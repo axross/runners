@@ -121,20 +121,19 @@ risk. The action and Claude Code block the two direct routes to pinning it:
   only be used with GitHub sources from the 'anthropics' organization." This was
   reproduced with Claude Code 2.1.286, and reported with 2.1.285 during review.
 
-Two indirect routes can pin the command, and the maintainer declined both:
+Two indirect routes can pin the command:
 
 - Rename the marketplace in a pinned checkout at run time, then add that local
   path. The reviewer reproduced this with Claude Code 2.1.285; it was not
-  reproduced here.
+  reproduced here. The maintainer was shown this route, as the option "rename and
+  keep the plugin pinned", and chose to stay unpinned.
 - Check the plugin out at a pinned commit and load its directory with
   `--plugin-dir` in `claude_args`. At the action's pinned SHA,
   `base-action/src/parse-sdk-options.ts` passes flags it does not recognize
   through to the CLI as extra arguments, and Claude Code 2.1.286 lists a
   `--plugin-dir` option. That was checked by reading the source and the help text
-  only; no run was made.
-
-Either route adds a step that this repository would then maintain, which is why
-it was declined.
+  only; no run was made. This route was identified after that
+  decision and has not been put to the maintainer.
 
 The maintainer accepted the risk. Its reach is wider than the workflow's
 `--allowedTools` list suggests, because a command's own `allowed-tools`
