@@ -30,6 +30,16 @@ is no related issue, say so here instead of deleting the section.
 
 Closes #
 
+## Acceptance criteria
+
+<!--
+Copy every acceptance criterion from the approved plan verbatim, each with its
+status and the evidence for it. A criterion carrying the
+`(verified out of tree: <where>)` marker keeps the marker and links its
+published evidence. The reviewer verifies these criteria from this section and
+does not open the tracking issue; an absent section is itself a finding.
+-->
+
 ## Verification
 
 <!--
