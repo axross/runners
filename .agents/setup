@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+step() {
+  local label="$1"
+  shift
+  echo "==> ${label}"
+  time "$@"
+}
+
+install_system_packages() {
+  local packages=()
+  local package
+  for package in ca-certificates curl git; do
+    dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed' || packages+=("$package")
+  done
+
+  if ((${#packages[@]})); then
+    sudo apt-get update
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}"
+  fi
+}
+
+install_mise() (
+  local version='2026.9.17'
+  local expected_sha256='63049bc35fb9065e8dc35ac8b25fdae53e9bd6f1885a843aedeba398e046a1ee'
+  local mise_path="$HOME/.local/bin/mise"
+  local download
+
+  if [[ -x "$mise_path" && "$("$mise_path" --version)" == "${version} "* ]]; then
+    return
+  fi
+
+  download="$(mktemp)"
+  trap 'rm -f -- "$download"' EXIT
+  curl -fsSL \
+    "https://github.com/jdx/mise/releases/download/v${version}/mise-v${version}-linux-x64" \
+    -o "$download"
+  printf '%s  %s\n' "$expected_sha256" "$download" | sha256sum --check --status
+  install -m 0755 "$download" "$mise_path"
+)
+
+install_toolchain() {
+  mise trust "$PWD"
+  mise install --yes
+}
+
+persist_login_environment() {
+  local marker='# runners mise toolchain'
+  touch "$HOME/.bash_profile"
+  if ! grep -Fqx "$marker" "$HOME/.bash_profile"; then
+    cat >>"$HOME/.bash_profile" <<'PROFILE'
+
+# runners mise toolchain
+export PATH="$HOME/.local/bin:$PATH"
+if command -v mise >/dev/null 2>&1; then
+  eval "$(mise activate bash)"
+fi
+PROFILE
+  fi
+}
+
+verify_toolchain() {
+  local tool
+  for tool in prettier markdownlint-cli2 shellcheck hadolint actionlint pwsh; do
+    mise exec -- which "$tool" >/dev/null || {
+      echo "Missing pinned tool: $tool" >&2
+      return 1
+    }
+  done
+}
+
+mkdir -p "$HOME/.local/bin"
+step "Install required system packages" install_system_packages
+step "Install mise" install_mise
+export PATH="$HOME/.local/bin:$PATH"
+step "Install the pinned lint toolchain" install_toolchain
+step "Persist the toolchain for login shells" persist_login_environment
+step "Verify the pinned tools" verify_toolchain
