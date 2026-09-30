@@ -66,8 +66,9 @@ is purely mechanical:
   which link to fix, which word to choose, which quoting to apply.
   [`check.sh`](../../.claude/hooks/check.sh) runs `mise run check` on `Stop` for
   a session that has uncommitted changes or commits ahead of its upstream, falling
-  back to `origin/HEAD` and then `origin/main` when there is no upstream, and
-  blocks completion with the tail of the output when it fails.
+  back to `origin/HEAD` and then `origin/main` when there is no usable upstream.
+  When none of those resolves, it cannot tell what changed, so it runs the check.
+  It blocks completion with the tail of the output when the check fails.
 
 ### Subagents
 
