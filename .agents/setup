@@ -70,6 +70,17 @@ verify_toolchain() {
   done
 }
 
+require_x86_64() {
+  local machine
+  machine="$(uname -m)"
+  [[ "$machine" == x86_64 ]] || {
+    echo "Unsupported architecture: $machine. This script installs the linux-x64 mise binary and supports x86_64 only." >&2
+    return 1
+  }
+}
+
+cd "$(dirname "$0")/.."
+require_x86_64
 mkdir -p "$HOME/.local/bin"
 step "Install required system packages" install_system_packages
 step "Install mise" install_mise

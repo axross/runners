@@ -112,9 +112,12 @@ async function modifiedProjectFiles(
   return [...new Set(files.filter((file): file is string => file !== null))];
 }
 
+const FALLBACK_BASELINE = "origin/main";
+
 async function hasPendingChanges(
   repositoryRoot: string,
   runtime: QualityHooksRuntime,
+  logger: PluginLogger,
 ): Promise<boolean> {
   const status = await runtime.run(
     "git",
@@ -133,12 +136,19 @@ async function hasPendingChanges(
       );
       baseline = upstream.stdout.trim();
     } catch {
-      const defaultRemoteBranch = await runtime.run(
-        "git",
-        ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
-        repositoryRoot,
-      );
-      baseline = defaultRemoteBranch.stdout.trim();
+      try {
+        const defaultRemoteBranch = await runtime.run(
+          "git",
+          ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+          repositoryRoot,
+        );
+        baseline = defaultRemoteBranch.stdout.trim();
+      } catch {
+        baseline = FALLBACK_BASELINE;
+        logger.log(
+          `No upstream and no origin/HEAD; comparing against ${FALLBACK_BASELINE} to find commits ahead.`,
+        );
+      }
     }
     const changed = await runtime.run(
       "git",
@@ -146,7 +156,8 @@ async function hasPendingChanges(
       repositoryRoot,
     );
     return changed.stdout.trim() !== "";
-  } catch {
+  } catch (error) {
+    logFailure(logger, "git diff against the baseline", error);
     return false;
   }
 }
@@ -196,7 +207,8 @@ export default function qualityHooks(
     try {
       return await serializeQualityWork(async () => {
         const repositoryRoot = await runtime.realpath(rootPath);
-        if (!(await hasPendingChanges(repositoryRoot, runtime))) return;
+        if (!(await hasPendingChanges(repositoryRoot, runtime, context.logger)))
+          return;
 
         try {
           await runtime.run("mise", ["run", "lint"], repositoryRoot);

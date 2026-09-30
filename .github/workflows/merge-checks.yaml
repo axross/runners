@@ -34,5 +34,8 @@ jobs:
         uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5.0.0
         with:
           version: 2026.9.17
+          # SHA-256 of the extracted mise binary, not of the archive the action
+          # downloads. Update with the version; see docs/operations/agent-sessions.md.
+          sha256: 63049bc35fb9065e8dc35ac8b25fdae53e9bd6f1885a843aedeba398e046a1ee
       - name: Run Checks
         run: mise run check

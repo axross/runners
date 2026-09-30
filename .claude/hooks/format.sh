@@ -1,5 +1,6 @@
 #!/bin/bash
 
+# No -e: formatting is best effort, and no failure here may block the edit.
 set -uo pipefail
 
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"

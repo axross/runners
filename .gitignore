@@ -1,5 +1,6 @@
 /.claude/settings.local.json
 /.claude/worktrees/
+.env
 .env.local
 .env.*.local
 
@@ -10,4 +11,10 @@ node_modules/
 *.token
 token.txt
 *.pem
+*.key
 .DS_Store
+
+# Credentials files a GitHub Actions runner writes when it is configured
+.runner
+.credentials
+.credentials_rsaparams

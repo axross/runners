@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# No -e: a failing check is reported through the exit code below, and a tool that
+# is missing must not abort the hook.
 set -uo pipefail
 
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"

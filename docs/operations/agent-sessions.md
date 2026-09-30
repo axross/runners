@@ -133,7 +133,8 @@ without replacing the tool's original result.
 On a successfully completed turn, the plugin's `agent.end` handler runs
 `mise run lint` when changes are uncommitted or committed ahead of the available
 upstream, falling back to the default remote branch resolved through `origin/HEAD`
-when the current branch has no upstream. A failure starts one follow-up turn with
+when the current branch has no upstream, and to `origin/main` with a logged
+notice when that does not resolve either. A failure starts one follow-up turn with
 the tail of the lint output. A marker in that follow-up prevents the same failure
 from starting an unbounded sequence of turns. Unlike Claude Code's blocking
 `Stop` hook above, Amp's public completion result cannot reject completion
@@ -158,5 +159,10 @@ idempotent: it installs any missing system packages (`ca-certificates`, `curl`,
 and verifies the download against a SHA-256 recorded in the script, runs
 `mise trust` and `mise install`, persists mise activation in the login shell, and
 verifies that every pinned tool resolves. When changing the pinned mise version,
-update the version and its SHA-256 together, taking the checksum from the
-release's published checksum file.
+update it in both places together: the `version` and `sha256` inputs of the
+`jdx/mise-action` step in
+[`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml), and the
+`version` and `expected_sha256` in `.agents/setup`. Both hold the SHA-256 of the
+bare `mise-v<version>-linux-x64` binary, taken from the release's published
+`SHASUMS256.txt`; the action hashes the binary it extracts from its archive, so
+it does not use the archive's checksum.
