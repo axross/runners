@@ -35,8 +35,9 @@ mise install
 `mise install` installs the tools pinned in [`mise.toml`](./mise.toml): Node,
 Prettier, markdownlint-cli2, shellcheck, hadolint, actionlint, and PowerShell.
 PSScriptAnalyzer is a PowerShell module rather than a mise tool, so
-`mise run lint:powershell` installs its pinned version from the PowerShell
-Gallery the first time a PowerShell script exists to lint.
+`mise run lint:powershell` downloads its pinned version from the PowerShell
+Gallery the first time a PowerShell script exists to lint, and refuses it unless
+its SHA-256 matches the pin in `mise.toml`.
 
 ## Commands
 

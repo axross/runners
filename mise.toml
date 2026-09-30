@@ -14,8 +14,10 @@ powershell = "7.6.6"
 
 [env]
 # PSScriptAnalyzer is a PowerShell module, not a mise tool, so `lint:powershell`
-# installs this version from the PowerShell Gallery on first use.
+# downloads this version's package from the PowerShell Gallery on first use and
+# refuses it unless its SHA-256 matches. Refresh the version and the hash together.
 PSSCRIPTANALYZER_VERSION = "1.25.0"
+PSSCRIPTANALYZER_SHA256 = "14e634c828eb98efb9f40b2918ba90f139ed5eccdf663a2a747736d996995d60"
 
 [tasks.format]
 description = "Rewrite Markdown, JSON, YAML, and TypeScript files with Prettier"
@@ -81,9 +83,41 @@ fi
 PSSCRIPTANALYZER_FILES="$(printf '%s\n' "${files[@]}")" pwsh -NoProfile -NonInteractive -Command '
   $ErrorActionPreference = "Stop"
   $version = $env:PSSCRIPTANALYZER_VERSION
-  if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer | Where-Object { $_.Version -eq [version]$version })) {
-    Install-Module -Name PSScriptAnalyzer -RequiredVersion $version -Scope CurrentUser -Force
+  $expected = $env:PSSCRIPTANALYZER_SHA256.ToLowerInvariant()
+  # Keyed by version and hash, so changing the pin installs and verifies afresh.
+  $root = Join-Path $HOME ".cache/runners/PSScriptAnalyzer-$version-$expected"
+  $manifest = Join-Path $root "PSScriptAnalyzer.psd1"
+  if (-not (Test-Path -LiteralPath $manifest)) {
+    $package = Join-Path ([IO.Path]::GetTempPath()) "PSScriptAnalyzer-$version.zip"
+    Invoke-WebRequest -Uri "https://www.powershellgallery.com/api/v2/package/PSScriptAnalyzer/$version" -OutFile $package
+    $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $package).Hash.ToLowerInvariant()
+    if ($actual -ne $expected) {
+      Remove-Item -LiteralPath $package -Force
+      throw "SHA-256 mismatch for PSScriptAnalyzer $version (expected $expected, got $actual); refusing to use it."
+    }
+    # Extract only the module. The NuGet packaging entries are not part of it, and
+    # the compatibility profiles are large and used only by rules this task does
+    # not enable.
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $staging = "$root.partial"
+    if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Recurse -Force }
+    $archive = [IO.Compression.ZipFile]::OpenRead($package)
+    try {
+      foreach ($entry in $archive.Entries) {
+        $name = $entry.FullName
+        if ($name.EndsWith("/") -or $name -like "_rels/*" -or $name -like "package/*" -or $name -like "compatibility_profiles/*" -or $name -eq "[Content_Types].xml" -or $name -like "*.nuspec") { continue }
+        $target = Join-Path $staging $name
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
+        [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $target, $true)
+      }
+    } finally {
+      $archive.Dispose()
+      Remove-Item -LiteralPath $package -Force
+    }
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $root) | Out-Null
+    Move-Item -LiteralPath $staging -Destination $root
   }
+  Import-Module -Name $manifest -Force
   $paths = $env:PSSCRIPTANALYZER_FILES -split "\r?\n" | Where-Object { $_ }
   $findings = @($paths | ForEach-Object { Invoke-ScriptAnalyzer -Path $_ -Severity Warning, Error })
   if ($findings.Count -gt 0) {
@@ -106,7 +140,7 @@ depends = [
 
 [tasks."check:links"]
 description = "Check relative links in the agent-facing Markdown and the docs"
-run = "node .claude/skills/agent-skill-authoring/scripts/check-links.mjs .claude docs README.md AGENTS.md CLAUDE.md REVIEW.md"
+run = "node .claude/skills/agent-skill-authoring/scripts/check-links.mjs .claude/agents docs README.md AGENTS.md CLAUDE.md REVIEW.md"
 
 [tasks."check:docs"]
 description = "Run the living-project-documentation validators over docs/"
