@@ -15,9 +15,12 @@ changed() {
   if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
     return 0
   fi
-  local upstream
-  upstream="$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)"
-  if [ -n "$upstream" ] && [ -n "$(git diff --name-only "$upstream...HEAD" 2>/dev/null)" ]; then
+  # Baseline for commits ahead: the upstream, else origin/HEAD, else origin/main.
+  local baseline
+  baseline="$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)"
+  [ -n "$baseline" ] || baseline="$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+  [ -n "$baseline" ] || baseline="origin/main"
+  if [ -n "$(git diff --name-only "$baseline...HEAD" 2>/dev/null)" ]; then
     return 0
   fi
   return 1

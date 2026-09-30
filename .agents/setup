@@ -65,7 +65,7 @@ PROFILE
 
 verify_toolchain() {
   local tool
-  for tool in prettier markdownlint-cli2 shellcheck hadolint actionlint pwsh; do
+  for tool in node prettier markdownlint-cli2 shellcheck hadolint actionlint pwsh; do
     mise exec -- which "$tool" >/dev/null || {
       echo "Missing pinned tool: $tool" >&2
       return 1
