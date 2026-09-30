@@ -54,3 +54,11 @@ jobs:
       # credential. The image is built on the runner host, not published.
       - name: Build Runner Image
         run: docker build --tag actions-runner:ci images/actions-runner
+      # Checks what the host relies on, not just that the build succeeds: the
+      # unprivileged user, the runner entry point, a writable tool cache, and the
+      # build dependencies. Runs the image with no mounts, network, or secrets.
+      - name: Smoke Test Runner Image
+        run: >-
+          docker run --rm --network none actions-runner:ci bash -c
+          'test "$(id -un)" = runner && test -x /home/runner/run.sh &&
+          test -w /opt/hostedtoolcache && ccache --version > /dev/null'
