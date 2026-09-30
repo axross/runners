@@ -6,10 +6,12 @@
 
 .DESCRIPTION
     Each fixture under fixtures/ breaks exactly one rule and must be rejected
-    with a non-zero exit code and a message naming the offending field. The
-    example configuration must be accepted and plan distinct container prefixes
-    and volume names for its two repositories. Runs under the PowerShell that
-    runs it, and calls neither Docker nor GitHub.
+    with a non-zero exit code and a message naming the offending field. Each
+    fixture under accepted/ sits on the edge of a rule and must be accepted.
+    The example configuration must be accepted and plan distinct container
+    prefixes and volume names for its two repositories. Runs under the
+    PowerShell that runs it, on Windows PowerShell 5.1 as well as PowerShell 7,
+    and calls neither Docker nor GitHub.
 #>
 $ErrorActionPreference = 'Stop'
 
@@ -17,6 +19,7 @@ $hostDirectory = Split-Path -Parent $PSScriptRoot
 $supervisor = Join-Path $hostDirectory 'supervisor.ps1'
 $example = Join-Path $hostDirectory 'runner-host.example.json'
 $fixtureDirectory = Join-Path $PSScriptRoot 'fixtures'
+$acceptedDirectory = Join-Path $PSScriptRoot 'accepted'
 $powershell = (Get-Process -Id $PID).Path
 
 $failures = New-Object System.Collections.Generic.List[string]
@@ -27,7 +30,7 @@ function Invoke-Validation {
     $previous = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        $output = @(& $powershell -NoProfile -NonInteractive -File $supervisor -ConfigPath $ConfigPath -ValidateOnly 2>&1 |
+        $output = @(& $powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $supervisor -ConfigPath $ConfigPath -ValidateOnly 2>&1 |
                 ForEach-Object { "$_" })
         return [pscustomobject]@{ ExitCode = $LASTEXITCODE; Text = $output -join "`n" }
     } finally {
@@ -61,6 +64,12 @@ $rejections = [ordered]@{
     'missing-host-prefix.json'       = @('hostPrefix: required field is missing')
     'slots-zero.json'                = @('repositories[0].slots: must be an integer')
     'mount-path-injection.json'      = @('repositories[0].volumes[0].mountPath: must be an absolute container path')
+    'mount-path-dotdot.json'         = @("repositories[0].volumes[0].mountPath: must not contain '..'")
+    'slots-too-many.json'            = @('repositories[0].slots: must be an integer from 1 to 16')
+    'token-path-relative.json'       = @('repositories[0].tokenPath: must be an absolute Windows path')
+    'token-path-drive-relative.json' = @('repositories[0].tokenPath: must be an absolute Windows path')
+    'token-path-rooted-without-drive.json' = @('repositories[0].tokenPath: must be an absolute Windows path')
+    'prefix-too-long.json'           = @('repositories[0].prefix: container prefix is', 'at most 64')
     'unknown-field.json'             = @('repositories[0].label: unknown field')
 }
 
@@ -74,6 +83,26 @@ foreach ($fixture in $rejections.Keys) {
 $unlisted = @(Get-ChildItem -LiteralPath $fixtureDirectory -Filter '*.json' | Where-Object { -not $rejections.Contains($_.Name) })
 Assert-Case -Name 'every fixture has an expectation' -Passed ($unlisted.Count -eq 0) `
     -Detail "no expectation for: $($unlisted.Name -join ', ')"
+
+# each fixture maps to the text its plan summary must contain and the text it
+# must not.
+$acceptances = [ordered]@{
+    'no-volumes.json'     = @{ Contains = @('Host configuration is valid: 1 repositories'); Lacks = @('volume:') }
+    'unc-token-path.json' = @{ Contains = @('token file:        \\example-server\example-share\example-repo-one.token'); Lacks = @() }
+    'max-slots.json'      = @{ Contains = @('slots:             16'); Lacks = @() }
+}
+
+foreach ($fixture in $acceptances.Keys) {
+    $result = Invoke-Validation -ConfigPath (Join-Path $acceptedDirectory $fixture)
+    $missing = @($acceptances[$fixture].Contains | Where-Object { -not $result.Text.Contains($_) })
+    $unwanted = @($acceptances[$fixture].Lacks | Where-Object { $result.Text.Contains($_) })
+    Assert-Case -Name "accepts $fixture" -Passed ($result.ExitCode -eq 0 -and $missing.Count -eq 0 -and $unwanted.Count -eq 0) `
+        -Detail "exit code $($result.ExitCode); message lacks: $($missing -join ' | '); message has: $($unwanted -join ' | '); message: $($result.Text)"
+}
+
+$unexpected = @(Get-ChildItem -LiteralPath $acceptedDirectory -Filter '*.json' | Where-Object { -not $acceptances.Contains($_.Name) })
+Assert-Case -Name 'every accepted fixture has an expectation' -Passed ($unexpected.Count -eq 0) `
+    -Detail "no expectation for: $($unexpected.Name -join ', ')"
 
 $accepted = Invoke-Validation -ConfigPath $example
 Assert-Case -Name 'accepts the example configuration' -Passed ($accepted.ExitCode -eq 0) -Detail $accepted.Text

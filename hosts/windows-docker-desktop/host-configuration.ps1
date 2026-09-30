@@ -14,6 +14,11 @@
 
 $script:DefaultLabels = @('self-hosted', 'linux', 'x64')
 $script:MaxSlots = 16
+# GitHub documents no limit for a runner's name, and neither its REST API
+# description nor the pinned runner's source enforces one. The derived runner
+# name is the container prefix plus a slot number and a 17-digit timestamp, so
+# capping the prefix keeps every name short on an assumption, not a known limit.
+$script:MaxPrefixLength = 64
 
 $script:HostFields = @('hostPrefix', 'imageName', 'repositories')
 $script:RepositoryFields = @('owner', 'repository', 'slots', 'tokenPath', 'labels', 'volumes', 'prefix')
@@ -26,6 +31,10 @@ $script:DerivedPrefixPattern = '^[a-z0-9][a-z0-9_.-]*$'
 $script:ImageNamePattern = '^[A-Za-z0-9][A-Za-z0-9_.:/@-]*$'
 $script:LabelPattern = '^[A-Za-z0-9][A-Za-z0-9._:/-]*$'
 $script:MountPathPattern = '^/[A-Za-z0-9_./-]+$'
+# a drive letter and a backslash, or a UNC path. Path.IsPathRooted would also
+# accept C:name and \name, which resolve against a working directory or drive
+# the scheduled task does not control.
+$script:TokenPathPattern = '^(?:[A-Za-z]:\\|\\\\)\S'
 
 # returns the property's value, or $null after recording why it is unusable.
 function Get-Field {
@@ -207,7 +216,7 @@ function Get-RepositoryPlan {
     $repository = Get-StringField -Node $Node -Name 'repository' -Path "$Path.repository" -Errors $Errors `
         -Pattern $script:RepositoryPattern -Expectation 'a GitHub repository name (letters, digits and . _ -)'
     $tokenPath = Get-StringField -Node $Node -Name 'tokenPath' -Path "$Path.tokenPath" -Errors $Errors `
-        -Pattern '\S' -Expectation 'a non-empty string'
+        -Pattern $script:TokenPathPattern -Expectation 'an absolute Windows path, such as C:\path\to\file or \\server\share\file'
     $labels = Get-CustomLabel -Node $Node -Path $Path -Errors $Errors
     $volumes = Get-VolumeDefinition -Node $Node -Path $Path -Errors $Errors
 
@@ -224,6 +233,10 @@ function Get-RepositoryPlan {
             -Pattern $script:DerivedPrefixPattern -Expectation 'lowercase letters, digits and . _ -, starting with a letter or digit'
     } elseif ($null -ne $owner -and $null -ne $repository) {
         $prefix = "$HostPrefix-$owner-$repository".ToLowerInvariant()
+    }
+    if ($null -ne $prefix -and $prefix.Length -gt $script:MaxPrefixLength) {
+        $Errors.Add("$Path.prefix: container prefix is $($prefix.Length) characters, at most $($script:MaxPrefixLength) are allowed because it starts every runner name; set a shorter prefix on this entry")
+        $prefix = $null
     }
 
     if ($null -eq $owner -or $null -eq $repository -or $null -eq $tokenPath -or $null -eq $labels `
@@ -285,7 +298,7 @@ function Read-HostConfiguration {
         throw "Host configuration file not found: $Path"
     }
     try {
-        $root = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+        $root = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
     } catch {
         throw "Host configuration is not valid JSON: $($_.Exception.Message)"
     }
