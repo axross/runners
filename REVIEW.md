@@ -37,8 +37,11 @@ Run all three checks on every review and raise a finding for each miss:
   A criterion carrying the `(verified out of tree: <where>)` marker is checked
   only for a link to its published evidence: with the link, it is not a
   finding and gets one summary line naming it as designated, every round;
-  without the link, it is a finding. Do not re-run or judge the evidence
-  itself. Every other unmet or diff-unconfirmable criterion is a finding,
+  without the link, it is a finding, unless the marker names a destination
+  that can only exist after the pull request merges. Such a criterion is not a
+  finding; it gets one summary line naming it as designated and pending, every
+  round, and the author links the evidence once it exists. Do not re-run or judge
+  the evidence itself. Every other unmet or diff-unconfirmable criterion is a finding,
   anchored inline when it attaches to a changed line, labelled Important.
 - **Public-repository safety** - this repository is public and is meant to hold
   nothing that identifies a person or a machine. Verify the lenses below for
