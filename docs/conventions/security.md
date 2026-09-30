@@ -78,11 +78,37 @@ API with the checkout's credential. A workflow triggered by `issue_comment` chec
 out the default branch, never the pull request's head, so no code a commenter
 could have introduced runs in a job that holds a secret.
 [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) holds only
-`contents: read`.
+`contents: read`. [`claude-review.yaml`](../../.github/workflows/claude-review.yaml)
+holds `contents: read` at the top and, on its one job, `contents: read` plus
+`id-token: write`. It needs no pull request, issue, or check write scope: at the
+pinned version the action exchanges the job's OpenID Connect token for a Claude
+GitHub App token and uses that token for every write to the pull request, and
+the job token's only other use is an optional CI-status server that stays off
+unless `actions: read` is granted and requested. Do not add a write scope to that
+job without re-reading the action at the pinned SHA and recording why.
 
 An untrusted context value (a comment body, a pull request title, a branch name)
 is passed into a step through an `env:` variable and quoted, never expanded inside
 `run:`. The workflow `if:` expression is not a substitute for that.
+
+## The Review Plugin Marketplace Is Not Pinned
+
+`claude-review.yaml` installs the `code-review` plugin from the
+`https://github.com/anthropics/claude-code.git` marketplace, at that repository's
+default branch at run time. This is an exception to the pinning convention above,
+accepted because the action cannot pin it: at the pinned SHA it validates each
+`plugin_marketplaces` entry against a pattern that must end in `.git`, so a
+`#ref` or `?ref=` suffix is rejected, and it offers no ref input.
+
+The cost is that whoever controls that repository's default branch controls the
+review command the job runs, inside a job that holds `CLAUDE_CODE_OAUTH_TOKEN`
+and an OpenID Connect token. Three controls bound it: the job's shell tools are
+limited to the `gh pr` and `git` subcommands the review needs, `WebFetch`,
+`WebSearch`, and `Task` are disallowed, and the job checks out only the default
+branch. An action that accepts local marketplace paths also permits a stricter
+variant, which is not adopted: check the marketplace out at a pinned commit in an
+earlier step and pass its path. Revisit the exception if the action gains a ref
+input, or if the maintainer prefers that variant over the extra step.
 
 ## Self-Hosted Runners Stay Out of This Repository's Own Jobs
 
@@ -141,7 +167,8 @@ Design rules that follow, which REVIEW.md applies:
 The repository is public and is meant to be reusable by anyone, so it holds no
 credential and no value that identifies a person or a machine: no token, key,
 registration or just-in-time configuration, `.env` value, hostname, IP address,
-home-directory path, account name other than a public maintainer handle, or
+home-directory path, or account name, other than the public maintainer handle and
+the owner and repository names of this repository and of `axross/skills`, and no
 consumer-specific owner, repository, image, volume, or task name. Examples use
 placeholders (`<owner>`, `<repo>`). A value a runner needs is read from the
 environment or supplied at run time.

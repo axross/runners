@@ -57,8 +57,9 @@ Each lens is a hard project rule. A violation is Important.
 - **No credentials or host-identifying values.** No token, key, password,
   registration or JIT configuration, `.env` value, internal hostname, IP
   address, LAN address, machine or user name, home-directory path, email
-  address, or personal account name is committed, in a file, a default, an
-  example, a comment, or a test fixture. An example uses an obviously fake
+  address, or account name is committed, in a file, a default, an example, a
+  comment, or a test fixture. The public maintainer handle and the owner and
+  repository names of this repository and of `axross/skills` are allowed. An example uses an obviously fake
   placeholder (`<owner>`, `<repo>`, `example.invalid`). A value a runner needs
   is read from the environment or a prompt at run time.
 - **No values specific to the repository this code was extracted from.** The

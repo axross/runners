@@ -6,10 +6,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
-  issues: write
-  checks: write
-  id-token: write
 
 jobs:
   review:
@@ -27,9 +23,18 @@ jobs:
       cancel-in-progress: true
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # The action posts to the pull request with a Claude GitHub App token it
+    # obtains by exchanging this job's OIDC token, not with the job token, so the
+    # job needs no write scope. docs/conventions/security.md records the check.
+    permissions:
+      contents: read # actions/checkout reads the default branch
+      id-token: write # the OIDC token the action exchanges for the app token
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          # The action configures its own git authentication with the app token.
+          persist-credentials: false
 
       - name: Claude Review
         uses: anthropics/claude-code-action@fd1c128679612beff4ca259c78021c506e8aa7a7 # v1.0.237
@@ -41,6 +46,6 @@ jobs:
           prompt: "/code-review:code-review https://github.com/${{ github.repository }}/pull/${{ github.event.issue.number }} --comment"
           claude_args: >-
             --append-system-prompt "Read REVIEW.md at the repository root and follow it as the highest-priority, review-only instructions for this review. Review this pull request even if it is a draft — do not skip it for being a draft. Do the ENTIRE review within this single turn: run every check and review pass yourself, synchronously and in order. Do NOT kick off background or parallel work and then end your turn to wait for it — this is a one-shot job that terminates the instant your turn ends, so anything you defer is lost and no review is posted. You MUST post your findings (inline comments plus a summary via `gh pr comment`) before your turn ends. This reviewer is advisory and does not gate merges."
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Read,Grep,Glob,Bash"
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Read,Grep,Glob,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*),Bash(git diff:*),Bash(git log:*)"
             --disallowedTools "WebFetch,WebSearch,Task"
             --max-turns 200

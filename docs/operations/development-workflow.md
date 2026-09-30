@@ -139,17 +139,21 @@ secrets. A Claude review request can:
 - start the GitHub-hosted `claude-review.yaml` job, which runs a third-party
   artificial intelligence action with repository-reading and shell tools
 - let the Anthropic action read pull request content and fetch its review
-  plugin
+  plugin from a marketplace that is not pinned to a commit, as
+  [Security](../conventions/security.md#the-review-plugin-marketplace-is-not-pinned)
+  records
 - pass the repository secret `CLAUDE_CODE_OAUTH_TOKEN` to the Anthropic action
 - let the action request a GitHub OpenID Connect identity token through the
   job's `id-token: write` permission
-- give the job's token these permissions: `contents: read`,
-  `pull-requests: write`, `issues: write`, and `checks: write`
+- give the job's token only `contents: read` and `id-token: write`; the action
+  publishes findings with a Claude GitHub App token it obtains by exchanging the
+  OpenID Connect token, so the job holds no pull request, issue, or check write
+  scope
 - incur charges through the Anthropic action
-- publish findings to the pull request through the Anthropic action
+- publish findings to the pull request through the Anthropic action, with the
+  permissions of the installed Claude GitHub App
 
-The `checks: write` permission also permits check-run modification. These are
-the consequences the maintainer accepted in issuing the grant. They document
+These are the consequences the maintainer accepted in issuing the grant. They document
 that acceptance; an agent does not re-disclose them or ask about them before a
 covered effect.
 
@@ -240,7 +244,10 @@ session, whatever it calls its own assessment. This repository configures one
 provider, Claude review, for every authoring host. A Claude Code session and an
 Amp session both request it; an Amp-authored pull request reviewed by Claude is
 still reviewed by a separate session under a separate identity. A manual change
-(no agent host) requests it the same way.
+(no agent host) requests it the same way. Routing Amp to a second provider, as
+some projects do, does not carry over: no other provider is configured here, and
+the request is posted under the maintainer's operator identity, which passes the
+review workflow's author-association gate.
 
 | Authoring host         | Review provider | Request                                                    |
 | ---------------------- | --------------- | ---------------------------------------------------------- |
