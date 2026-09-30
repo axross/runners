@@ -1,0 +1,152 @@
+# Pins the lint and format toolchain. `README.md` documents the tasks; the
+# Claude Code hooks, the Amp plugin, and `merge-checks.yaml` call the same
+# tasks, so a local run and CI use the same tool versions.
+
+[tools]
+node = "24.21.0"
+"npm:prettier" = "3.9.9"
+"npm:markdownlint-cli2" = "0.23.3"
+shellcheck = "0.11.0"
+hadolint = "2.15.1"
+actionlint = "1.7.12"
+powershell = "7.6.6"
+
+[env]
+# PSScriptAnalyzer is a PowerShell module, not a mise tool, so `lint:powershell`
+# installs this version from the PowerShell Gallery on first use.
+PSSCRIPTANALYZER_VERSION = "1.25.0"
+
+[tasks.format]
+description = "Rewrite Markdown, JSON, YAML, and TypeScript files with Prettier"
+run = "prettier --write ."
+
+[tasks."format:check"]
+description = "Fail when Prettier would change a file"
+run = "prettier --check ."
+
+[tasks."lint:markdown"]
+description = "Lint Markdown with markdownlint-cli2"
+run = "markdownlint-cli2 \"**/*.md\""
+
+[tasks."lint:shell"]
+description = "Lint shell scripts (*.sh and .agents/setup) with shellcheck"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+files=()
+while IFS= read -r file; do
+  files+=("$file")
+done < <(git ls-files --cached --others --exclude-standard -- '*.sh' '.agents/setup' ':!:.claude/skills')
+if [ -z "${files[*]-}" ]; then
+  echo "No shell scripts to lint."
+  exit 0
+fi
+shellcheck "${files[@]}"
+'''
+
+[tasks."lint:docker"]
+description = "Lint Dockerfiles with hadolint; passes when there are none"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+files=()
+while IFS= read -r file; do
+  files+=("$file")
+done < <(git ls-files --cached --others --exclude-standard -- '*Dockerfile' '*Dockerfile.*' '*.dockerfile' ':!:.claude/skills')
+if [ -z "${files[*]-}" ]; then
+  echo "No Dockerfiles to lint."
+  exit 0
+fi
+hadolint "${files[@]}"
+'''
+
+[tasks."lint:actions"]
+description = "Lint GitHub Actions workflows with actionlint"
+run = "actionlint"
+
+[tasks."lint:powershell"]
+description = "Lint PowerShell scripts with PSScriptAnalyzer; passes when there are none"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+files=()
+while IFS= read -r file; do
+  files+=("$file")
+done < <(git ls-files --cached --others --exclude-standard -- '*.ps1' '*.psm1' '*.psd1' ':!:.claude/skills')
+if [ -z "${files[*]-}" ]; then
+  echo "No PowerShell scripts to lint."
+  exit 0
+fi
+PSSCRIPTANALYZER_FILES="$(printf '%s\n' "${files[@]}")" pwsh -NoProfile -NonInteractive -Command '
+  $ErrorActionPreference = "Stop"
+  $version = $env:PSSCRIPTANALYZER_VERSION
+  if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer | Where-Object { $_.Version -eq [version]$version })) {
+    Install-Module -Name PSScriptAnalyzer -RequiredVersion $version -Scope CurrentUser -Force
+  }
+  $paths = $env:PSSCRIPTANALYZER_FILES -split "\r?\n" | Where-Object { $_ }
+  $findings = @($paths | ForEach-Object { Invoke-ScriptAnalyzer -Path $_ -Severity Warning, Error })
+  if ($findings.Count -gt 0) {
+    $findings | Format-Table -AutoSize | Out-String -Width 200 | Write-Host
+    exit 1
+  }
+  Write-Host "PSScriptAnalyzer: no findings in $($paths.Count) file(s)."
+'
+'''
+
+[tasks.lint]
+description = "Run every linter"
+depends = [
+  "lint:markdown",
+  "lint:shell",
+  "lint:docker",
+  "lint:actions",
+  "lint:powershell",
+]
+
+[tasks."check:links"]
+description = "Check relative links in the agent-facing Markdown and the docs"
+run = "node .claude/skills/agent-skill-authoring/scripts/check-links.mjs .claude docs README.md AGENTS.md CLAUDE.md REVIEW.md"
+
+[tasks."check:docs"]
+description = "Run the living-project-documentation validators over docs/"
+run = '''
+#!/usr/bin/env bash
+set -uo pipefail
+failed=0
+for check in .claude/skills/living-project-documentation/scripts/check-*.mjs; do
+  echo "::group::$(basename "$check")"
+  node "$check" || failed=1
+  echo "::endgroup::"
+done
+exit "$failed"
+'''
+
+[tasks."check:skills"]
+description = "Check that skills-lock.json and .claude/skills/ list the same skills"
+run = '''
+node -e '
+const fs = require("node:fs");
+const locked = Object.keys(JSON.parse(fs.readFileSync("skills-lock.json", "utf8")).skills).sort();
+const installed = fs
+  .readdirSync(".claude/skills", { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => entry.name)
+  .sort();
+const missing = locked.filter((name) => !installed.includes(name));
+const extra = installed.filter((name) => !locked.includes(name));
+for (const name of missing) console.error(`locked but not installed: ${name}`);
+for (const name of extra) console.error(`installed but not locked: ${name}`);
+if (missing.length || extra.length) process.exit(1);
+console.log(`skills-lock.json and .claude/skills/ agree (${locked.length} skills).`);
+'
+'''
+
+[tasks.check]
+description = "Run every gate: format check, lint, link check, docs validators, skills lock"
+depends = [
+  "format:check",
+  "lint",
+  "check:links",
+  "check:docs",
+  "check:skills",
+]

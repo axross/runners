@@ -1,0 +1,13 @@
+/.claude/settings.local.json
+/.claude/worktrees/
+.env.local
+.env.*.local
+
+/.amp/portals/*
+
+node_modules/
+
+*.token
+token.txt
+*.pem
+.DS_Store
