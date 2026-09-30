@@ -54,7 +54,7 @@ Run from the repository root.
 | `mise run lint:docker`     | hadolint over Dockerfiles; passes when there are none                                   |
 | `mise run lint:actions`    | actionlint over `.github/workflows/`                                                    |
 | `mise run lint:powershell` | PSScriptAnalyzer over `*.ps1`, `*.psm1`, and `*.psd1` files; passes when there are none |
-| `mise run check:links`     | Resolve relative links in the Markdown files                                            |
+| `mise run check:links`     | Resolve relative links in `docs/`, `.claude/agents/`, and the root Markdown files       |
 | `mise run check:docs`      | Run the `docs/` structural validators                                                   |
 | `mise run check:amp`       | Run the Amp quality-hooks plugin's smoke test (`node --test`, no install needed)        |
 | `mise run check:skills`    | Check that `skills-lock.json` and `.claude/skills/` list the same skills                |
