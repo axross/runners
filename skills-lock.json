@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "skills": {
+    "agent-skill-authoring": {
+      "source": "axross/skills",
+      "sourceType": "github",
+      "skillPath": "skills/agent-skill-authoring/SKILL.md",
+      "computedHash": "bfde329efcf55bf6315ddb346f85ec164fed8fba42eb17eee806c86151536b1b"
+    },
+    "agent-skill-management": {
+      "source": "axross/skills",
+      "sourceType": "github",
+      "skillPath": "skills/agent-skill-management/SKILL.md",
+      "computedHash": "e5972c36f0dd0e46ebfae1c2e7041687a81e6d01487d4afe840ba66999b37dcb"
+    },
+    "application-security": {
+      "source": "axross/skills",
+      "sourceType": "github",
+      "skillPath": "skills/application-security/SKILL.md",
+      "computedHash": "5dfc93de4eabc0a5af5ddda7cc16996fecc3c6a5ac91e1e178d8f8dd0da12bd2"
+    },
+    "code-maintainability": {
+      "source": "axross/skills",
+      "sourceType": "github",
+      "skillPath": "skills/code-maintainability/SKILL.md",
+      "computedHash": "e47584be3948faab01248481faef41c0fd7b70caa0cc6b34152a10e17e03524f"
+    },
+    "code-review": {
+      "source": "axross/skills",
+      "sourceType": "github",
+      "skillPath": "skills/code-review/SKILL.md",
+      "computedHash": "d11eb18422ef0a38083487bb05c6f4b9502ef7f8080104a4b99acc5b2c103c4d"
+    },
+    "conventional-commits": {
+      "source": "axross/skills",
+      "sourceType": "github",
+      "skillPath": "skills/conventional-commits/SKILL.md",
+      "computedHash": "d84711e66582ffd92dd0bd158843936aa6c9d9c91255b8c5564f357496950c72"
+    },
+    "github-operation": {
+      "source": "axross/skills",
+      "sourceType": "github",
+      "skillPath": "skills/github-operation/SKILL.md",
+      "computedHash": "e3ccbd13994df852c1eeffd86ea5f0fd2ce73541672ea3231a77d63dee7efc53"
+    },
+    "living-project-documentation": {
+      "source": "axross/skills",
+      "sourceType": "github",
+      "skillPath": "skills/living-project-documentation/SKILL.md",
+      "computedHash": "6e4db698fd762ca516e472394bf8a3238130f4152446cfb2a9c0adcea40adfa2"
+    },
+    "loop-engineering": {
+      "source": "axross/skills",
+      "sourceType": "github",
+      "skillPath": "skills/loop-engineering/SKILL.md",
+      "computedHash": "5587452c593a0084466eb088528f09409590a1977598b84a9ecf40f9eb7e5901"
+    },
+    "product-requirement-document-authoring": {
+      "source": "axross/skills",
+      "sourceType": "github",
+      "skillPath": "skills/product-requirement-document-authoring/SKILL.md",
+      "computedHash": "02b8770e9b8dcf6d94f92702ca155c67bc6e325af40da9d260a74d17c6814cef"
+    },
+    "professional-behavior": {
+      "source": "axross/skills",
+      "sourceType": "github",
+      "skillPath": "skills/professional-behavior/SKILL.md",
+      "computedHash": "049cc3f81dee2a94e38f206e3906d0b4fb2eeda5b21a42bb737233914ef087fa"
+    },
+    "quality-assurance": {
+      "source": "axross/skills",
+      "sourceType": "github",
+      "skillPath": "skills/quality-assurance/SKILL.md",
+      "computedHash": "b34ad09c8e4d8a134aa0aa8bc14d7032eac41230563952af0fea40093a630178"
+    },
+    "software-development": {
+      "source": "axross/skills",
+      "sourceType": "github",
+      "skillPath": "skills/software-development/SKILL.md",
+      "computedHash": "7d126d1db54163bc7b204567b4df32a9607b0107f617be8947ef1b306399e5ab"
+    },
+    "technical-document-authoring": {
+      "source": "axross/skills",
+      "sourceType": "github",
+      "skillPath": "skills/technical-document-authoring/SKILL.md",
+      "computedHash": "f2e48f86036000952673ad5d76599c1951404fdefc811c2c7fb18a48645f97a1"
+    }
+  }
+}
