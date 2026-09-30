@@ -18,13 +18,8 @@ editing the installed copy, because the next install discards the edit while it
 poses as a rule the library agrees with. See
 [Deviations and Gaps](#deviations-and-gaps) for how that is handled instead.
 
-The installed set is these fourteen skills: `professional-behavior`,
-`software-development`, `loop-engineering`, `github-operation`,
-`conventional-commits`, `code-review`, `quality-assurance`,
-`application-security`, `product-requirement-document-authoring`,
-`living-project-documentation`, `technical-document-authoring`,
-`code-maintainability`, `agent-skill-management`, and `agent-skill-authoring`.
-The runtime is Claude Code (`--agent claude-code`); Amp reads the same
+The installed set is exactly the keys of `skills-lock.json`; that file, not this
+document, is the inventory. The runtime is Claude Code (`--agent claude-code`); Amp reads the same
 `.claude/skills/` directory.
 
 ## Install and Refresh
@@ -76,7 +71,7 @@ Two checks cover two different failures:
     <path-to-axross-skills-clone>/skills .claude/skills
   ```
 
-  Every one of the fourteen installed skills MUST report `OK`. The command also
+  Every skill named in `skills-lock.json` MUST report `OK`. The command also
   reports `DRIFT ... no installed copy` for each library skill this project has
   not adopted; that is expected, because the project installs a subset, and it is
   not a fault. It needs a checkout of the library, so it is run by hand when

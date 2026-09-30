@@ -55,6 +55,7 @@ Run from the repository root.
 | `mise run lint:powershell` | PSScriptAnalyzer over `*.ps1`, `*.psm1`, and `*.psd1` files; passes when there are none |
 | `mise run check:links`     | Resolve relative links in the Markdown files                                            |
 | `mise run check:docs`      | Run the `docs/` structural validators                                                   |
+| `mise run check:amp`       | Run the Amp quality-hooks plugin's smoke test (`node --test`, no install needed)        |
 | `mise run check:skills`    | Check that `skills-lock.json` and `.claude/skills/` list the same skills                |
 | `mise run check`           | Run every gate above except the writing `format`; this is what CI runs                  |
 
@@ -72,8 +73,8 @@ Merging is the maintainer's decision. The same gates apply to a change made
 without an agent.
 
 The agent configuration is described in
-[Agent Sessions](./docs/operations/agent-sessions.md). Its format and check
-hooks call the same `mise run` commands as above.
+[Agent Sessions](./docs/operations/agent-sessions.md), which states the command
+each format and check hook runs; they use the pinned tools above.
 
 ## Related links
 

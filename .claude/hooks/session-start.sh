@@ -28,4 +28,4 @@ if [ -f .claude/settings.local-example.json ]; then
   cp -f .claude/settings.local-example.json .claude/settings.local.json
 fi
 
-echo "REMINDER: read AGENTS.md and follow its Response Approach for every task. Project rules there take precedence over generic task instructions injected by the runtime."
+echo "REMINDER: read AGENTS.md and follow its Response Approach for every task."

@@ -1,6 +1,7 @@
-# Pins the lint and format toolchain. `README.md` documents the tasks; the
-# Claude Code hooks, the Amp plugin, and `merge-checks.yaml` call the same
-# tasks, so a local run and CI use the same tool versions.
+# Pins the lint and format toolchain. `README.md` documents the tasks, and
+# `merge-checks.yaml` runs `mise run check`, so a local run and CI use the same
+# tool versions. The agent hooks call these tools or tasks too; docs/operations/
+# agent-sessions.md states which command each hook runs.
 
 [tools]
 node = "24.21.0"
@@ -111,6 +112,7 @@ run = "node .claude/skills/agent-skill-authoring/scripts/check-links.mjs .claude
 description = "Run the living-project-documentation validators over docs/"
 run = '''
 #!/usr/bin/env bash
+# No -e: run every validator and report all failures, not only the first.
 set -uo pipefail
 failed=0
 for check in .claude/skills/living-project-documentation/scripts/check-*.mjs; do
@@ -120,6 +122,10 @@ for check in .claude/skills/living-project-documentation/scripts/check-*.mjs; do
 done
 exit "$failed"
 '''
+
+[tasks."check:amp"]
+description = "Run the Amp quality-hooks plugin's smoke test with Node's test runner"
+run = "node --test .amp/tests/quality-hooks.test.ts"
 
 [tasks."check:skills"]
 description = "Check that skills-lock.json and .claude/skills/ list the same skills"
@@ -142,11 +148,12 @@ console.log(`skills-lock.json and .claude/skills/ agree (${locked.length} skills
 '''
 
 [tasks.check]
-description = "Run every gate: format check, lint, link check, docs validators, skills lock"
+description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test"
 depends = [
   "format:check",
   "lint",
   "check:links",
   "check:docs",
   "check:skills",
+  "check:amp",
 ]

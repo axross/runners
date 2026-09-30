@@ -146,10 +146,14 @@ do not run this check. The Amp hook runs `lint` where the Claude Code hook runs
 
 All quality commands share one in-process queue so concurrent lifecycle events
 cannot inspect or mutate the same workspace at the same time. The plugin is an
-Amp runtime entry point only: it neither reads nor invokes `.claude/` hooks. The
-plugin has no automated test in this repository and has not been exercised
-against a live Amp session; reload plugins from Amp's command palette or restart
-Amp after changing it, and confirm the hook runs before relying on it.
+Amp runtime entry point only: it neither reads nor invokes `.claude/` hooks. A
+smoke test, [`.amp/tests/quality-hooks.test.ts`](../../.amp/tests/quality-hooks.test.ts),
+runs under `mise run check:amp` with Node's built-in test runner, using stubs for
+Amp's plugin API and for the command runner. Node 24 strips the plugin's
+type-only import of `@ampcode/plugin`, so the package need not be installed. The
+test does not show that Amp loads the plugin or calls its handlers; reload
+plugins from Amp's command palette or restart Amp after changing it, and confirm
+the hook runs before relying on it.
 
 ### Environment Provisioning
 

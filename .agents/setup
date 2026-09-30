@@ -36,7 +36,10 @@ install_mise() (
   curl -fsSL \
     "https://github.com/jdx/mise/releases/download/v${version}/mise-v${version}-linux-x64" \
     -o "$download"
-  printf '%s  %s\n' "$expected_sha256" "$download" | sha256sum --check --status
+  if ! printf '%s  %s\n' "$expected_sha256" "$download" | sha256sum --check --status; then
+    echo "SHA-256 mismatch for the downloaded mise ${version} binary (expected ${expected_sha256}); refusing to install it." >&2
+    exit 1
+  fi
   install -m 0755 "$download" "$mise_path"
 )
 
