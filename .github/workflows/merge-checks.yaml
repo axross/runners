@@ -1,8 +1,9 @@
 name: Merge Checks
 
-# The repository's own CI: the format, lint, link, documentation, and skills
-# lock gates, run through the same mise task the README documents. It runs on a
-# GitHub-hosted runner only. This repository is public, and GitHub advises
+# The repository's own CI: the format, lint, link, documentation, skills lock,
+# and host configuration gates, run through the same mise task the README
+# documents, plus a build of the runner image that is never pushed. It runs on
+# GitHub-hosted runners only. This repository is public, and GitHub advises
 # against self-hosted runners on public repositories; see
 # docs/conventions/security.md.
 
@@ -39,3 +40,17 @@ jobs:
           sha256: 63049bc35fb9065e8dc35ac8b25fdae53e9bd6f1885a843aedeba398e046a1ee
       - name: Run Checks
         run: mise run check
+
+  image:
+    name: Build Runner Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # Builds only: no registry login and no push, so the job holds no
+      # credential. The image is built on the runner host, not published.
+      - name: Build Runner Image
+        run: docker build --tag actions-runner:ci images/actions-runner

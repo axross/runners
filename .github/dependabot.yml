@@ -12,6 +12,12 @@ updates:
       prefix: "ci"
       include: "scope"
 
-  # No "docker" entry yet: it is added in the change that introduces the first
-  # Dockerfile under images/<name>/, with one directory per image. The tools
-  # pinned in mise.toml are not covered by Dependabot and are refreshed by hand.
+  # One entry per image directory under images/. The tools pinned in mise.toml
+  # are not covered by Dependabot and are refreshed by hand.
+  - package-ecosystem: "docker"
+    directory: "/images/actions-runner"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "build"
+      include: "scope"
