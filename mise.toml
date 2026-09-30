@@ -88,7 +88,10 @@ PSSCRIPTANALYZER_FILES="$(printf '%s\n' "${files[@]}")" pwsh -NoProfile -NonInte
   $root = Join-Path $HOME ".cache/runners/PSScriptAnalyzer-$version-$expected"
   $manifest = Join-Path $root "PSScriptAnalyzer.psd1"
   if (-not (Test-Path -LiteralPath $manifest)) {
-    $package = Join-Path ([IO.Path]::GetTempPath()) "PSScriptAnalyzer-$version.zip"
+    # Download into the user cache under a per-process name, not a fixed name in the
+    # shared temp directory, so another local user or run cannot swap or collide with it.
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $root) | Out-Null
+    $package = "$root.$PID.nupkg"
     Invoke-WebRequest -Uri "https://www.powershellgallery.com/api/v2/package/PSScriptAnalyzer/$version" -OutFile $package
     $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $package).Hash.ToLowerInvariant()
     if ($actual -ne $expected) {
@@ -114,7 +117,6 @@ PSSCRIPTANALYZER_FILES="$(printf '%s\n' "${files[@]}")" pwsh -NoProfile -NonInte
       $archive.Dispose()
       Remove-Item -LiteralPath $package -Force
     }
-    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $root) | Out-Null
     Move-Item -LiteralPath $staging -Destination $root
   }
   Import-Module -Name $manifest -Force
