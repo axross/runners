@@ -72,7 +72,12 @@ for it.
 The pull request that adds this section cannot rely on it, because the grant
 takes effect only on merge. That pull request's delivery is authorized by the
 maintainer's approval of the plan in issue #1, which requested the authorization
-to push a `claude/` branch and open a draft pull request for it.
+to push a `claude/` branch and open a draft pull request for it. That pull
+request was in fact delivered from the host-assigned head branch
+`ccr-fd09e38c-631o65`, because the authoring cloud session could push only to
+that branch, and `main` was seeded with an empty root commit with the
+maintainer's explicit permission. This is a one-time exception for the adopting
+pull request; every later change uses a `claude/`-prefixed branch.
 
 The grant's targets are:
 
@@ -139,8 +144,8 @@ secrets. A Claude review request can:
 - start the GitHub-hosted `claude-review.yaml` job, which runs a third-party
   artificial intelligence action with repository-reading and shell tools
 - let the Anthropic action read pull request content and fetch its review
-  plugin from a marketplace that is not pinned to a commit, as
-  [Security](../conventions/security.md#the-review-plugin-marketplace-is-not-pinned)
+  plugin from a marketplace checked out at a pinned commit, as
+  [Security](../conventions/security.md#the-review-plugin-marketplace-is-pinned-by-checkout)
   records
 - pass the repository secret `CLAUDE_CODE_OAUTH_TOKEN` to the Anthropic action
 - let the action request a GitHub OpenID Connect identity token through the
@@ -281,8 +286,10 @@ silence is indistinguishable from a clean review: it needs the
 pay-as-you-go billing), both added by the maintainer. Past that setup, its
 author-association gate answers repository owners, members, and collaborators,
 plus the change loop's own bot identity (`claude[bot]`), and only when that
-comment carries no Markdown heading anywhere in it, so the reviewer's own summary
-cannot re-trigger it. The action also rejects any run a bot identity starts
+comment carries no Markdown heading anywhere in it. That heading test is only half
+of the guard against the reviewer's own summary re-triggering it; the other half
+is that the reviewer never writes the trigger phrase into a summary or comment,
+per [REVIEW.md](../../REVIEW.md). The action also rejects any run a bot identity starts
 unless that identity is named in its own `allowed_bots` input, which
 `claude-review.yaml` does for `claude[bot]`. See
 [Security](../conventions/security.md#the-review-gate-admits-one-bot-identity-by-login-not-association)

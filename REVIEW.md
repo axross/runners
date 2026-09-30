@@ -181,6 +181,12 @@ owns the Claude review container, finding shapes, tally, and summary scope.
 
 **Guidelines:**
 
+- Claude review MUST NOT write the review trigger phrase, the literal documented
+  in [the independent review](docs/operations/development-workflow.md#the-independent-review),
+  anywhere in a summary or an inline comment. Refer to it by name instead, for
+  example "the review request". The workflow's loop guard admits the reviewer's
+  own `claude[bot]` comments unless they carry a Markdown heading, so a summary
+  that quotes the phrase can start another review.
 - Claude review MUST use its two-output route: diff-anchored inline findings
   plus exactly one top-level summary with the required tally, including
   `0 important, 0 nits` when no findings exist. This is this repository's

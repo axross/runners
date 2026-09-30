@@ -45,8 +45,14 @@ executes: a `docker://` reference, a reusable workflow, and a downloaded binary
 are pinned to an immutable identifier, and a download is verified against a
 checksum before it runs. [`.agents/setup`](../../.agents/setup) does this for
 mise, and [`mise.toml`](../../mise.toml) pins every tool to an exact version.
-Dependabot's `github-actions` entry refreshes action pins monthly; the versions in
-`mise.toml` are refreshed by hand, looked up with `mise latest`, never recalled.
+[`mise.lock`](../../mise.lock), with the npm dependency locks it references under
+`.mise/locks/`, records each tool's download URL and checksum for `linux-x64`;
+`locked = true` is deliberately not set, so a platform the lockfile does not cover
+still installs. Dependabot's `github-actions` entry refreshes action pins monthly;
+the versions in `mise.toml` are refreshed by hand, looked up with `mise latest`,
+never recalled. A manual refresh of a tool version is: edit `mise.toml`, run
+`mise lock --platform linux-x64`, and commit `mise.toml`, `mise.lock`, and
+`.mise/locks/` together.
 
 ## `actions/*` Stays on Major Tags
 
@@ -91,24 +97,40 @@ An untrusted context value (a comment body, a pull request title, a branch name)
 is passed into a step through an `env:` variable and quoted, never expanded inside
 `run:`. The workflow `if:` expression is not a substitute for that.
 
-## The Review Plugin Marketplace Is Not Pinned
+## The Review Plugin Marketplace Is Pinned by Checkout
 
-`claude-review.yaml` installs the `code-review` plugin from the
-`https://github.com/anthropics/claude-code.git` marketplace, at that repository's
-default branch at run time. This is an exception to the pinning convention above,
-accepted because the action cannot pin it: at the pinned SHA it validates each
-`plugin_marketplaces` entry against a pattern that must end in `.git`, so a
-`#ref` or `?ref=` suffix is rejected, and it offers no ref input.
+`claude-review.yaml` runs the `code-review` plugin's command, which is model
+instructions the job executes with shell tools, a repository secret, and an
+OpenID Connect token in reach. Its source is therefore pinned like any other
+code the job runs. The action cannot pin a Git URL marketplace: at its pinned SHA
+it validates each URL entry against a pattern that must end in `.git`, so a
+`#ref` or `?ref=` suffix is rejected, and it has no ref input. It does accept a
+local path, so the workflow checks `anthropics/claude-code` out at a full commit
+SHA into `.review-marketplace` (with `persist-credentials: false`) and passes
+`./.review-marketplace` as `plugin_marketplaces`.
 
-The cost is that whoever controls that repository's default branch controls the
-review command the job runs, inside a job that holds `CLAUDE_CODE_OAUTH_TOKEN`
-and an OpenID Connect token. Three controls bound it: the job's shell tools are
-limited to the `gh pr` and `git` subcommands the review needs, `WebFetch`,
-`WebSearch`, and `Task` are disallowed, and the job checks out only the default
-branch. An action that accepts local marketplace paths also permits a stricter
-variant, which is not adopted: check the marketplace out at a pinned commit in an
-earlier step and pass its path. Revisit the exception if the action gains a ref
-input, or if the maintainer prefers that variant over the extra step.
+The pin is the control, not the `--allowedTools` list. A command's own
+`allowed-tools` frontmatter pre-approves tools in addition to that list. At the
+pinned commit, `plugins/code-review/commands/code-review.md` grants
+`Bash(gh issue view:*)`, `Bash(gh search:*)`, `Bash(gh issue list:*)`,
+`Bash(gh pr list:*)`, `Bash(gh pr comment:*)`, `Bash(gh pr diff:*)`,
+`Bash(gh pr view:*)`, and the inline-comment tool. Four of those
+(`gh issue view`, `gh search`, `gh issue list`, `gh pr list`) are beyond the
+workflow's own list. An unpinned marketplace would let a later commit widen that
+grant unseen.
+
+Dependabot does not bump a `with.ref`, so the pin is refreshed by hand:
+
+1. Resolve the new commit with `git ls-remote https://github.com/anthropics/claude-code HEAD`
+   (or a tag, peeled with `^{}`), never from memory.
+2. Read `plugins/code-review/commands/code-review.md` at that commit, and compare
+   its `allowed-tools` frontmatter and its stop conditions with the list above
+   and with the `--append-system-prompt` text in the workflow. A new tool in the
+   frontmatter is a review finding until it is accepted here.
+3. Update `ref:` in the `Checkout Review Plugin Marketplace` step, then open a pull request like any other
+   change to CI. The plugin also loads under the marketplace name in its
+   `.claude-plugin/marketplace.json`, which must still be `claude-code-plugins`
+   for the `plugins:` entry to resolve.
 
 ## Self-Hosted Runners Stay Out of This Repository's Own Jobs
 
@@ -197,14 +219,36 @@ trigger a paid run: a comment under the `claude[bot]` identity can only be
 produced by a session holding this repository's own operator credentials. The
 reviewer also posts its own summary under that same identity, so a login-only
 clause would admit the reviewer's own output back through the gate it fired from
-and arm an unbounded review chain. The heading test closes that side: a request
-carries the trigger phrase with no heading, while a reviewer summary opens with
-one.
+and arm an unbounded review chain.
 
-Two properties keep the admission bounded. Steering stays closed: the workflow
-passes a fixed `prompt` built from the pull request number and repository, never
-from the comment body. Execution of untrusted code stays closed: the job checks
-out the default branch, never the pull request head.
+Two rules close that side, and only the first is mechanical. The workflow's
+`!contains(body, '## ')` test excludes any comment that carries a Markdown
+heading, and the reviewer's summary usually opens with one. Nothing guarantees
+that, so the second rule is the real guard: [REVIEW.md](../../REVIEW.md) forbids
+the reviewer from writing the review trigger phrase anywhere in a summary or an
+inline comment. A summary that quoted the phrase, say while describing an
+acceptance criterion, and carried no Markdown heading would satisfy every clause of
+the gate and start another review. Only the top-level summary can do this, since
+inline review comments arrive as a different event, but the rule covers both so
+that it is simple to follow and to check.
+
+Three properties keep the admission bounded, and one does not hold:
+
+- Execution of untrusted code stays closed: the job checks out the default
+  branch, never the pull request head.
+- The prompt is fixed, built from the pull request number and repository, never
+  from the comment body, so a commenter's text is not an instruction.
+- **Steering is not closed.** The pull request's title, description, diff,
+  comments, and files are untrusted model input that the reviewer reads, and a
+  prompt injection in them can redirect the reviewer within the tools it holds.
+  The tools are narrowed to `gh pr` and `git` read and comment subcommands, but
+  the Claude GitHub App token stays reachable to the job: the action exports it
+  as `GH_TOKEN` and writes it into the checkout's `.git/config` remote URL. The
+  token carries the installed App's permissions, which can include writing
+  contents. `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` makes a best-effort attempt to
+  keep secrets out of the model's shell and is not relied on for this.
+  Blocking direct pushes to the default branch with a repository ruleset would
+  cap the damage, and whether to add one is a maintainer decision not taken here.
 
 The cost is a silent-skip failure mode. The gate trusts a login string; if that
 login changes, the gate silently reverts to skipping the Claude Code route's
