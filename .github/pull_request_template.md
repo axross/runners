@@ -36,7 +36,8 @@ Closes #
 Copy every acceptance criterion from the approved plan verbatim, each with its
 status and the evidence for it. A criterion carrying the
 `(verified out of tree: <where>)` marker keeps the marker and links its
-published evidence. The reviewer verifies these criteria from this section and
+published evidence, or is marked pending when that evidence can exist only after
+merge. The reviewer verifies these criteria from this section and
 does not open the tracking issue; an absent section is itself a finding.
 -->
 

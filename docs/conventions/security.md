@@ -19,7 +19,7 @@ pinned to the full 40-character commit SHA behind its latest release, with that
 release's tag kept as a trailing comment for a human to read:
 
 ```yaml
-uses: owner/action@d34db33fd34db33fd34db33fd34db33fd34db33 # v1.2.3
+uses: owner/action@d34db33fd34db33fd34db33fd34db33fd34db33f # v1.2.3
 ```
 
 A mutable tag (`@v1`, `@v1.2.3`, `@main`) can be repointed by whoever controls it.
@@ -50,7 +50,11 @@ mise, and [`mise.toml`](../../mise.toml) pins every tool to an exact version.
 `locked = true` is deliberately not set, so a platform the lockfile does not cover
 still installs. Dependabot's `github-actions` entry refreshes action pins monthly;
 the versions in `mise.toml` are refreshed by hand, looked up with `mise latest`,
-never recalled. A manual refresh of a tool version is: edit `mise.toml`, run
+never recalled. PSScriptAnalyzer is not a mise tool: `lint:powershell` downloads
+its package from the PowerShell Gallery and refuses it unless its SHA-256 matches
+`PSSCRIPTANALYZER_SHA256` in `mise.toml`, so the version and that hash are
+refreshed together, with the hash computed from the real download. A manual
+refresh of a mise tool version is: edit `mise.toml`, run
 `mise lock --platform linux-x64`, and commit `mise.toml`, `mise.lock`, and
 `.mise/locks/` together.
 
@@ -104,20 +108,33 @@ is passed into a step through an `env:` variable and quoted, never expanded insi
 default branch at run time. The command it runs is model instructions that the job
 executes with shell tools, a repository secret, and an OpenID Connect token in
 reach, so this is an exception to the pinning convention above. It is an accepted
-risk, for two reasons, and neither has a workaround:
+risk. The action and Claude Code block the two direct routes to pinning it:
 
-- The action cannot pin a Git URL. At its pinned SHA it validates each URL entry
+- A ref suffix on the URL. At its pinned SHA the action validates each URL entry
   against a pattern that must end in `.git`, so a `#ref` or `?ref=` suffix is
   rejected, and it has no ref input.
-- A pinned local copy is refused. The action accepts a local path, but the
-  marketplace's manifest names it `claude-code-plugins`, and Claude Code reserves
-  that name for GitHub sources in the `anthropics` organization.
+- A local copy under the marketplace's own name. The action accepts a local path,
+  but the marketplace's manifest names it `claude-code-plugins`, and Claude Code
+  reserves that name for GitHub sources in the `anthropics` organization.
   `claude plugin marketplace add <local clone at 525d3b35>` exits 1 with "The name
   'claude-code-plugins' is reserved for official Anthropic marketplaces and can
   only be used with GitHub sources from the 'anthropics' organization." This was
   reproduced with Claude Code 2.1.286, and reported with 2.1.285 during review.
-  Renaming the marketplace in a copy would mean vendoring and maintaining the
-  plugin, which this repository does not do.
+
+Two indirect routes can pin the command, and the maintainer declined both:
+
+- Rename the marketplace in a pinned checkout at run time, then add that local
+  path. The reviewer reproduced this with Claude Code 2.1.285; it was not
+  reproduced here.
+- Check the plugin out at a pinned commit and load its directory with
+  `--plugin-dir` in `claude_args`. At the action's pinned SHA,
+  `base-action/src/parse-sdk-options.ts` passes flags it does not recognize
+  through to the CLI as extra arguments, and Claude Code 2.1.286 lists a
+  `--plugin-dir` option. That was checked by reading the source and the help text
+  only; no run was made.
+
+Either route adds a step that this repository would then maintain, which is why
+it was declined.
 
 The maintainer accepted the risk. Its reach is wider than the workflow's
 `--allowedTools` list suggests, because a command's own `allowed-tools`
@@ -130,7 +147,9 @@ inline-comment tool. The first four are beyond the workflow's own list.
 
 The controls that remain are these, and none of them pins the command:
 
-- the subprocess environment scrub and the isolation step in the workflow;
+- the subprocess environment scrub and the isolation step in the workflow, which
+  installs bubblewrap and socat and lifts Ubuntu's AppArmor restriction on
+  unprivileged user namespaces for the job's ephemeral VM;
 - the least-privilege job permissions described above;
 - the author-association gate below, which limits who can start a run;
 - a ruleset blocking direct pushes to the default branch, which the maintainer is
@@ -138,8 +157,8 @@ The controls that remain are these, and none of them pins the command:
 - the vendor's own trust: a change to that repository's default branch is made by
   the organization that also supplies the action and the model.
 
-Revisit the exception if the action gains a ref input, or if Claude Code accepts a
-pinned local marketplace under another name.
+Revisit the exception if the maintainer wants the command pinned; either route
+above does it without a new action or Claude Code feature.
 
 ## Self-Hosted Runners Stay Out of This Repository's Own Jobs
 

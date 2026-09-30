@@ -282,8 +282,7 @@ a GitHub-hosted runner and applies [`REVIEW.md`](../../REVIEW.md) through its
 system prompt. It is inert until a one-time operator setup is done, and its
 silence is indistinguishable from a clean review: it needs the
 [Claude GitHub App](https://github.com/apps/claude) installed and a
-`CLAUDE_CODE_OAUTH_TOKEN` repository secret (or an `ANTHROPIC_API_KEY` for
-pay-as-you-go billing), both added by the maintainer. Past that setup, its
+`CLAUDE_CODE_OAUTH_TOKEN` repository secret, both added by the maintainer. Past that setup, its
 author-association gate answers repository owners, members, and collaborators,
 plus the change loop's own bot identity (`claude[bot]`), and only when that
 comment carries no Markdown heading anywhere in it. That heading test normally
@@ -312,13 +311,12 @@ linked issue comment. Approving the plan is the maintainer's acceptance that the
 named criterion will be verified this way.
 
 The pull request body's Acceptance criteria section MUST carry every designated
-criterion verbatim, marker included, next to a link to the published evidence.
+criterion verbatim, marker included, next to a link to the published evidence, or
+marked pending when that evidence can exist only after merge.
 
 Some evidence can exist only after the pull request merges, such as a check of the
-merged workflow on the default branch. A criterion whose marker names a
-destination that can only exist after merge has no link to show yet. The author
-links the evidence at that destination once it exists, and until then the
-reviewer does not treat the missing link as a finding.
+merged workflow on the default branch. Such a criterion has no link to show yet;
+the author links the evidence at its destination once it exists.
 
 A criterion the plan did not anticipate becomes designated only through an
 approved plan revision. [REVIEW.md](../../REVIEW.md) states how the reviewer

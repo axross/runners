@@ -30,7 +30,7 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
 
 - [operations/development-workflow.md](./operations/development-workflow.md) -
   the change loop, the standing delivery grant and its exclusions, branches and
-  merging, the configured subagents, and the independent `@claude review` route.
+  merging, the configured subagents, and the independent review route.
 - [operations/agent-sessions.md](./operations/agent-sessions.md) - how Claude
   Code and Amp sessions start, the format and check hooks, the subagents, and
   telemetry tagging.

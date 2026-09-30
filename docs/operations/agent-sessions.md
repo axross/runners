@@ -65,7 +65,8 @@ is purely mechanical:
 - **Lint, link, documentation, and skills-lock findings** need a decision:
   which link to fix, which word to choose, which quoting to apply.
   [`check.sh`](../../.claude/hooks/check.sh) runs `mise run check` on `Stop` for
-  a session that has uncommitted changes or commits ahead of its upstream, and
+  a session that has uncommitted changes or commits ahead of its upstream, falling
+  back to `origin/HEAD` and then `origin/main` when there is no upstream, and
   blocks completion with the tail of the output when it fails.
 
 ### Subagents

@@ -38,10 +38,11 @@ jobs:
       # injection through pull request content can reach.
       CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"
     steps:
-      # With bubblewrap available on Linux, the scrub also gives the model's shell
-      # commands PID-namespace isolation. This step mirrors the action's own
-      # dependency step, which the action skips unless allowed_non_write_users is
-      # set.
+      # Required, not optional. With the scrub set, Claude Code refuses to start
+      # without bubblewrap, and every Bash call fails without socat. The action
+      # installs these packages best-effort, and only when allowed_non_write_users
+      # is set; this step fails the job instead, because the review cannot start
+      # without them.
       - name: Install Subprocess Isolation Dependencies
         run: |
           sudo apt-get update -qq
