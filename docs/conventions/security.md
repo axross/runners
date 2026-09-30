@@ -97,40 +97,49 @@ An untrusted context value (a comment body, a pull request title, a branch name)
 is passed into a step through an `env:` variable and quoted, never expanded inside
 `run:`. The workflow `if:` expression is not a substitute for that.
 
-## The Review Plugin Marketplace Is Pinned by Checkout
+## The Review Plugin Marketplace Is Not Pinned (Accepted Risk)
 
-`claude-review.yaml` runs the `code-review` plugin's command, which is model
-instructions the job executes with shell tools, a repository secret, and an
-OpenID Connect token in reach. Its source is therefore pinned like any other
-code the job runs. The action cannot pin a Git URL marketplace: at its pinned SHA
-it validates each URL entry against a pattern that must end in `.git`, so a
-`#ref` or `?ref=` suffix is rejected, and it has no ref input. It does accept a
-local path, so the workflow checks `anthropics/claude-code` out at a full commit
-SHA into `.review-marketplace` (with `persist-credentials: false`) and passes
-`./.review-marketplace` as `plugin_marketplaces`.
+`claude-review.yaml` installs the `code-review` plugin from the
+`https://github.com/anthropics/claude-code.git` marketplace, at that repository's
+default branch at run time. The command it runs is model instructions that the job
+executes with shell tools, a repository secret, and an OpenID Connect token in
+reach, so this is an exception to the pinning convention above. It is an accepted
+risk, for two reasons, and neither has a workaround:
 
-The pin is the control, not the `--allowedTools` list. A command's own
-`allowed-tools` frontmatter pre-approves tools in addition to that list. At the
-pinned commit, `plugins/code-review/commands/code-review.md` grants
-`Bash(gh issue view:*)`, `Bash(gh search:*)`, `Bash(gh issue list:*)`,
-`Bash(gh pr list:*)`, `Bash(gh pr comment:*)`, `Bash(gh pr diff:*)`,
-`Bash(gh pr view:*)`, and the inline-comment tool. Four of those
-(`gh issue view`, `gh search`, `gh issue list`, `gh pr list`) are beyond the
-workflow's own list. An unpinned marketplace would let a later commit widen that
-grant unseen.
+- The action cannot pin a Git URL. At its pinned SHA it validates each URL entry
+  against a pattern that must end in `.git`, so a `#ref` or `?ref=` suffix is
+  rejected, and it has no ref input.
+- A pinned local copy is refused. The action accepts a local path, but the
+  marketplace's manifest names it `claude-code-plugins`, and Claude Code reserves
+  that name for GitHub sources in the `anthropics` organization.
+  `claude plugin marketplace add <local clone at 525d3b35>` exits 1 with "The name
+  'claude-code-plugins' is reserved for official Anthropic marketplaces and can
+  only be used with GitHub sources from the 'anthropics' organization." This was
+  reproduced with Claude Code 2.1.286, and reported with 2.1.285 during review.
+  Renaming the marketplace in a copy would mean vendoring and maintaining the
+  plugin, which this repository does not do.
 
-Dependabot does not bump a `with.ref`, so the pin is refreshed by hand:
+The maintainer accepted the risk. Its reach is wider than the workflow's
+`--allowedTools` list suggests, because a command's own `allowed-tools`
+frontmatter pre-approves tools in addition to that list, and it can change
+without notice. As an example, not a guarantee, the command at commit
+`525d3b35312636cf8c001ecb3df2be0324a48b43` pre-approved `Bash(gh issue view:*)`,
+`Bash(gh search:*)`, `Bash(gh issue list:*)`, `Bash(gh pr list:*)`,
+`Bash(gh pr comment:*)`, `Bash(gh pr diff:*)`, `Bash(gh pr view:*)`, and the
+inline-comment tool. The first four are beyond the workflow's own list.
 
-1. Resolve the new commit with `git ls-remote https://github.com/anthropics/claude-code HEAD`
-   (or a tag, peeled with `^{}`), never from memory.
-2. Read `plugins/code-review/commands/code-review.md` at that commit, and compare
-   its `allowed-tools` frontmatter and its stop conditions with the list above
-   and with the `--append-system-prompt` text in the workflow. A new tool in the
-   frontmatter is a review finding until it is accepted here.
-3. Update `ref:` in the `Checkout Review Plugin Marketplace` step, then open a pull request like any other
-   change to CI. The plugin also loads under the marketplace name in its
-   `.claude-plugin/marketplace.json`, which must still be `claude-code-plugins`
-   for the `plugins:` entry to resolve.
+The controls that remain are these, and none of them pins the command:
+
+- the subprocess environment scrub and the isolation step in the workflow;
+- the least-privilege job permissions described above;
+- the author-association gate below, which limits who can start a run;
+- a ruleset blocking direct pushes to the default branch, which the maintainer is
+  adding and which is outside this repository's files;
+- the vendor's own trust: a change to that repository's default branch is made by
+  the organization that also supplies the action and the model.
+
+Revisit the exception if the action gains a ref input, or if Claude Code accepts a
+pinned local marketplace under another name.
 
 ## Self-Hosted Runners Stay Out of This Repository's Own Jobs
 
@@ -212,7 +221,9 @@ Claude GitHub App, carry the `claude[bot]` identity, whose association GitHub
 reports as `NONE`, the same value an outside contributor's comment carries, so
 those requests were gated out identically to an outsider's. The gate's fourth
 clause admits that one login directly, and further requires the comment to carry
-no Markdown heading anywhere in it.
+no Markdown heading anywhere in it. That test does less than it looks like it does:
+the reviewer's summary opens with a one-line tally, not a heading, so the test
+normally does not exclude it.
 
 Admitting a login rather than widening the association list does not widen who can
 trigger a paid run: a comment under the `claude[bot]` identity can only be
@@ -221,18 +232,17 @@ reviewer also posts its own summary under that same identity, so a login-only
 clause would admit the reviewer's own output back through the gate it fired from
 and arm an unbounded review chain.
 
-Two rules close that side, and only the first is mechanical. The workflow's
-`!contains(body, '## ')` test excludes any comment that carries a Markdown
-heading, and the reviewer's summary usually opens with one. Nothing guarantees
-that, so the second rule is the real guard: [REVIEW.md](../../REVIEW.md) forbids
-the reviewer from writing the review trigger phrase anywhere in a summary or an
-inline comment. A summary that quoted the phrase, say while describing an
-acceptance criterion, and carried no Markdown heading would satisfy every clause of
-the gate and start another review. Only the top-level summary can do this, since
-inline review comments arrive as a different event, but the rule covers both so
-that it is simple to follow and to check.
+The real guard is a rule, not the heading test. [REVIEW.md](../../REVIEW.md)
+forbids the reviewer from writing the review trigger phrase anywhere in a summary
+or an inline comment. A summary that quoted the phrase, say while describing an
+acceptance criterion, would satisfy every clause of the gate, since it comes from
+`claude[bot]` and normally carries no Markdown heading, and would start another
+review. The workflow's `!contains(body, '## ')` test only excludes a comment that
+happens to carry a heading. Only a top-level summary can trigger the workflow,
+since inline review comments arrive as a different event, but the rule covers both
+so that it is simple to follow and to check.
 
-Three properties keep the admission bounded, and one does not hold:
+Two properties keep the admission bounded, and a third does not hold:
 
 - Execution of untrusted code stays closed: the job checks out the default
   branch, never the pull request head.
@@ -241,20 +251,26 @@ Three properties keep the admission bounded, and one does not hold:
 - **Steering is not closed.** The pull request's title, description, diff,
   comments, and files are untrusted model input that the reviewer reads, and a
   prompt injection in them can redirect the reviewer within the tools it holds.
-  The tools are narrowed to `gh pr` and `git` read and comment subcommands, but
-  the Claude GitHub App token stays reachable to the job: the action exports it
-  as `GH_TOKEN` and writes it into the checkout's `.git/config` remote URL. The
-  token carries the installed App's permissions, which can include writing
-  contents. `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` makes a best-effort attempt to
-  keep secrets out of the model's shell and is not relied on for this.
-  Blocking direct pushes to the default branch with a repository ruleset would
-  cap the damage, and whether to add one is a maintainer decision not taken here.
+  Those tools are the workflow's `--allowedTools` plus whatever the unpinned
+  command's frontmatter pre-approves, as described above. A `gh` command can name
+  another repository with `-R`, so the command allowlist does not confine reads to
+  this repository; only the repository scope of the App token does, which the
+  action documents but this job cannot confirm. The token stays reachable to the
+  job: the action exports it as `GH_TOKEN` and `GITHUB_TOKEN`, which `gh` needs, and
+  writes it into the checkout's `.git/config` remote URL. It carries the installed
+  App's permissions, which can include writing contents.
+  The action documents its subprocess scrub as removing Anthropic, cloud, and
+  GitHub Actions secrets from subprocess environments; this job relies on it for
+  `CLAUDE_CODE_OAUTH_TOKEN` and the `ACTIONS_*` runtime tokens, not for the two App
+  token variables.
+  Blocking direct pushes to the default branch with a repository ruleset caps the
+  damage, and is a maintainer decision made outside this repository.
 
 The cost is a silent-skip failure mode. The gate trusts a login string; if that
 login changes, the gate silently reverts to skipping the Claude Code route's
-requests, with no failed run and no comment. The heading test carries the same
-risk in the other direction if the reviewer's summary ever stops carrying a
-heading. Neither is mechanically detected; both are found only by noticing that
+requests, with no failed run and no comment. The trigger-phrase rule carries the
+opposite risk: if the reviewer quotes the phrase, a review starts that nobody
+asked for. Neither is mechanically detected; both are found only by noticing that
 reviews stopped arriving, or arrived when they should not have. Admitting the
 `NONE` association itself was rejected outright, since that would admit every
 outside author.

@@ -144,8 +144,8 @@ secrets. A Claude review request can:
 - start the GitHub-hosted `claude-review.yaml` job, which runs a third-party
   artificial intelligence action with repository-reading and shell tools
 - let the Anthropic action read pull request content and fetch its review
-  plugin from a marketplace checked out at a pinned commit, as
-  [Security](../conventions/security.md#the-review-plugin-marketplace-is-pinned-by-checkout)
+  plugin from a marketplace that is not pinned to a commit, an accepted risk that
+  [Security](../conventions/security.md#the-review-plugin-marketplace-is-not-pinned-accepted-risk)
   records
 - pass the repository secret `CLAUDE_CODE_OAUTH_TOKEN` to the Anthropic action
 - let the action request a GitHub OpenID Connect identity token through the
@@ -286,10 +286,10 @@ silence is indistinguishable from a clean review: it needs the
 pay-as-you-go billing), both added by the maintainer. Past that setup, its
 author-association gate answers repository owners, members, and collaborators,
 plus the change loop's own bot identity (`claude[bot]`), and only when that
-comment carries no Markdown heading anywhere in it. That heading test is only half
-of the guard against the reviewer's own summary re-triggering it; the other half
-is that the reviewer never writes the trigger phrase into a summary or comment,
-per [REVIEW.md](../../REVIEW.md). The action also rejects any run a bot identity starts
+comment carries no Markdown heading anywhere in it. That heading test normally
+does not exclude the reviewer's own summary, which opens with a tally line, so the
+guard against the summary re-triggering it is that the reviewer never writes the
+trigger phrase into a summary or comment, per [REVIEW.md](../../REVIEW.md). The action also rejects any run a bot identity starts
 unless that identity is named in its own `allowed_bots` input, which
 `claude-review.yaml` does for `claude[bot]`. See
 [Security](../conventions/security.md#the-review-gate-admits-one-bot-identity-by-login-not-association)
@@ -312,7 +312,14 @@ linked issue comment. Approving the plan is the maintainer's acceptance that the
 named criterion will be verified this way.
 
 The pull request body's Acceptance criteria section MUST carry every designated
-criterion verbatim, marker included, next to a link to the published evidence. A
-criterion the plan did not anticipate becomes designated only through an
+criterion verbatim, marker included, next to a link to the published evidence.
+
+Some evidence can exist only after the pull request merges, such as a check of the
+merged workflow on the default branch. A criterion whose marker names a
+destination that can only exist after merge has no link to show yet. The author
+links the evidence at that destination once it exists, and until then the
+reviewer does not treat the missing link as a finding.
+
+A criterion the plan did not anticipate becomes designated only through an
 approved plan revision. [REVIEW.md](../../REVIEW.md) states how the reviewer
 treats a designated criterion.
