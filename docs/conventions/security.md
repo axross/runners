@@ -132,8 +132,8 @@ Two indirect routes can pin the command:
   `base-action/src/parse-sdk-options.ts` passes flags it does not recognize
   through to the CLI as extra arguments, and Claude Code 2.1.286 lists a
   `--plugin-dir` option. That was checked by reading the source and the help text
-  only; no run was made. This route was identified after that
-  decision and has not been put to the maintainer.
+  only; no run was made. This route was identified after that decision; when it
+  was put to the maintainer, they again chose to stay unpinned.
 
 The maintainer accepted the risk. Its reach is wider than the workflow's
 `--allowedTools` list suggests, because a command's own `allowed-tools`
