@@ -141,8 +141,8 @@ depends = [
 ]
 
 [tasks."check:links"]
-description = "Check relative links in the agent-facing Markdown and the docs"
-run = "node .claude/skills/agent-skill-authoring/scripts/check-links.mjs .claude/agents docs README.md AGENTS.md CLAUDE.md REVIEW.md"
+description = "Check relative links in the agent-facing Markdown, the docs, and the image and host READMEs"
+run = "node .claude/skills/agent-skill-authoring/scripts/check-links.mjs .claude/agents docs images hosts README.md AGENTS.md CLAUDE.md REVIEW.md"
 
 [tasks."check:docs"]
 description = "Run the living-project-documentation validators over docs/"
@@ -183,8 +183,12 @@ console.log(`skills-lock.json and .claude/skills/ agree (${locked.length} skills
 '
 '''
 
+[tasks."test:host"]
+description = "Check the Windows host configuration validation against its fixtures and the example"
+run = "pwsh -NoProfile -NonInteractive -File hosts/windows-docker-desktop/tests/test-host-configuration.ps1"
+
 [tasks.check]
-description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test"
+description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, host test"
 depends = [
   "format:check",
   "lint",
@@ -192,4 +196,5 @@ depends = [
   "check:docs",
   "check:skills",
   "check:amp",
+  "test:host",
 ]

@@ -1,0 +1,18 @@
+{
+  "hostPrefix": "runner-host",
+  "imageName": "actions-runner:local",
+  "repositories": [
+    {
+      "repository": "example-repo-one",
+      "slots": 1,
+      "tokenPath": "C:\\path\\to\\example-repo-one.token",
+      "labels": ["example-label-example-repo-one"],
+      "volumes": [
+        {
+          "suffix": "npm",
+          "mountPath": "/home/runner/.npm"
+        }
+      ]
+    }
+  ]
+}

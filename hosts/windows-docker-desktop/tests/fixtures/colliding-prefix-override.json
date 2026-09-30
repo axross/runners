@@ -1,0 +1,33 @@
+{
+  "hostPrefix": "runner-host",
+  "imageName": "actions-runner:local",
+  "repositories": [
+    {
+      "owner": "example-owner",
+      "repository": "example-repo-one",
+      "slots": 1,
+      "tokenPath": "C:\\path\\to\\example-repo-one.token",
+      "labels": ["example-label-example-repo-one"],
+      "volumes": [
+        {
+          "suffix": "npm",
+          "mountPath": "/home/runner/.npm"
+        }
+      ]
+    },
+    {
+      "owner": "example-owner",
+      "repository": "example-repo-two",
+      "slots": 1,
+      "tokenPath": "C:\\path\\to\\example-repo-two.token",
+      "labels": ["example-label-example-repo-two"],
+      "volumes": [
+        {
+          "suffix": "npm",
+          "mountPath": "/home/runner/.npm"
+        }
+      ],
+      "prefix": "runner-host-example-owner-example-repo-one"
+    }
+  ]
+}
