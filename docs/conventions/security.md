@@ -48,7 +48,8 @@ are pinned to an immutable identifier, and a download is verified against a
 checksum before it runs. The runner image's base is pinned the same way, to a
 version and the digest of that version's image index, resolved from the registry
 and never guessed; Dependabot's `docker` entry proposes its refreshes.
-[`.agents/setup`](../../.agents/setup) does this for mise, and [`mise.toml`](../../mise.toml) pins every tool to an exact version.
+[`.agents/setup`](../../.agents/setup) verifies its mise download against a
+checksum, and [`mise.toml`](../../mise.toml) pins every tool to an exact version.
 [`mise.lock`](../../mise.lock), with the npm dependency locks it references under
 `.mise/locks/`, records each tool's download URL and checksum for `linux-x64`;
 `locked = true` is deliberately not set, so a platform the lockfile does not cover
@@ -206,8 +207,8 @@ Design rules that follow, which REVIEW.md applies:
 - A runner is ephemeral: it takes one job through a just-in-time registration,
   then its container is removed. A long-lived registration token is not stored.
 - Volumes hold only content the tool re-verifies, such as a content-addressed
-  package cache. A volume does not hold credentials, configuration, or tool
-  binaries the job later executes, except as the bounded exception below allows.
+  package cache. A volume does not hold credentials, configuration, or toolchains
+  the job later executes, except as the bounded exception below allows.
 - **Bounded exception: tool-cache and language-toolchain volumes on a runner
   host.** A volume of installed toolchains that a job later executes, such as
   `/opt/hostedtoolcache`, `~/.cargo`, and `~/.rustup`, is allowed when all three
@@ -219,11 +220,11 @@ Design rules that follow, which REVIEW.md applies:
   later job of the same repository executes, so every job on one entry's labels
   is one trust level. A fork's code would write binaries that a later job on the
   default branch or with a deployment secret executes, so a repository that
-  accepts fork pull requests lists no such volumes for its entry, or runs those
+  accepts fork pull requests lists no volumes for its entry, or runs those
   pull requests' workflows on a GitHub-hosted runner. The Cache Volumes section
   of [Windows Runner Host](../operations/windows-runner-host.md) states each
-  volume's reason and writers. Any other volume of executable content, or one
-  that fails a condition, stays a finding.
+  volume's reason and writers. Any other volume of content a later job executes
+  or links, or one that fails a condition, stays a finding.
 - A job that holds a deployment secret does not mount a volume that a less
   trusted job could have written.
 - A container does not run privileged, does not mount the host's container socket
