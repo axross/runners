@@ -50,6 +50,9 @@ $RunCommand = '/home/runner/run.sh'
 $JitConfigVariable = 'ACTIONS_RUNNER_INPUT_JITCONFIG'
 $InitialBackoffSeconds = 5
 $MaxBackoffSeconds = 300
+# a slot job that ran this long before it died starts the next restart backoff
+# over, so a long-lived worker that dies once is not punished like a crash loop.
+$HealthyRunSeconds = 600
 
 function Get-MountArgument {
     param([Parameter(Mandatory)]$Entry)
@@ -181,7 +184,19 @@ $WorkerScript = {
             'X-GitHub-Api-Version' = '2022-11-28'
         }
         $uri = "https://api.github.com/repos/$Owner/$Repository/actions/runners/generate-jitconfig"
-        $response = Invoke-RestMethod -Uri $uri -Method Post -Headers $headers -Body $body -ContentType 'application/json'
+        try {
+            $response = Invoke-RestMethod -Uri $uri -Method Post -Headers $headers -Body $body -ContentType 'application/json'
+        } catch {
+            # GitHub's error body says why a request was refused. It never holds
+            # the request headers, but the token is still scrubbed from the text
+            # and the text is kept to one short line before it reaches a log.
+            $detail = "$($_.Exception.Message) $($_.ErrorDetails.Message)"
+            $detail = ($detail.Replace($headers.Authorization.Substring('Bearer '.Length), '<token>') -replace '\s+', ' ').Trim()
+            if ($detail.Length -gt 500) {
+                $detail = $detail.Substring(0, 500) + '...'
+            }
+            throw $detail
+        }
         if ([string]::IsNullOrWhiteSpace($response.encoded_jit_config)) {
             throw 'GitHub returned no JIT configuration'
         }
@@ -268,27 +283,84 @@ function Receive-WorkerOutput {
     }
 }
 
+# stops the containers the workers last reported, once each, in a single docker
+# call so that they share one grace period. the drain first catches a container
+# started since the last pass.
+function Stop-KnownContainer {
+    param([Parameter(Mandatory)]$Workers, [Parameter(Mandatory)]$Stopped)
+
+    foreach ($worker in $Workers) {
+        if ($null -ne $worker.Job) {
+            Receive-WorkerOutput -Worker $worker
+        }
+    }
+    $names = @($Workers | Where-Object { $null -ne $_.Container -and -not $Stopped.Contains($_.Container) } |
+            ForEach-Object { $_.Container })
+    if ($names.Count -eq 0) {
+        return
+    }
+    Write-Information "Stopping container(s): $($names -join ', ')."
+    Invoke-Docker -Arguments (@('stop') + $names) | Out-Null
+    foreach ($name in $names) {
+        $null = $Stopped.Add($name)
+    }
+}
+
 Write-Information "Runner supervisor starting: $(@($plan.Repositories).Count) repositories, image $($plan.ImageName)."
 
-# fail before any slot starts, rather than once per slot on its first call.
-foreach ($entry in $plan.Repositories) {
-    Assert-TokenFile -Entry $entry
-}
-Wait-ForDocker
-foreach ($entry in $plan.Repositories) {
-    Initialize-EntryVolume -Entry $entry
-    Clear-StaleContainer -Entry $entry
+# one entry that cannot start (a missing token file, a volume that cannot be
+# created, a stale container that cannot be listed) is skipped with a warning
+# naming it, so it does not take the other repositories down. the warning holds
+# the entry and the reason, never a token.
+function Write-EntrySkipped {
+    param([Parameter(Mandatory)]$Entry, [Parameter(Mandatory)][string]$Reason)
+
+    Write-Warning "$($Entry.Path) ($($Entry.Owner)/$($Entry.Repository)) is not started and gets no slots: $Reason"
 }
 
-$workers = New-Object System.Collections.Generic.List[object]
+$startable = New-Object System.Collections.Generic.List[object]
 foreach ($entry in $plan.Repositories) {
+    try {
+        Assert-TokenFile -Entry $entry
+        $startable.Add($entry)
+    } catch {
+        Write-EntrySkipped -Entry $entry -Reason $_.Exception.Message
+    }
+}
+if ($startable.Count -gt 0) {
+    Wait-ForDocker
+}
+$prepared = New-Object System.Collections.Generic.List[object]
+foreach ($entry in $startable) {
+    try {
+        Initialize-EntryVolume -Entry $entry
+        Clear-StaleContainer -Entry $entry
+        $prepared.Add($entry)
+    } catch {
+        Write-EntrySkipped -Entry $entry -Reason $_.Exception.Message
+    }
+}
+if ($prepared.Count -eq 0) {
+    [Console]::Error.WriteLine('No repository could be started, so the supervisor is exiting.')
+    exit 1
+}
+
+# restart timing uses a monotonic clock, so a change of the system time cannot
+# shorten or stretch a backoff.
+$clock = [System.Diagnostics.Stopwatch]::StartNew()
+
+$workers = New-Object System.Collections.Generic.List[object]
+foreach ($entry in $prepared) {
     for ($slot = 1; $slot -le $entry.Slots; $slot++) {
         $workers.Add([pscustomobject]@{
-                Key       = "$($entry.ContainerPrefix) slot $slot"
-                Entry     = $entry
-                Slot      = $slot
-                Job       = Invoke-SlotWorkerJob -Entry $entry -Slot $slot
-                Container = $null
+                Key            = "$($entry.ContainerPrefix) slot $slot"
+                Entry          = $entry
+                Slot           = $slot
+                Job            = Invoke-SlotWorkerJob -Entry $entry -Slot $slot
+                StartedAt      = $clock.Elapsed.TotalSeconds
+                RestartAt      = 0
+                RestartBackoff = $InitialBackoffSeconds
+                Container      = $null
             })
     }
 }
@@ -304,33 +376,47 @@ $null = Register-ObjectEvent -InputObject ([Console]) -EventName CancelKeyPress 
 try {
     while (-not $script:stopRequested) {
         foreach ($worker in $workers) {
-            Receive-WorkerOutput -Worker $worker
-            if ($worker.Job.State -in @('Failed', 'Stopped', 'Completed')) {
-                Write-Warning "$($worker.Key): job ended unexpectedly (state: $($worker.Job.State)) - restarting it."
+            if ($null -ne $worker.Job) {
+                Receive-WorkerOutput -Worker $worker
+            }
+            if ($null -ne $worker.Job -and $worker.Job.State -in @('Failed', 'Stopped', 'Completed')) {
+                $state = $worker.Job.State
                 Remove-Job -Job $worker.Job -Force
+                $worker.Job = $null
                 $worker.Container = $null
+                $now = $clock.Elapsed.TotalSeconds
+                if (($now - $worker.StartedAt) -ge $HealthyRunSeconds) {
+                    $worker.RestartBackoff = $InitialBackoffSeconds
+                }
+                $worker.RestartAt = $now + $worker.RestartBackoff
+                Write-Warning "$($worker.Key): job ended unexpectedly (state: $state) - restarting it in $($worker.RestartBackoff)s."
+                $worker.RestartBackoff = [Math]::Min($worker.RestartBackoff * 2, $MaxBackoffSeconds)
+            }
+            if ($null -eq $worker.Job -and $clock.Elapsed.TotalSeconds -ge $worker.RestartAt) {
                 $worker.Job = Invoke-SlotWorkerJob -Entry $worker.Entry -Slot $worker.Slot
+                $worker.StartedAt = $clock.Elapsed.TotalSeconds
             }
         }
         Start-Sleep -Seconds 2
     }
 } finally {
     Write-Information 'Shutdown requested - stopping every slot''s current container.'
-    # drain once more so a container started since the last pass is stopped too.
+    # stop the containers first: stop-job does not interrupt a native docker run
+    # already in flight.
+    $stopped = New-Object System.Collections.Generic.HashSet[string]
+    Stop-KnownContainer -Workers $workers -Stopped $stopped
     foreach ($worker in $workers) {
-        Receive-WorkerOutput -Worker $worker
-        Stop-Job -Job $worker.Job -ErrorAction SilentlyContinue
-    }
-    # stop-job does not interrupt a native docker run already in flight.
-    foreach ($worker in $workers) {
-        if ($null -ne $worker.Container) {
-            Write-Information "Stopping container $($worker.Container)."
-            Invoke-Docker -Arguments @('stop', $worker.Container) | Out-Null
+        if ($null -ne $worker.Job) {
+            Stop-Job -Job $worker.Job -ErrorAction SilentlyContinue
         }
     }
+    # a container a slot started between the first pass and the job stopping.
+    Stop-KnownContainer -Workers $workers -Stopped $stopped
     foreach ($worker in $workers) {
-        Wait-Job -Job $worker.Job -Timeout 30 | Out-Null
-        Remove-Job -Job $worker.Job -Force -ErrorAction SilentlyContinue
+        if ($null -ne $worker.Job) {
+            Wait-Job -Job $worker.Job -Timeout 30 | Out-Null
+            Remove-Job -Job $worker.Job -Force -ErrorAction SilentlyContinue
+        }
     }
     Get-EventSubscriber | Unregister-Event -ErrorAction SilentlyContinue
     Write-Information 'Runner supervisor stopped.'
