@@ -215,17 +215,16 @@ Design rules that follow, which REVIEW.md applies:
   runs on that entry's labels. The accepted risk is that any job on those
   labels, including a pull request's run, can poison a toolchain that a later
   job of the same repository executes, so every job on one entry's labels is one
-  trust level. The maintainer decided this in
-  [issue 3](https://github.com/axross/runners/issues/3#issuecomment-5921848822),
-  and [Windows Runner Host](../operations/windows-runner-host.md#cache-volumes)
-  states each volume's reason and writers. Any other volume of executable
-  content, or one that fails either condition, stays a finding.
+  trust level. The Cache Volumes section of
+  [Windows Runner Host](../operations/windows-runner-host.md) states each
+  volume's reason and writers. Any other volume of executable content, or one
+  that fails either condition, stays a finding.
 - A job that holds a deployment secret does not mount a volume that a less
   trusted job could have written.
 - A container does not run privileged, does not mount the host's container socket
   or home directory, and has its egress limited where the host's network reaches
   anything sensitive. A justified exception is stated where it is declared;
-  [LAN egress](#lan-egress-from-runner-containers-accepted-risk) is one.
+  the LAN egress section below is one.
 - Each shared mount is declared with the reason it exists and the trust level of
   every job that can write to it.
 
@@ -238,9 +237,11 @@ later host:
 
 - One token per target repository, a fine-grained personal access token limited to
   that repository's Administration permission. A token MUST NOT cover several
-  repositories or be stored as a GitHub Actions secret. The token is read from a
-  file on the host on every registration, and the file is restricted to the host
-  user.
+  repositories or be stored as a GitHub Actions secret. A token that covers
+  several repositories, or a classic token, would let one leak register runners
+  for all of them, and a secret that can register runners for the automation that
+  reads it is not a boundary. The token is read from a file on the host on every
+  registration, and the file is restricted to the host user.
 - A registration is made with the entry's own token and carries `self-hosted`,
   `linux`, `x64`, and at least one custom label, so a job's runner is identifiable
   and a repository opts in by naming the label. A configuration entry without a
@@ -254,8 +255,8 @@ later host:
   would share a name or a prefix are rejected, and stale-container cleanup removes
   only containers matching the entry's own name pattern.
 - A repository that can run pull requests from forks on a host's labels requires
-  approval for outside collaborators' workflow runs, per the operator procedure in
-  [Windows Runner Host](../operations/windows-runner-host.md#repository-settings-set-by-hand).
+  approval for outside collaborators' workflow runs, per the Repository Settings
+  section of [Windows Runner Host](../operations/windows-runner-host.md).
 - `docker run` uses `--pull never`, so a missing local image fails instead of
   pulling a same-named public image.
 
@@ -265,12 +266,12 @@ The Windows host starts containers on Docker Desktop's default network, which
 routes to the machine's local network as any process on the machine does. A job
 can reach devices there, such as a router or a NAS, that a GitHub-hosted runner
 cannot. This is an exception to the rule above that egress is limited where the
-host's network reaches anything sensitive. The maintainer accepted the risk for
-Phase 1, because the Docker Desktop mechanism to block it (a firewall rule for the
-containers' subnet, or a custom network) has not been researched. The operator
-procedure tells operators to run the host only on a network they would trust the
-listed repositories' workflows with. Revisit the exception when a blocking
-mechanism is verified.
+host's network reaches anything sensitive. The maintainer accepted this risk,
+because the Docker Desktop mechanism to block it (a firewall rule for the
+containers' subnet, or a custom network) has not been researched or implemented.
+The operator procedure tells operators to run the host only on a network they
+would trust the listed repositories' workflows with. Revisit the exception when a
+blocking mechanism is verified.
 
 ## Nothing Identifying or Secret Is Committed
 

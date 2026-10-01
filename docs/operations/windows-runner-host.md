@@ -77,12 +77,10 @@ under **Settings, Developer settings, Fine-grained personal access tokens**:
 - **Repository access:** only that one repository.
 - **Permissions:** Administration, read and write, and nothing else.
 
-A token that covers several repositories, or a classic token, would let a leak
-register runners for all of them; the per-repository token keeps the blast radius
-to one. The token MUST NOT be stored as a GitHub Actions secret: a secret that can
-register runners for the automation that reads it is not a boundary. It lives only
-in a file on this machine, holding the raw token text, at the `tokenPath` of the
-repository's entry. Keep these files outside the checkout.
+Do not reuse a token across repositories, use a classic token, or store the token
+as a GitHub Actions secret; [Security](../conventions/security.md) states why. The
+token lives only in a file on this machine, holding the raw token text, at the
+`tokenPath` of the repository's entry. Keep these files outside the checkout.
 
 The file is read-only for the host user, so rotate a token by deleting the file
 and creating it again with the new token, then run `register-scheduled-tasks.ps1`
@@ -96,8 +94,8 @@ no restart.
 The configuration is a JSON file kept outside the checkout; every script takes its
 path as `-ConfigPath`. Start from
 [`runner-host.example.json`](../../hosts/windows-docker-desktop/runner-host.example.json),
-and see the [host README](../../hosts/windows-docker-desktop/README.md#host-configuration)
-for every field. The rules that matter operationally:
+and see the Host configuration section of the
+[host README](../../hosts/windows-docker-desktop/README.md) for every field. The rules that matter operationally:
 
 - **One entry per target repository**, each with its own `tokenPath`, `slots`,
   custom `labels`, and `volumes`. An owner and repository pair listed twice is
@@ -109,8 +107,8 @@ for every field. The rules that matter operationally:
   a setting.
 - **At least one custom label per entry.** Registrations always carry
   `self-hosted`, `linux`, and `x64`; the custom label is what a workflow puts in
-  `runs-on` to name this host, so a job's runner is identifiable. Choose one label
-  per repository, or a shared one only for repositories you would trust equally.
+  `runs-on` to name this host. Choose one label per repository, or a shared one
+  only for repositories you would trust equally.
 - **Names derive from `hostPrefix`, the owner, and the repository** unless an
   entry sets `prefix`, and the prefix is at most 64 characters, because it starts
   every runner name. GitHub documents no limit for runner names; 64 is this
@@ -120,8 +118,7 @@ for every field. The rules that matter operationally:
   containers and volumes. Across two supervisors on one machine, keep their
   `hostPrefix` values from being prefixes of each other; the script cannot see
   the other configuration.
-- **Volumes belong to one entry.** A volume's name is the entry's prefix plus its
-  `suffix`, so two entries never share one, and there is no way to configure it.
+- **A volume's name is the entry's prefix plus its `suffix`.**
 
 Check a configuration before using it. The command calls neither Docker nor
 GitHub, prints each repository's labels, container prefix, and volume names, and
@@ -191,10 +188,9 @@ background jobs. A slot loops forever:
    at start in the pinned version (`CommandSettings.cs` in `actions/runner`). The
    supervisor sets it only in the slot job's own process environment and passes
    `docker run -e ACTIONS_RUNNER_INPUT_JITCONFIG` with no value, so the client
-   copies it from there. It is never on a command line, in a log line, or in an
-   image layer. Anyone with access to the local Docker daemon can still read it
-   from `docker inspect` until the container is removed, and the registration is
-   single-use.
+   copies it from there. Anyone with access to the local Docker daemon can still
+   read it from `docker inspect` until the container is removed, and the
+   registration is single-use.
 4. The runner takes one matching job and exits, and `--rm` removes the container.
    The slot then returns to step 1.
 
@@ -209,10 +205,9 @@ current containers, then stops every slot's job.
 
 An entry's `volumes` are named Docker volumes that outlive the throwaway
 containers, so a job finds the toolchains and downloads an earlier job left. That
-is also what makes them a cache-poisoning surface (see
-[Security](../conventions/security.md#shared-runner-storage-is-a-cache-poisoning-surface)),
-so each is declared here with the reason it exists and who can write to it. The
-suffixes are those of
+makes each a shared writable surface, and [Security](../conventions/security.md)
+owns the rules that govern it. Each is declared here with the reason it exists.
+The suffixes are those of
 [`runner-host.example.json`](../../hosts/windows-docker-desktop/runner-host.example.json);
 the volume's name is the entry's prefix plus the suffix.
 
@@ -225,51 +220,22 @@ the volume's name is the entry's prefix plus the suffix.
 | `ccache`    | `/home/runner/.cache/ccache` | Compiled object files that `ccache` reuses                                             |
 | `npm`       | `/home/runner/.npm`          | npm's content-addressed package cache                                                  |
 
-**Who can write to every one of them:** any job routed to the entry's labels.
-That includes a pull request's run and a default-branch run of the same
-repository, which share the entry's volumes; a pull request from a fork is the
-same job, held only by the repository's approval setting under
-[Repository Settings](#repository-settings-set-by-hand). Every job on one entry's
-labels is therefore one trust level, and a volume is never shared with another
-entry.
+Any job routed to the entry's labels can write to every one of them, a pull
+request's run included, and no other entry mounts them. At startup the supervisor
+creates the entry's volumes and resets their ownership with a short root container
+that mounts only those volumes.
 
-Most of these volumes hold content that a later job executes or links (runtimes,
-installed binaries, wrapper distributions, object files), which the security
-convention otherwise forbids. The
-[bounded exception](../conventions/security.md#shared-runner-storage-is-a-cache-poisoning-surface)
-allows it on this host for two conditions, and the accepted risk is that any job
-on the entry's labels can poison a toolchain a later job of the same repository
-executes:
+Before listing volumes for a repository, check which of its workflows hold a
+deployment secret. Either list no volumes (`"volumes": []`, so each job starts
+from the image alone) or run those workflows on a GitHub-hosted runner. The host
+cannot check this; the operator does.
 
-- the entry is one repository, with its volumes used by no other entry; the
-  configuration enforces this;
-- **no workflow that holds a deployment secret runs on a label whose volumes a
-  less-trusted job can write.** A repository with such a workflow either lists no
-  volumes (`"volumes": []`, so each job starts from the image alone) or runs that
-  workflow on a GitHub-hosted runner. The host cannot check this; the operator
-  does.
-
-## Isolation Between Repositories
-
-The host enforces these for every entry, and a change that weakens one is a
-[Security](../conventions/security.md#per-repository-isolation-on-a-runner-host)
-finding:
-
-- A registration is made with the entry's own token and carries its own labels,
-  and a just-in-time runner takes jobs only from the repository it was registered
-  for.
-- Cache volumes are named per entry and mounted only into that entry's containers.
-  At startup the supervisor creates them and resets their ownership with a
-  short root container that has only that entry's volumes.
-- Stale-container cleanup removes only containers whose names match the entry's own
-  `<prefix>-<slot>-<timestamp>` pattern.
-- Containers run unprivileged, with no Docker socket and no host path mounted,
-  and `--pull never`, so a missing local image is an error and never a pull of a
-  same-named public image.
+## Removing a Repository
 
 A volume outlives its entry: if an entry is removed from the configuration, its
 volumes and any stopped containers stay until removed by hand with
-`docker volume rm` and `docker rm`.
+`docker volume rm` and `docker rm`. The isolation rules the host enforces between
+repositories are in [Security](../conventions/security.md).
 
 ## Health Checks
 
@@ -301,16 +267,11 @@ days of a new release; see
 [GitHub's self-hosted runner reference](https://docs.github.com/en/actions/reference/runners/self-hosted-runners).
 A current image avoids both.
 
-## Network Egress (Accepted Risk)
+## Network Access
 
-Containers start on Docker Desktop's default network, which gives them the same
-route to the machine's local network that any process on the machine has. A job
-can therefore reach a router, a NAS, or another machine there, none of which a
-GitHub-hosted runner could. The maintainer has accepted this risk for now; see
-[Security](../conventions/security.md#lan-egress-from-runner-containers-accepted-risk).
-Blocking it, through a host firewall rule for the containers' subnet or a custom
-Docker network, is a follow-up and not implemented. Run this host only on a
-network you would trust the listed repositories' workflows with.
+Run this host only on a network you would trust the listed repositories'
+workflows with; [Security](../conventions/security.md) states the accepted risk
+behind that.
 
 The machine needs outbound HTTPS to `github.com` and `api.github.com`,
 `*.actions.githubusercontent.com`, `ghcr.io` and its blob storage (the base image
