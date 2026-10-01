@@ -121,8 +121,22 @@ PSSCRIPTANALYZER_FILES="$(printf '%s\n' "${files[@]}")" pwsh -NoProfile -NonInte
   }
   Import-Module -Name $manifest -Force
   $paths = $env:PSSCRIPTANALYZER_FILES -split "\r?\n" | Where-Object { $_ }
-  # Targets Windows PowerShell 5.1 syntax; see the settings file for why.
+  # targets Windows PowerShell 5.1 syntax; see the settings file for why.
   $settings = Join-Path (Get-Location) ".config/PSScriptAnalyzerSettings.psd1"
+  # a settings file that stopped enabling the rule would lint clean, so each
+  # construct that only PowerShell 7 parses must still be reported before the
+  # result below can be trusted.
+  $sevenOnly = @(
+    "`$x = `$true ? 1 : 2",
+    "Get-Item . && Get-Item .",
+    "`$x = `$null ?? 1"
+  )
+  foreach ($sample in $sevenOnly) {
+    $reported = @(Invoke-ScriptAnalyzer -ScriptDefinition $sample -Settings $settings | Where-Object { $_.RuleName -eq "PSUseCompatibleSyntax" })
+    if ($reported.Count -eq 0) {
+      throw "PSUseCompatibleSyntax did not flag a PowerShell 7 construct ($sample); the settings no longer enforce 5.1 syntax."
+    }
+  }
   $findings = @($paths | ForEach-Object { Invoke-ScriptAnalyzer -Path $_ -Severity Warning, Error -Settings $settings })
   if ($findings.Count -gt 0) {
     $findings | Format-Table -AutoSize | Out-String -Width 200 | Write-Host

@@ -45,23 +45,23 @@ in `mise.toml`.
 
 Run from the repository root.
 
-| Command                    | What it does                                                                                                                            |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `mise install`             | Install the pinned tools                                                                                                                |
-| `mise run format`          | Rewrite Markdown, JSON, YAML, and TypeScript files with Prettier                                                                        |
-| `mise run format:check`    | Fail when Prettier would change a file                                                                                                  |
-| `mise run lint`            | Run every linter below                                                                                                                  |
-| `mise run lint:markdown`   | markdownlint-cli2 over the Markdown files                                                                                               |
-| `mise run lint:shell`      | shellcheck over `*.sh` files and `.agents/setup`                                                                                        |
-| `mise run lint:docker`     | hadolint over Dockerfiles; passes when there are none                                                                                   |
-| `mise run lint:actions`    | actionlint over `.github/workflows/`                                                                                                    |
-| `mise run lint:powershell` | PSScriptAnalyzer over `*.ps1`, `*.psm1`, and `*.psd1` files, flagging syntax Windows PowerShell 5.1 rejects; passes when there are none |
-| `mise run check:links`     | Resolve relative links in `docs/`, `images/`, `hosts/`, `.claude/agents/`, and the root Markdown files                                  |
-| `mise run check:docs`      | Run the `docs/` structural validators                                                                                                   |
-| `mise run check:amp`       | Run the Amp quality-hooks plugin's smoke test (`node --test`, no install needed)                                                        |
-| `mise run check:skills`    | Check that `skills-lock.json` and `.claude/skills/` list the same skills                                                                |
-| `mise run test:host`       | Check the host configuration validation against its invalid fixtures and the example                                                    |
-| `mise run check`           | Run every gate above except the writing `format`; this is what CI runs                                                                  |
+| Command                    | What it does                                                                                                                                                                                                  |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mise install`             | Install the pinned tools                                                                                                                                                                                      |
+| `mise run format`          | Rewrite Markdown, JSON, YAML, and TypeScript files with Prettier                                                                                                                                              |
+| `mise run format:check`    | Fail when Prettier would change a file                                                                                                                                                                        |
+| `mise run lint`            | Run every linter below                                                                                                                                                                                        |
+| `mise run lint:markdown`   | markdownlint-cli2 over the Markdown files                                                                                                                                                                     |
+| `mise run lint:shell`      | shellcheck over `*.sh` files and `.agents/setup`                                                                                                                                                              |
+| `mise run lint:docker`     | hadolint over Dockerfiles; passes when there are none                                                                                                                                                         |
+| `mise run lint:actions`    | actionlint over `.github/workflows/`                                                                                                                                                                          |
+| `mise run lint:powershell` | PSScriptAnalyzer over `*.ps1`, `*.psm1`, and `*.psd1` files, flagging syntax Windows PowerShell 5.1 rejects, after checking that its settings still flag PowerShell 7-only syntax; passes when there are none |
+| `mise run check:links`     | Resolve relative links in `docs/`, `images/`, `hosts/`, `.claude/agents/`, and the root Markdown files                                                                                                        |
+| `mise run check:docs`      | Run the `docs/` structural validators                                                                                                                                                                         |
+| `mise run check:amp`       | Run the Amp quality-hooks plugin's smoke test (`node --test`, no install needed)                                                                                                                              |
+| `mise run check:skills`    | Check that `skills-lock.json` and `.claude/skills/` list the same skills                                                                                                                                      |
+| `mise run test:host`       | Check the host configuration validation against its invalid fixtures and the example                                                                                                                          |
+| `mise run check`           | Run every gate above except the writing `format`; this is what CI runs                                                                                                                                        |
 
 The installed copies under `.claude/skills/` are generated and are excluded from
 formatting and linting. [Agent Skills](./docs/operations/agent-skills.md) owns
