@@ -20,7 +20,7 @@
     elevated prompt because registering a sign-in task does.
 
 .PARAMETER ConfigPath
-    path to the host configuration json file. the tasks keep the absolute path.
+    path to the host configuration JSON file. the tasks keep the absolute path.
 
 .PARAMETER WeeklyRebuildDayOfWeek
     day the image is rebuilt.

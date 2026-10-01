@@ -5,7 +5,7 @@
     host scripts and the tests.
 
 .DESCRIPTION
-    Read-HostConfiguration turns the json file into a plan: the image name, and
+    Read-HostConfiguration turns the JSON file into a plan: the image name, and
     per target repository the registration labels, the container name prefix and
     the volume names. a configuration is rejected as a whole, with one message
     line per problem naming the offending field, before any container starts.
@@ -270,7 +270,7 @@ function Test-PrefixCollision {
 # records a duplicate repository, a colliding container prefix or a shared token
 # file between any two entries, against the later entry. volume names are the
 # prefix plus a suffix, so they cannot collide while the prefixes do not. paths
-# compare case-insensitively because windows file names do.
+# compare case-insensitively because Windows file names do.
 function Test-EntryUniqueness {
     param([Parameter(Mandatory)][object[]]$Entries, [Parameter(Mandatory)]$Errors)
 

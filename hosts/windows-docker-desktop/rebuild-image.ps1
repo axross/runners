@@ -22,7 +22,7 @@
     the next container a slot starts uses the rebuilt one.
 
 .PARAMETER ConfigPath
-    path to the host configuration json file. see runner-host.example.json.
+    path to the host configuration JSON file. see runner-host.example.json.
 #>
 param(
     [Parameter(Mandatory)][string]$ConfigPath

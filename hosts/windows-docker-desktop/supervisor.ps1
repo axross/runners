@@ -16,7 +16,7 @@
     written for Windows PowerShell 5.1 and PowerShell 7.
 
 .PARAMETER ConfigPath
-    path to the host configuration json file. see runner-host.example.json.
+    path to the host configuration JSON file. see runner-host.example.json.
 
 .PARAMETER ValidateOnly
     validates the configuration and prints the planned registrations,
@@ -130,7 +130,7 @@ function Clear-StaleContainer {
 }
 
 # the script block of one slot's background job. it is self-contained because
-# start-job runs in a separate process that shares no functions with this one,
+# Start-Job runs in a separate process that shares no functions with this one,
 # and it reports to the parent only through the output stream's two protocol
 # lines, CURRENT_CONTAINER:<name> and SLOT_IDLE. everything else it says goes
 # to the information and warning streams.
@@ -233,7 +233,7 @@ $WorkerScript = {
         Write-Information "${label}: starting container $($jit.Name)."
 
         # the variable holds the registration only in this job's process
-        # environment, and `-e NAME` makes the docker client copy it from there,
+        # environment, and `-e NAME` makes the Docker client copy it from there,
         # so the value is never on a command line.
         $arguments = @('run', '--rm', '--pull', 'never', '--name', $jit.Name) + @($Mounts) +
             @('-e', $JitConfigVariable, $ImageName, $RunCommand)
@@ -289,7 +289,7 @@ function Receive-WorkerOutput {
     }
 }
 
-# stops the containers the workers last reported, once each, in a single docker
+# stops the containers the workers last reported, once each, in a single Docker
 # call so that they share one grace period. the drain first catches a container
 # started since the last pass.
 function Invoke-KnownContainerStop {
@@ -374,7 +374,7 @@ foreach ($entry in $prepared) {
     }
 }
 
-# ctrl+c is the one shutdown path this script observes. the action runs in this
+# Ctrl+C is the one shutdown path this script observes. the action runs in this
 # runspace, so the flag is visible to the loop below.
 $script:stopRequested = $false
 $null = Register-ObjectEvent -InputObject ([Console]) -EventName CancelKeyPress -Action {
@@ -410,7 +410,7 @@ try {
     }
 } finally {
     Write-Information 'Shutdown requested - stopping every slot''s current container.'
-    # stop the containers first: stop-job does not interrupt a native docker run
+    # stop the containers first: Stop-Job does not interrupt a native docker run
     # already in flight.
     $stopped = New-Object System.Collections.Generic.HashSet[string]
     Invoke-KnownContainerStop -Workers $workers -Stopped $stopped
