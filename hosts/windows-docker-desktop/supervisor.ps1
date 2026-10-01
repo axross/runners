@@ -119,7 +119,10 @@ function Clear-StaleContainer {
     foreach ($name in $result.Output) {
         if ($name -cmatch $ownName) {
             Write-Warning "Removing stale container '$name' left over from an earlier run."
-            Invoke-Docker -Arguments @('rm', '-f', $name) | Out-Null
+            $removal = Invoke-Docker -Arguments @('rm', '-f', $name)
+            if ($removal.ExitCode -ne 0) {
+                Write-Warning "Failed to remove stale container '$name': $($removal.Output -join ' ')"
+            }
         }
     }
 }
@@ -300,7 +303,10 @@ function Invoke-KnownContainerStop {
         return
     }
     Write-Information "Stopping container(s): $($names -join ', ')."
-    Invoke-Docker -Arguments (@('stop') + $names) | Out-Null
+    $stop = Invoke-Docker -Arguments (@('stop') + $names)
+    if ($stop.ExitCode -ne 0) {
+        Write-Warning "Failed to stop container(s) $($names -join ', '): $($stop.Output -join ' ')"
+    }
     foreach ($name in $names) {
         $null = $Stopped.Add($name)
     }
