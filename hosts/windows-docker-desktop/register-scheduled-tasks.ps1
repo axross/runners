@@ -15,9 +15,9 @@
     silently until this script is run again.
 
     Safe to run again after editing the configuration or replacing a token
-    file: re-registration replaces the tasks, and the permission step only
-    tightens permissions again. Needs an elevated prompt because registering a
-    sign-in task does.
+    file: re-registration replaces the tasks, and the permission step resets
+    each token file's permissions and then restricts them again. Needs an
+    elevated prompt because registering a sign-in task does.
 
 .PARAMETER ConfigPath
     Path to the host configuration json file. The tasks keep the absolute path.
@@ -55,8 +55,10 @@ function Register-SupervisorTask {
     $taskName = "$($plan.HostPrefix)-supervisor"
     $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument (Get-PowerShellArgument -ScriptName 'supervisor.ps1')
     $trigger = New-ScheduledTaskTrigger -AtLogOn -User $currentUser
-    # a docker desktop restart can end the whole supervisor process, so restart
-    # it rather than leave the host without runners until the next sign-in.
+    # a backstop for the supervisor process exiting, so the host is not left
+    # without runners until the next sign-in. the slots wait out a docker desktop
+    # restart themselves; whether task scheduler restarts a task that ends with a
+    # non-zero exit code is not verified on a real host.
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
         -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit (New-TimeSpan -Days 0)
     Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings `
@@ -83,8 +85,14 @@ function Protect-TokenFile {
         Write-Warning "$($Entry.Path): token file not found at $($Entry.TokenPath) yet - create it and run this script again to restrict its permissions."
         return
     }
-    # remove inherited permissions first, so the grant below is the only entry
-    # on the file rather than an addition to what the folder allows.
+    # reset first, so an entry granted by hand to another account, or inherited
+    # from the folder, is dropped. then remove inheritance, so the grant below is
+    # the only entry on the file, rather than an addition to what the folder
+    # allows.
+    & icacls $Entry.TokenPath /reset | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "icacls could not reset the permissions of $($Entry.TokenPath)."
+    }
     & icacls $Entry.TokenPath /inheritance:r | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw "icacls could not remove inherited permissions from $($Entry.TokenPath)."

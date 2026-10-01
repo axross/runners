@@ -286,7 +286,7 @@ function Receive-WorkerOutput {
 # stops the containers the workers last reported, once each, in a single docker
 # call so that they share one grace period. the drain first catches a container
 # started since the last pass.
-function Stop-KnownContainer {
+function Invoke-KnownContainerStop {
     param([Parameter(Mandatory)]$Workers, [Parameter(Mandatory)]$Stopped)
 
     foreach ($worker in $Workers) {
@@ -404,14 +404,14 @@ try {
     # stop the containers first: stop-job does not interrupt a native docker run
     # already in flight.
     $stopped = New-Object System.Collections.Generic.HashSet[string]
-    Stop-KnownContainer -Workers $workers -Stopped $stopped
+    Invoke-KnownContainerStop -Workers $workers -Stopped $stopped
     foreach ($worker in $workers) {
         if ($null -ne $worker.Job) {
             Stop-Job -Job $worker.Job -ErrorAction SilentlyContinue
         }
     }
     # a container a slot started between the first pass and the job stopping.
-    Stop-KnownContainer -Workers $workers -Stopped $stopped
+    Invoke-KnownContainerStop -Workers $workers -Stopped $stopped
     foreach ($worker in $workers) {
         if ($null -ne $worker.Job) {
             Wait-Job -Job $worker.Job -Timeout 30 | Out-Null

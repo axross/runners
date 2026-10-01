@@ -12,6 +12,12 @@
     system packages are installed again and pick up their current updates. A
     failed build leaves the previous image under its name.
 
+    After a successful build it removes the images this script built earlier
+    and that the new build left untagged, so weekly rebuilds do not fill the
+    disk. Only images carrying this script's own build label are removed; it
+    does not prune other dangling images, and an image built by hand or before
+    this label existed is left alone.
+
     A container already running finishes its job on the image it started with;
     the next container a slot starts uses the rebuilt one.
 
@@ -27,13 +33,23 @@ $InformationPreference = 'Continue'
 
 . (Join-Path $PSScriptRoot 'host-configuration.ps1')
 
+# marks the images this script builds, so the prune below touches only those.
+$BuildLabel = 'com.github.axross.runners.image=actions-runner'
+
 $plan = Read-HostConfiguration -Path $ConfigPath
 $imageDirectory = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '../../images/actions-runner')).Path
 
 Write-Information "Building $($plan.ImageName) from $imageDirectory without the layer cache..."
-& docker build --pull --no-cache --tag $plan.ImageName $imageDirectory
+& docker build --pull --no-cache --label $BuildLabel --tag $plan.ImageName $imageDirectory
 if ($LASTEXITCODE -ne 0) {
     throw "docker build failed with exit code $LASTEXITCODE."
 }
 
 Write-Information "Built $($plan.ImageName)."
+
+# the build is done and the new image is in place, so a prune that fails is
+# reported without failing the task.
+& docker image prune --force --filter "label=$BuildLabel"
+if ($LASTEXITCODE -ne 0) {
+    Write-Warning "docker image prune exited with code $LASTEXITCODE; earlier runner images may remain on disk."
+}
