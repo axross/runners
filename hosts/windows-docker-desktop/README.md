@@ -36,15 +36,16 @@ A JSON file kept outside the repository; every script takes its path as
 | `imageName`                          | The local image tag `rebuild-image.ps1` builds and the supervisor runs                                                                           |
 | `repositories[].owner`, `repository` | The target repository. Each owner and repository pair appears once                                                                               |
 | `repositories[].slots`               | How many jobs run at once for this repository, 1 to 16                                                                                           |
-| `repositories[].tokenPath`           | An absolute Windows path (drive letter or UNC) to the file holding this repository's own fine-grained token, re-read on every registration       |
-| `repositories[].labels`              | Custom labels, at least one. `self-hosted`, `linux`, and `x64` are always added and not listed                                                   |
-| `repositories[].volumes`             | The cache volumes as `suffix` and `mountPath` pairs, possibly none; never shared between entries                                                 |
+| `repositories[].tokenPath`           | An absolute Windows path (drive letter or UNC) to the file holding this repository's token, re-read on every registration                        |
+| `repositories[].labels`              | Custom labels, at least one; the labels every registration already carries are not listed                                                        |
+| `repositories[].volumes`             | The cache volumes as `suffix` and `mountPath` pairs, possibly none                                                                               |
 | `repositories[].prefix`              | Optional override of the container and volume name prefix, `<hostPrefix>-<owner>-<repository>` by default; at most 64 characters, derived or set |
 
 An invalid configuration stops the script before it touches Docker, with one line
 per problem naming the field. A field not listed above is rejected as unknown, not
-ignored, so a misspelled `label` cannot silently drop `labels`. Two entries whose prefixes are equal, or where one
-is the other followed by a hyphen, collide and are rejected.
+ignored, so a misspelled `label` cannot silently drop `labels`. The isolation rules the validation enforces, such
+as what a registration carries and which prefixes collide, are in the Per-Repository Isolation on a Runner Host
+section of [Security](../../docs/conventions/security.md).
 
 ## Commands
 

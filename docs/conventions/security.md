@@ -251,9 +251,11 @@ later host:
   passed to `docker run` by name. It MUST NOT be placed on a command line, in a log
   line, or in an image layer.
 - Volume and container names derive from the host prefix, owner, and repository.
-  An entry's volumes are mounted only into its own containers, two entries that
-  would share a name or a prefix are rejected, and stale-container cleanup removes
-  only containers matching the entry's own name pattern.
+  An entry's volumes are mounted only into its own containers. Two entries whose
+  container prefixes are equal, or where one is the other followed by a hyphen,
+  are rejected, because one would claim the other's containers and volumes.
+  Stale-container cleanup removes only containers matching the entry's own name
+  pattern.
 - A repository that can run pull requests from forks on a host's labels requires
   approval for outside collaborators' workflow runs, per the Repository Settings
   section of [Windows Runner Host](../operations/windows-runner-host.md).

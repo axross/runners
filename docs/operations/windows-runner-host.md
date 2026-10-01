@@ -81,10 +81,10 @@ under **Settings, Developer settings, Fine-grained personal access tokens**:
 - **Repository access:** only that one repository.
 - **Permissions:** Administration, read and write, and nothing else.
 
-Do not reuse a token across repositories, use a classic token, or store the token
-as a GitHub Actions secret; [Security](../conventions/security.md) states why. The
-token lives only in a file on this machine, holding the raw token text, at the
-`tokenPath` of the repository's entry. Keep these files outside the checkout.
+Save each token in a file on this machine, holding the raw token text, at the
+`tokenPath` of the repository's entry, and keep these files outside the checkout.
+The token rules are in the Per-Repository Isolation on a Runner Host section of
+[Security](../conventions/security.md).
 
 The file is read-only for the host user, so rotate a token by deleting the file
 and creating it again with the new token, then run `register-scheduled-tasks.ps1`
@@ -110,19 +110,20 @@ and see the Host configuration section of the
 - **Unknown fields are rejected, not ignored.** A misspelled field such as `label`
   for `labels` fails validation naming the field, so a typo cannot silently drop
   a setting.
-- **At least one custom label per entry.** Registrations always carry
-  `self-hosted`, `linux`, and `x64`; the custom label is what a workflow puts in
-  `runs-on` to name this host. Choose one label per repository, or a shared one
-  only for repositories you would trust equally.
+- **At least one custom label per entry.** Choose one label per repository, or a
+  shared one only for repositories you would trust equally. What a registration
+  carries is in the Per-Repository Isolation on a Runner Host section of
+  [Security](../conventions/security.md).
 - **Names derive from `hostPrefix`, the owner, and the repository** unless an
   entry sets `prefix`, and the prefix is at most 64 characters, because it starts
   every runner name. GitHub documents no limit for runner names; 64 is this
   project's assumption, so a long owner and repository pair needs a short
-  `prefix`. Two entries whose prefixes are equal, or where one is the
-  other plus a hyphen, are rejected, because one would claim the other's
-  containers and volumes. Across two supervisors on one machine, keep their
-  `hostPrefix` values from being prefixes of each other; the script cannot see
-  the other configuration.
+  `prefix`. When two derived prefixes collide, set a `prefix` on one of the
+  entries; the error names it. The collision rule is in the Per-Repository
+  Isolation on a Runner Host section of
+  [Security](../conventions/security.md). Across two supervisors on one machine,
+  that rule applies to their `hostPrefix` values too, but the script cannot see
+  the other configuration, so check it by hand.
 - **A volume's name is the entry's prefix plus its `suffix`.**
 
 Check a configuration before using it. The command calls neither Docker nor
@@ -190,12 +191,11 @@ background jobs. A slot loops forever:
 3. Start a throwaway container from the image with the entry's volumes and
    `/home/runner/run.sh`. The registration reaches the runner through the
    `ACTIONS_RUNNER_INPUT_JITCONFIG` environment variable, which the runner reads
-   at start in the pinned version (`CommandSettings.cs` in `actions/runner`). The
-   supervisor sets it only in the slot job's own process environment and passes
-   `docker run -e ACTIONS_RUNNER_INPUT_JITCONFIG` with no value, so the client
-   copies it from there. Anyone with access to the local Docker daemon can still
-   read it from `docker inspect` until the container is removed, and the
-   registration is single-use.
+   at start in the pinned version (`CommandSettings.cs` in `actions/runner`).
+   [Security](../conventions/security.md) owns how the supervisor hands it to
+   Docker. Anyone with access to the local Docker daemon can still read it from
+   `docker inspect` until the container is removed, and the registration is
+   single-use.
 4. The runner takes one matching job and exits, and `--rm` removes the container.
    The slot then returns to step 1.
 
