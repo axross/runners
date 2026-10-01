@@ -5,24 +5,23 @@
     every target repository in a host configuration, on this Windows machine.
 
 .DESCRIPTION
-    For each target repository the configuration lists, this script runs that
-    many slots. A slot loops forever: request a just-in-time (JIT) runner
+    for each target repository the configuration lists, this script runs that
+    many slots. a slot loops forever: request a just-in-time (JIT) runner
     registration from GitHub with that repository's own token, start a
     throwaway container from the runner image with the registration passed
     through the container's environment, wait for it to finish the one job it
-    takes, then repeat. See docs/operations/windows-runner-host.md for the
+    takes, then repeat. see docs/operations/windows-runner-host.md for the
     procedure around it.
 
-    Written for Windows PowerShell 5.1 and PowerShell 7; the verification status
-    is in docs/operations/windows-runner-host.md.
+    written for Windows PowerShell 5.1 and PowerShell 7.
 
 .PARAMETER ConfigPath
-    Path to the host configuration json file. See runner-host.example.json.
+    path to the host configuration json file. see runner-host.example.json.
 
 .PARAMETER ValidateOnly
-    Validates the configuration and prints the planned registrations,
-    container prefixes and volume names, then exits. Exits 1 on an invalid
-    configuration. Calls neither Docker nor GitHub and reads no token file.
+    validates the configuration and prints the planned registrations,
+    container prefixes and volume names, then exits. exits 1 on an invalid
+    configuration. calls neither Docker nor GitHub and reads no token file.
 #>
 param(
     [Parameter(Mandatory)][string]$ConfigPath,

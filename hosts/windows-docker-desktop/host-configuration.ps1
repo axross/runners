@@ -7,17 +7,16 @@
 .DESCRIPTION
     Read-HostConfiguration turns the json file into a plan: the image name, and
     per target repository the registration labels, the container name prefix and
-    the volume names. A configuration is rejected as a whole, with one message
+    the volume names. a configuration is rejected as a whole, with one message
     line per problem naming the offending field, before any container starts.
-    Nothing here calls Docker or GitHub, or reads a token file.
+    nothing here calls Docker or GitHub, or reads a token file.
 #>
 
 $script:DefaultLabels = @('self-hosted', 'linux', 'x64')
 $script:MaxSlots = 16
-# GitHub documents no limit for a runner's name, and neither its REST API
-# description nor the pinned runner's source enforces one. the derived runner
-# name is the container prefix plus a slot number and a 17-digit timestamp, so
-# capping the prefix keeps every name short on an assumption, not a known limit.
+# GitHub documents no limit for a runner's name. the derived runner name is the
+# container prefix plus a slot number and a 17-digit timestamp, so capping the
+# prefix keeps every name short, on an assumed limit rather than a known one.
 $script:MaxPrefixLength = 64
 
 $script:HostFields = @('hostPrefix', 'imageName', 'repositories')

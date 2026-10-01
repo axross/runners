@@ -5,24 +5,24 @@
     under the image name the host configuration gives.
 
 .DESCRIPTION
-    Builds images/actions-runner exactly as the checkout holds it, so the runner
-    version and base image digest come from its Dockerfile. It fetches nothing
+    builds images/actions-runner exactly as the checkout holds it, so the runner
+    version and base image digest come from its Dockerfile. it fetches nothing
     else and never updates the checkout; pull a newer checkout by hand first to
-    move to a newer runner. The build ignores the layer cache, so the operating
-    system packages are installed again and pick up their current updates. A
+    move to a newer runner. the build ignores the layer cache, so the operating
+    system packages are installed again and pick up their current updates. a
     failed build leaves the previous image under its name.
 
-    After a successful build it removes the images this script built earlier
+    after a successful build it removes the images this script built earlier
     and that the new build left untagged, so weekly rebuilds do not fill the
-    disk. Only images carrying this script's own build label are removed; it
+    disk. only images carrying this script's own build label are removed; it
     does not prune other dangling images, and an image built by hand or before
     this label existed is left alone.
 
-    A container already running finishes its job on the image it started with;
+    a container already running finishes its job on the image it started with;
     the next container a slot starts uses the rebuilt one.
 
 .PARAMETER ConfigPath
-    Path to the host configuration json file. See runner-host.example.json.
+    path to the host configuration json file. see runner-host.example.json.
 #>
 param(
     [Parameter(Mandatory)][string]$ConfigPath

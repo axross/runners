@@ -7,26 +7,26 @@
     file the host configuration lists to that user.
 
 .DESCRIPTION
-    Registers "<hostPrefix>-supervisor", which runs supervisor.ps1 at this
+    registers "<hostPrefix>-supervisor", which runs supervisor.ps1 at this
     user's sign-in, and "<hostPrefix>-weekly-rebuild", which runs
-    rebuild-image.ps1 weekly. Both run as the current user at the limited run
-    level, never elevated. Both point at this script's own directory and at
+    rebuild-image.ps1 weekly. both run as the current user at the limited run
+    level, never elevated. both point at this script's own directory and at
     the configuration file, so moving the checkout or the file breaks them
     silently until this script is run again.
 
-    Safe to run again after editing the configuration or replacing a token
+    safe to run again after editing the configuration or replacing a token
     file: re-registration replaces the tasks, and the permission step resets
-    each token file's permissions and then restricts them again. Needs an
+    each token file's permissions and then restricts them again. needs an
     elevated prompt because registering a sign-in task does.
 
 .PARAMETER ConfigPath
-    Path to the host configuration json file. The tasks keep the absolute path.
+    path to the host configuration json file. the tasks keep the absolute path.
 
 .PARAMETER WeeklyRebuildDayOfWeek
-    Day the image is rebuilt.
+    day the image is rebuilt.
 
 .PARAMETER WeeklyRebuildTime
-    Local time the image is rebuilt.
+    local time the image is rebuilt.
 #>
 param(
     [Parameter(Mandatory)][string]$ConfigPath,
@@ -57,8 +57,7 @@ function Register-SupervisorTask {
     $trigger = New-ScheduledTaskTrigger -AtLogOn -User $currentUser
     # a backstop for the supervisor process exiting, so the host is not left
     # without runners until the next sign-in. the slots wait out a Docker Desktop
-    # restart themselves; whether Task Scheduler restarts a task that ends with a
-    # non-zero exit code is not verified on a real host.
+    # restart themselves.
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
         -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit (New-TimeSpan -Days 0)
     Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings `

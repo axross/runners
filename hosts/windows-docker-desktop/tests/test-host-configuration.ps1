@@ -5,11 +5,11 @@
     -ValidateOnly mode, and a few rules the host scripts must keep.
 
 .DESCRIPTION
-    Each fixture under fixtures/ breaks exactly one rule and must be rejected
-    with a non-zero exit code and a message naming the offending field. Each
+    each fixture under fixtures/ breaks exactly one rule and must be rejected
+    with a non-zero exit code and a message naming the offending field. each
     fixture under accepted/ sits on the edge of a rule and must be accepted.
-    The example configuration must be accepted and plan distinct container
-    prefixes and volume names for its two repositories. Runs under the
+    the example configuration must be accepted and plan distinct container
+    prefixes and volume names for its two repositories. runs under the
     PowerShell that runs it, on Windows PowerShell 5.1 as well as PowerShell 7,
     and calls neither Docker nor GitHub.
 #>
