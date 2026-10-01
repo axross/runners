@@ -69,6 +69,7 @@ $rejections = [ordered]@{
     'token-path-relative.json'       = @('repositories[0].tokenPath: must be an absolute Windows path')
     'token-path-drive-relative.json' = @('repositories[0].tokenPath: must be an absolute Windows path')
     'token-path-rooted-without-drive.json' = @('repositories[0].tokenPath: must be an absolute Windows path')
+    'shared-token-path.json'         = @('repositories[1].tokenPath: token file', 'is already used at repositories[0]')
     'prefix-too-long.json'           = @('repositories[0].prefix: container prefix is', 'at most 64')
     'unknown-field.json'             = @('repositories[0].label: unknown field')
 }

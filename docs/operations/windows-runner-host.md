@@ -99,9 +99,10 @@ and see the Host configuration section of the
 
 - **One entry per target repository**, each with its own `tokenPath`, `slots`,
   custom `labels`, and `volumes`. An owner and repository pair listed twice is
-  rejected. `tokenPath` is an absolute Windows path, a drive letter and backslash
-  or a UNC path; a relative path is rejected because a scheduled task's working
-  directory is not the checkout.
+  rejected, and so are two entries that name the same token file, compared
+  without regard to case. `tokenPath` is an absolute Windows path, a drive
+  letter and backslash or a UNC path; a relative path is rejected because a
+  scheduled task's working directory is not the checkout.
 - **Unknown fields are rejected, not ignored.** A misspelled field such as `label`
   for `labels` fails validation naming the field, so a typo cannot silently drop
   a setting.

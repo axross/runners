@@ -264,9 +264,10 @@ function Test-PrefixCollision {
     return $First -eq $Second -or $First.StartsWith("$Second-") -or $Second.StartsWith("$First-")
 }
 
-# records a duplicate repository or a colliding container prefix between any two
-# entries, against the later entry. volume names are the prefix plus a suffix, so
-# they cannot collide while the prefixes do not.
+# records a duplicate repository, a colliding container prefix or a shared token
+# file between any two entries, against the later entry. volume names are the
+# prefix plus a suffix, so they cannot collide while the prefixes do not. paths
+# compare case-insensitively because windows file names do.
 function Test-EntryUniqueness {
     param([Parameter(Mandatory)][object[]]$Entries, [Parameter(Mandatory)]$Errors)
 
@@ -280,6 +281,9 @@ function Test-EntryUniqueness {
             }
             if (Test-PrefixCollision -First $a.ContainerPrefix -Second $b.ContainerPrefix) {
                 $Errors.Add("$($b.Path).prefix: container prefix '$($b.ContainerPrefix)' collides with '$($a.ContainerPrefix)' at $($a.Path); set a distinct prefix on one entry")
+            }
+            if ($a.TokenPath.ToLowerInvariant() -eq $b.TokenPath.ToLowerInvariant()) {
+                $Errors.Add("$($b.Path).tokenPath: token file '$($b.TokenPath)' is already used at $($a.Path); each repository needs its own token")
             }
         }
     }
