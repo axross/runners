@@ -11,10 +11,10 @@ a registry.
 - `build-essential`, `ccache`, `libyaml-0-2`, and `libgmp10`, installed without
   recommended packages. The package index is removed in the same layer, so a
   package a job needs at run time must be added here, not installed by the job.
-- `/opt/hostedtoolcache`, set as `RUNNER_TOOL_CACHE`, and the `~/.gradle`,
-  `~/.cargo`, `~/.rustup`, `~/.cache/ccache`, and `~/.npm` directories, all
-  owned by `runner`. They are the mount points the host configuration's cache
-  volumes usually target, and being pre-created keeps a fresh volume writable.
+- `/opt/hostedtoolcache`, set as `RUNNER_TOOL_CACHE`, and the `~/.cargo`,
+  `~/.rustup`, and `~/.npm` directories, all owned by `runner`. They are the
+  mount points the host configuration's cache volumes usually target, and being
+  pre-created keeps a fresh volume writable.
 
 It ends as `USER runner` and sets no entrypoint. The host supplies the command
 (`/home/runner/run.sh`) and the registration.

@@ -231,28 +231,32 @@ The suffixes are those of
 [`runner-host.example.json`](../../hosts/windows-docker-desktop/runner-host.example.json);
 the volume's name is the entry's prefix plus the suffix.
 
-| Suffix      | Mount path                   | Why it exists                                                                          |
-| ----------- | ---------------------------- | -------------------------------------------------------------------------------------- |
-| `toolcache` | `/opt/hostedtoolcache`       | Language runtimes that the `setup-*` actions install and `RUNNER_TOOL_CACHE` points at |
-| `gradle`    | `/home/runner/.gradle`       | Gradle's downloaded dependencies and wrapper distributions                             |
-| `cargo`     | `/home/runner/.cargo`        | Cargo's registry downloads and the binaries it installs                                |
-| `rustup`    | `/home/runner/.rustup`       | Rust toolchains                                                                        |
-| `ccache`    | `/home/runner/.cache/ccache` | Compiled object files that `ccache` reuses                                             |
-| `npm`       | `/home/runner/.npm`          | npm's content-addressed package cache                                                  |
+| Suffix      | Mount path             | Why it exists                                                                          |
+| ----------- | ---------------------- | -------------------------------------------------------------------------------------- |
+| `toolcache` | `/opt/hostedtoolcache` | Language runtimes that the `setup-*` actions install and `RUNNER_TOOL_CACHE` points at |
+| `cargo`     | `/home/runner/.cargo`  | Cargo's registry downloads and the binaries it installs                                |
+| `rustup`    | `/home/runner/.rustup` | Rust toolchains                                                                        |
+| `npm`       | `/home/runner/.npm`    | npm's content-addressed package cache                                                  |
 
 Any job routed to the entry's labels can write to every one of them, and no
 other entry mounts them. At startup the supervisor creates the entry's volumes
 and resets their ownership with a short root container that mounts only those
 volumes.
 
+An entry keeps only the volumes in the table above. The host does not enforce
+that: it accepts any suffix and mount path, so the operator does. A volume
+for anything else, such as a compiler or build-system cache whose contents a later
+job links or executes without re-verifying them, is unsupported because no rule in
+[Security](../conventions/security.md) allows it.
+
 Before listing volumes for a repository, check which of its workflows hold a
 deployment secret, and whether the repository accepts pull requests from forks.
-If either applies, list no tool-binary volumes for its entry (`"volumes": []`
-lists none, so each job starts from the image alone) or run those workflows,
-including the fork pull request workflows, on a GitHub-hosted runner. The host
-cannot check this; the operator does. The rule and its reason are in the Shared
-Runner Storage Is a Cache-Poisoning Surface section of
-[Security](../conventions/security.md).
+If either applies, the entry lists `"volumes": []`, so each job starts from the
+image alone, or those workflows, including the fork pull request workflows, run on
+a GitHub-hosted runner. That includes `npm` and every other volume in the table,
+not only the toolchain volumes. The host cannot check this; the operator does. The
+rule and its reason are in the Shared Runner Storage Is a Cache-Poisoning Surface
+section of [Security](../conventions/security.md).
 
 ## Removing a Repository
 

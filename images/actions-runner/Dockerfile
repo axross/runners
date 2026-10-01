@@ -25,19 +25,14 @@ ENV RUNNER_TOOL_CACHE=/opt/hostedtoolcache
 
 # the tool cache and the per-tool cache directories are the mount points of the
 # host's cache volumes. creating them owned by runner keeps a fresh volume
-# writable, and pre-creating .cache keeps its parent from being root-owned.
+# writable.
 RUN mkdir -p /opt/hostedtoolcache \
-        /home/runner/.gradle \
         /home/runner/.cargo \
         /home/runner/.rustup \
-        /home/runner/.cache/ccache \
         /home/runner/.npm \
     && chown runner:docker /opt/hostedtoolcache \
-        /home/runner/.gradle \
         /home/runner/.cargo \
         /home/runner/.rustup \
-        /home/runner/.cache \
-        /home/runner/.cache/ccache \
         /home/runner/.npm
 
 # hadolint ignore=DL3066
