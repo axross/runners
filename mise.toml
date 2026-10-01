@@ -121,7 +121,23 @@ PSSCRIPTANALYZER_FILES="$(printf '%s\n' "${files[@]}")" pwsh -NoProfile -NonInte
   }
   Import-Module -Name $manifest -Force
   $paths = $env:PSSCRIPTANALYZER_FILES -split "\r?\n" | Where-Object { $_ }
-  $findings = @($paths | ForEach-Object { Invoke-ScriptAnalyzer -Path $_ -Severity Warning, Error })
+  # targets Windows PowerShell 5.1 syntax; see the settings file for why.
+  $settings = Join-Path (Get-Location) ".config/PSScriptAnalyzerSettings.psd1"
+  # a settings file that stopped enabling the rule would lint clean, so each
+  # construct that only PowerShell 7 parses must still be reported before the
+  # result below can be trusted.
+  $sevenOnly = @(
+    "`$x = `$true ? 1 : 2",
+    "Get-Item . && Get-Item .",
+    "`$x = `$null ?? 1"
+  )
+  foreach ($sample in $sevenOnly) {
+    $reported = @(Invoke-ScriptAnalyzer -ScriptDefinition $sample -Settings $settings | Where-Object { $_.RuleName -eq "PSUseCompatibleSyntax" })
+    if ($reported.Count -eq 0) {
+      throw "PSUseCompatibleSyntax did not flag a PowerShell 7 construct ($sample); the settings no longer enforce 5.1 syntax."
+    }
+  }
+  $findings = @($paths | ForEach-Object { Invoke-ScriptAnalyzer -Path $_ -Severity Warning, Error -Settings $settings })
   if ($findings.Count -gt 0) {
     $findings | Format-Table -AutoSize | Out-String -Width 200 | Write-Host
     exit 1
@@ -141,8 +157,8 @@ depends = [
 ]
 
 [tasks."check:links"]
-description = "Check relative links in the agent-facing Markdown and the docs"
-run = "node .claude/skills/agent-skill-authoring/scripts/check-links.mjs .claude/agents docs README.md AGENTS.md CLAUDE.md REVIEW.md"
+description = "Check relative links in the agent-facing Markdown, the docs, and the image and host READMEs"
+run = "node .claude/skills/agent-skill-authoring/scripts/check-links.mjs .claude/agents docs images hosts README.md AGENTS.md CLAUDE.md REVIEW.md"
 
 [tasks."check:docs"]
 description = "Run the living-project-documentation validators over docs/"
@@ -183,8 +199,12 @@ console.log(`skills-lock.json and .claude/skills/ agree (${locked.length} skills
 '
 '''
 
+[tasks."test:host"]
+description = "Check the Windows host configuration validation against its fixtures and the example"
+run = "pwsh -NoProfile -NonInteractive -File hosts/windows-docker-desktop/tests/test-host-configuration.ps1"
+
 [tasks.check]
-description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test"
+description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, host test"
 depends = [
   "format:check",
   "lint",
@@ -192,4 +212,5 @@ depends = [
   "check:docs",
   "check:skills",
   "check:amp",
+  "test:host",
 ]

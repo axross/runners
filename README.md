@@ -6,18 +6,20 @@ WSL 2.
 
 ## Status
 
-The repository is at its agent foundation. It holds the entry files for agent
-sessions, the agent configuration for Claude Code and Amp, the project
-documentation, and the pinned lint toolchain. It does not yet hold any runner
-material. Runner images, host scripts, and agent-host configuration arrive in
-later changes, into this planned layout:
+The repository holds the entry files for agent sessions, the agent configuration
+for Claude Code and Amp, the project documentation, the pinned lint toolchain, and
+the first runner material: one runner image and the host scripts that run it for
+several repositories from a Windows machine with Docker Desktop.
+[Windows Runner Host](./docs/operations/windows-runner-host.md) owns the operator
+procedure and states what has and has not been verified on a real host. The
+agent-host configuration is not here yet. Layout:
 
-| Planned path               | Holds                                                                                  |
-| -------------------------- | -------------------------------------------------------------------------------------- |
-| `images/<name>/`           | One runner image per directory, such as a Dockerfile                                   |
-| `hosts/<platform>/`        | Scripts that run ephemeral runners on a host, starting with Windows and Docker Desktop |
-| `agent-hosts/claude-code/` | WSL 2 service units and templates for Claude Code Remote Control                       |
-| `agent-hosts/amp/`         | WSL 2 service units and templates for Amp runners                                      |
+| Path                            | Holds                                                                                   | State   |
+| ------------------------------- | --------------------------------------------------------------------------------------- | ------- |
+| `images/actions-runner/`        | The runner image: GitHub's runner image plus build dependencies, pinned by digest       | Present |
+| `hosts/windows-docker-desktop/` | The supervisor, image rebuild, and scheduled-task scripts, and an example configuration | Present |
+| `agent-hosts/claude-code/`      | WSL 2 service units and templates for Claude Code Remote Control                        | Planned |
+| `agent-hosts/amp/`              | WSL 2 service units and templates for Amp runners                                       | Planned |
 
 This repository is public. Its own CI and review run on GitHub-hosted runners,
 never on a self-hosted one; see [Security](./docs/conventions/security.md).
@@ -36,29 +38,30 @@ mise install
 Prettier, markdownlint-cli2, shellcheck, hadolint, actionlint, and PowerShell.
 PSScriptAnalyzer is a PowerShell module rather than a mise tool, so
 `mise run lint:powershell` downloads its pinned version from the PowerShell
-Gallery the first time a PowerShell script exists to lint, and refuses it unless
-its SHA-256 matches the pin in `mise.toml`.
+Gallery the first time it runs, and refuses it unless its SHA-256 matches the pin
+in `mise.toml`.
 
 ## Commands
 
 Run from the repository root.
 
-| Command                    | What it does                                                                            |
-| -------------------------- | --------------------------------------------------------------------------------------- |
-| `mise install`             | Install the pinned tools                                                                |
-| `mise run format`          | Rewrite Markdown, JSON, YAML, and TypeScript files with Prettier                        |
-| `mise run format:check`    | Fail when Prettier would change a file                                                  |
-| `mise run lint`            | Run every linter below                                                                  |
-| `mise run lint:markdown`   | markdownlint-cli2 over the Markdown files                                               |
-| `mise run lint:shell`      | shellcheck over `*.sh` files and `.agents/setup`                                        |
-| `mise run lint:docker`     | hadolint over Dockerfiles; passes when there are none                                   |
-| `mise run lint:actions`    | actionlint over `.github/workflows/`                                                    |
-| `mise run lint:powershell` | PSScriptAnalyzer over `*.ps1`, `*.psm1`, and `*.psd1` files; passes when there are none |
-| `mise run check:links`     | Resolve relative links in `docs/`, `.claude/agents/`, and the root Markdown files       |
-| `mise run check:docs`      | Run the `docs/` structural validators                                                   |
-| `mise run check:amp`       | Run the Amp quality-hooks plugin's smoke test (`node --test`, no install needed)        |
-| `mise run check:skills`    | Check that `skills-lock.json` and `.claude/skills/` list the same skills                |
-| `mise run check`           | Run every gate above except the writing `format`; this is what CI runs                  |
+| Command                    | What it does                                                                                                                                                                                                  |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mise install`             | Install the pinned tools                                                                                                                                                                                      |
+| `mise run format`          | Rewrite Markdown, JSON, YAML, and TypeScript files with Prettier                                                                                                                                              |
+| `mise run format:check`    | Fail when Prettier would change a file                                                                                                                                                                        |
+| `mise run lint`            | Run every linter below                                                                                                                                                                                        |
+| `mise run lint:markdown`   | markdownlint-cli2 over the Markdown files                                                                                                                                                                     |
+| `mise run lint:shell`      | shellcheck over `*.sh` files and `.agents/setup`                                                                                                                                                              |
+| `mise run lint:docker`     | hadolint over Dockerfiles; passes when there are none                                                                                                                                                         |
+| `mise run lint:actions`    | actionlint over `.github/workflows/`                                                                                                                                                                          |
+| `mise run lint:powershell` | PSScriptAnalyzer over `*.ps1`, `*.psm1`, and `*.psd1` files, flagging syntax Windows PowerShell 5.1 rejects, after checking that its settings still flag PowerShell 7-only syntax; passes when there are none |
+| `mise run check:links`     | Resolve relative links in `docs/`, `images/`, `hosts/`, `.claude/agents/`, and the root Markdown files                                                                                                        |
+| `mise run check:docs`      | Run the `docs/` structural validators                                                                                                                                                                         |
+| `mise run check:amp`       | Run the Amp quality-hooks plugin's smoke test (`node --test`, no install needed)                                                                                                                              |
+| `mise run check:skills`    | Check that `skills-lock.json` and `.claude/skills/` list the same skills                                                                                                                                      |
+| `mise run test:host`       | Check the host configuration validation against its invalid fixtures and the example                                                                                                                          |
+| `mise run check`           | Run every gate above except the writing `format`; this is what CI runs                                                                                                                                        |
 
 The installed copies under `.claude/skills/` are generated and are excluded from
 formatting and linting. [Agent Skills](./docs/operations/agent-skills.md) owns

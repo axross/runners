@@ -13,9 +13,9 @@ Documents under `conventions/` and `operations/` use MUST, MUST NOT, SHOULD,
 SHOULD NOT, and MAY as [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119.html)
 describes.
 
-The runner images, runner host scripts, and agent-host configuration this
-repository is for are planned and are not documented here until they exist. A
-change that adds one adds the operations document that owns its procedure, an
+The agent-host configuration this repository is also for is planned and is not
+documented here until it exists. A change that adds a runner image, host, or
+agent-host surface adds the operations document that owns its procedure, an
 entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
 
 ## Conventions
@@ -23,8 +23,9 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
 - [conventions/security.md](./conventions/security.md) - how actions and
   downloads are pinned, least-privilege workflow permissions, why this public
   repository runs its own jobs on GitHub-hosted runners only, the cache-poisoning
-  threat model for shared runner storage, what is never committed, and why the
-  review gate admits one bot identity by login.
+  threat model for shared runner storage, per-repository isolation on a runner
+  host, the accepted LAN-egress risk, what is never committed, and why the review
+  gate admits one bot identity by login.
 
 ## Operations
 
@@ -34,6 +35,10 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
 - [operations/agent-sessions.md](./operations/agent-sessions.md) - how Claude
   Code and Amp sessions start, the format and check hooks, the subagents, and
   telemetry tagging.
+- [operations/windows-runner-host.md](./operations/windows-runner-host.md) -
+  running ephemeral runners for several repositories on a Windows machine with
+  Docker Desktop: prerequisites, the per-repository token, the host
+  configuration, scheduled tasks, health checks, updating, and recovery.
 - [operations/agent-skills.md](./operations/agent-skills.md) - installing and
   refreshing the skills from `axross/skills`, the drift checks, and the register
   of deviations and gaps.

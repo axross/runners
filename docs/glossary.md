@@ -26,19 +26,32 @@ credential: it is passed to the runner at start, never stored in the repository,
 and is usable once.
 
 **Runner Image** - the container image a runner runs in, built from a Dockerfile
-under the planned `images/<name>/`. It carries the runner and the tools jobs
-need.
+under `images/<name>/`, such as `images/actions-runner/`. It carries the runner
+and the tools jobs need.
 
 **Runner Host** - the machine that builds runner images and starts runner
-containers, together with the scripts under the planned `hosts/<platform>/`. The
-first planned platform is Windows with Docker Desktop.
+containers, together with the scripts under `hosts/<platform>/`. The first
+platform is Windows with Docker Desktop, under `hosts/windows-docker-desktop/`.
+
+**Host Configuration** - the machine-local JSON file, kept outside the repository,
+that names a runner host's image and lists its **Target Repositories**. The
+**Supervisor** and the host's other scripts read it.
+
+**Target Repository** - a GitHub repository a runner host serves: one entry of the
+**Host Configuration**, with its own **Slots**, token, **Custom Labels**, and
+cache volumes.
+
+**Custom Label** - a runner label an entry of the **Host Configuration** adds to
+the default `self-hosted`, `linux`, and `x64`. A workflow lists it in `runs-on` to
+choose that host for its **Target Repository**.
 
 **Slot** - one concurrent runner position on a runner host. A host with two slots
 can run two jobs at once; each slot starts a fresh ephemeral runner when its
 previous one exits.
 
-**Supervisor** - the host-side script that keeps each slot filled: it requests a
-JIT config, starts a runner container, waits for it to exit, and repeats.
+**Supervisor** - the host-side script that keeps each slot of every **Target
+Repository** filled: it requests a **JIT Config** with that repository's token,
+starts a runner container, waits for it to exit, and repeats.
 
 **Shared Volume** - storage, such as a named Docker volume for a package cache,
 mounted into more than one runner container over time. It is the surface the

@@ -1,8 +1,10 @@
 name: Merge Checks
 
-# The repository's own CI: the format, lint, link, documentation, and skills
-# lock gates, run through the same mise task the README documents. It runs on a
-# GitHub-hosted runner only. This repository is public, and GitHub advises
+# the repository's own CI: the format, lint, link, documentation, skills lock,
+# and host configuration gates, run through the same mise task the README
+# documents, plus a build of the runner image that is never pushed and a run of
+# the host configuration test under Windows PowerShell 5.1. it runs on
+# GitHub-hosted runners only. this repository is public, and GitHub advises
 # against self-hosted runners on public repositories; see
 # docs/conventions/security.md.
 
@@ -39,3 +41,44 @@ jobs:
           sha256: 63049bc35fb9065e8dc35ac8b25fdae53e9bd6f1885a843aedeba398e046a1ee
       - name: Run Checks
         run: mise run check
+
+  image:
+    name: Build Runner Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # builds only: no registry login and no push, so the job holds no
+      # credential. the image is built on the runner host, not published.
+      - name: Build Runner Image
+        run: docker build --tag actions-runner:ci images/actions-runner
+      # checks what the host relies on, not just that the build succeeds: the
+      # unprivileged user, the runner entry point, a writable tool cache, and the
+      # build dependencies. runs the image with no mounts, network, or secrets.
+      - name: Smoke Test Runner Image
+        run: >-
+          docker run --rm --network none actions-runner:ci bash -c
+          'test "$(id -un)" = runner && test -x /home/runner/run.sh &&
+          test -w /opt/hostedtoolcache && ccache --version > /dev/null'
+
+  # the host scripts target the Windows PowerShell 5.1 that ships with Windows
+  # and that the scheduled tasks use, which the check job's PowerShell 7 does not
+  # cover. this runs only the configuration test, which calls neither Docker nor
+  # GitHub; Docker Desktop, Task Scheduler, and icacls are not exercised here.
+  host-windows:
+    name: Test Host Scripts On Windows PowerShell 5.1
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Run Host Configuration Test
+        shell: powershell
+        run: |
+          $PSVersionTable.PSVersion.ToString()
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File hosts/windows-docker-desktop/tests/test-host-configuration.ps1

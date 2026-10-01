@@ -7,10 +7,12 @@ and what is never committed. It does not cover application-level security, such 
 input validation or the OWASP-style concerns the installed `application-security`
 capability owns.
 
-The runner images, host scripts, and agent-host configuration this repository is
-for do not exist yet. The sections on runner trust and shared storage are the
-constraints those changes will be reviewed against, not a description of anything
-running today.
+The runner image under [`images/actions-runner/`](../../images/actions-runner) and
+the Windows host scripts under
+[`hosts/windows-docker-desktop/`](../../hosts/windows-docker-desktop) exist and are
+reviewed against the sections on runner trust and shared storage below. The
+agent-host configuration this repository is also for does not exist yet; those
+sections are the constraints it will be reviewed against.
 
 ## Pinning Convention
 
@@ -43,8 +45,11 @@ uses it, not at review time.
 The same standard applies to anything else a workflow or script fetches and
 executes: a `docker://` reference, a reusable workflow, and a downloaded binary
 are pinned to an immutable identifier, and a download is verified against a
-checksum before it runs. [`.agents/setup`](../../.agents/setup) does this for
-mise, and [`mise.toml`](../../mise.toml) pins every tool to an exact version.
+checksum before it runs. The runner image's base is pinned the same way, to a
+version and the digest of that version's image index, resolved from the registry
+and never guessed; Dependabot's `docker` entry proposes its refreshes.
+[`.agents/setup`](../../.agents/setup) verifies its mise download against a
+checksum, and [`mise.toml`](../../mise.toml) pins every tool to an exact version.
 [`mise.lock`](../../mise.lock), with the npm dependency locks it references under
 `.mise/locks/`, records each tool's download URL and checksum for `linux-x64`;
 `locked = true` is deliberately not set, so a platform the lockfile does not cover
@@ -198,18 +203,87 @@ Design rules that follow, which REVIEW.md applies:
 - A shared volume is scoped to one repository and one trust level. A volume MUST
   NOT be shared across repositories, between a public and a private repository,
   or between runs of a pull request from a fork and runs on the default branch.
+  The bounded exception below does not reach a fork's runs.
 - A runner is ephemeral: it takes one job through a just-in-time registration,
   then its container is removed. A long-lived registration token is not stored.
 - Volumes hold only content the tool re-verifies, such as a content-addressed
-  package cache. A volume does not hold credentials, configuration, or tool
-  binaries the job later executes.
+  package cache. A volume does not hold credentials, configuration, or toolchains
+  the job later executes, except as the bounded exception below allows.
+- **Bounded exception: tool-cache and language-toolchain volumes on a runner
+  host.** A volume of installed toolchains that a job later executes, such as
+  `/opt/hostedtoolcache`, `~/.cargo`, and `~/.rustup`, is allowed when all three
+  conditions hold: it is scoped to one target repository and never shared
+  between host-configuration entries, no job that holds a deployment secret
+  runs on that entry's labels, and no pull request from a fork runs on that
+  entry's labels. The accepted risk is that any job on those labels, including a
+  run of a pull request from the same repository, can poison a toolchain that a
+  later job of the same repository executes, so every job on one entry's labels
+  is one trust level. A fork's code would write binaries that a later job on the
+  default branch or with a deployment secret executes, so a repository that
+  accepts fork pull requests lists no volumes for its entry, or runs those
+  pull requests' workflows on a GitHub-hosted runner. The Cache Volumes section
+  of [Windows Runner Host](../operations/windows-runner-host.md) states each
+  volume's reason and writers. Any other volume of content a later job executes
+  or links, or one that fails a condition, stays a finding.
 - A job that holds a deployment secret does not mount a volume that a less
   trusted job could have written.
 - A container does not run privileged, does not mount the host's container socket
   or home directory, and has its egress limited where the host's network reaches
-  anything sensitive. A justified exception is stated where it is declared.
+  anything sensitive. A justified exception is stated where it is declared;
+  the LAN egress section below is one.
 - Each shared mount is declared with the reason it exists and the trust level of
   every job that can write to it.
+
+## Per-Repository Isolation on a Runner Host
+
+A runner host serves several repositories from one machine, so each repository's
+registration, storage, and containers are kept apart from every other's. The rules
+for [`hosts/windows-docker-desktop/`](../../hosts/windows-docker-desktop) and any
+later host:
+
+- One token per target repository, a fine-grained personal access token limited to
+  that repository's Administration permission. A token MUST NOT cover several
+  repositories or be stored as a GitHub Actions secret. A token that covers
+  several repositories, or a classic token, would let one leak register runners
+  for all of them, and a secret that can register runners for the automation that
+  reads it is not a boundary. The token is read from a file on the host on every
+  registration, and the file is restricted to the host user.
+- A registration is made with the entry's own token and carries `self-hosted`,
+  `linux`, `x64`, and at least one custom label, so a job's runner is identifiable
+  and a repository opts in by naming the label. A configuration entry without a
+  custom label MUST be rejected.
+- A registration reaches the runner through the `ACTIONS_RUNNER_INPUT_JITCONFIG`
+  environment variable, set only in the process that starts the container and
+  passed to `docker run` by name. It MUST NOT be placed on a command line, in a log
+  line, or in an image layer.
+- Volume and container names derive from the host prefix, owner, and repository.
+  An entry's volumes are mounted only into its own containers. Two entries whose
+  container prefixes are equal, or where one is the other followed by a hyphen,
+  are rejected, because one would claim the other's containers and volumes.
+  Stale-container cleanup removes only containers matching the entry's own name
+  pattern.
+- A repository that can run pull requests from forks on a host's labels MUST
+  require approval for outside collaborators' workflow runs. A self-hosted runner
+  executes whatever a workflow checks out, so an unapproved fork's run would
+  otherwise execute arbitrary code on the host before anyone reviews it. The
+  Repository Settings section of
+  [Windows Runner Host](../operations/windows-runner-host.md) gives the operator
+  step.
+- `docker run` uses `--pull never`, so a missing local image fails instead of
+  pulling a same-named public image.
+
+## LAN Egress From Runner Containers (Accepted Risk)
+
+The Windows host starts containers on Docker Desktop's default network, which
+routes to the machine's local network as any process on the machine does. A job
+can reach devices there, such as a router or a NAS, that a GitHub-hosted runner
+cannot. This is an exception to the rule above that egress is limited where the
+host's network reaches anything sensitive. The maintainer accepted this risk,
+because the Docker Desktop mechanism to block it (a firewall rule for the
+containers' subnet, or a custom network) has not been researched or implemented.
+The operator procedure tells operators to run the host only on a network they
+would trust the listed repositories' workflows with. Revisit the exception when a
+blocking mechanism is verified.
 
 ## Nothing Identifying or Secret Is Committed
 
