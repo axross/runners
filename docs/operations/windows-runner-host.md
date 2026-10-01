@@ -50,10 +50,14 @@ not observed.
    daemon, so it does not matter which of the two starts first.
 3. Confirm `docker info` exits 0 in a terminal.
 
-Docker Desktop's **Settings, Resources** caps the CPU and memory containers may
-use. Start from its defaults, and lower a repository's `slots` if builds starve
-when several jobs run together. A job that finds no free slot queues rather than
-fails.
+With the WSL 2 backend, containers share the WSL 2 virtual machine's CPU and
+memory, and Docker Desktop's **Settings, Resources** does not cap them. To cap
+them, set `memory` and `processors` under `[wsl2]` in
+`%UserProfile%\.wslconfig`, which applies to every WSL 2 distribution on the
+machine, then run `wsl --shutdown` so the virtual machine restarts with the
+limits. Start from the defaults, and lower a repository's `slots` if builds
+starve when several jobs run together. A job that finds no free slot queues
+rather than fails.
 
 ## Repository Settings (Set by Hand)
 
