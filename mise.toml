@@ -121,7 +121,9 @@ PSSCRIPTANALYZER_FILES="$(printf '%s\n' "${files[@]}")" pwsh -NoProfile -NonInte
   }
   Import-Module -Name $manifest -Force
   $paths = $env:PSSCRIPTANALYZER_FILES -split "\r?\n" | Where-Object { $_ }
-  $findings = @($paths | ForEach-Object { Invoke-ScriptAnalyzer -Path $_ -Severity Warning, Error })
+  # Targets Windows PowerShell 5.1 syntax; see the settings file for why.
+  $settings = Join-Path (Get-Location) ".config/PSScriptAnalyzerSettings.psd1"
+  $findings = @($paths | ForEach-Object { Invoke-ScriptAnalyzer -Path $_ -Severity Warning, Error -Settings $settings })
   if ($findings.Count -gt 0) {
     $findings | Format-Table -AutoSize | Out-String -Width 200 | Write-Host
     exit 1

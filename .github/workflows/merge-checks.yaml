@@ -2,7 +2,8 @@ name: Merge Checks
 
 # The repository's own CI: the format, lint, link, documentation, skills lock,
 # and host configuration gates, run through the same mise task the README
-# documents, plus a build of the runner image that is never pushed. It runs on
+# documents, plus a build of the runner image that is never pushed and a run of
+# the host configuration test under Windows PowerShell 5.1. It runs on
 # GitHub-hosted runners only. This repository is public, and GitHub advises
 # against self-hosted runners on public repositories; see
 # docs/conventions/security.md.
@@ -62,3 +63,22 @@ jobs:
           docker run --rm --network none actions-runner:ci bash -c
           'test "$(id -un)" = runner && test -x /home/runner/run.sh &&
           test -w /opt/hostedtoolcache && ccache --version > /dev/null'
+
+  # The host scripts must run on the Windows PowerShell 5.1 that ships with Windows
+  # and that the scheduled tasks use, which the check job's PowerShell 7 does not
+  # cover. This runs only the configuration test, which calls neither Docker nor
+  # GitHub; Docker Desktop, Task Scheduler, and icacls are not exercised here.
+  host-windows:
+    name: Test Host Scripts On Windows PowerShell 5.1
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Run Host Configuration Test
+        shell: powershell
+        run: |
+          $PSVersionTable.PSVersion.ToString()
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File hosts/windows-docker-desktop/tests/test-host-configuration.ps1
