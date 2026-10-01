@@ -97,9 +97,10 @@ Each lens is a hard project rule. A violation is Important.
   trust level, or a fork boundary, a cache keyed by attacker-controlled input,
   and a cache restored into a job that holds a secret are findings. A shared
   mount is justified where it is declared. A volume of installed tool binaries
-  is a finding unless it meets both conditions of the bounded exception in
-  [Security](docs/conventions/security.md): one target repository, and no
-  deployment-secret job on its labels.
+  is a finding unless it meets all three conditions of the bounded exception in
+  [Security](docs/conventions/security.md): one target repository, no
+  deployment-secret job on its labels, and no pull request from a fork on its
+  labels.
 - **Runner registration and lifetime.** A runner is ephemeral and registered
   per job through a just-in-time configuration. A long-lived registration
   token, a runner reused across jobs without a reset, and a container that

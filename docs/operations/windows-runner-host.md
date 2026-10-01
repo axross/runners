@@ -61,13 +61,13 @@ rather than fails.
 
 ## Repository Settings (Set by Hand)
 
-Each target repository MUST require approval for workflow runs from outside
-collaborators, under **Settings, Actions, General, Fork pull request workflows**.
-A self-hosted runner executes whatever a workflow checks out, and an unapproved
-fork's run would otherwise execute arbitrary code on this machine before anyone
-reviews it. Do not list a public repository whose fork pull requests run on these
-labels without that setting. A job selects this host by listing one of the
-repository's custom labels in `runs-on`; a repository that does not list the
+For each target repository, under **Settings, Actions, General, Fork pull
+request workflows**, choose the option that requires approval for workflow runs
+from outside collaborators. Do not list a public repository whose fork pull
+requests run on these labels until that is set. The requirement and its reason
+are in the Per-Repository Isolation on a Runner Host section of
+[Security](../conventions/security.md). A job selects this host by listing one of
+the repository's custom labels in `runs-on`; a repository that does not list the
 label never runs on it.
 
 ## The Fine-Grained Token
@@ -240,15 +240,19 @@ the volume's name is the entry's prefix plus the suffix.
 | `ccache`    | `/home/runner/.cache/ccache` | Compiled object files that `ccache` reuses                                             |
 | `npm`       | `/home/runner/.npm`          | npm's content-addressed package cache                                                  |
 
-Any job routed to the entry's labels can write to every one of them, a pull
-request's run included, and no other entry mounts them. At startup the supervisor
-creates the entry's volumes and resets their ownership with a short root container
-that mounts only those volumes.
+Any job routed to the entry's labels can write to every one of them, and no
+other entry mounts them. At startup the supervisor creates the entry's volumes
+and resets their ownership with a short root container that mounts only those
+volumes.
 
 Before listing volumes for a repository, check which of its workflows hold a
-deployment secret. Either list no volumes (`"volumes": []`, so each job starts
-from the image alone) or run those workflows on a GitHub-hosted runner. The host
-cannot check this; the operator does.
+deployment secret, and whether the repository accepts pull requests from forks.
+If either applies, list no tool-binary volumes for its entry (`"volumes": []`
+lists none, so each job starts from the image alone) or run those workflows,
+including the fork pull request workflows, on a GitHub-hosted runner. The host
+cannot check this; the operator does. The rule and its reason are in the Shared
+Runner Storage Is a Cache-Poisoning Surface section of
+[Security](../conventions/security.md).
 
 ## Removing a Repository
 

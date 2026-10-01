@@ -202,6 +202,7 @@ Design rules that follow, which REVIEW.md applies:
 - A shared volume is scoped to one repository and one trust level. A volume MUST
   NOT be shared across repositories, between a public and a private repository,
   or between runs of a pull request from a fork and runs on the default branch.
+  The bounded exception below does not reach a fork's runs.
 - A runner is ephemeral: it takes one job through a just-in-time registration,
   then its container is removed. A long-lived registration token is not stored.
 - Volumes hold only content the tool re-verifies, such as a content-addressed
@@ -209,16 +210,20 @@ Design rules that follow, which REVIEW.md applies:
   binaries the job later executes, except as the bounded exception below allows.
 - **Bounded exception: tool-cache and language-toolchain volumes on a runner
   host.** A volume of installed toolchains that a job later executes, such as
-  `/opt/hostedtoolcache`, `~/.cargo`, and `~/.rustup`, is allowed when both
+  `/opt/hostedtoolcache`, `~/.cargo`, and `~/.rustup`, is allowed when all three
   conditions hold: it is scoped to one target repository and never shared
-  between host-configuration entries, and no job that holds a deployment secret
-  runs on that entry's labels. The accepted risk is that any job on those
-  labels, including a pull request's run, can poison a toolchain that a later
-  job of the same repository executes, so every job on one entry's labels is one
-  trust level. The Cache Volumes section of
-  [Windows Runner Host](../operations/windows-runner-host.md) states each
+  between host-configuration entries, no job that holds a deployment secret
+  runs on that entry's labels, and no pull request from a fork runs on that
+  entry's labels. The accepted risk is that any job on those labels, including a
+  run of a pull request from the same repository, can poison a toolchain that a
+  later job of the same repository executes, so every job on one entry's labels
+  is one trust level. A fork's code would write binaries that a later job on the
+  default branch or with a deployment secret executes, so a repository that
+  accepts fork pull requests lists no such volumes for its entry, or runs those
+  pull requests' workflows on a GitHub-hosted runner. The Cache Volumes section
+  of [Windows Runner Host](../operations/windows-runner-host.md) states each
   volume's reason and writers. Any other volume of executable content, or one
-  that fails either condition, stays a finding.
+  that fails a condition, stays a finding.
 - A job that holds a deployment secret does not mount a volume that a less
   trusted job could have written.
 - A container does not run privileged, does not mount the host's container socket
@@ -256,9 +261,13 @@ later host:
   are rejected, because one would claim the other's containers and volumes.
   Stale-container cleanup removes only containers matching the entry's own name
   pattern.
-- A repository that can run pull requests from forks on a host's labels requires
-  approval for outside collaborators' workflow runs, per the Repository Settings
-  section of [Windows Runner Host](../operations/windows-runner-host.md).
+- A repository that can run pull requests from forks on a host's labels MUST
+  require approval for outside collaborators' workflow runs. A self-hosted runner
+  executes whatever a workflow checks out, so an unapproved fork's run would
+  otherwise execute arbitrary code on the host before anyone reviews it. The
+  Repository Settings section of
+  [Windows Runner Host](../operations/windows-runner-host.md) gives the operator
+  step.
 - `docker run` uses `--pull never`, so a missing local image fails instead of
   pulling a same-named public image.
 
