@@ -5,9 +5,11 @@
 **runners** holds generic GitHub Actions self-hosted runner images and the host
 scripts that run them, and later the WSL 2 host configuration for Claude Code
 Remote Control and Amp runner agent hosts. It is being extracted from the
-runner setup of a private application repository, in steps. Until those steps
-land, the repository holds only its agent foundation: the entry files, agent
-configuration, documentation, and lint toolchain.
+runner setup of a private application repository, in steps. It holds its agent
+foundation (the entry files, agent configuration, documentation, and lint
+toolchain), the `images/actions-runner/` runner image, and the
+`hosts/windows-docker-desktop/` runner host scripts; the agent-host
+configuration is still planned.
 [README.md](./README.md) owns project commands; [docs/index.md](./docs/index.md)
 indexes conventions, operations, and the glossary. mise pins the toolchain, and
 Prettier, markdownlint, shellcheck, hadolint, actionlint, and PSScriptAnalyzer
