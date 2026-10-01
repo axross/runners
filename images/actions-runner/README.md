@@ -45,4 +45,6 @@ From the repository root:
 docker build images/actions-runner
 ```
 
-CI runs this build on every pull request without pushing the result.
+CI runs this build on every pull request without pushing the result, then runs
+the image with no network to check that it runs as `runner`, has an executable
+`/home/runner/run.sh` and a writable tool cache, and carries `ccache`.

@@ -11,14 +11,19 @@ and [`images/actions-runner/`](../../images/actions-runner/README.md), and the
 trust rules they are reviewed against are in
 [Security](../conventions/security.md).
 
-**Verification status.** The image builds in CI on every pull request. The host
-scripts have been exercised on PowerShell 7 on Linux against a stub `docker` and
-a stub GitHub endpoint, which covers the registration, environment, cleanup,
-backoff, and shutdown paths, and the configuration validation has a test in CI.
-A run on Windows PowerShell 5.1 and Docker Desktop, serving a real repository, has
-not been done yet; it is the maintainer's post-merge check, and until it is done
-the Windows-specific steps below (Task Scheduler, `icacls`, Docker Desktop's
-settings) are described from the tools' documentation, not observed.
+**Verification status.** CI builds the image and runs a smoke test on it for every
+pull request, and runs the configuration validation test under PowerShell 7 and
+under Windows PowerShell 5.1 (`windows-latest`). The supervisor's runtime paths
+were exercised once, in the authoring session, on PowerShell 7 on Linux, with a
+stub `docker` executable and a stub HTTP endpoint standing in for GitHub; that
+harness is not committed, so nothing re-runs it. The paths it covered are the
+registration request and its error reporting, the environment hand-off to the
+container, stale-container cleanup, a slot's backoff, a dead slot job's restart
+backoff, skipping an entry that cannot start, and the shutdown stop. Windows
+PowerShell 5.1 running the supervisor, Docker Desktop, Task Scheduler, and
+`icacls` are unverified until the maintainer's post-merge check on a real host;
+the steps below that involve them are described from the tools' documentation,
+not observed.
 
 ## Prerequisites
 
@@ -79,10 +84,12 @@ register runners for the automation that reads it is not a boundary. It lives on
 in a file on this machine, holding the raw token text, at the `tokenPath` of the
 repository's entry. Keep these files outside the checkout.
 
-Rotate a token by replacing the file's contents and running
-`register-scheduled-tasks.ps1` again, which re-tightens the file's permissions.
-The supervisor reads the file on every registration, so a rotated token applies to
-the next job in every slot with no restart.
+The file is read-only for the host user, so rotate a token by deleting the file
+and creating it again with the new token, then run `register-scheduled-tasks.ps1`
+again: a new file inherits its folder's permissions until the script resets and
+restricts them. Do not edit the file in place. The supervisor reads the file on
+every registration, so a rotated token applies to the next job in every slot with
+no restart.
 
 ## The Host Configuration
 
@@ -94,13 +101,21 @@ for every field. The rules that matter operationally:
 
 - **One entry per target repository**, each with its own `tokenPath`, `slots`,
   custom `labels`, and `volumes`. An owner and repository pair listed twice is
-  rejected.
+  rejected. `tokenPath` is an absolute Windows path, a drive letter and backslash
+  or a UNC path; a relative path is rejected because a scheduled task's working
+  directory is not the checkout.
+- **Unknown fields are rejected, not ignored.** A misspelled field such as `label`
+  for `labels` fails validation naming the field, so a typo cannot silently drop
+  a setting.
 - **At least one custom label per entry.** Registrations always carry
   `self-hosted`, `linux`, and `x64`; the custom label is what a workflow puts in
   `runs-on` to name this host, so a job's runner is identifiable. Choose one label
   per repository, or a shared one only for repositories you would trust equally.
 - **Names derive from `hostPrefix`, the owner, and the repository** unless an
-  entry sets `prefix`. Two entries whose prefixes are equal, or where one is the
+  entry sets `prefix`, and the prefix is at most 64 characters, because it starts
+  every runner name. GitHub documents no limit for runner names; 64 is this
+  project's assumption, so a long owner and repository pair needs a short
+  `prefix`. Two entries whose prefixes are equal, or where one is the
   other plus a hyphen, are rejected, because one would claim the other's
   containers and volumes. Across two supervisors on one machine, keep their
   `hostPrefix` values from being prefixes of each other; the script cannot see
@@ -130,7 +145,12 @@ the configured `imageName`, with `docker build --pull --no-cache`. The runner
 version and base image digest come from that Dockerfile; the script fetches no
 newer runner and does not update the checkout. The cache is ignored so that the
 operating system packages are installed again and pick up their updates; a failed
-build leaves the previous image in place.
+build leaves the previous image in place. After a successful build the script
+removes the earlier images it built that the new build left untagged, so weekly
+rebuilds do not fill the disk. The prune is limited to images carrying the build
+label the script sets, so it does not touch other dangling images or images built
+by hand; an image from before the label existed stays until removed with
+`docker image rm`. A failed prune is a warning, not a failed rebuild.
 
 ## Registering the Scheduled Tasks
 
@@ -143,15 +163,17 @@ been built:
 
 This registers two tasks for the signed-in user, named from `hostPrefix`:
 
-- **`<hostPrefix>-supervisor`** runs `supervisor.ps1` at sign-in and restarts it
-  if it exits, so a Docker Desktop restart that takes the supervisor down does not
-  leave the machine without runners until the next sign-in.
+- **`<hostPrefix>-supervisor`** runs `supervisor.ps1` at sign-in and is set to
+  restart if it fails, as a backstop for the supervisor process exiting. Whether
+  Task Scheduler restarts a task that ends with a non-zero exit code is not
+  verified on a real host.
 - **`<hostPrefix>-weekly-rebuild`** runs `rebuild-image.ps1` weekly, Sunday 03:00
   by default, and runs a missed rebuild when the machine is next available.
 
 Both run as the current user at the limited run level, never elevated. The script
-also restricts every configured token file to that user: it removes inherited
-permissions, then grants the user read access. Run it again after editing the
+also restricts every configured token file to that user: it resets the file's
+permissions to its folder's defaults, removes inherited permissions, then grants
+the user read access, so an entry added to the file by hand does not survive. Run it again after editing the
 configuration, replacing a token file, or moving the checkout. Sign out and in, or
 start the supervisor task from Task Scheduler, to start it now.
 
@@ -178,9 +200,54 @@ background jobs. A slot loops forever:
 
 A failed registration request or a container that exits non-zero delays the next
 attempt, doubling from 5 seconds to a 300-second ceiling; a container that ran a
-job to completion is replaced at once. A slot job that dies is restarted. Ctrl+C
-in the supervisor's window stops every slot's job and `docker stop`s the current
-containers.
+job to completion is replaced at once. A slot job that dies is restarted after its
+own delay on the same schedule, and the delay starts over once a job has run for
+ten minutes before dying. Ctrl+C in the supervisor's window `docker stop`s the
+current containers, then stops every slot's job.
+
+## Cache Volumes
+
+An entry's `volumes` are named Docker volumes that outlive the throwaway
+containers, so a job finds the toolchains and downloads an earlier job left. That
+is also what makes them a cache-poisoning surface (see
+[Security](../conventions/security.md#shared-runner-storage-is-a-cache-poisoning-surface)),
+so each is declared here with the reason it exists and who can write to it. The
+suffixes are those of
+[`runner-host.example.json`](../../hosts/windows-docker-desktop/runner-host.example.json);
+the volume's name is the entry's prefix plus the suffix.
+
+| Suffix      | Mount path                   | Why it exists                                                                          |
+| ----------- | ---------------------------- | -------------------------------------------------------------------------------------- |
+| `toolcache` | `/opt/hostedtoolcache`       | Language runtimes that the `setup-*` actions install and `RUNNER_TOOL_CACHE` points at |
+| `gradle`    | `/home/runner/.gradle`       | Gradle's downloaded dependencies and wrapper distributions                             |
+| `cargo`     | `/home/runner/.cargo`        | Cargo's registry downloads and the binaries it installs                                |
+| `rustup`    | `/home/runner/.rustup`       | Rust toolchains                                                                        |
+| `ccache`    | `/home/runner/.cache/ccache` | Compiled object files that `ccache` reuses                                             |
+| `npm`       | `/home/runner/.npm`          | npm's content-addressed package cache                                                  |
+
+**Who can write to every one of them:** any job routed to the entry's labels.
+That includes a pull request's run and a default-branch run of the same
+repository, which share the entry's volumes; a pull request from a fork is the
+same job, held only by the repository's approval setting under
+[Repository Settings](#repository-settings-set-by-hand). Every job on one entry's
+labels is therefore one trust level, and a volume is never shared with another
+entry.
+
+Most of these volumes hold content that a later job executes or links (runtimes,
+installed binaries, wrapper distributions, object files), which the security
+convention otherwise forbids. The
+[bounded exception](../conventions/security.md#shared-runner-storage-is-a-cache-poisoning-surface)
+allows it on this host for two conditions, and the accepted risk is that any job
+on the entry's labels can poison a toolchain a later job of the same repository
+executes:
+
+- the entry is one repository, with its volumes used by no other entry; the
+  configuration enforces this;
+- **no workflow that holds a deployment secret runs on a label whose volumes a
+  less-trusted job can write.** A repository with such a workflow either lists no
+  volumes (`"volumes": []`, so each job starts from the image alone) or runs that
+  workflow on a GitHub-hosted runner. The host cannot check this; the operator
+  does.
 
 ## Isolation Between Repositories
 
@@ -206,10 +273,14 @@ volumes and any stopped containers stay until removed by hand with
 
 ## Health Checks
 
-- **GitHub:** a repository's **Settings, Actions, Runners** lists a runner only
-  between its registration and the end of its one job, so an idle host shows none.
-- **Machine:** `docker ps` shows up to `slots` containers per repository, named
-  `<prefix>-<slot>-<timestamp>`, one per busy slot.
+- **GitHub:** a healthy host shows, under each repository's **Settings, Actions,
+  Runners**, `slots` runners, **Idle** when no job is queued and **Active** when
+  one is running, because each slot registers a runner before it starts a
+  container. Fewer than `slots`, and none in particular, mean the supervisor is not
+  running or that repository's slots are failing; see Recovery.
+- **Machine:** `docker ps` shows `slots` running containers per repository, named
+  `<prefix>-<slot>-<timestamp>`, whether idle or busy, since an idle container is
+  a runner waiting for a job. None means the same as above.
   `Get-ScheduledTask <hostPrefix>-supervisor | Select State` reports `Running`.
 - **End to end:** a workflow run whose `runs-on` lists the custom label starts
   executing rather than sitting queued.
@@ -243,8 +314,12 @@ network you would trust the listed repositories' workflows with.
 
 The machine needs outbound HTTPS to `github.com` and `api.github.com`,
 `*.actions.githubusercontent.com`, `ghcr.io` and its blob storage (the base image
-pull), and whatever each repository's jobs reach on a GitHub-hosted runner. No
-inbound port is needed.
+pull), and whatever each repository's jobs reach on a GitHub-hosted runner. The
+image build, run weekly and on demand, also reaches the Ubuntu package archives
+that the base image's apt sources name, over port 80 or 443 (by default
+`archive.ubuntu.com` and `security.ubuntu.com`; check the base image's sources
+before filtering). The Dockerfile itself needs no access to Docker Hub. No inbound
+port is needed.
 
 ## Recovery
 
@@ -254,11 +329,20 @@ inbound port is needed.
   hand, `docker ps -a --filter "name=<prefix>-"` lists candidates and
   `docker rm -f <name>` removes one.
 - **Docker Desktop restarts mid-job:** the container is gone, the job fails on
-  GitHub's side, and re-running the workflow is the recovery. The supervisor task
-  restarts itself within a minute.
+  GitHub's side, and re-running the workflow is the recovery. The supervisor
+  process keeps running: each slot waits for `docker info` to answer, backs off
+  after the failed run, and resumes by itself when Docker is back, with no task
+  restart. The task's restart setting is only a backstop for the supervisor
+  process exiting.
 - **Stopping the supervisor:** Ctrl+C in its window is the clean path. Ending the
   task in Task Scheduler, or a shutdown, skips it and leaves running containers to
   finish or to be removed at the next start; a job in flight fails either way.
+- **One repository's entry will not start:** a missing or empty token file, a
+  volume that cannot be created, or stale containers that cannot be listed skip
+  that entry only. The supervisor logs a warning naming the entry and the reason
+  (never a token), gives that entry no slots, and serves the others. It exits 1
+  only when no entry can start. Fix the cause and restart the supervisor task; an
+  entry skipped at start is not retried while the supervisor runs.
 - **A rejected configuration:** the supervisor prints every offending field and
   exits before starting anything; fix the file and rerun it, or run it with
   `-ValidateOnly` first.
