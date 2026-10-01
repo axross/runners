@@ -24,6 +24,7 @@ $powershell = (Get-Process -Id $PID).Path
 
 $failures = New-Object System.Collections.Generic.List[string]
 
+# runs the supervisor in -ValidateOnly mode and returns its exit code and output.
 function Invoke-Validation {
     param([Parameter(Mandatory)][string]$ConfigPath)
 
@@ -38,6 +39,7 @@ function Invoke-Validation {
     }
 }
 
+# reports one case as passed or failed and records a failure.
 function Assert-Case {
     param([string]$Name, [bool]$Passed, [string]$Detail)
 

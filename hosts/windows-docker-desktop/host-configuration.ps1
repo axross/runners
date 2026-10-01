@@ -52,6 +52,7 @@ function Get-Field {
     return , $property.Value
 }
 
+# returns the string field if it matches -Pattern, or $null after recording why.
 function Get-StringField {
     param(
         [Parameter(Mandatory)]$Node,
@@ -73,6 +74,7 @@ function Get-StringField {
     return $value
 }
 
+# records an error for every property of the node that -Allowed does not list.
 function Test-UnknownField {
     param(
         [Parameter(Mandatory)]$Node,
@@ -88,6 +90,7 @@ function Test-UnknownField {
     }
 }
 
+# returns whether the node is an object, recording an error when it is not.
 function Test-IsObject {
     param($Node, [string]$Path, $Errors)
 

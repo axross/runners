@@ -51,6 +51,7 @@ function Get-PowerShellArgument {
     return "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $PSScriptRoot $ScriptName)`" -ConfigPath `"$absoluteConfigPath`""
 }
 
+# registers the task that runs the supervisor at sign-in and restarts it on failure.
 function Register-SupervisorTask {
     $taskName = "$($plan.HostPrefix)-supervisor"
     $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument (Get-PowerShellArgument -ScriptName 'supervisor.ps1')
@@ -65,6 +66,7 @@ function Register-SupervisorTask {
     Write-Information "Registered scheduled task '$taskName' (runs at sign-in for $currentUser)."
 }
 
+# registers the task that rebuilds the image weekly at the given day and time.
 function Register-WeeklyRebuildTask {
     param([string]$DayOfWeek, [string]$Time)
 
@@ -77,6 +79,7 @@ function Register-WeeklyRebuildTask {
     Write-Information "Registered scheduled task '$taskName' ($DayOfWeek at $Time)."
 }
 
+# restricts the token file to the current user, or warns when it does not exist yet.
 function Protect-TokenFile {
     param([Parameter(Mandatory)]$Entry)
 

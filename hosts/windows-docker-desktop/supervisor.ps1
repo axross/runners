@@ -54,6 +54,7 @@ $MaxBackoffSeconds = 300
 # over, so a long-lived worker that dies once is not punished like a crash loop.
 $HealthyRunSeconds = 600
 
+# returns the `--mount` arguments that attach the entry's volumes to a container.
 function Get-MountArgument {
     param([Parameter(Mandatory)]$Entry)
 
@@ -63,6 +64,7 @@ function Get-MountArgument {
     }
 }
 
+# throws unless the entry's token file exists and holds text.
 function Assert-TokenFile {
     param([Parameter(Mandatory)]$Entry)
 
@@ -255,6 +257,7 @@ $WorkerScript = {
     }
 }
 
+# starts the background job that runs one slot's worker loop and returns it.
 function Invoke-SlotWorkerJob {
     param([Parameter(Mandatory)]$Entry, [Parameter(Mandatory)][int]$Slot)
 
