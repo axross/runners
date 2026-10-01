@@ -93,6 +93,21 @@ restricts them. Do not edit the file in place. The supervisor reads the file on
 every registration, so a rotated token applies to the next job in every slot with
 no restart.
 
+## Allowing the Scripts to Run
+
+Windows PowerShell 5.1's default execution policy refuses local script files, so
+the `.\` commands in the sections below fail until the prompt allows them. In each
+PowerShell window you run them from, including the elevated one, run this once
+before the first command:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
+
+It lasts only for that window and changes no machine or user setting. The
+scheduled tasks pass `-ExecutionPolicy Bypass` to their own processes, so they
+need nothing from you.
+
 ## The Host Configuration
 
 The configuration is a JSON file kept outside the checkout; every script takes its

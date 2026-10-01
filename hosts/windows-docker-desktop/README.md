@@ -50,7 +50,8 @@ section of [Security](../../docs/conventions/security.md).
 ## Commands
 
 From an elevated PowerShell prompt for the registration, and any prompt for the
-rest:
+rest. Before the first command, follow the Allowing the Scripts to Run section of
+[Windows Runner Host](../../docs/operations/windows-runner-host.md).
 
 ```powershell
 .\supervisor.ps1 -ConfigPath C:\path\to\runner-host.json -ValidateOnly
