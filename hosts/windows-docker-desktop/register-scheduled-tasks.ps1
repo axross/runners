@@ -43,7 +43,7 @@ $plan = Read-HostConfiguration -Path $ConfigPath
 $absoluteConfigPath = (Resolve-Path -LiteralPath $ConfigPath).Path
 $currentUser = "$env:USERDOMAIN\$env:USERNAME"
 
-# windows clients default to an execution policy that refuses local script files;
+# Windows clients default to an execution policy that refuses local script files;
 # bypass applies to these task processes only, not to the machine.
 function Get-PowerShellArgument {
     param([Parameter(Mandatory)][string]$ScriptName)
@@ -56,8 +56,8 @@ function Register-SupervisorTask {
     $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument (Get-PowerShellArgument -ScriptName 'supervisor.ps1')
     $trigger = New-ScheduledTaskTrigger -AtLogOn -User $currentUser
     # a backstop for the supervisor process exiting, so the host is not left
-    # without runners until the next sign-in. the slots wait out a docker desktop
-    # restart themselves; whether task scheduler restarts a task that ends with a
+    # without runners until the next sign-in. the slots wait out a Docker Desktop
+    # restart themselves; whether Task Scheduler restarts a task that ends with a
     # non-zero exit code is not verified on a real host.
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
         -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit (New-TimeSpan -Days 0)

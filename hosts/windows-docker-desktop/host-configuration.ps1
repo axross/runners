@@ -15,7 +15,7 @@
 $script:DefaultLabels = @('self-hosted', 'linux', 'x64')
 $script:MaxSlots = 16
 # GitHub documents no limit for a runner's name, and neither its REST API
-# description nor the pinned runner's source enforces one. The derived runner
+# description nor the pinned runner's source enforces one. the derived runner
 # name is the container prefix plus a slot number and a 17-digit timestamp, so
 # capping the prefix keeps every name short on an assumption, not a known limit.
 $script:MaxPrefixLength = 64

@@ -12,7 +12,7 @@ updates:
       prefix: "ci"
       include: "scope"
 
-  # One entry per image directory under images/. The tools pinned in mise.toml
+  # one entry per image directory under images/. the tools pinned in mise.toml
   # are not covered by Dependabot and are refreshed by hand.
   - package-ecosystem: "docker"
     directory: "/images/actions-runner"

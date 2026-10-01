@@ -75,7 +75,7 @@ function Assert-TokenFile {
     }
 }
 
-# docker desktop and this script's scheduled task both start at sign-in with no
+# Docker Desktop and this script's scheduled task both start at sign-in with no
 # ordering between them, so poll instead of failing.
 function Wait-ForDocker {
     while ((Invoke-Docker -Arguments @('info')).ExitCode -ne 0) {
@@ -191,7 +191,7 @@ $WorkerScript = {
         try {
             $response = Invoke-RestMethod -Uri $uri -Method Post -Headers $headers -Body $body -ContentType 'application/json'
         } catch {
-            # GitHub's error body says why a request was refused. It never holds
+            # GitHub's error body says why a request was refused. it never holds
             # the request headers, but the token is still scrubbed from the text
             # and the text is kept to one short line before it reaches a log.
             $detail = "$($_.Exception.Message) $($_.ErrorDetails.Message)"
