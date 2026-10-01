@@ -13,7 +13,8 @@
     takes, then repeat. See docs/operations/windows-runner-host.md for the
     procedure around it.
 
-    Runs on Windows PowerShell 5.1 and PowerShell 7.
+    Written for Windows PowerShell 5.1 and PowerShell 7; the verification status
+    is in docs/operations/windows-runner-host.md.
 
 .PARAMETER ConfigPath
     Path to the host configuration json file. See runner-host.example.json.

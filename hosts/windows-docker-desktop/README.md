@@ -19,8 +19,11 @@ recovery.
 | `docker-commands.ps1`          | Runs the Docker client and reports its exit code; shared by the supervisor and its slot jobs |
 | `tests/`                       | The validation test and its rejected and accepted fixtures, run by `mise run test:host`      |
 
-The scripts run on Windows PowerShell 5.1 and PowerShell 7, and their files are
-ASCII-only.
+The scripts target Windows PowerShell 5.1, which the scheduled tasks use, and are
+written to run on PowerShell 7 as well. CI runs the configuration test under both;
+the rest is unverified on 5.1 until the check on a real host, which
+[Windows Runner Host](../../docs/operations/windows-runner-host.md) describes.
+Their files are ASCII-only.
 
 ## Host configuration
 
