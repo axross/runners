@@ -47,8 +47,8 @@ executes: a `docker://` reference, a reusable workflow, and a downloaded binary
 are pinned to an immutable identifier, and a download is verified against a
 checksum before it runs. The runner image's base is pinned the same way, to a
 version and the digest of that version's image index, resolved from the registry
-and never guessed; Dependabot's `docker` entry proposes its refreshes. [`.agents/setup`](../../.agents/setup) does this for
-mise, and [`mise.toml`](../../mise.toml) pins every tool to an exact version.
+and never guessed; Dependabot's `docker` entry proposes its refreshes.
+[`.agents/setup`](../../.agents/setup) does this for mise, and [`mise.toml`](../../mise.toml) pins every tool to an exact version.
 [`mise.lock`](../../mise.lock), with the npm dependency locks it references under
 `.mise/locks/`, records each tool's download URL and checksum for `linux-x64`;
 `locked = true` is deliberately not set, so a platform the lockfile does not cover
@@ -206,7 +206,20 @@ Design rules that follow, which REVIEW.md applies:
   then its container is removed. A long-lived registration token is not stored.
 - Volumes hold only content the tool re-verifies, such as a content-addressed
   package cache. A volume does not hold credentials, configuration, or tool
-  binaries the job later executes.
+  binaries the job later executes, except as the bounded exception below allows.
+- **Bounded exception: tool-cache and language-toolchain volumes on a runner
+  host.** A volume of installed toolchains that a job later executes, such as
+  `/opt/hostedtoolcache`, `~/.cargo`, and `~/.rustup`, is allowed when both
+  conditions hold: it is scoped to one target repository and never shared
+  between host-configuration entries, and no job that holds a deployment secret
+  runs on that entry's labels. The accepted risk is that any job on those
+  labels, including a pull request's run, can poison a toolchain that a later
+  job of the same repository executes, so every job on one entry's labels is one
+  trust level. The maintainer decided this in
+  [issue 3](https://github.com/axross/runners/issues/3#issuecomment-5921848822),
+  and [Windows Runner Host](../operations/windows-runner-host.md#cache-volumes)
+  states each volume's reason and writers. Any other volume of executable
+  content, or one that fails either condition, stays a finding.
 - A job that holds a deployment secret does not mount a volume that a less
   trusted job could have written.
 - A container does not run privileged, does not mount the host's container socket
