@@ -118,7 +118,7 @@ function Clear-StaleContainer {
     if ($result.ExitCode -ne 0) {
         throw "Failed to list containers: $($result.Output -join ' ')"
     }
-    $ownName = '^' + [regex]::Escape($Entry.Name) + '-\d+-\d{17}$'
+    $ownName = Get-JobContainerNamePattern -Name $Entry.Name
     foreach ($name in $result.Output) {
         if ($name -cmatch $ownName) {
             Write-Warning "Removing stale container '$name' left over from an earlier run."
@@ -263,12 +263,10 @@ $WorkerScript = {
 function Invoke-SlotWorkerJob {
     param([Parameter(Mandatory)]$Entry, [Parameter(Mandatory)][int]$Slot)
 
-    $mounts = [string[]]@(Get-MountArgument -Entry $Entry)
-    Start-Job -ScriptBlock $WorkerScript -ArgumentList @(
-        $PSScriptRoot, $Entry.Owner, $Entry.Repository, $Entry.TokenPath, $Slot, $plan.ImageName,
-        $Entry.Name, $Entry.Labels, (Format-CpuCount -Cpus $Entry.Cpus), $Entry.MemoryGb, $mounts, $RunCommand, $JitConfigVariable,
-        $InitialBackoffSeconds, $MaxBackoffSeconds
-    )
+    $workerArguments = Get-SlotWorkerArgument -Entry $Entry -Slot $Slot -ScriptRoot $PSScriptRoot -ImageName $plan.ImageName `
+        -Mounts ([string[]]@(Get-MountArgument -Entry $Entry)) -RunCommand $RunCommand -JitConfigVariable $JitConfigVariable `
+        -InitialBackoffSeconds $InitialBackoffSeconds -MaxBackoffSeconds $MaxBackoffSeconds
+    Start-Job -ScriptBlock $WorkerScript -ArgumentList @($workerArguments.Values)
 }
 
 # drains a worker's output. the container it is running, read only to know what

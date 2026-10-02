@@ -2,7 +2,8 @@
 <#
 .SYNOPSIS
     runs the Docker command line client and reports its exit code, and builds
-    the job container's arguments. dot-sourced by the supervisor and by each
+    the job container's arguments, its name and the pattern that recognizes it,
+    and a slot job's argument list. dot-sourced by the supervisor and by each
     slot's background job.
 
 .DESCRIPTION
@@ -51,7 +52,7 @@ function Get-JobContainerArgument {
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)][string]$Cpus,
         [Parameter(Mandatory)][int]$MemoryGb,
-        [string[]]$Mounts,
+        [string[]]$Mounts = @(),
         [Parameter(Mandatory)][string]$JitConfigVariable,
         [Parameter(Mandatory)][string]$ImageName,
         [Parameter(Mandatory)][string]$RunCommand
@@ -73,4 +74,49 @@ function Get-JobContainerName {
     )
 
     return "$EntryName-$Slot-$($Now.ToString('yyyyMMddHHmmssfff', [System.Globalization.CultureInfo]::InvariantCulture))"
+}
+
+# returns the pattern that matches only the names Get-JobContainerName gives
+# this entry's containers, so a container of another entry whose name starts
+# with this one is not matched. \z rather than $ keeps a trailing newline out.
+function Get-JobContainerNamePattern {
+    param([Parameter(Mandatory)][string]$Name)
+
+    return '^' + [regex]::Escape($Name) + '-\d+-\d{17}\z'
+}
+
+# returns the arguments of a slot's background job, keyed by the worker script
+# block's parameter names and in their order. Start-Job binds them to those
+# parameters by position, so a value out of order reaches the wrong parameter.
+# Format-CpuCount comes from host-configuration.ps1.
+function Get-SlotWorkerArgument {
+    param(
+        [Parameter(Mandatory)]$Entry,
+        [Parameter(Mandatory)][int]$Slot,
+        [Parameter(Mandatory)][string]$ScriptRoot,
+        [Parameter(Mandatory)][string]$ImageName,
+        [string[]]$Mounts = @(),
+        [Parameter(Mandatory)][string]$RunCommand,
+        [Parameter(Mandatory)][string]$JitConfigVariable,
+        [Parameter(Mandatory)][int]$InitialBackoffSeconds,
+        [Parameter(Mandatory)][int]$MaxBackoffSeconds
+    )
+
+    return [ordered]@{
+        ScriptRoot            = $ScriptRoot
+        Owner                 = $Entry.Owner
+        Repository            = $Entry.Repository
+        TokenPath             = $Entry.TokenPath
+        Slot                  = $Slot
+        ImageName             = $ImageName
+        EntryName             = $Entry.Name
+        Labels                = $Entry.Labels
+        Cpus                  = Format-CpuCount -Cpus $Entry.Cpus
+        MemoryGb              = $Entry.MemoryGb
+        Mounts                = $Mounts
+        RunCommand            = $RunCommand
+        JitConfigVariable     = $JitConfigVariable
+        InitialBackoffSeconds = $InitialBackoffSeconds
+        MaxBackoffSeconds     = $MaxBackoffSeconds
+    }
 }

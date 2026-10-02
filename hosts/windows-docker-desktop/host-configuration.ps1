@@ -28,12 +28,12 @@ $script:HostFields = @('imageName', 'repositories')
 $script:RepositoryFields = @('owner', 'repository', 'name', 'slots', 'tokenPath', 'labels', 'volumes', 'cpus', 'memoryGb')
 $script:VolumeFields = @('suffix', 'mountPath')
 
-$script:NamePattern = '^[a-z0-9][a-z0-9-]*$'
-$script:OwnerPattern = '^[A-Za-z0-9][A-Za-z0-9-]*$'
-$script:RepositoryPattern = '^(?!\.{1,2}$)[A-Za-z0-9_.-]+$'
-$script:ImageNamePattern = '^[A-Za-z0-9][A-Za-z0-9_.:/@-]*$'
-$script:LabelPattern = '^[A-Za-z0-9][A-Za-z0-9._:/-]*$'
-$script:MountPathPattern = '^/[A-Za-z0-9_./-]+$'
+$script:NamePattern = '^[a-z0-9][a-z0-9-]*\z'
+$script:OwnerPattern = '^[A-Za-z0-9][A-Za-z0-9-]*\z'
+$script:RepositoryPattern = '^(?!\.{1,2}\z)[A-Za-z0-9_.-]+\z'
+$script:ImageNamePattern = '^[A-Za-z0-9][A-Za-z0-9_.:/@-]*\z'
+$script:LabelPattern = '^[A-Za-z0-9][A-Za-z0-9._:/-]*\z'
+$script:MountPathPattern = '^/[A-Za-z0-9_./-]+\z'
 # a drive letter and a backslash, or a UNC path. Path.IsPathRooted would also
 # accept C:name and \name, which resolve against a working directory or drive
 # the scheduled task does not control.
@@ -218,6 +218,10 @@ function Get-CpuLimit {
     $isNumber = $value -is [int] -or $value -is [long] -or $value -is [double] -or $value -is [decimal]
     if (-not $isNumber -or $value -le 0 -or $value -gt $script:MaxCpus) {
         $Errors.Add("$Path.cpus: must be a number greater than 0 and at most $($script:MaxCpus)")
+        return $null
+    }
+    if ((Format-CpuCount -Cpus ([double]$value)) -ceq '0') {
+        $Errors.Add("$Path.cpus: must be a number greater than 0 and at most $($script:MaxCpus), and large enough not to be written as 0, which Docker reads as no limit")
         return $null
     }
     return [double]$value

@@ -10,8 +10,9 @@
     fixture under accepted/ sits on the edge of a rule and must be accepted.
     the example configuration must be accepted and plan distinct names and
     volume names for its two repositories, with the default limits where it
-    sets none. the job container's `docker run` arguments are built and checked
-    without Docker. runs under the PowerShell that runs it, on Windows
+    sets none. the job container's `docker run` arguments, a slot job's
+    positional arguments against its worker script block's parameters, and the
+    stale container name pattern are built and checked without Docker. runs under the PowerShell that runs it, on Windows
     PowerShell 5.1 as well as PowerShell 7, and calls neither Docker nor
     GitHub.
 #>
@@ -71,12 +72,20 @@ $rejections = [ordered]@{
     'missing-name.json'              = @('repositories[0].name: required field is missing')
     'name-bad-pattern.json'          = @('repositories[0].name: must be lowercase letters, digits and hyphens')
     'name-too-long.json'             = @('repositories[0].name: name is 65 characters', 'at most 64')
+    'name-trailing-newline.json'     = @('repositories[0].name: must be lowercase letters, digits and hyphens')
+    'owner-trailing-newline.json'    = @('repositories[0].owner: must be a GitHub owner name')
+    'repository-trailing-newline.json' = @('repositories[0].repository: must be a GitHub repository name')
+    'image-name-trailing-newline.json' = @('imageName: must be a local Docker image name')
+    'label-trailing-newline.json'    = @('repositories[0].labels: each label must be a string of letters')
+    'volume-suffix-trailing-newline.json' = @('repositories[0].volumes[0].suffix: must be lowercase letters, digits and hyphens')
+    'mount-path-trailing-newline.json' = @('repositories[0].volumes[0].mountPath: must be an absolute container path')
     'leftover-host-prefix.json'      = @('configuration.hostPrefix: unknown field')
     'leftover-prefix.json'           = @('repositories[0].prefix: unknown field')
     'cpus-zero.json'                 = @('repositories[0].cpus: must be a number greater than 0 and at most 64')
     'cpus-negative.json'             = @('repositories[0].cpus: must be a number greater than 0 and at most 64')
     'cpus-too-many.json'             = @('repositories[0].cpus: must be a number greater than 0 and at most 64')
     'cpus-string.json'               = @('repositories[0].cpus: must be a number greater than 0 and at most 64')
+    'cpus-rounds-to-zero.json'       = @('repositories[0].cpus: must be a number greater than 0 and at most 64, and large enough not to be written as 0')
     'memory-zero.json'               = @('repositories[0].memoryGb: must be an integer from 1 to 256')
     'memory-too-many.json'           = @('repositories[0].memoryGb: must be an integer from 1 to 256')
     'memory-fractional.json'         = @('repositories[0].memoryGb: must be an integer from 1 to 256')
@@ -144,14 +153,17 @@ Assert-Case -Name 'example plans the default limits where it sets none and its o
 Assert-Case -Name 'example registers the default labels and the custom label' `
     -Passed ($accepted.Text.Contains('labels:            self-hosted, linux, x64, example-label-one')) -Detail $accepted.Text
 
-# the job container's arguments, built the way the slot worker builds them. the
-# limits and the name must sit before the image, because Docker reads whatever
-# follows the image as the container's own command.
-$jobName = Get-JobContainerName -EntryName 'example-repo-one' -Slot 2 -Now (New-Object DateTime 2024, 3, 5, 6, 7, 8, 9)
-$jobArguments = @(Get-JobContainerArgument -Name $jobName -Cpus (Format-CpuCount -Cpus 1.5) -MemoryGb 16 `
-        -Mounts @('--mount', 'type=volume,source=example-repo-one-npm,target=/home/runner/.npm') `
-        -JitConfigVariable 'ACTIONS_RUNNER_INPUT_JITCONFIG' -ImageName 'actions-runner:local' -RunCommand '/home/runner/run.sh')
-$imageIndex = [Array]::IndexOf($jobArguments, 'actions-runner:local')
+# the job container's arguments for the entry in accepted/explicit-limits.json,
+# with the limits formatted the way the supervisor formats them for a slot job.
+# the limits and the name must sit before the image, because Docker reads
+# whatever follows the image as the container's own command.
+$limitsPlan = Read-HostConfiguration -Path (Join-Path $acceptedDirectory 'explicit-limits.json')
+$limitsEntry = $limitsPlan.Repositories[0]
+$mountArguments = @('--mount', "type=volume,source=$($limitsEntry.Volumes[0].Name),target=$($limitsEntry.Volumes[0].MountPath)")
+$jobName = Get-JobContainerName -EntryName $limitsEntry.Name -Slot 2 -Now (New-Object DateTime 2024, 3, 5, 6, 7, 8, 9)
+$jobArguments = @(Get-JobContainerArgument -Name $jobName -Cpus (Format-CpuCount -Cpus $limitsEntry.Cpus) -MemoryGb $limitsEntry.MemoryGb `
+        -Mounts $mountArguments -JitConfigVariable 'ACTIONS_RUNNER_INPUT_JITCONFIG' -ImageName $limitsPlan.ImageName -RunCommand '/home/runner/run.sh')
+$imageIndex = [Array]::IndexOf($jobArguments, $limitsPlan.ImageName)
 
 function Test-FlagBeforeImage {
     param([string]$Flag, [string]$Value)
@@ -169,8 +181,75 @@ Assert-Case -Name 'job container gets its memory limit before the image' `
 Assert-Case -Name 'job container gets no swap beyond its memory limit' `
     -Passed (Test-FlagBeforeImage -Flag '--memory-swap' -Value '16g') -Detail ($jobArguments -join ' ')
 Assert-Case -Name 'job container takes the registration from the environment, not the command line' `
-    -Passed ((Test-FlagBeforeImage -Flag '-e' -Value 'ACTIONS_RUNNER_INPUT_JITCONFIG') -and $jobArguments[-2] -ceq 'actions-runner:local' -and $jobArguments[-1] -ceq '/home/runner/run.sh') `
+    -Passed ((Test-FlagBeforeImage -Flag '-e' -Value 'ACTIONS_RUNNER_INPUT_JITCONFIG') -and $jobArguments[-2] -ceq $limitsPlan.ImageName -and $jobArguments[-1] -ceq '/home/runner/run.sh') `
     -Detail ($jobArguments -join ' ')
+
+$noMountArguments = @(Get-JobContainerArgument -Name $jobName -Cpus '1.5' -MemoryGb 16 `
+        -JitConfigVariable 'ACTIONS_RUNNER_INPUT_JITCONFIG' -ImageName 'actions-runner:local' -RunCommand '/home/runner/run.sh')
+$emptyMountArguments = @(Get-JobContainerArgument -Name $jobName -Cpus '1.5' -MemoryGb 16 -Mounts @() `
+        -JitConfigVariable 'ACTIONS_RUNNER_INPUT_JITCONFIG' -ImageName 'actions-runner:local' -RunCommand '/home/runner/run.sh')
+foreach ($case in @(@('omitted', $noMountArguments), @('empty', $emptyMountArguments))) {
+    $arguments = $case[1]
+    $blank = @($arguments | Where-Object { [string]::IsNullOrEmpty($_) })
+    Assert-Case -Name "job container with $($case[0]) mounts has no blank argument and ends with the image and command" `
+        -Passed ($blank.Count -eq 0 -and $arguments.Count -eq 16 -and $arguments[-2] -ceq 'actions-runner:local' -and $arguments[-1] -ceq '/home/runner/run.sh') `
+        -Detail ($arguments -join ' ')
+}
+
+# the slot job's arguments are positional, so the keys of Get-SlotWorkerArgument
+# must be the worker script block's parameter names in the same order, and each
+# value must fit the type of the parameter at its position.
+$syntaxTree = [System.Management.Automation.Language.Parser]::ParseFile($supervisor, [ref]$null, [ref]$null)
+$workerAssignment = $syntaxTree.Find({
+        param($node)
+        $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+        $node.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and
+        $node.Left.VariablePath.UserPath -ceq 'WorkerScript'
+    }, $true)
+$workerBlock = $workerAssignment.Right.Find({ param($node) $node -is [System.Management.Automation.Language.ScriptBlockExpressionAst] }, $true)
+$workerParameters = @($workerBlock.ScriptBlock.ParamBlock.Parameters)
+$workerParameterNames = @($workerParameters | ForEach-Object { $_.Name.VariablePath.UserPath })
+
+$workerArguments = Get-SlotWorkerArgument -Entry $limitsEntry -Slot 3 -ScriptRoot 'C:\host' -ImageName $limitsPlan.ImageName `
+    -Mounts $mountArguments -RunCommand '/home/runner/run.sh' -JitConfigVariable 'ACTIONS_RUNNER_INPUT_JITCONFIG' `
+    -InitialBackoffSeconds 5 -MaxBackoffSeconds 300
+$workerArgumentNames = @($workerArguments.Keys)
+$workerArgumentValues = @($workerArguments.Values)
+
+Assert-Case -Name 'slot job arguments are keyed by the worker parameters, in order' `
+    -Passed ($workerParameterNames.Count -gt 0 -and ($workerParameterNames -join ',') -ceq ($workerArgumentNames -join ',')) `
+    -Detail "parameters: $($workerParameterNames -join ', '); arguments: $($workerArgumentNames -join ', ')"
+$misfits = @()
+for ($position = 0; $position -lt [Math]::Min($workerParameters.Count, $workerArgumentValues.Count); $position++) {
+    if (-not $workerParameters[$position].StaticType.IsInstanceOfType($workerArgumentValues[$position])) {
+        $misfits += "$($workerParameterNames[$position]) at $position"
+    }
+}
+Assert-Case -Name 'slot job argument values fit their worker parameter types' -Passed ($misfits.Count -eq 0) -Detail "misfit: $($misfits -join ', ')"
+Assert-Case -Name 'slot job arguments carry the entry, the slot, and the formatted limits' `
+    -Passed ($workerArguments.Cpus -ceq '1.5' -and $workerArguments.MemoryGb -eq 16 -and $workerArguments.Slot -eq 3 `
+        -and $workerArguments.EntryName -ceq 'example-repo-one' -and $workerArguments.Owner -ceq 'example-owner' `
+        -and $workerArguments.Repository -ceq 'example-repo-one' -and $workerArguments.TokenPath -ceq $limitsEntry.TokenPath `
+        -and ($workerArguments.Labels -join ',') -ceq ($limitsEntry.Labels -join ',') -and ($workerArguments.Mounts -join ',') -ceq ($mountArguments -join ',') `
+        -and $workerArguments.ImageName -ceq 'actions-runner:local' -and $workerArguments.InitialBackoffSeconds -eq 5 -and $workerArguments.MaxBackoffSeconds -eq 300) `
+    -Detail (($workerArguments.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join '; ')
+
+# the stale-container cleanup matches only the containers Get-JobContainerName
+# gives this entry.
+$ownPattern = Get-JobContainerNamePattern -Name 'example-repo-one'
+$stamp = '20240305060708009'
+Assert-Case -Name 'stale container pattern matches the name Get-JobContainerName gives' `
+    -Passed ($jobName -cmatch $ownPattern) -Detail "pattern: $ownPattern; name: $jobName"
+$notOwn = [ordered]@{
+    'a non-numeric slot'         = "example-repo-one-x-$stamp"
+    'a 16-digit timestamp'       = "example-repo-one-1-$($stamp.Substring(1))"
+    'a longer name before it'    = "xexample-repo-one-1-$stamp"
+    'another entry extending it' = "example-repo-one-extra-1-$stamp"
+    'a trailing newline'         = "example-repo-one-1-$stamp`n"
+}
+foreach ($case in $notOwn.Keys) {
+    Assert-Case -Name "stale container pattern rejects $case" -Passed ($notOwn[$case] -cnotmatch $ownPattern) -Detail "pattern: $ownPattern; name: $($notOwn[$case])"
+}
 
 $previousCulture = [System.Threading.Thread]::CurrentThread.CurrentCulture
 try {
