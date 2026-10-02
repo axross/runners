@@ -252,15 +252,21 @@ foreach ($case in $notOwn.Keys) {
 }
 
 $previousCulture = [System.Threading.Thread]::CurrentThread.CurrentCulture
+$germanCulture = $null
 try {
-    [System.Threading.Thread]::CurrentThread.CurrentCulture = New-Object System.Globalization.CultureInfo 'de-DE'
-    $germanCpus = Format-CpuCount -Cpus 1.5
+    $germanCulture = New-Object System.Globalization.CultureInfo 'de-DE'
 } catch {
-    $germanCpus = '1.5'
-} finally {
-    [System.Threading.Thread]::CurrentThread.CurrentCulture = $previousCulture
+    Write-Output 'SKIP  CPU count keeps its decimal point under a comma-decimal culture - the de-DE culture is not available'
 }
-Assert-Case -Name 'CPU count keeps its decimal point under a comma-decimal culture' -Passed ($germanCpus -ceq '1.5') -Detail "formatted: $germanCpus"
+if ($null -ne $germanCulture) {
+    try {
+        [System.Threading.Thread]::CurrentThread.CurrentCulture = $germanCulture
+        $germanCpus = Format-CpuCount -Cpus 1.5
+    } finally {
+        [System.Threading.Thread]::CurrentThread.CurrentCulture = $previousCulture
+    }
+    Assert-Case -Name 'CPU count keeps its decimal point under a comma-decimal culture' -Passed ($germanCpus -ceq '1.5') -Detail "formatted: $germanCpus"
+}
 
 $hostFiles = @(Get-ChildItem -LiteralPath $hostDirectory -Recurse -File -Include '*.ps1', '*.json', '*.md')
 $nonAscii = @($hostFiles | Where-Object { @([IO.File]::ReadAllBytes($_.FullName) | Where-Object { $_ -gt 127 }).Count -gt 0 })
