@@ -14,7 +14,7 @@
     nothing here calls Docker or GitHub, or reads a token file.
 #>
 
-$script:DefaultLabels = @('self-hosted', 'linux', 'x64')
+$script:DefaultLabels = @('self-hosted', 'linux', 'x64', 'axpc')
 $script:MaxSlots = 16
 # GitHub documents no limit for a runner's name. the runner name is the entry's
 # name plus a slot number and a 17-digit timestamp, so capping the entry name
@@ -106,23 +106,21 @@ function Test-IsObject {
     return $false
 }
 
-# returns the custom labels, or $null after recording why the list is unusable.
+# returns the custom labels, an empty list when the field is absent or empty,
+# or $null after recording why a present list is unusable.
 function Get-CustomLabel {
     param([Parameter(Mandatory)]$Node, [Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)]$Errors)
 
-    $raw = Get-Field -Node $Node -Name 'labels' -Path "$Path.labels" -Errors $Errors
-    if ($null -eq $raw) {
-        return $null
+    $property = $Node.PSObject.Properties['labels']
+    if ($null -eq $property) {
+        return , [string[]]@()
     }
+    $raw = $property.Value
     if ($raw -isnot [array]) {
         $Errors.Add("${Path}.labels: must be a list of custom labels")
         return $null
     }
     $items = @($raw)
-    if ($items.Count -eq 0) {
-        $Errors.Add("${Path}.labels: at least one custom label is required")
-        return $null
-    }
 
     $valid = $true
     $seen = @{}
@@ -131,7 +129,7 @@ function Get-CustomLabel {
             $Errors.Add("${Path}.labels: each label must be a string of letters, digits and . _ : / - starting with a letter or digit")
             $valid = $false
         } elseif ($script:DefaultLabels -contains $item.ToLowerInvariant()) {
-            $Errors.Add("${Path}.labels: '$item' is always added, so list only custom labels (at least one is required)")
+            $Errors.Add("${Path}.labels: '$item' is always added, so list only custom labels")
             $valid = $false
         } elseif ($seen.ContainsKey($item.ToLowerInvariant())) {
             $Errors.Add("${Path}.labels: duplicate label '$item'")

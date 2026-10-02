@@ -36,7 +36,7 @@ A JSON file kept outside the repository; every script takes its path as
 | `repositories[].owner`, `repository` | The target repository. Each owner and repository pair appears once                                                                                        |
 | `repositories[].slots`               | How many jobs run at once for this repository, 1 to 16                                                                                                    |
 | `repositories[].tokenPath`           | An absolute Windows path (drive letter or UNC) to the file holding this repository's token, re-read on every registration                                 |
-| `repositories[].labels`              | Custom labels, at least one; the labels every registration already carries are not listed                                                                 |
+| `repositories[].labels`              | Optional custom labels, none by default; the four labels every registration carries, `self-hosted`, `linux`, `x64`, and `axpc`, are not listed            |
 | `repositories[].volumes`             | The cache volumes as `suffix` and `mountPath` pairs, possibly none                                                                                        |
 | `repositories[].name`                | Starts the entry's container, runner, and volume names. Lowercase letters, digits, and hyphens, at most 64 characters, not colliding with another entry's |
 | `repositories[].cpus`                | Optional CPU limit of each job container, a number above 0 and at most 64; 2 when absent                                                                  |
