@@ -19,7 +19,10 @@ stub `docker` executable and a stub HTTP endpoint standing in for GitHub; that
 harness is not committed, so nothing re-runs it. The paths it covered are the
 registration request and its error reporting, the environment hand-off to the
 container, stale-container cleanup, a slot's backoff, a dead slot job's restart
-backoff, skipping an entry that cannot start, and the shutdown stop. Windows
+backoff, skipping an entry that cannot start, and the shutdown stop. That run
+was made before entry names and container limits were added, so the worker
+start-up and the stale-container cleanup as they are now are covered only by
+the unit tests and by the check of the slot job's argument order. Windows
 PowerShell 5.1 running the supervisor, Docker Desktop, Task Scheduler, and
 `icacls` are unverified until the maintainer's post-merge check on a real host;
 the steps below that involve them are described from the tools' documentation,
@@ -64,7 +67,12 @@ rather than fails.
 The per-container `cpus` and `memoryGb` limits of the host configuration bind
 inside this virtual machine and reserve nothing in it. Slots times the limits,
 summed over every entry, can exceed the virtual machine's allocation, and the
-jobs then compete for what it has.
+jobs then compete for what it has. A `cpus` above the number of processors the
+virtual machine has (the `processors` value in `.wslconfig`, if set) is
+rejected by Docker, which refuses a `--cpus` value above the CPUs it can see:
+the container never starts, the supervisor prints Docker's error, then a
+warning that the container exited with a non-zero code, and the slot retries
+after its backoff.
 
 ## Repository Settings (Set by Hand)
 
@@ -141,10 +149,10 @@ and see the Host configuration section of the
   `<name>-<suffix>`. It is lowercase letters, digits, and hyphens, starting with
   a letter or digit, and at most 64 characters, because it starts every runner
   name. GitHub documents no limit for runner names; 64 is this project's
-  assumption. Choose it short and recognisable. Two entries whose names are equal,
-  or where one is the other followed by a hyphen, are rejected, and the error
-  names both. The collision rule is in the Per-Repository Isolation on a Runner
-  Host section of [Security](../conventions/security.md).
+  assumption. Choose it short and recognisable. A name that collides with another
+  entry's is rejected, and the error names both. The collision rule is in the
+  Per-Repository Isolation on a Runner Host section of
+  [Security](../conventions/security.md).
 - **One configuration per machine is the supported setup**, because the scheduled
   tasks have fixed names and registering a second configuration replaces the
   first's tasks.

@@ -9,15 +9,15 @@ single-job containers built from
 operator procedure: prerequisites, tokens, scheduled tasks, health checks, and
 recovery.
 
-| File                           | Purpose                                                                                                             |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
-| `supervisor.ps1`               | Runs every repository's slots; `-ValidateOnly` checks a configuration and prints its plan                           |
-| `rebuild-image.ps1`            | Builds the image from this checkout under the configured image name                                                 |
-| `register-scheduled-tasks.ps1` | Registers the supervisor and weekly rebuild tasks and restricts the token files                                     |
-| `runner-host.example.json`     | An example host configuration with two repositories, using obviously fake names                                     |
-| `host-configuration.ps1`       | Reads and validates a configuration; shared by the scripts above                                                    |
-| `docker-commands.ps1`          | Runs the Docker client, and builds job container and slot job arguments; shared by the supervisor and its slot jobs |
-| `tests/`                       | The validation test and its rejected and accepted fixtures, run by `mise run test:host`                             |
+| File                           | Purpose                                                                                                     |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| `supervisor.ps1`               | Runs every repository's slots; `-ValidateOnly` checks a configuration and prints its plan                   |
+| `rebuild-image.ps1`            | Builds the image from this checkout under the configured image name                                         |
+| `register-scheduled-tasks.ps1` | Registers the supervisor and weekly rebuild tasks and restricts the token files                             |
+| `runner-host.example.json`     | An example host configuration with two repositories, using obviously fake names                             |
+| `host-configuration.ps1`       | Reads and validates a configuration, and builds a slot job's arguments from it; shared by the scripts above |
+| `docker-commands.ps1`          | Runs the Docker client and builds job container arguments; shared by the supervisor and its slot jobs       |
+| `tests/`                       | The validation test and its rejected and accepted fixtures, run by `mise run test:host`                     |
 
 The scripts target Windows PowerShell 5.1, which the scheduled tasks use, and are
 written to run on PowerShell 7 as well. CI runs the configuration test under both;
@@ -30,17 +30,17 @@ Their files are ASCII-only.
 A JSON file kept outside the repository; every script takes its path as
 `-ConfigPath`. Copy `runner-host.example.json` and replace every value.
 
-| Field                                | Meaning                                                                                                                                      |
-| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `imageName`                          | The local image tag `rebuild-image.ps1` builds and the supervisor runs                                                                       |
-| `repositories[].owner`, `repository` | The target repository. Each owner and repository pair appears once                                                                           |
-| `repositories[].slots`               | How many jobs run at once for this repository, 1 to 16                                                                                       |
-| `repositories[].tokenPath`           | An absolute Windows path (drive letter or UNC) to the file holding this repository's token, re-read on every registration                    |
-| `repositories[].labels`              | Custom labels, at least one; the labels every registration already carries are not listed                                                    |
-| `repositories[].volumes`             | The cache volumes as `suffix` and `mountPath` pairs, possibly none                                                                           |
-| `repositories[].name`                | Starts the entry's container, runner, and volume names. Lowercase letters, digits, and hyphens, at most 64 characters, unique across entries |
-| `repositories[].cpus`                | Optional CPU limit of each job container, a number above 0 and at most 64; 2 when absent                                                     |
-| `repositories[].memoryGb`            | Optional memory limit of each job container in whole gigabytes, 1 to 256; 8 when absent                                                      |
+| Field                                | Meaning                                                                                                                                                   |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `imageName`                          | The local image tag `rebuild-image.ps1` builds and the supervisor runs                                                                                    |
+| `repositories[].owner`, `repository` | The target repository. Each owner and repository pair appears once                                                                                        |
+| `repositories[].slots`               | How many jobs run at once for this repository, 1 to 16                                                                                                    |
+| `repositories[].tokenPath`           | An absolute Windows path (drive letter or UNC) to the file holding this repository's token, re-read on every registration                                 |
+| `repositories[].labels`              | Custom labels, at least one; the labels every registration already carries are not listed                                                                 |
+| `repositories[].volumes`             | The cache volumes as `suffix` and `mountPath` pairs, possibly none                                                                                        |
+| `repositories[].name`                | Starts the entry's container, runner, and volume names. Lowercase letters, digits, and hyphens, at most 64 characters, not colliding with another entry's |
+| `repositories[].cpus`                | Optional CPU limit of each job container, a number above 0 and at most 64; 2 when absent                                                                  |
+| `repositories[].memoryGb`            | Optional memory limit of each job container in whole gigabytes, 1 to 256; 8 when absent                                                                   |
 
 An invalid configuration stops the script before it touches Docker, with one line
 per problem naming the field. A field not listed above is rejected as unknown, not
