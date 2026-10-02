@@ -16,7 +16,7 @@ recovery.
 | `register-scheduled-tasks.ps1` | Registers the supervisor and weekly rebuild tasks and restricts the token files                                     |
 | `runner-host.example.json`     | An example host configuration with two repositories, using obviously fake names                                     |
 | `host-configuration.ps1`       | Reads and validates a configuration; shared by the scripts above                                                    |
-| `docker-commands.ps1`          | Runs the Docker client, and builds a job container's name and arguments; shared by the supervisor and its slot jobs |
+| `docker-commands.ps1`          | Runs the Docker client, and builds job container and slot job arguments; shared by the supervisor and its slot jobs |
 | `tests/`                       | The validation test and its rejected and accepted fixtures, run by `mise run test:host`                             |
 
 The scripts target Windows PowerShell 5.1, which the scheduled tasks use, and are
@@ -76,6 +76,8 @@ Each fixture in `tests/fixtures/` breaks one rule and must be rejected with a
 message naming its field; each in `tests/accepted/` sits on the edge of a rule
 (no volumes, a UNC token path, the maximum slot count, the limit bounds) and must
 be accepted; the example must be accepted with distinct names and volume names.
-The test also builds a job container's `docker run` arguments and checks the
-limit flags. It never calls Docker or GitHub. CI also runs it under Windows PowerShell 5.1 on a
-GitHub-hosted Windows runner.
+The test also builds a job container's `docker run` arguments, checks the limit
+flags, and checks that a slot job's positional arguments line up with its worker
+script block's parameters. It also checks the pattern that recognizes an entry's
+stale containers. It never calls Docker or GitHub. CI also runs it under Windows
+PowerShell 5.1 on a GitHub-hosted Windows runner.

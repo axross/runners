@@ -200,6 +200,10 @@ rejected, naming the field. To move it:
 
 6. Start the `actions-runner-supervisor` task, or sign out and in.
 
+Job containers had no CPU or memory limit before. Without `cpus` and `memoryGb`,
+each is now capped at 2 CPUs and 8 GB, so set both on an entry whose jobs need
+more.
+
 ## Building the Runner Image
 
 From `hosts\windows-docker-desktop\` in the checkout, once, and after every
