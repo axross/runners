@@ -10,6 +10,7 @@
     container, runner and volume name, the container CPU and memory limits, and
     the volume names. a configuration is rejected as a whole, with one message
     line per problem naming the offending field, before any container starts.
+    Get-SlotWorkerArgument turns a plan entry into a slot job's arguments.
     nothing here calls Docker or GitHub, or reads a token file.
 #>
 
@@ -405,6 +406,41 @@ function Format-CpuCount {
     param([Parameter(Mandatory)][double]$Cpus)
 
     return $Cpus.ToString('0.#########', [System.Globalization.CultureInfo]::InvariantCulture)
+}
+
+# returns the arguments of a slot's background job, keyed by the worker script
+# block's parameter names and in their order. Start-Job binds them to those
+# parameters by position, so a value out of order reaches the wrong parameter.
+function Get-SlotWorkerArgument {
+    param(
+        [Parameter(Mandatory)]$Entry,
+        [Parameter(Mandatory)][int]$Slot,
+        [Parameter(Mandatory)][string]$ScriptRoot,
+        [Parameter(Mandatory)][string]$ImageName,
+        [string[]]$Mounts = @(),
+        [Parameter(Mandatory)][string]$RunCommand,
+        [Parameter(Mandatory)][string]$JitConfigVariable,
+        [Parameter(Mandatory)][int]$InitialBackoffSeconds,
+        [Parameter(Mandatory)][int]$MaxBackoffSeconds
+    )
+
+    return [ordered]@{
+        ScriptRoot            = $ScriptRoot
+        Owner                 = $Entry.Owner
+        Repository            = $Entry.Repository
+        TokenPath             = $Entry.TokenPath
+        Slot                  = $Slot
+        ImageName             = $ImageName
+        EntryName             = $Entry.Name
+        Labels                = $Entry.Labels
+        Cpus                  = Format-CpuCount -Cpus $Entry.Cpus
+        MemoryGb              = $Entry.MemoryGb
+        Mounts                = $Mounts
+        RunCommand            = $RunCommand
+        JitConfigVariable     = $JitConfigVariable
+        InitialBackoffSeconds = $InitialBackoffSeconds
+        MaxBackoffSeconds     = $MaxBackoffSeconds
+    }
 }
 
 # returns the lines the supervisor prints for -ValidateOnly.
