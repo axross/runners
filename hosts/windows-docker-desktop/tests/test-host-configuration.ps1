@@ -59,9 +59,9 @@ function Assert-Case {
 
 # each fixture maps to the text its rejection message must contain.
 $rejections = [ordered]@{
-    'missing-labels.json'            = @('repositories[0].labels: required field is missing')
-    'empty-labels.json'              = @('repositories[0].labels: at least one custom label is required')
     'default-labels-only.json'       = @('repositories[0].labels:', 'is always added')
+    'labels-not-list.json'           = @('repositories[0].labels: must be a list of custom labels')
+    'axpc-label.json'                = @("repositories[0].labels: 'AXPC' is always added")
     'duplicate-repository.json'      = @('repositories[1].repository: duplicate repository')
     'colliding-name.json'            = @('repositories[1].name: name', 'collides')
     'colliding-name-nested.json'     = @('repositories[1].name: name', 'collides')
@@ -115,6 +115,8 @@ Assert-Case -Name 'every fixture has an expectation' -Passed ($unlisted.Count -e
 # each fixture maps to the text its plan summary must contain and the text it
 # must not.
 $acceptances = [ordered]@{
+    'no-labels-field.json' = @{ Contains = @("labels:            self-hosted, linux, x64, axpc`n"); Lacks = @() }
+    'empty-labels.json'   = @{ Contains = @("labels:            self-hosted, linux, x64, axpc`n"); Lacks = @() }
     'no-volumes.json'     = @{ Contains = @('Host configuration is valid: 1 repositories', 'cpus:              2', 'memory:            8 GB'); Lacks = @('volume:') }
     'unc-token-path.json' = @{ Contains = @('token file:        \\example-server\example-share\example-repo-one.token'); Lacks = @() }
     'max-slots.json'      = @{ Contains = @('slots:             16'); Lacks = @() }
@@ -151,7 +153,9 @@ Assert-Case -Name 'example plans the default limits where it sets none and its o
     -Passed ($accepted.Text.Contains("cpus:              2`n") -and $accepted.Text.Contains("memory:            8 GB`n") `
         -and $accepted.Text.Contains("cpus:              4`n") -and $accepted.Text.Contains("memory:            16 GB")) -Detail $accepted.Text
 Assert-Case -Name 'example registers the default labels and the custom label' `
-    -Passed ($accepted.Text.Contains('labels:            self-hosted, linux, x64, example-label-one')) -Detail $accepted.Text
+    -Passed ($accepted.Text.Contains('labels:            self-hosted, linux, x64, axpc, example-label-one')) -Detail $accepted.Text
+Assert-Case -Name 'example registers the default labels and the second custom label' `
+    -Passed ($accepted.Text.Contains('labels:            self-hosted, linux, x64, axpc, example-label-two')) -Detail $accepted.Text
 
 # the job container's arguments for the entry in accepted/explicit-limits.json,
 # with the limits formatted the way the supervisor formats them for a slot job.
