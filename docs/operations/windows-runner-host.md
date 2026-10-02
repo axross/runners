@@ -233,6 +233,24 @@ label the script sets, so it does not touch other dangling images or images buil
 by hand; an image from before the label existed stays until removed with
 `docker image rm`. A failed prune is a warning, not a failed rebuild.
 
+On Linux x64, an uncached rebuild also downloads the two fixed NDK archives
+again, roughly 1.33 GB together, and extracts roughly 4.11 GB of file content.
+The [image README](../../images/actions-runner/README.md#android-ndk-contract)
+owns their version/checksum maintenance and the consumer fallback contract.
+Keeping the SDK in the image avoids sharing writable toolchains across jobs;
+do not add a home or Android SDK volume to compensate for rebuild cost.
+
+Before an authorized image update, record the current image ID with
+`docker image inspect <configured-image-name> --format '{{.Id}}'` and retain
+it with `docker tag <saved-image-id> actions-runner:rollback`. A tag keeps it
+out of the rebuild's dangling-image prune. To roll back, tag that saved image
+ID as the configured image name again, or rebuild from the previously approved
+image sources. Existing containers finish on their original image; subsequent
+containers use the retagged or rebuilt one. No scheduled-task, registration, or
+cache-volume change is needed. Image rollout and rollback are operator actions,
+not effects of an image-source pull request. Keep the image fixed while a
+consumer is collecting source/image/resource-controlled comparisons.
+
 ## Registering the Scheduled Tasks
 
 From an elevated PowerShell prompt, once the token files exist and the image has
@@ -373,8 +391,9 @@ pull), and whatever each repository's jobs reach on a GitHub-hosted runner. The
 image build, run weekly and on demand, also reaches the Ubuntu package archives
 that the base image's apt sources name, over port 80 or 443 (by default
 `archive.ubuntu.com` and `security.ubuntu.com`; check the base image's sources
-before filtering). The Dockerfile itself needs no access to Docker Hub. No inbound
-port is needed.
+before filtering), and `dl.google.com` over HTTPS for the checksum-pinned NDK
+archives on Linux x64. The Dockerfile itself needs no access to Docker Hub. No
+inbound port is needed.
 
 ## Recovery
 

@@ -15,9 +15,41 @@ a registry.
   `~/.rustup`, and `~/.npm` directories, all owned by `runner`. They are the
   mount points the host configuration's cache volumes usually target, and being
   pre-created keeps a fresh volume writable.
+- On Linux x64, Android NDK `27.0.12077973` (r27) and `27.1.12297006` (r27b)
+  under `/home/runner/.android/sdk/ndk`, owned by `runner`. Both
+  `ANDROID_HOME` and `ANDROID_SDK_ROOT` select that SDK root. Other base-image
+  platforms keep an empty SDK, not an incompatible x64 toolchain.
 
 It ends as `USER runner` and sets no entrypoint. The host supplies the command
 (`/home/runner/run.sh`) and the registration.
+
+## Android NDK contract
+
+[`install-ndks.sh`](./install-ndks.sh) pins each numeric version, Google's
+letter release, and the Linux archive's SHA-256. It verifies the archive before
+extraction and checks its `source.properties` revision before adding matching
+side-by-side `package.xml` registration. Archives and staging files stay out of
+the final image. The SDK is writable inside each disposable container so setup
+actions can add command-line tools, licenses, and packages. It MUST NOT be
+mounted from a shared writable home or SDK volume: a job must not replace a
+toolchain a later job executes.
+
+Java and Android command-line tools are not preinstalled. An Android setup
+action MUST retain the incoming `ANDROID_SDK_ROOT` and export both SDK variables
+to it; setting only `ANDROID_HOME` does not guarantee reuse. There is no global
+`ANDROID_NDK_HOME`: consumers select their own exact required release, validate
+it, and directly install a missing package with SDK-manager until the image
+catches up. An incomplete installed release is an error, not permission to use
+a different version. Do not restore an NDK cache over a preinstalled directory.
+
+To add or replace a release, obtain its official Linux archive from
+[Google's NDK downloads](https://developer.android.com/ndk/downloads), check
+Google's published archive checksum, compute SHA-256, and update the installer
+row and both test versions together. Run the checks below and repeat a real
+SDK-manager inventory/install request for each release: a successful Clang
+compile alone does not prove package discovery. Confirm consumers' exact
+requirements before removing an older release; two installed versions are not
+a request to unify consumer dependencies.
 
 ## The base pin
 
@@ -42,9 +74,36 @@ explains why.
 From the repository root:
 
 ```bash
-docker build images/actions-runner
+bash images/actions-runner/tests/check-download.sh
+docker build --tag actions-runner:test images/actions-runner
+bash images/actions-runner/tests/smoke-test.sh actions-runner:test
 ```
 
-CI runs this build on every pull request without pushing the result, then runs
-the image with no network to check that it runs as `runner`, has an executable
-`/home/runner/run.sh` and a writable tool cache, and carries `ccache`.
+CI runs these Linux x64 checks on every pull request without pushing the
+result. The smoke test uses no network or mounts, checks the existing runner
+and cache properties, compiles and links an Android arm64 C++ shared library
+with each NDK, and verifies its ELF architecture and exported symbol. A
+mutation in one disposable container must be absent in a second fresh
+container. The download test rejects corrupt input before extraction and
+checks that non-x64 installation is skipped.
+
+The host's uncached weekly rebuild downloads both archives again: together
+1,327,934,693 bytes (about 1.33 GB), containing 4,107,528,665 bytes of extracted
+file content before filesystem/layer overhead. This is a download/content
+cost, not a measured final image delta. The operator rebuild and rollback
+procedure is in [Windows Runner Host](../../docs/operations/windows-runner-host.md#building-the-runner-image).
+
+Local measurements on a 1-CPU, approximately 2-GB Linux verification machine,
+with the same base image already present and the legacy Docker builder:
+
+| Image          | Uncompressed layer-tar bytes | Uncached build seconds |
+| -------------- | ---------------------------- | ---------------------- |
+| Before NDKs    | 1,825,365,504                | 54.46                  |
+| With both NDKs | 5,946,855,424                | 619.66                 |
+
+The measured increase is 4,121,489,920 bytes, about 4.12 GB. These bytes are
+counted from decompressed final-image layer streams, not archive sizes or
+Docker's content-store-inclusive size field. Timings include layer export and
+are environment-specific, not a runner-host speed prediction. Build caches can
+also retain the installation stage; the host rebuild script's dangling-image
+prune is not a build-cache prune.
