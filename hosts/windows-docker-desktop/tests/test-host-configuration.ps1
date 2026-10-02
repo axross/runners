@@ -61,6 +61,7 @@ function Assert-Case {
 $rejections = [ordered]@{
     'default-labels-only.json'       = @('repositories[0].labels:', 'is always added')
     'labels-not-list.json'           = @('repositories[0].labels: must be a list of custom labels')
+    'labels-null.json'               = @('repositories[0].labels: must be a list of custom labels')
     'axpc-label.json'                = @("repositories[0].labels: 'AXPC' is always added")
     'duplicate-repository.json'      = @('repositories[1].repository: duplicate repository')
     'colliding-name.json'            = @('repositories[1].name: name', 'collides')

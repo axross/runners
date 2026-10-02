@@ -44,8 +44,7 @@ A JSON file kept outside the repository; every script takes its path as
 
 An invalid configuration stops the script before it touches Docker, with one line
 per problem naming the field. A field not listed above is rejected as unknown, not
-ignored, so a misspelled `label` cannot silently drop `labels`. A workflow selects
-the host with `runs-on: axpc`. The isolation rules the validation enforces, such
+ignored, so a misspelled `label` cannot silently drop `labels`. The isolation rules the validation enforces, such
 as what a registration carries and which names collide, are in the Per-Repository Isolation on a Runner Host
 section of [Security](../../docs/conventions/security.md).
 
