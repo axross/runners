@@ -250,11 +250,13 @@ later host:
   registration, and the file is restricted to the host user.
 - A registration is made with the entry's own token and carries `self-hosted`,
   `linux`, `x64`, and `axpc`, plus any labels the entry lists, so a job's runner
-  is identifiable and a repository opts in by naming `axpc` or one of the entry's
-  own labels in `runs-on`. An entry needs no label of its own, because its token
-  scopes the registration to one repository: only that repository's jobs can be
-  assigned to the runner, so a label shared across entries cannot route one
-  repository's job to another's runner. An entry that lists a default label, in
+  is identifiable. A job is assigned to a runner whose labels include every label
+  in the job's `runs-on`, so a job naming only `self-hosted` also lands on the
+  host; the label selects the host, it does not keep jobs off it. What keeps a
+  repository's jobs off another repository's runner is the entry's token, which
+  scopes the registration to one repository, so an entry needs no label of its
+  own and a label shared across entries cannot route one repository's job to
+  another's runner. An entry that lists a default label, in
   any case, MUST be rejected.
 - A registration reaches the runner through the `ACTIONS_RUNNER_INPUT_JITCONFIG`
   environment variable, set only in the process that starts the container and

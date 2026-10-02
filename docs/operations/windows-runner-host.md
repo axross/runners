@@ -81,9 +81,9 @@ request workflows**, choose the option that requires approval for workflow runs
 from outside collaborators. Do not list a public repository whose fork pull
 requests run on these labels until that is set. The requirement and its reason
 are in the Per-Repository Isolation on a Runner Host section of
-[Security](../conventions/security.md). A job selects this host by listing `axpc`,
-or a label its entry lists, in `runs-on`; a job that lists neither never runs on
-it.
+[Security](../conventions/security.md). A job runs on this host when every label
+in its `runs-on` is one the registration carries, so `runs-on: axpc` selects it,
+and so does `runs-on: self-hosted`.
 
 ## The Fine-Grained Token
 
