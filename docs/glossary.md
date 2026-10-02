@@ -41,9 +41,10 @@ that names a runner host's image and lists its **Target Repositories**. The
 **Host Configuration**, with its own **Slots**, token, **Custom Labels**, and
 cache volumes.
 
-**Custom Label** - a runner label an entry of the **Host Configuration** adds to
-the default `self-hosted`, `linux`, and `x64`. A workflow lists it in `runs-on` to
-choose that host for its **Target Repository**.
+**Custom Label** - an optional runner label an entry of the **Host Configuration**
+adds to the default `self-hosted`, `linux`, `x64`, and `axpc`. A workflow lists
+`axpc` or a custom label in `runs-on` to choose that host for its **Target
+Repository**.
 
 **Slot** - one concurrent runner position on a runner host. A host with two slots
 can run two jobs at once; each slot starts a fresh ephemeral runner when its

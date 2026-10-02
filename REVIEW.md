@@ -62,13 +62,17 @@ Each lens is a hard project rule. A violation is Important.
   address, LAN address, machine or user name, home-directory path, email
   address, or account name is committed, in a file, a default, an example, a
   comment, or a test fixture. The public maintainer handle and the owner and
-  repository names of this repository and of `axross/skills` are allowed. An example uses an obviously fake
+  repository names of this repository and of `axross/skills` are allowed, and so
+  is the default runner label `axpc`, the one committed host label, kept by the
+  maintainer's decision (see
+  [Security](docs/conventions/security.md#nothing-identifying-or-secret-is-committed)).
+  An example uses an obviously fake
   placeholder (`<owner>`, `<repo>`, `example.invalid`). A value a runner needs
   is read from the environment or a prompt at run time.
 - **No values specific to the repository this code was extracted from.** The
   runner material is generic. An owner, repository, image, container, volume,
   or scheduled-task name belonging to a particular consumer is a parameter,
-  never a literal.
+  never a literal. The default runner label `axpc` is the one exception.
 - **No self-hosted runners for this repository's own jobs.** Every workflow
   here uses a GitHub-hosted runner (`ubuntu-latest` or another hosted label).
   A `runs-on` that names `self-hosted`, or a label only a self-hosted runner

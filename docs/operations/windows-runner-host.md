@@ -81,9 +81,9 @@ request workflows**, choose the option that requires approval for workflow runs
 from outside collaborators. Do not list a public repository whose fork pull
 requests run on these labels until that is set. The requirement and its reason
 are in the Per-Repository Isolation on a Runner Host section of
-[Security](../conventions/security.md). A job selects this host by listing one of
-the repository's custom labels in `runs-on`; a repository that does not list the
-label never runs on it.
+[Security](../conventions/security.md). A job selects this host by listing `axpc`,
+or a label its entry lists, in `runs-on`; a job that lists neither never runs on
+it.
 
 ## The Fine-Grained Token
 
@@ -132,7 +132,7 @@ and see the Host configuration section of the
 [host README](../../hosts/windows-docker-desktop/README.md) for every field. The rules that matter operationally:
 
 - **One entry per target repository**, each with its own `tokenPath`, `slots`,
-  custom `labels`, and `volumes`. An owner and repository pair listed twice is
+  optional custom `labels`, and `volumes`. An owner and repository pair listed twice is
   rejected, and so are two entries that name the same token file, compared
   without regard to case. `tokenPath` is an absolute Windows path, a drive
   letter and backslash or a UNC path; a relative path is rejected because a
@@ -140,10 +140,10 @@ and see the Host configuration section of the
 - **Unknown fields are rejected, not ignored.** A misspelled field such as `label`
   for `labels` fails validation naming the field, so a typo cannot silently drop
   a setting.
-- **At least one custom label per entry.** Choose one label per repository, or a
-  shared one only for repositories you would trust equally. What a registration
-  carries is in the Per-Repository Isolation on a Runner Host section of
-  [Security](../conventions/security.md).
+- **Custom labels are optional.** Every registration carries `axpc`, so an entry
+  needs none; list one only to give a workflow a second name for that entry. What
+  a registration carries is in the Per-Repository Isolation on a Runner Host
+  section of [Security](../conventions/security.md).
 - **Every entry has a `name`** that starts its container and runner names,
   `<name>-<index>-<timestamp>` with a 1-based slot index, and its volume names,
   `<name>-<suffix>`. It is lowercase letters, digits, and hyphens, starting with
@@ -342,8 +342,8 @@ repositories are in [Security](../conventions/security.md).
   `docker inspect` on a container shows its limits under `HostConfig`: `NanoCpus`
   is the CPU limit in billionths of a CPU, and `Memory` and `MemorySwap` are both
   `memoryGb` gigabytes in bytes.
-- **End to end:** a workflow run whose `runs-on` lists the custom label starts
-  executing rather than sitting queued.
+- **End to end:** a workflow run whose `runs-on` is `axpc` starts executing rather
+  than sitting queued.
 
 ## Updating the Runner
 
