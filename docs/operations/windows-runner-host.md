@@ -227,8 +227,9 @@ version and base image digest come from that Dockerfile; the script fetches no
 newer runner and does not update the checkout. The cache is ignored so that the
 operating system packages are installed again and pick up their updates; a failed
 build leaves the previous image in place. After a successful build the script
-removes the earlier images it built that the new build left untagged, so weekly
-rebuilds do not fill the disk. The prune is limited to images carrying the build
+removes the earlier final images it built that the new build left untagged.
+It does not reclaim installation stages, build caches, or tagged rollback images.
+The prune is limited to images carrying the build
 label the script sets, so it does not touch other dangling images or images built
 by hand; an image from before the label existed stays until removed with
 `docker image rm`. A failed prune is a warning, not a failed rebuild.
@@ -246,10 +247,25 @@ it with `docker tag <saved-image-id> actions-runner:rollback`. A tag keeps it
 out of the rebuild's dangling-image prune. To roll back, tag that saved image
 ID as the configured image name again, or rebuild from the previously approved
 image sources. Existing containers finish on their original image; subsequent
-containers use the retagged or rebuilt one. No scheduled-task, registration, or
-cache-volume change is needed. Image rollout and rollback are operator actions,
-not effects of an image-source pull request. Keep the image fixed while a
-consumer is collecting source/image/resource-controlled comparisons.
+containers use the retagged or rebuilt one. A retag alone lasts only until the
+next rebuild from the checkout. Before rolling back or beginning a fixed-image
+comparison, pause the weekly rebuild in Task Scheduler or run:
+
+```powershell
+Disable-ScheduledTask -TaskName actions-runner-weekly-rebuild
+```
+
+Wait for an already-running rebuild to finish and record the image ID actually
+used; do not rebuild manually during the comparison. Keep the task disabled
+through the comparison or rollback window. Before re-enabling it with
+`Enable-ScheduledTask -TaskName actions-runner-weekly-rebuild`, put the checkout
+at the approved image sources you intend subsequent builds to use. A missed
+weekly build may run when the task is re-enabled. Remove the rollback tag with
+`docker image rm actions-runner:rollback` only after the update is accepted and
+that recovery image is no longer needed; this is not a general image/cache prune.
+No registration or cache-volume change is needed. Rollout, rollback, and
+scheduled-task changes are separately authorized operator actions, not effects
+of an image-source pull request.
 
 ## Registering the Scheduled Tasks
 

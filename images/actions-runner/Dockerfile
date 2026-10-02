@@ -34,9 +34,8 @@ ENV ANDROID_HOME=/home/runner/.android/sdk \
     ANDROID_SDK_ROOT=/home/runner/.android/sdk
 COPY --from=android-ndks --chown=runner:docker /home/runner/.android/sdk /home/runner/.android/sdk
 
-# the tool cache and the per-tool cache directories are the mount points of the
-# host's cache volumes. creating them owned by runner keeps a fresh volume
-# writable.
+# setup-android writes download metadata outside the SDK root. Android paths
+# stay container-local; the other directories can serve the host's cache mounts.
 RUN mkdir -p /opt/hostedtoolcache \
         /home/runner/.android/cache \
         /home/runner/.cargo \

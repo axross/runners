@@ -19,6 +19,8 @@ a registry.
   under `/home/runner/.android/sdk/ndk`, owned by `runner`. Both
   `ANDROID_HOME` and `ANDROID_SDK_ROOT` select that SDK root. Other base-image
   platforms keep an empty SDK, not an incompatible x64 toolchain.
+- Writable `~/.android/cache` for SDK download metadata, container-local and
+  never a shared mount point.
 
 It ends as `USER runner` and sets no entrypoint. The host supplies the command
 (`/home/runner/run.sh`) and the registration.
