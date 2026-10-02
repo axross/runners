@@ -256,10 +256,10 @@ later host:
   environment variable, set only in the process that starts the container and
   passed to `docker run` by name. It MUST NOT be placed on a command line, in a log
   line, or in an image layer.
-- Volume and container names derive from the host prefix, owner, and repository.
-  An entry's volumes are mounted only into its own containers. Two entries whose
-  container prefixes are equal, or where one is the other followed by a hyphen,
-  are rejected, because one would claim the other's containers and volumes.
+- Volume and container names start with the entry's `name`, which the operator
+  sets. An entry's volumes are mounted only into its own containers. Two entries
+  whose names are equal, or where one is the other followed by a hyphen, are
+  rejected, because one would claim the other's containers and volumes.
   Stale-container cleanup removes only containers matching the entry's own name
   pattern.
 - A repository that can run pull requests from forks on a host's labels MUST

@@ -7,11 +7,11 @@
       "name": "example-repo-one",
       "slots": 1,
       "tokenPath": "C:\\path\\to\\example-repo-one.token",
-      "labels": ["example-label-example-repo-one"],
+      "labels": ["example-label-example-repo-one\n"],
       "volumes": [
         {
           "suffix": "npm",
-          "mountPath": "/home/runner/.npm,readonly"
+          "mountPath": "/home/runner/.npm"
         }
       ]
     }

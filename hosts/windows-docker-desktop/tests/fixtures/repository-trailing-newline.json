@@ -3,7 +3,7 @@
   "repositories": [
     {
       "owner": "example-owner",
-      "repository": "example-repo-one",
+      "repository": "example-repo-one\n",
       "name": "example-repo-one",
       "slots": 1,
       "tokenPath": "C:\\path\\to\\example-repo-one.token",
@@ -11,7 +11,7 @@
       "volumes": [
         {
           "suffix": "npm",
-          "mountPath": "/home/runner/.npm,readonly"
+          "mountPath": "/home/runner/.npm"
         }
       ]
     }

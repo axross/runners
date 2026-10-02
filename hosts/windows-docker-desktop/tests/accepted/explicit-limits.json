@@ -11,9 +11,11 @@
       "volumes": [
         {
           "suffix": "npm",
-          "mountPath": "/home/runner/.npm,readonly"
+          "mountPath": "/home/runner/.npm"
         }
-      ]
+      ],
+      "cpus": 1.5,
+      "memoryGb": 16
     }
   ]
 }

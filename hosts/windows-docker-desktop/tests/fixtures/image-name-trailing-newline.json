@@ -1,5 +1,5 @@
 {
-  "imageName": "actions-runner:local",
+  "imageName": "actions-runner:local\n",
   "repositories": [
     {
       "owner": "example-owner",
@@ -11,7 +11,7 @@
       "volumes": [
         {
           "suffix": "npm",
-          "mountPath": "/home/runner/.npm,readonly"
+          "mountPath": "/home/runner/.npm"
         }
       ]
     }

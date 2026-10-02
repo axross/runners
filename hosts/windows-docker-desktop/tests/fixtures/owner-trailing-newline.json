@@ -2,7 +2,7 @@
   "imageName": "actions-runner:local",
   "repositories": [
     {
-      "owner": "example-owner",
+      "owner": "example-owner\n",
       "repository": "example-repo-one",
       "name": "example-repo-one",
       "slots": 1,
@@ -11,7 +11,7 @@
       "volumes": [
         {
           "suffix": "npm",
-          "mountPath": "/home/runner/.npm,readonly"
+          "mountPath": "/home/runner/.npm"
         }
       ]
     }

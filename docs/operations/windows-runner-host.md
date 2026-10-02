@@ -19,11 +19,16 @@ stub `docker` executable and a stub HTTP endpoint standing in for GitHub; that
 harness is not committed, so nothing re-runs it. The paths it covered are the
 registration request and its error reporting, the environment hand-off to the
 container, stale-container cleanup, a slot's backoff, a dead slot job's restart
-backoff, skipping an entry that cannot start, and the shutdown stop. Windows
+backoff, skipping an entry that cannot start, and the shutdown stop. That run
+was made before entry names and container limits were added, so the worker
+start-up and the stale-container cleanup as they are now are covered only by
+the unit tests and by the check of the slot job's argument order. Windows
 PowerShell 5.1 running the supervisor, Docker Desktop, Task Scheduler, and
 `icacls` are unverified until the maintainer's post-merge check on a real host;
 the steps below that involve them are described from the tools' documentation,
-not observed.
+not observed. The same holds for the container limits: a test checks the
+`docker run` arguments, and what Docker Desktop enforces and `docker inspect`
+reports is described from Docker's documentation.
 
 ## Prerequisites
 
@@ -58,6 +63,16 @@ machine, then run `wsl --shutdown` so the virtual machine restarts with the
 limits. Start from the defaults, and lower a repository's `slots` if builds
 starve when several jobs run together. A job that finds no free slot queues
 rather than fails.
+
+The per-container `cpus` and `memoryGb` limits of the host configuration bind
+inside this virtual machine and reserve nothing in it. Slots times the limits,
+summed over every entry, can exceed the virtual machine's allocation, and the
+jobs then compete for what it has. A `cpus` above the number of processors the
+virtual machine has (the `processors` value in `.wslconfig`, if set) is
+rejected by Docker, which refuses a `--cpus` value above the CPUs it can see:
+the container never starts, the supervisor prints Docker's error, then a
+warning that the container exited with a non-zero code, and the slot retries
+after its backoff.
 
 ## Repository Settings (Set by Hand)
 
@@ -129,25 +144,73 @@ and see the Host configuration section of the
   shared one only for repositories you would trust equally. What a registration
   carries is in the Per-Repository Isolation on a Runner Host section of
   [Security](../conventions/security.md).
-- **Names derive from `hostPrefix`, the owner, and the repository** unless an
-  entry sets `prefix`, and the prefix is at most 64 characters, because it starts
-  every runner name. GitHub documents no limit for runner names; 64 is this
-  project's assumption, so a long owner and repository pair needs a short
-  `prefix`. When two derived prefixes collide, set a `prefix` on one of the
-  entries; the error names it. The collision rule is in the Per-Repository
-  Isolation on a Runner Host section of
-  [Security](../conventions/security.md). Across two supervisors on one machine,
-  that rule applies to their `hostPrefix` values too, but the script cannot see
-  the other configuration, so check it by hand.
-- **A volume's name is the entry's prefix plus its `suffix`.**
+- **Every entry has a `name`** that starts its container and runner names,
+  `<name>-<index>-<timestamp>` with a 1-based slot index, and its volume names,
+  `<name>-<suffix>`. It is lowercase letters, digits, and hyphens, starting with
+  a letter or digit, and at most 64 characters, because it starts every runner
+  name. GitHub documents no limit for runner names; 64 is this project's
+  assumption. Choose it short and recognisable. A name that collides with another
+  entry's is rejected, and the error names both. The collision rule is in the
+  Per-Repository Isolation on a Runner Host section of
+  [Security](../conventions/security.md).
+- **One configuration per machine is the supported setup**, because the scheduled
+  tasks have fixed names and registering a second configuration replaces the
+  first's tasks.
+- **Every job container has CPU and memory limits.** `cpus` is a number above 0
+  and at most 64, 2 when absent. `memoryGb` is an integer from 1 to 256, 8 when
+  absent. Each job container of the entry starts with `--cpus` and `--memory`
+  set to them and `--memory-swap` equal to `--memory`, so it gets no swap beyond
+  its memory. Docker takes `--cpus` as a decimal number of CPUs and `--memory` as
+  a size with a unit suffix such as `g`; see
+  [Docker's resource constraints](https://docs.docker.com/engine/containers/resource_constraints/).
+  The limit applies to each container, not to an entry's slots together or to the
+  host. The short container that resets volume ownership at startup has none.
 
 Check a configuration before using it. The command calls neither Docker nor
-GitHub, prints each repository's labels, container prefix, and volume names, and
-exits 1 naming the field of every problem:
+GitHub, prints each repository's labels, name, container name pattern, CPU and
+memory limits, and volume names, and exits 1 naming the field of every problem:
 
 ```powershell
 .\supervisor.ps1 -ConfigPath C:\path\to\runner-host.json -ValidateOnly
 ```
+
+## Moving to the New Configuration Format
+
+A host whose configuration still has `hostPrefix` or a per-entry `prefix` is
+rejected, naming the field. To move it:
+
+1. Note the `hostPrefix`, and each entry's prefix, `<hostPrefix>-<owner>-<repository>`
+   in lowercase unless the entry set `prefix`. Stop the supervisor with Ctrl+C in
+   its window, then end and disable the `<hostPrefix>-supervisor` and
+   `<hostPrefix>-weekly-rebuild` tasks in Task Scheduler.
+2. Rewrite the file: give every entry a `name`, and delete `hostPrefix` and every
+   `prefix`. An entry whose `name` equals its previous prefix, which is possible
+   only when the prefix is a valid `name`, keeps its volumes; any other `name`
+   starts from empty volumes.
+3. Run `supervisor.ps1 -ValidateOnly` on the file until it passes.
+4. From an elevated prompt, run `register-scheduled-tasks.ps1`, which registers
+   `actions-runner-supervisor` and `actions-runner-weekly-rebuild`, then remove the
+   earlier tasks:
+
+   ```powershell
+   Unregister-ScheduledTask -TaskName <hostPrefix>-supervisor -Confirm:$false
+   Unregister-ScheduledTask -TaskName <hostPrefix>-weekly-rebuild -Confirm:$false
+   ```
+
+5. Remove what the earlier names left, skipping an entry whose `name` equals its
+   previous prefix. Remove a volume only once no container uses it:
+
+   ```powershell
+   docker ps -a --filter "name=<previous prefix>-"
+   docker rm -f <container name>
+   docker volume rm <previous prefix>-<suffix>
+   ```
+
+6. Start the `actions-runner-supervisor` task, or sign out and in.
+
+Job containers had no CPU or memory limit before. Without `cpus` and `memoryGb`,
+each is now capped at 2 CPUs and 8 GB, so set both on an entry whose jobs need
+more.
 
 ## Building the Runner Image
 
@@ -179,13 +242,13 @@ been built:
 .\register-scheduled-tasks.ps1 -ConfigPath C:\path\to\runner-host.json
 ```
 
-This registers two tasks for the signed-in user, named from `hostPrefix`:
+This registers two tasks for the signed-in user, with fixed names:
 
-- **`<hostPrefix>-supervisor`** runs `supervisor.ps1` at sign-in and is set to
+- **`actions-runner-supervisor`** runs `supervisor.ps1` at sign-in and is set to
   restart if it fails, as a backstop for the supervisor process exiting. Whether
   Task Scheduler restarts a task that ends with a non-zero exit code is not
   verified on a real host.
-- **`<hostPrefix>-weekly-rebuild`** runs `rebuild-image.ps1` weekly, Sunday 03:00
+- **`actions-runner-weekly-rebuild`** runs `rebuild-image.ps1` weekly, Sunday 03:00
   by default, and runs a missed rebuild when the machine is next available.
 
 Both run as the current user at the limited run level, never elevated. The script
@@ -229,7 +292,7 @@ makes each a shared writable surface, and [Security](../conventions/security.md)
 owns the rules that govern it. Each is declared here with the reason it exists.
 The suffixes are those of
 [`runner-host.example.json`](../../hosts/windows-docker-desktop/runner-host.example.json);
-the volume's name is the entry's prefix plus the suffix.
+the volume's name is the entry's `name` plus the suffix.
 
 | Suffix      | Mount path             | Why it exists                                                                          |
 | ----------- | ---------------------- | -------------------------------------------------------------------------------------- |
@@ -273,9 +336,12 @@ repositories are in [Security](../conventions/security.md).
   container. Fewer than `slots`, and none in particular, mean the supervisor is not
   running or that repository's slots are failing; see Recovery.
 - **Machine:** `docker ps` shows `slots` running containers per repository, named
-  `<prefix>-<slot>-<timestamp>`, whether idle or busy, since an idle container is
+  `<name>-<index>-<timestamp>`, whether idle or busy, since an idle container is
   a runner waiting for a job. None means the same as above.
-  `Get-ScheduledTask <hostPrefix>-supervisor | Select State` reports `Running`.
+  `Get-ScheduledTask actions-runner-supervisor | Select State` reports `Running`.
+  `docker inspect` on a container shows its limits under `HostConfig`: `NanoCpus`
+  is the CPU limit in billionths of a CPU, and `Memory` and `MemorySwap` are both
+  `memoryGb` gigabytes in bytes.
 - **End to end:** a workflow run whose `runs-on` lists the custom label starts
   executing rather than sitting queued.
 
@@ -315,7 +381,7 @@ port is needed.
 - **A container left by an unclean stop** (a forced stop of the supervisor task, a
   crash, a restart mid-job) is removed by the next supervisor start, which removes
   containers matching each entry's own name pattern before starting its slots. By
-  hand, `docker ps -a --filter "name=<prefix>-"` lists candidates and
+  hand, `docker ps -a --filter "name=<name>-"` lists candidates and
   `docker rm -f <name>` removes one.
 - **Docker Desktop restarts mid-job:** the container is gone, the job fails on
   GitHub's side, and re-running the workflow is the recovery. The supervisor

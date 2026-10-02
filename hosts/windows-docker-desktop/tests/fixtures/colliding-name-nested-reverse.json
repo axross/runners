@@ -4,7 +4,7 @@
     {
       "owner": "example-owner",
       "repository": "example-repo-one",
-      "name": "example-repo-one",
+      "name": "example-repo",
       "slots": 1,
       "tokenPath": "C:\\path\\to\\example-repo-one.token",
       "labels": ["example-label-example-repo-one"],
@@ -16,12 +16,12 @@
       ]
     },
     {
-      "owner": "Example-Owner",
-      "repository": "EXAMPLE-REPO-ONE",
-      "name": "example-repo-two",
+      "owner": "example-owner",
+      "repository": "example-repo-two",
+      "name": "example",
       "slots": 1,
-      "tokenPath": "C:\\path\\to\\EXAMPLE-REPO-ONE.token",
-      "labels": ["example-label-EXAMPLE-REPO-ONE"],
+      "tokenPath": "C:\\path\\to\\example-repo-two.token",
+      "labels": ["example-label-example-repo-two"],
       "volumes": [
         {
           "suffix": "npm",

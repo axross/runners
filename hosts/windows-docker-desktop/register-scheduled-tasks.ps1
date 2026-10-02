@@ -7,8 +7,8 @@
     file the host configuration lists to that user.
 
 .DESCRIPTION
-    registers "<hostPrefix>-supervisor", which runs supervisor.ps1 at this
-    user's sign-in, and "<hostPrefix>-weekly-rebuild", which runs
+    registers "actions-runner-supervisor", which runs supervisor.ps1 at this
+    user's sign-in, and "actions-runner-weekly-rebuild", which runs
     rebuild-image.ps1 weekly. both run as the current user at the limited run
     level, never elevated. both point at this script's own directory and at
     the configuration file, so moving the checkout or the file breaks them
@@ -53,7 +53,7 @@ function Get-PowerShellArgument {
 
 # registers the task that runs the supervisor at sign-in and restarts it on failure.
 function Register-SupervisorTask {
-    $taskName = "$($plan.HostPrefix)-supervisor"
+    $taskName = 'actions-runner-supervisor'
     $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument (Get-PowerShellArgument -ScriptName 'supervisor.ps1')
     $trigger = New-ScheduledTaskTrigger -AtLogOn -User $currentUser
     # a backstop for the supervisor process exiting, so the host is not left
@@ -70,7 +70,7 @@ function Register-SupervisorTask {
 function Register-WeeklyRebuildTask {
     param([string]$DayOfWeek, [string]$Time)
 
-    $taskName = "$($plan.HostPrefix)-weekly-rebuild"
+    $taskName = 'actions-runner-weekly-rebuild'
     $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument (Get-PowerShellArgument -ScriptName 'rebuild-image.ps1')
     $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $DayOfWeek -At $Time
     $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable

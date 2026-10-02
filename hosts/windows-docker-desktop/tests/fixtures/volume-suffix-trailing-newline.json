@@ -10,8 +10,8 @@
       "labels": ["example-label-example-repo-one"],
       "volumes": [
         {
-          "suffix": "npm",
-          "mountPath": "/home/runner/.npm,readonly"
+          "suffix": "npm\n",
+          "mountPath": "/home/runner/.npm"
         }
       ]
     }
