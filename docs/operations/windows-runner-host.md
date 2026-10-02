@@ -234,35 +234,34 @@ label the script sets, so it does not touch other dangling images or images buil
 by hand; an image from before the label existed stays until removed with
 `docker image rm`. A failed prune is a warning, not a failed rebuild.
 
-On Linux x64, an uncached rebuild also downloads the two fixed NDK archives
-again, roughly 1.33 GB together, and extracts roughly 4.11 GB of file content.
-The [image README](../../images/actions-runner/README.md#android-ndk-contract)
-owns their version/checksum maintenance and the consumer fallback contract.
-Keeping the SDK in the image avoids sharing writable toolchains across jobs;
-do not add a home or Android SDK volume to compensate for rebuild cost.
+The Android NDK contract and Build sections of the
+[image README](../../images/actions-runner/README.md) own version/checksum
+maintenance, the consumer fallback contract, and additional image-build costs.
 
-Before an authorized image update, record the current image ID with
-`docker image inspect <configured-image-name> --format '{{.Id}}'` and retain
-it with `docker tag <saved-image-id> actions-runner:rollback`. A tag keeps it
-out of the rebuild's dangling-image prune. To roll back, tag that saved image
-ID as the configured image name again, or rebuild from the previously approved
-image sources. Existing containers finish on their original image; subsequent
-containers use the retagged or rebuilt one. A retag alone lasts only until the
-next rebuild from the checkout. Before rolling back or beginning a fixed-image
-comparison, pause the weekly rebuild in Task Scheduler or run:
+For an authorized image update, rollback, or fixed-image comparison:
 
-```powershell
-Disable-ScheduledTask -TaskName actions-runner-weekly-rebuild
-```
+1. Pause the weekly rebuild in Task Scheduler or run
+   `Disable-ScheduledTask -TaskName actions-runner-weekly-rebuild`, then wait for
+   any already-running rebuild to finish.
+2. Record the stable current image ID with
+   `docker image inspect <configured-image-name> --format '{{.Id}}'`. Before an
+   update, retain it with `docker tag <saved-image-id> actions-runner:rollback`;
+   this tag keeps it out of the dangling-image prune.
+3. Build the approved new image sources, or roll back by tagging the saved image
+   ID as the configured image name again or rebuilding the previously approved
+   sources. Record the image ID actually used. Existing containers finish on
+   their original image; subsequent containers use the retagged or rebuilt one.
+4. Keep the task disabled through the comparison or rollback window, and do not
+   rebuild manually during a comparison. A retag alone lasts only until the next
+   rebuild from the checkout.
+5. Put the checkout at the approved image sources intended for subsequent builds
+   before re-enabling the task with
+   `Enable-ScheduledTask -TaskName actions-runner-weekly-rebuild`. A missed weekly
+   build may run when the task is re-enabled.
+6. Remove the rollback tag with `docker image rm actions-runner:rollback` only
+   after the update is accepted and that recovery image is no longer needed;
+   this is not a general image/cache prune.
 
-Wait for an already-running rebuild to finish and record the image ID actually
-used; do not rebuild manually during the comparison. Keep the task disabled
-through the comparison or rollback window. Before re-enabling it with
-`Enable-ScheduledTask -TaskName actions-runner-weekly-rebuild`, put the checkout
-at the approved image sources you intend subsequent builds to use. A missed
-weekly build may run when the task is re-enabled. Remove the rollback tag with
-`docker image rm actions-runner:rollback` only after the update is accepted and
-that recovery image is no longer needed; this is not a general image/cache prune.
 No registration or cache-volume change is needed. Rollout, rollback, and
 scheduled-task changes are separately authorized operator actions, not effects
 of an image-source pull request.

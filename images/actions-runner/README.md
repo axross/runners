@@ -93,19 +93,12 @@ The host's uncached weekly rebuild downloads both archives again: together
 1,327,934,693 bytes (about 1.33 GB), containing 4,107,528,665 bytes of extracted
 file content before filesystem/layer overhead. This is a download/content
 cost, not a measured final image delta. The operator rebuild and rollback
-procedure is in [Windows Runner Host](../../docs/operations/windows-runner-host.md#building-the-runner-image).
+procedure is in the Building the Runner Image section of
+[Windows Runner Host](../../docs/operations/windows-runner-host.md).
 
-Local measurements on a 1-CPU, approximately 2-GB Linux verification machine,
-with the same base image already present and the legacy Docker builder:
-
-| Image          | Uncompressed layer-tar bytes | Uncached build seconds |
-| -------------- | ---------------------------- | ---------------------- |
-| Before NDKs    | 1,825,365,504                | 54.46                  |
-| With both NDKs | 5,946,855,424                | 619.66                 |
-
-The measured increase is 4,121,489,920 bytes, about 4.12 GB. These bytes are
-counted from decompressed final-image layer streams, not archive sizes or
-Docker's content-store-inclusive size field. Timings include layer export and
-are environment-specific, not a runner-host speed prediction. Build caches can
-also retain the installation stage; the host rebuild script's dangling-image
-prune is not a build-cache prune.
+The [initial image size/build-cost evidence](https://github.com/axross/runners/issues/13#issuecomment-5963050240)
+records the exact source/image identities, raw layer bytes, uncached timings,
+and environment limits. Those historical measurements are not a size promise
+for a later base/version update or a runner-host speed prediction. Build caches
+can retain the installation stage independently of the host's dangling-image
+prune.

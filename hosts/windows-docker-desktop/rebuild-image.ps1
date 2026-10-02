@@ -12,9 +12,9 @@
     system packages are installed again and pick up their current updates. a
     failed build leaves the previous image under its name.
 
-    after a successful build it removes the images this script built earlier
-    and that the new build left untagged, so weekly rebuilds do not fill the
-    disk. only images carrying this script's own build label are removed; it
+    after a successful build it removes the final images this script built
+    earlier and that the new build left untagged. build caches and tagged
+    recovery images remain. only images carrying this script's own build label are removed; it
     does not prune other dangling images, and an image built by hand or before
     this label existed is left alone.
 
