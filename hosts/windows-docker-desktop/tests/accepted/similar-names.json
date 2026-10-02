@@ -1,0 +1,47 @@
+{
+  "imageName": "actions-runner:local",
+  "repositories": [
+    {
+      "owner": "example-owner",
+      "repository": "example-repo-one",
+      "name": "example-repo",
+      "slots": 1,
+      "tokenPath": "C:\\path\\to\\example-repo-one.token",
+      "labels": ["example-label-example-repo-one"],
+      "volumes": [
+        {
+          "suffix": "npm",
+          "mountPath": "/home/runner/.npm"
+        }
+      ]
+    },
+    {
+      "owner": "example-owner",
+      "repository": "example-repo-two",
+      "name": "example-repos",
+      "slots": 1,
+      "tokenPath": "C:\\path\\to\\example-repo-two.token",
+      "labels": ["example-label-example-repo-two"],
+      "volumes": [
+        {
+          "suffix": "npm",
+          "mountPath": "/home/runner/.npm"
+        }
+      ]
+    },
+    {
+      "owner": "example-owner",
+      "repository": "example-repo-three",
+      "name": "example-rep",
+      "slots": 1,
+      "tokenPath": "C:\\path\\to\\example-repo-three.token",
+      "labels": ["example-label-example-repo-three"],
+      "volumes": [
+        {
+          "suffix": "npm",
+          "mountPath": "/home/runner/.npm"
+        }
+      ]
+    }
+  ]
+}

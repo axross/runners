@@ -6,7 +6,8 @@
 
 .DESCRIPTION
     Read-HostConfiguration turns the JSON file into a plan: the image name, and
-    per target repository the registration labels, the container name prefix and
+    per target repository the registration labels, the name that starts every
+    container, runner and volume name, the container CPU and memory limits, and
     the volume names. a configuration is rejected as a whole, with one message
     line per problem naming the offending field, before any container starts.
     nothing here calls Docker or GitHub, or reads a token file.
@@ -14,19 +15,22 @@
 
 $script:DefaultLabels = @('self-hosted', 'linux', 'x64')
 $script:MaxSlots = 16
-# GitHub documents no limit for a runner's name. the derived runner name is the
-# container prefix plus a slot number and a 17-digit timestamp, so capping the
-# prefix keeps every name short, on an assumed limit rather than a known one.
-$script:MaxPrefixLength = 64
+# GitHub documents no limit for a runner's name. the runner name is the entry's
+# name plus a slot number and a 17-digit timestamp, so capping the entry name
+# keeps every name short, on an assumed limit rather than a known one.
+$script:MaxNameLength = 64
+$script:DefaultCpus = 2
+$script:MaxCpus = 64
+$script:DefaultMemoryGb = 8
+$script:MaxMemoryGb = 256
 
-$script:HostFields = @('hostPrefix', 'imageName', 'repositories')
-$script:RepositoryFields = @('owner', 'repository', 'slots', 'tokenPath', 'labels', 'volumes', 'prefix')
+$script:HostFields = @('imageName', 'repositories')
+$script:RepositoryFields = @('owner', 'repository', 'name', 'slots', 'tokenPath', 'labels', 'volumes', 'cpus', 'memoryGb')
 $script:VolumeFields = @('suffix', 'mountPath')
 
-$script:PrefixPattern = '^[a-z0-9][a-z0-9-]*$'
+$script:NamePattern = '^[a-z0-9][a-z0-9-]*$'
 $script:OwnerPattern = '^[A-Za-z0-9][A-Za-z0-9-]*$'
 $script:RepositoryPattern = '^(?!\.{1,2}$)[A-Za-z0-9_.-]+$'
-$script:DerivedPrefixPattern = '^[a-z0-9][a-z0-9_.-]*$'
 $script:ImageNamePattern = '^[A-Za-z0-9][A-Za-z0-9_.:/@-]*$'
 $script:LabelPattern = '^[A-Za-z0-9][A-Za-z0-9._:/-]*$'
 $script:MountPathPattern = '^/[A-Za-z0-9_./-]+$'
@@ -170,7 +174,7 @@ function Get-VolumeDefinition {
         Test-UnknownField -Node $item -Allowed $script:VolumeFields -Path $itemPath -Errors $Errors
         $before = $Errors.Count
         $suffix = Get-StringField -Node $item -Name 'suffix' -Path "$itemPath.suffix" -Errors $Errors `
-            -Pattern $script:PrefixPattern -Expectation 'lowercase letters, digits and hyphens, starting with a letter or digit'
+            -Pattern $script:NamePattern -Expectation 'lowercase letters, digits and hyphens, starting with a letter or digit'
         $mountPath = Get-StringField -Node $item -Name 'mountPath' -Path "$itemPath.mountPath" -Errors $Errors `
             -Pattern $script:MountPathPattern -Expectation 'an absolute container path of letters, digits and . _ / -'
         if ($null -ne $mountPath -and $mountPath.Contains('..')) {
@@ -199,12 +203,61 @@ function Get-VolumeDefinition {
     return , $definitions.ToArray()
 }
 
+# returns the entry's CPU limit as a double, the default when the field is
+# absent, or $null after recording why the value is unusable. ConvertFrom-Json
+# returns a fraction as a different numeric type depending on the PowerShell
+# version, so every numeric type is accepted.
+function Get-CpuLimit {
+    param([Parameter(Mandatory)]$Node, [Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)]$Errors)
+
+    $property = $Node.PSObject.Properties['cpus']
+    if ($null -eq $property) {
+        return [double]$script:DefaultCpus
+    }
+    $value = $property.Value
+    $isNumber = $value -is [int] -or $value -is [long] -or $value -is [double] -or $value -is [decimal]
+    if (-not $isNumber -or $value -le 0 -or $value -gt $script:MaxCpus) {
+        $Errors.Add("$Path.cpus: must be a number greater than 0 and at most $($script:MaxCpus)")
+        return $null
+    }
+    return [double]$value
+}
+
+# returns the entry's memory limit in whole gigabytes, the default when the
+# field is absent, or $null after recording why the value is unusable.
+function Get-MemoryLimit {
+    param([Parameter(Mandatory)]$Node, [Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)]$Errors)
+
+    $property = $Node.PSObject.Properties['memoryGb']
+    if ($null -eq $property) {
+        return $script:DefaultMemoryGb
+    }
+    $value = $property.Value
+    if (($value -isnot [int] -and $value -isnot [long]) -or $value -lt 1 -or $value -gt $script:MaxMemoryGb) {
+        $Errors.Add("$Path.memoryGb: must be an integer from 1 to $($script:MaxMemoryGb)")
+        return $null
+    }
+    return [int]$value
+}
+
+# returns the entry's name, or $null after recording why it is unusable.
+function Get-EntryName {
+    param([Parameter(Mandatory)]$Node, [Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)]$Errors)
+
+    $name = Get-StringField -Node $Node -Name 'name' -Path "$Path.name" -Errors $Errors `
+        -Pattern $script:NamePattern -Expectation 'lowercase letters, digits and hyphens, starting with a letter or digit'
+    if ($null -ne $name -and $name.Length -gt $script:MaxNameLength) {
+        $Errors.Add("$Path.name: name is $($name.Length) characters, at most $($script:MaxNameLength) are allowed because it starts every runner name")
+        return $null
+    }
+    return $name
+}
+
 # returns one repository's plan entry, or $null after recording every problem.
 function Get-RepositoryPlan {
     param(
         [Parameter(Mandatory)]$Node,
         [Parameter(Mandatory)][string]$Path,
-        [string]$HostPrefix,
         [Parameter(Mandatory)]$Errors
     )
 
@@ -228,48 +281,41 @@ function Get-RepositoryPlan {
         $slots = $null
     }
 
-    $prefixProperty = $Node.PSObject.Properties['prefix']
-    $prefix = $null
-    if ($null -ne $prefixProperty) {
-        $prefix = Get-StringField -Node $Node -Name 'prefix' -Path "$Path.prefix" -Errors $Errors `
-            -Pattern $script:DerivedPrefixPattern -Expectation 'lowercase letters, digits and . _ -, starting with a letter or digit'
-    } elseif ($null -ne $owner -and $null -ne $repository) {
-        $prefix = "$HostPrefix-$owner-$repository".ToLowerInvariant()
-    }
-    if ($null -ne $prefix -and $prefix.Length -gt $script:MaxPrefixLength) {
-        $Errors.Add("$Path.prefix: container prefix is $($prefix.Length) characters, at most $($script:MaxPrefixLength) are allowed because it starts every runner name; set a shorter prefix on this entry")
-        $prefix = $null
-    }
+    $name = Get-EntryName -Node $Node -Path $Path -Errors $Errors
+    $cpus = Get-CpuLimit -Node $Node -Path $Path -Errors $Errors
+    $memoryGb = Get-MemoryLimit -Node $Node -Path $Path -Errors $Errors
 
     if ($null -eq $owner -or $null -eq $repository -or $null -eq $tokenPath -or $null -eq $labels `
-            -or $null -eq $volumes -or $null -eq $slots -or $null -eq $prefix) {
+            -or $null -eq $volumes -or $null -eq $slots -or $null -eq $name -or $null -eq $cpus -or $null -eq $memoryGb) {
         return $null
     }
 
     $volumePlan = @($volumes | ForEach-Object {
-            [pscustomobject]@{ Name = "$prefix-$($_.Suffix)"; MountPath = $_.MountPath }
+            [pscustomobject]@{ Name = "$name-$($_.Suffix)"; MountPath = $_.MountPath }
         })
     return [pscustomobject]@{
-        Path            = $Path
-        Owner           = $owner
-        Repository      = $repository
-        Slots           = [int]$slots
-        TokenPath       = $tokenPath
-        Labels          = [string[]](@($script:DefaultLabels) + @($labels))
-        ContainerPrefix = $prefix
-        Volumes         = $volumePlan
+        Path       = $Path
+        Owner      = $owner
+        Repository = $repository
+        Name       = $name
+        Slots      = [int]$slots
+        TokenPath  = $tokenPath
+        Labels     = [string[]](@($script:DefaultLabels) + @($labels))
+        Cpus       = $cpus
+        MemoryGb   = $memoryGb
+        Volumes    = $volumePlan
     }
 }
 
-function Test-PrefixCollision {
+function Test-NameCollision {
     param([string]$First, [string]$Second)
 
     return $First -eq $Second -or $First.StartsWith("$Second-") -or $Second.StartsWith("$First-")
 }
 
-# records a duplicate repository, a colliding container prefix or a shared token
-# file between any two entries, against the later entry. volume names are the
-# prefix plus a suffix, so they cannot collide while the prefixes do not. paths
+# records a duplicate repository, a colliding name or a shared token file
+# between any two entries, against the later entry. volume names are the name
+# plus a suffix, so they cannot collide while the names do not. paths
 # compare case-insensitively because Windows file names do.
 function Test-EntryUniqueness {
     param([Parameter(Mandatory)][object[]]$Entries, [Parameter(Mandatory)]$Errors)
@@ -282,8 +328,8 @@ function Test-EntryUniqueness {
                 $Errors.Add("$($b.Path).repository: duplicate repository '$($b.Owner)/$($b.Repository)', already listed at $($a.Path)")
                 continue
             }
-            if (Test-PrefixCollision -First $a.ContainerPrefix -Second $b.ContainerPrefix) {
-                $Errors.Add("$($b.Path).prefix: container prefix '$($b.ContainerPrefix)' collides with '$($a.ContainerPrefix)' at $($a.Path); set a distinct prefix on one entry")
+            if (Test-NameCollision -First $a.Name -Second $b.Name) {
+                $Errors.Add("$($b.Path).name: name '$($b.Name)' collides with '$($a.Name)' at $($a.Path); set a distinct name on one entry")
             }
             if ($a.TokenPath.ToLowerInvariant() -eq $b.TokenPath.ToLowerInvariant()) {
                 $Errors.Add("$($b.Path).tokenPath: token file '$($b.TokenPath)' is already used at $($a.Path); each repository needs its own token")
@@ -315,8 +361,6 @@ function Read-HostConfiguration {
     }
     Test-UnknownField -Node $root -Allowed $script:HostFields -Path 'configuration' -Errors $errors
 
-    $hostPrefix = Get-StringField -Node $root -Name 'hostPrefix' -Path 'hostPrefix' -Errors $errors `
-        -Pattern '^[a-z0-9][a-z0-9-]{0,31}$' -Expectation 'up to 32 lowercase letters, digits and hyphens, starting with a letter or digit'
     $imageName = Get-StringField -Node $root -Name 'imageName' -Path 'imageName' -Errors $errors `
         -Pattern $script:ImageNamePattern -Expectation 'a local Docker image name with a tag, such as name:tag'
 
@@ -330,7 +374,7 @@ function Read-HostConfiguration {
         }
         $index = 0
         foreach ($node in @($repositories)) {
-            $entry = Get-RepositoryPlan -Node $node -Path "repositories[$index]" -HostPrefix "$hostPrefix" -Errors $errors
+            $entry = Get-RepositoryPlan -Node $node -Path "repositories[$index]" -Errors $errors
             $index++
             if ($null -ne $entry) {
                 $entries.Add($entry)
@@ -345,10 +389,18 @@ function Read-HostConfiguration {
         throw "Invalid host configuration ($Path):`n  - $($errors -join "`n  - ")"
     }
     return [pscustomobject]@{
-        HostPrefix   = $hostPrefix
         ImageName    = $imageName
         Repositories = $entries.ToArray()
     }
+}
+
+# returns the CPU count as text for Docker and for the summary: the invariant
+# culture keeps the decimal point whatever the machine's regional settings, and
+# the custom format never switches to an exponent.
+function Format-CpuCount {
+    param([Parameter(Mandatory)][double]$Cpus)
+
+    return $Cpus.ToString('0.#########', [System.Globalization.CultureInfo]::InvariantCulture)
 }
 
 # returns the lines the supervisor prints for -ValidateOnly.
@@ -363,8 +415,10 @@ function Get-PlanSummary {
         $lines.Add("  slots:             $($entry.Slots)")
         $lines.Add("  labels:            $($entry.Labels -join ', ')")
         $lines.Add("  token file:        $($entry.TokenPath)")
-        $lines.Add("  container prefix:  $($entry.ContainerPrefix)")
-        $lines.Add("  containers:        $($entry.ContainerPrefix)-<slot>-<timestamp>")
+        $lines.Add("  name:              $($entry.Name)")
+        $lines.Add("  containers:        $($entry.Name)-<index>-<timestamp>")
+        $lines.Add("  cpus:              $(Format-CpuCount -Cpus $entry.Cpus)")
+        $lines.Add("  memory:            $($entry.MemoryGb) GB")
         foreach ($volume in $entry.Volumes) {
             $lines.Add("  volume:            $($volume.Name) -> $($volume.MountPath)")
         }

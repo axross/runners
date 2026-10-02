@@ -1,10 +1,10 @@
 {
-  "hostPrefix": "runner-host",
   "imageName": "actions-runner:local",
   "repositories": [
     {
       "owner": "example-owner",
       "repository": "example-repo-one",
+      "name": "example-repo-one",
       "slots": 1,
       "tokenPath": "tokens\\example-repo-one.token",
       "labels": ["example-label-example-repo-one"],

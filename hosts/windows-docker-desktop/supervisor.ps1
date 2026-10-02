@@ -19,9 +19,10 @@
     path to the host configuration JSON file. see runner-host.example.json.
 
 .PARAMETER ValidateOnly
-    validates the configuration and prints the planned registrations,
-    container prefixes and volume names, then exits. exits 1 on an invalid
-    configuration. calls neither Docker nor GitHub and reads no token file.
+    validates the configuration and prints the planned registrations, names,
+    container name patterns, resource limits and volume names, then exits.
+    exits 1 on an invalid configuration. calls neither Docker nor GitHub and
+    reads no token file.
 #>
 param(
     [Parameter(Mandatory)][string]$ConfigPath,
@@ -113,11 +114,11 @@ function Initialize-EntryVolume {
 function Clear-StaleContainer {
     param([Parameter(Mandatory)]$Entry)
 
-    $result = Invoke-Docker -Arguments @('ps', '-a', '--filter', "name=$($Entry.ContainerPrefix)-", '--format', '{{.Names}}')
+    $result = Invoke-Docker -Arguments @('ps', '-a', '--filter', "name=$($Entry.Name)-", '--format', '{{.Names}}')
     if ($result.ExitCode -ne 0) {
         throw "Failed to list containers: $($result.Output -join ' ')"
     }
-    $ownName = '^' + [regex]::Escape($Entry.ContainerPrefix) + '-\d+-\d{17}$'
+    $ownName = '^' + [regex]::Escape($Entry.Name) + '-\d+-\d{17}$'
     foreach ($name in $result.Output) {
         if ($name -cmatch $ownName) {
             Write-Warning "Removing stale container '$name' left over from an earlier run."
@@ -142,8 +143,10 @@ $WorkerScript = {
         [string]$TokenPath,
         [int]$Slot,
         [string]$ImageName,
-        [string]$ContainerPrefix,
+        [string]$EntryName,
         [string[]]$Labels,
+        [string]$Cpus,
+        [int]$MemoryGb,
         [string[]]$Mounts,
         [string]$RunCommand,
         [string]$JitConfigVariable,
@@ -154,7 +157,7 @@ $WorkerScript = {
     $ErrorActionPreference = 'Stop'
     . (Join-Path $ScriptRoot 'docker-commands.ps1')
 
-    $label = "$ContainerPrefix slot ${Slot}"
+    $label = "$EntryName slot ${Slot}"
 
     # re-read on every registration, so a rotated token file applies to the
     # next job without a restart.
@@ -217,7 +220,7 @@ $WorkerScript = {
         }
 
         try {
-            $name = "$ContainerPrefix-$Slot-$(Get-Date -Format 'yyyyMMddHHmmssfff')"
+            $name = Get-JobContainerName -EntryName $EntryName -Slot $Slot
             $jit = [pscustomobject]@{
                 Name             = $name
                 EncodedJitConfig = Request-JitConfig -Owner $Owner -Repository $Repository -TokenPath $TokenPath -Name $name -Labels $Labels
@@ -233,10 +236,9 @@ $WorkerScript = {
         Write-Information "${label}: starting container $($jit.Name)."
 
         # the variable holds the registration only in this job's process
-        # environment, and `-e NAME` makes the Docker client copy it from there,
-        # so the value is never on a command line.
-        $arguments = @('run', '--rm', '--pull', 'never', '--name', $jit.Name) + @($Mounts) +
-            @('-e', $JitConfigVariable, $ImageName, $RunCommand)
+        # environment, where the Docker client reads it from.
+        $arguments = Get-JobContainerArgument -Name $jit.Name -Cpus $Cpus -MemoryGb $MemoryGb -Mounts $Mounts `
+            -JitConfigVariable $JitConfigVariable -ImageName $ImageName -RunCommand $RunCommand
         [Environment]::SetEnvironmentVariable($JitConfigVariable, $jit.EncodedJitConfig, 'Process')
         try {
             $exitCode = Invoke-DockerLogged -Arguments $arguments
@@ -264,7 +266,7 @@ function Invoke-SlotWorkerJob {
     $mounts = [string[]]@(Get-MountArgument -Entry $Entry)
     Start-Job -ScriptBlock $WorkerScript -ArgumentList @(
         $PSScriptRoot, $Entry.Owner, $Entry.Repository, $Entry.TokenPath, $Slot, $plan.ImageName,
-        $Entry.ContainerPrefix, $Entry.Labels, $mounts, $RunCommand, $JitConfigVariable,
+        $Entry.Name, $Entry.Labels, (Format-CpuCount -Cpus $Entry.Cpus), $Entry.MemoryGb, $mounts, $RunCommand, $JitConfigVariable,
         $InitialBackoffSeconds, $MaxBackoffSeconds
     )
 }
@@ -362,7 +364,7 @@ $workers = New-Object System.Collections.Generic.List[object]
 foreach ($entry in $prepared) {
     for ($slot = 1; $slot -le $entry.Slots; $slot++) {
         $workers.Add([pscustomobject]@{
-                Key            = "$($entry.ContainerPrefix) slot $slot"
+                Key            = "$($entry.Name) slot $slot"
                 Entry          = $entry
                 Slot           = $slot
                 Job            = Invoke-SlotWorkerJob -Entry $entry -Slot $slot
