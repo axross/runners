@@ -2,7 +2,10 @@
 
 This file is this repository's highest-priority review-only policy. The Claude
 adapter in [`claude-review.yaml`](.github/workflows/claude-review.yaml) supplies
-it through the workflow's system prompt. This policy complements the
+it through the workflow's system prompt. The root [`AGENTS.md`](AGENTS.md)
+`Code Review Rules` section instructs Codex to read and apply this file;
+whether Codex follows that indirect instruction and the substantive checks
+must be checked against a posted review. This policy complements the
 [Code Review](.claude/skills/code-review/SKILL.md) methodology, whose
 [Posted and CI Reviews](.claude/skills/code-review/SKILL.md#posted-and-ci-reviews)
 section owns the generic posted-review rules.
@@ -10,21 +13,24 @@ section owns the generic posted-review rules.
 This is a **strict** review: run every mandatory check and report every
 finding. Verify the acceptance criteria carried in the pull request body's
 **Acceptance criteria** section. Do not open the tracking issue to find them;
-an absent criteria section is itself a finding (Important).
+an absent criteria section is itself a finding (Important in Claude review).
 
 ## Severity Vocabulary for Posted Reviews
 
 Claude review uses Code Review's two posted labels, **Important** and **Nit**,
 instead of its internal Critical/Major/Minor/Nit triage or an
-Approve/Request-Changes verdict. In this repository, a hard project rule
-includes every MUST rule of a skill whose `description` matches the changed
-files, and every MUST rule of
+Approve/Request-Changes verdict. Codex managed review uses native priority labels;
+its output-format exception is recorded in
+[Development Workflow](docs/operations/development-workflow.md#codex-review-from-codex-amp-or-a-manual-change).
+In this repository, a hard project rule includes every MUST rule of a skill
+whose `description` matches the changed files, and every MUST rule of
 [Security](docs/conventions/security.md).
 
 **Guidelines:**
 
 - MUST flag a matching skill's MUST-rule violation and cite the skill and
-  rule, labelled Important.
+  rule. Claude review MUST label it Important; Codex review uses its native
+  priority label without implying an exact equivalence.
 
 ## Mandatory Checks
 
@@ -36,13 +42,15 @@ Run all three checks on every review and raise a finding for each miss:
 - **Acceptance criteria** - verify every criterion in the pull request body.
   A criterion carrying the `(verified out of tree: <where>)` marker is checked
   only for a link to its published evidence: with the link, it is not a
-  finding and gets one summary line naming it as designated, every round;
-  without the link, it is a finding, unless the evidence can exist only after
-  the pull request merges and the criterion is marked pending. Such a criterion
-  is not a finding; it gets one summary line naming it as designated and pending,
-  every round, and the author links the evidence once it exists. Do not re-run or
-  judge the evidence itself. Every other unmet or diff-unconfirmable criterion is a finding,
-  anchored inline when it attaches to a changed line, labelled Important.
+  finding, and Claude review gives it one summary line naming it as designated,
+  every round. Without the link, it is a finding, unless the evidence can exist
+  only after the pull request merges and the criterion is marked pending. Such a
+  criterion is not a finding; Claude review gives it one summary line naming it
+  as designated and pending, every round, and the author links the evidence once
+  it exists. Do not re-run or judge the evidence itself. Every other unmet or
+  diff-unconfirmable criterion is a finding, anchored inline when it attaches
+  to a changed line. Claude review labels it Important; Codex review reports it
+  in its native format.
 - **Public-repository safety** - this repository is public and is meant to hold
   nothing that identifies a person or a machine. Verify the lenses below for
   every changed file.
@@ -50,12 +58,14 @@ Run all three checks on every review and raise a finding for each miss:
 **Guidelines:**
 
 - MUST run all three checks on every review.
-- MUST give each finding a severity label, `file:line` evidence, and a concrete
-  fix according to [Code Review](.claude/skills/code-review/SKILL.md).
+- MUST give each finding a severity label supported by the selected provider,
+  `file:line` evidence, and a concrete fix according to
+  [Code Review](.claude/skills/code-review/SKILL.md).
 
 ## Public-Repository Safety Lenses
 
-Each lens is a hard project rule. A violation is Important.
+Each lens is a hard project rule. Claude review labels a violation Important;
+Codex review uses its native priority label.
 
 - **No credentials or host-identifying values.** No token, key, password,
   registration or JIT configuration, `.env` value, internal hostname, IP
@@ -191,10 +201,12 @@ runs `mise run check` on every pull request, which enforces:
 
 [Code Review's posted-review policy](.claude/skills/code-review/SKILL.md#posted-and-ci-reviews)
 owns the Claude review container, finding shapes, tally, and summary scope.
+Codex managed review publishes its own GitHub review format; the exception is
+limited to output format, not independence or the mandatory checks above.
 
 **Guidelines:**
 
-- Claude review MUST NOT write the review trigger phrase, the literal documented
+- A reviewer MUST NOT write either provider's review trigger phrase, documented
   in [the independent review](docs/operations/development-workflow.md#the-independent-review),
   anywhere in a summary or an inline comment. Refer to it by name instead, for
   example "the review request". The workflow's loop guard admits the reviewer's
@@ -205,3 +217,6 @@ owns the Claude review container, finding shapes, tally, and summary scope.
   `0 important, 0 nits` when no findings exist. This is this repository's
   exception to Code Review's single-submission rule; the advisory review
   carries no APPROVE or REQUEST_CHANGES verdict.
+- Codex review MUST use the managed review's standard GitHub review, with
+  native inline findings when present. A missing Important/Nit label or
+  top-level tally is not by itself a failed Codex review.

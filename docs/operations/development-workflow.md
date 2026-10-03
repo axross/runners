@@ -88,7 +88,7 @@ The grant's targets are:
   fixes require a linked issue and an approved plan
 - the run's draft pull request against the default branch; for recovery, the
   existing pull request
-- the review provider named in
+- the review provider the authoring host maps to in
   [the independent review](#the-independent-review)
 
 Its covered effects, each performed without asking, are:
@@ -105,7 +105,7 @@ Its covered effects, each performed without asking, are:
 - publication of evidence at the destination named in the approved plan when an
   acceptance criterion carries the
   `(verified out of tree: <where the evidence will be published>)` marker
-- review requests on that pull request through the Claude review route, one per
+- review requests on that pull request through the mapped provider, one per
   round, including fresh reviews after fixes, up to the four-round cap, with
   the consequences listed below
 
@@ -139,7 +139,13 @@ Creating the draft pull request and pushing fixes while it is open trigger
 GitHub-hosted runner with `contents: read`, checks out the pull request, and
 runs `mise run check`, which executes the pull request's own task definitions
 and the linters they call. A pull request from a fork runs without repository
-secrets. A Claude review request can:
+secrets. Codex review may:
+
+- incur charges
+- read the pull request and repository content, including files outside the diff
+- publish findings and a review to that pull request
+
+A Claude review request can:
 
 - start the GitHub-hosted `claude-review.yaml` job, which runs a third-party
   artificial intelligence action with repository-reading and shell tools
@@ -245,38 +251,44 @@ waive the independent review.
 ## The Independent Review
 
 The review is a separate session under a separate identity, never the authoring
-session, whatever it calls its own assessment. This repository configures one
-provider, Claude review, for every authoring host. A Claude Code session and an
-Amp session both request it; an Amp-authored pull request reviewed by Claude is
-still reviewed by a separate session under a separate identity. A manual change
-(no agent host) requests it the same way. Routing Amp to a second provider, as
-some projects do, does not carry over: no other provider is configured here, and
-the request is posted under the maintainer's operator identity, which passes the
-review workflow's author-association gate.
+session, whatever it calls its own assessment. The authoring host determines the
+provider and request route:
 
 | Authoring host         | Review provider | Request                                                    |
 | ---------------------- | --------------- | ---------------------------------------------------------- |
 | Claude Code            | Claude review   | Post `@claude review` as a top-level pull request comment. |
-| Amp                    | Claude review   | Post `@claude review` as a top-level pull request comment. |
-| Manual (no agent host) | Claude review   | Post `@claude review` as a top-level pull request comment. |
+| Codex                  | Codex review    | Post `@codex review` as a top-level pull request comment.  |
+| Amp                    | Codex review    | Post `@codex review` as a top-level pull request comment.  |
+| Manual (no agent host) | Codex review    | Post `@codex review` as a top-level pull request comment.  |
+
+The Claude workflow is the Claude Code route's CI adapter, not the default for
+every change just because it exists here. Codex and Amp use the external Codex
+App. Manual changes have no agent host, so they use Codex rather than claiming
+the Claude Code route.
 
 Before the first request, an agent run MUST record its authoring host and the
 selected provider in recoverable Loop Engineering run state. For a manually
-authored pull request, the author MUST record "manual" and "Claude review" in the
-pull request description before requesting review. A failed, silent, or
-unavailable route blocks the review gate; it never causes an automatic request to
-another provider.
+authored pull request, the author MUST record "manual" and "Codex review" in the
+pull request description before requesting review and keep that record current
+across rounds. Before each later request, confirm that the recorded host and
+provider remain unchanged; if the maintainer explicitly changes the provider,
+append that decision to the run state or pull request description and update the
+selection first. Each round invokes exactly one provider. A failed, silent, or
+unavailable selected route blocks the review gate; it never causes an automatic
+request to another provider.
 
-The literal above is reference documentation, not a request. In each review
+The literals above are reference documentation, not requests. In each review
 round, write the trigger literal in exactly one GitHub comment, that round's
 intentional top-level request. Do not copy it into a plan or pull request body,
 recoverable state, summary, progress comment, or reply. Everywhere else, refer to
-it by name. This prevents a comment-triggered integration from starting a
-duplicate review while permitting a fresh request after a fix batch. The review
-has a cap of four rounds; see
+the applicable phrase by name. This prevents a comment-triggered integration
+from starting a duplicate review while permitting a fresh request after a fix
+batch. The review has a cap of four rounds; see
 [Loop Engineering's external round cap](../../.claude/skills/loop-engineering/references/independent-review.md#external-round-cap).
 
-The route is the in-repository reviewer in
+### Claude review from Claude Code
+
+The Claude route is the in-repository reviewer in
 [`claude-review.yaml`](../../.github/workflows/claude-review.yaml), which runs on
 a GitHub-hosted runner and applies [`REVIEW.md`](../../REVIEW.md) through its
 system prompt. It is inert until a one-time operator setup is done, and its
@@ -295,9 +307,28 @@ unless that identity is named in its own `allowed_bots` input, which
 for the rationale.
 
 A request from any other author, a missing operator setup, and an unnamed bot
-all end without findings. A run that gets no review MUST confirm the operator
-setup and, where a bot posted the request, that its identity is named in
+all end without findings. A Claude route that gets no review MUST confirm the
+operator setup and, where a bot posted the request, that its identity is named in
 `allowed_bots`. Do not read the absence as approval.
+
+### Codex review from Codex, Amp, or a manual change
+
+The Codex route is the external Codex GitHub App, not an in-repository workflow.
+The root [`AGENTS.md`](../../AGENTS.md) `Code Review Rules` section instructs
+Codex to read and apply [`REVIEW.md`](../../REVIEW.md). A maintainer MUST connect
+this repository to Codex and enable Code review in Codex settings before the
+route can run; this repository stores no Codex workflow or review secret.
+
+Codex documents loading applicable `AGENTS.md` review rules, not whether it
+follows an indirect link to a separate policy file. On a representative pull
+request, check the posted review against `REVIEW.md` before claiming its
+substantive rules were applied. A completed review alone does not prove every
+check ran. Codex's native GitHub review output is accepted instead of requiring a
+custom adapter: native priority labels and findings need no Important/Nit labels
+or Claude tally. This exception covers output format only, not reviewer
+independence, the mandatory checks in `REVIEW.md`, or a fresh review after fixes.
+If the App does not acknowledge the request or post a review, the run MUST
+confirm that setup rather than read the silence as a clean review.
 
 ## Acceptance Criteria Verified Out of Tree
 
