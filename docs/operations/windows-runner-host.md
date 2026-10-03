@@ -262,6 +262,14 @@ For an authorized image update, rollback, or fixed-image comparison:
    after the update is accepted and that recovery image is no longer needed;
    this is not a general image/cache prune.
 
+For build-cache reclamation, inventory `docker system df -v` and identify the
+builder holding the installation stages first. Obtain separate approval for
+its unused-cache operation. For the daemon builder, an age-filtered option is
+`docker builder prune --all --filter until=168h`; it is not image-label-scoped
+and can invalidate other projects' build caches. This command's syntax is
+checked locally, but its real-host behavior and any automatic garbage-collection
+limit are unverified; do not assume the weekly image prune bounds that storage.
+
 No registration or cache-volume change is needed. Rollout, rollback, and
 scheduled-task changes are separately authorized operator actions, not effects
 of an image-source pull request.

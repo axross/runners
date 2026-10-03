@@ -47,7 +47,8 @@ a different version. Do not restore an NDK cache over a preinstalled directory.
 To add or replace a release, obtain its official Linux archive from
 [Google's NDK downloads](https://developer.android.com/ndk/downloads), check
 Google's published archive checksum, compute SHA-256, and update the installer
-row and both test versions together. Run the checks below and repeat a real
+row, both test versions, the version list under What it adds, and the archive
+size figures under Build together. Run the checks below and repeat a real
 SDK-manager inventory/install request for each release: a successful Clang
 compile alone does not prove package discovery. Confirm consumers' exact
 requirements before removing an older release; two installed versions are not

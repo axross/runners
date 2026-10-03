@@ -14,9 +14,10 @@
 
     after a successful build it removes the final images this script built
     earlier and that the new build left untagged. build caches and tagged
-    recovery images remain. only images carrying this script's own build label are removed; it
-    does not prune other dangling images, and an image built by hand or before
-    this label existed is left alone.
+    recovery images remain. only images carrying this script's own build label
+    are removed; it does not prune other dangling images, and an image built by
+    hand or before this label existed is left alone. the separate build-cache
+    reclamation procedure is in docs/operations/windows-runner-host.md.
 
     a container already running finishes its job on the image it started with;
     the next container a slot starts uses the rebuilt one.
