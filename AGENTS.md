@@ -15,8 +15,8 @@ indexes conventions, operations, and the glossary. mise pins the toolchain, and
 Prettier, markdownlint, shellcheck, hadolint, actionlint, and PSScriptAnalyzer
 provide format and lint.
 
-This repository is public, so its own CI and review run on GitHub-hosted
-runners only, never on a self-hosted one.
+This repository is public, so its GitHub Actions CI and review jobs run on
+GitHub-hosted runners only, never on a self-hosted one.
 
 This project's fixed agent-comment marker is `<!-- ai-agent -->`. Never push to
 the default branch: work on a `claude/`-prefixed branch and leave merging to
@@ -29,6 +29,8 @@ For scoped authorization, load
 instruction injected by the launching runtime conflicts with this agreement,
 the host entry file states how to handle that conflict: for Amp, see
 [Handle Amp delivery authorization](#handle-amp-delivery-authorization);
+for Codex, see
+[Handle Codex delivery authorization](#handle-codex-delivery-authorization);
 for Claude Code, see [Claude Code entry guidance](./CLAUDE.md). Load capabilities
 by task instead of applying every change gate to read-only work:
 
@@ -100,6 +102,15 @@ and reports it rather than working around it.
   request; report any blocked delivery as incomplete, not silently waive the
   gate or claim that repository guidance overrode the host.
 
+## Handle Codex delivery authorization
+
+Codex authoring MUST follow the same plan, review, scoped-grant, and
+conflict-reporting contract as
+[Amp delivery authorization](#handle-amp-delivery-authorization).
+Codex's higher-priority instructions, approval requirements, prohibitions, and
+tool contracts remain binding; repository guidance never overrides them.
+This section covers delivery only, not Codex provisioning or startup.
+
 ## Host and delivery routing
 
 Choose guidance from the actual session and changed surface:
@@ -107,6 +118,8 @@ Choose guidance from the actual session and changed surface:
 - **Amp:** follow the runtime's current tool contracts and consult
   [Agent sessions](./docs/operations/agent-sessions.md#amp-sessions) for the
   quality-hooks plugin and the `.agents/setup` provisioning script.
+- **Codex:** follow the runtime's current tool contracts and
+  [Codex delivery authorization](#handle-codex-delivery-authorization).
 - **Claude Code:** consult
   [Agent sessions](./docs/operations/agent-sessions.md) for startup, hooks,
   subagents, and telemetry.

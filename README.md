@@ -21,8 +21,8 @@ agent-host configuration is not here yet. Layout:
 | `agent-hosts/claude-code/`      | WSL 2 service units and templates for Claude Code Remote Control                        | Planned |
 | `agent-hosts/amp/`              | WSL 2 service units and templates for Amp runners                                       | Planned |
 
-This repository is public. Its own CI and review run on GitHub-hosted runners,
-never on a self-hosted one; see [Security](./docs/conventions/security.md).
+This repository is public. Its GitHub Actions CI and review jobs run on
+GitHub-hosted runners, never on a self-hosted one; see [Security](./docs/conventions/security.md).
 
 ## Getting started
 
