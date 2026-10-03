@@ -2,6 +2,7 @@
 set -euo pipefail
 
 image="${1:?Usage: bash images/actions-runner/tests/smoke-test.sh <image>}"
+test "$(docker image inspect --format '{{json (index .Config "Volumes")}}' "$image")" = null
 docker run --rm --network none -i "$image" bash -s <<'SMOKE'
 set -euo pipefail
 test "$(id -un)" = runner

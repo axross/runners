@@ -19,8 +19,7 @@ a registry.
   under `/home/runner/.android/sdk/ndk`, owned by `runner`. Both
   `ANDROID_HOME` and `ANDROID_SDK_ROOT` select that SDK root. Other base-image
   platforms keep an empty SDK, not an incompatible x64 toolchain.
-- Writable `~/.android/cache` for SDK download metadata, container-local and
-  never a shared mount point.
+- Writable `~/.android/cache` for SDK download metadata.
 
 It ends as `USER runner` and sets no entrypoint. The host supplies the command
 (`/home/runner/run.sh`) and the registration.
@@ -32,9 +31,9 @@ letter release, and the Linux archive's SHA-256. It verifies the archive before
 extraction and checks its `source.properties` revision before adding matching
 side-by-side `package.xml` registration. Archives and staging files stay out of
 the final image. The SDK is writable inside each disposable container so setup
-actions can add command-line tools, licenses, and packages. It MUST NOT be
-mounted from a shared writable home or SDK volume: a job must not replace a
-toolchain a later job executes.
+actions can add command-line tools, licenses, and packages. The Cache Volumes
+section of [Windows Runner Host](../../docs/operations/windows-runner-host.md)
+owns the Android storage exclusions.
 
 Java and Android command-line tools are not preinstalled. An Android setup
 action MUST retain the incoming `ANDROID_SDK_ROOT` and export both SDK variables
@@ -85,7 +84,8 @@ bash images/actions-runner/tests/smoke-test.sh actions-runner:test
 CI runs these Linux x64 checks on every pull request without pushing the
 result. The smoke test uses no network or mounts, checks the existing runner
 and cache properties, compiles and links an Android arm64 C++ shared library
-with each NDK, and verifies its ELF architecture and exported symbol. A
+with each NDK, and verifies its ELF architecture and exported symbol. It also
+rejects image-declared volumes that would introduce anonymous mounts. A
 mutation in one disposable container must be absent in a second fresh
 container. The download test rejects corrupt input before extraction and
 checks that non-x64 installation is skipped.

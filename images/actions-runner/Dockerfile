@@ -34,8 +34,9 @@ ENV ANDROID_HOME=/home/runner/.android/sdk \
     ANDROID_SDK_ROOT=/home/runner/.android/sdk
 COPY --from=android-ndks --chown=runner:docker /home/runner/.android/sdk /home/runner/.android/sdk
 
-# setup-android writes download metadata outside the SDK root. Android paths
-# stay container-local; the other directories can serve the host's cache mounts.
+# runner ownership keeps fresh tool-cache and language-cache volumes writable.
+# setup-android also writes metadata outside the SDK root, so .android and its
+# download cache need the same ownership within each disposable container.
 RUN mkdir -p /opt/hostedtoolcache \
         /home/runner/.android/cache \
         /home/runner/.cargo \

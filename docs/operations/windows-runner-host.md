@@ -352,6 +352,9 @@ that: it accepts any suffix and mount path, so the operator does. A volume
 for anything else, such as a compiler or build-system cache whose contents a later
 job links or executes without re-verifying them, is unsupported because no rule in
 [Security](../conventions/security.md) allows it.
+The Android SDK and `~/.android` MUST stay container-local, never cache-volume
+mount points: a job must not replace the image's verified NDKs or leave SDK
+metadata for a later job to trust.
 
 Before listing volumes for a repository, check which of its workflows hold a
 deployment secret, and whether the repository accepts pull requests from forks.
