@@ -319,6 +319,18 @@ Codex to read and apply [`REVIEW.md`](../../REVIEW.md). A maintainer MUST connec
 this repository to Codex and enable Code review in Codex settings before the
 route can run; this repository stores no Codex workflow or review secret.
 
+This route uses explicit review requests, not automatic event-based reviews.
+Before a request or the ready transition, a run MUST confirm that effective
+**Automatic review** is off for the repository, including any inherited personal
+preference. If it is on or unknown, block that action and ask the maintainer to
+confirm the setup; the standing grant does not authorize changing it. This
+prevents pull request events from starting extra billable reviews outside the
+four-round ledger. See the
+[Codex GitHub integration guide](https://learn.chatgpt.com/codex/third-party/github#enable-automatic-reviews).
+If an automatic review is observed, count it against the four-round cap, record
+its trigger, revision, and result in the round ledger, and do not add a duplicate
+manual request.
+
 Codex documents loading applicable `AGENTS.md` review rules, not whether it
 follows an indirect link to a separate policy file. On a representative pull
 request, check the posted review against `REVIEW.md` before claiming its
