@@ -223,8 +223,9 @@ Design rules that follow, which REVIEW.md applies:
   accepts fork pull requests lists no volumes for its entry, or runs those
   pull requests' workflows on a GitHub-hosted runner. The Cache Volumes section
   of [Windows Runner Host](../operations/windows-runner-host.md) states each
-  volume's reason and writers. Any other volume of content a later job executes
-  or links, or one that fails a condition, stays a finding.
+  volume's reason and writers and owns the Android storage exclusions, which
+  this exception does not reach. Any other volume of content a later job
+  executes or links, or one that fails a condition, stays a finding.
 - A job that holds a deployment secret does not mount a volume that a less
   trusted job could have written.
 - A container does not run privileged, does not mount the host's container socket

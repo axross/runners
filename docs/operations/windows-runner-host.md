@@ -227,11 +227,52 @@ version and base image digest come from that Dockerfile; the script fetches no
 newer runner and does not update the checkout. The cache is ignored so that the
 operating system packages are installed again and pick up their updates; a failed
 build leaves the previous image in place. After a successful build the script
-removes the earlier images it built that the new build left untagged, so weekly
-rebuilds do not fill the disk. The prune is limited to images carrying the build
+removes the earlier final images it built that the new build left untagged.
+It does not reclaim installation stages, build caches, or tagged rollback images.
+The prune is limited to images carrying the build
 label the script sets, so it does not touch other dangling images or images built
 by hand; an image from before the label existed stays until removed with
 `docker image rm`. A failed prune is a warning, not a failed rebuild.
+
+The Android NDK contract and Build sections of the
+[image README](../../images/actions-runner/README.md) own version/checksum
+maintenance, the consumer fallback contract, and additional image-build costs.
+
+For an authorized image update, rollback, or fixed-image comparison:
+
+1. Pause the weekly rebuild in Task Scheduler or run
+   `Disable-ScheduledTask -TaskName actions-runner-weekly-rebuild`, then wait for
+   any already-running rebuild to finish.
+2. Record the stable current image ID with
+   `docker image inspect <configured-image-name> --format '{{.Id}}'`. Before an
+   update, retain it with `docker tag <saved-image-id> actions-runner:rollback`;
+   this tag keeps it out of the dangling-image prune.
+3. Build the approved new image sources, or roll back by tagging the saved image
+   ID as the configured image name again or rebuilding the previously approved
+   sources. Record the image ID actually used. Existing containers finish on
+   their original image; subsequent containers use the retagged or rebuilt one.
+4. Keep the task disabled through the comparison or rollback window, and do not
+   rebuild manually during a comparison. A retag alone lasts only until the next
+   rebuild from the checkout.
+5. Put the checkout at the approved image sources intended for subsequent builds
+   before re-enabling the task with
+   `Enable-ScheduledTask -TaskName actions-runner-weekly-rebuild`. A missed weekly
+   build may run when the task is re-enabled.
+6. Remove the rollback tag with `docker image rm actions-runner:rollback` only
+   after the update is accepted and that recovery image is no longer needed;
+   this is not a general image/cache prune.
+
+For build-cache reclamation, inventory `docker system df -v` and identify the
+builder holding the installation stages first. Obtain separate approval for
+its unused-cache operation. For the daemon builder, an age-filtered option is
+`docker builder prune --all --filter until=168h`; it is not image-label-scoped
+and can invalidate other projects' build caches. This command's syntax is
+checked locally, but its real-host behavior and any automatic garbage-collection
+limit are unverified; do not assume the weekly image prune bounds that storage.
+
+No registration or cache-volume change is needed. Rollout, rollback, and
+scheduled-task changes are separately authorized operator actions, not effects
+of an image-source pull request.
 
 ## Registering the Scheduled Tasks
 
@@ -311,6 +352,9 @@ that: it accepts any suffix and mount path, so the operator does. A volume
 for anything else, such as a compiler or build-system cache whose contents a later
 job links or executes without re-verifying them, is unsupported because no rule in
 [Security](../conventions/security.md) allows it.
+The Android SDK and `~/.android` MUST stay container-local, never cache-volume
+mount points: a job must not replace the image's verified NDKs or leave SDK
+metadata for a later job to trust.
 
 Before listing volumes for a repository, check which of its workflows hold a
 deployment secret, and whether the repository accepts pull requests from forks.
@@ -373,8 +417,9 @@ pull), and whatever each repository's jobs reach on a GitHub-hosted runner. The
 image build, run weekly and on demand, also reaches the Ubuntu package archives
 that the base image's apt sources name, over port 80 or 443 (by default
 `archive.ubuntu.com` and `security.ubuntu.com`; check the base image's sources
-before filtering). The Dockerfile itself needs no access to Docker Hub. No inbound
-port is needed.
+before filtering), and `dl.google.com` over HTTPS for the checksum-pinned NDK
+archives on Linux x64. The Dockerfile itself needs no access to Docker Hub. No
+inbound port is needed.
 
 ## Recovery
 
