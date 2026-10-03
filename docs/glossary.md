@@ -74,10 +74,10 @@ waits for work on an agent host rather than showing an interface.
 
 ## Change Loop
 
-**Authoring Host** - the agent product a change is written with, Claude Code or
-Amp, or "manual" when no agent is involved. It selects nothing about the review
-provider here, since one provider serves every host; it is recorded so a run can
-be resumed.
+**Authoring Host** - the agent product a change is written with, Claude Code,
+Codex, or Amp, or "manual" when no agent is involved. It determines the
+independent-review provider and is recorded with that provider so a run can be
+resumed.
 
 **Standing Delivery Grant** - the maintainer's authorization, adopted in
 [operations/development-workflow.md](./operations/development-workflow.md), for a

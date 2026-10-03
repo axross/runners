@@ -206,17 +206,22 @@ limited to output format, not independence or the mandatory checks above.
 
 **Guidelines:**
 
-- A reviewer MUST NOT write either provider's review trigger phrase, documented
+- Model-authored review prose MUST NOT include either provider's review trigger
+  phrase, documented
   in [the independent review](docs/operations/development-workflow.md#the-independent-review),
   anywhere in a summary or an inline comment. Refer to it by name instead, for
-  example "the review request". The workflow's loop guard admits the reviewer's
-  own `claude[bot]` comments unless they carry a Markdown heading, so a summary
-  that quotes the phrase can start another review.
+  example "the review request". App-generated status and help text are exempt;
+  the model does not control that fixed text. The Claude workflow's loop guard
+  admits the reviewer's own `claude[bot]` comments unless they carry a Markdown
+  heading, so a summary that quotes the phrase can start another review.
 - Claude review MUST use its two-output route: diff-anchored inline findings
   plus exactly one top-level summary with the required tally, including
   `0 important, 0 nits` when no findings exist. This is this repository's
   exception to Code Review's single-submission rule; the advisory review
   carries no APPROVE or REQUEST_CHANGES verdict.
-- Codex review MUST use the managed review's standard GitHub review, with
-  native inline findings when present. A missing Important/Nit label or
-  top-level tally is not by itself a failed Codex review.
+- Codex review MUST use the managed review's native output, with inline findings
+  when present and its no-findings response or final thumbs-up reaction for a
+  clean round. A missing Important/Nit label, top-level tally, or separate review
+  object for a clean round is not by itself a failed Codex review. Follow
+  [Development Workflow](docs/operations/development-workflow.md#codex-review-from-codex-amp-or-a-manual-change)
+  to distinguish acknowledgment from completion.

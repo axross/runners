@@ -327,8 +327,18 @@ check ran. Codex's native GitHub review output is accepted instead of requiring 
 custom adapter: native priority labels and findings need no Important/Nit labels
 or Claude tally. This exception covers output format only, not reviewer
 independence, the mandatory checks in `REVIEW.md`, or a fresh review after fixes.
-If the App does not acknowledge the request or post a review, the run MUST
-confirm that setup rather than read the silence as a clean review.
+
+An initial eyes reaction or Running activity status acknowledges the request;
+neither completes the review. A run MUST correlate the request, reviewed
+revision, terminal App status, and actual final result before evaluating the
+review gate. Completed status proves the round ended, not that it found nothing:
+read any posted review and inline findings. The App's native no-findings response or
+final thumbs-up reaction on the request can confirm a clean round without a
+separate review object. Acknowledgment without a terminal result remains pending
+within [Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/independent-review.md#waiting-bound).
+If the App does not acknowledge or complete the round within that bound, the run
+MUST confirm the repository setup and keep the review gate blocked rather than
+read silence as a clean review.
 
 ## Acceptance Criteria Verified Out of Tree
 

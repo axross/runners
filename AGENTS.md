@@ -15,8 +15,8 @@ indexes conventions, operations, and the glossary. mise pins the toolchain, and
 Prettier, markdownlint, shellcheck, hadolint, actionlint, and PSScriptAnalyzer
 provide format and lint.
 
-This repository is public, so its own CI and review run on GitHub-hosted
-runners only, never on a self-hosted one.
+This repository is public, so its GitHub Actions CI and review jobs run on
+GitHub-hosted runners only, never on a self-hosted one.
 
 This project's fixed agent-comment marker is `<!-- ai-agent -->`. Never push to
 the default branch: work on a `claude/`-prefixed branch and leave merging to
