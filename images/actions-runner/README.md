@@ -38,10 +38,22 @@ owns the Android storage exclusions.
 Java and Android command-line tools are not preinstalled. An Android setup
 action MUST retain the incoming `ANDROID_SDK_ROOT` and export both SDK variables
 to it; setting only `ANDROID_HOME` does not guarantee reuse. There is no global
-`ANDROID_NDK_HOME`: consumers select their own exact required release, validate
-it, and directly install a missing package with SDK-manager until the image
-catches up. An incomplete installed release is an error, not permission to use
-a different version. Do not restore an NDK cache over a preinstalled directory.
+`ANDROID_NDK_HOME`: consumers select their own exact required release and use
+ordinary SDK-manager installation, just as on a standard Linux x64 runner:
+
+```bash
+sdkmanager --sdk_root="$ANDROID_SDK_ROOT" --install "ndk;$required_version"
+```
+
+SDK-manager recognizes the image's registered packages without downloading
+their NDK archives again, and acquires a missing version normally until the
+image catches up. The image owns archive verification, package registration,
+SDK environment, ownership, and compiler health tests. Consumers need no image
+flag, directory/revision/Clang branch, fixed SDK path, or SDK-manager wrapper.
+This still invokes SDK-manager and may fetch repository metadata; it does not
+eliminate all SDK/network work. Do not restore an NDK cache over a preinstalled
+directory or replace an application's dependency-selected version with another
+installed release.
 
 To add or replace a release, obtain its official Linux archive from
 [Google's NDK downloads](https://developer.android.com/ndk/downloads), check
@@ -89,6 +101,15 @@ rejects image-declared volumes that would introduce anonymous mounts. A
 mutation in one disposable container must be absent in a second fresh
 container. The download test rejects corrupt input before extraction and
 checks that non-x64 installation is skipped.
+
+Windows Docker Desktop verification remains the maintainer's post-merge
+responsibility. The [historical Linux SDK interoperability evidence](https://github.com/axross/runners/issues/13#issuecomment-5963049851)
+includes ordinary requests for both installed packages with networking disabled;
+it is not a Windows or full-application result. Repeat the build/smoke commands
+above on the intended desktop and record the source revision and image identity
+before validating a consumer. Use a separate candidate tag, not the host's
+production tag, and do not mount a shared SDK/home or runner socket. Image
+rollout remains a separate operator decision.
 
 The host's uncached weekly rebuild downloads both archives again: together
 1,327,934,693 bytes (about 1.33 GB), containing 4,107,528,665 bytes of extracted
