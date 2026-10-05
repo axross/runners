@@ -112,8 +112,9 @@ Gradle user home. The wrapper extracts the ZIP itself; the image manufactures no
 `.ok` marker. A different distribution URL or Gradle user home selects a
 different location. The image pins the ZIP's checksum, but does not add a
 wrapper checksum to consumers that omit one. Application dependencies and
-generated build caches stay out of the image. Keep SDK/home mutations container-local rather than introducing
-shared toolchain volumes that a later job could trust.
+generated build caches stay out of the image. The Cache Volumes section of
+[Windows Runner Host](../../docs/operations/windows-runner-host.md#cache-volumes)
+owns shared-volume policy and Android storage exclusions.
 
 To refresh an input:
 
