@@ -217,7 +217,11 @@ function Export-RunnerDiagnostic {
         if ($existing.Count -ge 10) { throw 'diagnostic sink full (ten bundles)' }
         $bundle = Join-Path $sink "$EntryName-bundle-$([Guid]::NewGuid().ToString('N'))"
         $null = New-Item -ItemType Directory -Path $bundle
-        if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { [IO.File]::SetUnixFileMode($bundle, 448) }
+        if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+            $acl = Get-Acl -LiteralPath $bundle
+            $acl.SetOwner([Security.Principal.WindowsIdentity]::GetCurrent().User)
+            Set-Acl -LiteralPath $bundle -AclObject $acl
+        } else { [IO.File]::SetUnixFileMode($bundle, 448) }
         $null = Assert-PrivateDiagnosticDirectory -Path $bundle
     } finally {
         if ($locked) { $mutex.ReleaseMutex() }

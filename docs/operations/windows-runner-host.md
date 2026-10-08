@@ -391,7 +391,11 @@ Admission is serialized across that entry's slots. The host independently
 rejects malicious tar paths, links, special files, duplicate names and excess
 sizes; it does not extract an arbitrary container filesystem or container logs.
 The admission lock is released before inspect and copy, so another slot can
-export while a slow copy is running. All storage operations, inspect and copy
+export while a slow copy is running. New bundles inherit the sink's private
+access rules. Windows can assign a different owner to a new child directory,
+so the exporter assigns its new bundle to the supervisor account before
+writing evidence; it never repairs the pre-created sink's owner or rules.
+All storage operations, inspect and copy
 run in a separate PowerShell process with an 18-second deadline. At timeout,
 Windows `taskkill /PID /T /F` terminates that process and its children; PowerShell
 7 on Linux uses process-tree termination. Cleanup has at most two seconds, with

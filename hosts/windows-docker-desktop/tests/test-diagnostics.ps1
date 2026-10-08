@@ -145,7 +145,19 @@ try {
     $null = New-Item -ItemType Directory -Path $sink
     Initialize-TestPrivateDirectory -Path $sink
     $null = Assert-PrivateDiagnosticDirectory -Path $sink
-    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
+    if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+        $privateAcl = Get-Acl -LiteralPath $sink
+        $insecureAcl = Get-Acl -LiteralPath $sink
+        $other = New-Object Security.Principal.SecurityIdentifier ([Security.Principal.WellKnownSidType]::WorldSid), $null
+        $insecureAcl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule $other, 'Read', 'ContainerInherit, ObjectInherit', 'None', 'Allow'))
+        Set-Acl -LiteralPath $sink -AclObject $insecureAcl
+        $insecure = $false
+        try { Export-RunnerDiagnostic -Name 'example-entry-1-20240305060708009' -EntryName 'example-entry' -Directory $sink -RawRecords $false -Clock ([Diagnostics.Stopwatch]::StartNew()) }
+        catch { $insecure = $_.Exception.Message -eq 'diagnostic directory grants access to another account' }
+        $unchanged = @((Get-Acl -LiteralPath $sink).GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]) | Where-Object { $_.IdentityReference.Value -eq $other.Value -and $_.AccessControlType -eq 'Allow' }).Count -eq 1
+        Assert-Case -Name 'Windows insecure sink rejected without writes or ACL repair' -Passed ($insecure -and $unchanged -and @(Get-ChildItem -LiteralPath $sink -Force).Count -eq 0) -Detail 'unsafe sink was admitted or repaired'
+        Set-Acl -LiteralPath $sink -AclObject $privateAcl
+    } else {
         [IO.File]::SetUnixFileMode($sink, 493)
         $insecure = $false
         try { $null = Assert-PrivateDiagnosticDirectory -Path $sink } catch { $insecure = $true }
