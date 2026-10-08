@@ -6,6 +6,8 @@ Apply this reference when persisting recoverable state or reporting a phase resu
 
 Durable state is whatever a fresh executor cannot safely derive: target, phase, approved plan revision and approval evidence, scoped operation grants, assignments and attempts, latest results, self-review evidence, checks, review round, open findings at their permitted durability, unresolved decisions or authorization, the execution arrangement and how it was settled, actual revision and uncommitted state, remaining processes, and unknown external effects.
 
+For example, a human-dismissed external finding can have a verified disposition reply but failed conversation closure. Preserve the actual human decision and its rationale separately from the verified reply and pending closure; resume only the pending effect under its valid grant. Finding disposition is not delivery completion. Pending, failed, and outcome-unknown reply/closure effects retain their own evidence without requiring a new storage schema or result vocabulary.
+
 **Guidelines:**
 
 - MUST persist only through a currently permitted project mechanism and preserve append-only history.

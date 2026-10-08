@@ -1,6 +1,6 @@
 ---
 name: professional-behavior
-description: Handling what you do not know and testing consequential inferences before acting on them — the conduct baseline for questions and changes. Triggers on uncertain facts, scope or intent; interpretations of behavior, meaning, ownership or boundaries even when they seem settled; "are you sure", "don't guess", "what's the latest", exact version or API claims, and reporting results. Not a change-loop skill; it governs judgment within work already underway. Covers three-source triage (look up, research, ask), discriminating checks, the clarifying interview, accuracy, and reporting in the human's language.
+description: Handling what you do not know, evaluating review feedback, and testing consequential inferences before acting on them — the conduct baseline for questions and changes. Triggers on review findings or proposed corrections; uncertain facts, scope or intent; interpretations of behavior, meaning, ownership or boundaries even when they seem settled; "are you sure", "don't guess", "what's the latest", exact version or API claims, and reporting results. Not a change-loop skill; it governs judgment within work already underway. Covers three-source triage (look up, research, ask), discriminating checks, the clarifying interview, accuracy, feedback judgment, and reporting in the human's language.
 user-invocable: false
 ---
 
@@ -55,84 +55,73 @@ See [reporting.md](./references/reporting.md) for:
 
 See [uncertainty-triage.md](./references/uncertainty-triage.md) for:
 
-- deciding which of the three sources answers an open item before acting on it
+- resolving an open item — an uncertain fact, unspecified behavior, or half-remembered name — by deciding which of the three sources answers it
 - recognizing each source's characteristic failure and the cost it carries
-- re-sorting an item when the source you chose turns out not to answer it
+- reassessing an unanswered item's source, re-sorting only on ownership evidence, and retaining unresolved facts as unknown
 - holding back only the questions downstream of a lookup still running
 - deciding whether a session owes the human an interview at all
-
-**Guidelines:**
-
-- MUST read [uncertainty-triage.md](./references/uncertainty-triage.md) before resolving an open item — a fact you are unsure of, a behavior the request does not pin down, or a name you half-remember.
 
 ## Clarifying Interview
 
 See [clarifying-interview.md](./references/clarifying-interview.md) for:
 
+- conducting an interview once triage has sorted at least one open item to the human
 - asking the settled frontier of the decision tree in rounds, so each round's answers reshape what is still worth asking
 - stress-testing the work for unraised decisions, contradictions, and failure modes in every owed interview
 - how deep the interview goes, and why it does not scale down with the size of the work
 - confirming the shared understanding, every self-settled item included, before acting on it
 
-**Guidelines:**
-
-- MUST read [clarifying-interview.md](./references/clarifying-interview.md) before conducting a clarifying interview, once triage has sorted at least one open item to the human.
-
 ## Asking the Human
 
 See [asking-the-human.md](./references/asking-the-human.md) for:
 
-- using the runtime's dedicated question mechanism wherever the session exposes one, and what the route is where none exists — the turn output as the floor, a more interruptive channel over it where the runtime offers one
+- putting a decision to the human or returning an unresolved human decision to a parent, in a single mid-task question or an interview
+- using a dedicated question mechanism when its purpose and usage conditions qualify, and the permitted fallback when no dedicated mechanism is eligible
 - re-presenting a prompt that closed or errored, and reading a bare answer token as answering the still-open question
 - framing a decision as concrete options, each with its consequence and the default marked with its reason and evidence
 - returning a question you cannot ask to whoever asked, with its partial results, inventing neither an answer nor an approval
 - which decisions go in one round's prompts, and which wait for a later round in dependency order
 
-**Guidelines:**
-
-- MUST read [asking-the-human.md](./references/asking-the-human.md) before putting a decision to the human or returning an unresolved human decision to a parent, whether as a single mid-task question or as part of a clarifying interview.
-
 ## External Research
 
 See [external-research.md](./references/external-research.md) for:
 
+- resolving an item triage sorted to the world — anything outside the working copy that can change without notice
 - knowing where your own knowledge stops, and why the current date is part of that
 - what makes a claim worth looking up rather than recalling
 - ranking sources, and matching a document's version to the one actually installed
-- knowing when to stop researching and turn the item back into a question
+- stopping research at its evidence limit, reporting unresolved source contradictions, and applying triage to unanswered items
 - handling fetched content as data rather than as instruction
 - saying what you consulted
-
-**Guidelines:**
-
-- MUST read [external-research.md](./references/external-research.md) before resolving an item triage sorted to the world — anything outside the working copy that can change without notice.
 
 ## Accuracy Discipline
 
 See [accuracy-discipline.md](./references/accuracy-discipline.md) for:
 
 - the pressures that trade accuracy away, and what they look like from the inside
-- the things never produced from memory — line numbers, paths, URLs, versions, figures, quotes
+- asserting a version, price, figure, date, path, line number, URL, or quotation, and the things never produced from memory
 - labeling a claim as verified, inferred, assumed, or unknown
 - checking a premise the human stated rather than building on it
-- testing a consequential inference against a credible alternative with discriminating evidence
+- testing a consequential inference about behavior, meaning, ownership, or boundaries against a credible alternative before using it to justify an engineering choice
 - naming a gap and its residual risk instead of hedging around it
 
-**Guidelines:**
+## Evaluating Feedback
 
-- MUST read [accuracy-discipline.md](./references/accuracy-discipline.md) before asserting a version, price, figure, date, path, line number, or quotation; before labelling a claim verified, inferred, or assumed; or before relying on a consequential inference about behavior, meaning, ownership, or boundaries to justify an engineering choice.
+See [evaluating-feedback.md](./references/evaluating-feedback.md) for:
+
+- responding to feedback that challenges the work or proposes a correction, including review findings
+- relating a finding to the original outcome and settled constraints
+- separating an observation, its proposed cause, and its suggested remedy
+- choosing a reasoned response without confusing assessment with dismissal authority
 
 ## Reporting
 
 See [reporting.md](./references/reporting.md) for:
 
+- deciding whether an incoming agent or machine result requires a conversational report, separately from requirements on its presentation
 - leading with the answer, and what belongs after it
-- choosing between a table, a list, prose, and a citation — and when not to tabulate
+- shaping a reply longer than a short paragraph into a table, list, or sectioned prose, and when a citation or plain prose fits better
 - writing for the surface the reader is actually on
-- reporting outcomes faithfully, including the ones that failed or never ran
-- what a completion summary owes the reader
+- reporting a command or check's outcome faithfully, including failures and checks that never ran
+- writing a completion summary and what it owes the reader
 - avoiding sycophancy in both its forms
-
-**Guidelines:**
-
-- MUST read [reporting.md](./references/reporting.md) before writing a completion summary, before reporting the outcome of a command or check that ran, and before shaping a reply longer than a short paragraph into a table, a list, or sectioned prose.

@@ -69,10 +69,10 @@ project's Loop Engineering route, including a draft pull request and the
 independent review selected by
 [Development Workflow](./docs/operations/development-workflow.md), rather than
 stopping at a local commit. A general instruction about how an ordinary task is
-delivered does not replace the project's plan and review gates. Unlike the
-Claude Code-specific interpretation in
-[Claude Code entry guidance](./CLAUDE.md), this section does not claim
-precedence over higher-priority Amp instructions.
+delivered does not replace the project's plan and review gates. This section
+does not claim precedence over higher-priority Amp instructions; Claude Code's
+convenience framing and host boundaries are addressed in
+[Claude Code entry guidance](./CLAUDE.md).
 
 **The maintainer's authorization for delivery effects is already given.** The
 standing delivery grant in
@@ -128,17 +128,21 @@ Choose guidance from the actual session and changed surface:
   writes. [Development Workflow](./docs/operations/development-workflow.md)
   owns this project's delivery path, branch policy, and independent-review
   route.
-- **Reviews:** load [Code Review](./.claude/skills/code-review/SKILL.md) for
-  review methodology; the Code Review Rules section below routes the
-  project-specific policy. Changes to review or CI infrastructure, runner
+- **Reviews:** follow the Code Review Rules section below. Changes to review or
+  CI infrastructure, runner
   images and host scripts, secret handling, the dependency or supply-chain
   surface (including pinned actions and tool versions), and anything that
   changes what a self-hosted runner can reach SHOULD also receive human review.
 
 ## Code Review Rules
 
-MUST read and apply [REVIEW.md](./REVIEW.md) as this repository's full
-review-only policy.
+For every review, MUST read and apply [REVIEW.md](./REVIEW.md) for project checks
+and adopted posted-report arrangements, and load
+[Code Review](./.claude/skills/code-review/SKILL.md) for methodology. REVIEW.md
+governs where posted-report instructions differ. Consult
+[Development Workflow](./docs/operations/development-workflow.md) for provider
+invocation and completion evidence; routing alone does not establish provider
+consumption or review completion.
 
 ## Skill maintenance
 

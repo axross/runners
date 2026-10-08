@@ -4,7 +4,7 @@ Apply these rules to verify the author exercised the change in the running app. 
 
 ## Required Manual Checks
 
-The reviewer MUST ask the author to confirm (in the PR description or the review thread) that the following were checked when the diff touches the listed surface. Rows marked _(optional)_ apply only if the project has the corresponding capability. Which surfaces a change puts at risk is decided by the skill that owns each changed surface, and the method for mapping them belongs to the project's verification rules; this table does not re-derive either — it adds only the review-side check the reviewer demands for each surface.
+The table describes the manual evidence owed for each changed surface. For checks within [Review Finding Scope](./verification-evidence.md#review-finding-scope), the reviewer MUST ask the author to confirm (in the PR description or the review thread) that the following were checked when the diff touches the listed surface. Rows marked _(optional)_ apply only if the project has the corresponding capability. Which surfaces a change puts at risk is decided by the skill that owns each changed surface, and the method for mapping them belongs to the project's verification rules; this table does not re-derive either — it adds only the review-side check the reviewer demands for each surface.
 
 | Diff touches                                                                                                             | Required manual check                                                                                                                                                                         |
 | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -18,7 +18,7 @@ The reviewer MUST ask the author to confirm (in the PR description or the review
 
 **Guidelines:**
 
-- MUST flag a Major when the diff touches a row in the table above and the author has not confirmed the corresponding check.
+- MUST, subject to [Review Finding Scope](./verification-evidence.md#review-finding-scope), flag a Major when the diff touches a row in the table above and the author has not confirmed the corresponding check.
 
 ## Dev-Server Output Inspection
 

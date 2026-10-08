@@ -29,10 +29,6 @@ See [scoping-and-mece.md](./references/scoping-and-mece.md) for:
 - classifying every section as mechanism or judgment when a vendor- or runner-specific skill sits beneath a tool-agnostic owner
 - using section length and topic growth as signals for restructuring
 
-**Guidelines:**
-
-- MUST read [scoping-and-mece.md](./references/scoping-and-mece.md) before assigning a rule's owner or migrating content between capabilities, project policy, and host guidance.
-
 ## Capability Framing
 
 See [capability-framing.md](./references/capability-framing.md) for:
@@ -50,10 +46,6 @@ See [frontmatter-and-naming.md](./references/frontmatter-and-naming.md) for:
 - distinguishing standard required and optional metadata from host-specific invocation controls
 - choosing the skill directory name and keeping it aligned with the `name` field
 - assessing host-project harness fields against the selected host and distribution path
-
-**Guidelines:**
-
-- MUST read [frontmatter-and-naming.md](./references/frontmatter-and-naming.md) before editing metadata or judging whether a host extension is required or supported.
 
 ## Description Writing
 
@@ -79,13 +71,14 @@ See [body-content-style.md](./references/body-content-style.md) for:
 
 A `SKILL.md` carries exactly three things: what capability this is, the rules that apply unconditionally within it, and the routing that says which reference to read when. Every other normative statement — the detail behind a MUST or SHOULD, procedures, tables, examples — goes in a reference. The test for keeping a rule in the body is whether the reader needs it **before the routing decision**, not whether the rule is important: a change-loop capability's distinction between read-only work and a change must be available before the reader chooses an implementation reference. This contract is itself needed before the routing decision it governs, which is why it is stated here rather than left behind the pointer below — the same reason the load-bearing test just after it is stated directly rather than deferred.
 
-A rule is **load-bearing** when an agent that loads `SKILL.md` and opens no reference would produce wrong output for want of it — held before the work starts, not looked up once the reader already knows the question exists. That test still sorts a skill's material, but its consequence is a conditional read obligation rather than a relocation: a load-bearing rule's own statement stays in its reference, and `SKILL.md` carries an RFC-2119 obligation to read that reference before the work its rule governs. A reference nobody is told to read never gets read; a `SKILL.md` that states every rule directly cannot be tree-shaken by the sessions that will never touch most of them. This test is itself load-bearing for a skill's author, so it is stated here as a rule rather than left behind the pointer below.
+A rule is **load-bearing** when an agent that loads `SKILL.md` and opens no reference would produce wrong output for want of it. Its statement stays in the owning reference; the parent routing names the situations in which that reference applies. Repeating those situations as a separate MUST-read bullet adds no selection information. Routing therefore consists only of a `See ... for:` or `See ... when` link and descriptive situation bullets, without a `**Guidelines:**` block.
 
 **Guidelines:**
 
 - MUST treat a rule as load-bearing when an agent that loads `SKILL.md` alone would produce wrong output for want of it — a fixed order, a closed set, or a constraint whose violation is not self-evident from the output — and as elaboration otherwise.
 - MUST place a load-bearing rule's own statement, its RFC-2119 bullets, and everything that elaborates it in the reference file that governs it, not in `SKILL.md`.
-- MUST give `SKILL.md` a `**Guidelines:**` block, placed after a reference's routing list, carrying one RFC-2119 bullet per reference that names the reference and states the condition — narrow enough to be skippable — under which it MUST be read.
+- MUST limit reference routing to a `See ... for:` or `See ... when` link followed by descriptive bullets naming situations, use cases, or conditions for consulting that reference.
+- MUST NOT attach a `**Guidelines:**` block to reference routing, even for an empty block or one containing only read obligations; express reference-selection conditions in the descriptive bullets instead.
 - MUST NOT restate a load-bearing rule's statement or its RFC-2119 bullets in `SKILL.md` once its reference states them, except under the carve-out below.
 - MUST keep a rule's own statement in `SKILL.md`, never moved to a reference, when the rule's triggering condition is unconditional within its own skill's scope — a pointer that would fire on every turn costs a read and shakes nothing.
 
@@ -93,17 +86,13 @@ See [progressive-disclosure.md](./references/progressive-disclosure.md) for:
 
 - deciding when a skill should stay single-file or split into `references/`
 - the three-part role contract and the "needed before the routing decision" test in full, and how the load-bearing test and the unconditional-scope carve-out relate to it
-- the load-bearing test's full sorting table, and how it decides whether a reference earns a conditional read obligation
+- the load-bearing test's full sorting table and the selection conditions a reference's routing names
 - the size thresholds that signal a skill or reference file has grown too large
-- using the parent routing-section format: `## Topic`, `See [file.md](./references/file.md) for:`, descriptive situation bullets, then a `**Guidelines:**` block carrying the read obligation
-- wording a read obligation's triggering condition narrowly enough to be skippable
+- using the descriptive-only parent routing-section format when splitting a skill or restructuring its reference layout
+- wording reference-selection conditions narrowly enough to skip irrelevant references
 - stating the fact a routing bullet points at — the flag, limit, or rule by name — instead of announcing that one exists
 - keeping parent routing bullets free of RFC-2119-style requirement keywords so they remain routing cues, not duplicated rules
-- the two placements a body-resident rule may take relative to a routing list, and when each applies
-
-**Guidelines:**
-
-- MUST read [progressive-disclosure.md](./references/progressive-disclosure.md) before splitting a skill into `references/`, restructuring its reference layout, or deciding where a body-resident rule belongs relative to a routing list.
+- deciding where a body-resident rule belongs relative to a routing list
 
 ## Cross-Referencing and Discovery
 
@@ -113,10 +102,6 @@ See [cross-referencing.md](./references/cross-referencing.md) for:
 - choosing one source of truth instead of copying detailed rules across skills
 - using topic-based cross-skill references, verifying intra-skill relative links, and keeping skill discovery current (plus any written index a host maintains)
 - routing only to applicable owners and hosts, including when an optional owner or project host document is absent
-
-**Guidelines:**
-
-- MUST read [cross-referencing.md](./references/cross-referencing.md) before adding or changing a cross-owner route.
 
 ## Project Skill Archetypes
 
@@ -136,7 +121,3 @@ See [audit-checklist.md](./references/audit-checklist.md) for:
 - checking inventory, skill discovery, section anatomy, RFC-2119 bullets, topic-based cross-skill references, and relative links
 - identifying overlap, stale assumptions, orphan references, and missing source-of-truth links
 - applying the ownership and portability checklist without expanding a bounded change into a library-wide migration
-
-**Guidelines:**
-
-- MUST read [audit-checklist.md](./references/audit-checklist.md) when reviewing a skill's ownership boundaries or metadata portability.

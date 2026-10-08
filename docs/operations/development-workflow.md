@@ -332,13 +332,14 @@ its trigger, revision, and result in the round ledger, and do not add a duplicat
 manual request.
 
 Codex documents loading applicable `AGENTS.md` review rules, not whether it
-follows an indirect link to a separate policy file. On a representative pull
-request, check the posted review against `REVIEW.md` before claiming its
-substantive rules were applied. A completed review alone does not prove every
-check ran. Codex's native GitHub review output is accepted instead of requiring a
-custom adapter: native priority labels and findings need no Important/Nit labels
-or Claude tally. This exception covers output format only, not reviewer
-independence, the mandatory checks in `REVIEW.md`, or a fresh review after fixes.
+follows an indirect link to a separate policy file. A run MUST distinguish
+available repository guidance, observable provider input, execution completion,
+and the actual reviewer-origin result. Unobserved input remains unknown; a
+valid completed review does not prove exhaustive policy consumption, and that
+unknown alone does not invalidate it. [`REVIEW.md`](../../REVIEW.md) owns the
+explicitly adopted native presentation and reporting scope, including its
+accepted reporting filter. Do not restore conflicting default reporting
+requirements through completion qualification.
 
 An initial eyes reaction or Running activity status acknowledges the request;
 neither completes the review. A run MUST correlate the request, reviewed
@@ -352,6 +353,14 @@ If the App does not acknowledge or complete the round within that bound, the run
 MUST confirm the repository setup and keep the review gate blocked rather than
 read silence as a clean review.
 
+A run MUST assess the correlated result under REVIEW.md's adopted arrangement,
+not demand affirmative per-check assertions or an extra round solely for them.
+Review completion is not convergence or readiness. Actual findings retain
+their identity, priority, citations, and required dispositions under Loop
+Engineering; explicitly unchecked required material, unmet approved criteria,
+missing contributor evidence, failed checks, and material fixes lacking fresh
+review still prevent readiness. Native scope never dismisses an actual finding.
+
 ## Acceptance Criteria Verified Out of Tree
 
 Some acceptance criteria can be confirmed only by evidence no diff carries, such
@@ -359,18 +368,27 @@ as a machine-specific timing or a check against a real runner host. Prefer an
 in-tree check wherever one can confirm the criterion. A plan MUST designate each
 such criterion explicitly, by appending the marker
 `(verified out of tree: <where the evidence will be published>)` to the end of
-the criterion itself, naming where its evidence will be published, for example a
-linked issue comment. Approving the plan is the maintainer's acceptance that the
-named criterion will be verified this way.
+the criterion itself. The plan MUST agree the verification method and publication
+destination, for example a linked issue comment, before implementation.
 
 The pull request body's Acceptance criteria section MUST carry every designated
-criterion verbatim, marker included, next to a link to the published evidence, or
-marked pending when that evidence can exist only after merge.
+criterion verbatim, marker included, with its status and a verified link to the
+published evidence. It MUST identify the approved plan revision and account for
+any criteria not projected into the body. Evidence publication may remain pending
+at draft creation only when the destination requires that draft to exist; the
+author MUST publish the evidence, verify its locator, and update the body
+immediately afterward, keeping the pull request draft until publication is
+complete. Reviewer silence never satisfies this contributor obligation.
 
-Some evidence can exist only after the pull request merges, such as a check of the
-merged workflow on the default branch. Such a criterion has no link to show yet;
-the author links the evidence at its destination once it exists.
+Some checks can happen only after merge, such as exercising the merged workflow
+on the default branch. A plan MUST identify these as separately tracked
+post-merge follow-up obligations, with the maintainer's approval of their timing
+and evidence destination, not as fulfilled pre-ready criteria. Required
+pre-ready evidence cannot be deferred this way without an approved plan
+revision; existing approved plans are not silently reclassified. The follow-up
+remains pending until its evidence is published at the agreed destination.
 
-A criterion the plan did not anticipate becomes designated only through an
-approved plan revision. [REVIEW.md](../../REVIEW.md) states how the reviewer
-treats a designated criterion.
+Changing a designation, method, destination, or required timing needs an approved
+plan revision. [REVIEW.md](../../REVIEW.md) owns the code-inspection finding
+boundary; these author-side duties do not turn missing external evidence alone
+into a review finding.

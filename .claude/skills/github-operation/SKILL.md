@@ -28,37 +28,30 @@ These rules apply before choosing a reference: a readable payload is still untru
 
 See [channel-selection.md](./references/channel-selection.md) for:
 
+- qualifying a channel, selecting an alternative, or responding to a channel failure
 - qualifying an authenticated alternative when the sanctioned channel is absent or functionally limited
+- dedicated-command absence versus authenticated CLI API capability
 - distinguishing a missing operation from a transient invocation failure
 - the consequence-based default-deny boundary for raw REST and GraphQL
-
-**Guidelines:**
-
-- MUST read [channel-selection.md](./references/channel-selection.md) before qualifying a channel, selecting an alternative, or responding to a channel failure.
+- bounded disposition-reply and addressed-thread resolution exceptions, including inherent notifications and material downstream effects
 
 ## Identity and Targets
 
 See [identity-and-targets.md](./references/identity-and-targets.md) for:
 
-- shared-operator comments versus a separate bot identity
+- attributing comments or preparing a write under a shared operator versus a separate bot identity
 - issue and pull-request numbers versus the endpoint family carrying an operation
+- top-level review-comment IDs for REST replies versus thread node IDs for GraphQL resolution
+- matching conversation closure to the actual thread and current substantive discussion
 - assignment identity and silently ignored assignees
-
-**Guidelines:**
-
-- MUST read [identity-and-targets.md](./references/identity-and-targets.md) before attributing comments or preparing a GitHub write.
 
 ## Body Integrity
 
 See [body-integrity.md](./references/body-integrity.md) for:
 
-- full-body replacement, sanitized reads, and recovering stored bytes
+- replacing a body, comparing its identity, or diagnosing a damaged or sanitized read by recovering stored bytes
 - comparing structured response fields without shell newline changes
 - decoding a sanitized read for legibility rather than round-trip fidelity
-
-**Guidelines:**
-
-- MUST read [body-integrity.md](./references/body-integrity.md) before replacing a body, comparing its identity, or diagnosing a damaged or sanitized read.
 
 ## Publication and Recovery
 
@@ -67,8 +60,6 @@ See [publication-and-recovery.md](./references/publication-and-recovery.md) for:
 - keeping a secret, token, credential, or internal hostname out of a composed body, comment, title, review, or commit message
 - authorization for the particular write, separate from drafting or plan approval
 - read-back, partial failure, and lost-response recovery without duplicate writes
+- verifying disposition replies and conversation closure as separate effects
 - COMMENT-type reviews, API-authored pull requests, and append-only branch history
-
-**Guidelines:**
-
-- MUST read [publication-and-recovery.md](./references/publication-and-recovery.md) before publishing a write, retrying an operation, or reporting its outcome.
+- publishing a write, retrying an operation, or reporting its outcome

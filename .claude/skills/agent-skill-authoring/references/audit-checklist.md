@@ -41,6 +41,8 @@ It also reads `description` as the **YAML scalar** it is, which is a distinct fa
 
 Across each skill's **prose documents** — its `SKILL.md` and every `references/*.md`, but not `scripts/` or `assets/`, which carry payload rather than rules — it further verifies that no `##`+ heading is separated from its `**Guidelines:**` block by nothing but blank lines (a fenced block, table, list, or paragraph all count as the demonstration); that every top-level bullet inside a `**Guidelines:**` block opens with an RFC-2119 keyword, nested bullets exempt; that every relative link resolves inside its own skill directory; and that every `#fragment` matches a heading in its target file, using GitHub's slug rules. A fragment whose target file does not resolve is left to `check-links.mjs` rather than reported twice.
 
+In `SKILL.md`, the body validator also rejects any `**Guidelines:**` block introduced by a reference-routing list, including empty blocks and read-obligation-only blocks. Both `See ... for:` and `See ... when` are routing lead-ins. Fenced examples are ignored, and independent substantive blocks before routing or after explanatory prose or a new heading remain valid.
+
 It exits 0 when every skill passes, 1 when any check fails, and 2 on a bad invocation or an unrecognized option.
 
 A host-specific frontmatter extension such as Claude Code's `when_to_use` or `user-invocable` is neither required nor rejected: the Agent Skills specification defines neither, so requiring one would fail a correct skill on every host that ignores it. Whether a skill carries them is a project's own convention to enforce, not this validator's.
@@ -98,7 +100,7 @@ find .claude/skills -name '*.md' -print | sort  # or .agents/skills
 
 - MUST check that every skill's frontmatter parses as YAML.
 - MUST assess any invocation-control fields under [frontmatter-and-naming.md](./frontmatter-and-naming.md#invocation-control-and-discovery-fields); missing host extensions are not portable-format failures.
-- MUST check that every parent `SKILL.md` reference-routing section uses `## Section/Topic Name`, `See [file.md](./references/file.md) for:`, and descriptive bullets without RFC-2119-style requirement keywords.
+- MUST check parent reference routes against the descriptive-only contract in `SKILL.md`: a topic heading, a `See ... for:` or `See ... when` link, descriptive bullets without RFC-2119-style requirement keywords, and no routing Guidelines block.
 - MUST check that every substantive rule section has a `**Guidelines:**` block after its explanation or demonstration.
 - MUST check that every guideline bullet begins with an RFC-2119 keyword.
 - MUST check that relative Markdown links outside fenced code blocks resolve; this skill's `scripts/check-links.mjs` automates the check (see [cross-referencing.md](./cross-referencing.md)).

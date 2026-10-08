@@ -104,51 +104,18 @@ A distributable skill is authored under `skills/<name>/SKILL.md` (with its `refe
 
 See [active-loading.md](./references/active-loading.md) for:
 
-- installation, source agreement, discovery, and active content as separate observations
-- same-name precedence, stale sessions, and unavailable source evidence
+- verifying an installation or refresh through separate observations of installation, source agreement, discovery, and active content
+- diagnosing missing discovery or unexpected loaded content, including same-name precedence, stale sessions, and unavailable source evidence
 - diagnosis before an authorized installation change
-
-**Guidelines:**
-
-- MUST read [active-loading.md](./references/active-loading.md) when verifying a skill installation or refresh, or diagnosing missing discovery or unexpected loaded content.
 
 ## Proposing a Change to an Installed Skill
 
-A distributable skill's installed copy under the skill root is a **generated artifact**: the next install or `npx skills` upgrade regenerates it from its source and silently discards anything you typed into it. How you change such a skill therefore depends on **whether you own its source**.
+See [installed-rule-changes.md](./references/installed-rule-changes.md) for:
 
-The change usually announces itself while you are using the skill rather than before it: you load the skill for some other task and find a rule that is wrong, out of date, or silent on the case in front of you. That finding is what this section acts on. The question it answers is not whether to act — a rule left uncorrected misleads the next reader as it misled you — but where the action lands, and the installed copy is never the answer.
-
-Determine which case you are in from the skill's `source` in `skills-lock.json`:
-
-- The `source` points inside a repository you control (a local path or your own repo) → **you own the source** (first-party); change it locally.
-- The `source` points at an upstream repository or registry you do not control → the skill was **installed from outside** (third-party); route the change upstream.
-
-### Acting on What You Found
-
-A finding about a skill arrives in the middle of other work, which is what makes it easy to lose: correcting it in place is forbidden, and the task at hand has its own momentum. Sort it by tier, route it, and carry on — the proposal travels alongside the work rather than displacing it.
-
-**Guidelines:**
-
-- MUST treat a rule you find wrong, outdated, or missing while applying an installed skill as a change to route, not an observation to discard; sort it by the ownership question above before acting on it.
-- MUST, when you own the source, make the change locally: edit the source under `skills/<name>/`, reinstall with the CLI, and commit the regenerated installed copy and `skills-lock.json` (see [Distributable Skills: Install and Refresh](#distributable-skills-install-and-refresh)). Never hand-edit the installed copy.
-- MUST continue the task that exposed the finding under the skill exactly as installed while a proposal is pending; routing a change never blocks that work, and never licenses acting as though the proposed rule were already in force.
-- SHOULD raise what generalizes — a rule that is wrong, outdated, or missing for any user of the skill — and record what only suits your project as a local convention instead of an upstream request.
-- SHOULD, when you need a local-only deviation you cannot wait on upstream for, fork the skill into your own distributable source deliberately — copy it under your `skills/<name>/`, repoint its `skills-lock.json` `source`, and manage it first-party from then on — rather than hiding the change as an edit to the installed copy. Record that you have diverged from upstream.
-- SHOULD name any proposal you filed or left pending in the work's completion report, so the finding outlives the session that produced it.
-
-### Filing an Upstream Feature Request
-
-The upstream repository is the source of truth for a third-party skill, so changing one means requesting the change there — a feature request or bug report describing the behavior the skill should have. Two facts shape how it is filed: the maintainer who reads it has no access to your project, and opening it is a public write on a repository you do not own.
-
-**Guidelines:**
-
-- MUST NOT hand-edit the installed copy of a skill installed from an upstream you do not own — a reinstall or `npx skills` upgrade overwrites it from upstream, so the edit is lost and, until then, masquerades as source.
-- MUST propose a change to a skill installed from outside as a **feature request or bug report on its upstream repository**, resolving that upstream from the skill's `source` in `skills-lock.json`; search its issue tracker first and add to an existing request that already covers the finding rather than filing a duplicate.
-- MUST obtain the human's go-ahead on the drafted title and body before opening the issue — it is a public write, under their identity, on a repository the project does not own; a standing instruction to file such findings as they arise is that go-ahead.
-- MUST write the request so a maintainer with no access to your project can act on it: the skill and the section or rule at issue, the situation that exposed it, the current behavior and the behavior it should have, and why it generalizes beyond your project.
-- MUST keep the upstream proposal to an issue; do not open a pull request on the upstream repository.
-- MUST report the finding and the drafted request back to the human instead when the upstream does not resolve to a reachable issue tracker — never drop it, and never edit the installed copy in its place.
-- MUST pull an accepted upstream change by re-running the install/upgrade against the upstream source, not by editing files under the skill root.
+- routing a wrong, outdated, or missing loaded rule to its actual source according to skill tier
+- distinguishing additive local conventions, approved bounded deviations, and unadopted upstream proposals
+- checking human adoption, host priority, scope, and reassessment without requiring a dedicated register
+- correcting an owned source under applicable change gates or publishing an authorized third-party request
 
 ## The Lockfile
 

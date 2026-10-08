@@ -1,30 +1,58 @@
 # Review Instructions
 
-This file is this repository's highest-priority review-only policy. The Claude
-adapter in [`claude-review.yaml`](.github/workflows/claude-review.yaml) supplies
-it through the workflow's system prompt. The root [`AGENTS.md`](AGENTS.md)
-`Code Review Rules` section instructs Codex to read and apply this file;
-whether Codex follows that indirect instruction and the substantive checks
-must be checked against a posted review. This policy complements the
-[Code Review](.claude/skills/code-review/SKILL.md) methodology, whose
+This file defines this repository's review policy, complementing the
+[Code Review](.claude/skills/code-review/SKILL.md) methodology. Where posted-report
+instructions differ, this file governs. The Claude adapter in
+[`claude-review.yaml`](.github/workflows/claude-review.yaml) supplies the policy
+through its system prompt. The root [`AGENTS.md`](AGENTS.md) `Code Review Rules`
+section directs Codex here. These routes do not prove provider consumption;
+unobserved provider input remains unknown, not proof of a failed review.
+[Development Workflow](docs/operations/development-workflow.md) owns provider
+invocation and completion evidence. Code Review's
 [Posted and CI Reviews](.claude/skills/code-review/SKILL.md#posted-and-ci-reviews)
-section owns the generic posted-review rules.
+section owns the default posted-review rules.
 
-This is a **strict** review: run every mandatory check and report every
-finding. Verify the acceptance criteria carried in the pull request body's
+This is a **strict** review: run every mandatory check within its stated scope
+and report findings under the adopted arrangement below. Assess the criteria
+carried in the pull request body's
 **Acceptance criteria** section. Do not open the tracking issue to find them;
 an absent criteria section is itself a finding (Important in Claude review).
+
+## Adopted Review Arrangements
+
+Substantive checks apply to both routes. These arrangements replace conflicting
+presentation and reporting-scope defaults in this file and Code Review:
+
+- **Codex** — accept native priorities, inline findings, summaries, no-findings
+  responses, and provider boilerplate. No Important/Nit conversion, formal
+  review object, zero tally, affirmative per-check assertions, or proof of
+  lower-priority completeness is required. The native high-priority reporting
+  filter is accepted, not an explicit unchecked-material limitation. Preserve
+  every actual finding, including P2/P3, with its identity, priority, citations,
+  and disposition; native acceptance never dismisses it. A final thumbs-up
+  reaction can confirm a clean round only under Development Workflow's
+  request, material, and terminal-result correlation.
+- **Claude** — use diff-anchored inline findings plus exactly one top-level
+  summary, not a single formal review submission. Important/Nit labels,
+  all-findings reporting, summary scope, and the tally remain required,
+  including `0 important, 0 nits` for a clean round. This review is advisory,
+  with no APPROVE or REQUEST_CHANGES verdict.
+
+Accepting native scope accepts the risk of unreported omissions, not proof of
+exhaustive checking. Explicitly unchecked required scope, outstanding findings,
+fresh-review requirements, and contributor evidence still constrain readiness
+under [Loop Engineering](.claude/skills/loop-engineering/SKILL.md).
 
 ## Severity Vocabulary for Posted Reviews
 
 Claude review uses Code Review's two posted labels, **Important** and **Nit**,
 instead of its internal Critical/Major/Minor/Nit triage or an
 Approve/Request-Changes verdict. Codex managed review uses native priority labels;
-its output-format exception is recorded in
-[Development Workflow](docs/operations/development-workflow.md#codex-review-from-codex-amp-or-a-manual-change).
+its presentation and reporting scope follow the adopted arrangement above.
 In this repository, a hard project rule includes every MUST rule of a skill
 whose `description` matches the changed files, and every MUST rule of
-[Security](docs/conventions/security.md).
+[Security](docs/conventions/security.md), subject to Code Review's
+acceptance-criteria finding boundary.
 
 **Guidelines:**
 
@@ -34,23 +62,23 @@ whose `description` matches the changed files, and every MUST rule of
 
 ## Mandatory Checks
 
-Run all three checks on every review and raise a finding for each miss:
+Run all three checks on every review and report findings within each check's
+scope:
 
 - **Skill conformance** - verify the change against every skill whose
   `description` matches the changed files. Cite the owning skill and rule for
-  each deviation.
-- **Acceptance criteria** - verify every criterion in the pull request body.
-  A criterion carrying the `(verified out of tree: <where>)` marker is checked
-  only for a link to its published evidence: with the link, it is not a
-  finding, and Claude review gives it one summary line naming it as designated,
-  every round. Without the link, it is a finding, unless the evidence can exist
-  only after the pull request merges and the criterion is marked pending. Such a
-  criterion is not a finding; Claude review gives it one summary line naming it
-  as designated and pending, every round, and the author links the evidence once
-  it exists. Do not re-run or judge the evidence itself. Every other unmet or
-  diff-unconfirmable criterion is a finding, anchored inline when it attaches
-  to a changed line. Claude review labels it Important; Codex review reports it
-  in its native format.
+  each deviation, without reintroducing external-evidence absence-only findings.
+- **Acceptance criteria** - assess every criterion in the pull request body
+  under [Code Review's review lenses](.claude/skills/code-review/references/review-lenses.md),
+  Acceptance Criteria boundary. Report violations demonstrable by inspecting
+  the changed material, inline where a changed line supports the finding.
+  Claude review labels these Important; Codex uses its native priorities. A
+  real-host result, machine-specific measurement, or other external verification
+  does not become a finding solely because it cannot be confirmed from the diff
+  or lacks an evidence link, whether designated or not. Do not re-run or judge
+  external evidence in this inspection check. Contributor verification and
+  required evidence remain separate readiness obligations in
+  [Development Workflow](docs/operations/development-workflow.md).
 - **Public-repository safety** - this repository is public and is meant to hold
   nothing that identifies a person or a machine. Verify the lenses below for
   every changed file.
@@ -200,9 +228,9 @@ runs `mise run check` on every pull request, which enforces:
 ## Reporting
 
 [Code Review's posted-review policy](.claude/skills/code-review/SKILL.md#posted-and-ci-reviews)
-owns the Claude review container, finding shapes, tally, and summary scope.
-Codex managed review publishes its own GitHub review format; the exception is
-limited to output format, not independence or the mandatory checks above.
+owns default reporting, subject to the adopted arrangements above. Review
+completion and contributor readiness are separate; a quiet review cannot
+discharge author-side verification or evidence obligations.
 
 **Guidelines:**
 
@@ -214,14 +242,3 @@ limited to output format, not independence or the mandatory checks above.
   the model does not control that fixed text. The Claude workflow's loop guard
   admits the reviewer's own `claude[bot]` comments unless they carry a Markdown
   heading, so a summary that quotes the phrase can start another review.
-- Claude review MUST use its two-output route: diff-anchored inline findings
-  plus exactly one top-level summary with the required tally, including
-  `0 important, 0 nits` when no findings exist. This is this repository's
-  exception to Code Review's single-submission rule; the advisory review
-  carries no APPROVE or REQUEST_CHANGES verdict.
-- Codex review MUST use the managed review's native output, with inline findings
-  when present and its no-findings response or final thumbs-up reaction for a
-  clean round. A missing Important/Nit label, top-level tally, or separate review
-  object for a clean round is not by itself a failed Codex review. Follow
-  [Development Workflow](docs/operations/development-workflow.md#codex-review-from-codex-amp-or-a-manual-change)
-  to distinguish acknowledgment from completion.

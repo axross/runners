@@ -38,16 +38,16 @@ The boundary that matters most is between what you may settle and what you may n
 
 ## Re-Sorting
 
-A first sort is a hypothesis. When the chosen source does not produce an answer, the sort itself is usually what was wrong — most often an item filed as a fact that no fact could ever settle.
+A first sort is a hypothesis. Re-sort when evidence shows that another source owns the answer. An unanswered lookup alone does not show that: distinguish a decision no fact can settle from a factual investigation that is unperformed, blocked, or inconclusive. A failed candidate answers a question about that candidate, not about every possible alternative. The human may decide whether to continue or limit the investigation; that decision does not settle the unknown fact.
 
-> Searching the codebase for "the retry limit" and finding nothing usually means no retry limit has been decided. That is not a missing fact; it is an undecided question wearing a fact's clothes.
+> The project's decision record explicitly leaves "the retry limit" undecided. Choosing the limit is then a human decision, not a missing fact. A search that finds no limit is not equivalent evidence.
 
 **Guidelines:**
 
-- MUST re-sort an item that its assigned source fails to settle, rather than guessing to fill the gap or searching indefinitely.
-- MUST treat an environment item that the working copy does not answer as a candidate human item — an absent convention is usually an unmade decision.
-- SHOULD escalate a world item that current sources answer inconsistently to the human rather than picking the more convincing source, per the stop condition in [external-research.md](./external-research.md).
-- MUST NOT let a failed lookup quietly become an assumption; either the source answered it or it moves to a different source.
+- MUST reassess an item's owning source after an unanswered lookup, and re-sort only when evidence shows that another source owns the answer; do not guess or search indefinitely.
+- MUST distinguish an absent decision from an unperformed, unavailable, or inconclusive factual lookup. Keep the latter unresolved under its proper source, name the missing evidence and any blocker, and ask only the separate scope or risk decision the human owns.
+- SHOULD apply [Knowing When to Stop](./external-research.md#knowing-when-to-stop) to a world item that current sources answer inconsistently.
+- MUST NOT let a failed lookup become an assumption or an automatic human decision: the fact is answered, re-sorted on evidence, or explicitly remains unknown.
 
 ## Lookups Still Running
 
@@ -58,7 +58,7 @@ Sorting an item to the environment or the world starts an investigation; it does
 **Guidelines:**
 
 - MUST hold back only the human questions whose options, relevance, or existence depend on a lookup still running, and ask the rest of the frontier now rather than waiting for the investigation to finish, per [clarifying-interview.md](./clarifying-interview.md#walking-the-decision-tree).
-- MUST NOT fill the wait with a guess: a question downstream of a running lookup stays unasked until the source answers it or fails and the item is re-sorted, per [Re-Sorting](#re-sorting).
+- MUST NOT fill the wait with a guess: a question downstream of a lookup stays unasked while its prerequisite remains unknown. Ask it only when evidence settles that prerequisite or a separate human scope decision removes the dependence on it, per [Re-Sorting](#re-sorting).
 
 ## Whether an Interview Is Owed
 

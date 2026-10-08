@@ -4,7 +4,7 @@ Apply this reference when choosing who or what executes an assignment. The loop 
 
 ## Executor Selection
 
-Delegation to a subagent is the default choice for change-work execution. Direct parent execution is the fallback, valid only where delegation is unavailable through currently permitted tools or disallowed by host policy. That much — use only what the session permits, and execute in the parent only in that fallback case — is stated in [SKILL.md](../SKILL.md) under its carve-out and is not restated here; what follows is what applies once delegation is actually on the table.
+Delegation to a subagent is the default choice for change-work execution. Direct loop-driver execution is the fallback, valid only where delegation is unavailable through currently permitted tools or disallowed by host policy. That much — use only what the session permits, and execute in the driver only in that fallback case — is stated in [SKILL.md](../SKILL.md) under its carve-out and is not restated here; what follows is what applies once delegation is actually on the table.
 
 **Guidelines:**
 
@@ -13,23 +13,23 @@ Delegation to a subagent is the default choice for change-work execution. Direct
 
 ## Read Routing
 
-Not every read belongs in the parent's own context, and size alone does not decide which. Some reads are the object of the judgment about to be made: the exact wording is what the judgment is about, and no summary of it does the same work. Others are inputs to a judgment about something else — a large payload one conclusion is wanted from, where carrying the whole payload into the parent's context spends exactly what routing the read away would have saved. A third case is neither, because fidelity is the requirement while only part of the payload is wanted, and a summarizing intermediary cannot serve that at all.
+Not every read belongs in the context of the actor making the judgment, and size alone does not decide which. Some reads are the object of the judgment about to be made: the exact wording is what the judgment is about, and no summary of it does the same work. Others are inputs to a judgment about something else — a large payload one conclusion is wanted from, where carrying the whole payload into that actor's context spends exactly what routing the read away would have saved. A third case is neither, because fidelity is the requirement while only part of the payload is wanted, and a summarizing intermediary cannot serve that at all.
 
-| The read                                                   | Where it goes             | Examples                                                                                                              |
-| ---------------------------------------------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| the object of the judgment being made                      | the parent's own context  | the diff under review, two plan revisions being compared, a body about to be written back, the rules the parent obeys |
-| large material wanted for one conclusion, not its own text | an investigator           | logs, a long thread, a wide search across files or history, a file tree being located in                              |
-| fidelity required, but only part of the payload wanted     | narrowed at the tool call | one failing assertion line, field selection on a structured response, a bounded line range of a file                  |
+| The read                                                   | Where it goes               | Examples                                                                                                              |
+| ---------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| the object of the judgment being made                      | the judging actor's context | the diff under review, two plan revisions being compared, a body about to be written back, the rules that actor obeys |
+| large material wanted for one conclusion, not its own text | an investigator             | logs, a long thread, a wide search across files or history, a file tree being located in                              |
+| fidelity required, but only part of the payload wanted     | narrowed at the tool call   | one failing assertion line, field selection on a structured response, a bounded line range of a file                  |
 
 **Guidelines:**
 
-- MUST keep in the parent's own context any read whose exact text is the object of the judgment being made, along with the rules the parent is itself obeying.
+- MUST keep in the context of the actor making the judgment any read whose exact text is the object of that judgment, along with the rules that actor is itself obeying.
 - MUST route any other large payload wanted only for a conclusion to an investigator wherever a permitted one is available, and read it directly otherwise.
 - MUST narrow the read at the tool call, rather than delegating it or reading it whole, wherever fidelity is the requirement but only part of the payload is wanted.
 
 ## The Investigator Return Contract
 
-An investigator earns its place only by returning what the parent needs next: a conclusion, and a locator the parent can follow when the conclusion turns out not to be enough. Handing back the source text instead puts into the parent's context exactly what routing the read away existed to keep out, so it saves nothing. The output is the only channel back, which is why the output alone is what these rules constrain — nothing here bounds what the investigator reads to get there.
+An investigator earns its place only by returning what the caller needs next: a conclusion, and a locator the caller can follow when the conclusion turns out not to be enough. Handing back the source text instead puts into the caller's context exactly what routing the read away existed to keep out, so it saves nothing. The returned result must stand on its own rather than depend on mid-run dialogue. These rules constrain that result, not the executor's possible communication channels — nothing here bounds what the investigator reads to get there. Where the caller is the investigator's only human communication channel, the investigator returns its findings there and the caller handles the human exchange under [the assignment contract](./implementation-package.md#assignment).
 
 **Guidelines:**
 
@@ -49,11 +49,11 @@ An executor should fail before effects, not after them. Preflight checks the ass
 
 ## Integration Boundary
 
-A child's `complete` result closes only its assignment. The parent still owns phase progression and integrated evidence.
+This boundary applies when an actor assigns a contribution and retains responsibility for the whole change. The contribution's `complete` result closes only that assignment; the responsible actor still verifies integrated evidence and advances the loop.
 
 **Guidelines:**
 
 - MUST compare the result, including its self-review material, policy, outcome, findings, and limitations, with actual changed files, uncommitted state, commits, checks, processes, and the approved revision before accepting it.
-- MUST NOT accept missing, outdated, or mismatched required self-review evidence as clean; integration changes require current parent self-review evidence against the integrated diff.
+- MUST NOT accept missing, outdated, or mismatched required self-review evidence as clean; integration changes require current loop-driver self-review evidence against the integrated diff.
 - MUST inspect the integrated result rather than treating a receipt as proof that the whole change is ready.
 - MUST issue a fresh assignment after a plan revision; a clarification that does not change the plan may continue under the current assignment.

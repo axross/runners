@@ -19,13 +19,9 @@ A turn is priced by the size of the context it carries, not by what it does: a t
 See [independent-operations.md](./references/independent-operations.md) for:
 
 - the pricing rationale in full — what a turn is billed for, and why the multiplier is the number of turns rather than the number of operations
-- the dependency test that decides which operations may share a turn, worked through with a Good/Bad example pair
+- resolving uncertainty about whether an operation depends on another's result through the dependency test, worked through with a Good/Bad example pair
 - why no numeric target is given for how many operations belong in one turn
-- how this rule sits beside [change-management.md](./references/change-management.md)'s incremental-changes rule without contradicting it
-
-**Guidelines:**
-
-- MUST read [independent-operations.md](./references/independent-operations.md) when it is not obvious whether a candidate operation depends on another's result, or when this rule appears to conflict with [change-management.md](./references/change-management.md)'s incremental-changes rule.
+- resolving an apparent conflict with [change-management.md](./references/change-management.md)'s incremental-changes rule
 
 What follows is the rule itself, not a further reading obligation: it binds every turn this skill governs rather than some narrower situation — a turn either has mutually independent operations available to issue together or it does not, and this rule is what decides which — so it stands here directly instead of behind a pointer that would fire on every turn regardless.
 
@@ -52,7 +48,10 @@ See [code-quality.md](./references/code-quality.md) for:
 
 See [change-management.md](./references/change-management.md) for:
 
+- implementing a defect correction, addressing a review finding, or refactoring behavior
 - staying within the scope of the task
+- tracing a correction to its evidenced cause and owner instead of patching symptoms
+- selecting a coherent remedy, including shared causes and temporary mitigation
 - making incremental, independently verifiable changes
 - following existing patterns before introducing new ones
 - weighing whether to add a dependency
@@ -86,8 +85,10 @@ ships none, it requires nothing.
 
 See [verification.md](./references/verification.md) for:
 
+- choosing verification for a defect correction or review-driven change
 - mapping changed files to the output surfaces they put at risk before choosing a verification path
 - the manual verification steps that confirm a change before it is called done, and why a passing gate is not one of them
+- checking that a correction achieves the intended outcome without sacrificing required behavior
 
 ## Current External Documentation
 
@@ -107,7 +108,7 @@ See [pull-request-descriptions.md](./references/pull-request-descriptions.md) fo
 - who the description is written for — the developer about to read the diff — and the roughly 200-word ceiling that follows from it
 - what a pull request body contains, and why the "why" leads
 - reproducing the repository's pull request template in an API-authored body
-- issue linking, the acceptance criteria the body carries, risk disclosure, and reviewer guidance
+- issue linking, the body's diff-verifiable and designated out-of-tree criteria with evidence links, risk disclosure, and reviewer guidance
 - keeping the description current across review rounds
 
 ## Topic-Specific Skills

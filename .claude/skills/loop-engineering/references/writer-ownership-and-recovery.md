@@ -24,12 +24,12 @@ A clarification explains the approved plan without changing scope, acceptance cr
 
 - MUST pause affected work, collect its actual partial state, revise the plan, obtain fresh approval, and issue a fresh assignment after a plan revision.
 - MUST NOT consume results produced for the superseded plan as current results; explicitly audit any reusable work against the new revision.
-- MUST use a fresh delegated execution context after plan revision, never resume a child carrying superseded requirements. Include still-valid and potentially obsolete changes, prior results, and the reason for the revision in its assignment; a parent implementing directly rereads and audits against the new approved revision.
+- MUST use a fresh delegated execution context after plan revision, never resume a child carrying superseded requirements. Include still-valid and potentially obsolete changes, prior results, and the reason for the revision in its assignment; a loop driver implementing directly rereads and audits against the new approved revision.
 - MUST checkpoint only work valid independently of an unresolved decision; leave decision-dependent changes uncommitted and identify them rather than manufacturing a clean workspace.
 
 ## Retry Budget
 
-Each approved plan revision and task phase allows one initial execution plus **2** retries. Exhaustion returns recovery to the parent; it does not authorize another delegated attempt.
+Each approved plan revision and task phase allows one initial execution plus **2** retries. Exhaustion leaves recovery with the current loop driver; it does not authorize another delegated attempt.
 
 **Guidelines:**
 
@@ -37,7 +37,7 @@ Each approved plan revision and task phase allows one initial execution plus **2
 - MUST inspect actual files, commits, processes, and external effects before retrying, especially when the prior result is `outcome-unknown`.
 - MUST NOT infer permission to schedule, poll, or spawn from the retry budget.
 - MUST also count transient API or recoverable tool failures. A newly approved plan, human-requested scope change, new review round, or separate addressing task starts its own budget rather than consuming an earlier phase's retries.
-- MUST reuse a still-valid executor only where permitted and supported; otherwise provide a new executor the complete assignment plus previous attempt, partial changes, failure, processes, and confirmed stopped state. On exhaustion the parent continues from established state, not from a destructive reset.
+- MUST reuse a still-valid executor only where permitted and supported; otherwise provide a new executor the complete assignment plus previous attempt, partial changes, failure, processes, and confirmed stopped state. On exhaustion the current loop driver continues from established state, not from a destructive reset.
 
 ## Append-Only Recovery
 

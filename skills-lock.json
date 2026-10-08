@@ -5,31 +5,31 @@
       "source": "axross/skills",
       "sourceType": "github",
       "skillPath": "skills/agent-skill-authoring/SKILL.md",
-      "computedHash": "bfde329efcf55bf6315ddb346f85ec164fed8fba42eb17eee806c86151536b1b"
+      "computedHash": "91fea1b1b93a4dd0673044fdfed08fbdd3a748e4ca46b4299aafb831ad103214"
     },
     "agent-skill-management": {
       "source": "axross/skills",
       "sourceType": "github",
       "skillPath": "skills/agent-skill-management/SKILL.md",
-      "computedHash": "e5972c36f0dd0e46ebfae1c2e7041687a81e6d01487d4afe840ba66999b37dcb"
+      "computedHash": "6f114ef3714d001eb606fdf22df9ffc1da4f76de0d3f6dda45d0e1a80aa7fa0b"
     },
     "application-security": {
       "source": "axross/skills",
       "sourceType": "github",
       "skillPath": "skills/application-security/SKILL.md",
-      "computedHash": "5dfc93de4eabc0a5af5ddda7cc16996fecc3c6a5ac91e1e178d8f8dd0da12bd2"
+      "computedHash": "f2148acd492cd864e947da8b20649655c8daa376aef99ec1321be51174fb7b38"
     },
     "code-maintainability": {
       "source": "axross/skills",
       "sourceType": "github",
       "skillPath": "skills/code-maintainability/SKILL.md",
-      "computedHash": "e47584be3948faab01248481faef41c0fd7b70caa0cc6b34152a10e17e03524f"
+      "computedHash": "0e58836b09fba0219eb0bd29ae605611f5b6f7a06211d27a421a6e3fe2bb6537"
     },
     "code-review": {
       "source": "axross/skills",
       "sourceType": "github",
       "skillPath": "skills/code-review/SKILL.md",
-      "computedHash": "d11eb18422ef0a38083487bb05c6f4b9502ef7f8080104a4b99acc5b2c103c4d"
+      "computedHash": "cc7908448f27518bca882a1bfd6b4cbb7a0018d70254b461f49efeee64ad0ba6"
     },
     "conventional-commits": {
       "source": "axross/skills",
@@ -41,7 +41,7 @@
       "source": "axross/skills",
       "sourceType": "github",
       "skillPath": "skills/github-operation/SKILL.md",
-      "computedHash": "e3ccbd13994df852c1eeffd86ea5f0fd2ce73541672ea3231a77d63dee7efc53"
+      "computedHash": "013054dc1e630bf7d8402ce6f63ec32478514e89606d9709bcd630aeb13e72e1"
     },
     "living-project-documentation": {
       "source": "axross/skills",
@@ -53,37 +53,37 @@
       "source": "axross/skills",
       "sourceType": "github",
       "skillPath": "skills/loop-engineering/SKILL.md",
-      "computedHash": "5587452c593a0084466eb088528f09409590a1977598b84a9ecf40f9eb7e5901"
+      "computedHash": "9719940c60398e6fbf8733c0a3d814db3f9cf528ff8c45fa11de58069f6dda75"
     },
     "product-requirement-document-authoring": {
       "source": "axross/skills",
       "sourceType": "github",
       "skillPath": "skills/product-requirement-document-authoring/SKILL.md",
-      "computedHash": "02b8770e9b8dcf6d94f92702ca155c67bc6e325af40da9d260a74d17c6814cef"
+      "computedHash": "db2afd4d5862b1c93f9cabaf5a6baaaf5eeaf48b4c7c27f452564b1a6176bde4"
     },
     "professional-behavior": {
       "source": "axross/skills",
       "sourceType": "github",
       "skillPath": "skills/professional-behavior/SKILL.md",
-      "computedHash": "049cc3f81dee2a94e38f206e3906d0b4fb2eeda5b21a42bb737233914ef087fa"
+      "computedHash": "36f290d9b41ee5dd96ec4abbb4c414f30d146e062dd1f242cce7e7bd24718686"
     },
     "quality-assurance": {
       "source": "axross/skills",
       "sourceType": "github",
       "skillPath": "skills/quality-assurance/SKILL.md",
-      "computedHash": "b34ad09c8e4d8a134aa0aa8bc14d7032eac41230563952af0fea40093a630178"
+      "computedHash": "6820cfa28c766df1cff3d7259cca1c6269cd952d5ab4d832fcb98bcde464305a"
     },
     "software-development": {
       "source": "axross/skills",
       "sourceType": "github",
       "skillPath": "skills/software-development/SKILL.md",
-      "computedHash": "7d126d1db54163bc7b204567b4df32a9607b0107f617be8947ef1b306399e5ab"
+      "computedHash": "cc7691c1cf57352f9cc1de4a442f735a6530017779e906645036bf9180a0161d"
     },
     "technical-document-authoring": {
       "source": "axross/skills",
       "sourceType": "github",
       "skillPath": "skills/technical-document-authoring/SKILL.md",
-      "computedHash": "f2e48f86036000952673ad5d76599c1951404fdefc811c2c7fb18a48645f97a1"
+      "computedHash": "7d976d4801cfc39923a34f512a5978a6d313f274aa254a3bc7e0591062151284"
     }
   }
 }

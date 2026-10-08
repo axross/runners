@@ -38,6 +38,22 @@ A successful response proves neither that every requested field changed nor that
 - MUST distinguish a stored trigger comment from a started workflow, and a started workflow from its completed result; report only the stage actually observed.
 - MUST report unverified fields or downstream results explicitly instead of turning a successful API response into whole-change completion.
 
+### Verify Review-Conversation Effects Separately
+
+A disposition reply and a resolved thread are separate postconditions. Neither proves a code fix or independent approval, and dismissing a finding is not the separate operation of dismissing a whole pull-request review.
+
+For a REST reply, GitHub's [review-comment GET](https://docs.github.com/en/rest/pulls/comments), `GET /repos/{owner}/{repo}/pulls/comments/{comment_id}`, reads the created reply by its own ID. Its `in_reply_to_id` identifies the parent, not the reply or thread. A separate query reads the actual [GraphQL review thread](https://docs.github.com/en/graphql/reference/pulls)'s `isResolved` and `resolvedBy`. Mutation responses alone do not establish either result.
+
+**Guidelines:**
+
+- MUST verify a published disposition reply through a separate read, including its parent/thread association, PR, author and exact stored body. Complete that verification before resolution when project delivery requires the reply; otherwise do not invent a reply prerequisite or expand a resolution-only grant.
+- MUST verify the intended thread's resolution state through a permitted read-back route rather than treating the reply or mutation response as sufficient evidence.
+- MUST preserve verified reply evidence when resolution fails and report partial delivery with closure pending; do not publish the reply again.
+- MUST retain the intended parent and body after a lost reply response and inspect current replies for the matching effect before considering a retry; keep outcome-unknown if read-back cannot settle it.
+- MUST apply the existing recovery limits after a lost resolution response: retain the thread identifier and intended effect, inspect actual state before retry, and retain outcome-unknown when read-back cannot establish the result.
+- MUST verify current reply/closure state and disposition evidence on resume, without repeating confirmed replies or resolution, or claiming that the resumed session performed the original action; preserve observed attribution.
+- MUST NOT report resolution as proof of a code fix, reviewer approval, or independent-review convergence; retain the disposition and reviewer evidence separately.
+
 ## Recover Partial or Unknown Outcomes
 
 A timeout can occur after GitHub accepted a write. Retrying a creation or trigger comment can duplicate objects or automation. A multi-operation delivery can also stop between successful publication and a failed state update.
