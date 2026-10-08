@@ -19,6 +19,8 @@ namespace {
 using Clock = std::chrono::steady_clock;
 constexpr size_t MetricBudget = 8 * 1024 * 1024;
 constexpr size_t RawBudget = 32 * 1024 * 1024;
+constexpr size_t FinalMetricReserve = 4096;
+constexpr int StartupMilliseconds = 500;
 constexpr int DurationSeconds = 24 * 60 * 60;
 constexpr int IntervalSeconds = 10;
 constexpr int ScanLimit = 1024;
@@ -317,7 +319,7 @@ private:
 
 // bounds observer work independently of the runner's lifetime and result.
 int observe(int dir, bool raw, int duration = DurationSeconds, int interval = IntervalSeconds,
-            size_t budget = MetricBudget, decltype(&sample) collect = sample) {
+            size_t budget = MetricBudget, decltype(&sample) collect = sample, int ready = -1) {
     int metrics = openat(dir, "metrics.txt", O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
     if (metrics < 0) return 1;
     auto start = Clock::now();
@@ -329,19 +331,30 @@ int observe(int dir, bool raw, int duration = DurationSeconds, int interval = In
         used += text.size(); return true;
     };
     bool bounded = false;
-    do {
+    std::string initial = "sample.phase=start\nsample.elapsed_seconds=0\n" + collect("/sys/fs/cgroup", "/proc", baseline, false);
+    if (initial.size() + FinalMetricReserve > budget - used || !append(initial)) {
+        append("gap=start_sample_unavailable\n");
+        bounded = true;
+    }
+    if (ready >= 0) {
+        char saved = '1';
+        bool notified = !bounded && write(ready, &saved, 1) == 1;
+        close(ready);
+        if (!notified) { close(metrics); return 1; }
+    }
+    while (!bounded) {
         if (stopSignal) break;
         auto next = Clock::now() + std::chrono::seconds(interval);
         std::string text = "sample.phase=periodic\nsample.elapsed_seconds=" + std::to_string(std::chrono::duration_cast<std::chrono::seconds>(Clock::now() - start).count()) + '\n' + collect("/sys/fs/cgroup", "/proc", baseline, true);
-        if (text.size() + 4096 > budget - used) { append("gap=metric_output_limit\n"); bounded = true; break; }
+        if (text.size() + FinalMetricReserve > budget - used) { append("gap=metric_output_limit\n"); bounded = true; break; }
         if (!append(text)) { close(metrics); return 1; }
         if (stopSignal) break;
         while (!stopSignal && Clock::now() < next) usleep(100000);
         if (Clock::now() - start >= std::chrono::seconds(duration)) { append("gap=observation_duration_limit\n"); bounded = true; break; }
-    } while (true);
+    }
     if (!bounded) {
         std::string text = "sample.phase=end\nsample.elapsed_seconds=" + std::to_string(std::chrono::duration_cast<std::chrono::seconds>(Clock::now() - start).count()) + '\n' + collect("/sys/fs/cgroup", "/proc", baseline, false);
-        if (text.size() + 4096 > budget - used || !append(text)) {
+        if (text.size() + FinalMetricReserve > budget - used || !append(text)) {
             append("gap=final_sample_unavailable\n");
             bounded = true;
         }
@@ -359,8 +372,40 @@ int observe(int dir, bool raw, int duration = DurationSeconds, int interval = In
     return 0;
 }
 
+// waits only for a saved pre-run baseline; a late observer cannot invent deltas.
+pid_t startObserver(int dir, bool raw, decltype(&sample) collect) {
+    auto deadline = Clock::now() + std::chrono::milliseconds(StartupMilliseconds);
+    int ready[2];
+    if (pipe2(ready, O_NONBLOCK | O_CLOEXEC) != 0) return -1;
+    pid_t parent = getpid();
+    pid_t observer = fork();
+    if (observer == 0) {
+        close(ready[0]);
+        prctl(PR_SET_PDEATHSIG, SIGTERM);
+        if (getppid() != parent) stopSignal = SIGTERM;
+        _exit(observe(dir, raw, DurationSeconds, IntervalSeconds, MetricBudget, collect, ready[1]));
+    }
+    close(ready[1]);
+    bool saved = false;
+    while (observer > 0 && Clock::now() < deadline) {
+        char value;
+        ssize_t count = read(ready[0], &value, 1);
+        if (count == 1) { saved = value == '1'; break; }
+        if (count == 0) break;
+        pollfd poller{ready[0], POLLIN, 0};
+        poll(&poller, 1, 10);
+    }
+    close(ready[0]);
+    if (!saved) {
+        if (observer > 0) kill(observer, SIGKILL);
+        std::cerr << "Diagnostic gap: start observation unavailable; counter deltas unavailable.\n";
+    }
+    return observer;
+}
+
 // forwards shutdown to the ordinary runner, then reaps a finite-lived observer.
-int launch(const char* command, bool raw, const char* bundle = "/tmp/runner-diagnostics") {
+int launch(const char* command, bool raw, const char* bundle = "/tmp/runner-diagnostics",
+           decltype(&sample) collect = sample) {
     struct sigaction action{};
     action.sa_handler = stopped;
     sigemptyset(&action.sa_mask);
@@ -369,28 +414,30 @@ int launch(const char* command, bool raw, const char* bundle = "/tmp/runner-diag
     if (mkdir(bundle, 0700) == 0) dir = directory(bundle);
     pid_t observer = -1;
     if (dir >= 0) {
-        pid_t parent = getpid();
-        observer = fork();
-        if (observer == 0) {
-            prctl(PR_SET_PDEATHSIG, SIGTERM);
-            if (getppid() != parent) stopSignal = SIGTERM;
-            _exit(observe(dir, raw));
-        }
+        observer = startObserver(dir, raw, collect);
         close(dir);
     }
     if (observer < 0) std::cerr << "Diagnostic gap: observer unavailable.\n";
+    sigset_t shutdown, previous;
+    sigemptyset(&shutdown); sigaddset(&shutdown, SIGTERM); sigaddset(&shutdown, SIGINT);
+    sigprocmask(SIG_BLOCK, &shutdown, &previous);
     pid_t runner = fork();
     if (runner == 0) {
         signal(SIGTERM, SIG_DFL); signal(SIGINT, SIG_DFL);
+        sigprocmask(SIG_SETMASK, &previous, nullptr);
         execl(command, command, static_cast<char*>(nullptr)); _exit(127);
     }
-    if (runner > 0 && stopSignal) kill(runner, stopSignal);
+    sigprocmask(SIG_SETMASK, &previous, nullptr);
     int status = 0;
     if (runner < 0) status = 127 << 8;
     else {
-        while (waitpid(runner, &status, 0) < 0) {
-            if (errno != EINTR) { status = 127 << 8; break; }
-            if (stopSignal) kill(runner, stopSignal);
+        int forwarded = 0;
+        for (;;) {
+            if (stopSignal && stopSignal != forwarded) { forwarded = stopSignal; kill(runner, forwarded); }
+            pid_t waited = waitpid(runner, &status, WNOHANG);
+            if (waited == runner) break;
+            if (waited < 0 && errno != EINTR) { status = 127 << 8; break; }
+            usleep(10000);
         }
     }
     if (observer > 0) {

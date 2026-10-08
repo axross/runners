@@ -42,6 +42,12 @@ peak, limit, OOM and swap counters, CPU quota and throttling, the process's
 allowed CPUs, and at most 128 recognized JVM/compiler/linker/native-build
 PID/PPID/RSS records. Unavailable fields are explicit. Counters carry separate
 absolute and baseline-delta fields; a missing initial counter has no delta.
+Start and end samples are labelled separately and do not attach to JVMs.
+The launcher waits at most 500 ms for a saved start snapshot before starting
+the runner. A startup timeout stops the late observer, reports a gap, and
+starts the ordinary runner without manufacturing post-start deltas. Shutdown
+signals are masked across the runner fork and handler reset, then forwarded
+through a nonblocking wait loop so the check-to-wait window cannot swallow them.
 These counters do not identify which child died. Attach uses only the baked
 JDK's `jcmd VM.flags`, for up to four JVMs per sample and 500 ms each, retaining
 only numeric heap/metaspace/processor flags and boolean `UseContainerSupport`.

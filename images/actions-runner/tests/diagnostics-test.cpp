@@ -1,11 +1,42 @@
+#include <sys/wait.h>
+#include <unistd.h>
+pid_t waitWithShutdown(pid_t pid, int* status, int options);
+pid_t forkWithShutdown();
+#define waitpid waitWithShutdown
+#define fork forkWithShutdown
 #define main diagnostic_cli_main
 #include "../runner-diagnostics.cpp"
 #undef main
+#undef waitpid
+#undef fork
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
 
 namespace fs = std::filesystem;
+pid_t shutdownWaitOwner = -1, shutdownForkOwner = -1;
+int shutdownSignal = SIGTERM, shutdownForks = 0;
+std::string shutdownReadyPath;
+
+// delivers a real signal after the launcher's check but before its wait syscall.
+pid_t waitWithShutdown(pid_t pid, int* status, int options) {
+    if (getpid() == shutdownWaitOwner) {
+        shutdownWaitOwner = -1;
+        auto deadline = Clock::now() + std::chrono::seconds(1);
+        while (readText(shutdownReadyPath).empty() && Clock::now() < deadline) usleep(1000);
+        kill(getpid(), shutdownSignal);
+    }
+    return waitpid(pid, status, options);
+}
+
+// injects a pending signal before the runner child's handler reset and exec.
+pid_t forkWithShutdown() {
+    bool inject = getpid() == shutdownForkOwner && ++shutdownForks == 2;
+    pid_t child = fork();
+    if (child == 0 && inject) raise(shutdownSignal);
+    return child;
+}
+
 namespace {
 // fails without printing private fixture contents.
 void check(bool passed, const char* name) {
@@ -113,7 +144,7 @@ void bounds(const fs::path& root) {
     check(has(readText((output / "metrics.txt").string()), "gap=observation_duration_limit\n"), "duration bound records a final gap");
     fs::remove(output / "metrics.txt");
     dir = directory(output.string()); check(observe(dir, false, 10, 0, 128) == 0, "small output budget stops observation"); close(dir);
-    check(fs::file_size(output / "metrics.txt") <= 128 && has(readText((output / "metrics.txt").string()), "gap=metric_output_limit\n"), "output bound is enforced and reported");
+    check(fs::file_size(output / "metrics.txt") <= 128 && has(readText((output / "metrics.txt").string()), "gap=start_sample_unavailable\n"), "output bound is enforced and reported");
     check(IntervalSeconds == 10 && DurationSeconds == 86400 && MetricBudget == 8388608, "production interval, duration and metric budget");
 }
 
@@ -129,7 +160,7 @@ std::string endingSample(const std::string&, const std::string&,
     if (attach) {
         put(endingRoot / "cgroup/memory.events", "oom_kill 8\n");
         stopped(SIGTERM);
-    } else if (oversizedEnd) text.append(MetricBudget + 1, 'x');
+    } else if (oversizedEnd && sampledAttach.size() == 3) text.append(MetricBudget + 1, 'x');
     return text;
 }
 
@@ -145,7 +176,7 @@ void finalObservation(const fs::path& root) {
         check(observe(dir, false, DurationSeconds, IntervalSeconds, MetricBudget, endingSample) == 0, "stop during sample completes finite observation");
         close(dir);
         auto text = readText((output / "metrics.txt").string());
-        check(sampledAttach == std::vector<bool>({true, false}), "termination triggers a new sample without JVM attach");
+        check(sampledAttach == std::vector<bool>({false, true, false}), "start and end samples never attach, including stop during periodic sampling");
         if (oversized) {
             check(has(text, "gap=final_sample_unavailable\n") && has(text, "final=unavailable\n") && !has(text, "final=observed\n"), "unsaved end sample never claims final observation");
         } else {
@@ -153,6 +184,46 @@ void finalObservation(const fs::path& root) {
         }
     }
     stopSignal = 0;
+}
+
+int startupDelay = 0, startupCalls = 0;
+std::string delayedStartSample(const std::string& cgroup, const std::string& proc,
+                               std::map<std::string, long long>& baseline, bool attach) {
+    if (startupCalls++ == 0) usleep(startupDelay * 1000);
+    return sample(cgroup, proc, baseline, attach);
+}
+
+void startupAndSignalWindows(const fs::path& root) {
+    for (int delay : {250, 1000}) {
+        auto bundle = root / (delay == 250 ? "delayed-start" : "start-timeout");
+        auto command = root / (delay == 250 ? "check-start.sh" : "fallback-start.sh");
+        put(command, "#!/bin/sh\nif grep -q '^sample.phase=start$' '" + (bundle / "metrics.txt").string() + "'; then exit 0; else exit 7; fi\n");
+        chmod(command.c_str(), 0700);
+        pid_t parent = fork();
+        if (parent == 0) { startupDelay = delay; startupCalls = 0; stopSignal = 0; _exit(launch(command.c_str(), false, bundle.c_str(), delayedStartSample)); }
+        auto start = Clock::now();
+        int status; waitpid(parent, &status, 0);
+        check(WIFEXITED(status) && WEXITSTATUS(status) == (delay == 250 ? 0 : 7), "runner starts only after saved baseline, or preserves fallback result");
+        check(Clock::now() - start < std::chrono::seconds(2), "startup observation wait is bounded even when collection stalls");
+        if (delay == 1000) check(!has(readText((bundle / "metrics.txt").string()), ".delta=0\n"), "timed-out startup cannot manufacture post-start deltas");
+    }
+    for (int signal : {SIGTERM, SIGINT}) {
+        shutdownSignal = signal;
+        auto bundle = root / (signal == SIGTERM ? "wait-term-window" : "wait-int-window");
+        auto command = root / "trap-stop.sh";
+        shutdownReadyPath = (root / (signal == SIGTERM ? "term-ready" : "int-ready")).string();
+        put(command, "#!/bin/sh\ntrap 'exit 23' TERM INT\nprintf ready > '" + shutdownReadyPath + "'\ncount=0\nwhile [ \"$count\" -lt 100 ]; do sleep 0.01; count=$((count+1)); done\nexit 0\n");
+        chmod(command.c_str(), 0700);
+        pid_t parent = fork();
+        if (parent == 0) { shutdownWaitOwner = getpid(); stopSignal = 0; _exit(launch(command.c_str(), false, bundle.c_str())); }
+        int status; waitpid(parent, &status, 0);
+        check(WIFEXITED(status) && WEXITSTATUS(status) == 23, "signal in check-to-wait window is forwarded, preserving trapped exit");
+        bundle = root / (signal == SIGTERM ? "fork-term-window" : "fork-int-window");
+        parent = fork();
+        if (parent == 0) { shutdownForkOwner = getpid(); shutdownForks = 0; stopSignal = 0; _exit(launch("/bin/true", false, bundle.c_str())); }
+        waitpid(parent, &status, 0);
+        check(WIFEXITED(status) && WEXITSTATUS(status) == 128 + signal, "pending signal before child handler reset is not swallowed");
+    }
 }
 
 // runs isolated launcher instances and reaps all test descendants, including abrupt exit.
@@ -201,7 +272,7 @@ int main(int argc, char** argv) {
     std::cout << std::unitbuf;
     try {
         fs::path root(argv[1]); std::string marker(argv[2]);
-        counters(root, marker); rawRecords(root, marker); flags(root, marker); bounds(root); finalObservation(root); lifecycle(root);
+        counters(root, marker); rawRecords(root, marker); flags(root, marker); bounds(root); finalObservation(root); startupAndSignalWindows(root); lifecycle(root);
         std::cout << "All diagnostic observer and lifecycle checks passed.\n";
     } catch (const std::exception& error) { std::cerr << "FAIL " << error.what() << '\n'; return 1; }
 }
