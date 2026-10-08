@@ -396,6 +396,10 @@ Windows `taskkill /PID /T /F` terminates that process and its children; PowerShe
 container removal attempted in the remaining host budget of 24 seconds. The
 observer has at most six seconds to finalize after runner exit, keeping total
 finalization within 30 seconds.
+Supervisor-controlled cleanup starts its clock before stopping the container.
+Orderly shutdown shares one clock across the batch, including stop and export
+queue time. Later exports with no remaining budget are skipped with a gap;
+every diagnostic removal is attempted before any worker-reap wait.
 Prior evidence is never automatically deleted. A full, inaccessible or insecure
 sink, missing collector, failed/partial copy, or unavailable final sample is a
 diagnostic gap, not a successful runner's failure. If removal fails, recover

@@ -20,6 +20,13 @@ using Clock = std::chrono::steady_clock;
 constexpr size_t MetricBudget = 8 * 1024 * 1024;
 constexpr size_t RawBudget = 32 * 1024 * 1024;
 constexpr size_t FinalMetricReserve = 4096;
+constexpr size_t AttachOutputBudget = 16384;
+constexpr int AttachTimeoutMilliseconds = 500;
+constexpr int ProcessLimit = 128;
+constexpr int JvmAttachLimit = 4;
+constexpr int RawRecordLimit = 128;
+constexpr int RawCollectionSeconds = 3;
+constexpr int ObserverFinalizationSeconds = 6;
 constexpr int StartupMilliseconds = 500;
 constexpr int DurationSeconds = 24 * 60 * 60;
 constexpr int IntervalSeconds = 10;
@@ -126,10 +133,10 @@ std::string jvmFlags(int pid, const std::string& tool) {
     setpgid(child, child);
     fcntl(pipes[0], F_SETFL, O_NONBLOCK);
     std::string output;
-    auto deadline = Clock::now() + std::chrono::milliseconds(500);
+    auto deadline = Clock::now() + std::chrono::milliseconds(AttachTimeoutMilliseconds);
     int status = 0;
     bool exited = false, drained = false;
-    while (Clock::now() < deadline && output.size() < 16384) {
+    while (Clock::now() < deadline && output.size() < AttachOutputBudget) {
         char buffer[1024];
         ssize_t count = read(pipes[0], buffer, sizeof(buffer));
         if (count > 0) output.append(buffer, count);
@@ -142,7 +149,7 @@ std::string jvmFlags(int pid, const std::string& tool) {
     kill(-child, SIGKILL);
     if (!exited) waitpid(child, &status, 0);
     close(pipes[0]);
-    if (!exited || !drained || !WIFEXITED(status) || WEXITSTATUS(status) != 0 || output.size() >= 16384) return {};
+    if (!exited || !drained || !WIFEXITED(status) || WEXITSTATUS(status) != 0 || output.size() >= AttachOutputBudget) return {};
     static const std::regex flag("-XX:(?:([+-])(UseContainerSupport)|((?:InitialHeapSize|MaxHeapSize|MaxMetaspaceSize|ActiveProcessorCount))=(-?[0-9]{1,20}))(?:[[:space:]]|$)");
     std::ostringstream filtered;
     for (std::sregex_iterator it(output.begin(), output.end(), flag), end; it != end; ++it) {
@@ -171,7 +178,7 @@ std::string processes(const std::string& proc, bool attach) {
         if (!comm.empty() && comm.back() == '\n') comm.pop_back();
         auto category = categories.find(comm);
         if (category == categories.end()) continue;
-        if (++selected > 128) { limited = true; break; }
+        if (++selected > ProcessLimit) { limited = true; break; }
         std::istringstream status(readText(proc + '/' + id + "/status"));
         std::string line, parent = "unavailable", rss = "unavailable";
         while (std::getline(status, line)) {
@@ -183,7 +190,7 @@ std::string processes(const std::string& proc, bool attach) {
         output << "process=" << category->second << " pid=" << id << " ppid=" << parent << " rss_kib=" << rss << '\n';
         if (comm == "java") {
             std::string flags;
-            if (attach && attached++ < 4) {
+            if (attach && attached++ < JvmAttachLimit) {
                 flags = jvmFlags(std::stoi(id), "/opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-101/x64/bin/jcmd");
             }
             output << "jvm.pid=" << id << '\n' << (flags.empty() ? "jvm.flags=unavailable\n" : flags);
@@ -259,7 +266,7 @@ class RawRecords {
     int sequence = 0;
     Clock::time_point deadline;
 public:
-    explicit RawRecords(int fd) : output(fd), deadline(Clock::now() + std::chrono::seconds(3)) {}
+    explicit RawRecords(int fd) : output(fd), deadline(Clock::now() + std::chrono::seconds(RawCollectionSeconds)) {}
     std::string gaps;
     void collect(const std::string& path, int depth, const std::regex& pattern) {
         int dir = directory(path);
@@ -276,7 +283,7 @@ private:
     void walk(int dir, int depth, const std::regex& pattern) {
         bool limited = false;
         for (const auto& name : names(dir, limited)) {
-            if (Clock::now() >= deadline || sequence >= 128) { limited = true; break; }
+            if (Clock::now() >= deadline || sequence >= RawRecordLimit) { limited = true; break; }
             struct stat info{};
             if (fstatat(dir, name.c_str(), &info, AT_SYMLINK_NOFOLLOW) != 0) continue;
             if (S_ISDIR(info.st_mode) && depth > 0) {
@@ -442,7 +449,7 @@ int launch(const char* command, bool raw, const char* bundle = "/tmp/runner-diag
     }
     if (observer > 0) {
         kill(observer, SIGTERM);
-        auto deadline = Clock::now() + std::chrono::seconds(6);
+        auto deadline = Clock::now() + std::chrono::seconds(ObserverFinalizationSeconds);
         int observerStatus = 0;
         bool reaped = false;
         while (Clock::now() < deadline) {

@@ -1,6 +1,7 @@
 #Requires -Version 5.1
 param([string]$HostDirectory, [string]$Scratch)
 $ErrorActionPreference = 'Stop'
+. (Join-Path $HostDirectory 'diagnostic-export.ps1')
 
 $concurrentSink = Join-Path $Scratch 'concurrent'
 $null = New-Item -ItemType Directory -Path $concurrentSink

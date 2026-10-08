@@ -164,6 +164,7 @@ std::string endingSample(const std::string&, const std::string&,
     return text;
 }
 
+// distinguishes a saved post-stop observation from merely completing a sample.
 void finalObservation(const fs::path& root) {
     endingRoot = root / "ending";
     put(endingRoot / "cgroup/memory.current", "271\n");
@@ -193,7 +194,8 @@ std::string delayedStartSample(const std::string& cgroup, const std::string& pro
     return sample(cgroup, proc, baseline, attach);
 }
 
-void startupAndSignalWindows(const fs::path& root) {
+// pre-run counters remain meaningful under scheduling delay and failed startup.
+void startupObservation(const fs::path& root) {
     for (int delay : {250, 1000}) {
         auto bundle = root / (delay == 250 ? "delayed-start" : "start-timeout");
         auto command = root / (delay == 250 ? "check-start.sh" : "fallback-start.sh");
@@ -207,6 +209,10 @@ void startupAndSignalWindows(const fs::path& root) {
         check(Clock::now() - start < std::chrono::seconds(2), "startup observation wait is bounded even when collection stalls");
         if (delay == 1000) check(!has(readText((bundle / "metrics.txt").string()), ".delta=0\n"), "timed-out startup cannot manufacture post-start deltas");
     }
+}
+
+// preserves shutdown outcomes when delivery crosses wait or handler boundaries.
+void signalWindows(const fs::path& root) {
     for (int signal : {SIGTERM, SIGINT}) {
         shutdownSignal = signal;
         auto bundle = root / (signal == SIGTERM ? "wait-term-window" : "wait-int-window");
@@ -272,7 +278,7 @@ int main(int argc, char** argv) {
     std::cout << std::unitbuf;
     try {
         fs::path root(argv[1]); std::string marker(argv[2]);
-        counters(root, marker); rawRecords(root, marker); flags(root, marker); bounds(root); finalObservation(root); startupAndSignalWindows(root); lifecycle(root);
+        counters(root, marker); rawRecords(root, marker); flags(root, marker); bounds(root); finalObservation(root); startupObservation(root); signalWindows(root); lifecycle(root);
         std::cout << "All diagnostic observer and lifecycle checks passed.\n";
     } catch (const std::exception& error) { std::cerr << "FAIL " << error.what() << '\n'; return 1; }
 }

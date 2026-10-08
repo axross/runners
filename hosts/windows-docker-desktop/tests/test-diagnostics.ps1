@@ -188,6 +188,7 @@ try {
         }
     }
     & (Join-Path $PSScriptRoot 'test-diagnostic-finalization.ps1') -HostDirectory $hostDirectory -Scratch $scratch
+    & (Join-Path $PSScriptRoot 'test-diagnostic-shutdown.ps1') -HostDirectory $hostDirectory
     function Get-DiagnosticIdentity {
         param($Name, $Clock)
         if ($Name -cne 'example-entry-1-20240305060708009' -or -not $Clock.IsRunning) { throw 'unexpected inspect input' }

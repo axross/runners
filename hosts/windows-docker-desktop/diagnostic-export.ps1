@@ -212,6 +212,7 @@ function Invoke-BoundedDiagnosticExport {
     param([string]$Name, [string]$EntryName, [string]$Directory, [bool]$RawRecords, [Diagnostics.Stopwatch]$Clock,
         [int]$DeadlineMilliseconds = $script:DiagnosticExportMilliseconds, [string]$ScriptPath = (Join-Path $PSScriptRoot 'export-runner-diagnostics.ps1'))
 
+    if ($Clock.ElapsedMilliseconds -ge $DeadlineMilliseconds) { throw 'diagnostic finalization timeout' }
     $arguments = @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', $ScriptPath, '-Name', $Name, '-EntryName', $EntryName, '-Directory', $Directory)
     if ($RawRecords) { $arguments += '-RawRecords' }
     $info = New-Object Diagnostics.ProcessStartInfo
@@ -256,11 +257,15 @@ function Invoke-BoundedDiagnosticExport {
 
 # removal is attempted after every export outcome, without replacing runner status.
 function Complete-DiagnosticContainer {
-    param([string]$Name, [string]$EntryName, [string]$Directory, [bool]$RawRecords)
+    param([string]$Name, [string]$EntryName, [string]$Directory, [bool]$RawRecords,
+        [Diagnostics.Stopwatch]$Clock = [Diagnostics.Stopwatch]::StartNew())
 
-    $clock = [Diagnostics.Stopwatch]::StartNew()
     try {
-        Invoke-BoundedDiagnosticExport -Name $Name -EntryName $EntryName -Directory $Directory -RawRecords $RawRecords -Clock $clock
+        if ($Clock.ElapsedMilliseconds -ge $script:DiagnosticExportMilliseconds) {
+            Write-Warning 'Diagnostic gap: finalization budget spent while waiting; export skipped.'
+        } else {
+            Invoke-BoundedDiagnosticExport -Name $Name -EntryName $EntryName -Directory $Directory -RawRecords $RawRecords -Clock $Clock
+        }
     } catch {
         if ($_.Exception.Message -eq 'diagnostic sink full (ten bundles)') {
             Write-Warning 'Diagnostic gap: private sink full (ten bundles); prior evidence retained.'

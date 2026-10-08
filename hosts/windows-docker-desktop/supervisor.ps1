@@ -124,8 +124,9 @@ function Clear-StaleContainer {
         if ($name -cmatch $ownName) {
             Write-Warning "Removing stale container '$name' left over from an earlier run."
             if ($Entry.Diagnostics) {
+                $diagnosticClock = [Diagnostics.Stopwatch]::StartNew()
                 $null = Invoke-Docker -Arguments @('stop', $name)
-                Complete-DiagnosticContainer -Name $name -EntryName $Entry.Name -Directory $Entry.DiagnosticDirectory -RawRecords $Entry.DiagnosticRawRecords
+                Complete-DiagnosticContainer -Name $name -EntryName $Entry.Name -Directory $Entry.DiagnosticDirectory -RawRecords $Entry.DiagnosticRawRecords -Clock $diagnosticClock
                 continue
             }
             $removal = Invoke-Docker -Arguments @('rm', '-f', $name)
@@ -406,8 +407,9 @@ try {
             if ($null -ne $worker.Job -and $worker.Job.State -in @('Failed', 'Stopped', 'Completed')) {
                 $state = $worker.Job.State
                 if ($worker.Entry.Diagnostics -and $null -ne $worker.Container) {
+                    $diagnosticClock = [Diagnostics.Stopwatch]::StartNew()
                     $null = Invoke-Docker -Arguments @('stop', $worker.Container)
-                    Complete-DiagnosticContainer -Name $worker.Container -EntryName $worker.Entry.Name -Directory $worker.Entry.DiagnosticDirectory -RawRecords $worker.Entry.DiagnosticRawRecords
+                    Complete-DiagnosticContainer -Name $worker.Container -EntryName $worker.Entry.Name -Directory $worker.Entry.DiagnosticDirectory -RawRecords $worker.Entry.DiagnosticRawRecords -Clock $diagnosticClock
                 }
                 Remove-Job -Job $worker.Job -Force
                 $worker.Job = $null
@@ -432,6 +434,7 @@ try {
     # stop the containers first: Stop-Job does not interrupt a native docker run
     # already in flight.
     $stopped = New-Object System.Collections.Generic.HashSet[string]
+    $shutdownClock = [Diagnostics.Stopwatch]::StartNew()
     Invoke-KnownContainerStop -Workers $workers -Stopped $stopped
     foreach ($worker in $workers) {
         if ($null -ne $worker.Job) {
@@ -442,8 +445,10 @@ try {
     Invoke-KnownContainerStop -Workers $workers -Stopped $stopped
     foreach ($worker in $workers) {
         if ($worker.Entry.Diagnostics -and $null -ne $worker.Container) {
-            Complete-DiagnosticContainer -Name $worker.Container -EntryName $worker.Entry.Name -Directory $worker.Entry.DiagnosticDirectory -RawRecords $worker.Entry.DiagnosticRawRecords
+            Complete-DiagnosticContainer -Name $worker.Container -EntryName $worker.Entry.Name -Directory $worker.Entry.DiagnosticDirectory -RawRecords $worker.Entry.DiagnosticRawRecords -Clock $shutdownClock
         }
+    }
+    foreach ($worker in $workers) {
         if ($null -ne $worker.Job) {
             Wait-Job -Job $worker.Job -Timeout 30 | Out-Null
             Remove-Job -Job $worker.Job -Force -ErrorAction SilentlyContinue
