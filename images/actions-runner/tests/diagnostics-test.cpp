@@ -93,15 +93,27 @@ void counters(const fs::path& root, const std::string& marker) {
 void rawRecords(const fs::path& root, const std::string& marker) {
     auto source = root / "reports", target = root / "raw";
     fs::create_directories(source); fs::create_directory(target);
-    put(source / "daemon-1.out.log", marker);
-    put(source / "unrelated.log", marker); put(source / "heap.hprof", marker);
-    fs::create_symlink(source / "daemon-1.out.log", source / "hs_err_pid2.log");
+    auto version = source / "1.2.3";
+    put(version / "daemon-1.out.log", marker + "-daemon");
+    put(source / "daemon-9.out.log", marker + "-root");
+    put(version / "unrelated.log", marker); put(version / "heap.hprof", marker);
+    fs::create_symlink(version / "daemon-1.out.log", version / "daemon-2.out.log");
     fs::create_directory_symlink(source, source / "link");
     int dir = directory(target.string());
     RawRecords records(dir);
-    records.collect(source.string(), 2, std::regex("(daemon-[0-9]+\\.out|hs_err_pid[0-9]+)\\.log"));
+    records.collect(source.string(), 1, std::regex("daemon-[0-9]+\\.out\\.log"));
     close(dir);
-    check(std::distance(fs::directory_iterator(target), fs::directory_iterator{}) == 1 && !has(records.gaps, marker) && has(records.gaps, "raw_not_regular"), "raw rejects symlinks, unrelated files and dumps");
+    check(std::distance(fs::directory_iterator(target), fs::directory_iterator{}) == 1 && readText((target / "raw-1.log").string()) == marker + "-daemon" && !has(records.gaps, marker) && has(records.gaps, "raw_not_regular"), "raw daemon reports require version depth and reject symlinks, unrelated files and dumps");
+    fs::remove_all(source); fs::remove_all(target); fs::create_directory(target);
+    put(source / "hs_err_pid10.log", marker + "-workspace-root");
+    put(source / "example-repository/hs_err_pid11.log", marker + "-intermediate");
+    put(source / "_temp/hs_err_pid12.log", marker + "-temp");
+    put(source / "example-repository/example-repository/hs_err_pid13.log", marker + "-checkout");
+    put(source / "example-repository/other-directory/hs_err_pid14.log", marker + "-wrong-directory");
+    put(source / "example-repository/example-repository/deeper/hs_err_pid15.log", marker + "-too-deep");
+    dir = directory(target.string()); RawRecords workspace(dir);
+    workspace.collect(source.string(), 2, std::regex("hs_err_pid[0-9]+\\.log")); close(dir);
+    check(std::distance(fs::directory_iterator(target), fs::directory_iterator{}) == 1 && readText((target / "raw-1.log").string()) == marker + "-checkout", "raw workspace reports require matching repository directories at exact checkout depth");
     fs::remove_all(source); fs::remove_all(target); fs::create_directory(source); fs::create_directory(target);
     auto report = source / "hs_err_pid3.log";
     put(report, ""); fs::resize_file(report, 32 * 1024 * 1024);
@@ -273,6 +285,7 @@ void lifecycle(const fs::path& root) {
 }
 }
 
+// caller supplies disposable scratch and a synthetic marker, not production credentials.
 int main(int argc, char** argv) {
     if (argc != 3) return 2;
     std::cout << std::unitbuf;

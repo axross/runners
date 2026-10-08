@@ -336,6 +336,8 @@ example enables neither diagnostics nor raw records. No resource allocation,
 build command, tool version, registration or mount changes with this opt-in.
 The sink is not exposed to the job as a bind mount or volume.
 
+Collect private evidence as follows:
+
 1. Pre-create a directory on a local Windows filesystem, outside the checkout.
    Restrict its owner and all allowed access rules to the account that runs the
    supervisor. The feature MUST NOT create the sink, relax permissions, or

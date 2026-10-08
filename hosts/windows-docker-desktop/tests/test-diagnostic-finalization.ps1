@@ -53,6 +53,7 @@ try {
 $source = $source.Replace('__LIBRARY__', (Join-Path $HostDirectory 'diagnostic-export.ps1').Replace("'", "''")).Replace('__TAR__', ${function:Get-DiagnosticTar}.ToString())
 [IO.File]::WriteAllText($fixture, $source, [Text.Encoding]::ASCII)
 
+# leaves exporter fixtures concurrent; waiting here would hide whole-copy admission locking.
 function Invoke-TestDiagnosticExport {
     param([string]$Name)
 

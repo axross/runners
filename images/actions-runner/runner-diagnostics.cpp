@@ -26,6 +26,7 @@ constexpr int ProcessLimit = 128;
 constexpr int JvmAttachLimit = 4;
 constexpr int RawRecordLimit = 128;
 constexpr int RawCollectionSeconds = 3;
+constexpr int WorkspaceDepth = 2;
 constexpr int ObserverFinalizationSeconds = 6;
 constexpr int StartupMilliseconds = 500;
 constexpr int DurationSeconds = 24 * 60 * 60;
@@ -288,8 +289,15 @@ private:
             if (fstatat(dir, name.c_str(), &info, AT_SYMLINK_NOFOLLOW) != 0) continue;
             if (S_ISDIR(info.st_mode) && depth > 0) {
                 int child = openat(dir, name.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
-                if (child >= 0) { walk(child, depth - 1, pattern); close(child); }
-            } else if (std::regex_match(name, pattern)) {
+                if (child < 0) continue;
+                if (depth == WorkspaceDepth) {
+                    int checkout = openat(child, name.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+                    if (checkout >= 0) { walk(checkout, 0, pattern); close(checkout); }
+                } else {
+                    walk(child, depth - 1, pattern);
+                }
+                close(child);
+            } else if (depth == 0 && std::regex_match(name, pattern)) {
                 if (!S_ISREG(info.st_mode)) { gap("raw_not_regular"); continue; }
                 copy(dir, name);
             }
@@ -369,7 +377,7 @@ int observe(int dir, bool raw, int duration = DurationSeconds, int interval = In
     if (raw) {
         RawRecords records(dir);
         records.collect("/home/runner/.gradle/daemon", 1, std::regex("daemon-[0-9]+\\.out\\.log"));
-        records.collect("/home/runner/_work", 2, std::regex("hs_err_pid[0-9]+\\.log"));
+        records.collect("/home/runner/_work", WorkspaceDepth, std::regex("hs_err_pid[0-9]+\\.log"));
         records.collect("/home/runner", 0, std::regex("hs_err_pid[0-9]+\\.log"));
         records.collect("/tmp", 0, std::regex("hs_err_pid[0-9]+\\.log"));
         append(records.gaps.substr(0, 2048));
