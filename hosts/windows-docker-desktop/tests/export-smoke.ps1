@@ -2,7 +2,7 @@
 param([string]$Name, [string]$Sink, [switch]$RawRecords, [string]$Marker, [switch]$FinalUnavailable)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '../diagnostic-export.ps1')
-Export-RunnerDiagnostic -Name $Name -EntryName 'example-entry' -Directory $Sink -RawRecords $RawRecords.IsPresent -Clock ([Diagnostics.Stopwatch]::StartNew())
+Invoke-BoundedDiagnosticExport -Name $Name -EntryName 'example-entry' -Directory $Sink -RawRecords $RawRecords.IsPresent -Clock ([Diagnostics.Stopwatch]::StartNew())
 $bundle = @(Get-ChildItem -LiteralPath $Sink -Directory)
 if ($bundle.Count -ne 1) { throw 'unexpected bundle count' }
 $metrics = [IO.File]::ReadAllText((Join-Path $bundle[0].FullName 'metrics.txt'))

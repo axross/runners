@@ -9,16 +9,17 @@ single-job containers built from
 operator procedure: prerequisites, tokens, scheduled tasks, health checks, and
 recovery.
 
-| File                           | Purpose                                                                                                     |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| `supervisor.ps1`               | Runs every repository's slots; `-ValidateOnly` checks a configuration and prints its plan                   |
-| `rebuild-image.ps1`            | Builds the image from this checkout under the configured image name                                         |
-| `register-scheduled-tasks.ps1` | Registers the supervisor and weekly rebuild tasks and restricts the token files                             |
-| `runner-host.example.json`     | An example host configuration with two repositories, using obviously fake names                             |
-| `host-configuration.ps1`       | Reads and validates a configuration, and builds a slot job's arguments from it; shared by the scripts above |
-| `docker-commands.ps1`          | Runs the Docker client and builds job container arguments; shared by the supervisor and its slot jobs       |
-| `diagnostic-export.ps1`        | Exports bounded private evidence before diagnostic-container removal, without changing runner outcomes      |
-| `tests/`                       | The validation test and its rejected and accepted fixtures, run by `mise run test:host`                     |
+| File                            | Purpose                                                                                                     |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `supervisor.ps1`                | Runs every repository's slots; `-ValidateOnly` checks a configuration and prints its plan                   |
+| `rebuild-image.ps1`             | Builds the image from this checkout under the configured image name                                         |
+| `register-scheduled-tasks.ps1`  | Registers the supervisor and weekly rebuild tasks and restricts the token files                             |
+| `runner-host.example.json`      | An example host configuration with two repositories, using obviously fake names                             |
+| `host-configuration.ps1`        | Reads and validates a configuration, and builds a slot job's arguments from it; shared by the scripts above |
+| `docker-commands.ps1`           | Runs the Docker client and builds job container arguments; shared by the supervisor and its slot jobs       |
+| `diagnostic-export.ps1`         | Exports bounded private evidence before diagnostic-container removal, without changing runner outcomes      |
+| `export-runner-diagnostics.ps1` | Private export worker; isolates storage I/O so the supervisor can enforce its deadline                      |
+| `tests/`                        | The validation test and its rejected and accepted fixtures, run by `mise run test:host`                     |
 
 The scripts target Windows PowerShell 5.1, which the scheduled tasks use, and are
 written to run on PowerShell 7 as well. CI runs the configuration test under both;

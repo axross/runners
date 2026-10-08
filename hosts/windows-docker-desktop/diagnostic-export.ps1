@@ -167,6 +167,7 @@ function Get-DiagnosticIdentity {
 
 # serializes bundle admission across an entry's slots, including partial bundles.
 function Export-RunnerDiagnostic {
+    [CmdletBinding()]
     param([string]$Name, [string]$EntryName, [string]$Directory, [bool]$RawRecords, [Diagnostics.Stopwatch]$Clock)
 
     $sink = Assert-PrivateDiagnosticDirectory -Path $Directory
@@ -183,24 +184,71 @@ function Export-RunnerDiagnostic {
         $null = New-Item -ItemType Directory -Path $bundle
         if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { [IO.File]::SetUnixFileMode($bundle, 448) }
         $null = Assert-PrivateDiagnosticDirectory -Path $bundle
-        $identity = Get-DiagnosticIdentity -Name $Name -Clock $Clock
-        [IO.File]::WriteAllText((Join-Path $bundle 'identity.txt'), $identity, [Text.Encoding]::ASCII)
-        $process = Invoke-DiagnosticDocker -Arguments @('cp', "${Name}:/tmp/runner-diagnostics/.", '-')
-        try {
-            Copy-DiagnosticTar -Stream $process.StandardOutput.BaseStream -Bundle $bundle -RawRecords $RawRecords -Clock $Clock
-            if (-not $process.WaitForExit([Math]::Max(1, 18000 - [int]$Clock.ElapsedMilliseconds)) -or $process.ExitCode -ne 0) { throw 'diagnostic copy failed' }
-        } finally {
-            if (-not $process.HasExited) { $process.Kill() }
-            $process.Dispose()
-        }
-        $metrics = [IO.File]::ReadAllText((Join-Path $bundle 'metrics.txt'))
-        if ($metrics -notmatch '(?m)^final=observed\r?$') {
-            Write-Warning 'Diagnostic gap: final observation unavailable (abrupt exit or observation limit).'
-        }
-        [IO.File]::WriteAllText((Join-Path $bundle 'complete.txt'), 'export complete; evidence remains untrusted and private', [Text.Encoding]::ASCII)
     } finally {
         if ($locked) { $mutex.ReleaseMutex() }
         $mutex.Dispose()
+    }
+    $identity = Get-DiagnosticIdentity -Name $Name -Clock $Clock
+    [IO.File]::WriteAllText((Join-Path $bundle 'identity.txt'), $identity, [Text.Encoding]::ASCII)
+    $process = Invoke-DiagnosticDocker -Arguments @('cp', "${Name}:/tmp/runner-diagnostics/.", '-')
+    try {
+        Copy-DiagnosticTar -Stream $process.StandardOutput.BaseStream -Bundle $bundle -RawRecords $RawRecords -Clock $Clock
+        if (-not $process.WaitForExit([Math]::Max(1, 18000 - [int]$Clock.ElapsedMilliseconds)) -or $process.ExitCode -ne 0) { throw 'diagnostic copy failed' }
+    } finally {
+        if (-not $process.HasExited) { $process.Kill() }
+        $process.Dispose()
+    }
+    $metrics = [IO.File]::ReadAllText((Join-Path $bundle 'metrics.txt'))
+    if ($metrics -notmatch '(?m)^final=observed\r?$') {
+        Write-Warning 'Diagnostic gap: final observation unavailable (abrupt exit or observation limit).'
+    }
+    [IO.File]::WriteAllText((Join-Path $bundle 'complete.txt'), 'export complete; evidence remains untrusted and private', [Text.Encoding]::ASCII)
+}
+
+# isolates all storage operations, including synchronous I/O, behind one deadline.
+function Invoke-BoundedDiagnosticExport {
+    param([string]$Name, [string]$EntryName, [string]$Directory, [bool]$RawRecords, [Diagnostics.Stopwatch]$Clock,
+        [int]$DeadlineMilliseconds = 18000, [string]$ScriptPath = (Join-Path $PSScriptRoot 'export-runner-diagnostics.ps1'))
+
+    $arguments = @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', $ScriptPath, '-Name', $Name, '-EntryName', $EntryName, '-Directory', $Directory)
+    if ($RawRecords) { $arguments += '-RawRecords' }
+    $info = New-Object Diagnostics.ProcessStartInfo
+    $info.FileName = (Get-Process -Id $PID).Path
+    $info.Arguments = (@($arguments | ForEach-Object { ConvertTo-NativeArgument -Value $_ }) -join ' ')
+    $info.UseShellExecute = $false
+    $info.CreateNoWindow = $true
+    $info.RedirectStandardOutput = $true
+    $info.RedirectStandardError = $true
+    $process = New-Object Diagnostics.Process
+    $process.StartInfo = $info
+    try {
+        $null = $process.Start()
+        if (-not $process.WaitForExit([Math]::Max(1, $DeadlineMilliseconds - [int]$Clock.ElapsedMilliseconds))) {
+            throw 'diagnostic finalization timeout'
+        }
+        switch ($process.ExitCode) {
+            0 { }
+            3 { Write-Warning 'Diagnostic gap: final observation unavailable (abrupt exit or observation limit).' }
+            4 { throw 'diagnostic sink full (ten bundles)' }
+            default { throw 'diagnostic export failed' }
+        }
+    } finally {
+        if (-not $process.HasExited) {
+            if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+                $killInfo = New-Object Diagnostics.ProcessStartInfo
+                $killInfo.FileName = Join-Path ([Environment]::SystemDirectory) 'taskkill.exe'
+                $killInfo.Arguments = "/PID $($process.Id) /T /F"
+                $killInfo.UseShellExecute = $false
+                $killInfo.CreateNoWindow = $true
+                $killInfo.RedirectStandardOutput = $true
+                $killInfo.RedirectStandardError = $true
+                $kill = [Diagnostics.Process]::Start($killInfo)
+                try { if (-not $kill.WaitForExit(1000)) { $kill.Kill() } } finally { $kill.Dispose() }
+                if (-not $process.HasExited) { $process.Kill() }
+            } else { $process.Kill($true) }
+            if (-not $process.WaitForExit(1000)) { Write-Warning 'Diagnostic gap: exporter termination unavailable.' }
+        }
+        $process.Dispose()
     }
 }
 
@@ -210,7 +258,7 @@ function Complete-DiagnosticContainer {
 
     $clock = [Diagnostics.Stopwatch]::StartNew()
     try {
-        Export-RunnerDiagnostic -Name $Name -EntryName $EntryName -Directory $Directory -RawRecords $RawRecords -Clock $clock
+        Invoke-BoundedDiagnosticExport -Name $Name -EntryName $EntryName -Directory $Directory -RawRecords $RawRecords -Clock $clock
     } catch {
         if ($_.Exception.Message -eq 'diagnostic sink full (ten bundles)') {
             Write-Warning 'Diagnostic gap: private sink full (ten bundles); prior evidence retained.'

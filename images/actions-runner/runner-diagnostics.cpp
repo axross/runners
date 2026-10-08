@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <chrono>
 #include <csignal>
-#include <cstring>
 #include <dirent.h>
 #include <fcntl.h>
 #include <iostream>

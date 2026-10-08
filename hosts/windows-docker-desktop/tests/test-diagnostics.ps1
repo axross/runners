@@ -187,6 +187,7 @@ try {
             $env:RUNNER_TEST_READBACK = $previousReadback
         }
     }
+    & (Join-Path $PSScriptRoot 'test-diagnostic-finalization.ps1') -HostDirectory $hostDirectory -Scratch $scratch
     function Get-DiagnosticIdentity {
         param($Name, $Clock)
         if ($Name -cne 'example-entry-1-20240305060708009' -or -not $Clock.IsRunning) { throw 'unexpected inspect input' }
@@ -208,7 +209,7 @@ try {
         -Passed ($full -and @(Get-ChildItem -LiteralPath $sink -Force).Count -eq 10 -and @(Get-ChildItem -LiteralPath $sink -Filter '*partial*').Count -eq 9) -Detail 'quota admission or retention failed'
 
     $script:completionOrder = New-Object System.Collections.Generic.List[string]
-    function Export-RunnerDiagnostic {
+    function Invoke-BoundedDiagnosticExport {
         param($Name, $EntryName, $Directory, $RawRecords, $Clock)
         if ($Name -cne 'example-entry-1-20240305060708009' -or $EntryName -cne 'example-entry' -or $Directory -cne $scratch -or $RawRecords -or -not $Clock.IsRunning) { throw 'unexpected export input' }
         $script:completionOrder.Add('export')

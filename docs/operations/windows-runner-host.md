@@ -388,9 +388,14 @@ The host admits at most ten bundles per entry, including partials, and at most
 Admission is serialized across that entry's slots. The host independently
 rejects malicious tar paths, links, special files, duplicate names and excess
 sizes; it does not extract an arbitrary container filesystem or container logs.
-Copying and inspect share an 18-second deadline, with removal attempted in the
-remaining host budget of 24 seconds. The observer has at most six seconds to
-finalize after runner exit, keeping total finalization within 30 seconds.
+The admission lock is released before inspect and copy, so another slot can
+export while a slow copy is running. All storage operations, inspect and copy
+run in a separate PowerShell process with an 18-second deadline. At timeout,
+Windows `taskkill /PID /T /F` terminates that process and its children; PowerShell
+7 on Linux uses process-tree termination. Cleanup has at most two seconds, with
+container removal attempted in the remaining host budget of 24 seconds. The
+observer has at most six seconds to finalize after runner exit, keeping total
+finalization within 30 seconds.
 Prior evidence is never automatically deleted. A full, inaccessible or insecure
 sink, missing collector, failed/partial copy, or unavailable final sample is a
 diagnostic gap, not a successful runner's failure. If removal fails, recover
