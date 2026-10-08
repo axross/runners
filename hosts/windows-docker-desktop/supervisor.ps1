@@ -34,6 +34,7 @@ $InformationPreference = 'Continue'
 
 . (Join-Path $PSScriptRoot 'host-configuration.ps1')
 . (Join-Path $PSScriptRoot 'docker-commands.ps1')
+. (Join-Path $PSScriptRoot 'diagnostic-export.ps1')
 
 try {
     $plan = Read-HostConfiguration -Path $ConfigPath
@@ -122,6 +123,11 @@ function Clear-StaleContainer {
     foreach ($name in $result.Output) {
         if ($name -cmatch $ownName) {
             Write-Warning "Removing stale container '$name' left over from an earlier run."
+            if ($Entry.Diagnostics) {
+                $null = Invoke-Docker -Arguments @('stop', $name)
+                Complete-DiagnosticContainer -Name $name -EntryName $Entry.Name -Directory $Entry.DiagnosticDirectory -RawRecords $Entry.DiagnosticRawRecords
+                continue
+            }
             $removal = Invoke-Docker -Arguments @('rm', '-f', $name)
             if ($removal.ExitCode -ne 0) {
                 Write-Warning "Failed to remove stale container '$name': $($removal.Output -join ' ')"
@@ -151,11 +157,15 @@ $WorkerScript = {
         [string]$RunCommand,
         [string]$JitConfigVariable,
         [int]$InitialBackoffSeconds,
-        [int]$MaxBackoffSeconds
+        [int]$MaxBackoffSeconds,
+        [bool]$Diagnostics,
+        [string]$DiagnosticDirectory,
+        [bool]$DiagnosticRawRecords
     )
 
     $ErrorActionPreference = 'Stop'
     . (Join-Path $ScriptRoot 'docker-commands.ps1')
+    . (Join-Path $ScriptRoot 'diagnostic-export.ps1')
 
     $label = "$EntryName slot ${Slot}"
 
@@ -238,10 +248,15 @@ $WorkerScript = {
         # the variable holds the registration only in this job's process
         # environment, where the Docker client reads it from.
         $arguments = Get-JobContainerArgument -Name $jit.Name -Cpus $Cpus -MemoryGb $MemoryGb -Mounts $Mounts `
-            -JitConfigVariable $JitConfigVariable -ImageName $ImageName -RunCommand $RunCommand
+            -JitConfigVariable $JitConfigVariable -ImageName $ImageName -RunCommand $RunCommand `
+            -Diagnostics $Diagnostics -DiagnosticRawRecords $DiagnosticRawRecords
         [Environment]::SetEnvironmentVariable($JitConfigVariable, $jit.EncodedJitConfig, 'Process')
         try {
-            $exitCode = Invoke-DockerLogged -Arguments $arguments
+            if ($Diagnostics) {
+                $exitCode = Invoke-DiagnosticRunner -Arguments $arguments -Name $jit.Name -EntryName $EntryName -Directory $DiagnosticDirectory -RawRecords $DiagnosticRawRecords
+            } else {
+                $exitCode = Invoke-DockerLogged -Arguments $arguments
+            }
         } finally {
             [Environment]::SetEnvironmentVariable($JitConfigVariable, $null, 'Process')
         }
@@ -253,7 +268,7 @@ $WorkerScript = {
             Start-Sleep -Seconds $backoffSeconds
             $backoffSeconds = [Math]::Min($backoffSeconds * 2, $MaxBackoffSeconds)
         } else {
-            Write-Information "${label}: container finished its job - starting a replacement."
+            Write-Information "${label}: container exited successfully (GitHub owns the job result) - starting a replacement."
             $backoffSeconds = $InitialBackoffSeconds
         }
     }
@@ -390,6 +405,10 @@ try {
             }
             if ($null -ne $worker.Job -and $worker.Job.State -in @('Failed', 'Stopped', 'Completed')) {
                 $state = $worker.Job.State
+                if ($worker.Entry.Diagnostics -and $null -ne $worker.Container) {
+                    $null = Invoke-Docker -Arguments @('stop', $worker.Container)
+                    Complete-DiagnosticContainer -Name $worker.Container -EntryName $worker.Entry.Name -Directory $worker.Entry.DiagnosticDirectory -RawRecords $worker.Entry.DiagnosticRawRecords
+                }
                 Remove-Job -Job $worker.Job -Force
                 $worker.Job = $null
                 $worker.Container = $null
@@ -422,6 +441,9 @@ try {
     # a container a slot started between the first pass and the job stopping.
     Invoke-KnownContainerStop -Workers $workers -Stopped $stopped
     foreach ($worker in $workers) {
+        if ($worker.Entry.Diagnostics -and $null -ne $worker.Container) {
+            Complete-DiagnosticContainer -Name $worker.Container -EntryName $worker.Entry.Name -Directory $worker.Entry.DiagnosticDirectory -RawRecords $worker.Entry.DiagnosticRawRecords
+        }
         if ($null -ne $worker.Job) {
             Wait-Job -Job $worker.Job -Timeout 30 | Out-Null
             Remove-Job -Job $worker.Job -Force -ErrorAction SilentlyContinue

@@ -27,6 +27,46 @@ a registry.
 It ends as `USER runner` and sets no entrypoint. The host supplies the command
 (`/home/runner/run.sh`) and the registration.
 
+## Opt-in diagnostics
+
+The host's default command and automatic removal are unchanged. For an opted-in
+entry, `/usr/local/bin/runner-diagnostics` supervises `run.sh`, forwards stop
+signals, and reaps a separate observer. It never wraps a build tool or changes
+JVM flags. The binary is compiled with the existing `build-essential` toolchain;
+no additional package or version is installed. A missing binary falls back to
+the normal runner with a diagnostic-gap warning.
+
+The observer writes container-local `/tmp/runner-diagnostics/metrics.txt` every
+ten seconds, for at most 24 hours and 8 MiB. It records cgroup v1/v2 memory,
+peak, limit, OOM and swap counters, CPU quota and throttling, the process's
+allowed CPUs, and at most 128 recognized JVM/compiler/linker/native-build
+PID/PPID/RSS records. Unavailable fields are explicit. Counters carry separate
+absolute and baseline-delta fields; a missing initial counter has no delta.
+These counters do not identify which child died. Attach uses only the baked
+JDK's `jcmd VM.flags`, for up to four JVMs per sample and 500 ms each, retaining
+only numeric heap/metaspace/processor flags and boolean `UseContainerSupport`.
+No arguments, environment, arbitrary process names, or unfiltered tool output
+are retained. Missing tools, attach failure and unsupported cgroup layouts are
+gaps, not build failures. Each directory scan considers at most 1,024 entries.
+
+The second, raw-record opt-in retains only regular, non-symlink reports from:
+
+- `/home/runner/.gradle/daemon/<version>/daemon-<pid>.out.log`.
+- `/home/runner/_work/<repository>/<repository>/hs_err_pid<pid>.log`.
+- `/home/runner/hs_err_pid<pid>.log` and `/tmp/hs_err_pid<pid>.log`.
+
+Collection has a three-second scan/copy deadline, a combined 32 MiB budget,
+and at most 128 generated `raw-<index>.log` files. It omits oversized or changed
+records rather than retaining a truncated report. Symlink ancestors, unrelated
+workspace contents, heap dumps, and core dumps are excluded. Nonstandard Gradle
+homes, deeper build directories and configured fatal-report destinations are
+not searched. Gaps identify omitted records without echoing names or contents.
+Raw data are private, potentially sensitive and never uploaded or printed.
+
+Private host retention, quotas, incomplete export and operator interpretation
+are owned by [Windows Runner Host](../../docs/operations/windows-runner-host.md#collecting-private-diagnostics).
+Diagnostics supply evidence, not a fix for the original daemon disappearance.
+
 ## Android NDK contract
 
 [`install-ndks.sh`](./install-ndks.sh) pins each numeric version, Google's
@@ -152,10 +192,20 @@ explains why.
 From the repository root:
 
 ```bash
+bash images/actions-runner/tests/diagnostics-test.sh
 bash images/actions-runner/tests/check-download.sh
 docker build --tag actions-runner:test images/actions-runner
 bash images/actions-runner/tests/smoke-test.sh actions-runner:test
 ```
+
+The standalone diagnostic test needs Linux `g++` (C++17) and `timeout`, but no
+Docker daemon. It uses asymmetric cgroup fixtures, synthetic private markers,
+raw-file boundaries, bounded attach subprocesses, and real launcher children.
+Run tests and builds alone and sequentially in an orb. The smoke command also
+runs these fixtures inside the actual image, followed by isolated diagnostic
+container lifecycle checks without production registration or networking. That
+command needs PowerShell 7 (`pwsh`) on the Linux test host for the real private
+export path; the existing hosted image job supplies it.
 
 CI runs these Linux x64 checks on every pull request without pushing the
 result. The smoke test uses no network or mounts and checks:

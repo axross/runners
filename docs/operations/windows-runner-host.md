@@ -315,8 +315,11 @@ background jobs. A slot loops forever:
    Docker. Anyone with access to the local Docker daemon can still read it from
    `docker inspect` until the container is removed, and the registration is
    single-use.
-4. The runner takes one matching job and exits, and `--rm` removes the container.
-   The slot then returns to step 1.
+4. The runner takes one matching job and exits. Normally `--rm` removes the
+   container. An opted-in diagnostic entry exports its bounded evidence first,
+   then explicitly removes the stopped container, including on export failure.
+   The slot then returns to step 1. Container exit is not the GitHub job result;
+   a runner can exit successfully after reporting a failed consumer job.
 
 A failed registration request or a container that exits non-zero delays the next
 attempt, doubling from 5 seconds to a 300-second ceiling; a container that ran a
@@ -324,6 +327,99 @@ job to completion is replaced at once. A slot job that dies is restarted after i
 own delay on the same schedule, and the delay starts over once a job has run for
 ten minutes before dying. Ctrl+C in the supervisor's window `docker stop`s the
 current containers, then stops every slot's job.
+
+## Collecting private diagnostics
+
+Diagnostics are off by default. Enable them only for the entry whose evidence
+you need, after separate authorization to operate that host. The default
+example enables neither diagnostics nor raw records. No resource allocation,
+build command, tool version, registration or mount changes with this opt-in.
+The sink is not exposed to the job as a bind mount or volume.
+
+1. Pre-create a directory on a local Windows filesystem, outside the checkout.
+   Restrict its owner and all allowed access rules to the account that runs the
+   supervisor. The feature MUST NOT create the sink, relax permissions, or
+   repair its access controls. For a new, empty example directory, review the
+   path before running these commands as that account:
+
+   ```powershell
+   $sink = 'C:\example-evidence'
+   New-Item -ItemType Directory -Path $sink
+   $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User
+   $acl = New-Object Security.AccessControl.DirectorySecurity
+   $acl.SetOwner($sid)
+   $acl.SetAccessRuleProtection($true, $false)
+   $rule = New-Object Security.AccessControl.FileSystemAccessRule $sid, 'FullControl', 'ContainerInherit, ObjectInherit', 'None', 'Allow'
+   $acl.AddAccessRule($rule)
+   Set-Acl -LiteralPath $sink -AclObject $acl
+   ```
+
+2. Set `diagnostics` to `true` and `diagnosticDirectory` to that directory in
+   the target entry. Leave `diagnosticRawRecords` absent or `false` unless
+   private daemon/crash retention is separately wanted. Set it to `true` only
+   with diagnostics enabled. Run `supervisor.ps1 -ValidateOnly` before an
+   authorized restart. Validation checks configuration without Docker or
+   GitHub, but does not assert that runtime storage is private or writable.
+3. After a container stops, inspect the entry's generated
+   `<name>-bundle-<random-id>` directory privately. `identity.txt` holds only
+   the actual immutable image ID, CPU/memory/swap/affinity readbacks, container
+   exit and Docker's OOM flag. `metrics.txt` holds the bounded observer output;
+   [the image README](../../images/actions-runner/README.md#opt-in-diagnostics)
+   owns fields, sampling limits, and the exact raw-record locations. A
+   `complete.txt` marker means copying finished, not that every observation
+   was available or that the incident's cause is known.
+4. Treat any directory without `complete.txt` as incomplete. A missing
+   `final=observed` metric marks unavailable final observations after abrupt
+   termination or a collection bound. Review every `gap=` and `unavailable`
+   field. Missing counters MUST NOT be read as zero. A counter delta is
+   container-wide, not a kill attributed to a daemon. Docker's `OOMKilled=false`
+   does not exclude a killed child. Correlate time samples and process PIDs with
+   separately authorized host kernel/WSL evidence; the container cannot read
+   enclosing-host kill records.
+5. Keep all raw records private. The feature never prints or uploads them.
+   Retained contents are untrusted operator evidence, MUST NOT become build
+   inputs, and MUST NOT be published without human sanitization. Public
+   summaries MUST omit credentials, registrations, private paths and
+   machine-identifying values; an allowlisted metric file is not automatic
+   permission to publish it.
+
+The host admits at most ten bundles per entry, including partials, and at most
+40 MiB of payload per bundle (with a small reservation for host metadata).
+Admission is serialized across that entry's slots. The host independently
+rejects malicious tar paths, links, special files, duplicate names and excess
+sizes; it does not extract an arbitrary container filesystem or container logs.
+Copying and inspect share an 18-second deadline, with removal attempted in the
+remaining host budget of 24 seconds. The observer has at most six seconds to
+finalize after runner exit, keeping total finalization within 30 seconds.
+Prior evidence is never automatically deleted. A full, inaccessible or insecure
+sink, missing collector, failed/partial copy, or unavailable final sample is a
+diagnostic gap, not a successful runner's failure. If removal fails, recover
+through entry-specific stale cleanup at the next supervisor start. Stale cleanup
+and orderly shutdown attempt private export before diagnostic-container removal;
+an unclean supervisor termination can leave a partial bundle or no final sample.
+Operators MUST review and manually archive or remove prior bundles before
+collecting beyond the quota. Retention outside this feature is their decision.
+
+The diagnostic tests discriminate Linux fixture and subprocess behavior; the
+existing hosted image smoke command exercises image lifecycle and export with
+synthetic jobs, no production registration, networking or shared mounts.
+Windows PowerShell 5.1 hosted tests check configuration, tar handling and private
+ACL fixtures, not Docker Desktop/WSL runtime behavior. Required hosted PR image
+evidence is still needed when a local orb has no Docker daemon. Real-host
+diagnostic overhead and retention remain unmeasured until a separately
+authorized Windows check.
+
+The incident motivating this feature reached native Android compilation before
+the Gradle daemon disappeared. The observed client failure did not establish an
+OOM kill, JVM crash, deployed image identity, actual slots or peak usage.
+[Issue #21](https://github.com/axross/runners/issues/21) records that historical
+characterization. This delivery MUST NOT be described as fixing that failure.
+Real-host diagnosis, memory/slot/CPU-affinity comparisons selected independently
+from measured pressure and host headroom, and ordinary setup-action/SDK-manager/
+wrapper reuse verification are separately approved follow-ups. Do not infer a
+resource remedy or tool-reuse correction from fixture results, and do not rerun
+the consumer workflow, alter host settings, roll out an image or inject build
+options under this diagnostic-source change.
 
 ## Cache Volumes
 

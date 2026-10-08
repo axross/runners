@@ -17,6 +17,7 @@ recovery.
 | `runner-host.example.json`     | An example host configuration with two repositories, using obviously fake names                             |
 | `host-configuration.ps1`       | Reads and validates a configuration, and builds a slot job's arguments from it; shared by the scripts above |
 | `docker-commands.ps1`          | Runs the Docker client and builds job container arguments; shared by the supervisor and its slot jobs       |
+| `diagnostic-export.ps1`        | Exports bounded private evidence before diagnostic-container removal, without changing runner outcomes      |
 | `tests/`                       | The validation test and its rejected and accepted fixtures, run by `mise run test:host`                     |
 
 The scripts target Windows PowerShell 5.1, which the scheduled tasks use, and are
@@ -30,17 +31,20 @@ Their files are ASCII-only.
 A JSON file kept outside the repository; every script takes its path as
 `-ConfigPath`. Copy `runner-host.example.json` and replace every value.
 
-| Field                                | Meaning                                                                                                                                                   |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `imageName`                          | The local image tag `rebuild-image.ps1` builds and the supervisor runs                                                                                    |
-| `repositories[].owner`, `repository` | The target repository. Each owner and repository pair appears once                                                                                        |
-| `repositories[].slots`               | How many jobs run at once for this repository, 1 to 16                                                                                                    |
-| `repositories[].tokenPath`           | An absolute Windows path (drive letter or UNC) to the file holding this repository's token, re-read on every registration                                 |
-| `repositories[].labels`              | Optional custom labels, none by default; the four labels every registration carries, `self-hosted`, `linux`, `x64`, and `axpc`, are not listed            |
-| `repositories[].volumes`             | The cache volumes as `suffix` and `mountPath` pairs, possibly none                                                                                        |
-| `repositories[].name`                | Starts the entry's container, runner, and volume names. Lowercase letters, digits, and hyphens, at most 64 characters, not colliding with another entry's |
-| `repositories[].cpus`                | Optional CPU limit of each job container, a number above 0 and at most 64; 2 when absent                                                                  |
-| `repositories[].memoryGb`            | Optional memory limit of each job container in whole gigabytes, 1 to 256; 8 when absent                                                                   |
+| Field                                 | Meaning                                                                                                                                                   |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `imageName`                           | The local image tag `rebuild-image.ps1` builds and the supervisor runs                                                                                    |
+| `repositories[].owner`, `repository`  | The target repository. Each owner and repository pair appears once                                                                                        |
+| `repositories[].slots`                | How many jobs run at once for this repository, 1 to 16                                                                                                    |
+| `repositories[].tokenPath`            | An absolute Windows path (drive letter or UNC) to the file holding this repository's token, re-read on every registration                                 |
+| `repositories[].labels`               | Optional custom labels, none by default; the four labels every registration carries, `self-hosted`, `linux`, `x64`, and `axpc`, are not listed            |
+| `repositories[].volumes`              | The cache volumes as `suffix` and `mountPath` pairs, possibly none                                                                                        |
+| `repositories[].name`                 | Starts the entry's container, runner, and volume names. Lowercase letters, digits, and hyphens, at most 64 characters, not colliding with another entry's |
+| `repositories[].cpus`                 | Optional CPU limit of each job container, a number above 0 and at most 64; 2 when absent                                                                  |
+| `repositories[].memoryGb`             | Optional memory limit of each job container in whole gigabytes, 1 to 256; 8 when absent                                                                   |
+| `repositories[].diagnostics`          | Optional boolean, false by default; enables the diagnostic runner lifecycle for this entry only                                                           |
+| `repositories[].diagnosticDirectory`  | Required with diagnostics, invalid without them; absolute local Windows directory, outside the checkout, pre-created and private to the operator          |
+| `repositories[].diagnosticRawRecords` | Optional boolean, false by default; separate opt-in for private daemon/crash records, invalid when true without diagnostics                               |
 
 An invalid configuration stops the script before it touches Docker, with one line
 per problem naming the field. A field not listed above is rejected as unknown, not
@@ -64,6 +68,11 @@ rest. Before the first command, follow the Allowing the Scripts to Run section o
 `-ValidateOnly` prints each repository's registration labels, name, container
 name pattern, CPU and memory limits, and volume names without calling Docker or
 GitHub, and exits 1 on an invalid configuration.
+It also prints the two diagnostic opt-ins, not the private evidence path.
+Validation checks types and path shape without opening the sink. Runtime
+privacy, access or quota failures warn and do not prevent a runner starting.
+The opt-in procedure and retention limits are in
+[Collecting private diagnostics](../../docs/operations/windows-runner-host.md#collecting-private-diagnostics).
 
 ## Tests
 
@@ -81,3 +90,8 @@ flags, and checks that a slot job's positional arguments line up with its worker
 script block's parameters. It also checks the pattern that recognizes an entry's
 stale containers. It never calls Docker or GitHub. CI also runs it under Windows
 PowerShell 5.1 on a GitHub-hosted Windows runner.
+It includes [`tests/test-diagnostics.ps1`](./tests/test-diagnostics.ps1), covering
+per-entry opt-in, tar path/type/size rejection, private sinks, partial-bundle
+quotas, and export/removal ordering with runner exit preservation. Real image
+export is exercised by the image's existing smoke command, which also needs
+PowerShell 7 on its Linux test host; Docker Desktop remains a separate check.

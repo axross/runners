@@ -132,5 +132,9 @@ RUN mkdir -p /opt/hostedtoolcache \
         /home/runner/.rustup \
         /home/runner/.npm
 
+COPY runner-diagnostics.cpp /tmp/runner-diagnostics.cpp
+RUN g++ -std=c++17 -O2 -Wall -Wextra -Werror /tmp/runner-diagnostics.cpp -o /usr/local/bin/runner-diagnostics \
+    && rm /tmp/runner-diagnostics.cpp
+
 # hadolint ignore=DL3066
 USER runner

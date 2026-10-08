@@ -26,7 +26,7 @@ $script:DefaultMemoryGb = 8
 $script:MaxMemoryGb = 256
 
 $script:HostFields = @('imageName', 'repositories')
-$script:RepositoryFields = @('owner', 'repository', 'name', 'slots', 'tokenPath', 'labels', 'volumes', 'cpus', 'memoryGb')
+$script:RepositoryFields = @('owner', 'repository', 'name', 'slots', 'tokenPath', 'labels', 'volumes', 'cpus', 'memoryGb', 'diagnostics', 'diagnosticDirectory', 'diagnosticRawRecords')
 $script:VolumeFields = @('suffix', 'mountPath')
 
 $script:NamePattern = '^[a-z0-9][a-z0-9-]*\z'
@@ -287,6 +287,28 @@ function Get-RepositoryPlan {
     $name = Get-EntryName -Node $Node -Path $Path -Errors $Errors
     $cpus = Get-CpuLimit -Node $Node -Path $Path -Errors $Errors
     $memoryGb = Get-MemoryLimit -Node $Node -Path $Path -Errors $Errors
+    $diagnostics = $false
+    $rawRecords = $false
+    foreach ($setting in @('diagnostics', 'diagnosticRawRecords')) {
+        $property = $Node.PSObject.Properties[$setting]
+        if ($null -ne $property) {
+            if ($property.Value -isnot [bool]) { $Errors.Add("$Path.${setting}: must be a boolean") }
+            elseif ($setting -eq 'diagnostics') { $diagnostics = $property.Value }
+            else { $rawRecords = $property.Value }
+        }
+    }
+    $diagnosticDirectory = ''
+    $directoryProperty = $Node.PSObject.Properties['diagnosticDirectory']
+    if ($diagnostics) {
+        $diagnosticDirectory = Get-StringField -Node $Node -Name 'diagnosticDirectory' -Path "$Path.diagnosticDirectory" -Errors $Errors `
+            -Pattern '\A[A-Za-z]:\\[^\x00-\x1f"<>|?*:/]+\z' -Expectation 'an absolute local Windows directory outside the checkout'
+        if ($null -ne $diagnosticDirectory -and $diagnosticDirectory -match '(^|\\)\.\.?($|\\)') {
+            $Errors.Add("$Path.diagnosticDirectory: must not contain dot path components")
+        }
+    } elseif ($null -ne $directoryProperty) {
+        $Errors.Add("$Path.diagnosticDirectory: requires diagnostics")
+    }
+    if ($rawRecords -and -not $diagnostics) { $Errors.Add("$Path.diagnosticRawRecords: requires diagnostics") }
 
     if ($null -eq $owner -or $null -eq $repository -or $null -eq $tokenPath -or $null -eq $labels `
             -or $null -eq $volumes -or $null -eq $slots -or $null -eq $name -or $null -eq $cpus -or $null -eq $memoryGb) {
@@ -307,6 +329,9 @@ function Get-RepositoryPlan {
         Cpus       = $cpus
         MemoryGb   = $memoryGb
         Volumes    = $volumePlan
+        Diagnostics = $diagnostics
+        DiagnosticDirectory = [string]$diagnosticDirectory
+        DiagnosticRawRecords = $rawRecords
     }
 }
 
@@ -438,6 +463,9 @@ function Get-SlotWorkerArgument {
         JitConfigVariable     = $JitConfigVariable
         InitialBackoffSeconds = $InitialBackoffSeconds
         MaxBackoffSeconds     = $MaxBackoffSeconds
+        Diagnostics           = [bool]$Entry.Diagnostics
+        DiagnosticDirectory   = [string]$Entry.DiagnosticDirectory
+        DiagnosticRawRecords  = [bool]$Entry.DiagnosticRawRecords
     }
 }
 
@@ -457,6 +485,8 @@ function Get-PlanSummary {
         $lines.Add("  containers:        $($entry.Name)-<index>-<timestamp>")
         $lines.Add("  cpus:              $(Format-CpuCount -Cpus $entry.Cpus)")
         $lines.Add("  memory:            $($entry.MemoryGb) GB")
+        $lines.Add("  diagnostics:       $($entry.Diagnostics)")
+        $lines.Add("  raw records:       $($entry.DiagnosticRawRecords)")
         foreach ($volume in $entry.Volumes) {
             $lines.Add("  volume:            $($volume.Name) -> $($volume.MountPath)")
         }

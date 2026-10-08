@@ -286,6 +286,8 @@ foreach ($pattern in $forbidden) {
     Assert-Case -Name "host scripts never use $pattern" -Passed ($hits.Count -eq 0) -Detail "found in: $($hits.Name -join ', ')"
 }
 
+. (Join-Path $PSScriptRoot 'test-diagnostics.ps1')
+
 if ($failures.Count -gt 0) {
     Write-Output "$($failures.Count) check(s) failed."
     exit 1
