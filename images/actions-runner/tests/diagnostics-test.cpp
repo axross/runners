@@ -117,6 +117,44 @@ void bounds(const fs::path& root) {
     check(IntervalSeconds == 10 && DurationSeconds == 86400 && MetricBudget == 8388608, "production interval, duration and metric budget");
 }
 
+fs::path endingRoot;
+bool oversizedEnd = false;
+std::vector<bool> sampledAttach;
+
+// injects a stop after counters are read, before the periodic sample returns.
+std::string endingSample(const std::string&, const std::string&,
+                         std::map<std::string, long long>& baseline, bool attach) {
+    sampledAttach.push_back(attach);
+    auto text = sample((endingRoot / "cgroup").string(), (endingRoot / "proc").string(), baseline, attach);
+    if (attach) {
+        put(endingRoot / "cgroup/memory.events", "oom_kill 8\n");
+        stopped(SIGTERM);
+    } else if (oversizedEnd) text.append(MetricBudget + 1, 'x');
+    return text;
+}
+
+void finalObservation(const fs::path& root) {
+    endingRoot = root / "ending";
+    put(endingRoot / "cgroup/memory.current", "271\n");
+    for (bool oversized : {false, true}) {
+        oversizedEnd = oversized; sampledAttach.clear(); stopSignal = 0;
+        put(endingRoot / "cgroup/memory.events", "oom_kill 5\n");
+        auto output = endingRoot / (oversized ? "limited" : "complete");
+        fs::create_directories(output);
+        int dir = directory(output.string());
+        check(observe(dir, false, DurationSeconds, IntervalSeconds, MetricBudget, endingSample) == 0, "stop during sample completes finite observation");
+        close(dir);
+        auto text = readText((output / "metrics.txt").string());
+        check(sampledAttach == std::vector<bool>({true, false}), "termination triggers a new sample without JVM attach");
+        if (oversized) {
+            check(has(text, "gap=final_sample_unavailable\n") && has(text, "final=unavailable\n") && !has(text, "final=observed\n"), "unsaved end sample never claims final observation");
+        } else {
+            check(has(text, "sample.phase=end\n") && has(text, "memory.events.oom_kill.absolute=8\n") && has(text, "memory.events.oom_kill.delta=3\n") && has(text, "final=observed\n"), "end sample captures counters changed during interrupted sampling");
+        }
+    }
+    stopSignal = 0;
+}
+
 // runs isolated launcher instances and reaps all test descendants, including abrupt exit.
 void lifecycle(const fs::path& root) {
     prctl(PR_SET_CHILD_SUBREAPER, 1);
@@ -163,7 +201,7 @@ int main(int argc, char** argv) {
     std::cout << std::unitbuf;
     try {
         fs::path root(argv[1]); std::string marker(argv[2]);
-        counters(root, marker); rawRecords(root, marker); flags(root, marker); bounds(root); lifecycle(root);
+        counters(root, marker); rawRecords(root, marker); flags(root, marker); bounds(root); finalObservation(root); lifecycle(root);
         std::cout << "All diagnostic observer and lifecycle checks passed.\n";
     } catch (const std::exception& error) { std::cerr << "FAIL " << error.what() << '\n'; return 1; }
 }

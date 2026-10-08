@@ -1,5 +1,7 @@
 #Requires -Version 5.1
 $ErrorActionPreference = 'Stop'
+$script:DiagnosticExportMilliseconds = 18000
+$script:DiagnosticHostMilliseconds = 24000
 
 # evidence is private operator data, not a job mount or an automatic upload.
 function Assert-PrivateDiagnosticDirectory {
@@ -61,7 +63,7 @@ function Invoke-DiagnosticDocker {
 
 # one monotonic deadline covers all bytes, including blocked or truncated copies.
 function Read-DiagnosticByte {
-    param([IO.Stream]$Stream, [int]$Count, [Diagnostics.Stopwatch]$Clock, [int]$DeadlineMilliseconds = 18000)
+    param([IO.Stream]$Stream, [int]$Count, [Diagnostics.Stopwatch]$Clock, [int]$DeadlineMilliseconds = $script:DiagnosticExportMilliseconds)
 
     $bytes = New-Object byte[] $Count
     $offset = 0
@@ -149,14 +151,14 @@ function Get-DiagnosticIdentity {
         $offset = 0
         while ($offset -lt $buffer.Length) {
             $task = $stream.ReadAsync($buffer, $offset, $buffer.Length - $offset)
-            $remaining = 18000 - [int]$Clock.ElapsedMilliseconds
+            $remaining = $script:DiagnosticExportMilliseconds - [int]$Clock.ElapsedMilliseconds
             if ($remaining -le 0 -or -not $task.Wait($remaining)) { throw 'diagnostic inspect timeout' }
             if ($task.Result -eq 0) { break }
             $offset += $task.Result
         }
         if ($offset -eq $buffer.Length) { throw 'diagnostic inspect output limit' }
         $text = [Text.Encoding]::ASCII.GetString($buffer, 0, $offset).Trim()
-        if (-not $process.WaitForExit([Math]::Max(1, 18000 - [int]$Clock.ElapsedMilliseconds)) -or $process.ExitCode -ne 0) { throw 'diagnostic inspect failed' }
+        if (-not $process.WaitForExit([Math]::Max(1, $script:DiagnosticExportMilliseconds - [int]$Clock.ElapsedMilliseconds)) -or $process.ExitCode -ne 0) { throw 'diagnostic inspect failed' }
         if ($text -cnotmatch '\Asha256:[0-9a-f]{64}\|[0-9]+\|[0-9]+\|-?[0-9]+\|-?[0-9]+\|[0-9]+\|[0-9,-]*\|(true|false)\|-?[0-9]+\z') { throw 'diagnostic inspect readback unavailable' }
         return "image|nano_cpus|memory_bytes|memory_swap_bytes|cpu_quota|cpu_period|allowed_cpus|container_oom_killed|container_exit_code`n$text`n"
     } finally {
@@ -193,7 +195,7 @@ function Export-RunnerDiagnostic {
     $process = Invoke-DiagnosticDocker -Arguments @('cp', "${Name}:/tmp/runner-diagnostics/.", '-')
     try {
         Copy-DiagnosticTar -Stream $process.StandardOutput.BaseStream -Bundle $bundle -RawRecords $RawRecords -Clock $Clock
-        if (-not $process.WaitForExit([Math]::Max(1, 18000 - [int]$Clock.ElapsedMilliseconds)) -or $process.ExitCode -ne 0) { throw 'diagnostic copy failed' }
+        if (-not $process.WaitForExit([Math]::Max(1, $script:DiagnosticExportMilliseconds - [int]$Clock.ElapsedMilliseconds)) -or $process.ExitCode -ne 0) { throw 'diagnostic copy failed' }
     } finally {
         if (-not $process.HasExited) { $process.Kill() }
         $process.Dispose()
@@ -208,7 +210,7 @@ function Export-RunnerDiagnostic {
 # isolates all storage operations, including synchronous I/O, behind one deadline.
 function Invoke-BoundedDiagnosticExport {
     param([string]$Name, [string]$EntryName, [string]$Directory, [bool]$RawRecords, [Diagnostics.Stopwatch]$Clock,
-        [int]$DeadlineMilliseconds = 18000, [string]$ScriptPath = (Join-Path $PSScriptRoot 'export-runner-diagnostics.ps1'))
+        [int]$DeadlineMilliseconds = $script:DiagnosticExportMilliseconds, [string]$ScriptPath = (Join-Path $PSScriptRoot 'export-runner-diagnostics.ps1'))
 
     $arguments = @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', $ScriptPath, '-Name', $Name, '-EntryName', $EntryName, '-Directory', $Directory)
     if ($RawRecords) { $arguments += '-RawRecords' }
@@ -269,7 +271,7 @@ function Complete-DiagnosticContainer {
         $process = $null
         try {
             $process = Invoke-DiagnosticDocker -Arguments @('rm', '-f', $Name)
-            if (-not $process.WaitForExit([Math]::Max(1, 24000 - [int]$clock.ElapsedMilliseconds)) -or $process.ExitCode -ne 0) {
+            if (-not $process.WaitForExit([Math]::Max(1, $script:DiagnosticHostMilliseconds - [int]$clock.ElapsedMilliseconds)) -or $process.ExitCode -ne 0) {
                 Write-Warning 'Diagnostic gap: container removal failed; entry-specific startup recovery will retry.'
             }
         } catch {

@@ -317,7 +317,7 @@ private:
 
 // bounds observer work independently of the runner's lifetime and result.
 int observe(int dir, bool raw, int duration = DurationSeconds, int interval = IntervalSeconds,
-            size_t budget = MetricBudget) {
+            size_t budget = MetricBudget, decltype(&sample) collect = sample) {
     int metrics = openat(dir, "metrics.txt", O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
     if (metrics < 0) return 1;
     auto start = Clock::now();
@@ -330,14 +330,22 @@ int observe(int dir, bool raw, int duration = DurationSeconds, int interval = In
     };
     bool bounded = false;
     do {
+        if (stopSignal) break;
         auto next = Clock::now() + std::chrono::seconds(interval);
-        std::string text = "sample.elapsed_seconds=" + std::to_string(std::chrono::duration_cast<std::chrono::seconds>(Clock::now() - start).count()) + '\n' + sample("/sys/fs/cgroup", "/proc", baseline, true);
+        std::string text = "sample.phase=periodic\nsample.elapsed_seconds=" + std::to_string(std::chrono::duration_cast<std::chrono::seconds>(Clock::now() - start).count()) + '\n' + collect("/sys/fs/cgroup", "/proc", baseline, true);
         if (text.size() + 4096 > budget - used) { append("gap=metric_output_limit\n"); bounded = true; break; }
         if (!append(text)) { close(metrics); return 1; }
         if (stopSignal) break;
         while (!stopSignal && Clock::now() < next) usleep(100000);
         if (Clock::now() - start >= std::chrono::seconds(duration)) { append("gap=observation_duration_limit\n"); bounded = true; break; }
     } while (true);
+    if (!bounded) {
+        std::string text = "sample.phase=end\nsample.elapsed_seconds=" + std::to_string(std::chrono::duration_cast<std::chrono::seconds>(Clock::now() - start).count()) + '\n' + collect("/sys/fs/cgroup", "/proc", baseline, false);
+        if (text.size() + 4096 > budget - used || !append(text)) {
+            append("gap=final_sample_unavailable\n");
+            bounded = true;
+        }
+    }
     if (raw) {
         RawRecords records(dir);
         records.collect("/home/runner/.gradle/daemon", 1, std::regex("daemon-[0-9]+\\.out\\.log"));
