@@ -14,6 +14,18 @@ Use this order: Summary; Todo; Background with Assumptions; Goals and Non-goals;
 - MUST describe beneficiary-observable outcomes, not incidental implementation details; include required sections and state a reason for each omitted conditional section. Follow the project's product-requirement capability when present.
 - MUST separate decided assumptions from open questions and keep the approved Todo fixed rather than updating it as a progress log.
 
+## Verification Outside the Tree
+
+Some approved criteria need evidence the diff cannot carry, such as a real-device result or a machine-specific measurement. Agreeing that route during planning keeps the contributor accountable without asking a code reviewer to establish the result through inspection. An in-tree test remains preferable when it can verify the same outcome.
+
+Designate each necessary external-verification criterion by appending `(verified out of tree: <where the evidence will be published>)` to its wording. Plan approval binds the verification method and evidence destination, not a reviewer exemption; review finding scope is a separate contract.
+
+**Guidelines:**
+
+- SHOULD use in-tree verification when it can establish the required outcome.
+- MUST designate each criterion requiring out-of-tree verification in the plan and agree its verification method and evidence destination before implementation.
+- MUST obtain an approved plan revision before adding or changing that designation later, then regenerate the delivery projection under the Plan Revision Identity rules below.
+
 ## Plan Revision Identity
 
 The canonical plan content begins at the first plan section heading and runs through the end of Open questions. A status representation and archived original description are excluded. HTML character-reference decoding—named and numeric—is the only normalization before identity comparison.

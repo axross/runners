@@ -24,8 +24,26 @@ Project delivery decides where plans, state, and review evidence belong. This re
 
 - MUST identify the repository, operation, and target kind before a write; resolve a bare number to issue or pull request rather than guessing from a link between them.
 - MUST send changes to an issue's own body or metadata to that issue, and changes to a pull request's body, metadata, draft status, or review to that pull request.
-- MUST identify the actual comment or review thread when editing or replying to it; an issue/PR number alone is not that object's identity.
+- MUST identify the actual comment or review thread when editing, replying to, or resolving it; an issue/PR number alone is not that object's identity.
 - MUST preserve unrelated labels when an authorized label operation replaces the whole list. GitHub's set-labels semantics replace, rather than append to, that list.
+
+### Identify Review-Conversation API Targets
+
+The [REST reply operation](https://docs.github.com/en/rest/pulls/comments#create-a-reply-for-a-review-comment), `POST /repos/{owner}/{repo}/pulls/{pull_number}/comments/{comment_id}/replies`, takes a top-level review-comment ID. Replies to replies are unsupported. The [GraphQL resolution operation](https://docs.github.com/en/graphql/reference/pulls), `resolveReviewThread`, instead takes the review thread's node ID as `threadId`; a comment's node ID is not the thread ID.
+
+**Guidelines:**
+
+- MUST verify the REST reply's top-level parent comment and its intended repository/PR relationship; when the supplied comment is a reply, locate and verify its top-level parent rather than chaining replies.
+- MUST establish the actual thread node ID and its association with the finding before GraphQL resolution; do not substitute a PR number or comment ID.
+
+### Match Closure to Current Discussion
+
+A correct thread identifier does not prove that an earlier disposition covers the thread's current discussion. Closing a thread marks its outstanding matters resolved, including substantive content added since the original finding.
+
+**Guidelines:**
+
+- MUST establish the repository, pull request, thread, and relevant finding relationship before closure, and inspect the current substantive discussion to confirm the authorized disposition covers all outstanding matters closure would mark resolved.
+- MUST reassess that coverage after reopening, new substantive content, or a changed human decision; do not automatically re-resolve or assume every original grant has expired.
 
 ## Verify Assignment Separately From Creation
 

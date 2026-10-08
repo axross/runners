@@ -33,12 +33,10 @@ Closes #
 ## Acceptance criteria
 
 <!--
-Copy every acceptance criterion from the approved plan verbatim, each with its
-status and the evidence for it. A criterion carrying the
-`(verified out of tree: <where>)` marker keeps the marker and links its
-published evidence, or is marked pending when that evidence can exist only after
-merge. The reviewer verifies these criteria from this section and
-does not open the tracking issue; an absent section is itself a finding.
+copy diff-verifiable and designated out-of-tree criteria verbatim with status,
+evidence links, plan revision, and omitted-criterion accounting, per
+docs/operations/development-workflow.md. Keep this section; the reviewer uses
+it without opening the tracking issue.
 -->
 
 ## Verification
@@ -46,8 +44,11 @@ does not open the tracking issue; an absent section is itself a finding.
 <!--
 Evidence, not assertion: the commands run and their observed results, manual
 checks performed, and any check that was skipped and why. When the
-linked issue lists acceptance criteria, state each criterion's status. For
-user-visible changes, add before/after screenshots or a recording.
+linked issue lists acceptance criteria, state each criterion's status.
+Required pre-ready evidence is not satisfied by reviewer silence or a pending
+post-merge check. Identify approved post-merge follow-ups separately, with their
+tracking and evidence destinations. For user-visible changes, add before/after
+screenshots or a recording.
 -->
 
 ## Risks and breaking changes

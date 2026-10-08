@@ -81,9 +81,12 @@ Installing a skill does not prove a host loaded it. In Claude Code, confirm the
 selected source and new content in a **fresh** session with `/context` and a
 skill load; the session that changed the tree read its skills at startup, and a
 subagent spawned from it does not substitute for a fresh host session. In Amp,
-run `reload_skills` after the refresh, then load the skill and inspect its
-reported source and content. A matching installed directory or discovery entry
-alone proves neither active loading nor compliance.
+record the intended source revision and a distinguishing passage from each
+changed skill before running `reload_skills`. Then load those skills and compare
+their returned source and body with the expected passages from this refresh.
+A matching installed directory or discovery entry alone proves neither active
+loading nor compliance. Report unavailable source, reload, or body evidence as
+unavailable rather than substituting a shell inventory for active loading.
 
 ### When Upstream Renames a Skill
 
@@ -117,7 +120,7 @@ findable MUST carry it in `description` rather than in a host-specific field.
 
 Two different things route here, and they resolve the same way. A **deviation**
 is a collision: an installed capability requires one thing, this project
-deliberately does another. A **gap** is an installed capability being wrong,
+proposes or has adopted a bounded alternative. A **gap** is an installed capability being wrong,
 outdated, or simply silent on a case that comes up here, or a capability the
 library does not have at all. Either way the installed skill is left exactly as
 it is, and the resolution is written down in this document.
@@ -126,23 +129,32 @@ That matters because an unrecorded deviation reads to the next agent, and to a
 reviewer, as a plain violation of a MUST rule, and an unrecorded gap gets
 rediscovered from scratch by whoever hits it next.
 
-A suspected gap MUST be verified against the installed skill's own text before
-being routed anywhere; a rule that turns out to be stated correctly is a
-compliance failure to own, not a defect to file. A real gap is then resolved by
-one or both of two routes: an issue opened on
+A suspected gap MUST be verified against the actual host-selected skill's text
+and source before being routed anywhere; a rule that already covers the case is
+not a defect to file. When that source cannot be established, report routing as
+blocked rather than infer it from this project's lockfile. A real gap is then
+resolved by one or both of two routes: an issue opened on
 [`axross/skills`](https://github.com/axross/skills) when the gap generalizes
 beyond this project, and a written note in the register below saying what the
 capability states, what this project does instead, and how to handle the case
 meanwhile. The human's go-ahead MUST be obtained before opening an upstream
-issue, since it is a public write on a repository this project does not own, and
+issue or posting feedback on an existing one, since it is a public write beyond
+this repository's delivery grant, and
 the gap MUST be recorded locally in the meantime rather than leaving the finding
 to depend on that issue landing.
 
-The task that exposed the finding continues under the skill exactly as installed.
-Routing a change never blocks the work, and never licenses acting as though the
-proposed rule were already in force. Any upstream issue filed or left pending
-SHOULD be named in the work's completion report, so the finding outlives the
-session that produced it.
+An additive, nonconflicting local convention is not a deviation. A conflicting
+choice is only valid after human adoption under
+[Agent Skill Management](../../.claude/skills/agent-skill-management/SKILL.md)'s
+installed-rule change contract. This project's register MUST retain that
+contract's required exception and adoption evidence. The contract owns validity
+and reassessment; this register owns their local record, not permission to
+override a host restriction or publish upstream.
+
+The exposing task continues under applicable installed rules and any separately
+valid deviation. A pending upstream proposal never puts its proposed rule into
+force; if applicable boundaries prevent continuing, report the blocker. Any
+upstream request filed or left pending SHOULD be named in the completion report.
 
 ## The Register
 

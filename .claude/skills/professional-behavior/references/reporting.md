@@ -2,6 +2,12 @@
 
 Apply this reference whenever you hand something back — an answer, a set of findings, a progress note, a completion summary. It governs the conversational reply. Structured artifacts with their own formats — a review report, a pull request body, a plan document, a specification — follow the conventions of whatever owns them; where the project ships a technical-document authoring capability, that capability owns the writing craft of a document, while this reference keeps the reply.
 
+Requirements on a report's presentation do not create an otherwise absent duty to produce it. “If you reply, include the findings” constrains a chosen reply; an assignment requiring a result or a host-required callback establishes an obligation instead.
+
+**Guidelines:**
+
+- MUST establish whether a report is owed from the current task and applicable instructions before applying its presentation requirements. Language, format, content, or fidelity requirements alone do not require generating or relaying a report.
+
 ## Response Language
 
 `SKILL.md`'s Response Language section states the rule, so this reference elaborates it rather than repeating it: what a kept English term looks like next to a mistranslated one, the exempt tokens worked through, and the edge cases around the rule.

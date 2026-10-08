@@ -31,7 +31,7 @@ Review the actual target revision and uncommitted diff, not an implementation re
 
 - MUST use an assignment satisfying the review contract in [implementation-package.md](./implementation-package.md), including every required material at its declared fidelity.
 - MUST use a fresh review context each round and re-review after every fix batch.
-- MUST NOT present parent self-review or an unavailable advisory review as independent review.
+- MUST NOT present loop-driver self-review or an unavailable advisory review as independent review.
 - MUST review correctness against the approved criteria, maintainability, security, and test coverage; use Critical, Major, Minor, and Nit severities, honoring any stricter project policy.
 - MUST build input from the review directive, current project policy, approved plan, and actual diff, in that order, excluding the implementer's receipt and summaries derived from it. Reading encountered run state is disclosed, not claimed mechanically impossible.
 - MUST review only a stable target without a competing writer. A plan change abandons the current round and requires approval and fresh review, not transfer of its findings into a new plan's verdict.
@@ -40,11 +40,13 @@ Review the actual target revision and uncommitted diff, not an implementation re
 
 The ledger preserves findings through translation and recovery. Each finding has an ID, severity, citation, claim, suggested fix, disposition, and reason.
 
+The driver's interpretation and remedy selection follow [finding-response.md](./finding-response.md). The suggested fix remains part of the finding's record even when a justified correction uses a different remedy; the authority below still determines its disposition.
+
 **Guidelines:**
 
 - MUST preserve each finding's ID, severity, and citation without omission or regrading.
 - MUST give every finding one terminal state: **fixed**, **dismissed**, or **deferred**.
-- MUST tie `fixed` to the fixing commit; the parent MAY dismiss Minor or Nit with a recorded reason, but MUST obtain human confirmation before dismissing Critical or Major and record that reason too.
+- MUST tie `fixed` to the fixing commit; the loop driver MAY dismiss Minor or Nit with a recorded reason, but MUST obtain human confirmation before dismissing Critical or Major and record that reason too.
 - MUST use `deferred` only when the human makes an informed decision to decline another round.
 - MUST NOT deliver the draft pull request while a finding in the current round lacks a terminal state. Superseded-plan rounds are abandoned, not silently treated as resolved.
 

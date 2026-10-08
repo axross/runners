@@ -2,9 +2,18 @@
 
 Apply these rules when reviewing whether the author proved the change works. Verification evidence is the observable record of checks performed, not a general claim that the change was tested.
 
+## Review Finding Scope
+
+Evidence adequacy and review finding scope are separate decisions. Code-review practices own which gaps a review reports; QA does not widen that scope. An excluded finding can still leave contributor verification incomplete.
+
+**Guidelines:**
+
+- MUST, when code-review practices are available, apply their finding-scope boundaries before turning missing verification into a QA finding; consult their acceptance-criteria code-inspection boundary when the proposed finding depends only on absent external-verification confirmation or evidence.
+- MUST use this reference's evidence rules under the project's review policy when no code-review owner is available; absence of that optional owner creates no additional exclusion.
+
 ## Evidence-Adequacy Decision Flow
 
-Walk every changed surface through this flow; the change's evidence is adequate only when each surface exits at "covered". The severity of each flag is assigned by the specific rule that covers it — the sections below and the project's review severity tiers.
+Walk every changed surface through this flow; the change's evidence is adequate only when each surface exits at "covered". Each flag is subject to [Review Finding Scope](#review-finding-scope); excluding it does not turn the surface into "covered". The severity of each reportable flag is assigned by the specific rule that covers it — the sections below and the project's review severity tiers.
 
 ```mermaid
 flowchart TD
@@ -33,7 +42,7 @@ Evidence is whatever actually establishes the check ran, and the change's own de
 **Guidelines:**
 
 - MUST require evidence that the project's format and lint commands ran after code or documentation edits, accepting the project's own reported check results or the author's report of the run, and MUST NOT treat the change description's silence as evidence that they did not.
-- MUST require manual evidence for changed output surfaces listed in [manual-verification.md](./manual-verification.md).
+- MUST require manual evidence for changed output surfaces listed in [manual-verification.md](./manual-verification.md), without turning a gap excluded by Review Finding Scope into a finding.
 - MUST map skipped required checks to a concrete reason and residual risk.
 - MUST require a second-pass verification statement after fixing any finding the project's review severity tiers rank as Critical or Major.
 
