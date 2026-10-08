@@ -13,9 +13,11 @@ $script:exportCalls = 0
 
 # preserves the stop boundary while keeping this test independent of Docker/jobs.
 function Invoke-KnownContainerStop {
-    param($Workers, $Stopped)
+    param($Workers, $Stopped, $Clock)
 
-    if ($null -eq $script:stopClock) { $script:stopClock = [Diagnostics.Stopwatch]::StartNew() }
+    if ($null -eq $Clock -or -not $Clock.IsRunning) { throw 'missing shutdown clock' }
+    if ($null -eq $script:stopClock) { $script:stopClock = $Clock }
+    if (-not [object]::ReferenceEquals($script:stopClock, $Clock)) { throw 'stop clock restarted' }
     foreach ($worker in $Workers) { $null = $Stopped.Add($worker.Container) }
 }
 function Invoke-TestStopJob { param($Job, $ErrorAction) if ($null -eq $Job -or $ErrorAction -ne 'SilentlyContinue') { throw 'unexpected stop' }; Start-Sleep -Milliseconds 10 }

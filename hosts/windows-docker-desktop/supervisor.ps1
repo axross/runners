@@ -125,7 +125,7 @@ function Clear-StaleContainer {
             Write-Warning "Removing stale container '$name' left over from an earlier run."
             if ($Entry.Diagnostics) {
                 $diagnosticClock = [Diagnostics.Stopwatch]::StartNew()
-                $null = Invoke-Docker -Arguments @('stop', $name)
+                Invoke-BoundedDiagnosticStop -Names @($name) -Clock $diagnosticClock
                 Complete-DiagnosticContainer -Name $name -EntryName $Entry.Name -Directory $Entry.DiagnosticDirectory -RawRecords $Entry.DiagnosticRawRecords -Clock $diagnosticClock
                 continue
             }
@@ -309,22 +309,26 @@ function Receive-WorkerOutput {
 # call so that they share one grace period. the drain first catches a container
 # started since the last pass.
 function Invoke-KnownContainerStop {
-    param([Parameter(Mandatory)]$Workers, [Parameter(Mandatory)]$Stopped)
+    param([Parameter(Mandatory)]$Workers, [Parameter(Mandatory)]$Stopped, [Diagnostics.Stopwatch]$Clock)
 
     foreach ($worker in $Workers) {
         if ($null -ne $worker.Job) {
             Receive-WorkerOutput -Worker $worker
         }
     }
-    $names = @($Workers | Where-Object { $null -ne $_.Container -and -not $Stopped.Contains($_.Container) } |
-            ForEach-Object { $_.Container })
+    $pending = @($Workers | Where-Object { $null -ne $_.Container -and -not $Stopped.Contains($_.Container) })
+    $names = @($pending | ForEach-Object { $_.Container })
     if ($names.Count -eq 0) {
         return
     }
     Write-Information "Stopping container(s): $($names -join ', ')."
-    $stop = Invoke-Docker -Arguments (@('stop') + $names)
-    if ($stop.ExitCode -ne 0) {
-        Write-Warning "Failed to stop container(s) $($names -join ', '): $($stop.Output -join ' ')"
+    if (@($Workers | Where-Object { $_.Entry.Diagnostics }).Count -gt 0) {
+        Invoke-BoundedDiagnosticStop -Names $names -Clock $Clock
+    } else {
+        $stop = Invoke-Docker -Arguments (@('stop') + $names)
+        if ($stop.ExitCode -ne 0) {
+            Write-Warning "Failed to stop container(s) $($names -join ', '): $($stop.Output -join ' ')"
+        }
     }
     foreach ($name in $names) {
         $null = $Stopped.Add($name)
@@ -408,7 +412,7 @@ try {
                 $state = $worker.Job.State
                 if ($worker.Entry.Diagnostics -and $null -ne $worker.Container) {
                     $diagnosticClock = [Diagnostics.Stopwatch]::StartNew()
-                    $null = Invoke-Docker -Arguments @('stop', $worker.Container)
+                    Invoke-BoundedDiagnosticStop -Names @($worker.Container) -Clock $diagnosticClock
                     Complete-DiagnosticContainer -Name $worker.Container -EntryName $worker.Entry.Name -Directory $worker.Entry.DiagnosticDirectory -RawRecords $worker.Entry.DiagnosticRawRecords -Clock $diagnosticClock
                 }
                 Remove-Job -Job $worker.Job -Force
@@ -435,14 +439,14 @@ try {
     # already in flight.
     $stopped = New-Object System.Collections.Generic.HashSet[string]
     $shutdownClock = [Diagnostics.Stopwatch]::StartNew()
-    Invoke-KnownContainerStop -Workers $workers -Stopped $stopped
+    Invoke-KnownContainerStop -Workers $workers -Stopped $stopped -Clock $shutdownClock
     foreach ($worker in $workers) {
         if ($null -ne $worker.Job) {
             Stop-Job -Job $worker.Job -ErrorAction SilentlyContinue
         }
     }
     # a container a slot started between the first pass and the job stopping.
-    Invoke-KnownContainerStop -Workers $workers -Stopped $stopped
+    Invoke-KnownContainerStop -Workers $workers -Stopped $stopped -Clock $shutdownClock
     foreach ($worker in $workers) {
         if ($worker.Entry.Diagnostics -and $null -ne $worker.Container) {
             Complete-DiagnosticContainer -Name $worker.Container -EntryName $worker.Entry.Name -Directory $worker.Entry.DiagnosticDirectory -RawRecords $worker.Entry.DiagnosticRawRecords -Clock $shutdownClock

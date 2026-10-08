@@ -364,7 +364,7 @@ The sink is not exposed to the job as a bind mount or volume.
    `<name>-bundle-<random-id>` directory privately. `identity.txt` holds only
    the actual immutable image ID, CPU/memory/swap/affinity readbacks, container
    exit and Docker's OOM flag. `metrics.txt` holds the bounded observer output;
-   [the image README](../../images/actions-runner/README.md#opt-in-diagnostics)
+   [the image README](../../images/actions-runner/README.md)
    owns fields, sampling limits, and the exact raw-record locations. A
    `complete.txt` marker means copying finished, not that every observation
    was available or that the incident's cause is known.
@@ -397,8 +397,13 @@ container removal attempted in the remaining host budget of 24 seconds. The
 observer has at most six seconds to finalize after runner exit, keeping total
 finalization within 30 seconds.
 Supervisor-controlled cleanup starts its clock before stopping the container.
+The Docker stop client is bounded to 12 seconds, within the shared 18-second
+stop/export deadline; this does not change Docker's container grace settings.
+Stop failure or timeout warns and still proceeds to export and removal.
 Orderly shutdown shares one clock across the batch, including stop and export
-queue time. Later exports with no remaining budget are skipped with a gap;
+queue time. Batches containing a diagnostic entry use bounded stop for both
+passes, including a replacement from a non-diagnostic entry; batches without
+diagnostics keep the original stop call. Later exports with no remaining budget are skipped with a gap;
 every diagnostic removal is attempted before any worker-reap wait.
 Prior evidence is never automatically deleted. A full, inaccessible or insecure
 sink, missing collector, failed/partial copy, or unavailable final sample is a
@@ -418,11 +423,9 @@ evidence is still needed when a local orb has no Docker daemon. Real-host
 diagnostic overhead and retention remain unmeasured until a separately
 authorized Windows check.
 
-The incident motivating this feature reached native Android compilation before
-the Gradle daemon disappeared. The observed client failure did not establish an
-OOM kill, JVM crash, deployed image identity, actual slots or peak usage.
-[Issue #21](https://github.com/axross/runners/issues/21) records that historical
-characterization. This delivery MUST NOT be described as fixing that failure.
+Diagnostics alone MUST NOT be described as fixing daemon disappearance or
+establishing an OOM kill, JVM crash, actual slots or peak usage. Missing runtime
+evidence remains unknown.
 Real-host diagnosis, memory/slot/CPU-affinity comparisons selected independently
 from measured pressure and host headroom, and ordinary setup-action/SDK-manager/
 wrapper reuse verification are separately approved follow-ups. Do not infer a

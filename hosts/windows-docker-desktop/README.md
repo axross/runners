@@ -73,7 +73,7 @@ It also prints the two diagnostic opt-ins, not the private evidence path.
 Validation checks types and path shape without opening the sink. Runtime
 privacy, access or quota failures warn and do not prevent a runner starting.
 The opt-in procedure and retention limits are in
-[Collecting private diagnostics](../../docs/operations/windows-runner-host.md#collecting-private-diagnostics).
+[Windows Runner Host](../../docs/operations/windows-runner-host.md).
 
 ## Tests
 
@@ -93,6 +93,6 @@ stale containers. It never calls Docker or GitHub. CI also runs it under Windows
 PowerShell 5.1 on a GitHub-hosted Windows runner.
 It includes [`tests/test-diagnostics.ps1`](./tests/test-diagnostics.ps1), covering
 per-entry opt-in, tar path/type/size rejection, private sinks, partial-bundle
-quotas, and export/removal ordering with runner exit preservation. Real image
+quotas, stuck stop subprocesses, and export/removal ordering with runner exit preservation. Real image
 export is exercised by the image's existing smoke command, which also needs
 PowerShell 7 on its Linux test host; Docker Desktop remains a separate check.

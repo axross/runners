@@ -1,7 +1,9 @@
 #Requires -Version 5.1
 $ErrorActionPreference = 'Stop'
+$script:DiagnosticStopMilliseconds = 12000
 $script:DiagnosticExportMilliseconds = 18000
 $script:DiagnosticHostMilliseconds = 24000
+$script:DiagnosticTerminationMilliseconds = 1000
 
 # evidence is private operator data, not a job mount or an automatic upload.
 function Assert-PrivateDiagnosticDirectory {
@@ -59,6 +61,37 @@ function Invoke-DiagnosticDocker {
     $process.StartInfo = $info
     $null = $process.Start()
     return $process
+}
+
+# drains pipes without retaining daemon text, which can contain private host data.
+function Invoke-BoundedDiagnosticStop {
+    [CmdletBinding()]
+    param([string[]]$Names, [Diagnostics.Stopwatch]$Clock)
+
+    $process = $null
+    try {
+        $deadline = [Math]::Min($Clock.ElapsedMilliseconds + $script:DiagnosticStopMilliseconds, $script:DiagnosticExportMilliseconds)
+        if ($Clock.ElapsedMilliseconds -ge $deadline) { throw 'diagnostic stop timeout' }
+        $process = Invoke-DiagnosticDocker -Arguments (@('stop') + $Names)
+        $null = $process.StandardOutput.BaseStream.CopyToAsync([IO.Stream]::Null)
+        $null = $process.StandardError.BaseStream.CopyToAsync([IO.Stream]::Null)
+        if (-not $process.WaitForExit([Math]::Max(1, $deadline - $Clock.ElapsedMilliseconds)) -or $process.ExitCode -ne 0) {
+            throw 'diagnostic stop failed or timed out'
+        }
+    } catch {
+        Write-Warning 'Diagnostic gap: stop unavailable or over budget; export and removal will still be attempted.'
+    } finally {
+        if ($null -ne $process) {
+            try {
+                if (-not $process.HasExited) {
+                    $process.Kill()
+                    if (-not $process.WaitForExit($script:DiagnosticTerminationMilliseconds)) { throw 'diagnostic stop client termination unavailable' }
+                }
+            } catch {
+                Write-Warning 'Diagnostic gap: stop client termination unavailable.'
+            } finally { $process.Dispose() }
+        }
+    }
 }
 
 # one monotonic deadline covers all bytes, including blocked or truncated copies.
@@ -246,10 +279,10 @@ function Invoke-BoundedDiagnosticExport {
                 $killInfo.RedirectStandardOutput = $true
                 $killInfo.RedirectStandardError = $true
                 $kill = [Diagnostics.Process]::Start($killInfo)
-                try { if (-not $kill.WaitForExit(1000)) { $kill.Kill() } } finally { $kill.Dispose() }
+                try { if (-not $kill.WaitForExit($script:DiagnosticTerminationMilliseconds)) { $kill.Kill() } } finally { $kill.Dispose() }
                 if (-not $process.HasExited) { $process.Kill() }
             } else { $process.Kill($true) }
-            if (-not $process.WaitForExit(1000)) { Write-Warning 'Diagnostic gap: exporter termination unavailable.' }
+            if (-not $process.WaitForExit($script:DiagnosticTerminationMilliseconds)) { Write-Warning 'Diagnostic gap: exporter termination unavailable.' }
         }
         $process.Dispose()
     }

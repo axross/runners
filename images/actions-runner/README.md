@@ -70,8 +70,8 @@ not searched. Gaps identify omitted records without echoing names or contents.
 Raw data are private, potentially sensitive and never uploaded or printed.
 
 Private host retention, quotas, incomplete export and operator interpretation
-are owned by [Windows Runner Host](../../docs/operations/windows-runner-host.md#collecting-private-diagnostics).
-Diagnostics supply evidence, not a fix for the original daemon disappearance.
+are owned by [Windows Runner Host](../../docs/operations/windows-runner-host.md).
+Diagnostics supply evidence, not a resource remedy or tool-reuse correction.
 
 ## Android NDK contract
 
