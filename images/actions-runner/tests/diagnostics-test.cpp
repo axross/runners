@@ -1,14 +1,22 @@
+#include <cerrno>
+#include <dirent.h>
 #include <sys/wait.h>
 #include <unistd.h>
 pid_t waitWithShutdown(pid_t pid, int* status, int options);
 pid_t forkWithShutdown();
+DIR* openWithFailure(int fd);
+dirent* readWithFailure(DIR* dir);
 #define waitpid waitWithShutdown
 #define fork forkWithShutdown
+#define fdopendir openWithFailure
+#define readdir readWithFailure
 #define main diagnostic_cli_main
 #include "../runner-diagnostics.cpp"
 #undef main
 #undef waitpid
 #undef fork
+#undef fdopendir
+#undef readdir
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
@@ -17,6 +25,19 @@ namespace fs = std::filesystem;
 pid_t shutdownWaitOwner = -1, shutdownForkOwner = -1;
 int shutdownSignal = SIGTERM, shutdownForks = 0;
 std::string shutdownReadyPath;
+bool failDirectoryOpen = false, failDirectoryRead = false;
+
+// injects resource exhaustion at the directory-stream boundary, not file access.
+DIR* openWithFailure(int fd) {
+    if (failDirectoryOpen) { errno = EMFILE; return nullptr; }
+    return fdopendir(fd);
+}
+
+// an enumeration I/O error differs from an empty directory's ordinary EOF.
+dirent* readWithFailure(DIR* dir) {
+    if (failDirectoryRead) { errno = EIO; return nullptr; }
+    return readdir(dir);
+}
 
 // delivers a real signal after the launcher's check but before its wait syscall.
 pid_t waitWithShutdown(pid_t pid, int* status, int options) {
@@ -113,7 +134,30 @@ void rawRecords(const fs::path& root, const std::string& marker) {
     put(source / "example-repository/example-repository/deeper/hs_err_pid15.log", marker + "-too-deep");
     dir = directory(target.string()); RawRecords workspace(dir);
     workspace.collect(source.string(), 2, std::regex("hs_err_pid[0-9]+\\.log")); close(dir);
-    check(std::distance(fs::directory_iterator(target), fs::directory_iterator{}) == 1 && readText((target / "raw-1.log").string()) == marker + "-checkout", "raw workspace reports require matching repository directories at exact checkout depth");
+    check(std::distance(fs::directory_iterator(target), fs::directory_iterator{}) == 1 && readText((target / "raw-1.log").string()) == marker + "-checkout" && workspace.gaps.empty(), "raw workspace reports require exact checkout depth; absent unrelated checkouts are not access failures");
+    fs::remove_all(source); fs::remove_all(target); fs::create_directory(target);
+    auto blockedVersion = source / marker;
+    put(blockedVersion / "daemon-1.out.log", marker);
+    fs::permissions(blockedVersion, fs::perms::none);
+    dir = directory(target.string()); RawRecords deniedVersion(dir);
+    deniedVersion.collect(source.string(), 1, std::regex("daemon-[0-9]+\\.out\\.log")); close(dir);
+    fs::permissions(blockedVersion, fs::perms::owner_all);
+    check(fs::is_empty(target) && deniedVersion.gaps == "gap=raw_location_unavailable\n", "inaccessible Gradle version reports a fixed gap without private names");
+    fs::remove_all(source);
+    auto blockedCheckout = source / marker / marker;
+    put(blockedCheckout / "hs_err_pid1.log", marker);
+    fs::permissions(blockedCheckout, fs::perms::none);
+    dir = directory(target.string()); RawRecords deniedCheckout(dir);
+    deniedCheckout.collect(source.string(), 2, std::regex("hs_err_pid[0-9]+\\.log")); close(dir);
+    fs::permissions(blockedCheckout, fs::perms::owner_all);
+    check(fs::is_empty(target) && deniedCheckout.gaps == "gap=raw_location_unavailable\n", "inaccessible nested checkout differs from absent checkout and reveals no private names");
+    for (bool openFailure : {true, false}) {
+        failDirectoryOpen = openFailure; failDirectoryRead = !openFailure;
+        dir = directory(target.string()); RawRecords failedScan(dir);
+        failedScan.collect(source.string(), 2, std::regex("hs_err_pid[0-9]+\\.log")); close(dir);
+        failDirectoryOpen = false; failDirectoryRead = false;
+        check(fs::is_empty(target) && failedScan.gaps == "gap=raw_scan_unavailable\n", "directory stream open and enumeration failures report omissions, not an empty scan or scan limit");
+    }
     fs::remove_all(source); fs::remove_all(target); fs::create_directory(source); fs::create_directory(target);
     auto report = source / "hs_err_pid3.log";
     put(report, ""); fs::resize_file(report, 32 * 1024 * 1024);

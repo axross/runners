@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cerrno>
 #include <chrono>
 #include <csignal>
 #include <dirent.h>
@@ -84,12 +85,20 @@ std::string field(const std::map<std::string, std::string>& values, const std::s
 }
 
 // caps directory enumeration, including directories filled with unrelated files.
-std::vector<std::string> names(int fd, bool& limited) {
+std::vector<std::string> names(int fd, bool& limited, bool& unavailable) {
     std::vector<std::string> result;
-    DIR* dir = fdopendir(dup(fd));
-    if (!dir) return result;
+    int duplicate = dup(fd);
+    DIR* dir = fdopendir(duplicate);
+    if (!dir) {
+        if (duplicate >= 0) close(duplicate);
+        unavailable = true;
+        return result;
+    }
     int count = 0;
-    while (dirent* entry = readdir(dir)) {
+    for (;;) {
+        errno = 0;
+        dirent* entry = readdir(dir);
+        if (!entry) { unavailable = errno != 0; break; }
         if (++count > ScanLimit) { limited = true; break; }
         std::string name = entry->d_name;
         if (name != "." && name != "..") result.push_back(name);
@@ -165,8 +174,8 @@ std::string processes(const std::string& proc, bool attach) {
     std::ostringstream output;
     int fd = directory(proc);
     if (fd < 0) return "processes=unavailable\n";
-    bool limited = false;
-    auto entries = names(fd, limited);
+    bool limited = false, unavailable = false;
+    auto entries = names(fd, limited, unavailable);
     close(fd);
     const std::map<std::string, std::string> categories{
         {"java", "jvm"}, {"clang", "compiler"}, {"clang++", "compiler"},
@@ -198,6 +207,7 @@ std::string processes(const std::string& proc, bool attach) {
         }
     }
     if (limited) output << "gap=process_scan_limit\n";
+    if (unavailable) output << "gap=process_scan_unavailable\n";
     return output.str();
 }
 
@@ -282,17 +292,18 @@ private:
     }
     // a bounded traversal is intentionally not an arbitrary workspace search.
     void walk(int dir, int depth, const std::regex& pattern) {
-        bool limited = false;
-        for (const auto& name : names(dir, limited)) {
+        bool limited = false, unavailable = false;
+        for (const auto& name : names(dir, limited, unavailable)) {
             if (Clock::now() >= deadline || sequence >= RawRecordLimit) { limited = true; break; }
             struct stat info{};
-            if (fstatat(dir, name.c_str(), &info, AT_SYMLINK_NOFOLLOW) != 0) continue;
+            if (fstatat(dir, name.c_str(), &info, AT_SYMLINK_NOFOLLOW) != 0) { gap("raw_metadata_unavailable"); continue; }
             if (S_ISDIR(info.st_mode) && depth > 0) {
                 int child = openat(dir, name.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
-                if (child < 0) continue;
+                if (child < 0) { gap("raw_location_unavailable"); continue; }
                 if (depth == WorkspaceDepth) {
                     int checkout = openat(child, name.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
                     if (checkout >= 0) { walk(checkout, 0, pattern); close(checkout); }
+                    else if (errno != ENOENT) { gap("raw_location_unavailable"); }
                 } else {
                     walk(child, depth - 1, pattern);
                 }
@@ -303,6 +314,7 @@ private:
             }
         }
         if (limited) gap("raw_scan_limit");
+        if (unavailable) gap("raw_scan_unavailable");
     }
     // pins the source inode and removes an incomplete generated destination only.
     void copy(int dir, const std::string& name) {

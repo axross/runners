@@ -9,17 +9,18 @@ single-job containers built from
 operator procedure: prerequisites, tokens, scheduled tasks, health checks, and
 recovery.
 
-| File                            | Purpose                                                                                                     |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `supervisor.ps1`                | Runs every repository's slots; `-ValidateOnly` checks a configuration and prints its plan                   |
-| `rebuild-image.ps1`             | Builds the image from this checkout under the configured image name                                         |
-| `register-scheduled-tasks.ps1`  | Registers the supervisor and weekly rebuild tasks and restricts the token files                             |
-| `runner-host.example.json`      | An example host configuration with two repositories, using obviously fake names                             |
-| `host-configuration.ps1`        | Reads and validates a configuration, and builds a slot job's arguments from it; shared by the scripts above |
-| `docker-commands.ps1`           | Runs the Docker client and builds job container arguments; shared by the supervisor and its slot jobs       |
-| `diagnostic-export.ps1`         | Exports bounded private evidence before diagnostic-container removal, without changing runner outcomes      |
-| `export-runner-diagnostics.ps1` | Private export worker; isolates storage I/O so the supervisor can enforce its deadline                      |
-| `tests/`                        | The validation test and its rejected and accepted fixtures, run by `mise run test:host`                     |
+| File                              | Purpose                                                                                                     |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `supervisor.ps1`                  | Runs every repository's slots; `-ValidateOnly` checks a configuration and prints its plan                   |
+| `rebuild-image.ps1`               | Builds the image from this checkout under the configured image name                                         |
+| `register-scheduled-tasks.ps1`    | Registers the supervisor and weekly rebuild tasks and restricts the token files                             |
+| `runner-host.example.json`        | An example host configuration with two repositories, using obviously fake names                             |
+| `host-configuration.ps1`          | Reads and validates a configuration, and builds a slot job's arguments from it; shared by the scripts above |
+| `docker-commands.ps1`             | Runs the Docker client and builds job container arguments; shared by the supervisor and its slot jobs       |
+| `diagnostic-export.ps1`           | Exports bounded private evidence before diagnostic-container removal, without changing runner outcomes      |
+| `diagnostic-process-lifetime.ps1` | Initializes the Windows Job Object lifetime boundary before enabled container work                          |
+| `export-runner-diagnostics.ps1`   | Private export worker; isolates storage I/O so the supervisor can enforce its deadline                      |
+| `tests/`                          | The validation test and its rejected and accepted fixtures, run by `mise run test:host`                     |
 
 The scripts target Windows PowerShell 5.1, which the scheduled tasks use, and are
 written to run on PowerShell 7 as well. CI runs the configuration test under both;
@@ -70,8 +71,10 @@ rest. Before the first command, follow the Allowing the Scripts to Run section o
 name pattern, CPU and memory limits, and volume names without calling Docker or
 GitHub, and exits 1 on an invalid configuration.
 It also prints the two diagnostic opt-ins, not the private evidence path.
-Validation checks types and path shape without opening the sink. Runtime
-privacy, access or quota failures warn and do not prevent a runner starting.
+Validation checks types and normalized Windows checkout exclusion without opening
+the sink. Runtime privacy, access or quota failures warn and do not prevent a
+runner starting. A diagnostic-marked stale container after disabling is different:
+startup retains it and refuses that entry until explicit private recovery/cleanup.
 The opt-in procedure and retention limits are in
 [Windows Runner Host](../../docs/operations/windows-runner-host.md).
 
@@ -93,6 +96,8 @@ stale containers. It never calls Docker or GitHub. CI also runs it under Windows
 PowerShell 5.1 on a GitHub-hosted Windows runner.
 It includes [`tests/test-diagnostics.ps1`](./tests/test-diagnostics.ps1), covering
 per-entry opt-in, tar path/type/size rejection, private sinks, partial-bundle
-quotas, stuck stop subprocesses, and export/removal ordering with runner exit preservation. Real image
+quotas, stuck stop subprocesses, immutable rollback markers, queued deadlines,
+single-owner completion, runner retry/result preservation, exporter descendants
+and Windows owner-death containment. Real image
 export is exercised by the image's existing smoke command, which also needs
 PowerShell 7 on its Linux test host; Docker Desktop remains a separate check.

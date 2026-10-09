@@ -4,6 +4,7 @@ $script:DiagnosticStopMilliseconds = 12000
 $script:DiagnosticExportMilliseconds = 18000
 $script:DiagnosticHostMilliseconds = 24000
 $script:DiagnosticTerminationMilliseconds = 1000
+. (Join-Path $PSScriptRoot 'diagnostic-process-lifetime.ps1')
 
 # evidence is private operator data, not a job mount or an automatic upload.
 function Assert-PrivateDiagnosticDirectory {
@@ -69,6 +70,7 @@ function Invoke-BoundedDiagnosticStop {
     param([string[]]$Names, [Diagnostics.Stopwatch]$Clock)
 
     $process = $null
+    $success = $false
     try {
         $deadline = [Math]::Min($Clock.ElapsedMilliseconds + $script:DiagnosticStopMilliseconds, $script:DiagnosticExportMilliseconds)
         if ($Clock.ElapsedMilliseconds -ge $deadline) { throw 'diagnostic stop timeout' }
@@ -78,6 +80,7 @@ function Invoke-BoundedDiagnosticStop {
         if (-not $process.WaitForExit([Math]::Max(1, $deadline - $Clock.ElapsedMilliseconds)) -or $process.ExitCode -ne 0) {
             throw 'diagnostic stop failed or timed out'
         }
+        $success = $true
     } catch {
         Write-Warning 'Diagnostic gap: stop unavailable or over budget; export and removal will still be attempted.'
     } finally {
@@ -85,12 +88,58 @@ function Invoke-BoundedDiagnosticStop {
             try {
                 if (-not $process.HasExited) {
                     $process.Kill()
-                    if (-not $process.WaitForExit($script:DiagnosticTerminationMilliseconds)) { throw 'diagnostic stop client termination unavailable' }
+                    $remaining = [Math]::Max(1, [Math]::Min($script:DiagnosticTerminationMilliseconds, $script:DiagnosticHostMilliseconds - $Clock.ElapsedMilliseconds))
+                    if (-not $process.WaitForExit($remaining)) { throw 'diagnostic stop client termination unavailable' }
                 }
             } catch {
                 Write-Warning 'Diagnostic gap: stop client termination unavailable.'
             } finally { $process.Dispose() }
         }
+    }
+    return $success
+}
+
+# a PowerShell wait remains interruptible even when Docker's daemon never replies.
+function Invoke-DiagnosticContainerRun {
+    param([string[]]$Arguments)
+
+    $clientJob = $null
+    $process = $null
+    try {
+        try {
+            if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) { $clientJob = New-Object Runners.DiagnosticJob }
+        } catch { Write-Warning 'Diagnostic gap: runner client lifetime containment unavailable.' }
+        $process = Invoke-DiagnosticDocker -Arguments $Arguments
+        try { if ($null -ne $clientJob) { $clientJob.Assign($process.Handle) } }
+        catch { Write-Warning 'Diagnostic gap: runner client lifetime containment unavailable.' }
+        $stdout = $process.StandardOutput.ReadLineAsync()
+        $stderr = $process.StandardError.ReadLineAsync()
+        while (-not $process.HasExited -or $null -ne $stdout -or $null -ne $stderr) {
+            foreach ($pipe in @('stdout', 'stderr')) {
+                $read = Get-Variable -Name $pipe -ValueOnly
+                if ($null -ne $read -and $read.IsCompleted) {
+                    $line = $read.GetAwaiter().GetResult()
+                    $next = $null
+                    if ($null -ne $line) {
+                        Write-Information $line
+                        if ($pipe -eq 'stdout') { $next = $process.StandardOutput.ReadLineAsync() }
+                        else { $next = $process.StandardError.ReadLineAsync() }
+                    }
+                    Set-Variable -Name $pipe -Value $next
+                }
+            }
+            Start-Sleep -Milliseconds 20
+        }
+        return $process.ExitCode
+    } finally {
+        try {
+            if ($null -ne $clientJob -and -not $clientJob.Close()) { throw 'runner client containment cleanup failed' }
+            if ($null -ne $process -and -not $process.HasExited) {
+                $process.Kill()
+                if (-not $process.WaitForExit($script:DiagnosticTerminationMilliseconds)) { throw 'runner client termination failed' }
+            }
+        } catch { Write-Warning 'Diagnostic gap: runner client termination unavailable.' }
+        finally { if ($null -ne $process) { $process.Dispose() } }
     }
 }
 
@@ -259,10 +308,27 @@ function Invoke-BoundedDiagnosticExport {
     $info.CreateNoWindow = $true
     $info.RedirectStandardOutput = $true
     $info.RedirectStandardError = $true
+    $info.RedirectStandardInput = $true
     $process = New-Object Diagnostics.Process
     $process.StartInfo = $info
+    $jobObject = $null
+    $started = $false
+    $assigned = $false
     try {
+        $windows = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
+        if ($windows -and -not ('Runners.DiagnosticJob' -as [type])) { throw 'diagnostic containment unavailable' }
+        try { if ($windows) { $jobObject = New-Object Runners.DiagnosticJob } }
+        catch { throw 'diagnostic containment unavailable' }
         $null = $process.Start()
+        $started = $true
+        $null = $process.StandardOutput.BaseStream.CopyToAsync([IO.Stream]::Null)
+        $null = $process.StandardError.BaseStream.CopyToAsync([IO.Stream]::Null)
+        try {
+            if ($windows) { $jobObject.Assign($process.Handle); $assigned = $true }
+            if ($Clock.ElapsedMilliseconds -ge $DeadlineMilliseconds) { throw 'admission deadline spent' }
+            $process.StandardInput.WriteLine('diagnostic-admitted')
+            $process.StandardInput.Close()
+        } catch { throw 'diagnostic containment unavailable' }
         if (-not $process.WaitForExit([Math]::Max(1, $DeadlineMilliseconds - [int]$Clock.ElapsedMilliseconds))) {
             throw 'diagnostic finalization timeout'
         }
@@ -273,70 +339,83 @@ function Invoke-BoundedDiagnosticExport {
             default { throw 'diagnostic export failed' }
         }
     } finally {
-        if (-not $process.HasExited) {
-            if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
-                $killInfo = New-Object Diagnostics.ProcessStartInfo
-                $killInfo.FileName = Join-Path ([Environment]::SystemDirectory) 'taskkill.exe'
-                $killInfo.Arguments = "/PID $($process.Id) /T /F"
-                $killInfo.UseShellExecute = $false
-                $killInfo.CreateNoWindow = $true
-                $killInfo.RedirectStandardOutput = $true
-                $killInfo.RedirectStandardError = $true
-                $kill = [Diagnostics.Process]::Start($killInfo)
-                try { if (-not $kill.WaitForExit($script:DiagnosticTerminationMilliseconds)) { $kill.Kill() } } finally { $kill.Dispose() }
-                if (-not $process.HasExited) { $process.Kill() }
-            } else { $process.Kill($true) }
-            if (-not $process.WaitForExit($script:DiagnosticTerminationMilliseconds)) { Write-Warning 'Diagnostic gap: exporter termination unavailable.' }
+        $terminationDeadline = [Math]::Min($Clock.ElapsedMilliseconds + $script:DiagnosticTerminationMilliseconds, $DeadlineMilliseconds + $script:DiagnosticHostMilliseconds - $script:DiagnosticExportMilliseconds)
+        try {
+            if ($started) { $process.StandardInput.Close() }
+            if ($null -ne $jobObject) {
+                $jobObject.Terminate()
+                while ($jobObject.ActiveProcesses() -gt 0 -and $Clock.ElapsedMilliseconds -lt $terminationDeadline) { Start-Sleep -Milliseconds 10 }
+                if ($jobObject.ActiveProcesses() -gt 0) { throw 'exporter tree still active' }
+            }
+            if (-not $assigned -and $started -and -not $process.HasExited) {
+                if ($windows) { $process.Kill() } else { $process.Kill($true) }
+            }
+            if ($started -and -not $process.WaitForExit([Math]::Max(1, $terminationDeadline - $Clock.ElapsedMilliseconds))) { throw 'exporter still active' }
+        } catch {
+            Write-Warning 'Diagnostic gap: exporter tree termination failed or unknown.'
+        } finally {
+            if ($null -ne $jobObject -and -not $jobObject.Close()) { Write-Warning 'Diagnostic gap: exporter containment handle cleanup failed or unknown.' }
+            if ($started) { $process.StandardInput.Close() }
+            $process.Dispose()
         }
-        $process.Dispose()
     }
+}
+
+# drains removal output because daemon errors are not safe diagnostic evidence.
+function Invoke-BoundedContainerRemoval {
+    param([string]$Name, [Diagnostics.Stopwatch]$Clock, [int]$DeadlineMilliseconds = $script:DiagnosticHostMilliseconds)
+
+    $process = $null
+    $removed = $false
+    try {
+        $process = Invoke-DiagnosticDocker -Arguments @('rm', '-f', $Name)
+        $null = $process.StandardOutput.BaseStream.CopyToAsync([IO.Stream]::Null)
+        $null = $process.StandardError.BaseStream.CopyToAsync([IO.Stream]::Null)
+        $removed = $process.WaitForExit([Math]::Max(1, $DeadlineMilliseconds - $Clock.ElapsedMilliseconds)) -and $process.ExitCode -eq 0
+        if (-not $removed) { Write-Warning 'Container removal failed or over budget; startup recovery remains required.' }
+    } catch { Write-Warning 'Container removal unavailable; startup recovery remains required.' }
+    finally {
+        if ($null -ne $process) {
+            try {
+                if (-not $process.HasExited) {
+                    $process.Kill()
+                    if (-not $process.WaitForExit([Math]::Max(1, [Math]::Min($script:DiagnosticTerminationMilliseconds, $DeadlineMilliseconds - $Clock.ElapsedMilliseconds)))) {
+                        throw 'removal client still active'
+                    }
+                }
+            } catch { Write-Warning 'Diagnostic gap: removal client termination failed or unknown.' }
+            finally { $process.Dispose() }
+        }
+    }
+    return $removed
 }
 
 # removal is attempted after every export outcome, without replacing runner status.
 function Complete-DiagnosticContainer {
+    [CmdletBinding()]
     param([string]$Name, [string]$EntryName, [string]$Directory, [bool]$RawRecords,
-        [Diagnostics.Stopwatch]$Clock = [Diagnostics.Stopwatch]::StartNew())
+        [Diagnostics.Stopwatch]$Clock = [Diagnostics.Stopwatch]::StartNew(), [long]$CompletedAt = 0)
 
+    $queuedMilliseconds = 0L
+    if ($CompletedAt -gt 0) {
+        $age = ([Diagnostics.Stopwatch]::GetTimestamp() - $CompletedAt) * 1000 / [Diagnostics.Stopwatch]::Frequency
+        $queuedMilliseconds = [long][Math]::Min($script:DiagnosticHostMilliseconds, [Math]::Max(0, $age - $Clock.ElapsedMilliseconds))
+    }
+    $exportDeadline = [int]($script:DiagnosticExportMilliseconds - $queuedMilliseconds)
+    $hostDeadline = [int]($script:DiagnosticHostMilliseconds - $queuedMilliseconds)
     try {
-        if ($Clock.ElapsedMilliseconds -ge $script:DiagnosticExportMilliseconds) {
+        if ($Clock.ElapsedMilliseconds -ge $exportDeadline) {
             Write-Warning 'Diagnostic gap: finalization budget spent while waiting; export skipped.'
         } else {
-            Invoke-BoundedDiagnosticExport -Name $Name -EntryName $EntryName -Directory $Directory -RawRecords $RawRecords -Clock $Clock
+            Invoke-BoundedDiagnosticExport -Name $Name -EntryName $EntryName -Directory $Directory -RawRecords $RawRecords -Clock $Clock -DeadlineMilliseconds $exportDeadline
         }
     } catch {
         if ($_.Exception.Message -eq 'diagnostic sink full (ten bundles)') {
             Write-Warning 'Diagnostic gap: private sink full (ten bundles); prior evidence retained.'
+        } elseif ($_.Exception.Message -eq 'diagnostic containment unavailable') {
+            Write-Warning 'Diagnostic gap: exporter containment unavailable; export not admitted.'
         } else {
             Write-Warning 'Diagnostic gap: private export unavailable, incomplete, unsafe or over budget; prior evidence retained.'
         }
-    } finally {
-        $process = $null
-        try {
-            $process = Invoke-DiagnosticDocker -Arguments @('rm', '-f', $Name)
-            if (-not $process.WaitForExit([Math]::Max(1, $script:DiagnosticHostMilliseconds - [int]$clock.ElapsedMilliseconds)) -or $process.ExitCode -ne 0) {
-                Write-Warning 'Diagnostic gap: container removal failed; entry-specific startup recovery will retry.'
-            }
-        } catch {
-            Write-Warning 'Diagnostic gap: container removal unavailable; entry-specific startup recovery will retry.'
-        } finally {
-            if ($null -ne $process) {
-                if (-not $process.HasExited) { $process.Kill() }
-                $process.Dispose()
-            }
-        }
-    }
-}
-
-# holds the container status apart from diagnostics and from GitHub's job result.
-function Invoke-DiagnosticRunner {
-    [CmdletBinding()]
-    param([string[]]$Arguments, [string]$Name, [string]$EntryName, [string]$Directory, [bool]$RawRecords)
-
-    try {
-        $runnerExit = Invoke-DockerLogged -Arguments $Arguments
-    } finally {
-        try { Complete-DiagnosticContainer -Name $Name -EntryName $EntryName -Directory $Directory -RawRecords $RawRecords }
-        catch { Write-Warning 'Diagnostic gap: finalization failed; entry-specific startup recovery remains required.' }
-    }
-    return $runnerExit
+    } finally { $null = Invoke-BoundedContainerRemoval -Name $Name -Clock $Clock -DeadlineMilliseconds $hostDeadline }
 }

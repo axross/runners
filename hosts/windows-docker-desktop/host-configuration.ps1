@@ -305,6 +305,18 @@ function Get-RepositoryPlan {
         if ($null -ne $diagnosticDirectory -and $diagnosticDirectory -match '(^|\\)\.\.?($|\\)') {
             $Errors.Add("$Path.diagnosticDirectory: must not contain dot path components")
         }
+        if ($null -ne $diagnosticDirectory -and [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+            try {
+                $diagnosticDirectory = [IO.Path]::GetFullPath($diagnosticDirectory)
+                $checkout = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..')).TrimEnd([char]92)
+                if ($diagnosticDirectory.TrimEnd([char]92).Equals($checkout, [StringComparison]::OrdinalIgnoreCase) -or
+                    $diagnosticDirectory.StartsWith($checkout + '\', [StringComparison]::OrdinalIgnoreCase)) {
+                    $Errors.Add("$Path.diagnosticDirectory: must be outside the checkout")
+                }
+            } catch {
+                $Errors.Add("$Path.diagnosticDirectory: cannot normalize local Windows directory")
+            }
+        }
     } elseif ($null -ne $directoryProperty) {
         $Errors.Add("$Path.diagnosticDirectory: requires diagnostics")
     }
@@ -444,7 +456,8 @@ function Get-SlotWorkerArgument {
         [Parameter(Mandatory)][string]$RunCommand,
         [Parameter(Mandatory)][string]$JitConfigVariable,
         [Parameter(Mandatory)][int]$InitialBackoffSeconds,
-        [Parameter(Mandatory)][int]$MaxBackoffSeconds
+        [Parameter(Mandatory)][int]$MaxBackoffSeconds,
+        [int]$BackoffSeconds = $InitialBackoffSeconds
     )
 
     return [ordered]@{
@@ -464,8 +477,8 @@ function Get-SlotWorkerArgument {
         InitialBackoffSeconds = $InitialBackoffSeconds
         MaxBackoffSeconds     = $MaxBackoffSeconds
         Diagnostics           = [bool]$Entry.Diagnostics
-        DiagnosticDirectory   = [string]$Entry.DiagnosticDirectory
         DiagnosticRawRecords  = [bool]$Entry.DiagnosticRawRecords
+        BackoffSeconds        = $BackoffSeconds
     }
 }
 

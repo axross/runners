@@ -69,6 +69,22 @@ try {
     $diagnosticPlan = Read-HostConfiguration -Path $configPath
     Assert-Case -Name 'diagnostics enabled on one entry only, raw off by default' `
         -Passed ($diagnosticPlan.Repositories[0].Diagnostics -and -not $diagnosticPlan.Repositories[0].DiagnosticRawRecords -and -not $diagnosticPlan.Repositories[1].Diagnostics) -Detail 'opt-in leaked to another entry'
+    if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+        $checkout = [IO.Path]::GetFullPath((Join-Path $hostDirectory '../..'))
+        foreach ($inside in @($checkout, ($checkout.ToUpperInvariant() + '\evidence\'), ($checkout + '\'))) {
+            $candidate = $config | ConvertTo-Json -Depth 10 | ConvertFrom-Json
+            $candidate.repositories[0].diagnosticDirectory = $inside
+            $candidate | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $configPath -Encoding ASCII
+            $readRejected = $false
+            try { $null = Read-HostConfiguration -Path $configPath } catch { $readRejected = $_.Exception.Message.Contains('diagnosticDirectory: must be outside the checkout') }
+            $validation = Invoke-Validation -ConfigPath $configPath
+            Assert-Case -Name 'Windows normalized checkout sink rejected by read and ValidateOnly' -Passed ($readRejected -and $validation.ExitCode -ne 0 -and $validation.Text.Contains('diagnosticDirectory: must be outside the checkout')) -Detail 'checkout sink admitted before startup'
+        }
+        $candidate.repositories[0].diagnosticDirectory = $checkout + '-evidence'
+        $candidate | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $configPath -Encoding ASCII
+        $validation = Invoke-Validation -ConfigPath $configPath
+        Assert-Case -Name 'Windows sibling prefix is not mistaken for checkout membership' -Passed ($validation.ExitCode -eq 0) -Detail 'safe sibling rejected'
+    } else { Write-Output 'SKIP  Windows path normalization requires the hosted Windows test route' }
     foreach ($case in @(
         @('diagnostics', 'true', 'diagnostics'),
         @('diagnosticRawRecords', 'true', 'diagnosticRawRecords'),
@@ -97,7 +113,9 @@ try {
     $raw = @(Get-JobContainerArgument @base -Diagnostics $true -DiagnosticRawRecords $true)
     Assert-Case -Name 'default command and auto-removal unchanged' -Passed ($ordinary[1] -ceq '--rm' -and $ordinary[-1] -ceq '/home/runner/run.sh') -Detail 'default lifecycle changed'
     Assert-Case -Name 'diagnostic lifecycle omits auto-removal and preserves resource and mount arguments' `
-        -Passed ($diagnostic -notcontains '--rm' -and ($ordinary[2..($ordinary.Count - 2)] -join '|') -ceq ($diagnostic[1..($diagnostic.Count - 4)] -join '|')) -Detail 'diagnostics changed limits, mounts or registration'
+        -Passed ($diagnostic -notcontains '--rm' -and ($ordinary[2..5] -join '|') -ceq ($diagnostic[1..4] -join '|') -and
+            ($ordinary[6..($ordinary.Count - 2)] -join '|') -ceq ($diagnostic[7..($diagnostic.Count - 4)] -join '|') -and
+            $diagnostic[5] -ceq '--label' -and $diagnostic[6] -ceq 'runners.diagnostic-lifecycle=1' -and $ordinary -notcontains '--label') -Detail 'diagnostics changed limits, mounts or registration'
     Assert-Case -Name 'raw launcher needs second opt-in and missing collector has a fallback' `
         -Passed (-not $diagnostic[-1].Contains(' raw-run') -and $raw[-1].Contains(' raw-run') -and $diagnostic[-1].Contains('exec /home/runner/run.sh')) -Detail 'wrong diagnostic launcher'
 
@@ -224,8 +242,8 @@ try {
 
     $script:completionOrder = New-Object System.Collections.Generic.List[string]
     function Invoke-BoundedDiagnosticExport {
-        param($Name, $EntryName, $Directory, $RawRecords, $Clock)
-        if ($Name -cne 'example-entry-1-20240305060708009' -or $EntryName -cne 'example-entry' -or $Directory -cne $scratch -or $RawRecords -or -not $Clock.IsRunning) { throw 'unexpected export input' }
+        param($Name, $EntryName, $Directory, $RawRecords, $Clock, $DeadlineMilliseconds)
+        if ($Name -cne 'example-entry-1-20240305060708009' -or $EntryName -cne 'example-entry' -or $Directory -cne $scratch -or $RawRecords -or -not $Clock.IsRunning -or $DeadlineMilliseconds -le 0) { throw 'unexpected export input' }
         $script:completionOrder.Add('export')
         throw 'diagnostic sink full (ten bundles)'
     }
@@ -233,23 +251,16 @@ try {
         param($Arguments)
         $script:completionOrder.Add(($Arguments -join ' '))
         $fake = [pscustomobject]@{ HasExited = $true; ExitCode = 0 }
+        foreach ($pipe in @('StandardOutput', 'StandardError')) { $fake | Add-Member -NotePropertyName $pipe -NotePropertyValue (New-Object IO.StreamReader (New-Object IO.MemoryStream)) }
         $fake | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value { param($Milliseconds) return $Milliseconds -le 30000 }
-        $fake | Add-Member -MemberType ScriptMethod -Name Dispose -Value {}
+        $fake | Add-Member -MemberType ScriptMethod -Name Dispose -Value { $this.StandardOutput.Dispose(); $this.StandardError.Dispose() }
         return $fake
     }
-    function Invoke-DockerLogged {
-        param($Arguments)
-        if ($Arguments[0] -cne 'run') { throw 'unexpected runner operation' }
-        $script:completionOrder.Add('run')
-        return $script:testRunnerExit
-    }
-    foreach ($runnerExit in @(0, 7)) {
-        $script:testRunnerExit = $runnerExit
-        $script:completionOrder.Clear()
-        $actualExit = Invoke-DiagnosticRunner -Arguments @('run') -Name 'example-entry-1-20240305060708009' -EntryName 'example-entry' -Directory $scratch -RawRecords $false -WarningVariable gap
-        Assert-Case -Name "export failure preserves runner result $runnerExit and attempts removal after export" `
-            -Passed ($actualExit -eq $runnerExit -and ($script:completionOrder -join '|') -ceq 'run|export|rm -f example-entry-1-20240305060708009' -and "$gap".Contains('sink full')) -Detail 'runner result changed or removal missing'
-    }
+    $script:completionOrder.Clear()
+    Complete-DiagnosticContainer -Name 'example-entry-1-20240305060708009' -EntryName 'example-entry' -Directory $scratch -RawRecords $false -WarningVariable gap
+    Assert-Case -Name 'parent export failure still attempts removal after export' `
+        -Passed (($script:completionOrder -join '|') -ceq 'export|rm -f example-entry-1-20240305060708009' -and "$gap".Contains('sink full')) -Detail 'removal missing'
+    & (Join-Path $PSScriptRoot 'test-diagnostic-worker.ps1') -HostDirectory $hostDirectory -Scratch $scratch
 } finally {
     Remove-Item -LiteralPath $scratch -Recurse -Force
 }

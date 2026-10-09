@@ -119,29 +119,36 @@ function Clear-StaleContainer {
     if ($result.ExitCode -ne 0) {
         throw "Failed to list containers: $($result.Output -join ' ')"
     }
+    $marked = Invoke-Docker -Arguments @('ps', '-a', '--filter', "name=$($Entry.Name)-", '--filter', 'label=runners.diagnostic-lifecycle=1', '--format', '{{.Names}}')
+    if ($marked.ExitCode -ne 0) { throw 'Diagnostic lifecycle identification unavailable; stale cleanup refused.' }
     $ownName = Get-JobContainerNamePattern -Name $Entry.Name
+    $diagnosticClock = [Diagnostics.Stopwatch]::StartNew()
+    $retained = $false
     foreach ($name in $result.Output) {
         if ($name -cmatch $ownName) {
-            Write-Warning "Removing stale container '$name' left over from an earlier run."
-            if ($Entry.Diagnostics) {
-                $diagnosticClock = [Diagnostics.Stopwatch]::StartNew()
-                Invoke-BoundedDiagnosticStop -Names @($name) -Clock $diagnosticClock
-                Complete-DiagnosticContainer -Name $name -EntryName $Entry.Name -Directory $Entry.DiagnosticDirectory -RawRecords $Entry.DiagnosticRawRecords -Clock $diagnosticClock
+            if ($marked.Output -ccontains $name) {
+                $null = Invoke-BoundedDiagnosticStop -Names @($name) -Clock $diagnosticClock
+                if ($Entry.Diagnostics) {
+                    Complete-DiagnosticContainer -Name $name -EntryName $Entry.Name -Directory $Entry.DiagnosticDirectory -RawRecords $Entry.DiagnosticRawRecords -Clock $diagnosticClock
+                } else {
+                    Write-Warning 'Diagnostic evidence retained after disabling; deletion refused. Explicit private recovery and cleanup are required before this entry can start.'
+                    $retained = $true
+                }
                 continue
             }
+            Write-Warning "Removing stale container '$name' left over from an earlier run."
             $removal = Invoke-Docker -Arguments @('rm', '-f', $name)
             if ($removal.ExitCode -ne 0) {
                 Write-Warning "Failed to remove stale container '$name': $($removal.Output -join ' ')"
             }
         }
     }
+    if ($retained) { throw 'Marked diagnostic containers remain after disabling; entry startup refused.' }
 }
 
 # the script block of one slot's background job. it is self-contained because
 # Start-Job runs in a separate process that shares no functions with this one,
-# and it reports to the parent only through the output stream's two protocol
-# lines, CURRENT_CONTAINER:<name> and SLOT_IDLE. everything else it says goes
-# to the information and warning streams.
+# and job logs must not enter the parent's lifecycle protocol.
 $WorkerScript = {
     param(
         [string]$ScriptRoot,
@@ -160,13 +167,17 @@ $WorkerScript = {
         [int]$InitialBackoffSeconds,
         [int]$MaxBackoffSeconds,
         [bool]$Diagnostics,
-        [string]$DiagnosticDirectory,
-        [bool]$DiagnosticRawRecords
+        [bool]$DiagnosticRawRecords,
+        [int]$BackoffSeconds
     )
 
     $ErrorActionPreference = 'Stop'
     . (Join-Path $ScriptRoot 'docker-commands.ps1')
     . (Join-Path $ScriptRoot 'diagnostic-export.ps1')
+    if ($Diagnostics) {
+        try { Initialize-DiagnosticProcessContainment }
+        catch { Write-Warning 'Diagnostic gap: runner client lifetime support unavailable.' }
+    }
 
     $label = "$EntryName slot ${Slot}"
 
@@ -222,7 +233,7 @@ $WorkerScript = {
         return $response.encoded_jit_config
     }
 
-    $backoffSeconds = $InitialBackoffSeconds
+    $backoffSeconds = $BackoffSeconds
     while ($true) {
         if ((Invoke-Docker -Arguments @('info')).ExitCode -ne 0) {
             Write-Warning "${label}: Docker is not responding - waiting."
@@ -254,7 +265,7 @@ $WorkerScript = {
         [Environment]::SetEnvironmentVariable($JitConfigVariable, $jit.EncodedJitConfig, 'Process')
         try {
             if ($Diagnostics) {
-                $exitCode = Invoke-DiagnosticRunner -Arguments $arguments -Name $jit.Name -EntryName $EntryName -Directory $DiagnosticDirectory -RawRecords $DiagnosticRawRecords
+                $exitCode = Invoke-DiagnosticContainerRun -Arguments $arguments
             } else {
                 $exitCode = Invoke-DockerLogged -Arguments $arguments
             }
@@ -263,6 +274,13 @@ $WorkerScript = {
         }
         $jit = $null
 
+        if ($Diagnostics) {
+            return [pscustomobject]@{
+                RunnerExitCode = $exitCode
+                CompletedAt = [Diagnostics.Stopwatch]::GetTimestamp()
+                BackoffSeconds = $backoffSeconds
+            }
+        }
         Write-Output 'SLOT_IDLE'
         if ($exitCode -ne 0) {
             Write-Warning "${label}: container exited with code $exitCode - retrying in ${backoffSeconds}s."
@@ -277,11 +295,11 @@ $WorkerScript = {
 
 # starts the background job that runs one slot's worker loop and returns it.
 function Invoke-SlotWorkerJob {
-    param([Parameter(Mandatory)]$Entry, [Parameter(Mandatory)][int]$Slot)
+    param([Parameter(Mandatory)]$Entry, [Parameter(Mandatory)][int]$Slot, [int]$BackoffSeconds = $InitialBackoffSeconds)
 
     $workerArguments = Get-SlotWorkerArgument -Entry $Entry -Slot $Slot -ScriptRoot $PSScriptRoot -ImageName $plan.ImageName `
         -Mounts ([string[]]@(Get-MountArgument -Entry $Entry)) -RunCommand $RunCommand -JitConfigVariable $JitConfigVariable `
-        -InitialBackoffSeconds $InitialBackoffSeconds -MaxBackoffSeconds $MaxBackoffSeconds
+        -InitialBackoffSeconds $InitialBackoffSeconds -MaxBackoffSeconds $MaxBackoffSeconds -BackoffSeconds $BackoffSeconds
     Start-Job -ScriptBlock $WorkerScript -ArgumentList @($workerArguments.Values)
 }
 
@@ -298,6 +316,8 @@ function Receive-WorkerOutput {
                 $Worker.Container = $Matches[1]
             } elseif ($_ -is [string] -and $_ -ceq 'SLOT_IDLE') {
                 $Worker.Container = $null
+            } elseif ($Worker.Entry.Diagnostics -and $null -ne $_.PSObject.Properties['RunnerExitCode']) {
+                $Worker.Result = $_
             }
         }
     } catch {
@@ -323,7 +343,15 @@ function Invoke-KnownContainerStop {
     }
     Write-Information "Stopping container(s): $($names -join ', ')."
     if (@($Workers | Where-Object { $_.Entry.Diagnostics }).Count -gt 0) {
-        Invoke-BoundedDiagnosticStop -Names $names -Clock $Clock
+        $success = Invoke-BoundedDiagnosticStop -Names $names -Clock $Clock
+        foreach ($worker in $pending) {
+            if ($success) { $null = $Stopped.Add($worker.Container) }
+            elseif (-not $worker.Entry.Diagnostics) {
+                Write-Warning 'Mixed shutdown stop failed; force-removing an unconfirmed ordinary container.'
+                if (Invoke-BoundedContainerRemoval -Name $worker.Container -Clock $Clock) { $null = $Stopped.Add($worker.Container) }
+            }
+        }
+        return
     } else {
         $stop = Invoke-Docker -Arguments (@('stop') + $names)
         if ($stop.ExitCode -ne 0) {
@@ -332,6 +360,55 @@ function Invoke-KnownContainerStop {
     }
     foreach ($name in $names) {
         $null = $Stopped.Add($name)
+    }
+}
+
+# admission is recorded before export, so shutdown cannot admit a completion twice.
+function Complete-WorkerDiagnostic {
+    [CmdletBinding()]
+    param($Worker, [Diagnostics.Stopwatch]$Clock = [Diagnostics.Stopwatch]::StartNew())
+
+    if (-not $Worker.Entry.Diagnostics -or $null -eq $Worker.Container -or $Worker.Finalized) { return }
+    $Worker.Finalized = $true
+    $completedAt = 0L
+    if ($null -ne $Worker.Result) { $completedAt = [long]$Worker.Result.CompletedAt }
+    try {
+        Complete-DiagnosticContainer -Name $Worker.Container -EntryName $Worker.Entry.Name -Directory $Worker.Entry.DiagnosticDirectory -RawRecords $Worker.Entry.DiagnosticRawRecords -Clock $Clock -CompletedAt $completedAt
+    } finally { $Worker.Container = $null }
+}
+
+# worker failure backoff is distinct from a container's success/nonzero retry.
+function Complete-SlotWorker {
+    param($Worker)
+
+    Receive-WorkerOutput -Worker $Worker
+    $state = $Worker.Job.State
+    if ($Worker.Entry.Diagnostics -and $null -ne $Worker.Container) {
+        $diagnosticClock = [Diagnostics.Stopwatch]::StartNew()
+        if ($null -eq $Worker.Result) { $null = Invoke-BoundedDiagnosticStop -Names @($Worker.Container) -Clock $diagnosticClock }
+        Complete-WorkerDiagnostic -Worker $Worker -Clock $diagnosticClock
+    }
+    Remove-Job -Job $Worker.Job -Force
+    $Worker.Job = $null
+    $Worker.Container = $null
+    $now = $clock.Elapsed.TotalSeconds
+    if ($Worker.Entry.Diagnostics -and $null -ne $Worker.Result) {
+        $Worker.RestartBackoff = $InitialBackoffSeconds
+        if ($Worker.Result.RunnerExitCode -eq 0) {
+            $Worker.RestartAt = $now
+            $Worker.RunnerBackoff = $InitialBackoffSeconds
+            Write-Information "$($Worker.Key): container exited successfully (GitHub owns the job result) - starting a replacement."
+        } else {
+            $delay = [int]$Worker.Result.BackoffSeconds
+            $Worker.RestartAt = $now + $delay
+            $Worker.RunnerBackoff = [Math]::Min($delay * 2, $MaxBackoffSeconds)
+            Write-Warning "$($Worker.Key): container exited with code $($Worker.Result.RunnerExitCode) - retrying in ${delay}s."
+        }
+    } else {
+        if (($now - $Worker.StartedAt) -ge $HealthyRunSeconds) { $Worker.RestartBackoff = $InitialBackoffSeconds }
+        $Worker.RestartAt = $now + $Worker.RestartBackoff
+        Write-Warning "$($Worker.Key): job ended unexpectedly (state: $state) - restarting it in $($Worker.RestartBackoff)s."
+        $Worker.RestartBackoff = [Math]::Min($Worker.RestartBackoff * 2, $MaxBackoffSeconds)
     }
 }
 
@@ -357,13 +434,17 @@ foreach ($entry in $plan.Repositories) {
     }
 }
 if ($startable.Count -gt 0) {
+    if (@($startable | Where-Object { $_.Diagnostics }).Count -gt 0) {
+        try { Initialize-DiagnosticProcessContainment }
+        catch { Write-Warning 'Diagnostic gap: exporter containment support unavailable; exports will not be admitted.' }
+    }
     Wait-ForDocker
 }
 $prepared = New-Object System.Collections.Generic.List[object]
 foreach ($entry in $startable) {
     try {
-        Initialize-EntryVolume -Entry $entry
         Clear-StaleContainer -Entry $entry
+        Initialize-EntryVolume -Entry $entry
         $prepared.Add($entry)
     } catch {
         Write-EntrySkipped -Entry $entry -Reason $_.Exception.Message
@@ -389,7 +470,10 @@ foreach ($entry in $prepared) {
                 StartedAt      = $clock.Elapsed.TotalSeconds
                 RestartAt      = 0
                 RestartBackoff = $InitialBackoffSeconds
+                RunnerBackoff  = $InitialBackoffSeconds
                 Container      = $null
+                Result         = $null
+                Finalized      = $false
             })
     }
 }
@@ -409,25 +493,12 @@ try {
                 Receive-WorkerOutput -Worker $worker
             }
             if ($null -ne $worker.Job -and $worker.Job.State -in @('Failed', 'Stopped', 'Completed')) {
-                $state = $worker.Job.State
-                if ($worker.Entry.Diagnostics -and $null -ne $worker.Container) {
-                    $diagnosticClock = [Diagnostics.Stopwatch]::StartNew()
-                    Invoke-BoundedDiagnosticStop -Names @($worker.Container) -Clock $diagnosticClock
-                    Complete-DiagnosticContainer -Name $worker.Container -EntryName $worker.Entry.Name -Directory $worker.Entry.DiagnosticDirectory -RawRecords $worker.Entry.DiagnosticRawRecords -Clock $diagnosticClock
-                }
-                Remove-Job -Job $worker.Job -Force
-                $worker.Job = $null
-                $worker.Container = $null
-                $now = $clock.Elapsed.TotalSeconds
-                if (($now - $worker.StartedAt) -ge $HealthyRunSeconds) {
-                    $worker.RestartBackoff = $InitialBackoffSeconds
-                }
-                $worker.RestartAt = $now + $worker.RestartBackoff
-                Write-Warning "$($worker.Key): job ended unexpectedly (state: $state) - restarting it in $($worker.RestartBackoff)s."
-                $worker.RestartBackoff = [Math]::Min($worker.RestartBackoff * 2, $MaxBackoffSeconds)
+                Complete-SlotWorker -Worker $worker
             }
             if ($null -eq $worker.Job -and $clock.Elapsed.TotalSeconds -ge $worker.RestartAt) {
-                $worker.Job = Invoke-SlotWorkerJob -Entry $worker.Entry -Slot $worker.Slot
+                $worker.Result = $null
+                $worker.Finalized = $false
+                $worker.Job = Invoke-SlotWorkerJob -Entry $worker.Entry -Slot $worker.Slot -BackoffSeconds $worker.RunnerBackoff
                 $worker.StartedAt = $clock.Elapsed.TotalSeconds
             }
         }
@@ -435,22 +506,24 @@ try {
     }
 } finally {
     Write-Information 'Shutdown requested - stopping every slot''s current container.'
-    # stop the containers first: Stop-Job does not interrupt a native docker run
-    # already in flight.
+    # finalize before Stop-Job: an ordinary worker can still be in a native wait.
     $stopped = New-Object System.Collections.Generic.HashSet[string]
     $shutdownClock = [Diagnostics.Stopwatch]::StartNew()
     Invoke-KnownContainerStop -Workers $workers -Stopped $stopped -Clock $shutdownClock
+    $mixedShutdown = @($workers | Where-Object { $_.Entry.Diagnostics }).Count -gt 0
     foreach ($worker in $workers) {
-        if ($null -ne $worker.Job) {
+        if ($null -ne $worker.Job -and ($worker.Entry.Diagnostics -or -not $mixedShutdown)) {
             Stop-Job -Job $worker.Job -ErrorAction SilentlyContinue
         }
     }
     # a container a slot started between the first pass and the job stopping.
     Invoke-KnownContainerStop -Workers $workers -Stopped $stopped -Clock $shutdownClock
-    foreach ($worker in $workers) {
-        if ($worker.Entry.Diagnostics -and $null -ne $worker.Container) {
-            Complete-DiagnosticContainer -Name $worker.Container -EntryName $worker.Entry.Name -Directory $worker.Entry.DiagnosticDirectory -RawRecords $worker.Entry.DiagnosticRawRecords -Clock $shutdownClock
+    foreach ($worker in $workers) { Complete-WorkerDiagnostic -Worker $worker -Clock $shutdownClock }
+    if ($mixedShutdown) {
+        foreach ($worker in $workers) {
+            if ($null -ne $worker.Job -and -not $worker.Entry.Diagnostics) { Stop-Job -Job $worker.Job -ErrorAction SilentlyContinue }
         }
+        Invoke-KnownContainerStop -Workers $workers -Stopped $stopped -Clock $shutdownClock
     }
     foreach ($worker in $workers) {
         if ($null -ne $worker.Job) {

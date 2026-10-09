@@ -68,6 +68,9 @@ workspace contents, heap dumps, and core dumps are excluded. Nonstandard Gradle
 homes, deeper build directories and configured fatal-report destinations are
 not searched. Gaps identify omitted records without echoing names or contents.
 Raw data are private, potentially sensitive and never uploaded or printed.
+Nested access and directory-enumeration failures report fixed gaps. An absent
+matching checkout inside an unrelated workspace directory is not an access
+failure.
 
 Private host retention, quotas, incomplete export and operator interpretation
 are owned by [Windows Runner Host](../../docs/operations/windows-runner-host.md).
@@ -204,8 +207,9 @@ docker build --tag actions-runner:test images/actions-runner
 bash images/actions-runner/tests/smoke-test.sh actions-runner:test
 ```
 
-The standalone diagnostic test needs Linux `g++` (C++17) and `timeout`, but no
-Docker daemon. It uses asymmetric cgroup fixtures, synthetic private markers,
+The standalone diagnostic test needs Linux `g++` (C++17), `timeout`, and an
+unprivileged user for permission fixtures, but no Docker daemon.
+It uses asymmetric cgroup fixtures, synthetic private markers,
 raw-file boundaries, bounded attach subprocesses, and real launcher children.
 Run tests and builds alone and sequentially in an orb. The smoke command also
 runs these fixtures inside the actual image, followed by isolated diagnostic

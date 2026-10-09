@@ -2,6 +2,7 @@
 param([string]$HostDirectory, [string]$Scratch)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $HostDirectory 'diagnostic-export.ps1')
+Initialize-DiagnosticProcessContainment
 
 $concurrentSink = Join-Path $Scratch 'concurrent'
 $null = New-Item -ItemType Directory -Path $concurrentSink
@@ -12,6 +13,7 @@ $source = @'
 param([string]$Name, [string]$EntryName, [string]$Directory, [switch]$RawRecords)
 $ErrorActionPreference = 'Stop'
 . '__LIBRARY__'
+if ([Console]::ReadLine() -cne 'diagnostic-admitted') { exit 5 }
 function Get-DiagnosticTar { __TAR__ }
 if ($Name -eq 'blocked-storage') {
     function Assert-PrivateDiagnosticDirectory {
@@ -63,7 +65,11 @@ function Invoke-TestDiagnosticExport {
     $info.UseShellExecute = $false
     $info.RedirectStandardOutput = $true
     $info.RedirectStandardError = $true
-    return [Diagnostics.Process]::Start($info)
+    $info.RedirectStandardInput = $true
+    $child = [Diagnostics.Process]::Start($info)
+    $child.StandardInput.WriteLine('diagnostic-admitted')
+    $child.StandardInput.Close()
+    return $child
 }
 
 $slow = Invoke-TestDiagnosticExport -Name 'slow'
@@ -92,9 +98,10 @@ $boundedExport = ${function:Invoke-BoundedDiagnosticExport}
 $script:boundedTimeout = $false
 $script:removalAttempted = $false
 function Invoke-BoundedDiagnosticExport {
-    param($Name, $EntryName, $Directory, $RawRecords, $Clock)
+    param($Name, $EntryName, $Directory, $RawRecords, $Clock, $DeadlineMilliseconds)
 
-    try { & $boundedExport @PSBoundParameters -DeadlineMilliseconds 2500 -ScriptPath $fixture }
+    if ($DeadlineMilliseconds -le 0) { throw 'missing export deadline' }
+    try { & $boundedExport -Name $Name -EntryName $EntryName -Directory $Directory -RawRecords $RawRecords -Clock $Clock -DeadlineMilliseconds 2500 -ScriptPath $fixture }
     catch { $script:boundedTimeout = $_.Exception.Message -eq 'diagnostic finalization timeout'; throw }
 }
 function Invoke-DiagnosticDocker {
@@ -103,23 +110,87 @@ function Invoke-DiagnosticDocker {
     if (($Arguments -join ' ') -cne 'rm -f blocked-storage') { throw 'unexpected removal target' }
     $script:removalAttempted = $true
     $fake = [pscustomobject]@{ HasExited = $true; ExitCode = 0 }
+    foreach ($pipe in @('StandardOutput', 'StandardError')) { $fake | Add-Member -NotePropertyName $pipe -NotePropertyValue (New-Object IO.StreamReader (New-Object IO.MemoryStream)) }
     $fake | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value { param($Milliseconds) return $Milliseconds -gt 0 -and $Milliseconds -le 24000 }
-    $fake | Add-Member -MemberType ScriptMethod -Name Dispose -Value {}
+    $fake | Add-Member -MemberType ScriptMethod -Name Dispose -Value { $this.StandardOutput.Dispose(); $this.StandardError.Dispose() }
     return $fake
 }
-function Invoke-DockerLogged {
-    param($Arguments)
-
-    if ($Arguments[0] -cne 'run') { throw 'unexpected runner operation' }
-    return 7
-}
 $clock = [Diagnostics.Stopwatch]::StartNew()
-$exitCode = Invoke-DiagnosticRunner -Arguments @('run') -Name 'blocked-storage' -EntryName 'example-entry' -Directory $concurrentSink -RawRecords $false -WarningVariable gaps
+Complete-DiagnosticContainer -Name 'blocked-storage' -EntryName 'example-entry' -Directory $concurrentSink -RawRecords $false -WarningVariable gaps
 Assert-Case -Name 'synchronous storage stall is bounded at process boundary' -Passed ($script:boundedTimeout -and $clock.ElapsedMilliseconds -lt 5000) -Detail 'storage I/O blocked finalization'
-Assert-Case -Name 'storage timeout preserves runner result, reports gap and attempts removal' -Passed ($exitCode -eq 7 -and $script:removalAttempted -and "$gaps".Contains('over budget')) -Detail 'timeout changed runner result or skipped removal'
+Assert-Case -Name 'storage timeout reports gap and attempts removal' -Passed ($script:removalAttempted -and "$gaps".Contains('over budget')) -Detail 'timeout skipped removal'
 foreach ($pidFile in @('exporter.pid', 'descendant.pid')) {
     $childId = [int][IO.File]::ReadAllText((Join-Path $concurrentSink $pidFile))
     $remaining = Get-Process -Id $childId -ErrorAction SilentlyContinue
     Assert-Case -Name "storage timeout reaps $pidFile" -Passed ($null -eq $remaining -or $remaining.HasExited) -Detail 'exporter process tree survived'
     if ($null -ne $remaining) { $remaining.Dispose() }
 }
+
+$info = New-Object Diagnostics.ProcessStartInfo
+$info.FileName = (Get-Process -Id $PID).Path
+$info.Arguments = (@('-NoProfile', '-NonInteractive', '-File', $fixture, '-Name', 'blocked-storage', '-Directory', $Scratch) | ForEach-Object { ConvertTo-NativeArgument -Value $_ }) -join ' '
+$info.UseShellExecute = $false
+$info.RedirectStandardInput = $true
+$notAdmitted = [Diagnostics.Process]::Start($info)
+try {
+    $notAdmitted.StandardInput.Close()
+    Assert-Case -Name 'failed admission exits without storage writes or descendants' -Passed ($notAdmitted.WaitForExit(5000) -and $notAdmitted.ExitCode -eq 5 -and -not (Test-Path -LiteralPath (Join-Path $Scratch 'exporter.pid')) -and -not (Test-Path -LiteralPath (Join-Path $Scratch 'descendant.pid'))) -Detail 'exporter escaped ready gate'
+} finally {
+    if (-not $notAdmitted.HasExited) { $notAdmitted.Kill() }
+    $null = $notAdmitted.WaitForExit(1000)
+    $notAdmitted.Dispose()
+}
+
+if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+    & {
+        function Invoke-TestNewObject {
+            param([string]$TypeName, [object[]]$ArgumentList)
+            if ($TypeName -ne 'Runners.DiagnosticJob') { return Microsoft.PowerShell.Utility\New-Object @PSBoundParameters }
+            $fake = [pscustomobject]@{}
+            $fake | Add-Member -MemberType ScriptMethod -Name Assign -Value { param($Handle) if ($Handle -eq [IntPtr]::Zero) { throw 'missing process' }; throw 'synthetic assignment failure' }
+            $fake | Add-Member -MemberType ScriptMethod -Name Terminate -Value {}
+            $fake | Add-Member -MemberType ScriptMethod -Name ActiveProcesses -Value { return 0 }
+            $fake | Add-Member -MemberType ScriptMethod -Name Close -Value { return $true }
+            return $fake
+        }
+        Set-Alias -Name New-Object -Value Invoke-TestNewObject -Scope Local
+        $failedAdmission = $false
+        try { & $boundedExport -Name 'blocked-storage' -EntryName 'example-entry' -Directory $Scratch -RawRecords $false -Clock ([Diagnostics.Stopwatch]::StartNew()) -DeadlineMilliseconds 3000 -ScriptPath $fixture }
+        catch { $failedAdmission = $_.Exception.Message -eq 'diagnostic containment unavailable' }
+        Assert-Case -Name 'Windows failed assignment refuses admission without storage work or native descendants' -Passed ($failedAdmission -and -not (Test-Path -LiteralPath (Join-Path $Scratch 'exporter.pid')) -and -not (Test-Path -LiteralPath (Join-Path $Scratch 'descendant.pid'))) -Detail 'failed containment released exporter'
+    }
+    $ownerScript = Join-Path $Scratch 'owner-fixture.ps1'
+    $ownerSource = @'
+param([string]$Library, [string]$Exporter, [string]$Directory)
+$ErrorActionPreference = 'Stop'
+. $Library
+Initialize-DiagnosticProcessContainment
+Invoke-BoundedDiagnosticExport -Name 'blocked-storage' -EntryName 'example-entry' -Directory $Directory -RawRecords $false -Clock ([Diagnostics.Stopwatch]::StartNew()) -ScriptPath $Exporter
+'@
+    [IO.File]::WriteAllText($ownerScript, $ownerSource, [Text.Encoding]::ASCII)
+    $ownerSink = Join-Path $Scratch 'owner-death'
+    $null = New-Item -ItemType Directory -Path $ownerSink
+    $info.Arguments = (@('-NoProfile', '-NonInteractive', '-File', $ownerScript, '-Library', (Join-Path $HostDirectory 'diagnostic-export.ps1'), '-Exporter', $fixture, '-Directory', $ownerSink) | ForEach-Object { ConvertTo-NativeArgument -Value $_ }) -join ' '
+    $owner = [Diagnostics.Process]::Start($info)
+    $descendantIds = @()
+    try {
+        $readyClock = [Diagnostics.Stopwatch]::StartNew()
+        while (-not (Test-Path -LiteralPath (Join-Path $ownerSink 'descendant.pid')) -and -not $owner.HasExited -and $readyClock.ElapsedMilliseconds -lt 10000) { Start-Sleep -Milliseconds 10 }
+        Assert-Case -Name 'Windows owner fixture admits a real exporter descendant' -Passed (Test-Path -LiteralPath (Join-Path $ownerSink 'descendant.pid')) -Detail 'owner death fixture never admitted'
+        foreach ($pidFile in @('exporter.pid', 'descendant.pid')) {
+            if (Test-Path -LiteralPath (Join-Path $ownerSink $pidFile)) { $descendantIds += [int][IO.File]::ReadAllText((Join-Path $ownerSink $pidFile)) }
+        }
+        if (-not $owner.HasExited) { $owner.Kill() }
+        $null = $owner.WaitForExit(1000)
+        foreach ($childId in $descendantIds) {
+            $child = Get-Process -Id $childId -ErrorAction SilentlyContinue
+            $reaped = $null -eq $child -or $child.WaitForExit(2000)
+            Assert-Case -Name 'Windows owner death kills exporter and descendant on last handle close' -Passed $reaped -Detail 'Job Object tree survived owner'
+            if ($null -ne $child) { if (-not $child.HasExited) { $child.Kill() }; $child.Dispose() }
+        }
+    } finally {
+        if (-not $owner.HasExited) { $owner.Kill() }
+        $null = $owner.WaitForExit(1000)
+        $owner.Dispose()
+    }
+} else { Write-Output 'SKIP  Job Object owner death requires the hosted Windows test route' }
