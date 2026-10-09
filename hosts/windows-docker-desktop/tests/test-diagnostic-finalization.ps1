@@ -96,13 +96,19 @@ try {
 
 $boundedExport = ${function:Invoke-BoundedDiagnosticExport}
 $script:boundedTimeout = $false
+$script:boundedFailure = 'no export failure'
 $script:removalAttempted = $false
 function Invoke-BoundedDiagnosticExport {
     param($Name, $EntryName, $Directory, $RawRecords, $Clock, $DeadlineMilliseconds)
 
     if ($DeadlineMilliseconds -le 0) { throw 'missing export deadline' }
     try { & $boundedExport -Name $Name -EntryName $EntryName -Directory $Directory -RawRecords $RawRecords -Clock $Clock -DeadlineMilliseconds 2500 -ScriptPath $fixture }
-    catch { $script:boundedTimeout = $_.Exception.Message -eq 'diagnostic finalization timeout'; throw }
+    catch {
+        $script:boundedFailure = $_.Exception.GetType().Name + ' at export line ' + $_.InvocationInfo.ScriptLineNumber
+        if ($_.Exception.Message -in @('diagnostic finalization timeout', 'diagnostic containment unavailable', 'diagnostic export failed')) { $script:boundedFailure = $_.Exception.Message }
+        $script:boundedTimeout = $_.Exception.Message -eq 'diagnostic finalization timeout'
+        throw
+    }
 }
 function Invoke-DiagnosticDocker {
     param($Arguments)
@@ -117,7 +123,7 @@ function Invoke-DiagnosticDocker {
 }
 $clock = [Diagnostics.Stopwatch]::StartNew()
 Complete-DiagnosticContainer -Name 'blocked-storage' -EntryName 'example-entry' -Directory $concurrentSink -RawRecords $false -WarningVariable gaps
-Assert-Case -Name 'synchronous storage stall is bounded at process boundary' -Passed ($script:boundedTimeout -and $clock.ElapsedMilliseconds -lt 5000) -Detail 'storage I/O blocked finalization'
+Assert-Case -Name 'synchronous storage stall is bounded at process boundary' -Passed ($script:boundedTimeout -and $clock.ElapsedMilliseconds -lt 5000) -Detail "storage fixture did not reach its timeout: $script:boundedFailure"
 Assert-Case -Name 'storage timeout reports gap and attempts removal' -Passed ($script:removalAttempted -and "$gaps".Contains('over budget')) -Detail 'timeout skipped removal'
 foreach ($pidFile in @('exporter.pid', 'descendant.pid')) {
     $childId = [int][IO.File]::ReadAllText((Join-Path $concurrentSink $pidFile))
