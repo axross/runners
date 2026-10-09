@@ -302,7 +302,10 @@ start the supervisor task from Task Scheduler, to start it now.
 ## How a Container Picks Up a Job
 
 For each repository, the supervisor runs that entry's `slots` as separate
-background jobs. A slot loops forever:
+background jobs. A diagnostics-disabled worker loops forever; an enabled worker runs
+one container and returns its host-origin exit code, monotonic completion time
+and retry backoff. The supervisor alone exports/removes diagnostic containers
+and starts replacement workers. Each slot follows this cycle:
 
 1. Wait for Docker to answer `docker info`.
 2. Request a single-use registration from GitHub with that repository's token, for
@@ -315,8 +318,11 @@ background jobs. A slot loops forever:
    Docker. Anyone with access to the local Docker daemon can still read it from
    `docker inspect` until the container is removed, and the registration is
    single-use.
-4. The runner takes one matching job and exits, and `--rm` removes the container.
-   The slot then returns to step 1.
+4. The runner takes one matching job and exits. Normally `--rm` removes the
+   container. An opted-in diagnostic entry exports its bounded evidence first,
+   then explicitly removes the stopped container, including on export failure.
+   The slot then returns to step 1. Container exit is not the GitHub job result;
+   a runner can exit successfully after reporting a failed consumer job.
 
 A failed registration request or a container that exits non-zero delays the next
 attempt, doubling from 5 seconds to a 300-second ceiling; a container that ran a
@@ -324,6 +330,184 @@ job to completion is replaced at once. A slot job that dies is restarted after i
 own delay on the same schedule, and the delay starts over once a job has run for
 ten minutes before dying. Ctrl+C in the supervisor's window `docker stop`s the
 current containers, then stops every slot's job.
+
+## Collecting private diagnostics
+
+Diagnostics are off by default. Enable them only for the entry whose evidence
+you need, after separate authorization to operate that host. The default
+example enables neither diagnostics nor raw records. No resource allocation,
+build command, tool version, registration or mount changes with this opt-in.
+The sink is not exposed to the job as a bind mount or volume.
+
+Collect private evidence as follows:
+
+1. Pre-create a directory on a local Windows filesystem, outside the checkout.
+   Restrict its owner and all allowed access rules to the account that runs the
+   supervisor. The feature MUST NOT create the sink, relax permissions, or
+   repair its access controls. For a new, empty example directory, review the
+   path before running these commands as that account:
+
+   ```powershell
+   $sink = 'C:\example-evidence'
+   New-Item -ItemType Directory -Path $sink
+   $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User
+   $acl = New-Object Security.AccessControl.DirectorySecurity
+   $acl.SetOwner($sid)
+   $acl.SetAccessRuleProtection($true, $false)
+   $rule = New-Object Security.AccessControl.FileSystemAccessRule $sid, 'FullControl', 'ContainerInherit, ObjectInherit', 'None', 'Allow'
+   $acl.AddAccessRule($rule)
+   Set-Acl -LiteralPath $sink -AclObject $acl
+   ```
+
+2. Set `diagnostics` to `true` and `diagnosticDirectory` to that directory in
+   the target entry. Leave `diagnosticRawRecords` absent or `false` unless
+   private daemon/crash retention is separately wanted. Set it to `true` only
+   with diagnostics enabled. Run `supervisor.ps1 -ValidateOnly` before an
+   authorized restart. Validation rejects a normalized path inside the checkout
+   without Docker, GitHub or token reads, but does not assert that runtime
+   storage is private or writable.
+3. After a container stops, inspect the entry's generated
+   `<name>-bundle-<random-id>` directory privately. `identity.txt` holds only
+   the actual immutable image ID, CPU/memory/swap/affinity readbacks, container
+   exit and Docker's OOM flag. `metrics.txt` holds the bounded observer output;
+   [the image README](../../images/actions-runner/README.md)
+   owns fields, sampling limits, and the exact raw-record locations. A
+   `complete.txt` marker means copying finished, not that every observation
+   was available or that the incident's cause is known.
+4. Treat any directory without `complete.txt` as incomplete. A missing
+   `final=observed` metric marks unavailable final observations after abrupt
+   termination or a collection bound. Review every `gap=` and `unavailable`
+   field. Missing counters MUST NOT be read as zero. A counter delta is
+   container-wide, not a kill attributed to a daemon. Docker's `OOMKilled=false`
+   does not exclude a killed child. Correlate time samples and process PIDs with
+   separately authorized host kernel/WSL evidence; the container cannot read
+   enclosing-host kill records.
+5. Keep all raw records private. The feature never prints or uploads them.
+   Retained contents are untrusted operator evidence, MUST NOT become build
+   inputs, and MUST NOT be published without human sanitization. Public
+   summaries MUST omit credentials, registrations, private paths and
+   machine-identifying values; an allowlisted metric file is not automatic
+   permission to publish it.
+
+The host admits at most ten bundles per entry, including partials, and at most
+40 MiB of payload per bundle (with a small reservation for host metadata).
+Admission is serialized across that entry's slots. The host independently
+rejects malicious tar paths, links, special files, duplicate names and excess
+sizes; it does not extract an arbitrary container filesystem or container logs.
+The admission lock is released before inspect and copy. New bundles inherit the sink's private
+access rules. Windows can assign a different owner to a new child directory,
+so the exporter assigns its new bundle to the supervisor account before
+writing evidence; it never repairs the pre-created sink's owner or rules.
+All storage operations, inspect and copy
+run in a separate PowerShell process within the shared 18-second deadline.
+On Windows the supervisor initializes its built-in Job Object support before
+enabled lifecycle work. The exporter waits on redirected stdin until assigned
+to a supervisor-owned Job Object, with kill-on-last-handle-close and no
+breakaway, CPU, memory or affinity limits. Failed containment skips export with
+a fixed gap, without releasing storage work or native children. Termination
+checks the Job Object's active process count and reaps the exporter within the
+remaining budget; a failed or unknown cleanup warns rather than claiming the
+tree is gone. Owner death closes the last handle and terminates associated
+processes. PowerShell 7 on Linux uses process-tree termination for fixture support.
+Exporter cleanup has at most one second, with
+container removal attempted in the remaining host budget of 24 seconds. The
+observer has at most six seconds to finalize after runner exit, keeping total
+finalization within 30 seconds.
+Supervisor-controlled cleanup starts its clock before stopping the container.
+The Docker stop client is bounded to 12 seconds, within the shared 18-second
+stop/export deadline; this does not change Docker's container grace settings.
+Stop failure or timeout warns and still proceeds to export and removal.
+Orderly shutdown shares one clock across the batch, including stop and export
+queue time. A normal completion's deadline starts at the worker's monotonic
+completion time, not when the supervisor reaches its slot. Batches containing a diagnostic entry use bounded stop for all
+passes, including a replacement from a non-diagnostic entry; batches without
+diagnostics keep the original stop call. A failed mixed stop force-removes
+unconfirmed ordinary containers; only successful stop/removal confirms cleanup.
+Enabled workers use an interruptible Docker-client wait and, on Windows, a
+worker-owned lifetime Job Object that closes on worker death. Shutdown stops
+enabled workers and drains their late container names before the supervisor's
+single finalization. Ordinary workers are stopped afterward because their native
+wait can block. The final ordinary drain still uses
+the same shutdown clock. Client-containment failure warns without replacing the
+runner outcome; it is not a confirmed client cleanup.
+Later exports with no remaining budget are skipped with a gap;
+every diagnostic removal is attempted before any worker-reap wait.
+Prior evidence is never automatically deleted. A full, inaccessible or insecure
+sink, missing collector, failed/partial copy, or unavailable final sample is a
+diagnostic gap, not a successful runner's failure. If removal fails, recover
+through entry-specific stale cleanup at the next supervisor start. Each enabled
+container carries only the immutable `runners.diagnostic-lifecycle=1` label,
+not a registration or private path. Startup queries that label and entry-specific
+names through a fixed allowlist, never a full inspect/configuration dump.
+Unmarked ordinary containers retain their ordinary removal behavior even when
+the entry now enables diagnostics. Marked stale containers with diagnostics
+still enabled and orderly shutdown attempt private export before removal;
+an unclean supervisor termination can leave a partial bundle or no final sample.
+Operators MUST review and manually archive or remove prior bundles before
+collecting beyond the quota. Retention outside this feature is their decision.
+
+### Recover before disabling diagnostics
+
+Operators MUST stop and disable the supervisor task before private recovery or
+changing the opt-in. Do not start another runner against the retained evidence.
+If an entry is already disabled and marked stale containers remain, startup
+attempts bounded stop, refuses deletion/export, warns, and gives that entry no
+slots until explicit private recovery and cleanup. It does not retain disabled
+sink/raw settings or silently enable collection.
+
+After separate host authorization, recover one marked container at a time:
+
+1. Keep the supervisor task disabled. Match the candidate's name to the entry's
+   `<name>-<index>-<timestamp>` pattern and confirm its immutable label with
+   `docker ps -a --filter "name=<name>-" --filter "label=runners.diagnostic-lifecycle=1" --format "{{.Names}}"`.
+   Never dump configuration or registration values.
+2. Pre-create/recheck the private sink as above, and resolve its quota by
+   privately archiving prior bundles if needed. From the host scripts directory,
+   under the supervisor account, use the same bounded lifetime boundary. Replace
+   the placeholders and set raw collection only by explicit choice:
+
+   ```powershell
+   . .\diagnostic-export.ps1
+   Initialize-DiagnosticProcessContainment
+   $container = '<name>-<index>-<timestamp>'
+   $entryName = '<name>'
+   $sink = 'C:\path\to\private-evidence'
+   $clock = [Diagnostics.Stopwatch]::StartNew()
+   if (-not (Invoke-BoundedDiagnosticStop -Names @($container) -Clock $clock)) { throw 'Stop unconfirmed; retain container and investigate privately.' }
+   Invoke-BoundedDiagnosticExport -Name $container -EntryName $entryName -Directory $sink -RawRecords $false -Clock $clock
+   if (-not (Invoke-BoundedContainerRemoval -Name $container -Clock $clock)) { throw 'Removal unconfirmed; keep task disabled.' }
+   ```
+
+3. A failed export in this explicit procedure retains the container. Review
+   partial bundles privately and resolve the gap before retrying; do not bypass
+   containment or copy the complete filesystem/logs. If choosing to abandon
+   evidence, explicitly remove only the identified container with
+   `Invoke-BoundedContainerRemoval` and a fresh stopwatch, never an unbounded prune.
+4. Verify no marked containers remain for that entry. Set `diagnostics` to
+   `false`, remove `diagnosticDirectory` and `diagnosticRawRecords`, validate the
+   configuration, and only then authorize/re-enable the supervisor task.
+
+This procedure is source guidance, not authorization to operate a host.
+
+The diagnostic tests discriminate Linux fixture and subprocess behavior; the
+existing hosted image smoke command exercises image lifecycle and export with
+synthetic jobs, no production registration, networking or shared mounts.
+Windows PowerShell 5.1 hosted tests check normalized Windows paths, private ACLs,
+tar handling, exporter descendant containment and owner death, not Docker
+Desktop/WSL runtime behavior. Required hosted PR image
+evidence is still needed when a local orb has no Docker daemon. Real-host
+diagnostic overhead and retention remain unmeasured until a separately
+authorized Windows check.
+
+Diagnostics alone MUST NOT be described as fixing daemon disappearance or
+establishing an OOM kill, JVM crash, actual slots or peak usage. Missing runtime
+evidence remains unknown.
+Real-host diagnosis, memory/slot/CPU-affinity comparisons selected independently
+from measured pressure and host headroom, and ordinary setup-action/SDK-manager/
+wrapper reuse verification are separately approved follow-ups. Do not infer a
+resource remedy or tool-reuse correction from fixture results, and do not rerun
+the consumer workflow, alter host settings, roll out an image or inject build
+options under this diagnostic-source change.
 
 ## Cache Volumes
 
@@ -427,8 +611,10 @@ Hub. No inbound port is needed.
 ## Recovery
 
 - **A container left by an unclean stop** (a forced stop of the supervisor task, a
-  crash, a restart mid-job) is removed by the next supervisor start, which removes
-  containers matching each entry's own name pattern before starting its slots. By
+  crash, a restart mid-job) is handled by the next supervisor start using each
+  entry's own name pattern and immutable diagnostic marker. Marked containers
+  left after disabling require the private recovery procedure above and refuse
+  entry startup/deletion; ordinary containers are removed before slots start. By
   hand, `docker ps -a --filter "name=<name>-"` lists candidates and
   `docker rm -f <name>` removes one.
 - **Docker Desktop restarts mid-job:** the container is gone, the job fails on

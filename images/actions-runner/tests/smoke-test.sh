@@ -103,4 +103,5 @@ docker run --rm --network none "$image" bash -c \
    "$ANDROID_SDK_ROOT/cmdline-tools/20.0/bin/sdkmanager" --version | grep -Fx "20.0"
    archive="$HOME/.gradle/wrapper/dists/gradle-9.3.1-bin/23ovyewtku6u96viwx3xl3oks/gradle-9.3.1-bin.zip"
    printf "%s  %s\n" "b266d5ff6b90eada6dc3b20cb090e3731302e553a27c5d3e4df1f0d76beaff06" "$archive" | sha256sum --check --strict'
+bash images/actions-runner/tests/diagnostic-smoke.sh "$image"
 echo "Runner image smoke and tool isolation checks passed."

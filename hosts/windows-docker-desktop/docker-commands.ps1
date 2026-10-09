@@ -55,9 +55,21 @@ function Get-JobContainerArgument {
         [string[]]$Mounts = @(),
         [Parameter(Mandatory)][string]$JitConfigVariable,
         [Parameter(Mandatory)][string]$ImageName,
-        [Parameter(Mandatory)][string]$RunCommand
+        [Parameter(Mandatory)][string]$RunCommand,
+        [bool]$Diagnostics = $false,
+        [bool]$DiagnosticRawRecords = $false
     )
 
+    if ($Diagnostics) {
+        $mode = ''
+        if ($DiagnosticRawRecords) { $mode = ' raw-run' }
+        $launcher = 'if [ -x /usr/local/bin/runner-diagnostics ]; then exec /usr/local/bin/runner-diagnostics' + $mode +
+            '; else printf "Diagnostic gap: collector missing.\n" >&2; exec /home/runner/run.sh; fi'
+        return @('run', '--pull', 'never', '--name', $Name,
+            '--label', 'runners.diagnostic-lifecycle=1',
+            '--cpus', $Cpus, '--memory', "${MemoryGb}g", '--memory-swap', "${MemoryGb}g") + @($Mounts) +
+            @('-e', $JitConfigVariable, $ImageName, 'bash', '-c', $launcher)
+    }
     return @('run', '--rm', '--pull', 'never', '--name', $Name,
         '--cpus', $Cpus, '--memory', "${MemoryGb}g", '--memory-swap', "${MemoryGb}g") + @($Mounts) +
         @('-e', $JitConfigVariable, $ImageName, $RunCommand)
