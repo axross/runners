@@ -4,31 +4,6 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $HostDirectory 'diagnostic-export.ps1')
 Initialize-DiagnosticProcessContainment
 
-foreach ($hidden in @($false, $true)) {
-    foreach ($rawInput in @($false, $true)) {
-        $read = '[Console]::ReadLine()'
-        if ($rawInput) { $read = '(New-Object IO.StreamReader ([Console]::OpenStandardInput())).ReadLine()' }
-        $command = "if (($read) -ceq 'diagnostic-admitted') { exit 0 }; exit 5"
-        $probeInfo = New-Object Diagnostics.ProcessStartInfo
-        $probeInfo.FileName = (Get-Process -Id $PID).Path
-        $probeInfo.Arguments = '-NoLogo -NoProfile -NonInteractive -EncodedCommand ' + [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
-        $probeInfo.UseShellExecute = $false
-        $probeInfo.CreateNoWindow = $hidden
-        $probeInfo.RedirectStandardInput = $true
-        $probe = [Diagnostics.Process]::Start($probeInfo)
-        try {
-            $probe.StandardInput.WriteLine('diagnostic-admitted')
-            $probe.StandardInput.Close()
-            $done = $probe.WaitForExit(3000)
-            Write-Output "Admission probe: hidden=$hidden raw=$rawInput completed=$done exit=$($probe.ExitCode)"
-        } finally {
-            if (-not $probe.HasExited) { $probe.Kill() }
-            $null = $probe.WaitForExit(1000)
-            $probe.Dispose()
-        }
-    }
-}
-
 $concurrentSink = Join-Path $Scratch 'concurrent'
 $null = New-Item -ItemType Directory -Path $concurrentSink
 Initialize-TestPrivateDirectory -Path $concurrentSink
@@ -38,7 +13,9 @@ $source = @'
 param([string]$Name, [string]$EntryName, [string]$Directory, [switch]$RawRecords)
 $ErrorActionPreference = 'Stop'
 . '__LIBRARY__'
-if ([Console]::ReadLine() -cne 'diagnostic-admitted') { exit 5 }
+$admission = New-Object IO.StreamReader ([Console]::OpenStandardInput())
+try { if ($admission.ReadLine() -cne 'diagnostic-admitted') { exit 5 } }
+finally { $admission.Dispose() }
 function Get-DiagnosticTar { __TAR__ }
 if ($Name -eq 'blocked-storage') {
     function Assert-PrivateDiagnosticDirectory {
@@ -118,6 +95,11 @@ try {
         }
     }
 }
+
+$actualFull = $false
+try { Invoke-BoundedDiagnosticExport -Name 'example-entry-1-20240305060708009' -EntryName 'example-entry' -Directory $concurrentSink -RawRecords $false -Clock ([Diagnostics.Stopwatch]::StartNew()) }
+catch { $actualFull = $_.Exception.Message -eq 'diagnostic sink full (ten bundles)' }
+Assert-Case -Name 'actual hidden exporter reaches guarded full sink without Docker or admission bypass' -Passed ($actualFull -and @(Get-ChildItem -LiteralPath $concurrentSink -Filter '*-bundle-*').Count -eq 10) -Detail 'actual exporter lost redirected admission or quota'
 
 $boundedExport = ${function:Invoke-BoundedDiagnosticExport}
 $script:boundedTimeout = $false

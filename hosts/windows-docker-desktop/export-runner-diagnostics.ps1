@@ -3,7 +3,9 @@ param([string]$Name, [string]$EntryName, [string]$Directory, [switch]$RawRecords
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'diagnostic-export.ps1')
 
-if ([Console]::ReadLine() -cne 'diagnostic-admitted') { exit 5 }
+$admission = New-Object IO.StreamReader ([Console]::OpenStandardInput())
+try { if ($admission.ReadLine() -cne 'diagnostic-admitted') { exit 5 } }
+finally { $admission.Dispose() }
 
 try {
     Export-RunnerDiagnostic -Name $Name -EntryName $EntryName -Directory $Directory -RawRecords $RawRecords.IsPresent -Clock ([Diagnostics.Stopwatch]::StartNew()) -WarningVariable gaps
