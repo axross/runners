@@ -4,6 +4,31 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $HostDirectory 'diagnostic-export.ps1')
 Initialize-DiagnosticProcessContainment
 
+foreach ($hidden in @($false, $true)) {
+    foreach ($rawInput in @($false, $true)) {
+        $read = '[Console]::ReadLine()'
+        if ($rawInput) { $read = '(New-Object IO.StreamReader ([Console]::OpenStandardInput())).ReadLine()' }
+        $command = "if (($read) -ceq 'diagnostic-admitted') { exit 0 }; exit 5"
+        $probeInfo = New-Object Diagnostics.ProcessStartInfo
+        $probeInfo.FileName = (Get-Process -Id $PID).Path
+        $probeInfo.Arguments = '-NoLogo -NoProfile -NonInteractive -EncodedCommand ' + [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+        $probeInfo.UseShellExecute = $false
+        $probeInfo.CreateNoWindow = $hidden
+        $probeInfo.RedirectStandardInput = $true
+        $probe = [Diagnostics.Process]::Start($probeInfo)
+        try {
+            $probe.StandardInput.WriteLine('diagnostic-admitted')
+            $probe.StandardInput.Close()
+            $done = $probe.WaitForExit(3000)
+            Write-Output "Admission probe: hidden=$hidden raw=$rawInput completed=$done exit=$($probe.ExitCode)"
+        } finally {
+            if (-not $probe.HasExited) { $probe.Kill() }
+            $null = $probe.WaitForExit(1000)
+            $probe.Dispose()
+        }
+    }
+}
+
 $concurrentSink = Join-Path $Scratch 'concurrent'
 $null = New-Item -ItemType Directory -Path $concurrentSink
 Initialize-TestPrivateDirectory -Path $concurrentSink
