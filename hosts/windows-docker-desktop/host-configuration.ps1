@@ -451,6 +451,17 @@ function Format-CpuCount {
     return $Cpus.ToString('0.#########', [System.Globalization.CultureInfo]::InvariantCulture)
 }
 
+function Get-SlotCpuAffinityOffset {
+    param([Parameter(Mandatory)]$Plan, [Parameter(Mandatory)]$Entry, [Parameter(Mandatory)][int]$Slot)
+
+    $offset = 0L
+    foreach ($preceding in $Plan.Repositories) {
+        if ($preceding.Name -ceq $Entry.Name) { break }
+        $offset += [long]$preceding.Slots * [int][Math]::Ceiling($preceding.Cpus)
+    }
+    return $offset + [long]($Slot - 1) * [int][Math]::Ceiling($Entry.Cpus)
+}
+
 # returns the arguments of a slot's background job, keyed by the worker script
 # block's parameter names and in their order. Start-Job binds them to those
 # parameters by position, so a value out of order reaches the wrong parameter.
@@ -468,12 +479,6 @@ function Get-SlotWorkerArgument {
         [int]$BackoffSeconds = $InitialBackoffSeconds
     )
 
-    $offset = 0L
-    foreach ($preceding in $Plan.Repositories) {
-        if ($preceding.Name -ceq $Entry.Name) { break }
-        $offset += [long]$preceding.Slots * [int][Math]::Ceiling($preceding.Cpus)
-    }
-    $offset += [long]($Slot - 1) * [int][Math]::Ceiling($Entry.Cpus)
     return [ordered]@{
         ScriptRoot            = $ScriptRoot
         Owner                 = $Entry.Owner
@@ -484,7 +489,7 @@ function Get-SlotWorkerArgument {
         EntryName             = $Entry.Name
         Labels                = $Entry.Labels
         Cpus                  = $Entry.Cpus
-        CpuAffinityOffset     = $offset
+        CpuAffinityOffset     = Get-SlotCpuAffinityOffset -Plan $Plan -Entry $Entry -Slot $Slot
         MemoryGb              = $Entry.MemoryGb
         Mounts                = $Mounts
         RunCommand            = $RunCommand
@@ -504,7 +509,6 @@ function Get-PlanSummary {
     $lines = New-Object System.Collections.Generic.List[string]
     $lines.Add("Host configuration is valid: $(@($Plan.Repositories).Count) entries, image $($Plan.ImageName)")
     $lines.Add('CPU policy: cpus is CPU-time quota; affinity count is ceiling(cpus), not reserved CPUs.')
-    $offset = 0L
     foreach ($entry in $Plan.Repositories) {
         $count = [int][Math]::Ceiling($entry.Cpus)
         $lines.Add('')
@@ -516,14 +520,13 @@ function Get-PlanSummary {
         $lines.Add("  containers:        $($entry.Name)-<index>-<timestamp>")
         $lines.Add("  cpus:              $(Format-CpuCount -Cpus $entry.Cpus)")
         $lines.Add("  affinity per slot: $count CPUs; IDs discovered at launch")
-        $lines.Add("  affinity position: $offset")
+        $lines.Add("  affinity position: $(Get-SlotCpuAffinityOffset -Plan $Plan -Entry $entry -Slot 1)")
         $lines.Add("  memory:            $($entry.MemoryGb) GB")
         $lines.Add("  diagnostics:       $($entry.Diagnostics)")
         $lines.Add("  raw records:       $($entry.DiagnosticRawRecords)")
         foreach ($volume in $entry.Volumes) {
             $lines.Add("  volume:            $($volume.Name) -> $($volume.MountPath)")
         }
-        $offset += [long]$entry.Slots * $count
     }
     return $lines.ToArray()
 }
