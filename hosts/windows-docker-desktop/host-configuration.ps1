@@ -428,6 +428,13 @@ function Read-HostConfiguration {
     if ($errors.Count -gt 0) {
         throw "Invalid host configuration ($Path):`n  - $($errors -join "`n  - ")"
     }
+    $affinityOffset = 0L
+    foreach ($entry in $entries) {
+        $count = [int][Math]::Ceiling($entry.Cpus)
+        $entry | Add-Member -NotePropertyName CpuAffinityCount -NotePropertyValue $count
+        $entry | Add-Member -NotePropertyName CpuAffinityOffset -NotePropertyValue $affinityOffset
+        $affinityOffset += [long]$entry.Slots * $count
+    }
     return [pscustomobject]@{
         ImageName    = $imageName
         Repositories = $entries.ToArray()
@@ -470,6 +477,8 @@ function Get-SlotWorkerArgument {
         EntryName             = $Entry.Name
         Labels                = $Entry.Labels
         Cpus                  = Format-CpuCount -Cpus $Entry.Cpus
+        CpuAffinityCount      = $Entry.CpuAffinityCount
+        CpuAffinityOffset     = [long]($Entry.CpuAffinityOffset + [long]($Slot - 1) * $Entry.CpuAffinityCount)
         MemoryGb              = $Entry.MemoryGb
         Mounts                = $Mounts
         RunCommand            = $RunCommand
@@ -488,6 +497,7 @@ function Get-PlanSummary {
 
     $lines = New-Object System.Collections.Generic.List[string]
     $lines.Add("Host configuration is valid: $(@($Plan.Repositories).Count) repositories, image $($Plan.ImageName)")
+    $lines.Add('CPU policy: cpus is CPU-time quota; affinity count is ceiling(cpus), not reserved CPUs.')
     foreach ($entry in $Plan.Repositories) {
         $lines.Add('')
         $lines.Add("Repository $($entry.Owner)/$($entry.Repository)")
@@ -497,6 +507,8 @@ function Get-PlanSummary {
         $lines.Add("  name:              $($entry.Name)")
         $lines.Add("  containers:        $($entry.Name)-<index>-<timestamp>")
         $lines.Add("  cpus:              $(Format-CpuCount -Cpus $entry.Cpus)")
+        $lines.Add("  affinity per slot: $($entry.CpuAffinityCount) CPUs; IDs discovered at launch")
+        $lines.Add("  affinity position: $($entry.CpuAffinityOffset)")
         $lines.Add("  memory:            $($entry.MemoryGb) GB")
         $lines.Add("  diagnostics:       $($entry.Diagnostics)")
         $lines.Add("  raw records:       $($entry.DiagnosticRawRecords)")

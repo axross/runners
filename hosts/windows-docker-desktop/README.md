@@ -42,7 +42,7 @@ A JSON file kept outside the repository; every script takes its path as
 | `repositories[].labels`               | Optional custom labels, none by default; the four labels every registration carries, `self-hosted`, `linux`, `x64`, and `axpc`, are not listed            |
 | `repositories[].volumes`              | The cache volumes as `suffix` and `mountPath` pairs, possibly none                                                                                        |
 | `repositories[].name`                 | Starts the entry's container, runner, and volume names. Lowercase letters, digits, and hyphens, at most 64 characters, not colliding with another entry's |
-| `repositories[].cpus`                 | Optional CPU limit of each job container, a number above 0 and at most 64; 2 when absent                                                                  |
+| `repositories[].cpus`                 | Optional CPU-time quota of each job container, a number above 0 and at most 64; 2 when absent. Automatic affinity selects ceiling(`cpus`) available CPUs  |
 | `repositories[].memoryGb`             | Optional memory limit of each job container in whole gigabytes, 1 to 256; 8 when absent                                                                   |
 | `repositories[].diagnostics`          | Optional boolean, false by default; enables the diagnostic runner lifecycle for this entry only                                                           |
 | `repositories[].diagnosticDirectory`  | Required with diagnostics, invalid without them; absolute local Windows directory, outside the checkout, pre-created and private to the operator          |
@@ -70,6 +70,14 @@ rest. Before the first command, follow the Allowing the Scripts to Run section o
 `-ValidateOnly` prints each repository's registration labels, name, container
 name pattern, CPU and memory limits, and volume names without calling Docker or
 GitHub, and exits 1 on an invalid configuration.
+Quota and planned affinity cardinality are separate; actual CPU IDs require
+runtime discovery. There is no CPU-ID, workload-role, or affinity opt-in field.
+Every ordinary and diagnostic job now has affinity, distributed across measured
+Docker-visible IDs in entry/slot order. Slot counts and consumer build flags do
+not change. Affinity reserves nothing and guarantees neither compiler worker
+counts nor an OOM remedy. Allocation, enforcement, rollback, and separately
+authorized Desktop/WSL verification are in
+[Windows Runner Host](../../docs/operations/windows-runner-host.md#automatic-cpu-affinity).
 It also prints the two diagnostic opt-ins, not the private evidence path.
 Validation checks types and normalized Windows checkout exclusion without opening
 the sink. Runtime privacy, access or quota failures warn and do not prevent a
@@ -94,6 +102,11 @@ flags, and checks that a slot job's positional arguments line up with its worker
 script block's parameters. It also checks the pattern that recognizes an entry's
 stale containers. It never calls Docker or GitHub. CI also runs it under Windows
 PowerShell 5.1 on a GitHub-hosted Windows runner.
+It includes [`tests/test-cpu-affinity.ps1`](./tests/test-cpu-affinity.ps1), covering
+fractional quotas, sparse/distributed selections, capacity and malformed-output
+rejection, bounded native probe clients, scoped cleanup, and registration refusal
+before discovery succeeds. Effective Docker enforcement needs the real-daemon
+image smoke, not these synthetic tests.
 It includes [`tests/test-diagnostics.ps1`](./tests/test-diagnostics.ps1), covering
 per-entry opt-in, tar path/type/size rejection, private sinks, partial-bundle
 quotas, stuck stop subprocesses, immutable rollback markers, queued deadlines,

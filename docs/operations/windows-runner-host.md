@@ -67,12 +67,12 @@ rather than fails.
 The per-container `cpus` and `memoryGb` limits of the host configuration bind
 inside this virtual machine and reserve nothing in it. Slots times the limits,
 summed over every entry, can exceed the virtual machine's allocation, and the
-jobs then compete for what it has. A `cpus` above the number of processors the
-virtual machine has (the `processors` value in `.wslconfig`, if set) is
-rejected by Docker, which refuses a `--cpus` value above the CPUs it can see:
-the container never starts, the supervisor prints Docker's error, then a
-warning that the container exited with a non-zero code, and the slot retries
-after its backoff.
+jobs then compete for what it has. CPU IDs come from the actual Docker Linux
+environment, not a Windows CPU count or a configured WSL processor count. A slot
+whose ceiling-based affinity cardinality exceeds that measured availability
+fails before requesting registration and retries after its backoff. Docker can
+also reject a quota or CPU set at launch. Neither path starts an unrestricted
+runner; see Automatic CPU Affinity below.
 
 ## Repository Settings (Set by Hand)
 
@@ -160,7 +160,7 @@ and see the Host configuration section of the
   and at most 64, 2 when absent. `memoryGb` is an integer from 1 to 256, 8 when
   absent. Each job container of the entry starts with `--cpus` and `--memory`
   set to them and `--memory-swap` equal to `--memory`, so it gets no swap beyond
-  its memory. Docker takes `--cpus` as a decimal number of CPUs and `--memory` as
+  its memory. Docker takes `--cpus` as a CPU-time quota and `--memory` as
   a size with a unit suffix such as `g`; see
   [Docker's resource constraints](https://docs.docker.com/engine/containers/resource_constraints/).
   The limit applies to each container, not to an entry's slots together or to the
@@ -168,11 +168,73 @@ and see the Host configuration section of the
 
 Check a configuration before using it. The command calls neither Docker nor
 GitHub, prints each repository's labels, name, container name pattern, CPU and
-memory limits, and volume names, and exits 1 naming the field of every problem:
+memory limits, planned affinity cardinality/position, and volume names, and exits
+1 naming the field of every problem. It selects no CPU IDs and reads no token:
 
 ```powershell
 .\supervisor.ps1 -ConfigPath C:\path\to\runner-host.json -ValidateOnly
 ```
+
+## Automatic CPU Affinity
+
+Every ordinary and diagnostic job container receives `--cpuset-cpus` alongside
+its unchanged `--cpus` quota. This changes ordinary execution placement without
+adding a JSON field or an opt-in. A quota of 1.5 keeps quota 1.5 and selects two
+allowed logical CPUs: affinity cardinality is ceiling(`cpus`), an allocation
+policy, not an equivalence between CPU time and CPU IDs. Quota alone does not
+restrict scheduling to a particular set.
+
+The configuration reader enumerates entries in file order and slots in index
+order. Each slot advances a cumulative position by its cardinality. Before
+every registration attempt, a short probe reads its own `Cpus_allowed_list` on
+the slot's effective local image and Docker context. The probe has no CPU set,
+network, registration, mounts, or image pull. The worker chooses consecutive IDs
+from that sorted measured inventory, starting at position modulo inventory size
+and wrapping. Sparse IDs are preserved, not replaced with a range from a host
+count. With a stable common inventory, selections are disjoint when their total
+cardinality fits and can overlap when overcommitted. Topology changes between
+observations can also create overlap. No CPU is reserved or exclusive.
+
+Discovery waits at most 30 seconds, followed by at most 5 seconds for scoped
+cleanup, including client termination. Each slot uses one stable probe name,
+`<name>-cpu-probe-<index>`, and immutable marker `runners.cpu-probe=1`. A retry or
+worker restart reconciles that exact marked probe before creating another.
+Malformed/empty output, insufficient capacity, timeout, or unconfirmed cleanup
+fails the attempt before JIT registration. An unavailable daemon can prevent
+confirmed deletion; the deadline bounds waiting, not guaranteed daemon cleanup.
+Clean shutdown attempts removal after worker cancellation. No broad prune or
+job-container deletion is used for probes.
+
+Docker enforces the requested cpuset; before the existing runner or diagnostic
+launcher starts, a Bash guard compares its kernel `Cpus_allowed_list` with the
+selected canonical set. Missing/unreadable/mismatched readback exits 125 without
+launching the runner or falling back unrestricted. Per-attempt discovery and
+this check protect against stale topology after Docker/WSL changes. The short
+volume-ownership helper has no new CPU policy. Labels, slots, images, memory,
+swap, mounts, consumer tools/build flags, and diagnostic opt-ins remain their
+own controls. Affinity does not guarantee compiler process counts, lower memory
+use, or an OOM remedy; the Android failure cause remains unconfirmed.
+
+The image smoke checks actual Docker `HostConfig`, parent/child process sets,
+effective cgroup cpuset and quota, quota-only controls, distributed selections,
+and refusal controls. `nproc` and `getconf` are recorded as separate processor
+API observations, not worker counts. Missing topology/layout coverage fails as
+incomplete evidence. Hosted Linux enforcement is not Docker Desktop/WSL proof.
+The real-host check is a separately authorized post-merge follow-up on
+[the affinity issue](https://github.com/axross/runners/issues/25), not fulfilled
+by source tests. Before an authorized rollout, save private source/configuration
+and image rollback material, establish a quiet maintenance window, and verify
+all entries' requested/process/cgroup sets, quotas, diagnostics, capacity, and
+topology-change behavior on the intended context. Publish only sanitized source
+and image identities, settings/readbacks, gaps, and observed throughput/pressure
+there. Do not publish tokens, full inspect output, or raw private diagnostics.
+
+Rollback requires its own authorized maintenance window. Stop job admission,
+drain work, retain/recover marked diagnostics, and restore the saved pre-affinity
+host scripts together with their compatible configuration and image. Validate
+offline before restarting; there is no JSON switch to disable affinity. Restore
+no WSL allocation or Windows process-affinity setting: this feature changes
+neither. A failed runtime readback blocks rollout, not independent pool work.
 
 ## Moving to the New Configuration Format
 
@@ -307,11 +369,12 @@ one container and returns its host-origin exit code, monotonic completion time
 and retry backoff. The supervisor alone exports/removes diagnostic containers
 and starts replacement workers. Each slot follows this cycle:
 
-1. Wait for Docker to answer `docker info`.
+1. Reconcile the slot's probe and discover/select current allowed CPUs before
+   registration. Failure backs off without registering a runner.
 2. Request a single-use registration from GitHub with that repository's token, for
    a uniquely named runner carrying the entry's labels.
 3. Start a throwaway container from the image with the entry's volumes and
-   `/home/runner/run.sh`. The registration reaches the runner through the
+   the affinity guard followed by `/home/runner/run.sh`. The registration reaches the runner through the
    `ACTIONS_RUNNER_INPUT_JITCONFIG` environment variable, which the runner reads
    at start in the pinned version (`CommandSettings.cs` in `actions/runner`).
    [Security](../conventions/security.md) owns how the supervisor hands it to
@@ -324,7 +387,7 @@ and starts replacement workers. Each slot follows this cycle:
    The slot then returns to step 1. Container exit is not the GitHub job result;
    a runner can exit successfully after reporting a failed consumer job.
 
-A failed registration request or a container that exits non-zero delays the next
+A failed CPU discovery, registration request or container that exits non-zero delays the next
 attempt, doubling from 5 seconds to a 300-second ceiling; a container that ran a
 job to completion is replaced at once. A slot job that dies is restarted after its
 own delay on the same schedule, and the delay starts over once a job has run for
@@ -568,8 +631,11 @@ repositories are in [Security](../conventions/security.md).
   a runner waiting for a job. None means the same as above.
   `Get-ScheduledTask actions-runner-supervisor | Select State` reports `Running`.
   `docker inspect` on a container shows its limits under `HostConfig`: `NanoCpus`
-  is the CPU limit in billionths of a CPU, and `Memory` and `MemorySwap` are both
-  `memoryGb` gigabytes in bytes.
+  is the CPU-time quota in billionths of a CPU, `CpusetCpus` is the requested
+  CPU set, and `Memory` and `MemorySwap` are both `memoryGb` gigabytes in bytes.
+  Requested settings are not effective readback. The startup log's bounded
+  `CPU affinity verified` line reports the guard's kernel-granted set; the
+  authorized real-host check also resolves the actual cgroup cpuset/quota layout.
 - **End to end:** a workflow run whose `runs-on` is `axpc` starts executing rather
   than sitting queued.
 
@@ -619,8 +685,8 @@ Hub. No inbound port is needed.
   `docker rm -f <name>` removes one.
 - **Docker Desktop restarts mid-job:** the container is gone, the job fails on
   GitHub's side, and re-running the workflow is the recovery. The supervisor
-  process keeps running: each slot waits for `docker info` to answer, backs off
-  after the failed run, and resumes by itself when Docker is back, with no task
+  process keeps running: each slot remeasures affinity, backs off after discovery
+  or run failure, and resumes by itself when Docker is back, with no task
   restart. The task's restart setting is only a backstop for the supervisor
   process exiting.
 - **Stopping the supervisor:** Ctrl+C in its window is the clean path. Ending the
@@ -635,6 +701,11 @@ Hub. No inbound port is needed.
 - **A rejected configuration:** the supervisor prints every offending field and
   exits before starting anything; fix the file and rerun it, or run it with
   `-ValidateOnly` first.
+- **A slot logging CPU discovery/cleanup failures:** registration is withheld.
+  Check the intended Docker context/local image and available CPUs in a separately
+  authorized maintenance window. Resolve the exact marked slot probe if deletion
+  cannot be confirmed; never remove unrelated containers or prune broadly.
+  A topology or readback mismatch must not be bypassed with unrestricted startup.
 - **A slot logging registration failures:** the message carries GitHub's status. A
   401 or 404 usually means the token expired or lacks Administration access to that
   repository; replace the file. The other repositories' slots are unaffected.

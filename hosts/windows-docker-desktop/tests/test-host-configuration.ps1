@@ -166,7 +166,7 @@ $limitsPlan = Read-HostConfiguration -Path (Join-Path $acceptedDirectory 'explic
 $limitsEntry = $limitsPlan.Repositories[0]
 $mountArguments = @('--mount', "type=volume,source=$($limitsEntry.Volumes[0].Name),target=$($limitsEntry.Volumes[0].MountPath)")
 $jobName = Get-JobContainerName -EntryName $limitsEntry.Name -Slot 2 -Now (New-Object DateTime 2024, 3, 5, 6, 7, 8, 9)
-$jobArguments = @(Get-JobContainerArgument -Name $jobName -Cpus (Format-CpuCount -Cpus $limitsEntry.Cpus) -MemoryGb $limitsEntry.MemoryGb `
+$jobArguments = @(Get-JobContainerArgument -Name $jobName -Cpus (Format-CpuCount -Cpus $limitsEntry.Cpus) -CpusetCpus '5,11' -MemoryGb $limitsEntry.MemoryGb `
         -Mounts $mountArguments -JitConfigVariable 'ACTIONS_RUNNER_INPUT_JITCONFIG' -ImageName $limitsPlan.ImageName -RunCommand '/home/runner/run.sh')
 $imageIndex = [Array]::IndexOf($jobArguments, $limitsPlan.ImageName)
 
@@ -181,23 +181,25 @@ Assert-Case -Name 'job container name is the entry name, slot index and timestam
     -Passed ($jobName -ceq 'example-repo-one-2-20240305060708009' -and (Test-FlagBeforeImage -Flag '--name' -Value $jobName)) -Detail "name: $jobName; arguments: $($jobArguments -join ' ')"
 Assert-Case -Name 'job container gets its CPU limit before the image' `
     -Passed (Test-FlagBeforeImage -Flag '--cpus' -Value '1.5') -Detail ($jobArguments -join ' ')
+Assert-Case -Name 'job container gets selected CPU IDs independently of quota' `
+    -Passed (Test-FlagBeforeImage -Flag '--cpuset-cpus' -Value '5,11') -Detail 'affinity missing'
 Assert-Case -Name 'job container gets its memory limit before the image' `
     -Passed (Test-FlagBeforeImage -Flag '--memory' -Value '16g') -Detail ($jobArguments -join ' ')
 Assert-Case -Name 'job container gets no swap beyond its memory limit' `
     -Passed (Test-FlagBeforeImage -Flag '--memory-swap' -Value '16g') -Detail ($jobArguments -join ' ')
 Assert-Case -Name 'job container takes the registration from the environment, not the command line' `
-    -Passed ((Test-FlagBeforeImage -Flag '-e' -Value 'ACTIONS_RUNNER_INPUT_JITCONFIG') -and $jobArguments[-2] -ceq $limitsPlan.ImageName -and $jobArguments[-1] -ceq '/home/runner/run.sh') `
+    -Passed ((Test-FlagBeforeImage -Flag '-e' -Value 'ACTIONS_RUNNER_INPUT_JITCONFIG') -and $jobArguments[-1] -ceq '/home/runner/run.sh') `
     -Detail ($jobArguments -join ' ')
 
-$noMountArguments = @(Get-JobContainerArgument -Name $jobName -Cpus '1.5' -MemoryGb 16 `
+$noMountArguments = @(Get-JobContainerArgument -Name $jobName -Cpus '1.5' -CpusetCpus '5,11' -MemoryGb 16 `
         -JitConfigVariable 'ACTIONS_RUNNER_INPUT_JITCONFIG' -ImageName 'actions-runner:local' -RunCommand '/home/runner/run.sh')
-$emptyMountArguments = @(Get-JobContainerArgument -Name $jobName -Cpus '1.5' -MemoryGb 16 -Mounts @() `
+$emptyMountArguments = @(Get-JobContainerArgument -Name $jobName -Cpus '1.5' -CpusetCpus '5,11' -MemoryGb 16 -Mounts @() `
         -JitConfigVariable 'ACTIONS_RUNNER_INPUT_JITCONFIG' -ImageName 'actions-runner:local' -RunCommand '/home/runner/run.sh')
 foreach ($case in @(@('omitted', $noMountArguments), @('empty', $emptyMountArguments))) {
     $arguments = $case[1]
     $blank = @($arguments | Where-Object { [string]::IsNullOrEmpty($_) })
-    Assert-Case -Name "job container with $($case[0]) mounts has no blank argument and ends with the image and command" `
-        -Passed ($blank.Count -eq 0 -and $arguments.Count -eq 16 -and $arguments[-2] -ceq 'actions-runner:local' -and $arguments[-1] -ceq '/home/runner/run.sh') `
+    Assert-Case -Name "job container with $($case[0]) mounts has no blank argument and preserves the command after its guard" `
+        -Passed ($blank.Count -eq 0 -and $arguments[-7] -ceq 'actions-runner:local' -and $arguments[-1] -ceq '/home/runner/run.sh' -and $arguments[-2] -ceq '5,11') `
         -Detail ($arguments -join ' ')
 }
 
@@ -233,6 +235,7 @@ for ($position = 0; $position -lt [Math]::Min($workerParameters.Count, $workerAr
 Assert-Case -Name 'slot job argument values fit their worker parameter types' -Passed ($misfits.Count -eq 0) -Detail "misfit: $($misfits -join ', ')"
 Assert-Case -Name 'slot job arguments carry the entry, the slot, and the formatted limits' `
     -Passed ($workerArguments.Cpus -ceq '1.5' -and $workerArguments.MemoryGb -eq 16 -and $workerArguments.Slot -eq 3 `
+        -and $workerArguments.CpuAffinityCount -eq 2 -and $workerArguments.CpuAffinityOffset -eq 4 `
         -and $workerArguments.EntryName -ceq 'example-repo-one' -and $workerArguments.Owner -ceq 'example-owner' `
         -and $workerArguments.Repository -ceq 'example-repo-one' -and $workerArguments.TokenPath -ceq $limitsEntry.TokenPath `
         -and ($workerArguments.Labels -join ',') -ceq ($limitsEntry.Labels -join ',') -and ($workerArguments.Mounts -join ',') -ceq ($mountArguments -join ',') `
@@ -286,6 +289,7 @@ foreach ($pattern in $forbidden) {
     Assert-Case -Name "host scripts never use $pattern" -Passed ($hits.Count -eq 0) -Detail "found in: $($hits.Name -join ', ')"
 }
 
+. (Join-Path $PSScriptRoot 'test-cpu-affinity.ps1')
 . (Join-Path $PSScriptRoot 'test-diagnostics.ps1')
 
 if ($failures.Count -gt 0) {

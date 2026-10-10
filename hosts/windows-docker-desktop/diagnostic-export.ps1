@@ -4,6 +4,7 @@ $script:DiagnosticStopMilliseconds = 12000
 $script:DiagnosticExportMilliseconds = 18000
 $script:DiagnosticHostMilliseconds = 24000
 $script:DiagnosticTerminationMilliseconds = 1000
+. (Join-Path $PSScriptRoot 'docker-commands.ps1')
 . (Join-Path $PSScriptRoot 'diagnostic-process-lifetime.ps1')
 
 # evidence is private operator data, not a job mount or an automatic upload.
@@ -40,30 +41,6 @@ function Assert-PrivateDiagnosticDirectory {
     return $full
 }
 
-# quotes only at the ProcessStartInfo boundary; callers still supply arrays.
-function ConvertTo-NativeArgument {
-    param([string]$Value)
-
-    return '"' + ([regex]::Replace(([regex]::Replace($Value, '(\\*)"', '$1$1\"')), '(\\+)$', '$1$1')) + '"'
-}
-
-# redirects raw bytes instead of passing tar data through PowerShell's text stream.
-function Invoke-DiagnosticDocker {
-    param([string[]]$Arguments)
-
-    $info = New-Object Diagnostics.ProcessStartInfo
-    $info.FileName = (Get-Command docker -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
-    $info.Arguments = (@($Arguments | ForEach-Object { ConvertTo-NativeArgument -Value $_ }) -join ' ')
-    $info.UseShellExecute = $false
-    $info.CreateNoWindow = $true
-    $info.RedirectStandardOutput = $true
-    $info.RedirectStandardError = $true
-    $process = New-Object Diagnostics.Process
-    $process.StartInfo = $info
-    $null = $process.Start()
-    return $process
-}
-
 # drains pipes without retaining daemon text, which can contain private host data.
 function Invoke-BoundedDiagnosticStop {
     [CmdletBinding()]
@@ -97,50 +74,6 @@ function Invoke-BoundedDiagnosticStop {
         }
     }
     return $success
-}
-
-# a PowerShell wait remains interruptible even when Docker's daemon never replies.
-function Invoke-DiagnosticContainerRun {
-    param([string[]]$Arguments)
-
-    $clientJob = $null
-    $process = $null
-    try {
-        try {
-            if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) { $clientJob = New-Object Runners.DiagnosticJob }
-        } catch { Write-Warning 'Diagnostic gap: runner client lifetime containment unavailable.' }
-        $process = Invoke-DiagnosticDocker -Arguments $Arguments
-        try { if ($null -ne $clientJob) { $clientJob.Assign($process.Handle) } }
-        catch { Write-Warning 'Diagnostic gap: runner client lifetime containment unavailable.' }
-        $stdout = $process.StandardOutput.ReadLineAsync()
-        $stderr = $process.StandardError.ReadLineAsync()
-        while (-not $process.HasExited -or $null -ne $stdout -or $null -ne $stderr) {
-            foreach ($pipe in @('stdout', 'stderr')) {
-                $read = Get-Variable -Name $pipe -ValueOnly
-                if ($null -ne $read -and $read.IsCompleted) {
-                    $line = $read.GetAwaiter().GetResult()
-                    $next = $null
-                    if ($null -ne $line) {
-                        Write-Information $line
-                        if ($pipe -eq 'stdout') { $next = $process.StandardOutput.ReadLineAsync() }
-                        else { $next = $process.StandardError.ReadLineAsync() }
-                    }
-                    Set-Variable -Name $pipe -Value $next
-                }
-            }
-            Start-Sleep -Milliseconds 20
-        }
-        return $process.ExitCode
-    } finally {
-        try {
-            if ($null -ne $clientJob -and -not $clientJob.Close()) { throw 'runner client containment cleanup failed' }
-            if ($null -ne $process -and -not $process.HasExited) {
-                $process.Kill()
-                if (-not $process.WaitForExit($script:DiagnosticTerminationMilliseconds)) { throw 'runner client termination failed' }
-            }
-        } catch { Write-Warning 'Diagnostic gap: runner client termination unavailable.' }
-        finally { if ($null -ne $process) { $process.Dispose() } }
-    }
 }
 
 # one monotonic deadline covers all bytes, including blocked or truncated copies.

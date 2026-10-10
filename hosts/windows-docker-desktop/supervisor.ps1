@@ -160,6 +160,8 @@ $WorkerScript = {
         [string]$EntryName,
         [string[]]$Labels,
         [string]$Cpus,
+        [int]$CpuAffinityCount,
+        [long]$CpuAffinityOffset,
         [int]$MemoryGb,
         [string[]]$Mounts,
         [string]$RunCommand,
@@ -235,9 +237,13 @@ $WorkerScript = {
 
     $backoffSeconds = $BackoffSeconds
     while ($true) {
-        if ((Invoke-Docker -Arguments @('info')).ExitCode -ne 0) {
-            Write-Warning "${label}: Docker is not responding - waiting."
-            Start-Sleep -Seconds 5
+        try {
+            $cpuset = Get-SlotCpuAffinity -ProbeName "$EntryName-cpu-probe-$Slot" -ImageName $ImageName `
+                -Count $CpuAffinityCount -Offset $CpuAffinityOffset
+        } catch {
+            Write-Warning "${label}: CPU discovery or probe cleanup failed; no registration - retrying in ${backoffSeconds}s."
+            Start-Sleep -Seconds $backoffSeconds
+            $backoffSeconds = [Math]::Min($backoffSeconds * 2, $MaxBackoffSeconds)
             continue
         }
 
@@ -259,7 +265,7 @@ $WorkerScript = {
 
         # the variable holds the registration only in this job's process
         # environment, where the Docker client reads it from.
-        $arguments = Get-JobContainerArgument -Name $jit.Name -Cpus $Cpus -MemoryGb $MemoryGb -Mounts $Mounts `
+        $arguments = Get-JobContainerArgument -Name $jit.Name -Cpus $Cpus -CpusetCpus $cpuset -MemoryGb $MemoryGb -Mounts $Mounts `
             -JitConfigVariable $JitConfigVariable -ImageName $ImageName -RunCommand $RunCommand `
             -Diagnostics $Diagnostics -DiagnosticRawRecords $DiagnosticRawRecords
         [Environment]::SetEnvironmentVariable($JitConfigVariable, $jit.EncodedJitConfig, 'Process')
@@ -530,6 +536,8 @@ try {
             Wait-Job -Job $worker.Job -Timeout 30 | Out-Null
             Remove-Job -Job $worker.Job -Force -ErrorAction SilentlyContinue
         }
+        try { Invoke-CpuProbeRemoval -Name "$($worker.Entry.Name)-cpu-probe-$($worker.Slot)" }
+        catch { Write-Warning "$($worker.Key): probe removal unconfirmed; next launch must reconcile it." }
     }
     Get-EventSubscriber | Unregister-Event -ErrorAction SilentlyContinue
     Write-Information 'Runner supervisor stopped.'

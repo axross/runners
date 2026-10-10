@@ -279,6 +279,22 @@ later host:
 - `docker run` uses `--pull never`, so a missing local image fails instead of
   pulling a same-named public image.
 
+## CPU Placement Is Not Resource Reservation
+
+Job containers MUST receive both the existing CPU-time quota and automatically
+selected affinity, and MUST refuse runner startup when discovery, capacity,
+cleanup, or effective process readback fails. A quota limits CPU time, not CPU
+IDs. A cpuset limits execution placement but reserves no CPUs or memory, isolates
+no repository from shared hardware, and guarantees neither compiler process
+counts nor OOM prevention. Slot overcommit and topology changes can create
+overlapping sets. CPU discovery MUST use the slot's effective local Docker
+image/context without network, mounts, registration, image pull, or added
+privileges, and cleanup MUST target only its exact marked probe. The allocation,
+deadlines, readback, and separately authorized real-host procedure are in
+[Windows Runner Host](../operations/windows-runner-host.md#automatic-cpu-affinity).
+CPU policy MUST NOT infer workload roles from names, tags, or labels, or alter
+consumer build flags, global WSL allocation, or Windows process affinity.
+
 ## LAN Egress From Runner Containers (Accepted Risk)
 
 The Windows host starts containers on Docker Desktop's default network, which
