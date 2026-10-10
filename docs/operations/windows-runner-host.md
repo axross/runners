@@ -60,7 +60,7 @@ memory, and Docker Desktop's **Settings, Resources** does not cap them. To cap
 them, set `memory` and `processors` under `[wsl2]` in
 `%UserProfile%\.wslconfig`, which applies to every WSL 2 distribution on the
 machine, then run `wsl --shutdown` so the virtual machine restarts with the
-limits. Start from the defaults, and lower a repository's `slots` if builds
+limits. Start from the defaults, and lower an entry's `slots` if builds
 starve when several jobs run together. A job that finds no free slot queues
 rather than fails.
 
@@ -97,7 +97,7 @@ under **Settings, Developer settings, Fine-grained personal access tokens**:
 - **Permissions:** Administration, read and write, and nothing else.
 
 Save each token in a file on this machine, holding the raw token text, at the
-`tokenPath` of the repository's entry, and keep these files outside the checkout.
+`tokenPath` of the repository's pool entries, and keep these files outside the checkout.
 The token rules are in the Per-Repository Isolation on a Runner Host section of
 [Security](../conventions/security.md).
 
@@ -201,13 +201,13 @@ Use operator-local values, not these example names. Neither the image name nor
 the entry name identifies a workload to the supervisor. Set resource limits
 only from approved host evidence; a dedicated slot does not reserve host memory.
 No shared SDK, workspace, or new persistent cache is needed. Existing storage
-rules apply independently to each entry; signing/deployment jobs MUST NOT mount
-less-trusted caches. Diagnostics remain independent per entry, with private
+choices follow the [shared-storage rules in Security](../conventions/security.md#shared-runner-storage-is-a-cache-poisoning-surface).
+Diagnostics remain independent per entry, with private
 retention keyed by its name even if two entries use the same private sink.
 
 Deployment and workflow execution require separate scoped authorization:
 
-1. Record the existing configuration, actual slots, image IDs and tagged
+1. Record the existing configuration, scheduled-task state, actual slots, image IDs and tagged
    rollback images. Pause the weekly rebuild and wait for any rebuild to finish.
 2. Establish a quiet maintenance window: finish affected jobs, including old
    workflow revisions still using the general label. Do not restart a busy
@@ -238,13 +238,32 @@ Deployment and workflow execution require separate scoped authorization:
    destination after human sanitization. Serialization success does not prove
    OOM, and missing counters are not zero. Host pressure can still affect one
    Android build beside general CI.
+7. After the validation window, confirm the checkout contains the approved image
+   sources for subsequent rebuilds. Restore the weekly task's recorded state:
+   if previously enabled, run
+   `Enable-ScheduledTask -TaskName actions-runner-weekly-rebuild` under the
+   authorized host-operation scope. A missed rebuild may start on re-enable;
+   otherwise retain the prior disabled state and record it explicitly.
 
 For rollback, first finish affected jobs and obtain the required operation
-scope. Restore consumer routing and the saved host configuration/images in a
-quiet window, checking that no old dedicated job remains eligible for an
-unintended extra runner. Preserve general capacity and private evidence; remove
+scope. In a quiet window, disable `actions-runner-supervisor` to prevent an
+automatic restart and clean-stop the running supervisor using Recovery's Ctrl+C
+path. If a clean stop is unavailable, keep rollback pending rather than force
+an unsafe stop. Restore the saved host configuration/images. If retaining the new
+host scripts, keep the explicit `axpc` migration in restored general custom-label
+lists; restoring an unmigrated file also requires its matching approved script
+revision. Validate with `supervisor.ps1 -ValidateOnly`; the running process does
+not reload configuration.
+Restore consumer routing under its separate authorization while the supervisor
+remains stopped, then re-enable/start the supervisor task and read back actual
+registrations, labels, slot counts and image IDs. Check that no old dedicated
+job or extra dedicated-label registration bypasses the restored routing.
+Preserve general capacity and private evidence; remove
 only identified obsolete pool registrations/containers, never prune unrelated
 storage. Keep rebuilding paused until the intended image sources are restored.
+After rollback validation, restore the recorded weekly-task state as in step 7,
+including re-enabling `actions-runner-weekly-rebuild` if it was enabled before
+the window. No scheduled-task change is authorized by this procedure alone.
 
 ## Moving to the New Configuration Format
 
@@ -373,11 +392,12 @@ start the supervisor task from Task Scheduler, to start it now.
 
 ## How a Container Picks Up a Job
 
-For each repository, the supervisor runs that entry's `slots` as separate
+For each execution pool, the supervisor runs that entry's `slots` as separate
 background jobs. A diagnostics-disabled worker loops forever; an enabled worker runs
 one container and returns its host-origin exit code, monotonic completion time
 and retry backoff. The supervisor alone exports/removes diagnostic containers
-and starts replacement workers. Each slot follows this cycle:
+and starts replacement workers. A sibling pool for the same repository has its
+own workers and lifecycle. Each slot follows this cycle:
 
 1. Wait for Docker to answer `docker info`.
 2. Request a single-use registration from GitHub with that repository's token, for
@@ -621,7 +641,7 @@ not only the toolchain volumes. The host cannot check this; the operator does. T
 rule and its reason are in the Shared Runner Storage Is a Cache-Poisoning Surface
 section of [Security](../conventions/security.md).
 
-## Removing a Repository
+## Removing an Entry
 
 A volume outlives its entry: if an entry is removed from the configuration, its
 volumes and any stopped containers stay until removed by hand with
@@ -643,8 +663,8 @@ repositories are in [Security](../conventions/security.md).
   `docker inspect` on a container shows its limits under `HostConfig`: `NanoCpus`
   is the CPU limit in billionths of a CPU, and `Memory` and `MemorySwap` are both
   `memoryGb` gigabytes in bytes.
-- **End to end:** a workflow run whose `runs-on` is `axpc` starts executing rather
-  than sitting queued.
+- **End to end:** for each pool, a workflow run whose `runs-on` matches that
+  entry's routing label starts executing rather than sitting queued.
 
 ## Updating the Runner
 
@@ -699,15 +719,19 @@ Hub. No inbound port is needed.
 - **Stopping the supervisor:** Ctrl+C in its window is the clean path. Ending the
   task in Task Scheduler, or a shutdown, skips it and leaves running containers to
   finish or to be removed at the next start; a job in flight fails either way.
-- **One repository's entry will not start:** a missing or empty token file, a
+- **One pool's entry will not start:** a missing or empty token file, a
   volume that cannot be created, or stale containers that cannot be listed skip
   that entry only. The supervisor logs a warning naming the entry and the reason
-  (never a token), gives that entry no slots, and serves the others. It exits 1
-  only when no entry can start. Fix the cause and restart the supervisor task; an
-  entry skipped at start is not retried while the supervisor runs.
+  (never a token), gives that entry no slots, and serves the other startable
+  pools, including a sibling for the same repository. Shared dependencies, such
+  as that repository's token or the Docker daemon, can affect several pools.
+  It exits 1 only when no entry can start. Fix the cause and restart the supervisor
+  task in an authorized quiet window; an entry skipped at start is not retried
+  while the supervisor runs.
 - **A rejected configuration:** the supervisor prints every offending field and
   exits before starting anything; fix the file and rerun it, or run it with
   `-ValidateOnly` first.
 - **A slot logging registration failures:** the message carries GitHub's status. A
   401 or 404 usually means the token expired or lacks Administration access to that
-  repository; replace the file. The other repositories' slots are unaffected.
+  repository; replace the file. Other workers continue their own registration
+  loops, but a shared-token problem can affect every pool for that repository.
