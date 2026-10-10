@@ -9,31 +9,38 @@ $block = $assignment.Right.Find({ param($node) $node -is [Management.Automation.
 $workerScript = $block.ScriptBlock.GetScriptBlock()
 $fixtureRoot = Join-Path $Scratch 'worker'
 $null = New-Item -ItemType Directory -Path $fixtureRoot
+Copy-Item -LiteralPath (Join-Path $HostDirectory 'host-configuration.ps1') -Destination $fixtureRoot
 $tokenPath = Join-Path $fixtureRoot 'token'
 $marker = [Guid]::NewGuid().ToString('N')
 [IO.File]::WriteAllText($tokenPath, $marker, [Text.Encoding]::ASCII)
 $dockerFixture = @'
 . '__DOCKER__'
-function Invoke-Docker {
-    param($Arguments)
-    if ($Arguments[0] -ne 'info') { throw 'worker attempted cleanup' }
-    if (-not $Diagnostics -and $script:runs -ge 2) { throw 'fixture loop finished' }
-    return [pscustomobject]@{ ExitCode = 0 }
+function Get-SlotCpuAffinity {
+    param($ProbeName, $ImageName, $Count, $Offset)
+    $script:probes++
+    if ($script:failCpu -and $script:probes -eq 1) { throw 'synthetic discovery failure' }
+    $inventory = '2,5-6,11'
+    if ($script:probes -gt (1 + [int]$script:failCpu)) { $inventory = '13-16' }
+    return Select-CpuAffinity -AvailableCpus $inventory -Count $Count -Offset $Offset
 }
 function Invoke-RestMethod {
     param($Uri, $Method, $Headers, $Body, $ContentType)
+    if ($script:probes -le [int]$script:failCpu) { throw 'registration before discovery' }
     $script:registrations++
     if ($script:failJit -and $script:registrations -eq 1) { throw 'synthetic JIT failure' }
     return [pscustomobject]@{ encoded_jit_config = $marker }
 }
 function Start-Sleep {
     param($Seconds)
+    if (-not $Diagnostics -and $script:runs -ge 2) { throw 'fixture loop finished' }
     $script:delays.Add([int]$Seconds)
 }
 function Invoke-DockerLogged {
     param($Arguments)
     $script:runs++
     if ($Arguments -notcontains '--rm' -or $Arguments -contains '--label') { throw 'ordinary lifecycle changed' }
+    $script:selections.Add($Arguments[[Array]::IndexOf($Arguments, '--cpuset-cpus') + 1])
+    if ($Arguments[[Array]::IndexOf($Arguments, '--cpus') + 1] -cne '1') { throw 'quota formatting changed' }
     if ([Environment]::GetEnvironmentVariable('ACTIONS_RUNNER_INPUT_JITCONFIG', 'Process') -ne $marker) { throw 'JIT environment missing' }
     return $script:runnerExit
 }
@@ -46,38 +53,48 @@ function Invoke-DiagnosticContainerRun {
     param($Arguments)
     $script:runs++
     if ($Arguments -contains '--rm' -or $Arguments -notcontains 'runners.diagnostic-lifecycle=1') { throw 'diagnostic lifecycle missing' }
+    $script:selections.Add($Arguments[[Array]::IndexOf($Arguments, '--cpuset-cpus') + 1])
+    if ($Arguments[[Array]::IndexOf($Arguments, '--cpus') + 1] -cne '1') { throw 'quota formatting changed' }
     if ([Environment]::GetEnvironmentVariable('ACTIONS_RUNNER_INPUT_JITCONFIG', 'Process') -ne $marker) { throw 'JIT environment missing' }
     return $script:runnerExit
 }
 function Complete-DiagnosticContainer { throw 'worker attempted diagnostic finalization' }
 '@
 [IO.File]::WriteAllText((Join-Path $fixtureRoot 'diagnostic-export.ps1'), $diagnosticFixture, [Text.Encoding]::ASCII)
-$entry = [pscustomobject]@{ Owner = 'example-owner'; Repository = 'example-repo'; Name = 'example-entry'; TokenPath = $tokenPath; Labels = [string[]]@('axpc'); Cpus = 2; MemoryGb = 8; Diagnostics = $true; DiagnosticDirectory = 'C:\example-evidence'; DiagnosticRawRecords = $false }
+$entry = [pscustomobject]@{ Owner = 'example-owner'; Repository = 'example-repo'; Name = 'example-entry'; TokenPath = $tokenPath; Labels = [string[]]@('axpc'); Cpus = 1.0000000001; Slots = 1; MemoryGb = 8; Diagnostics = $true; DiagnosticDirectory = 'C:\example-evidence'; DiagnosticRawRecords = $false }
+$workerPlan = [pscustomobject]@{ ImageName = 'actions-runner:local'; Repositories = @([pscustomobject]@{ Name = 'preceding-entry'; Cpus = 0.5; Slots = 2 }, $entry) }
 foreach ($code in @(0, 7)) {
     $script:runs = 0
     $script:registrations = 0
+    $script:probes = 0
+    $script:failCpu = $true
+    $script:selections = New-Object System.Collections.Generic.List[string]
     $script:runnerExit = $code
     $script:failJit = $true
     $script:delays = New-Object System.Collections.Generic.List[int]
-    $arguments = Get-SlotWorkerArgument -Entry $entry -Slot 1 -ScriptRoot $fixtureRoot -ImageName 'actions-runner:local' -RunCommand '/home/runner/run.sh' -JitConfigVariable 'ACTIONS_RUNNER_INPUT_JITCONFIG' -InitialBackoffSeconds 5 -MaxBackoffSeconds 300
+    $arguments = Get-SlotWorkerArgument -Plan $workerPlan -Entry $entry -Slot 1 -ScriptRoot $fixtureRoot -RunCommand '/home/runner/run.sh' -JitConfigVariable 'ACTIONS_RUNNER_INPUT_JITCONFIG' -InitialBackoffSeconds 5 -MaxBackoffSeconds 300
     $before = [Diagnostics.Stopwatch]::GetTimestamp()
     $values = @($arguments.Values)
     $output = @(& $workerScript @values)
     $result = @($output | Where-Object { $_ -isnot [string] })
-    Assert-Case -Name "enabled worker returns result $code after exactly one container and JIT retry, without export" -Passed ($script:runs -eq 1 -and $script:registrations -eq 2 -and $result.Count -eq 1 -and $result[0].RunnerExitCode -eq $code -and $result[0].BackoffSeconds -eq 10 -and $result[0].CompletedAt -ge $before -and ($script:delays -join '|') -eq '5' -and $output -notcontains 'SLOT_IDLE') -Detail 'worker looped, finalized or lost retry/result'
+    Assert-Case -Name "enabled worker returns result $code after discovery/JIT retries, without export" -Passed ($script:runs -eq 1 -and $script:registrations -eq 2 -and $result.Count -eq 1 -and $result[0].RunnerExitCode -eq $code -and $result[0].BackoffSeconds -eq 20 -and $result[0].CompletedAt -ge $before -and ($script:delays -join '|') -eq '5|10' -and $output -notcontains 'SLOT_IDLE') -Detail 'worker looped, finalized or lost retry/result'
+    Assert-Case -Name 'discovery failure creates no registration and recovery remeasures before launch' -Passed ($script:probes -eq 3 -and ($script:selections -join '|') -eq '15-16') -Detail 'failed inventory admitted or cached'
     Assert-Case -Name 'enabled worker clears JIT environment before publishing completion' -Passed ([string]::IsNullOrEmpty([Environment]::GetEnvironmentVariable('ACTIONS_RUNNER_INPUT_JITCONFIG', 'Process')) -and -not ($output -join '|').Contains($marker)) -Detail 'JIT leaked into completion'
 }
 $entry.Diagnostics = $false
 $script:runs = 0
 $script:registrations = 0
+$script:probes = 0
+$script:failCpu = $false
+$script:selections.Clear()
 $script:failJit = $false
 $script:runnerExit = 7
 $script:delays.Clear()
-$arguments = Get-SlotWorkerArgument -Entry $entry -Slot 1 -ScriptRoot $fixtureRoot -ImageName 'actions-runner:local' -RunCommand '/home/runner/run.sh' -JitConfigVariable 'ACTIONS_RUNNER_INPUT_JITCONFIG' -InitialBackoffSeconds 5 -MaxBackoffSeconds 300
+$arguments = Get-SlotWorkerArgument -Plan $workerPlan -Entry $entry -Slot 1 -ScriptRoot $fixtureRoot -RunCommand '/home/runner/run.sh' -JitConfigVariable 'ACTIONS_RUNNER_INPUT_JITCONFIG' -InitialBackoffSeconds 5 -MaxBackoffSeconds 300
 $output = New-Object System.Collections.Generic.List[object]
 $values = @($arguments.Values)
 try { & $workerScript @values | ForEach-Object { $output.Add($_) } } catch { if ($_.Exception.Message -ne 'fixture loop finished') { throw } }
-Assert-Case -Name 'disabled worker retains repeated registration, auto-removal, idle protocol and exponential retry loop' -Passed ($script:runs -eq 2 -and $script:registrations -eq 2 -and @($output | Where-Object { $_ -eq 'SLOT_IDLE' }).Count -eq 2 -and ($script:delays -join '|') -eq '5|10' -and [string]::IsNullOrEmpty([Environment]::GetEnvironmentVariable('ACTIONS_RUNNER_INPUT_JITCONFIG', 'Process'))) -Detail 'default loop changed'
+Assert-Case -Name 'ordinary worker retains registration, auto-removal, idle protocol and retry loop with current affinity' -Passed ($script:runs -eq 2 -and $script:registrations -eq 2 -and @($output | Where-Object { $_ -eq 'SLOT_IDLE' }).Count -eq 2 -and ($script:delays -join '|') -eq '5' -and ($script:selections -join '|') -eq '6,11|15-16' -and [string]::IsNullOrEmpty([Environment]::GetEnvironmentVariable('ACTIONS_RUNNER_INPUT_JITCONFIG', 'Process'))) -Detail 'ordinary lifecycle/affinity changed'
 
 foreach ($name in @('Complete-SlotWorker', 'Complete-WorkerDiagnostic', 'Clear-StaleContainer', 'Invoke-KnownContainerStop')) {
     $definition = $tree.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name }, $true)

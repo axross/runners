@@ -107,17 +107,17 @@ try {
     try { $null = Read-HostConfiguration -Path $configPath } catch { $rejected = $_.Exception.Message.Contains('diagnosticRawRecords: requires diagnostics') }
     Assert-Case -Name 'raw-only configuration rejected' -Passed $rejected -Detail 'raw admitted without diagnostics'
 
-    $base = @{ Name = 'example-entry-1-20240305060708009'; Cpus = '1.5'; MemoryGb = 16; Mounts = $mountArguments; JitConfigVariable = 'ACTIONS_RUNNER_INPUT_JITCONFIG'; ImageName = 'actions-runner:local'; RunCommand = '/home/runner/run.sh' }
+    $base = @{ Name = 'example-entry-1-20240305060708009'; Cpus = '1.5'; CpusetCpus = '5,11'; MemoryGb = 16; Mounts = $mountArguments; JitConfigVariable = 'ACTIONS_RUNNER_INPUT_JITCONFIG'; ImageName = 'actions-runner:local'; RunCommand = '/home/runner/run.sh' }
     $ordinary = @(Get-JobContainerArgument @base)
     $diagnostic = @(Get-JobContainerArgument @base -Diagnostics $true)
     $raw = @(Get-JobContainerArgument @base -Diagnostics $true -DiagnosticRawRecords $true)
-    Assert-Case -Name 'default command and auto-removal unchanged' -Passed ($ordinary[1] -ceq '--rm' -and $ordinary[-1] -ceq '/home/runner/run.sh') -Detail 'default lifecycle changed'
+    Assert-Case -Name 'ordinary command and auto-removal preserved after affinity guard' -Passed ($ordinary[1] -ceq '--rm' -and $ordinary[-1] -ceq '/home/runner/run.sh') -Detail 'ordinary lifecycle changed'
     Assert-Case -Name 'diagnostic lifecycle omits auto-removal and preserves resource and mount arguments' `
         -Passed ($diagnostic -notcontains '--rm' -and ($ordinary[2..5] -join '|') -ceq ($diagnostic[1..4] -join '|') -and
-            ($ordinary[6..($ordinary.Count - 2)] -join '|') -ceq ($diagnostic[7..($diagnostic.Count - 4)] -join '|') -and
+            ($ordinary[6..($ordinary.Count - 6)] -join '|') -ceq ($diagnostic[7..($diagnostic.Count - 6)] -join '|') -and
             $diagnostic[5] -ceq '--label' -and $diagnostic[6] -ceq 'runners.diagnostic-lifecycle=1' -and $ordinary -notcontains '--label') -Detail 'diagnostics changed limits, mounts or registration'
     Assert-Case -Name 'raw launcher needs second opt-in and missing collector has a fallback' `
-        -Passed (-not $diagnostic[-1].Contains(' raw-run') -and $raw[-1].Contains(' raw-run') -and $diagnostic[-1].Contains('exec /home/runner/run.sh')) -Detail 'wrong diagnostic launcher'
+        -Passed (-not $diagnostic[-4].Contains(' raw-run') -and $raw[-4].Contains(' raw-run') -and $diagnostic[-4].Contains('exec /home/runner/run.sh')) -Detail 'wrong diagnostic launcher'
 
     Test-DiagnosticTarCase -Case 'accepts regular metrics' -Name 'metrics.txt' -Size 15 -Accepted $true
     Test-DiagnosticTarCase -Case 'accepts Docker directory-relative metrics' -Name './metrics.txt' -Size 0 -Accepted $true
