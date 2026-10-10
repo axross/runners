@@ -418,7 +418,7 @@ function Complete-SlotWorker {
     }
 }
 
-Write-Information "Runner supervisor starting: $(@($plan.Repositories).Count) repositories, image $($plan.ImageName)."
+Write-Information "Runner supervisor starting: $(@($plan.Repositories).Count) entries, image $($plan.ImageName)."
 
 # one entry that cannot start (a missing token file, a volume that cannot be
 # created, a stale container that cannot be listed) is skipped with a warning

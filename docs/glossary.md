@@ -34,24 +34,31 @@ containers, together with the scripts under `hosts/<platform>/`. The first
 platform is Windows with Docker Desktop, under `hosts/windows-docker-desktop/`.
 
 **Host Configuration** - the machine-local JSON file, kept outside the repository,
-that names a runner host's image and lists its **Target Repositories**. The
+that names a runner host's image and lists its **Execution Pools** for
+**Target Repositories**. The
 **Supervisor** and the host's other scripts read it.
 
-**Target Repository** - a GitHub repository a runner host serves: one entry of the
-**Host Configuration**, with its own **Slots**, token, **Custom Labels**, and
-cache volumes.
+**Target Repository** - a GitHub repository a runner host serves. Its
+**Execution Pools** share one repository-scoped token file.
+
+**Execution Pool** - one entry of the **Host Configuration**, with its own
+**Slots**, registration labels, and
+container, runner, and cache-volume namespace.
+
+**Routing Label** - the label a workflow uses in `runs-on` to select an
+**Execution Pool**. Missing or empty host `labels` default to `axpc`; a non-empty
+list supplies that pool's routing labels instead.
 
 **Custom Label** - an optional runner label an entry of the **Host Configuration**
-adds to the default `self-hosted`, `linux`, `x64`, and `axpc`. A workflow lists
-`axpc` or a custom label in `runs-on` to choose that host for its **Target
-Repository**.
+lists beside `self-hosted`, `linux`, and `x64`. A workflow
+can use a custom label to select that pool for its **Target Repository**.
 
 **Slot** - one concurrent runner position on a runner host. A host with two slots
 can run two jobs at once; each slot starts a fresh ephemeral runner when its
 previous one exits.
 
-**Supervisor** - the host-side script that keeps each slot of every **Target
-Repository** filled: it requests a **JIT Config** with that repository's token,
+**Supervisor** - the host-side script that keeps each slot of every **Execution
+Pool** filled: it requests a **JIT Config** with the target repository's token,
 starts a runner container, waits for it to exit, and repeats.
 
 **Shared Volume** - storage, such as a named Docker volume for a package cache,

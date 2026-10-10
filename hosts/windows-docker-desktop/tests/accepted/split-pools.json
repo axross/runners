@@ -1,0 +1,25 @@
+{
+  "imageName": "actions-runner:local",
+  "repositories": [
+    {
+      "owner": "example-owner",
+      "repository": "example-repo",
+      "name": "example-general",
+      "slots": 3,
+      "tokenPath": "C:\\path\\to\\example-repo.token",
+      "labels": ["axpc", "example-general-route"],
+      "volumes": [{ "suffix": "npm", "mountPath": "/home/runner/.npm" }]
+    },
+    {
+      "owner": "Example-Owner",
+      "repository": "EXAMPLE-REPO",
+      "name": "example-android",
+      "slots": 1,
+      "tokenPath": "C:\\PATH\\to\\EXAMPLE-REPO.token",
+      "labels": ["example-android-route"],
+      "volumes": [{ "suffix": "npm", "mountPath": "/home/runner/.npm" }],
+      "diagnostics": true,
+      "diagnosticDirectory": "C:\\example-evidence"
+    }
+  ]
+}

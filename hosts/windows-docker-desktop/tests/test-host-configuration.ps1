@@ -59,11 +59,10 @@ function Assert-Case {
 
 # each fixture maps to the text its rejection message must contain.
 $rejections = [ordered]@{
-    'default-labels-only.json'       = @('repositories[0].labels:', 'is always added')
-    'labels-not-list.json'           = @('repositories[0].labels: must be a list of custom labels')
-    'labels-null.json'               = @('repositories[0].labels: must be a list of custom labels')
-    'axpc-label.json'                = @("repositories[0].labels: 'AXPC' is always added")
-    'duplicate-repository.json'      = @('repositories[1].repository: duplicate repository')
+    'default-labels-only.json'       = @('repositories[0].labels:', 'list only non-platform labels')
+    'labels-not-list.json'           = @('repositories[0].labels: must be a list of labels')
+    'labels-null.json'               = @('repositories[0].labels: must be a list of labels')
+    'duplicate-repository.json'      = @('repositories[1].labels: ambiguous same-repository routing')
     'colliding-name.json'            = @('repositories[1].name: name', 'collides')
     'colliding-name-nested.json'     = @('repositories[1].name: name', 'collides')
     'colliding-name-nested-reverse.json' = @('repositories[1].name: name', 'collides')
@@ -118,13 +117,15 @@ Assert-Case -Name 'every fixture has an expectation' -Passed ($unlisted.Count -e
 $acceptances = [ordered]@{
     'no-labels-field.json' = @{ Contains = @("labels:            self-hosted, linux, x64, axpc`n"); Lacks = @() }
     'empty-labels.json'   = @{ Contains = @("labels:            self-hosted, linux, x64, axpc`n"); Lacks = @() }
-    'no-volumes.json'     = @{ Contains = @('Host configuration is valid: 1 repositories', 'cpus:              2', 'memory:            8 GB'); Lacks = @('volume:') }
+    'axpc-label.json'     = @{ Contains = @("labels:            self-hosted, linux, x64, AXPC, example-label-one`n"); Lacks = @() }
+    'no-volumes.json'     = @{ Contains = @('Host configuration is valid: 1 entries', 'cpus:              2', 'memory:            8 GB'); Lacks = @('volume:') }
     'unc-token-path.json' = @{ Contains = @('token file:        \\example-server\example-share\example-repo-one.token'); Lacks = @() }
     'max-slots.json'      = @{ Contains = @('slots:             16'); Lacks = @() }
     'explicit-limits.json' = @{ Contains = @('cpus:              1.5', 'memory:            16 GB'); Lacks = @('cpus:              2') }
     'limit-bounds.json'   = @{ Contains = @('cpus:              64', 'memory:            256 GB'); Lacks = @() }
     'max-name-length.json' = @{ Contains = @("name:              $('n' * 64)"); Lacks = @() }
-    'similar-names.json'  = @{ Contains = @('Host configuration is valid: 3 repositories', "name:              example-repos`n"); Lacks = @() }
+    'similar-names.json'  = @{ Contains = @('Host configuration is valid: 3 entries', "name:              example-repos`n"); Lacks = @() }
+    'split-pools.json'    = @{ Contains = @('entries, image actions-runner:local', 'labels:            self-hosted, linux, x64, example-android-route', 'slots:             3'); Lacks = @('example-android-route, axpc') }
 }
 
 foreach ($fixture in $acceptances.Keys) {
@@ -241,6 +242,59 @@ Assert-Case -Name 'slot job arguments carry the entry, the slot, and the limits'
         -and ($workerArguments.Labels -join ',') -ceq ($limitsEntry.Labels -join ',') -and ($workerArguments.Mounts -join ',') -ceq ($mountArguments -join ',') `
         -and $workerArguments.ImageName -ceq 'actions-runner:local' -and $workerArguments.InitialBackoffSeconds -eq 5 -and $workerArguments.MaxBackoffSeconds -eq 300) `
     -Detail (($workerArguments.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join '; ')
+
+$poolFixture = Join-Path $acceptedDirectory 'split-pools.json'
+$poolPlan = Read-HostConfiguration -Path $poolFixture
+$general = $poolPlan.Repositories[0]
+$android = $poolPlan.Repositories[1]
+Assert-Case -Name 'split pools preserve general capacity and exclusively route Android to one slot' `
+    -Passed ($general.Slots -eq 3 -and $android.Slots -eq 1 -and $poolPlan.ImageName -ceq 'actions-runner:local' `
+        -and ($general.Labels -join ',') -ceq 'self-hosted,linux,x64,axpc,example-general-route' `
+        -and ($android.Labels -join ',') -ceq 'self-hosted,linux,x64,example-android-route' `
+        -and $general.TokenPath -eq $android.TokenPath -and -not $general.Diagnostics -and $android.Diagnostics `
+        -and $general.Volumes[0].Name -ceq 'example-general-npm' -and $android.Volumes[0].Name -ceq 'example-android-npm') `
+    -Detail 'split-pool compatibility, routing, credentials or storage isolation changed'
+foreach ($entry in $poolPlan.Repositories) {
+    $arguments = Get-SlotWorkerArgument -Plan $poolPlan -Entry $entry -Slot 1 -ScriptRoot 'C:\host' `
+        -RunCommand '/home/runner/run.sh' -JitConfigVariable 'ACTIONS_RUNNER_INPUT_JITCONFIG' -InitialBackoffSeconds 5 -MaxBackoffSeconds 300
+    $run = @(Get-JobContainerArgument -Name (Get-JobContainerName -EntryName $entry.Name -Slot 1) `
+        -Cpus (Format-CpuCount -Cpus $arguments.Cpus) -CpusetCpus '5,11' -MemoryGb $arguments.MemoryGb -ImageName $arguments.ImageName `
+        -JitConfigVariable $arguments.JitConfigVariable -RunCommand $arguments.RunCommand -Diagnostics $arguments.Diagnostics)
+    Assert-Case -Name "$($entry.Name) launches the global image in its own lifecycle" `
+        -Passed ($run -ccontains 'actions-runner:local' -and ($run -contains '--rm') -eq (-not $entry.Diagnostics) `
+            -and ($run -contains 'runners.diagnostic-lifecycle=1') -eq $entry.Diagnostics) -Detail ($run -join ' ')
+    $other = $general
+    if ($entry.Name -eq $general.Name) { $other = $android }
+    Assert-Case -Name "$($entry.Name) cleanup excludes the other pool" `
+        -Passed ((Get-JobContainerName -EntryName $other.Name -Slot 1) -cnotmatch (Get-JobContainerNamePattern -Name $entry.Name)) `
+        -Detail 'cleanup crossed pool names'
+}
+
+$poolRejections = @(
+    @{ Name = 'duplicate routes'; Field = 'labels'; Change = { param($c) $c.repositories[1].labels = @('AXPC') } },
+    @{ Name = 'general carries Android route'; Field = 'labels'; Change = { param($c) $c.repositories[0].labels += 'EXAMPLE-ANDROID-ROUTE' } },
+    @{ Name = 'Android carries general custom route'; Field = 'labels'; Change = { param($c) $c.repositories[1].labels += 'example-general-route' } },
+    @{ Name = 'Android carries axpc'; Field = 'labels'; Change = { param($c) $c.repositories[1].labels += 'axpc' } },
+    @{ Name = 'duplicate label'; Field = 'labels'; Change = { param($c) $c.repositories[1].labels += 'EXAMPLE-ANDROID-ROUTE' } },
+    @{ Name = 'shared custom alias'; Field = 'labels'; Change = { param($c) $c.repositories[0].labels += 'shared'; $c.repositories[1].labels += 'SHARED' } },
+    @{ Name = 'same repository with different token'; Field = 'tokenPath'; Change = { param($c) $c.repositories[1].tokenPath = 'C:\path\to\other.token' } },
+    @{ Name = 'cross repository with shared token'; Field = 'tokenPath'; Change = { param($c) $c.repositories[1].repository = 'other-repo' } },
+    @{ Name = 'colliding pool names'; Field = 'name'; Change = { param($c) $c.repositories[1].name = 'example-general-nested' } },
+    @{ Name = 'platform label'; Field = 'labels'; Change = { param($c) $c.repositories[1].labels = @('SELF-HOSTED') } },
+    @{ Name = 'removed entry image field'; Field = 'imageName'; Change = { param($c) $c.repositories[1] | Add-Member imageName 'actions-runner:other' } },
+    @{ Name = 'removed routing field'; Field = 'routingLabel'; Change = { param($c) $c.repositories[1] | Add-Member routingLabel 'other-route' } }
+)
+$poolScratch = [IO.Path]::GetTempFileName()
+try {
+    foreach ($case in $poolRejections) {
+        $config = Get-Content -LiteralPath $poolFixture -Raw | ConvertFrom-Json
+        & $case.Change $config
+        [IO.File]::WriteAllText($poolScratch, ($config | ConvertTo-Json -Depth 8), [Text.Encoding]::ASCII)
+        $result = Invoke-Validation -ConfigPath $poolScratch
+        Assert-Case -Name "rejects $($case.Name) before external effects" `
+            -Passed ($result.ExitCode -ne 0 -and $result.Text.Contains(".$($case.Field):")) -Detail $result.Text
+    }
+} finally { Remove-Item -LiteralPath $poolScratch -Force }
 
 # the stale-container cleanup matches only the containers Get-JobContainerName
 # gives this entry.

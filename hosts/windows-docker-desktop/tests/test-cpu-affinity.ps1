@@ -3,7 +3,8 @@ $ErrorActionPreference = 'Stop'
 $cpuScratch = Join-Path ([IO.Path]::GetTempPath()) "runners-cpu-$([Guid]::NewGuid().ToString('N'))"
 $null = New-Item -ItemType Directory -Path $cpuScratch
 try {
-    $config = Get-Content -LiteralPath $example -Raw | ConvertFrom-Json
+    $config = Get-Content -LiteralPath $poolFixture -Raw | ConvertFrom-Json
+    $config.imageName = 'actions-runner:synthetic'
     $config.repositories[0] | Add-Member -NotePropertyName cpus -NotePropertyValue 1.5 -Force
     $config.repositories[0].slots = 2
     $config.repositories[1] | Add-Member -NotePropertyName cpus -NotePropertyValue 1.0000000001 -Force
@@ -15,7 +16,7 @@ try {
     $summary = $validation.Text
     $counts = @([regex]::Matches($summary, 'affinity per slot: (\d+) CPUs') | ForEach-Object { $_.Groups[1].Value })
     $positions = @([regex]::Matches($summary, 'affinity position: (\d+)') | ForEach-Object { $_.Groups[1].Value })
-    Assert-Case -Name 'offline plan separates quota, raw ceiling cardinality and cumulative entry positions' `
+    Assert-Case -Name 'same-repository pools separate quota, raw ceiling cardinality and cumulative entry positions' `
         -Passed ($validation.ExitCode -eq 0 -and ($counts -join '|') -ceq '2|2' -and ($positions -join '|') -ceq '0|4' -and
             $summary.Contains("cpus:              1`n") -and $summary.Contains("cpus:              1.5`n") -and
             $summary.Contains('cpus is CPU-time quota') -and $summary.Contains('IDs discovered at launch')) -Detail 'quota rounded before ceiling or entry positions lost'
@@ -56,7 +57,7 @@ try {
             for ($slot = 1; $slot -le $entry.Slots; $slot++) {
                 $worker = Get-SlotWorkerArgument -Plan $cpuPlan -Entry $entry -Slot $slot -ScriptRoot $hostDirectory `
                     -RunCommand '/home/runner/run.sh' -JitConfigVariable 'ACTIONS_RUNNER_INPUT_JITCONFIG' -InitialBackoffSeconds 5 -MaxBackoffSeconds 300
-                $sets += Get-SlotCpuAffinity -ProbeName 'example-entry-cpu-probe-1' -ImageName 'actions-runner:synthetic' `
+                $sets += Get-SlotCpuAffinity -ProbeName 'example-entry-cpu-probe-1' -ImageName $worker.ImageName `
                     -Count ([int][Math]::Ceiling($worker.Cpus)) -Offset $worker.CpuAffinityOffset
             }
         }

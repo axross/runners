@@ -14,7 +14,8 @@
     nothing here calls Docker or GitHub, or reads a token file.
 #>
 
-$script:DefaultLabels = @('self-hosted', 'linux', 'x64', 'axpc')
+$script:PlatformLabels = @('self-hosted', 'linux', 'x64')
+$script:DefaultLabels = @($script:PlatformLabels) + @('axpc')
 $script:MaxSlots = 16
 # GitHub documents no limit for a runner's name. the runner name is the entry's
 # name plus a slot number and a 17-digit timestamp, so capping the entry name
@@ -106,21 +107,24 @@ function Test-IsObject {
     return $false
 }
 
-# returns the custom labels, an empty list when the field is absent or empty,
+# returns the registration labels, defaults when the field is absent or empty,
 # or $null after recording why a present list is unusable.
-function Get-CustomLabel {
+function Get-RegistrationLabel {
     param([Parameter(Mandatory)]$Node, [Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)]$Errors)
 
     $property = $Node.PSObject.Properties['labels']
     if ($null -eq $property) {
-        return , [string[]]@()
+        return , [string[]]$script:DefaultLabels
     }
     $raw = $property.Value
     if ($raw -isnot [array]) {
-        $Errors.Add("${Path}.labels: must be a list of custom labels")
+        $Errors.Add("${Path}.labels: must be a list of labels")
         return $null
     }
     $items = @($raw)
+    if ($items.Count -eq 0) {
+        return , [string[]]$script:DefaultLabels
+    }
 
     $valid = $true
     $seen = @{}
@@ -128,8 +132,8 @@ function Get-CustomLabel {
         if ($item -isnot [string] -or $item -cnotmatch $script:LabelPattern) {
             $Errors.Add("${Path}.labels: each label must be a string of letters, digits and . _ : / - starting with a letter or digit")
             $valid = $false
-        } elseif ($script:DefaultLabels -contains $item.ToLowerInvariant()) {
-            $Errors.Add("${Path}.labels: '$item' is always added, so list only custom labels")
+        } elseif ($script:PlatformLabels -contains $item) {
+            $Errors.Add("${Path}.labels: '$item' is always added, so list only non-platform labels")
             $valid = $false
         } elseif ($seen.ContainsKey($item.ToLowerInvariant())) {
             $Errors.Add("${Path}.labels: duplicate label '$item'")
@@ -142,7 +146,7 @@ function Get-CustomLabel {
     if (-not $valid) {
         return $null
     }
-    return , [string[]]$items
+    return , [string[]](@($script:PlatformLabels) + $items)
 }
 
 # returns the cache volume definitions as suffix and mount path pairs, or $null.
@@ -275,7 +279,7 @@ function Get-RepositoryPlan {
         -Pattern $script:RepositoryPattern -Expectation 'a GitHub repository name (letters, digits and . _ -)'
     $tokenPath = Get-StringField -Node $Node -Name 'tokenPath' -Path "$Path.tokenPath" -Errors $Errors `
         -Pattern $script:TokenPathPattern -Expectation 'an absolute Windows path, such as C:\path\to\file or \\server\share\file'
-    $labels = Get-CustomLabel -Node $Node -Path $Path -Errors $Errors
+    $labels = Get-RegistrationLabel -Node $Node -Path $Path -Errors $Errors
     $volumes = Get-VolumeDefinition -Node $Node -Path $Path -Errors $Errors
 
     $slots = Get-Field -Node $Node -Name 'slots' -Path "$Path.slots" -Errors $Errors
@@ -337,7 +341,7 @@ function Get-RepositoryPlan {
         Name       = $name
         Slots      = [int]$slots
         TokenPath  = $tokenPath
-        Labels     = [string[]](@($script:DefaultLabels) + @($labels))
+        Labels     = [string[]]$labels
         Cpus       = $cpus
         MemoryGb   = $memoryGb
         Volumes    = $volumePlan
@@ -353,10 +357,9 @@ function Test-NameCollision {
     return $First -eq $Second -or $First.StartsWith("$Second-") -or $Second.StartsWith("$First-")
 }
 
-# records a duplicate repository, a colliding name or a shared token file
-# between any two entries, against the later entry. volume names are the name
-# plus a suffix, so they cannot collide while the names do not. paths
-# compare case-insensitively because Windows file names do.
+# paths compare case-insensitively because Windows file names do. platform
+# labels cannot distinguish pools; every other shared label can route a job
+# to either pool, regardless of its intended routing label.
 function Test-EntryUniqueness {
     param([Parameter(Mandatory)][object[]]$Entries, [Parameter(Mandatory)]$Errors)
 
@@ -364,14 +367,19 @@ function Test-EntryUniqueness {
         for ($earlier = 0; $earlier -lt $later; $earlier++) {
             $a = $Entries[$earlier]
             $b = $Entries[$later]
-            if ("$($a.Owner)/$($a.Repository)".ToLowerInvariant() -eq "$($b.Owner)/$($b.Repository)".ToLowerInvariant()) {
-                $Errors.Add("$($b.Path).repository: duplicate repository '$($b.Owner)/$($b.Repository)', already listed at $($a.Path)")
-                continue
-            }
+            $sameRepository = "$($a.Owner)/$($a.Repository)" -eq "$($b.Owner)/$($b.Repository)"
             if (Test-NameCollision -First $a.Name -Second $b.Name) {
                 $Errors.Add("$($b.Path).name: name '$($b.Name)' collides with '$($a.Name)' at $($a.Path); set a distinct name on one entry")
             }
-            if ($a.TokenPath.ToLowerInvariant() -eq $b.TokenPath.ToLowerInvariant()) {
+            if ($sameRepository) {
+                if ($a.TokenPath -ne $b.TokenPath) {
+                    $Errors.Add("$($b.Path).tokenPath: pools for the same repository must use the same token file as $($a.Path)")
+                }
+                $overlap = @($b.Labels | Where-Object { $script:PlatformLabels -notcontains $_ -and $a.Labels -contains $_ })
+                if ($overlap.Count -gt 0) {
+                    $Errors.Add("$($b.Path).labels: ambiguous same-repository routing; labels '$($overlap -join ', ')' also appear at $($a.Path)")
+                }
+            } elseif ($a.TokenPath -eq $b.TokenPath) {
                 $Errors.Add("$($b.Path).tokenPath: token file '$($b.TokenPath)' is already used at $($a.Path); each repository needs its own token")
             }
         }
@@ -443,6 +451,17 @@ function Format-CpuCount {
     return $Cpus.ToString('0.#########', [System.Globalization.CultureInfo]::InvariantCulture)
 }
 
+function Get-SlotCpuAffinityOffset {
+    param([Parameter(Mandatory)]$Plan, [Parameter(Mandatory)]$Entry, [Parameter(Mandatory)][int]$Slot)
+
+    $offset = 0L
+    foreach ($preceding in $Plan.Repositories) {
+        if ($preceding.Name -ceq $Entry.Name) { break }
+        $offset += [long]$preceding.Slots * [int][Math]::Ceiling($preceding.Cpus)
+    }
+    return $offset + [long]($Slot - 1) * [int][Math]::Ceiling($Entry.Cpus)
+}
+
 # returns the arguments of a slot's background job, keyed by the worker script
 # block's parameter names and in their order. Start-Job binds them to those
 # parameters by position, so a value out of order reaches the wrong parameter.
@@ -460,12 +479,6 @@ function Get-SlotWorkerArgument {
         [int]$BackoffSeconds = $InitialBackoffSeconds
     )
 
-    $offset = 0L
-    foreach ($preceding in $Plan.Repositories) {
-        if ($preceding.Name -ceq $Entry.Name) { break }
-        $offset += [long]$preceding.Slots * [int][Math]::Ceiling($preceding.Cpus)
-    }
-    $offset += [long]($Slot - 1) * [int][Math]::Ceiling($Entry.Cpus)
     return [ordered]@{
         ScriptRoot            = $ScriptRoot
         Owner                 = $Entry.Owner
@@ -476,7 +489,7 @@ function Get-SlotWorkerArgument {
         EntryName             = $Entry.Name
         Labels                = $Entry.Labels
         Cpus                  = $Entry.Cpus
-        CpuAffinityOffset     = $offset
+        CpuAffinityOffset     = Get-SlotCpuAffinityOffset -Plan $Plan -Entry $Entry -Slot $Slot
         MemoryGb              = $Entry.MemoryGb
         Mounts                = $Mounts
         RunCommand            = $RunCommand
@@ -494,9 +507,8 @@ function Get-PlanSummary {
     param([Parameter(Mandatory)]$Plan)
 
     $lines = New-Object System.Collections.Generic.List[string]
-    $lines.Add("Host configuration is valid: $(@($Plan.Repositories).Count) repositories, image $($Plan.ImageName)")
+    $lines.Add("Host configuration is valid: $(@($Plan.Repositories).Count) entries, image $($Plan.ImageName)")
     $lines.Add('CPU policy: cpus is CPU-time quota; affinity count is ceiling(cpus), not reserved CPUs.')
-    $offset = 0L
     foreach ($entry in $Plan.Repositories) {
         $count = [int][Math]::Ceiling($entry.Cpus)
         $lines.Add('')
@@ -508,14 +520,13 @@ function Get-PlanSummary {
         $lines.Add("  containers:        $($entry.Name)-<index>-<timestamp>")
         $lines.Add("  cpus:              $(Format-CpuCount -Cpus $entry.Cpus)")
         $lines.Add("  affinity per slot: $count CPUs; IDs discovered at launch")
-        $lines.Add("  affinity position: $offset")
+        $lines.Add("  affinity position: $(Get-SlotCpuAffinityOffset -Plan $Plan -Entry $entry -Slot 1)")
         $lines.Add("  memory:            $($entry.MemoryGb) GB")
         $lines.Add("  diagnostics:       $($entry.Diagnostics)")
         $lines.Add("  raw records:       $($entry.DiagnosticRawRecords)")
         foreach ($volume in $entry.Volumes) {
             $lines.Add("  volume:            $($volume.Name) -> $($volume.MountPath)")
         }
-        $offset += [long]$entry.Slots * $count
     }
     return $lines.ToArray()
 }
