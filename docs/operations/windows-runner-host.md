@@ -230,11 +230,16 @@ and image identities, settings/readbacks, gaps, and observed throughput/pressure
 there. Do not publish tokens, full inspect output, or raw private diagnostics.
 
 Rollback requires its own authorized maintenance window. Stop job admission,
-drain work, retain/recover marked diagnostics, and restore the saved pre-affinity
-host scripts together with their compatible configuration and image. Validate
-offline before restarting; there is no JSON switch to disable affinity. Restore
-no WSL allocation or Windows process-affinity setting: this feature changes
-neither. A failed runtime readback blocks rollout, not independent pool work.
+drain work, then cleanly stop the supervisor with Ctrl+C and retain/recover
+marked diagnostics before replacing scripts or images. Keep the weekly rebuild
+paused during rollback. Restore the saved pre-affinity host scripts together
+with their compatible configuration and image, validate offline, and only then
+restart the supervisor. Confirm the restored source/image identities and
+requested/effective CPU sets and quotas before resuming admission and the weekly
+rebuild; an empty requested cpuset is not an empty effective set. There is no
+JSON switch to disable affinity. Restore no WSL allocation or Windows
+process-affinity setting: this feature changes neither. A failed runtime
+readback blocks rollout, not independent pool work.
 
 ## Moving to the New Configuration Format
 
