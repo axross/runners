@@ -2,7 +2,7 @@
 <#
 .SYNOPSIS
     builds the runner image from the repository checkout this script runs from,
-    under the image name the host configuration gives.
+    under the image names the host configuration gives.
 
 .DESCRIPTION
     builds images/actions-runner exactly as the checkout holds it, so the runner
@@ -39,14 +39,18 @@ $BuildLabel = 'com.github.axross.runners.image=actions-runner'
 
 $plan = Read-HostConfiguration -Path $ConfigPath
 $imageDirectory = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '../../images/actions-runner')).Path
+$imageNames = @(@($plan.ImageName) + @($plan.Repositories | ForEach-Object { $_.ImageName }) | Select-Object -Unique)
+$arguments = @('build', '--pull', '--no-cache', '--label', $BuildLabel)
+foreach ($imageName in $imageNames) { $arguments += @('--tag', $imageName) }
+$arguments += $imageDirectory
 
-Write-Information "Building $($plan.ImageName) from $imageDirectory without the layer cache..."
-& docker build --pull --no-cache --label $BuildLabel --tag $plan.ImageName $imageDirectory
+Write-Information "Building $($imageNames -join ', ') from $imageDirectory without the layer cache..."
+& docker @arguments
 if ($LASTEXITCODE -ne 0) {
     throw "docker build failed with exit code $LASTEXITCODE."
 }
 
-Write-Information "Built $($plan.ImageName)."
+Write-Information "Built $($imageNames -join ', ')."
 
 # the build is done and the new image is in place, so a prune that fails is
 # reported without failing the task.

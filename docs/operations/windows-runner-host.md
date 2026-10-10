@@ -131,17 +131,20 @@ path as `-ConfigPath`. Start from
 and see the Host configuration section of the
 [host README](../../hosts/windows-docker-desktop/README.md) for every field. The rules that matter operationally:
 
-- **One entry per target repository**, each with its own `tokenPath`, `slots`,
-  optional custom `labels`, and `volumes`. An owner and repository pair listed twice is
-  rejected, and so are two entries that name the same token file, compared
-  without regard to case. `tokenPath` is an absolute Windows path, a drive
+- **One entry per execution pool**, each with its own `name`, `slots`,
+  optional image/routing overrides, custom `labels`, and `volumes`. Multiple
+  entries for the same owner/repository pair MUST use the same `tokenPath`;
+  different repositories MUST NOT share a token file, compared without regard
+  to case. `tokenPath` is an absolute Windows path, a drive
   letter and backslash or a UNC path; a relative path is rejected because a
   scheduled task's working directory is not the checkout.
 - **Unknown fields are rejected, not ignored.** A misspelled field such as `label`
   for `labels` fails validation naming the field, so a typo cannot silently drop
   a setting.
-- **Custom labels are optional.** Every registration carries `axpc`, so an entry
-  needs none; list one only to give a workflow a second name for that entry. What
+- **Custom labels are optional.** An entry defaults to `axpc`; `routingLabel`
+  replaces it while retaining `self-hosted`, `linux`, and `x64`. Same-repository
+  entries MUST NOT share any non-platform label. List a custom label only to
+  give a workflow another name for that pool. What
   a registration carries is in the Per-Repository Isolation on a Runner Host
   section of [Security](../conventions/security.md).
 - **Every entry has a `name`** that starts its container and runner names,
@@ -167,12 +170,80 @@ and see the Host configuration section of the
   host. The short container that resets volume ownership at startup has none.
 
 Check a configuration before using it. The command calls neither Docker nor
-GitHub, prints each repository's labels, name, container name pattern, CPU and
+GitHub, prints each entry's selected image, routing label, labels, name, container name pattern, CPU and
 memory limits, and volume names, and exits 1 naming the field of every problem:
 
 ```powershell
 .\supervisor.ps1 -ConfigPath C:\path\to\runner-host.json -ValidateOnly
 ```
+
+### Split a repository into general and Android pools
+
+Keep the general entry's existing name, slots, resource limits, labels, mounts,
+and diagnostic settings. Leave its image/routing fields absent to retain the
+root image and `axpc`. Add an entry for the same repository with a distinct
+non-nested name, the same token path, a separately selected `imageName`, a
+dedicated `routingLabel`, and `slots: 1`. For example, the added entry can be:
+
+```json
+{
+  "owner": "example-owner",
+  "repository": "example-repo",
+  "name": "example-android",
+  "tokenPath": "C:\\path\\to\\example-repo.token",
+  "imageName": "actions-runner:example-android",
+  "routingLabel": "example-android-route",
+  "slots": 1,
+  "volumes": []
+}
+```
+
+Use operator-local values, not these example names. Neither the image name nor
+the entry name identifies a workload to the supervisor. Set resource limits
+only from approved host evidence; a separate image does not reserve host memory.
+No shared SDK, workspace, or new persistent cache is needed. Existing storage
+rules apply independently to each entry; signing/deployment jobs MUST NOT mount
+less-trusted caches. Diagnostics remain independent per entry, with private
+retention keyed by its name even if two entries use the same private sink.
+
+Deployment and workflow execution require separate scoped authorization:
+
+1. Record the existing configuration, actual slots, image IDs and tagged
+   rollback images. Pause the weekly rebuild and wait for any rebuild to finish.
+2. Establish a quiet maintenance window: finish affected jobs, including old
+   workflow revisions still using the general label. Do not restart a busy
+   supervisor; stopping it stops every entry, not just Android. Do not restart
+   Docker or WSL for this change.
+3. Validate the split configuration, build its image selections, and restart
+   the supervisor only under the approved host-operation scope. Verify the
+   actual registrations: one Android slot, no `axpc` on Android, no dedicated
+   label on general runners, and no extra dedicated-label registrations on
+   this or another host. If runner-inventory access is unavailable, obtain
+   operator evidence instead of expanding permissions. Inspect immutable image
+   identities and enforced limits; a source test is not this readback.
+4. Enable consumer routing only after the pool is verified. Change only the
+   selected jobs' `runs-on` under that repository's approved plan. A missing
+   dedicated runner leaves jobs queued; do not fall back to general runners.
+5. With permission for named non-publishing executions, queue two Android
+   requests in distinct existing concurrency groups. Verify that their actual
+   execution intervals do not overlap and their existing artifact/alignment
+   checks pass. Run general CI alongside Android on its unchanged slots;
+   where at least two slots exist, verify two representative general jobs
+   overlap. Do not change cancellation rules or execute release publication
+   as a test. Stop after a failure and retain evidence rather than retrying
+   unboundedly.
+6. Record queue/build durations, effective labels/images/limits, actual host
+   concurrency, diagnostic gaps and rollback in the approved evidence
+   destination after human sanitization. Serialization success does not prove
+   OOM, and missing counters are not zero. Host pressure can still affect one
+   Android build beside general CI.
+
+For rollback, first finish affected jobs and obtain the required operation
+scope. Restore consumer routing and the saved host configuration/images in a
+quiet window, checking that no old dedicated job remains eligible for an
+unintended extra runner. Preserve general capacity and private evidence; remove
+only identified obsolete pool registrations/containers, never prune unrelated
+storage. Keep rebuilding paused until the intended image sources are restored.
 
 ## Moving to the New Configuration Format
 
@@ -222,7 +293,8 @@ change to `images\actions-runner\`:
 ```
 
 It builds the checkout's [`Dockerfile`](../../images/actions-runner/Dockerfile) under
-the configured `imageName`, with `docker build --pull --no-cache`. The runner
+the root `imageName` and every distinct per-entry `imageName` in one build,
+with `docker build --pull --no-cache` and multiple tags. The runner
 version and base image digest come from that Dockerfile; the script fetches no
 newer runner and does not update the checkout. The cache is ignored so that the
 operating system packages are installed again and pick up their updates; a failed
@@ -559,11 +631,11 @@ repositories are in [Security](../conventions/security.md).
 ## Health Checks
 
 - **GitHub:** a healthy host shows, under each repository's **Settings, Actions,
-  Runners**, `slots` runners, **Idle** when no job is queued and **Active** when
+  Runners**, the sum of its entries' `slots` runners, **Idle** when no job is queued and **Active** when
   one is running, because each slot registers a runner before it starts a
   container. Fewer than `slots`, and none in particular, mean the supervisor is not
   running or that repository's slots are failing; see Recovery.
-- **Machine:** `docker ps` shows `slots` running containers per repository, named
+- **Machine:** `docker ps` shows `slots` running containers per entry, named
   `<name>-<index>-<timestamp>`, whether idle or busy, since an idle container is
   a runner waiting for a job. None means the same as above.
   `Get-ScheduledTask actions-runner-supervisor | Select State` reports `Running`.
