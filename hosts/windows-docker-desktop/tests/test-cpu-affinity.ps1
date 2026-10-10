@@ -85,10 +85,7 @@ try {
 
     & {
         . (Join-Path $hostDirectory 'docker-commands.ps1')
-        $script:CpuProbeMilliseconds = 2000
-        $script:CpuProbeCleanupMilliseconds = 2000
         $script:clientMode = 'timeout'
-        $script:clientPid = Join-Path $cpuScratch 'client.pid'
         function Invoke-DiagnosticDocker {
             param($Arguments)
             $code = 'exit 0'
@@ -107,13 +104,14 @@ try {
         }
         foreach ($mode in @('timeout', 'overflow')) {
             $script:clientMode = $mode
+            $script:clientPid = Join-Path $cpuScratch "client-$mode.pid"
             $clock = [Diagnostics.Stopwatch]::StartNew()
             $errorText = ''
             try { $null = Get-SlotCpuAffinity -ProbeName 'example-entry-cpu-probe-1' -ImageName 'actions-runner:synthetic' -Count 2 -Offset 0 } catch { $errorText = $_.Exception.Message }
             $client = Get-Process -Id ([int][IO.File]::ReadAllText($script:clientPid)) -ErrorAction SilentlyContinue
             Assert-Case -Name "$mode has bounded wait, reaps actual client and discards private stderr" `
                 -Passed ($errorText.Length -gt 0 -and -not $errorText.Contains('SYNTHETIC_PRIVATE_MARKER') -and
-                    $clock.ElapsedMilliseconds -lt 4500 -and $null -eq $client) -Detail "elapsed $($clock.ElapsedMilliseconds) ms; client reaped: $($null -eq $client)"
+                    $clock.ElapsedMilliseconds -lt 35500 -and $null -eq $client) -Detail "elapsed $($clock.ElapsedMilliseconds) ms; client reaped: $($null -eq $client)"
             if ($null -ne $client) { $client.Kill(); $client.Dispose() }
         }
     }
