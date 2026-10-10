@@ -253,7 +253,7 @@ later host:
   entries for different repositories MUST NOT share it. Extra pools do not expand
   the token's repository authority.
 - A registration is made with the entry's own token and carries `self-hosted`,
-  `linux`, `x64`, and its `routingLabel` (`axpc` when absent), plus any labels the entry lists, so a job's runner
+  `linux`, `x64`, and the entry's `labels` (`axpc` when absent or empty), so a job's runner
   is identifiable. A job is assigned to a runner whose labels include every label
   in the job's `runs-on`, so a job naming only `self-hosted` also lands on the
   host; the label selects the host, it does not keep jobs off it. What keeps a
@@ -263,9 +263,10 @@ later host:
   another's runner. Platform labels alone do not isolate same-repository pools;
   consumers MUST include the intended pool's routing label. Same-repository
   entries MUST NOT share any non-platform label: even a shared custom alias
-  could make a job eligible for both pools. Custom labels MUST NOT include a
-  platform label, `axpc`, or the entry's own route. A dedicated route replaces
-  `axpc`; adding a label while retaining `axpc` does not reserve a pool.
+  could make a job eligible for both pools. A non-empty `labels` list replaces
+  `axpc` and MUST NOT include a platform label. General pools explicitly list
+  `axpc` alongside any aliases; dedicated pools omit it. Adding a label while
+  retaining `axpc` does not reserve a pool.
 - A registration reaches the runner through the `ACTIONS_RUNNER_INPUT_JITCONFIG`
   environment variable, set only in the process that starts the container and
   passed to `docker run` by name. It MUST NOT be placed on a command line, in a log
@@ -309,7 +310,7 @@ the owner and repository names of this repository and of `axross/skills`, and no
 consumer-specific owner, repository, image, volume, or task name. Examples use
 placeholders (`<owner>`, `<repo>`). A value a runner needs is read from the
 environment or supplied at run time. The one exception is the default runner label
-`axpc`, which the host scripts add when no routing override is supplied and which is committed by
+`axpc`, which the host scripts add when `labels` is absent or empty and which is committed by
 the maintainer's decision; every other host, consumer, or machine value stays a
 parameter.
 

@@ -34,7 +34,7 @@ containers, together with the scripts under `hosts/<platform>/`. The first
 platform is Windows with Docker Desktop, under `hosts/windows-docker-desktop/`.
 
 **Host Configuration** - the machine-local JSON file, kept outside the repository,
-that names a runner host's default image and lists its **Execution Pools** for
+that names a runner host's image and lists its **Execution Pools** for
 **Target Repositories**. The
 **Supervisor** and the host's other scripts read it.
 
@@ -42,14 +42,15 @@ that names a runner host's default image and lists its **Execution Pools** for
 **Execution Pools** share one repository-scoped token file.
 
 **Execution Pool** - one entry of the **Host Configuration**, with its own
-**Slots**, selected **Runner Image**, **Routing Label**, **Custom Labels**, and
+**Slots**, registration labels, and
 container, runner, and cache-volume namespace.
 
 **Routing Label** - the label a workflow uses in `runs-on` to select an
-**Execution Pool**. It defaults to `axpc`; an override replaces that label.
+**Execution Pool**. Missing or empty host `labels` default to `axpc`; a non-empty
+list supplies that pool's routing labels instead.
 
 **Custom Label** - an optional runner label an entry of the **Host Configuration**
-adds beside `self-hosted`, `linux`, `x64`, and its **Routing Label**. A workflow
+lists beside `self-hosted`, `linux`, and `x64`. A workflow
 can use a custom label to select that pool for its **Target Repository**.
 
 **Slot** - one concurrent runner position on a runner host. A host with two slots

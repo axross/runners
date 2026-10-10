@@ -7,7 +7,7 @@
       "name": "example-repo-one",
       "slots": 2,
       "tokenPath": "C:\\path\\to\\example-repo-one.token",
-      "labels": ["example-label-one"],
+      "labels": ["axpc", "example-label-one"],
       "volumes": [
         { "suffix": "toolcache", "mountPath": "/opt/hostedtoolcache" },
         { "suffix": "cargo", "mountPath": "/home/runner/.cargo" },
@@ -21,7 +21,7 @@
       "name": "example-repo-two",
       "slots": 1,
       "tokenPath": "C:\\path\\to\\example-repo-two.token",
-      "labels": ["example-label-two"],
+      "labels": ["axpc", "example-label-two"],
       "cpus": 4,
       "memoryGb": 16,
       "volumes": [

@@ -7,7 +7,7 @@
       "name": "example-general",
       "slots": 3,
       "tokenPath": "C:\\path\\to\\example-repo.token",
-      "labels": ["example-general-route"],
+      "labels": ["axpc", "example-general-route"],
       "volumes": [{ "suffix": "npm", "mountPath": "/home/runner/.npm" }]
     },
     {
@@ -16,8 +16,7 @@
       "name": "example-android",
       "slots": 1,
       "tokenPath": "C:\\PATH\\to\\EXAMPLE-REPO.token",
-      "imageName": "actions-runner:example-android",
-      "routingLabel": "example-android-route",
+      "labels": ["example-android-route"],
       "volumes": [{ "suffix": "npm", "mountPath": "/home/runner/.npm" }],
       "diagnostics": true,
       "diagnosticDirectory": "C:\\example-evidence"

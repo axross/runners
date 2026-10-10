@@ -15,8 +15,7 @@
 #>
 
 $script:PlatformLabels = @('self-hosted', 'linux', 'x64')
-$script:DefaultRoutingLabel = 'axpc'
-$script:DefaultLabels = @($script:PlatformLabels) + @($script:DefaultRoutingLabel)
+$script:DefaultLabels = @($script:PlatformLabels) + @('axpc')
 $script:MaxSlots = 16
 # GitHub documents no limit for a runner's name. the runner name is the entry's
 # name plus a slot number and a 17-digit timestamp, so capping the entry name
@@ -28,7 +27,7 @@ $script:DefaultMemoryGb = 8
 $script:MaxMemoryGb = 256
 
 $script:HostFields = @('imageName', 'repositories')
-$script:RepositoryFields = @('owner', 'repository', 'name', 'slots', 'tokenPath', 'labels', 'volumes', 'cpus', 'memoryGb', 'imageName', 'routingLabel', 'diagnostics', 'diagnosticDirectory', 'diagnosticRawRecords')
+$script:RepositoryFields = @('owner', 'repository', 'name', 'slots', 'tokenPath', 'labels', 'volumes', 'cpus', 'memoryGb', 'diagnostics', 'diagnosticDirectory', 'diagnosticRawRecords')
 $script:VolumeFields = @('suffix', 'mountPath')
 
 $script:NamePattern = '^[a-z0-9][a-z0-9-]*\z'
@@ -108,21 +107,24 @@ function Test-IsObject {
     return $false
 }
 
-# returns the custom labels, an empty list when the field is absent or empty,
+# returns the registration labels, defaults when the field is absent or empty,
 # or $null after recording why a present list is unusable.
-function Get-CustomLabel {
-    param([Parameter(Mandatory)]$Node, [Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)]$Errors, [string]$RoutingLabel)
+function Get-RegistrationLabel {
+    param([Parameter(Mandatory)]$Node, [Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)]$Errors)
 
     $property = $Node.PSObject.Properties['labels']
     if ($null -eq $property) {
-        return , [string[]]@()
+        return , [string[]]$script:DefaultLabels
     }
     $raw = $property.Value
     if ($raw -isnot [array]) {
-        $Errors.Add("${Path}.labels: must be a list of custom labels")
+        $Errors.Add("${Path}.labels: must be a list of labels")
         return $null
     }
     $items = @($raw)
+    if ($items.Count -eq 0) {
+        return , [string[]]$script:DefaultLabels
+    }
 
     $valid = $true
     $seen = @{}
@@ -130,8 +132,8 @@ function Get-CustomLabel {
         if ($item -isnot [string] -or $item -cnotmatch $script:LabelPattern) {
             $Errors.Add("${Path}.labels: each label must be a string of letters, digits and . _ : / - starting with a letter or digit")
             $valid = $false
-        } elseif ($script:DefaultLabels -contains $item -or $item -eq $RoutingLabel) {
-            $Errors.Add("${Path}.labels: '$item' is a platform, default routing or entry routing label, so list only custom labels")
+        } elseif ($script:PlatformLabels -contains $item) {
+            $Errors.Add("${Path}.labels: '$item' is always added, so list only non-platform labels")
             $valid = $false
         } elseif ($seen.ContainsKey($item.ToLowerInvariant())) {
             $Errors.Add("${Path}.labels: duplicate label '$item'")
@@ -144,7 +146,7 @@ function Get-CustomLabel {
     if (-not $valid) {
         return $null
     }
-    return , [string[]]$items
+    return , [string[]](@($script:PlatformLabels) + $items)
 }
 
 # returns the cache volume definitions as suffix and mount path pairs, or $null.
@@ -263,8 +265,7 @@ function Get-RepositoryPlan {
     param(
         [Parameter(Mandatory)]$Node,
         [Parameter(Mandatory)][string]$Path,
-        [Parameter(Mandatory)]$Errors,
-        [string]$DefaultImageName
+        [Parameter(Mandatory)]$Errors
     )
 
     if (-not (Test-IsObject -Node $Node -Path $Path -Errors $Errors)) {
@@ -278,20 +279,7 @@ function Get-RepositoryPlan {
         -Pattern $script:RepositoryPattern -Expectation 'a GitHub repository name (letters, digits and . _ -)'
     $tokenPath = Get-StringField -Node $Node -Name 'tokenPath' -Path "$Path.tokenPath" -Errors $Errors `
         -Pattern $script:TokenPathPattern -Expectation 'an absolute Windows path, such as C:\path\to\file or \\server\share\file'
-    $imageName = $DefaultImageName
-    if ($null -ne $Node.PSObject.Properties['imageName']) {
-        $imageName = Get-StringField -Node $Node -Name 'imageName' -Path "$Path.imageName" -Errors $Errors `
-            -Pattern $script:ImageNamePattern -Expectation 'a local Docker image name with a tag, such as name:tag'
-    }
-    $routingLabel = $script:DefaultRoutingLabel
-    if ($null -ne $Node.PSObject.Properties['routingLabel']) {
-        $routingLabel = Get-StringField -Node $Node -Name 'routingLabel' -Path "$Path.routingLabel" -Errors $Errors `
-            -Pattern $script:LabelPattern -Expectation 'a routing label of letters, digits and . _ : / - starting with a letter or digit'
-        if ($script:PlatformLabels -contains $routingLabel) {
-            $Errors.Add("$Path.routingLabel: must not be a platform label")
-        }
-    }
-    $labels = Get-CustomLabel -Node $Node -Path $Path -Errors $Errors -RoutingLabel $routingLabel
+    $labels = Get-RegistrationLabel -Node $Node -Path $Path -Errors $Errors
     $volumes = Get-VolumeDefinition -Node $Node -Path $Path -Errors $Errors
 
     $slots = Get-Field -Node $Node -Name 'slots' -Path "$Path.slots" -Errors $Errors
@@ -353,9 +341,7 @@ function Get-RepositoryPlan {
         Name       = $name
         Slots      = [int]$slots
         TokenPath  = $tokenPath
-        ImageName  = $imageName
-        RoutingLabel = $routingLabel
-        Labels     = [string[]](@($script:PlatformLabels) + @($routingLabel) + @($labels))
+        Labels     = [string[]]$labels
         Cpus       = $cpus
         MemoryGb   = $memoryGb
         Volumes    = $volumePlan
@@ -391,7 +377,7 @@ function Test-EntryUniqueness {
                 }
                 $overlap = @($b.Labels | Where-Object { $script:PlatformLabels -notcontains $_ -and $a.Labels -contains $_ })
                 if ($overlap.Count -gt 0) {
-                    $Errors.Add("$($b.Path).routingLabel: ambiguous same-repository routing; labels '$($overlap -join ', ')' also appear at $($a.Path)")
+                    $Errors.Add("$($b.Path).labels: ambiguous same-repository routing; labels '$($overlap -join ', ')' also appear at $($a.Path)")
                 }
             } elseif ($a.TokenPath -eq $b.TokenPath) {
                 $Errors.Add("$($b.Path).tokenPath: token file '$($b.TokenPath)' is already used at $($a.Path); each repository needs its own token")
@@ -436,7 +422,7 @@ function Read-HostConfiguration {
         }
         $index = 0
         foreach ($node in @($repositories)) {
-            $entry = Get-RepositoryPlan -Node $node -Path "repositories[$index]" -Errors $errors -DefaultImageName $imageName
+            $entry = Get-RepositoryPlan -Node $node -Path "repositories[$index]" -Errors $errors
             $index++
             if ($null -ne $entry) {
                 $entries.Add($entry)
@@ -473,6 +459,7 @@ function Get-SlotWorkerArgument {
         [Parameter(Mandatory)]$Entry,
         [Parameter(Mandatory)][int]$Slot,
         [Parameter(Mandatory)][string]$ScriptRoot,
+        [Parameter(Mandatory)][string]$ImageName,
         [string[]]$Mounts = @(),
         [Parameter(Mandatory)][string]$RunCommand,
         [Parameter(Mandatory)][string]$JitConfigVariable,
@@ -487,7 +474,7 @@ function Get-SlotWorkerArgument {
         Repository            = $Entry.Repository
         TokenPath             = $Entry.TokenPath
         Slot                  = $Slot
-        ImageName             = $Entry.ImageName
+        ImageName             = $ImageName
         EntryName             = $Entry.Name
         Labels                = $Entry.Labels
         Cpus                  = Format-CpuCount -Cpus $Entry.Cpus
@@ -508,12 +495,10 @@ function Get-PlanSummary {
     param([Parameter(Mandatory)]$Plan)
 
     $lines = New-Object System.Collections.Generic.List[string]
-    $lines.Add("Host configuration is valid: $(@($Plan.Repositories).Count) entries, default image $($Plan.ImageName)")
+    $lines.Add("Host configuration is valid: $(@($Plan.Repositories).Count) entries, image $($Plan.ImageName)")
     foreach ($entry in $Plan.Repositories) {
         $lines.Add('')
         $lines.Add("Repository $($entry.Owner)/$($entry.Repository)")
-        $lines.Add("  image:             $($entry.ImageName)")
-        $lines.Add("  routing label:     $($entry.RoutingLabel)")
         $lines.Add("  slots:             $($entry.Slots)")
         $lines.Add("  labels:            $($entry.Labels -join ', ')")
         $lines.Add("  token file:        $($entry.TokenPath)")

@@ -7,7 +7,7 @@
       "name": "example-repo-one",
       "slots": 1,
       "tokenPath": "C:\\path\\to\\example-repo-one.token",
-      "labels": ["example-label-one", "AXPC"],
+      "labels": ["AXPC", "example-label-one"],
       "volumes": [
         {
           "suffix": "npm",

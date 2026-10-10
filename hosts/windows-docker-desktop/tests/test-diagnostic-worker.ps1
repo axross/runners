@@ -34,7 +34,6 @@ function Invoke-DockerLogged {
     param($Arguments)
     $script:runs++
     if ($Arguments -notcontains '--rm' -or $Arguments -contains '--label') { throw 'ordinary lifecycle changed' }
-    if ($Arguments -cnotcontains 'actions-runner:local') { throw 'ordinary image selection changed' }
     if ([Environment]::GetEnvironmentVariable('ACTIONS_RUNNER_INPUT_JITCONFIG', 'Process') -ne $marker) { throw 'JIT environment missing' }
     return $script:runnerExit
 }
@@ -47,21 +46,20 @@ function Invoke-DiagnosticContainerRun {
     param($Arguments)
     $script:runs++
     if ($Arguments -contains '--rm' -or $Arguments -notcontains 'runners.diagnostic-lifecycle=1') { throw 'diagnostic lifecycle missing' }
-    if ($Arguments -cnotcontains 'actions-runner:example-android') { throw 'diagnostic image selection changed' }
     if ([Environment]::GetEnvironmentVariable('ACTIONS_RUNNER_INPUT_JITCONFIG', 'Process') -ne $marker) { throw 'JIT environment missing' }
     return $script:runnerExit
 }
 function Complete-DiagnosticContainer { throw 'worker attempted diagnostic finalization' }
 '@
 [IO.File]::WriteAllText((Join-Path $fixtureRoot 'diagnostic-export.ps1'), $diagnosticFixture, [Text.Encoding]::ASCII)
-$entry = [pscustomobject]@{ Owner = 'example-owner'; Repository = 'example-repo'; Name = 'example-entry'; TokenPath = $tokenPath; ImageName = 'actions-runner:example-android'; Labels = [string[]]@('example-android-route'); Cpus = 2; MemoryGb = 8; Diagnostics = $true; DiagnosticDirectory = 'C:\example-evidence'; DiagnosticRawRecords = $false }
+$entry = [pscustomobject]@{ Owner = 'example-owner'; Repository = 'example-repo'; Name = 'example-entry'; TokenPath = $tokenPath; Labels = [string[]]@('axpc'); Cpus = 2; MemoryGb = 8; Diagnostics = $true; DiagnosticDirectory = 'C:\example-evidence'; DiagnosticRawRecords = $false }
 foreach ($code in @(0, 7)) {
     $script:runs = 0
     $script:registrations = 0
     $script:runnerExit = $code
     $script:failJit = $true
     $script:delays = New-Object System.Collections.Generic.List[int]
-    $arguments = Get-SlotWorkerArgument -Entry $entry -Slot 1 -ScriptRoot $fixtureRoot -RunCommand '/home/runner/run.sh' -JitConfigVariable 'ACTIONS_RUNNER_INPUT_JITCONFIG' -InitialBackoffSeconds 5 -MaxBackoffSeconds 300
+    $arguments = Get-SlotWorkerArgument -Entry $entry -Slot 1 -ScriptRoot $fixtureRoot -ImageName 'actions-runner:local' -RunCommand '/home/runner/run.sh' -JitConfigVariable 'ACTIONS_RUNNER_INPUT_JITCONFIG' -InitialBackoffSeconds 5 -MaxBackoffSeconds 300
     $before = [Diagnostics.Stopwatch]::GetTimestamp()
     $values = @($arguments.Values)
     $output = @(& $workerScript @values)
@@ -70,13 +68,12 @@ foreach ($code in @(0, 7)) {
     Assert-Case -Name 'enabled worker clears JIT environment before publishing completion' -Passed ([string]::IsNullOrEmpty([Environment]::GetEnvironmentVariable('ACTIONS_RUNNER_INPUT_JITCONFIG', 'Process')) -and -not ($output -join '|').Contains($marker)) -Detail 'JIT leaked into completion'
 }
 $entry.Diagnostics = $false
-$entry.ImageName = 'actions-runner:local'
 $script:runs = 0
 $script:registrations = 0
 $script:failJit = $false
 $script:runnerExit = 7
 $script:delays.Clear()
-$arguments = Get-SlotWorkerArgument -Entry $entry -Slot 1 -ScriptRoot $fixtureRoot -RunCommand '/home/runner/run.sh' -JitConfigVariable 'ACTIONS_RUNNER_INPUT_JITCONFIG' -InitialBackoffSeconds 5 -MaxBackoffSeconds 300
+$arguments = Get-SlotWorkerArgument -Entry $entry -Slot 1 -ScriptRoot $fixtureRoot -ImageName 'actions-runner:local' -RunCommand '/home/runner/run.sh' -JitConfigVariable 'ACTIONS_RUNNER_INPUT_JITCONFIG' -InitialBackoffSeconds 5 -MaxBackoffSeconds 300
 $output = New-Object System.Collections.Generic.List[object]
 $values = @($arguments.Values)
 try { & $workerScript @values | ForEach-Object { $output.Add($_) } } catch { if ($_.Exception.Message -ne 'fixture loop finished') { throw } }

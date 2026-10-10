@@ -103,7 +103,7 @@ function Initialize-EntryVolume {
     }
 
     $arguments = @('run', '--rm', '--pull', 'never', '--user', 'root') + @(Get-MountArgument -Entry $Entry) +
-        @($Entry.ImageName, 'chown', 'runner:docker') + @($Entry.Volumes | ForEach-Object { $_.MountPath })
+        @($plan.ImageName, 'chown', 'runner:docker') + @($Entry.Volumes | ForEach-Object { $_.MountPath })
     $result = Invoke-Docker -Arguments $arguments
     if ($result.ExitCode -ne 0) {
         throw "Failed to set ownership of the cache volumes for $($Entry.Path): $($result.Output -join ' ')"
@@ -297,7 +297,7 @@ $WorkerScript = {
 function Invoke-SlotWorkerJob {
     param([Parameter(Mandatory)]$Entry, [Parameter(Mandatory)][int]$Slot, [int]$BackoffSeconds = $InitialBackoffSeconds)
 
-    $workerArguments = Get-SlotWorkerArgument -Entry $Entry -Slot $Slot -ScriptRoot $PSScriptRoot `
+    $workerArguments = Get-SlotWorkerArgument -Entry $Entry -Slot $Slot -ScriptRoot $PSScriptRoot -ImageName $plan.ImageName `
         -Mounts ([string[]]@(Get-MountArgument -Entry $Entry)) -RunCommand $RunCommand -JitConfigVariable $JitConfigVariable `
         -InitialBackoffSeconds $InitialBackoffSeconds -MaxBackoffSeconds $MaxBackoffSeconds -BackoffSeconds $BackoffSeconds
     Start-Job -ScriptBlock $WorkerScript -ArgumentList @($workerArguments.Values)
@@ -412,7 +412,7 @@ function Complete-SlotWorker {
     }
 }
 
-Write-Information "Runner supervisor starting: $(@($plan.Repositories).Count) entries, default image $($plan.ImageName)."
+Write-Information "Runner supervisor starting: $(@($plan.Repositories).Count) entries, image $($plan.ImageName)."
 
 # one entry that cannot start (a missing token file, a volume that cannot be
 # created, a stale container that cannot be listed) is skipped with a warning

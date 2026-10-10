@@ -12,7 +12,7 @@ recovery.
 | File                              | Purpose                                                                                                     |
 | --------------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | `supervisor.ps1`                  | Runs every repository's slots; `-ValidateOnly` checks a configuration and prints its plan                   |
-| `rebuild-image.ps1`               | Builds the image from this checkout under all configured image names                                        |
+| `rebuild-image.ps1`               | Builds the image from this checkout under the configured image name                                         |
 | `register-scheduled-tasks.ps1`    | Registers the supervisor and weekly rebuild tasks and restricts the token files                             |
 | `runner-host.example.json`        | An example host configuration with two repositories, using obviously fake names                             |
 | `host-configuration.ps1`          | Reads and validates a configuration, and builds a slot job's arguments from it; shared by the scripts above |
@@ -33,28 +33,31 @@ Their files are ASCII-only.
 A JSON file kept outside the repository; every script takes its path as
 `-ConfigPath`. Copy `runner-host.example.json` and replace every value.
 
-| Field                                 | Meaning                                                                                                                                                             |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `imageName`                           | The default local image tag; `rebuild-image.ps1` builds it and all entry overrides from the same Dockerfile                                                         |
-| `repositories[].owner`, `repository`  | The target repository. Multiple entries form separate pools with distinct routing labels and names, using the same token file                                       |
-| `repositories[].imageName`            | Optional local image selection for this entry; defaults to the root `imageName`                                                                                     |
-| `repositories[].routingLabel`         | Optional routing label, `axpc` by default; replaces rather than supplements `axpc`. Must not be a platform label                                                    |
-| `repositories[].slots`                | How many jobs run at once in this entry's pool, 1 to 16; set 1 for a dedicated serialized pool                                                                      |
-| `repositories[].tokenPath`            | An absolute Windows path (drive letter or UNC) to the file holding this repository's token, re-read on every registration                                           |
-| `repositories[].labels`               | Optional extra labels; must not include `self-hosted`, `linux`, `x64`, `axpc`, or the entry's routing label. Non-platform labels cannot overlap within a repository |
-| `repositories[].volumes`              | The cache volumes as `suffix` and `mountPath` pairs, possibly none                                                                                                  |
-| `repositories[].name`                 | Starts the entry's container, runner, and volume names. Lowercase letters, digits, and hyphens, at most 64 characters, not colliding with another entry's           |
-| `repositories[].cpus`                 | Optional CPU limit of each job container, a number above 0 and at most 64; 2 when absent                                                                            |
-| `repositories[].memoryGb`             | Optional memory limit of each job container in whole gigabytes, 1 to 256; 8 when absent                                                                             |
-| `repositories[].diagnostics`          | Optional boolean, false by default; enables the diagnostic runner lifecycle for this entry only                                                                     |
-| `repositories[].diagnosticDirectory`  | Required with diagnostics, invalid without them; absolute local Windows directory, outside the checkout, pre-created and private to the operator                    |
-| `repositories[].diagnosticRawRecords` | Optional boolean, false by default; separate opt-in for private daemon/crash records, invalid when true without diagnostics                                         |
+| Field                                 | Meaning                                                                                                                                                                               |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `imageName`                           | The local image tag every entry uses; `rebuild-image.ps1` builds it from the maintained Dockerfile                                                                                    |
+| `repositories[].owner`, `repository`  | The target repository. Multiple entries form separate pools with distinct routing labels and names, using the same token file                                                         |
+| `repositories[].slots`                | How many jobs run at once in this entry's pool, 1 to 16; set 1 for a dedicated serialized pool                                                                                        |
+| `repositories[].tokenPath`            | An absolute Windows path (drive letter or UNC) to the file holding this repository's token, re-read on every registration                                                             |
+| `repositories[].labels`               | Non-platform registration labels; absent or empty defaults to `axpc`, a non-empty list replaces it. Must not include `self-hosted`, `linux`, or `x64`, or overlap within a repository |
+| `repositories[].volumes`              | The cache volumes as `suffix` and `mountPath` pairs, possibly none                                                                                                                    |
+| `repositories[].name`                 | Starts the entry's container, runner, and volume names. Lowercase letters, digits, and hyphens, at most 64 characters, not colliding with another entry's                             |
+| `repositories[].cpus`                 | Optional CPU limit of each job container, a number above 0 and at most 64; 2 when absent                                                                                              |
+| `repositories[].memoryGb`             | Optional memory limit of each job container in whole gigabytes, 1 to 256; 8 when absent                                                                                               |
+| `repositories[].diagnostics`          | Optional boolean, false by default; enables the diagnostic runner lifecycle for this entry only                                                                                       |
+| `repositories[].diagnosticDirectory`  | Required with diagnostics, invalid without them; absolute local Windows directory, outside the checkout, pre-created and private to the operator                                      |
+| `repositories[].diagnosticRawRecords` | Optional boolean, false by default; separate opt-in for private daemon/crash records, invalid when true without diagnostics                                                           |
 
 An invalid configuration stops the script before it touches Docker, with one line
 per problem naming the field. A field not listed above is rejected as unknown, not
 ignored, so a misspelled `label` cannot silently drop `labels`. The isolation rules the validation enforces, such
 as what a registration carries and which names collide, are in the Per-Repository Isolation on a Runner Host
 section of [Security](../../docs/conventions/security.md).
+
+Non-empty `labels` lists no longer add to `axpc`. Before rollout, add `axpc`
+explicitly to an existing general entry's custom-label list to preserve its
+registration, as the example does. Missing or empty lists keep the default.
+The image, resource limits, slots, mounts, and diagnostic settings do not change.
 
 ## Commands
 
@@ -70,7 +73,7 @@ rest. Before the first command, follow the Allowing the Scripts to Run section o
 ```
 
 `-ValidateOnly` prints each repository's registration labels, name, container
-name pattern, selected image, routing label, CPU and memory limits, and volume names without calling Docker or
+name pattern, CPU and memory limits, and volume names, plus the global image, without calling Docker or
 GitHub, and exits 1 on an invalid configuration.
 It also prints the two diagnostic opt-ins, not the private evidence path.
 Validation checks types and normalized Windows checkout exclusion without opening
@@ -91,7 +94,7 @@ Each fixture in `tests/fixtures/` breaks one rule and must be rejected with a
 message naming its field; each in `tests/accepted/` sits on the edge of a rule
 (no volumes, a UNC token path, the maximum slot count, the limit bounds) and must
 be accepted; the example must be accepted with distinct names and volume names.
-The split-pool fixture checks image/routing defaults, isolated same-repository
+The split-pool fixture checks label defaults and replacement, isolated same-repository
 storage, a one-slot dedicated pool, and rejection of cross-route labels or
 incorrect token sharing. The test also builds a job container's `docker run` arguments, checks the limit
 flags, and checks that a slot job's positional arguments line up with its worker
