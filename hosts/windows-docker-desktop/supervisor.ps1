@@ -159,7 +159,8 @@ $WorkerScript = {
         [string]$ImageName,
         [string]$EntryName,
         [string[]]$Labels,
-        [string]$Cpus,
+        [double]$Cpus,
+        [long]$CpuAffinityOffset,
         [int]$MemoryGb,
         [string[]]$Mounts,
         [string]$RunCommand,
@@ -172,6 +173,7 @@ $WorkerScript = {
     )
 
     $ErrorActionPreference = 'Stop'
+    . (Join-Path $ScriptRoot 'host-configuration.ps1')
     . (Join-Path $ScriptRoot 'docker-commands.ps1')
     . (Join-Path $ScriptRoot 'diagnostic-export.ps1')
     if ($Diagnostics) {
@@ -235,9 +237,13 @@ $WorkerScript = {
 
     $backoffSeconds = $BackoffSeconds
     while ($true) {
-        if ((Invoke-Docker -Arguments @('info')).ExitCode -ne 0) {
-            Write-Warning "${label}: Docker is not responding - waiting."
-            Start-Sleep -Seconds 5
+        try {
+            $cpuset = Get-SlotCpuAffinity -ProbeName "$EntryName-cpu-probe-$Slot" -ImageName $ImageName `
+                -Count ([int][Math]::Ceiling($Cpus)) -Offset $CpuAffinityOffset
+        } catch {
+            Write-Warning "${label}: CPU discovery or probe cleanup failed; no registration - retrying in ${backoffSeconds}s."
+            Start-Sleep -Seconds $backoffSeconds
+            $backoffSeconds = [Math]::Min($backoffSeconds * 2, $MaxBackoffSeconds)
             continue
         }
 
@@ -259,7 +265,7 @@ $WorkerScript = {
 
         # the variable holds the registration only in this job's process
         # environment, where the Docker client reads it from.
-        $arguments = Get-JobContainerArgument -Name $jit.Name -Cpus $Cpus -MemoryGb $MemoryGb -Mounts $Mounts `
+        $arguments = Get-JobContainerArgument -Name $jit.Name -Cpus (Format-CpuCount -Cpus $Cpus) -CpusetCpus $cpuset -MemoryGb $MemoryGb -Mounts $Mounts `
             -JitConfigVariable $JitConfigVariable -ImageName $ImageName -RunCommand $RunCommand `
             -Diagnostics $Diagnostics -DiagnosticRawRecords $DiagnosticRawRecords
         [Environment]::SetEnvironmentVariable($JitConfigVariable, $jit.EncodedJitConfig, 'Process')
@@ -297,7 +303,7 @@ $WorkerScript = {
 function Invoke-SlotWorkerJob {
     param([Parameter(Mandatory)]$Entry, [Parameter(Mandatory)][int]$Slot, [int]$BackoffSeconds = $InitialBackoffSeconds)
 
-    $workerArguments = Get-SlotWorkerArgument -Entry $Entry -Slot $Slot -ScriptRoot $PSScriptRoot -ImageName $plan.ImageName `
+    $workerArguments = Get-SlotWorkerArgument -Plan $plan -Entry $Entry -Slot $Slot -ScriptRoot $PSScriptRoot `
         -Mounts ([string[]]@(Get-MountArgument -Entry $Entry)) -RunCommand $RunCommand -JitConfigVariable $JitConfigVariable `
         -InitialBackoffSeconds $InitialBackoffSeconds -MaxBackoffSeconds $MaxBackoffSeconds -BackoffSeconds $BackoffSeconds
     Start-Job -ScriptBlock $WorkerScript -ArgumentList @($workerArguments.Values)
@@ -530,6 +536,8 @@ try {
             Wait-Job -Job $worker.Job -Timeout 30 | Out-Null
             Remove-Job -Job $worker.Job -Force -ErrorAction SilentlyContinue
         }
+        try { Invoke-CpuProbeRemoval -Name "$($worker.Entry.Name)-cpu-probe-$($worker.Slot)" }
+        catch { Write-Warning "$($worker.Key): probe removal unconfirmed; next launch must reconcile it." }
     }
     Get-EventSubscriber | Unregister-Event -ErrorAction SilentlyContinue
     Write-Information 'Runner supervisor stopped.'

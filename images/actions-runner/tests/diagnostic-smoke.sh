@@ -21,6 +21,10 @@ tar -cf - images/actions-runner/runner-diagnostics.cpp images/actions-runner/tes
 cat > "$work/run.sh" <<'RUNNER'
 #!/usr/bin/env bash
 set -euo pipefail
+if [ "${CPU_AFFINITY_TEST:-}" = wait ]; then
+  bash /home/runner/cpu-affinity-readback.sh
+  exec sleep 60
+fi
 mkdir -p /home/runner/.gradle/daemon/fixture
 printf '%s\n' "$DIAGNOSTIC_TEST_MARKER" > /home/runner/.gradle/daemon/fixture/daemon-99.out.log
 printf '%s\n' "$DIAGNOSTIC_TEST_MARKER" > /tmp/hs_err_pid99.log
@@ -31,10 +35,14 @@ if [ "$DIAGNOSTIC_TEST_MODE" = wait ]; then
 fi
 exit "$DIAGNOSTIC_TEST_MODE"
 RUNNER
+cp images/actions-runner/tests/cpu-affinity-readback.sh "$work/cpu-affinity-readback.sh"
 docker build --network none --tag "$candidate" --file - "$work" <<DOCKERFILE
 FROM $image
 COPY --chown=runner:docker --chmod=0755 run.sh /home/runner/run.sh
+COPY --chown=runner:docker --chmod=0755 cpu-affinity-readback.sh /home/runner/cpu-affinity-readback.sh
 DOCKERFILE
+
+pwsh -NoProfile -NonInteractive -File images/actions-runner/tests/cpu-affinity-smoke.ps1 -ImageName "$candidate"
 
 for mode in 0 7 wait abrupt observer-failure raw; do
   name="diagnostic-$suffix-$mode"

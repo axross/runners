@@ -226,6 +226,14 @@ result. The smoke test uses no network or mounts and checks:
 - Arm64 C++ compile/link and ELF properties for both NDKs.
 - Absence of image-declared volumes and entrypoints, and of generated Gradle user-home state.
 - Isolation of SDK, JDK, and ZIP mutations between fresh containers.
+- Actual host launch-contract CPU affinity for ordinary, diagnostic, and raw
+  modes, compared with a quota-only control. It verifies requested Docker settings,
+  parent/child process sets, effective cgroup cpuset and quota, distributed slots,
+  capacity rejection, and refused startup on mismatch or Docker rejection.
+  Processor API counts (`nproc`, `getconf`) are separate observations, not
+  guaranteed compiler worker counts. A daemon exposing fewer than two or at least
+  64 CPUs cannot cover this smoke's subset/capacity controls and fails as
+  incomplete evidence; unsupported cgroup readback does too.
 
 The download test rejects corrupt
 NDK input before extraction and checks that non-x64 NDK installation is skipped.

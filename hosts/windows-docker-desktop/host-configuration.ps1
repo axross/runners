@@ -448,10 +448,10 @@ function Format-CpuCount {
 # parameters by position, so a value out of order reaches the wrong parameter.
 function Get-SlotWorkerArgument {
     param(
+        [Parameter(Mandatory)]$Plan,
         [Parameter(Mandatory)]$Entry,
         [Parameter(Mandatory)][int]$Slot,
         [Parameter(Mandatory)][string]$ScriptRoot,
-        [Parameter(Mandatory)][string]$ImageName,
         [string[]]$Mounts = @(),
         [Parameter(Mandatory)][string]$RunCommand,
         [Parameter(Mandatory)][string]$JitConfigVariable,
@@ -460,16 +460,23 @@ function Get-SlotWorkerArgument {
         [int]$BackoffSeconds = $InitialBackoffSeconds
     )
 
+    $offset = 0L
+    foreach ($preceding in $Plan.Repositories) {
+        if ($preceding.Name -ceq $Entry.Name) { break }
+        $offset += [long]$preceding.Slots * [int][Math]::Ceiling($preceding.Cpus)
+    }
+    $offset += [long]($Slot - 1) * [int][Math]::Ceiling($Entry.Cpus)
     return [ordered]@{
         ScriptRoot            = $ScriptRoot
         Owner                 = $Entry.Owner
         Repository            = $Entry.Repository
         TokenPath             = $Entry.TokenPath
         Slot                  = $Slot
-        ImageName             = $ImageName
+        ImageName             = $Plan.ImageName
         EntryName             = $Entry.Name
         Labels                = $Entry.Labels
-        Cpus                  = Format-CpuCount -Cpus $Entry.Cpus
+        Cpus                  = $Entry.Cpus
+        CpuAffinityOffset     = $offset
         MemoryGb              = $Entry.MemoryGb
         Mounts                = $Mounts
         RunCommand            = $RunCommand
@@ -488,7 +495,10 @@ function Get-PlanSummary {
 
     $lines = New-Object System.Collections.Generic.List[string]
     $lines.Add("Host configuration is valid: $(@($Plan.Repositories).Count) repositories, image $($Plan.ImageName)")
+    $lines.Add('CPU policy: cpus is CPU-time quota; affinity count is ceiling(cpus), not reserved CPUs.')
+    $offset = 0L
     foreach ($entry in $Plan.Repositories) {
+        $count = [int][Math]::Ceiling($entry.Cpus)
         $lines.Add('')
         $lines.Add("Repository $($entry.Owner)/$($entry.Repository)")
         $lines.Add("  slots:             $($entry.Slots)")
@@ -497,12 +507,15 @@ function Get-PlanSummary {
         $lines.Add("  name:              $($entry.Name)")
         $lines.Add("  containers:        $($entry.Name)-<index>-<timestamp>")
         $lines.Add("  cpus:              $(Format-CpuCount -Cpus $entry.Cpus)")
+        $lines.Add("  affinity per slot: $count CPUs; IDs discovered at launch")
+        $lines.Add("  affinity position: $offset")
         $lines.Add("  memory:            $($entry.MemoryGb) GB")
         $lines.Add("  diagnostics:       $($entry.Diagnostics)")
         $lines.Add("  raw records:       $($entry.DiagnosticRawRecords)")
         foreach ($volume in $entry.Volumes) {
             $lines.Add("  volume:            $($volume.Name) -> $($volume.MountPath)")
         }
+        $offset += [long]$entry.Slots * $count
     }
     return $lines.ToArray()
 }
