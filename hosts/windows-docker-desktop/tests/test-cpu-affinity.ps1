@@ -11,10 +11,13 @@ try {
     $configPath = Join-Path $cpuScratch 'plan.json'
     $config | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $configPath -Encoding ASCII
     $cpuPlan = Read-HostConfiguration -Path $configPath
-    $summary = (Get-PlanSummary -Plan $cpuPlan) -join "`n"
+    $validation = Invoke-Validation -ConfigPath $configPath
+    $summary = $validation.Text
+    $counts = @([regex]::Matches($summary, 'affinity per slot: (\d+) CPUs') | ForEach-Object { $_.Groups[1].Value })
+    $positions = @([regex]::Matches($summary, 'affinity position: (\d+)') | ForEach-Object { $_.Groups[1].Value })
     Assert-Case -Name 'offline plan separates quota, raw ceiling cardinality and cumulative entry positions' `
-        -Passed ($cpuPlan.Repositories[0].CpuAffinityCount -eq 2 -and $cpuPlan.Repositories[0].CpuAffinityOffset -eq 0 -and
-            $cpuPlan.Repositories[1].CpuAffinityCount -eq 2 -and $cpuPlan.Repositories[1].CpuAffinityOffset -eq 4 -and
+        -Passed ($validation.ExitCode -eq 0 -and ($counts -join '|') -ceq '2|2' -and ($positions -join '|') -ceq '0|4' -and
+            $summary.Contains("cpus:              1`n") -and $summary.Contains("cpus:              1.5`n") -and
             $summary.Contains('cpus is CPU-time quota') -and $summary.Contains('IDs discovered at launch')) -Detail 'quota rounded before ceiling or entry positions lost'
 
     & {
@@ -49,7 +52,15 @@ try {
             }
         }
         $sets = @()
-        foreach ($offset in @(0, 2, 4, 6, 5)) {
+        foreach ($entry in $cpuPlan.Repositories) {
+            for ($slot = 1; $slot -le $entry.Slots; $slot++) {
+                $worker = Get-SlotWorkerArgument -Plan $cpuPlan -Entry $entry -Slot $slot -ScriptRoot $hostDirectory `
+                    -RunCommand '/home/runner/run.sh' -JitConfigVariable 'ACTIONS_RUNNER_INPUT_JITCONFIG' -InitialBackoffSeconds 5 -MaxBackoffSeconds 300
+                $sets += Get-SlotCpuAffinity -ProbeName 'example-entry-cpu-probe-1' -ImageName 'actions-runner:synthetic' `
+                    -Count ([int][Math]::Ceiling($worker.Cpus)) -Offset $worker.CpuAffinityOffset
+            }
+        }
+        foreach ($offset in @(6, 5)) {
             $sets += Get-SlotCpuAffinity -ProbeName 'example-entry-cpu-probe-1' -ImageName 'actions-runner:synthetic' -Count 2 -Offset $offset
         }
         Assert-Case -Name 'measured sparse inventory distributes slots, exactly fills capacity and wraps overcommit' `

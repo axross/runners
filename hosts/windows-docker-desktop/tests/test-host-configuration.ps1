@@ -217,7 +217,7 @@ $workerBlock = $workerAssignment.Right.Find({ param($node) $node -is [System.Man
 $workerParameters = @($workerBlock.ScriptBlock.ParamBlock.Parameters)
 $workerParameterNames = @($workerParameters | ForEach-Object { $_.Name.VariablePath.UserPath })
 
-$workerArguments = Get-SlotWorkerArgument -Entry $limitsEntry -Slot 3 -ScriptRoot 'C:\host' -ImageName $limitsPlan.ImageName `
+$workerArguments = Get-SlotWorkerArgument -Plan $limitsPlan -Entry $limitsEntry -Slot 3 -ScriptRoot 'C:\host' `
     -Mounts $mountArguments -RunCommand '/home/runner/run.sh' -JitConfigVariable 'ACTIONS_RUNNER_INPUT_JITCONFIG' `
     -InitialBackoffSeconds 5 -MaxBackoffSeconds 300
 $workerArgumentNames = @($workerArguments.Keys)
@@ -233,9 +233,9 @@ for ($position = 0; $position -lt [Math]::Min($workerParameters.Count, $workerAr
     }
 }
 Assert-Case -Name 'slot job argument values fit their worker parameter types' -Passed ($misfits.Count -eq 0) -Detail "misfit: $($misfits -join ', ')"
-Assert-Case -Name 'slot job arguments carry the entry, the slot, and the formatted limits' `
-    -Passed ($workerArguments.Cpus -ceq '1.5' -and $workerArguments.MemoryGb -eq 16 -and $workerArguments.Slot -eq 3 `
-        -and $workerArguments.CpuAffinityCount -eq 2 -and $workerArguments.CpuAffinityOffset -eq 4 `
+Assert-Case -Name 'slot job arguments carry the entry, the slot, and the limits' `
+    -Passed ($workerArguments.Cpus -eq 1.5 -and $workerArguments.MemoryGb -eq 16 -and $workerArguments.Slot -eq 3 `
+        -and $workerArguments.CpuAffinityOffset -eq 4 `
         -and $workerArguments.EntryName -ceq 'example-repo-one' -and $workerArguments.Owner -ceq 'example-owner' `
         -and $workerArguments.Repository -ceq 'example-repo-one' -and $workerArguments.TokenPath -ceq $limitsEntry.TokenPath `
         -and ($workerArguments.Labels -join ',') -ceq ($limitsEntry.Labels -join ',') -and ($workerArguments.Mounts -join ',') -ceq ($mountArguments -join ',') `

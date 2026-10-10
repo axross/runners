@@ -9,6 +9,7 @@ $block = $assignment.Right.Find({ param($node) $node -is [Management.Automation.
 $workerScript = $block.ScriptBlock.GetScriptBlock()
 $fixtureRoot = Join-Path $Scratch 'worker'
 $null = New-Item -ItemType Directory -Path $fixtureRoot
+Copy-Item -LiteralPath (Join-Path $HostDirectory 'host-configuration.ps1') -Destination $fixtureRoot
 $tokenPath = Join-Path $fixtureRoot 'token'
 $marker = [Guid]::NewGuid().ToString('N')
 [IO.File]::WriteAllText($tokenPath, $marker, [Text.Encoding]::ASCII)
@@ -39,6 +40,7 @@ function Invoke-DockerLogged {
     $script:runs++
     if ($Arguments -notcontains '--rm' -or $Arguments -contains '--label') { throw 'ordinary lifecycle changed' }
     $script:selections.Add($Arguments[[Array]::IndexOf($Arguments, '--cpuset-cpus') + 1])
+    if ($Arguments[[Array]::IndexOf($Arguments, '--cpus') + 1] -cne '1') { throw 'quota formatting changed' }
     if ([Environment]::GetEnvironmentVariable('ACTIONS_RUNNER_INPUT_JITCONFIG', 'Process') -ne $marker) { throw 'JIT environment missing' }
     return $script:runnerExit
 }
@@ -52,13 +54,15 @@ function Invoke-DiagnosticContainerRun {
     $script:runs++
     if ($Arguments -contains '--rm' -or $Arguments -notcontains 'runners.diagnostic-lifecycle=1') { throw 'diagnostic lifecycle missing' }
     $script:selections.Add($Arguments[[Array]::IndexOf($Arguments, '--cpuset-cpus') + 1])
+    if ($Arguments[[Array]::IndexOf($Arguments, '--cpus') + 1] -cne '1') { throw 'quota formatting changed' }
     if ([Environment]::GetEnvironmentVariable('ACTIONS_RUNNER_INPUT_JITCONFIG', 'Process') -ne $marker) { throw 'JIT environment missing' }
     return $script:runnerExit
 }
 function Complete-DiagnosticContainer { throw 'worker attempted diagnostic finalization' }
 '@
 [IO.File]::WriteAllText((Join-Path $fixtureRoot 'diagnostic-export.ps1'), $diagnosticFixture, [Text.Encoding]::ASCII)
-$entry = [pscustomobject]@{ Owner = 'example-owner'; Repository = 'example-repo'; Name = 'example-entry'; TokenPath = $tokenPath; Labels = [string[]]@('axpc'); Cpus = 1.5; CpuAffinityCount = 2; CpuAffinityOffset = 2L; MemoryGb = 8; Diagnostics = $true; DiagnosticDirectory = 'C:\example-evidence'; DiagnosticRawRecords = $false }
+$entry = [pscustomobject]@{ Owner = 'example-owner'; Repository = 'example-repo'; Name = 'example-entry'; TokenPath = $tokenPath; Labels = [string[]]@('axpc'); Cpus = 1.0000000001; Slots = 1; MemoryGb = 8; Diagnostics = $true; DiagnosticDirectory = 'C:\example-evidence'; DiagnosticRawRecords = $false }
+$workerPlan = [pscustomobject]@{ ImageName = 'actions-runner:local'; Repositories = @([pscustomobject]@{ Name = 'preceding-entry'; Cpus = 0.5; Slots = 2 }, $entry) }
 foreach ($code in @(0, 7)) {
     $script:runs = 0
     $script:registrations = 0
@@ -68,7 +72,7 @@ foreach ($code in @(0, 7)) {
     $script:runnerExit = $code
     $script:failJit = $true
     $script:delays = New-Object System.Collections.Generic.List[int]
-    $arguments = Get-SlotWorkerArgument -Entry $entry -Slot 1 -ScriptRoot $fixtureRoot -ImageName 'actions-runner:local' -RunCommand '/home/runner/run.sh' -JitConfigVariable 'ACTIONS_RUNNER_INPUT_JITCONFIG' -InitialBackoffSeconds 5 -MaxBackoffSeconds 300
+    $arguments = Get-SlotWorkerArgument -Plan $workerPlan -Entry $entry -Slot 1 -ScriptRoot $fixtureRoot -RunCommand '/home/runner/run.sh' -JitConfigVariable 'ACTIONS_RUNNER_INPUT_JITCONFIG' -InitialBackoffSeconds 5 -MaxBackoffSeconds 300
     $before = [Diagnostics.Stopwatch]::GetTimestamp()
     $values = @($arguments.Values)
     $output = @(& $workerScript @values)
@@ -86,7 +90,7 @@ $script:selections.Clear()
 $script:failJit = $false
 $script:runnerExit = 7
 $script:delays.Clear()
-$arguments = Get-SlotWorkerArgument -Entry $entry -Slot 1 -ScriptRoot $fixtureRoot -ImageName 'actions-runner:local' -RunCommand '/home/runner/run.sh' -JitConfigVariable 'ACTIONS_RUNNER_INPUT_JITCONFIG' -InitialBackoffSeconds 5 -MaxBackoffSeconds 300
+$arguments = Get-SlotWorkerArgument -Plan $workerPlan -Entry $entry -Slot 1 -ScriptRoot $fixtureRoot -RunCommand '/home/runner/run.sh' -JitConfigVariable 'ACTIONS_RUNNER_INPUT_JITCONFIG' -InitialBackoffSeconds 5 -MaxBackoffSeconds 300
 $output = New-Object System.Collections.Generic.List[object]
 $values = @($arguments.Values)
 try { & $workerScript @values | ForEach-Object { $output.Add($_) } } catch { if ($_.Exception.Message -ne 'fixture loop finished') { throw } }

@@ -159,8 +159,7 @@ $WorkerScript = {
         [string]$ImageName,
         [string]$EntryName,
         [string[]]$Labels,
-        [string]$Cpus,
-        [int]$CpuAffinityCount,
+        [double]$Cpus,
         [long]$CpuAffinityOffset,
         [int]$MemoryGb,
         [string[]]$Mounts,
@@ -174,6 +173,7 @@ $WorkerScript = {
     )
 
     $ErrorActionPreference = 'Stop'
+    . (Join-Path $ScriptRoot 'host-configuration.ps1')
     . (Join-Path $ScriptRoot 'docker-commands.ps1')
     . (Join-Path $ScriptRoot 'diagnostic-export.ps1')
     if ($Diagnostics) {
@@ -239,7 +239,7 @@ $WorkerScript = {
     while ($true) {
         try {
             $cpuset = Get-SlotCpuAffinity -ProbeName "$EntryName-cpu-probe-$Slot" -ImageName $ImageName `
-                -Count $CpuAffinityCount -Offset $CpuAffinityOffset
+                -Count ([int][Math]::Ceiling($Cpus)) -Offset $CpuAffinityOffset
         } catch {
             Write-Warning "${label}: CPU discovery or probe cleanup failed; no registration - retrying in ${backoffSeconds}s."
             Start-Sleep -Seconds $backoffSeconds
@@ -265,7 +265,7 @@ $WorkerScript = {
 
         # the variable holds the registration only in this job's process
         # environment, where the Docker client reads it from.
-        $arguments = Get-JobContainerArgument -Name $jit.Name -Cpus $Cpus -CpusetCpus $cpuset -MemoryGb $MemoryGb -Mounts $Mounts `
+        $arguments = Get-JobContainerArgument -Name $jit.Name -Cpus (Format-CpuCount -Cpus $Cpus) -CpusetCpus $cpuset -MemoryGb $MemoryGb -Mounts $Mounts `
             -JitConfigVariable $JitConfigVariable -ImageName $ImageName -RunCommand $RunCommand `
             -Diagnostics $Diagnostics -DiagnosticRawRecords $DiagnosticRawRecords
         [Environment]::SetEnvironmentVariable($JitConfigVariable, $jit.EncodedJitConfig, 'Process')
@@ -303,7 +303,7 @@ $WorkerScript = {
 function Invoke-SlotWorkerJob {
     param([Parameter(Mandatory)]$Entry, [Parameter(Mandatory)][int]$Slot, [int]$BackoffSeconds = $InitialBackoffSeconds)
 
-    $workerArguments = Get-SlotWorkerArgument -Entry $Entry -Slot $Slot -ScriptRoot $PSScriptRoot -ImageName $plan.ImageName `
+    $workerArguments = Get-SlotWorkerArgument -Plan $plan -Entry $Entry -Slot $Slot -ScriptRoot $PSScriptRoot `
         -Mounts ([string[]]@(Get-MountArgument -Entry $Entry)) -RunCommand $RunCommand -JitConfigVariable $JitConfigVariable `
         -InitialBackoffSeconds $InitialBackoffSeconds -MaxBackoffSeconds $MaxBackoffSeconds -BackoffSeconds $BackoffSeconds
     Start-Job -ScriptBlock $WorkerScript -ArgumentList @($workerArguments.Values)
