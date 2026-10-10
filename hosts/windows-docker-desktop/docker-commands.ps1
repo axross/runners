@@ -302,6 +302,7 @@ if [ "$allowed" != "$expected" ]; then
 fi
 printf 'CPU affinity verified: %s\n' "$allowed"
 '@
+    $guard = $guard.Replace("`r`n", "`n")
 
     if ($Diagnostics) {
         $mode = ''
