@@ -33,20 +33,20 @@ Their files are ASCII-only.
 A JSON file kept outside the repository; every script takes its path as
 `-ConfigPath`. Copy `runner-host.example.json` and replace every value.
 
-| Field                                 | Meaning                                                                                                                                                                               |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `imageName`                           | The local image tag every entry uses; `rebuild-image.ps1` builds it from the maintained Dockerfile                                                                                    |
-| `repositories[].owner`, `repository`  | The target repository. Multiple entries form separate pools with distinct routing labels and names, using the same token file                                                         |
-| `repositories[].slots`                | How many jobs run at once in this entry's pool, 1 to 16; set 1 for a dedicated serialized pool                                                                                        |
-| `repositories[].tokenPath`            | An absolute Windows path (drive letter or UNC) to the file holding this repository's token, re-read on every registration                                                             |
-| `repositories[].labels`               | Non-platform registration labels; absent or empty defaults to `axpc`, a non-empty list replaces it. Must not include `self-hosted`, `linux`, or `x64`, or overlap within a repository |
-| `repositories[].volumes`              | The cache volumes as `suffix` and `mountPath` pairs, possibly none                                                                                                                    |
-| `repositories[].name`                 | Starts the entry's container, runner, and volume names. Lowercase letters, digits, and hyphens, at most 64 characters, not colliding with another entry's                             |
-| `repositories[].cpus`                 | Optional CPU limit of each job container, a number above 0 and at most 64; 2 when absent                                                                                              |
-| `repositories[].memoryGb`             | Optional memory limit of each job container in whole gigabytes, 1 to 256; 8 when absent                                                                                               |
-| `repositories[].diagnostics`          | Optional boolean, false by default; enables the diagnostic runner lifecycle for this entry only                                                                                       |
-| `repositories[].diagnosticDirectory`  | Required with diagnostics, invalid without them; absolute local Windows directory, outside the checkout, pre-created and private to the operator                                      |
-| `repositories[].diagnosticRawRecords` | Optional boolean, false by default; separate opt-in for private daemon/crash records, invalid when true without diagnostics                                                           |
+| Field                                 | Meaning                                                                                                                                                   |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `imageName`                           | The local image tag every entry uses; `rebuild-image.ps1` builds it from the maintained Dockerfile                                                        |
+| `repositories[].owner`, `repository`  | The target repository. Multiple entries can form separate execution pools                                                                                 |
+| `repositories[].slots`                | How many jobs run at once in this entry's pool, 1 to 16; set 1 for a dedicated serialized pool                                                            |
+| `repositories[].tokenPath`            | An absolute Windows path (drive letter or UNC) to the file holding this repository's token, re-read on every registration                                 |
+| `repositories[].labels`               | Non-platform registration labels; absent or empty defaults to `axpc`, a non-empty list replaces it                                                        |
+| `repositories[].volumes`              | The cache volumes as `suffix` and `mountPath` pairs, possibly none                                                                                        |
+| `repositories[].name`                 | Starts the entry's container, runner, and volume names. Lowercase letters, digits, and hyphens, at most 64 characters, not colliding with another entry's |
+| `repositories[].cpus`                 | Optional CPU limit of each job container, a number above 0 and at most 64; 2 when absent                                                                  |
+| `repositories[].memoryGb`             | Optional memory limit of each job container in whole gigabytes, 1 to 256; 8 when absent                                                                   |
+| `repositories[].diagnostics`          | Optional boolean, false by default; enables the diagnostic runner lifecycle for this entry only                                                           |
+| `repositories[].diagnosticDirectory`  | Required with diagnostics, invalid without them; absolute local Windows directory, outside the checkout, pre-created and private to the operator          |
+| `repositories[].diagnosticRawRecords` | Optional boolean, false by default; separate opt-in for private daemon/crash records, invalid when true without diagnostics                               |
 
 An invalid configuration stops the script before it touches Docker, with one line
 per problem naming the field. A field not listed above is rejected as unknown, not

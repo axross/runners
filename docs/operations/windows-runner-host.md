@@ -132,10 +132,8 @@ and see the Host configuration section of the
 [host README](../../hosts/windows-docker-desktop/README.md) for every field. The rules that matter operationally:
 
 - **One entry per execution pool**, each with its own `name`, `slots`,
-  `labels`, and `volumes`. Every entry uses the global `imageName`. Multiple
-  entries for the same owner/repository pair MUST use the same `tokenPath`;
-  different repositories MUST NOT share a token file, compared without regard
-  to case. `tokenPath` is an absolute Windows path, a drive
+  `labels`, and `volumes`. Every entry uses the global `imageName`.
+  `tokenPath` is an absolute Windows path, a drive
   letter and backslash or a UNC path; a relative path is rejected because a
   scheduled task's working directory is not the checkout.
 - **Unknown fields are rejected, not ignored.** A misspelled field such as `label`
@@ -145,9 +143,8 @@ and see the Host configuration section of the
   a non-empty list replaces that default while retaining `self-hosted`, `linux`,
   and `x64`. Before rollout, add `axpc` to each existing non-empty general
   custom-label list that lacks it; otherwise ordinary `axpc` jobs no longer
-  match that entry. Same-repository entries MUST NOT share any non-platform
-  label, including aliases. What
-  a registration carries is in the Per-Repository Isolation on a Runner Host
+  match that entry. Label and token isolation rules are in the
+  Per-Repository Isolation on a Runner Host
   section of [Security](../conventions/security.md).
 - **Every entry has a `name`** that starts its container and runner names,
   `<name>-<index>-<timestamp>` with a 1-based slot index, and its volume names,
@@ -636,8 +633,9 @@ repositories are in [Security](../conventions/security.md).
 - **GitHub:** a healthy host shows, under each repository's **Settings, Actions,
   Runners**, the sum of its entries' `slots` runners, **Idle** when no job is queued and **Active** when
   one is running, because each slot registers a runner before it starts a
-  container. Fewer than `slots`, and none in particular, mean the supervisor is not
-  running or that repository's slots are failing; see Recovery.
+  container. Fewer than that sum, and none in particular, mean the supervisor is
+  not running or one or more pools are failing. Compare runner-name prefixes
+  with each entry's `name` and `slots` to identify the affected pool; see Recovery.
 - **Machine:** `docker ps` shows `slots` running containers per entry, named
   `<name>-<index>-<timestamp>`, whether idle or busy, since an idle container is
   a runner waiting for a job. None means the same as above.
