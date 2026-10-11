@@ -40,6 +40,14 @@ function Invoke-Inspection {
     } finally { $ErrorActionPreference = $previous }
 }
 
+<#
+.SYNOPSIS
+    supplies the next disposable public-CLI input in the shared scratch file.
+.DESCRIPTION
+    callers must finish inspection before preparing another case. invalid shapes
+    are deliberately preserved for rejection tests. writes honor ShouldProcess;
+    serialization and file-write failures propagate to the test runner.
+#>
 function New-TestConfiguration {
     [CmdletBinding(SupportsShouldProcess)]
     param([object]$Sdk = 'C:\example-emulator\sdk', [object]$Avd = 'C:\example-emulator\avd', [string]$Text)
@@ -207,8 +215,11 @@ try {
         Copy-Item -LiteralPath (Join-Path $hostDirectory '../windows-docker-desktop/diagnostic-process-lifetime.ps1') -Destination $lifetimeCopy
         $faultWorker = @'
 $ErrorActionPreference = 'Stop'
-if ([Console]::In.ReadLine() -cne 'prerequisite-inventory-admitted') { exit 1 }
-$configurationPath = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String([Console]::In.ReadLine()))
+$inputReader = New-Object IO.StreamReader ([Console]::OpenStandardInput())
+try {
+    if ($inputReader.ReadLine() -cne 'prerequisite-inventory-admitted') { exit 1 }
+    $configurationPath = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($inputReader.ReadLine()))
+} finally { $inputReader.Dispose() }
 $directory = Split-Path -Parent $configurationPath
 [IO.File]::WriteAllText((Join-Path $directory 'worker.pid'), [string]$PID)
 $mode = [IO.File]::ReadAllText($configurationPath)

@@ -5,8 +5,11 @@ $WarningPreference = 'SilentlyContinue'
 
 # fixed admission precedes configuration I/O and every Windows or SDK observation.
 try {
-    if ([Console]::In.ReadLine() -cne 'prerequisite-inventory-admitted') { exit 1 }
-    $request = [Console]::In.ReadLine()
+    $inputReader = New-Object IO.StreamReader ([Console]::OpenStandardInput())
+    try {
+        if ($inputReader.ReadLine() -cne 'prerequisite-inventory-admitted') { exit 1 }
+        $request = $inputReader.ReadLine()
+    } finally { $inputReader.Dispose() }
     if ($null -eq $request -or $request.Length -gt 4096) { exit 1 }
     $configurationPath = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($request))
     if ($configurationPath.Length -gt 1024) { exit 1 }
