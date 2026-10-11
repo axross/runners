@@ -11,6 +11,9 @@ The runner image under [`images/actions-runner/`](../../images/actions-runner) a
 the Windows host scripts under
 [`hosts/windows-docker-desktop/`](../../hosts/windows-docker-desktop) exist and are
 reviewed against the sections on runner trust and shared storage below. The
+`hosts/windows-android-emulator/` surface provides prerequisite inventory only;
+its native emulator runtime and network protections are not implemented or
+verified. The
 agent-host configuration this repository is also for does not exist yet; those
 sections are the constraints it will be reviewed against.
 
@@ -170,7 +173,7 @@ This repository is public. GitHub advises against self-hosted runners on public
 repositories, because a pull request from a fork can run arbitrary code on the
 runner, and a persistent runner then lets that code outlive the job. Every
 workflow in this repository therefore runs on a GitHub-hosted runner
-(`ubuntu-latest`), its CI and its review alike. A `runs-on` naming `self-hosted`
+(`ubuntu-latest` or `windows-latest`), its CI and its review alike. A `runs-on` naming `self-hosted`
 is a review finding.
 
 That rule is about this repository's own jobs. A runner image or host script kept
@@ -302,6 +305,41 @@ deadlines, readback, and separately authorized real-host procedure are in
 [Windows Runner Host](../operations/windows-runner-host.md#automatic-cpu-affinity).
 CPU policy MUST NOT infer workload roles from names, tags, or labels, or alter
 consumer build flags, global WSL allocation, or Windows process affinity.
+
+## Windows Android Emulator Feasibility Is Not a Sandbox
+
+The initial emulator-host surface performs configuration validation and bounded
+read-only prerequisite inventory, not device launch or isolation setup. Its
+feasibility remains unverified. SDK metadata, binary presence, and synthetic
+fixtures MUST NOT be presented as proof of acceleration or network enforcement.
+[Windows Android Emulator Host](../operations/windows-android-emulator.md) owns
+the separately authorized real-host verification procedure and evidence handling.
+
+The proposed native host is limited to trusted, nonpublishing workloads. It uses
+dedicated SDK/AVD storage under the existing Windows account, not a separate OS
+security principal. Directory separation does not isolate personal files or
+privileges from a compromised host process. Restricting workloads to trusted jobs
+does not establish a malicious-code sandbox. Private repository visibility,
+authentication, and dependency pins do not establish that executable code or
+Android apps are safe. Untrusted/fork workloads and deployment-secret jobs are
+outside this scope.
+
+Any later runtime MUST enforce default Android-to-Windows loopback/private/LAN
+denial, except necessary host-internal transport and explicitly configured
+infrastructure. It MUST also enforce client raw/control-endpoint bypass denial.
+Both boundaries require enforcement outside Android/job configuration and
+real-host demonstration before readiness. Windows ADB port 5037 MUST NOT be a
+shared client service: device selection does not limit that server's authority.
+Loopback binding, encryption, or private-network policy alone does not prove
+filtering on alternate routes. These are requirements for later implementation,
+not protections this initial diagnostic supplies. The general Docker
+runner-container LAN-egress exception below is unchanged; no total
+client-container egress isolation is claimed.
+
+This repository's own emulator-related CI MUST stay on GitHub-hosted runners
+with synthetic fixtures/peers only. It MUST NOT receive personal-host access
+credentials, enrollment material, or a network path to that host. Real-host
+verification is a separately authorized operator action, not a public CI job.
 
 ## LAN Egress From Runner Containers (Accepted Risk)
 

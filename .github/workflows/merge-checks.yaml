@@ -64,8 +64,8 @@ jobs:
 
   # the host scripts target the Windows PowerShell 5.1 that ships with Windows
   # and that the scheduled tasks use, which the check job's PowerShell 7 does not
-  # cover. this runs only the configuration test, which calls neither Docker nor
-  # GitHub; Docker Desktop, Task Scheduler, and icacls are not exercised here.
+  # cover. synthetic fixtures never access the personal host or launch Android;
+  # Docker Desktop, Task Scheduler, and icacls are not exercised here.
   host-windows:
     name: Test Host Scripts On Windows PowerShell 5.1
     runs-on: windows-latest
@@ -75,8 +75,11 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Run Host Configuration Test
+      - name: Run Synthetic Host Tests
         shell: powershell
         run: |
           $PSVersionTable.PSVersion.ToString()
           powershell.exe -NoProfile -ExecutionPolicy Bypass -File hosts/windows-docker-desktop/tests/test-host-configuration.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File hosts/windows-android-emulator/tests/test-prerequisites.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
