@@ -205,7 +205,7 @@ if ([Console]::In.ReadLine() -cne 'prerequisite-inventory-admitted') { exit 1 }
 $configurationPath = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String([Console]::In.ReadLine()))
 $directory = Split-Path -Parent $configurationPath
 [IO.File]::WriteAllText((Join-Path $directory 'worker.pid'), [string]$PID)
-if ([IO.File]::ReadAllText($configurationPath) -in @('valid-facts', 'stderr')) {
+if ([IO.File]::ReadAllText($configurationPath) -in @('valid-facts', 'stderr', 'stderr-byte')) {
     foreach ($fact in @(
         'windowsVersion=10.0.0', 'windowsSku=unknown', 'powershellVersion=5.1.0',
         'osArchitecture=x64', 'processArchitecture=x64', 'hypervisorPresent=unknown',
@@ -217,6 +217,8 @@ if ([IO.File]::ReadAllText($configurationPath) -in @('valid-facts', 'stderr')) {
     )) { [Console]::Out.WriteLine($fact) }
     if ([IO.File]::ReadAllText($configurationPath) -eq 'stderr') {
         [Console]::Error.Write('synthetic-private-marker' + ('x' * 65537))
+    } elseif ([IO.File]::ReadAllText($configurationPath) -eq 'stderr-byte') {
+        [Console]::Error.Write('x')
     }
     exit 0
 }
@@ -235,7 +237,7 @@ switch ([IO.File]::ReadAllText($configurationPath)) {
 }
 '@
         [IO.File]::WriteAllText((Join-Path $copy 'prerequisite-inventory.ps1'), $faultWorker, $utf8)
-        foreach ($fault in @('valid-facts', 'invalid', 'overflow', 'timeout', 'stderr')) {
+        foreach ($fault in @('valid-facts', 'invalid', 'overflow', 'timeout', 'stderr', 'stderr-byte')) {
             foreach ($file in @('worker.pid', 'descendant.pid')) { Remove-Item -LiteralPath (Join-Path $scratch $file) -ErrorAction SilentlyContinue }
             [IO.File]::WriteAllText($config, $fault, $utf8)
             $result = Invoke-Inspection -Path $config -Validation $false -Script (Join-Path $copy 'inspect-prerequisites.ps1')
@@ -245,7 +247,7 @@ switch ([IO.File]::ReadAllText($configurationPath)) {
             } else {
                 Assert-Case "Windows $fault fails closed with bounded private output" ($result.ExitCode -ne 0 -and $result.Text.Contains('inventory_unavailable') -and -not $result.Text.Contains($marker) -and $result.Text.Length -lt 65536 -and $result.Milliseconds -lt 32000)
             }
-            $pidFiles = if ($fault -in @('valid-facts', 'stderr')) { @('worker.pid') } else { @('worker.pid', 'descendant.pid') }
+            $pidFiles = if ($fault -in @('valid-facts', 'stderr', 'stderr-byte')) { @('worker.pid') } else { @('worker.pid', 'descendant.pid') }
             foreach ($file in $pidFiles) {
                 $pidFile = Join-Path $scratch $file
                 $gone = $false
