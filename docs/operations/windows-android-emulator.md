@@ -55,12 +55,13 @@ From the full checkout's root in PowerShell, validate the file:
 .\hosts\windows-android-emulator\inspect-prerequisites.ps1 -ConfigPath C:\path\to\emulator-host.json -ValidateOnly
 ```
 
-`-ValidateOnly` reads the configuration only. It rejects unsafe or overlapping
-paths and unknown fields, and launches no SDK programs. Passing validation does
-not establish that directories exist, have safe effective access controls, or
-contain a usable toolchain. Do not add future profiles, ports, credentials, or
-lease settings to this initial configuration; their runtime schema does not
-exist yet.
+`-ValidateOnly` reads the configuration only. It rejects unsafe path syntax,
+lexically overlapping roots, and unknown fields, and launches no SDK programs.
+It does not resolve physical aliases such as junctions, SUBST drives, or alternate
+names, or establish ownership. Passing validation does not establish that
+directories exist, have safe effective access controls, or contain a usable
+toolchain. Do not add future profiles, ports, credentials, or lease settings to
+this initial configuration; their runtime schema does not exist yet.
 
 The existing `mise run test:host` task covers synthetic prerequisite CLI fixtures
 alongside the Docker runner host checks. Follow the root README's command and
@@ -90,6 +91,10 @@ timer. This is not a hard whole-invocation wall-clock guarantee; retain actual
 elapsed time and report overruns. It uses the existing Windows Job Object
 lifetime helper from the Docker host surface; copying the entry script alone
 is unsupported.
+
+The fixed inventory worker permits no stderr payload. Any worker stderr makes
+collection fail; it is not copied to the public report or drained without a
+byte limit.
 
 Read the reported gaps as unavailable observations, not as successful checks.
 The diagnostic always leaves feasibility unverified. Binary presence and

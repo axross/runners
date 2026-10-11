@@ -40,7 +40,6 @@ function Invoke-Inspection {
     } finally { $ErrorActionPreference = $previous }
 }
 
-# writes only synthetic fixture data into the disposable test area.
 function New-TestConfiguration {
     [CmdletBinding(SupportsShouldProcess)]
     param([object]$Sdk = 'C:\example-emulator\sdk', [object]$Avd = 'C:\example-emulator\avd', [string]$Text)
@@ -107,7 +106,7 @@ try {
         $result = Invoke-Inspection -Path (New-TestConfiguration -Text $invalidConfigurations[$index])
         Assert-Case "configuration shape case $index" ($result.ExitCode -ne 0 -and $result.Text.Contains('sdkRoot') -and $result.Text.Contains('avdRoot') -and -not $result.Text.Contains($marker) -and $result.Text.Length -lt 1024)
     }
-    $validJson = '{"avdRoot":"D:\\example-avd","sdk\u0052oot":"C:\\example-sdk"}'
+    $validJson = '{"avdRoot":"D:\\example-avd","sdk\u0052oot":"C:\\example-sdk-' + [char]0x00e9 + '"}'
     $result = Invoke-Inspection -Path (New-TestConfiguration -Text $validJson)
     Assert-Case 'field order and JSON character escapes preserve the schema' ($result.ExitCode -eq 0)
     foreach ($size in @(4096, 4097)) {
@@ -175,7 +174,7 @@ try {
             $result = Invoke-Inspection -Path $config -Validation $false
             $report = ConvertFrom-Json -InputObject $result.Text
             Assert-Case 'Windows reads allowlisted metadata, not SDK or Node programs' ($result.ExitCode -eq 0 -and $report.cleanup -eq 'confirmed' -and $report.feasibility -eq 'unverified' -and $report.facts.emulatorVersion -eq '35.1.2' -and $report.facts.platformToolsVersion -eq '35.0.1' -and $report.facts.commandLineToolsVersion -eq 'unknown' -and $report.facts.emulatorBinary -eq 'present' -and $report.facts.adbBinary -eq 'present' -and $report.facts.nodeBinary -eq 'present' -and $report.facts.nodeVersion -eq 'unknown' -and -not $result.Text.Contains($marker) -and -not $result.Text.Contains($scratch) -and -not (Test-Path -LiteralPath $sentinel) -and $result.Text.Length -lt 65536 -and $result.Milliseconds -lt 30000)
-            $metadataPrefix = "Pkg.Revision=35.1.2`nPkg.Desc="
+            $metadataPrefix = "Pkg.Revision=35.1.2`nPkg.Desc=" + [char]0x00e9
             foreach ($size in @(8192, 8193)) {
                 [IO.File]::WriteAllText((Join-Path $sdk 'emulator\source.properties'), ($metadataPrefix + ('x' * ($size - $utf8.GetByteCount($metadataPrefix)))), $utf8)
                 $result = Invoke-Inspection -Path $config -Validation $false
@@ -206,6 +205,21 @@ if ([Console]::In.ReadLine() -cne 'prerequisite-inventory-admitted') { exit 1 }
 $configurationPath = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String([Console]::In.ReadLine()))
 $directory = Split-Path -Parent $configurationPath
 [IO.File]::WriteAllText((Join-Path $directory 'worker.pid'), [string]$PID)
+if ([IO.File]::ReadAllText($configurationPath) -in @('valid-facts', 'stderr')) {
+    foreach ($fact in @(
+        'windowsVersion=10.0.0', 'windowsSku=unknown', 'powershellVersion=5.1.0',
+        'osArchitecture=x64', 'processArchitecture=x64', 'hypervisorPresent=unknown',
+        'virtualizationFirmwareEnabled=unknown', 'vmMonitorModeExtensions=unknown',
+        'secondLevelAddressTranslation=unknown', 'sdkRootDirectory=missing',
+        'avdRootDirectory=missing', 'emulatorVersion=missing', 'platformToolsVersion=missing',
+        'commandLineToolsVersion=missing', 'emulatorBinary=missing', 'adbBinary=missing',
+        'nodeBinary=missing', 'nodeVersion=missing'
+    )) { [Console]::Out.WriteLine($fact) }
+    if ([IO.File]::ReadAllText($configurationPath) -eq 'stderr') {
+        [Console]::Error.Write('synthetic-private-marker' + ('x' * 65537))
+    }
+    exit 0
+}
 $childSource = "[IO.File]::WriteAllText('" + (Join-Path $directory 'descendant.pid').Replace("'", "''") + "', [string]`$PID); Start-Sleep -Seconds 60"
 $info = New-Object Diagnostics.ProcessStartInfo
 $info.FileName = (Get-Process -Id $PID).Path
@@ -221,12 +235,18 @@ switch ([IO.File]::ReadAllText($configurationPath)) {
 }
 '@
         [IO.File]::WriteAllText((Join-Path $copy 'prerequisite-inventory.ps1'), $faultWorker, $utf8)
-        foreach ($fault in @('invalid', 'overflow', 'timeout')) {
+        foreach ($fault in @('valid-facts', 'invalid', 'overflow', 'timeout', 'stderr')) {
             foreach ($file in @('worker.pid', 'descendant.pid')) { Remove-Item -LiteralPath (Join-Path $scratch $file) -ErrorAction SilentlyContinue }
             [IO.File]::WriteAllText($config, $fault, $utf8)
             $result = Invoke-Inspection -Path $config -Validation $false -Script (Join-Path $copy 'inspect-prerequisites.ps1')
-            Assert-Case "Windows $fault fails closed with bounded private output" ($result.ExitCode -ne 0 -and $result.Text.Contains('inventory_unavailable') -and -not $result.Text.Contains($marker) -and $result.Text.Length -lt 65536 -and $result.Milliseconds -lt 32000)
-            foreach ($file in @('worker.pid', 'descendant.pid')) {
+            if ($fault -eq 'valid-facts') {
+                $report = ConvertFrom-Json -InputObject $result.Text
+                Assert-Case 'Windows fault peer positive control supplies acceptable complete facts' ($result.ExitCode -eq 0 -and $report.status -eq 'collected' -and $report.cleanup -eq 'confirmed' -and $report.feasibility -eq 'unverified' -and $report.facts.windowsVersion -eq '10.0.0')
+            } else {
+                Assert-Case "Windows $fault fails closed with bounded private output" ($result.ExitCode -ne 0 -and $result.Text.Contains('inventory_unavailable') -and -not $result.Text.Contains($marker) -and $result.Text.Length -lt 65536 -and $result.Milliseconds -lt 32000)
+            }
+            $pidFiles = if ($fault -in @('valid-facts', 'stderr')) { @('worker.pid') } else { @('worker.pid', 'descendant.pid') }
+            foreach ($file in $pidFiles) {
                 $pidFile = Join-Path $scratch $file
                 $gone = $false
                 if (Test-Path -LiteralPath $pidFile) {

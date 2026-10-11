@@ -72,8 +72,8 @@ function Read-PrerequisiteConfiguration {
     if (-not $match.Success) { throw 'sdkRoot, avdRoot: configuration requires exactly these two JSON string fields' }
     $configuration = @{}
     for ($index = 0; $index -lt 2; $index++) {
-        $key = @(ConvertFrom-Json -InputObject ('[' + $match.Groups['key'].Captures[$index].Value + ']'))[0]
-        $value = @(ConvertFrom-Json -InputObject ('[' + $match.Groups['value'].Captures[$index].Value + ']'))[0]
+        $key = @((ConvertFrom-Json -InputObject ('[' + $match.Groups['key'].Captures[$index].Value + ']')))[0]
+        $value = @((ConvertFrom-Json -InputObject ('[' + $match.Groups['value'].Captures[$index].Value + ']')))[0]
         if ($key -cnotin @('sdkRoot', 'avdRoot') -or $configuration.ContainsKey($key)) {
             throw 'sdkRoot, avdRoot: unknown or duplicate configuration fields'
         }

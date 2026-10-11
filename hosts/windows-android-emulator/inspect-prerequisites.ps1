@@ -72,7 +72,8 @@ try {
     $process.StartInfo = $info
     $null = $process.Start()
     $started = $true
-    $stderr = $process.StandardError.BaseStream.CopyToAsync([IO.Stream]::Null)
+    $errorByte = New-Object byte[] 1
+    $stderr = $process.StandardError.BaseStream.ReadAsync($errorByte, 0, 1)
     $job.Assign($process.Handle)
     $assigned = $true
     if ($clock.ElapsedMilliseconds -ge $workMilliseconds) { throw 'admission deadline' }
@@ -96,6 +97,7 @@ try {
     if ($process.ExitCode -ne 0) { throw 'worker failed' }
     $remaining = $workMilliseconds - $clock.ElapsedMilliseconds
     if ($remaining -le 0 -or -not $stderr.Wait([int]$remaining)) { throw 'stderr deadline' }
+    if ($stderr.GetAwaiter().GetResult() -ne 0) { throw 'unexpected worker stderr' }
 
     $version = '(?:unknown|missing|[0-9]{1,6}(?:\.[0-9]{1,6}){1,3})'
     $presence = '(?:present|missing|unknown)'
