@@ -15,6 +15,12 @@ supervisor, lease authority, relay, and common client are planned, not
 implemented or runnable. Consumer application compatibility, workflow adoption,
 and the other execution-pool plans remain separate work.
 
+Use an existing PowerShell session whose effective execution policy permits
+these local scripts, respecting file-origin and signature restrictions. This
+procedure does not require or authorize a policy change. If execution is
+blocked, stop and request separately scoped authorization rather than applying
+a policy bypass or unblocking files.
+
 ## Distinguish evidence and permissions
 
 Use the following evidence levels; success at one does not establish the next:

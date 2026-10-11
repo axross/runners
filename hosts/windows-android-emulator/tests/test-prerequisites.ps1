@@ -192,6 +192,12 @@ try {
             $result = Invoke-Inspection -Path $config -Validation $false
             $report = ConvertFrom-Json -InputObject $result.Text
             Assert-Case 'oversized metadata is unknown and absent metadata or Node is missing' ($result.ExitCode -eq 0 -and $report.facts.emulatorVersion -eq 'unknown' -and $report.facts.platformToolsVersion -eq 'missing' -and $report.facts.nodeBinary -eq 'missing' -and $report.facts.nodeVersion -eq 'missing')
+            $longSdk = (Join-Path $scratch 'long-sdk-').PadRight(220, 'x')
+            $null = New-Item -ItemType Directory -Path (Join-Path $longSdk 'emulator') -Force
+            [IO.File]::WriteAllText((Join-Path $longSdk 'emulator\source.properties'), 'Pkg.Revision=36.2.1', $utf8)
+            $result = Invoke-Inspection -Path (New-TestConfiguration -Sdk $longSdk -Avd $avd) -Validation $false
+            $report = ConvertFrom-Json -InputObject $result.Text
+            Assert-Case 'Windows accepted long SDK roots preserve readable child metadata' ($result.ExitCode -eq 0 -and $report.facts.sdkRootDirectory -eq 'present' -and $report.facts.emulatorVersion -eq '36.2.1' -and -not $result.Text.Contains($longSdk) -and -not (Test-Path -LiteralPath $sentinel))
         } finally { $env:PATH = $oldPath }
 
         $copy = Join-Path $scratch 'fault-host\hosts\windows-android-emulator'

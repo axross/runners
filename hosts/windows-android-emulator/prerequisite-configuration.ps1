@@ -30,7 +30,7 @@ function Read-BoundedPrerequisiteText {
 function ConvertTo-PrerequisiteRoot {
     param([string]$Value, [string]$Field)
 
-    if ($Value.Length -gt 240 -or $Value -cnotmatch '\A[A-Za-z]:\\' -or $Value.Length -le 3) {
+    if ($Value -cnotmatch '\A[A-Za-z]:\\' -or $Value.Length -le 3) {
         throw "$Field`: requires a non-root absolute local Windows directory"
     }
     $root = $Value.TrimEnd('\')
@@ -77,6 +77,7 @@ function Read-PrerequisiteConfiguration {
         if ($key -cnotin @('sdkRoot', 'avdRoot') -or $configuration.ContainsKey($key)) {
             throw 'sdkRoot, avdRoot: unknown or duplicate configuration fields'
         }
+        if ($value.Length -gt 240) { throw "$key`: directory exceeds character budget" }
         $configuration[$key] = ConvertTo-PrerequisiteRoot -Value $value -Field $key
     }
     if (Test-PrerequisiteRootIntersection -Left $configuration.sdkRoot -Right $configuration.avdRoot) {
