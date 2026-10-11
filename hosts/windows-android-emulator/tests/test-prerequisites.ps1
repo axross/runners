@@ -205,7 +205,8 @@ if ([Console]::In.ReadLine() -cne 'prerequisite-inventory-admitted') { exit 1 }
 $configurationPath = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String([Console]::In.ReadLine()))
 $directory = Split-Path -Parent $configurationPath
 [IO.File]::WriteAllText((Join-Path $directory 'worker.pid'), [string]$PID)
-if ([IO.File]::ReadAllText($configurationPath) -in @('valid-facts', 'stderr', 'stderr-byte')) {
+$mode = [IO.File]::ReadAllText($configurationPath)
+if ($mode -in @('valid-facts', 'invalid', 'stderr', 'stderr-byte')) {
     foreach ($fact in @(
         'windowsVersion=10.0.0', 'windowsSku=unknown', 'powershellVersion=5.1.0',
         'osArchitecture=x64', 'processArchitecture=x64', 'hypervisorPresent=unknown',
@@ -214,10 +215,13 @@ if ([IO.File]::ReadAllText($configurationPath) -in @('valid-facts', 'stderr', 's
         'avdRootDirectory=missing', 'emulatorVersion=missing', 'platformToolsVersion=missing',
         'commandLineToolsVersion=missing', 'emulatorBinary=missing', 'adbBinary=missing',
         'nodeBinary=missing', 'nodeVersion=missing'
-    )) { [Console]::Out.WriteLine($fact) }
-    if ([IO.File]::ReadAllText($configurationPath) -eq 'stderr') {
+    )) {
+        if ($mode -eq 'invalid' -and $fact -eq 'windowsVersion=10.0.0') { $fact = 'windowsVersion=synthetic-private-marker' }
+        [Console]::Out.WriteLine($fact)
+    }
+    if ($mode -eq 'stderr') {
         [Console]::Error.Write('synthetic-private-marker' + ('x' * 65537))
-    } elseif ([IO.File]::ReadAllText($configurationPath) -eq 'stderr-byte') {
+    } elseif ($mode -eq 'stderr-byte') {
         [Console]::Error.Write('x')
     }
     exit 0
@@ -230,9 +234,8 @@ $info.UseShellExecute = $false
 $null = [Diagnostics.Process]::Start($info)
 $clock = [Diagnostics.Stopwatch]::StartNew()
 while (-not [IO.File]::Exists((Join-Path $directory 'descendant.pid')) -and $clock.ElapsedMilliseconds -lt 5000) { Start-Sleep -Milliseconds 10 }
-switch ([IO.File]::ReadAllText($configurationPath)) {
+switch ($mode) {
     'overflow' { [Console]::Out.Write('synthetic-private-marker' + ('x' * 65537)); Start-Sleep -Seconds 60 }
-    'invalid' { [Console]::Error.WriteLine('synthetic-private-marker'); [Console]::Out.WriteLine('synthetic-private-marker=private'); exit 0 }
     default { Start-Sleep -Seconds 60 }
 }
 '@
@@ -247,7 +250,7 @@ switch ([IO.File]::ReadAllText($configurationPath)) {
             } else {
                 Assert-Case "Windows $fault fails closed with bounded private output" ($result.ExitCode -ne 0 -and $result.Text.Contains('inventory_unavailable') -and -not $result.Text.Contains($marker) -and $result.Text.Length -lt 65536 -and $result.Milliseconds -lt 32000)
             }
-            $pidFiles = if ($fault -in @('valid-facts', 'stderr', 'stderr-byte')) { @('worker.pid') } else { @('worker.pid', 'descendant.pid') }
+            $pidFiles = if ($fault -in @('valid-facts', 'invalid', 'stderr', 'stderr-byte')) { @('worker.pid') } else { @('worker.pid', 'descendant.pid') }
             foreach ($file in $pidFiles) {
                 $pidFile = Join-Path $scratch $file
                 $gone = $false

@@ -168,11 +168,9 @@ runner configuration to turn this check into a pass.
 ## Verify restricted transport and the network boundary
 
 The restricted SSH service, lease-aware relay, and client are not implemented.
-Do not expose Windows Android Debug Bridge (ADB) port 5037 as a shared service
-or substitute a raw SSH forward for the planned lease-aware service. A port or
-device serial is not an authorization boundary. Read
-[Security](../conventions/security.md) before preparing an authorized probe of
-the proposed boundary.
+[Security](../conventions/security.md) owns the endpoint-access constraints for
+this authorized probe of Windows Android Debug Bridge (ADB) transport. Do not
+substitute a raw SSH forward for the planned lease-aware service.
 
 First prove the permitted restricted path works using separate test identities
 and verified SSH host identity. Record the synthetic device's identity privately
