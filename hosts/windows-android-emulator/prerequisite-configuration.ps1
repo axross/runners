@@ -1,7 +1,13 @@
 #Requires -Version 5.1
 $ErrorActionPreference = 'Stop'
 
-# decodes at most the requested UTF-8 byte budget; malformed or excess data throws.
+<#
+.SYNOPSIS
+    reads bounded UTF-8 input, accepting an optional leading BOM.
+.DESCRIPTION
+    the byte budget includes any BOM. throws on unreadable input, excess bytes,
+    malformed UTF-8, or stream cleanup failure; no partial text is returned.
+#>
 function Read-BoundedPrerequisiteText {
     param([string]$Path, [int]$MaximumBytes)
 
@@ -26,7 +32,14 @@ function Read-BoundedPrerequisiteText {
     }
 }
 
-# checks Windows directory syntax without resolving a root or inspecting its storage.
+<#
+.SYNOPSIS
+    accepts a non-root local Windows directory and removes its trailing separator.
+.DESCRIPTION
+    throws for unsafe directory syntax without echoing the supplied value. Field
+    must be a public schema name. acceptance is lexical only: it establishes
+    neither physical alias separation, storage ownership, nor accessibility.
+#>
 function ConvertTo-PrerequisiteRoot {
     param([string]$Value, [string]$Field)
 
@@ -45,6 +58,13 @@ function ConvertTo-PrerequisiteRoot {
     return $root
 }
 
+<#
+.SYNOPSIS
+    checks equality or ancestry of normalized roots at directory boundaries.
+.DESCRIPTION
+    callers supply validated absolute Windows roots. comparison is case-insensitive
+    and lexical; a false result does not exclude physical aliases.
+#>
 function Test-PrerequisiteRootIntersection {
     param([string]$Left, [string]$Right)
 
@@ -53,7 +73,15 @@ function Test-PrerequisiteRootIntersection {
         $Right.StartsWith($Left.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)
 }
 
-# accepts only the two string fields; rejection messages never contain supplied keys or values.
+<#
+.SYNOPSIS
+    loads the two dedicated roots without inspecting or creating their storage.
+.DESCRIPTION
+    throws for unreadable, oversized, malformed, unknown or duplicate input,
+    unsafe roots, or lexical overlap with each other or a Windows checkout.
+    rejection messages omit supplied keys and values. accepted roots still need
+    independent ownership and physical-alias checks before host use.
+#>
 function Read-PrerequisiteConfiguration {
     param([string]$ConfigPath, [string]$CheckoutRoot)
 

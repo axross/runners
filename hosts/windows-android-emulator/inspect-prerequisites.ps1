@@ -8,7 +8,14 @@ $workMilliseconds = $totalMilliseconds - 5000
 $maximumOutputBytes = 65536
 $maximumConfigurationPathCharacters = 1024
 
-# reports only fixed status fields, never exception text or a configuration value.
+<#
+.SYNOPSIS
+    emits a public failure envelope that leaves feasibility unverified.
+.DESCRIPTION
+    callers supply only public status codes, never exception text or configuration
+    values. the envelope does not imply cleanup succeeded; serialization or output
+    errors propagate rather than producing a partial success report.
+#>
 function Write-PrerequisiteFailure {
     param([string]$Status)
 

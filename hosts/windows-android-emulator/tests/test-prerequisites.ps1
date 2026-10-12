@@ -25,7 +25,14 @@ function Assert-Case {
     else { Write-Output "FAIL  $Name"; $failures.Add($Name) }
 }
 
-# invokes a fresh public CLI and retains output for privacy assertions, not failure logging.
+<#
+.SYNOPSIS
+    captures a fresh public CLI's exit status, text, and elapsed milliseconds.
+.DESCRIPTION
+    nonzero CLI exits are observations for assertions, not terminating errors.
+    returned text can contain synthetic private markers and must not be logged
+    on failure. caller error preferences are restored even if invocation fails.
+#>
 function Invoke-Inspection {
     param([string]$Path, [bool]$Validation = $true, [string]$Script = $inspection)
 

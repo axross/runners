@@ -20,7 +20,15 @@ try {
     catch { exit 2 }
 } catch { exit 1 }
 
-# refuses network drives and reparse traversal; inaccessible paths remain unknown, not missing.
+<#
+.SYNOPSIS
+    reports presence only on fixed local storage without reparse traversal.
+.DESCRIPTION
+    missing paths and file/directory mismatches return missing. unsafe syntax,
+    network storage, reparse points, and inaccessible observations return unknown,
+    not proof of absence. this is a point-in-time observation, not an ownership
+    or race-free access guarantee.
+#>
 function Get-PrerequisitePathStatus {
     param([string]$Path, [bool]$Directory)
 
@@ -41,7 +49,15 @@ function Get-PrerequisitePathStatus {
     catch { return 'unknown' }
 }
 
-# accepts only one numeric Pkg.Revision in a fixed, byte-bounded source.properties file.
+<#
+.SYNOPSIS
+    reads numeric SDK version metadata without executing an SDK program.
+.DESCRIPTION
+    callers select a fixed source.properties path under the configured SDK.
+    missing or unsafe paths retain their presence status; unreadable, oversized,
+    malformed or ambiguous revision metadata returns unknown. a version is not
+    evidence of binary integrity or runtime compatibility.
+#>
 function Get-PrerequisiteSdkVersion {
     param([string]$Path)
 
@@ -58,7 +74,14 @@ function Get-PrerequisiteSdkVersion {
     } catch { return 'unknown' }
 }
 
-# preserves absent properties and inconsistent CPU reports instead of coercing them to false.
+<#
+.SYNOPSIS
+    preserves uncertainty and disagreement in observed boolean properties.
+.DESCRIPTION
+    empty observations or a missing/nonboolean property return unknown; differing
+    boolean observations return mixed. callers must not treat either status as
+    false or as proof of a usable acceleration backend.
+#>
 function ConvertTo-PrerequisiteBoolean {
     param([object[]]$Instances, [string]$Property)
 
