@@ -24,8 +24,9 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   downloads are pinned, least-privilege workflow permissions, why this public
   repository runs its own jobs on GitHub-hosted runners only, the cache-poisoning
   threat model for shared runner storage, per-repository isolation on a runner
-  host, the accepted LAN-egress risk, what is never committed, and why the review
-  gate admits one bot identity by login.
+  host, the Android emulator feasibility constraints, the accepted LAN-egress
+  risk, what is never committed, and why the review gate admits one bot identity
+  by login.
 
 ## Operations
 
@@ -39,6 +40,9 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   running ephemeral runners for several repositories on a Windows machine with
   Docker Desktop: prerequisites, the per-repository token, the host
   configuration, scheduled tasks, health checks, updating, and recovery.
+- [operations/windows-android-emulator.md](./operations/windows-android-emulator.md) -
+  initial prerequisite inventory and the separately authorized real-host
+  feasibility procedure; emulator runtime and connection tools are not implemented.
 - [operations/agent-skills.md](./operations/agent-skills.md) - installing and
   refreshing the skills from `axross/skills`, the drift checks, and the register
   of deviations and gaps.

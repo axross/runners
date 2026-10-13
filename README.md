@@ -12,14 +12,18 @@ the first runner material: one runner image and the host scripts that run it for
 several repositories from a Windows machine with Docker Desktop.
 [Windows Runner Host](./docs/operations/windows-runner-host.md) owns the operator
 procedure and states what has and has not been verified on a real host. The
-agent-host configuration is not here yet. Layout:
+Windows Android emulator surface contains only an initial prerequisite diagnostic;
+[Windows Android Emulator Host](./docs/operations/windows-android-emulator.md)
+owns its inventory and separately authorized feasibility procedure. Real-host
+feasibility is unverified. The agent-host configuration is not here yet. Layout:
 
-| Path                            | Holds                                                                                   | State   |
-| ------------------------------- | --------------------------------------------------------------------------------------- | ------- |
-| `images/actions-runner/`        | The runner image: GitHub's runner image plus build dependencies, pinned by digest       | Present |
-| `hosts/windows-docker-desktop/` | The supervisor, image rebuild, and scheduled-task scripts, and an example configuration | Present |
-| `agent-hosts/claude-code/`      | WSL 2 service units and templates for Claude Code Remote Control                        | Planned |
-| `agent-hosts/amp/`              | WSL 2 service units and templates for Amp runners                                       | Planned |
+| Path                              | Holds                                                                                       | State   |
+| --------------------------------- | ------------------------------------------------------------------------------------------- | ------- |
+| `images/actions-runner/`          | The runner image: GitHub's runner image plus build dependencies, pinned by digest           | Present |
+| `hosts/windows-docker-desktop/`   | The supervisor, image rebuild, and scheduled-task scripts, and an example configuration     | Present |
+| `hosts/windows-android-emulator/` | Prerequisite diagnostic and example configuration only; emulator runtime is not implemented | Initial |
+| `agent-hosts/claude-code/`        | WSL 2 service units and templates for Claude Code Remote Control                            | Planned |
+| `agent-hosts/amp/`                | WSL 2 service units and templates for Amp runners                                           | Planned |
 
 This repository is public. Its GitHub Actions CI and review jobs run on
 GitHub-hosted runners, never on a self-hosted one; see [Security](./docs/conventions/security.md).
@@ -60,7 +64,7 @@ Run from the repository root.
 | `mise run check:docs`      | Run the `docs/` structural validators                                                                                                                                                                         |
 | `mise run check:amp`       | Run the Amp quality-hooks plugin's smoke test (`node --test`, no install needed)                                                                                                                              |
 | `mise run check:skills`    | Check that `skills-lock.json` and `.claude/skills/` list the same skills                                                                                                                                      |
-| `mise run test:host`       | Check the host configuration validation against its invalid fixtures and the example                                                                                                                          |
+| `mise run test:host`       | Check Docker runner host configuration and diagnostic fixtures, and synthetic Windows Android prerequisite CLI fixtures                                                                                       |
 | `mise run check`           | Run every gate above except the writing `format`; this is what CI runs                                                                                                                                        |
 
 The installed copies under `.claude/skills/` are generated and are excluded from

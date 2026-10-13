@@ -200,8 +200,13 @@ console.log(`skills-lock.json and .claude/skills/ agree (${locked.length} skills
 '''
 
 [tasks."test:host"]
-description = "Check the Windows host configuration validation against its fixtures and the example"
-run = "pwsh -NoProfile -NonInteractive -File hosts/windows-docker-desktop/tests/test-host-configuration.ps1"
+description = "Check Docker runner host fixtures and synthetic Android prerequisite CLI fixtures"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+pwsh -NoProfile -NonInteractive -File hosts/windows-docker-desktop/tests/test-host-configuration.ps1
+pwsh -NoProfile -NonInteractive -File hosts/windows-android-emulator/tests/test-prerequisites.ps1
+'''
 
 [tasks.check]
 description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, host test"
