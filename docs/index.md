@@ -26,15 +26,23 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   threat model for shared runner storage, per-repository isolation on a runner
   host, the accepted LAN-egress risk, what is never committed, and why the review
   gate admits one bot identity by login.
+- [conventions/documentation.md](./conventions/documentation.md) - how this
+  project's own documentation is kept true: correcting what a change
+  invalidated, making a new document reachable, standing on its own, and the
+  checks a documentation change owes.
 
 ## Operations
 
 - [operations/development-workflow.md](./operations/development-workflow.md) -
-  the change loop, the standing delivery grant and its exclusions, branches and
-  merging, the configured subagents, and the independent review route.
+  the change loop, the post-approval delivery sequence, the standing delivery
+  grant and its exclusions, branch naming and merging, run-state storage and
+  resume retrieval, what catches a loop stopped mid-flight, and the independent
+  review route with its coverage evidence.
 - [operations/agent-sessions.md](./operations/agent-sessions.md) - how Claude
-  Code and Amp sessions start, the format and check hooks, the subagents, and
-  telemetry tagging.
+  Code and Amp sessions start, the format and check hooks, Claude Code's
+  plan-gate delivery confirmation, waiting on CI and review, the subagents and
+  how an unavailable role is recorded, telemetry tagging, and recommended
+  environment variables.
 - [operations/windows-runner-host.md](./operations/windows-runner-host.md) -
   running ephemeral runners for several repositories on a Windows machine with
   Docker Desktop: prerequisites, the per-repository token, the host
@@ -45,4 +53,9 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
 
 ## Glossary
 
-- [glossary.md](./glossary.md) - runner, image, host, and agent-host vocabulary.
+- [glossary.md](./glossary.md) - runner, image, host, agent-host, and change-loop
+  vocabulary.
+
+For what this project is, how to start it, and the commands it has, see
+[`README.md`](../README.md). [`AGENTS.md`](../AGENTS.md) is the working agreement
+for agent sessions.

@@ -93,6 +93,30 @@ named set of delivery effects that every run holds without asking.
 **Tracking Issue** - the GitHub issue whose body holds a change's plan. The plan
 gate is the maintainer's approval of that plan.
 
+**Plan-Gate Delivery Confirmation** - the answer a Claude Code run collects
+with every plan-approval question: delivery of the run's draft pull request, the
+Claude review request on it, and watching its activity. A confirming answer is
+the user's explicit request for that run's pull request. See
+[operations/agent-sessions.md](./operations/agent-sessions.md#confirming-delivery-at-the-plan-gate-in-claude-code).
+
+**Run State** - the recoverable record of a change loop's progress, saved as
+append-only status comments on the **Tracking Issue**, or as dated entries in a
+pull request description when there is no issue. A fresh session reads it to
+resume the run. See
+[operations/development-workflow.md](./operations/development-workflow.md#save-and-resume-run-state).
+
+**Review Coverage Evidence** - the facts a run keeps separate when it assesses
+an independent review: which policy was available, what input the reviewer is
+known to have consumed, what it reported, and what it published. Availability
+never stands in for consumption. See
+[operations/development-workflow.md](./operations/development-workflow.md#review-coverage-evidence).
+
+**Branch Naming Rule** - the rule that a working branch is named
+`issue-<issue number>-<short description>` when a source or tracking issue
+exists and `noissue-<short description>` when none does, so a branch name
+identifies the source of the change rather than the agent host. See
+[operations/development-workflow.md](./operations/development-workflow.md#branches-and-merging).
+
 **Agent Marker** - the `<!-- ai-agent -->` comment that marks an issue or comment
 as written by an agent.
 
