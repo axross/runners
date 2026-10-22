@@ -28,11 +28,7 @@ the maintainer, `@axross`.
 
 ## Response Approach
 
-After loading Professional Behavior, use
-[Loop Engineering](./.claude/skills/loop-engineering/SKILL.md) for requested
-project changes, including small code or document edits. Establish the current
-phase before planning or implementation. Standalone read-only work stays outside
-the change gates. This agreement is the maintainer's explicit request that every
+This agreement is the maintainer's explicit request that every
 change run deliver through its required verification and the independent review
 selected by
 [Development Workflow](./docs/operations/development-workflow.md), then reach
@@ -59,7 +55,9 @@ capabilities by task instead of applying every change gate to read-only work:
   on the skill's own trigger words to fire for a session that is only
   writing a comment.
 - MUST load [Loop Engineering](./.claude/skills/loop-engineering/SKILL.md)
-  before planning or making any code or document change, then follow
+  before planning or making any code or document change, including a small
+  edit, and establish the current phase before planning or implementation; then
+  follow
   [Development Workflow](./docs/operations/development-workflow.md) for this
   repository's gates. Read-only work stays outside the change loop.
 - MUST load each matching skill's body, not act from its discovery description
