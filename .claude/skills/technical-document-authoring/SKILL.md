@@ -46,7 +46,7 @@ See [structure-and-flow.md](./references/structure-and-flow.md) for:
 - Ordering sections, writing or renaming a heading, opening an answer-first section, or adding a link the reader is expected to follow
 - Leading with the answer / TL;DR / decision before the supporting detail
 - Motivating change in strategy and direction docs — answering "why now", naming stakes, framing proposals as candidates
-- Task-based, sentence-case headings that use the reader's vocabulary
+- Discoverable headings in the reader's vocabulary, with forms suited to section purpose
 - Heading hierarchy rules — no skipped levels, no stacked headings without intro text
 - Skimmability — descriptive headings, key concept first in the paragraph, short paragraphs
 - Progressive disclosure within a document — concept near instruction, simple before complex

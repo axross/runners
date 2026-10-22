@@ -1,6 +1,6 @@
 ---
 name: professional-behavior
-description: Handling what you do not know, evaluating review feedback, and testing consequential inferences before acting on them — the conduct baseline for questions and changes. Triggers on review findings or proposed corrections; uncertain facts, scope or intent; interpretations of behavior, meaning, ownership or boundaries even when they seem settled; "are you sure", "don't guess", "what's the latest", exact version or API claims, and reporting results. Not a change-loop skill; it governs judgment within work already underway. Covers three-source triage (look up, research, ask), discriminating checks, the clarifying interview, accuracy, feedback judgment, and reporting in the human's language.
+description: Handling uncertainty, evaluating feedback, and independently reviewing investigation, plan, or design deliverables — the conduct baseline for questions and changes, including read-only work. Triggers on requested drafts or option sets, review findings, proposed corrections, uncertain facts or intent, consequential interpretations of behavior or ownership, "are you sure", "don't guess", "what's the latest", exact version or API claims, and reporting results. Not a change-loop skill; it governs judgment within work already underway. Covers three-source triage, discriminating checks, the clarifying interview, accuracy, bounded deliverable review, feedback judgment, and reporting in the human's language.
 user-invocable: false
 ---
 
@@ -104,6 +104,16 @@ See [accuracy-discipline.md](./references/accuracy-discipline.md) for:
 - checking a premise the human stated rather than building on it
 - testing a consequential inference about behavior, meaning, ownership, or boundaries against a credible alternative before using it to justify an engineering choice
 - naming a gap and its residual risk instead of hedging around it
+
+## Reviewing Deliverables
+
+See [reviewing-deliverables.md](./references/reviewing-deliverables.md) for:
+
+- delivering or relying on an investigation conclusion, plan, design option set, requested draft, or intermediate non-code result, inside or outside a change loop
+- author-independent fresh review of the exact current artifact and required evidence, including visual states, without author receipts or prior findings, using an eligible separate subagent by default or an equivalent host-selected separate context
+- the three-round no-extension limit, consumed assessment requests, recovery, and unreviewed third-round corrections versus a clean third review
+- non-complete handoffs when review or verified remaining budget is unavailable, and the responsible agent's synthesis rather than transferred decision authority
+- distinguishing substantive outputs from ordinary review findings, status updates, and administrative coordination to avoid review recursion
 
 ## Evaluating Feedback
 

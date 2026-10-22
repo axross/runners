@@ -31,6 +31,8 @@ A clarification explains the approved plan without changing scope, acceptance cr
 
 Each approved plan revision and task phase allows one initial execution plus **2** retries. Exhaustion leaves recovery with the current loop driver; it does not authorize another delegated attempt.
 
+When the effect requests a new assessment of a phase deliverable, [reviewing-phase-deliverables.md](./reviewing-phase-deliverables.md) routes to the separate artifact-review budget; an execution retry does not replenish it.
+
 **Guidelines:**
 
 - MUST count runtime failure, lost response, unexplained stall, and unexpected executor disappearance as attempts.

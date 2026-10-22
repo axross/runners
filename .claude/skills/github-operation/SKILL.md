@@ -39,6 +39,7 @@ See [channel-selection.md](./references/channel-selection.md) for:
 
 See [identity-and-targets.md](./references/identity-and-targets.md) for:
 
+- creating an issue or pull request and establishing its required ownership
 - attributing comments or preparing a write under a shared operator versus a separate bot identity
 - issue and pull-request numbers versus the endpoint family carrying an operation
 - top-level review-comment IDs for REST replies versus thread node IDs for GraphQL resolution
@@ -57,6 +58,7 @@ See [body-integrity.md](./references/body-integrity.md) for:
 
 See [publication-and-recovery.md](./references/publication-and-recovery.md) for:
 
+- creating an issue or pull request with required metadata to verify separately
 - keeping a secret, token, credential, or internal hostname out of a composed body, comment, title, review, or commit message
 - authorization for the particular write, separate from drafting or plan approval
 - read-back, partial failure, and lost-response recovery without duplicate writes

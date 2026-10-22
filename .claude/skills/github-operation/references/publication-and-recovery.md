@@ -30,10 +30,13 @@ GitHub Operation identifies the concrete write and its downstream effects; it do
 
 A successful response proves neither that every requested field changed nor that downstream work completed. For example, an issue can be created while its assignment is silently ignored. Record those as separate outcomes rather than retrying creation.
 
+A normalized snapshot can include the author while omitting `assignees`. An omitted field supplies no value to compare: it is different from an empty list and from verified ownership. Select a permitted read that actually exposes the required field, or retain it as unverified.
+
 **Guidelines:**
 
-- MUST identify the intended postcondition and a permitted read-back path before a write, then verify the affected fields on the resolved object after it.
+- MUST identify the intended postconditions from the request and applicable project policy, including required metadata after creation, and a permitted read-back path before a write; verify the affected fields on the resolved object after it.
 - MUST retain the resulting object ID or URL and evidence sufficient to correlate the write with its read-back.
+- MUST treat a required field omitted from a response as unverified until a permitted read establishes its actual value; do not infer an empty, unchanged, or successful result from its absence.
 - MUST compare body content under [body-integrity.md](./body-integrity.md); verify other affected fields such as assignees, labels, branch revision, or draft state directly.
 - MUST distinguish a stored trigger comment from a started workflow, and a started workflow from its completed result; report only the stage actually observed.
 - MUST report unverified fields or downstream results explicitly instead of turning a successful API response into whole-change completion.
@@ -58,6 +61,8 @@ For a REST reply, GitHub's [review-comment GET](https://docs.github.com/en/rest/
 
 A timeout can occur after GitHub accepted a write. Retrying a creation or trigger comment can duplicate objects or automation. A multi-operation delivery can also stop between successful publication and a failed state update.
 
+If creation is verified but assignment is pending, the created object remains the recovery target. Read its actual metadata on resume, including changes a human may have made, instead of recreating it or blindly repeating an assignment.
+
 Use these distinctions when reporting and deciding the next action:
 
 | Observation                                                          | Result                         | Next action                                                      |
@@ -74,6 +79,7 @@ Use these distinctions when reporting and deciding the next action:
 
 - MUST inspect actual target state after a lost response, connection failure, or partial result before retrying a potentially non-idempotent write.
 - MUST preserve known object IDs, intended content, confirmed effects, and unknown effects in the result; let project delivery choose where recovery evidence persists.
+- MUST resume pending metadata work on the established object and skip writes to fields whose actual state already satisfies the required postcondition.
 - MUST establish both that the intended effect is absent and that a still-valid grant authorizes another attempt before retrying; object discovery or failure evidence alone supplies neither authorization nor a fresh retry.
 - MUST NOT repeat creation, publication, or a trigger merely to obtain a cleaner response. If the effect is confirmed, continue from that object; if it remains unknown, report the unresolved outcome.
 - MUST respect the active host's recovery constraints and any applicable change-loop retry limits rather than creating a separate retry budget here.

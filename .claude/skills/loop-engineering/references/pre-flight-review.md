@@ -2,6 +2,16 @@
 
 Apply this reference when project policy selects an advisory review before delivery. Its absence or unavailability never substitutes for or waives mandatory independent review.
 
+## Checkpoint Qualification
+
+This checkpoint follows verified initial implementation, whether the driver or another actor implemented it. Implementation delegation and phase-deliverable review supply no qualification for its fresh reader. Missing review evidence remains a visible gap even when project policy permits limited draft delivery.
+
+**Guidelines:**
+
+- MUST apply [checkpoint qualification](./subagent-delegation.md#checkpoint-qualification) to the current pre-flight assignment, then use the review input below; an earlier reader's availability is not current eligibility.
+- MUST retain the qualification, whether review ran, and the actual reviewed target, materials, policy, result, and limitations in existing run state. Preserve a non-complete or stale result rather than inferring clean review from verification or direct implementation.
+- MUST use an authorized-draft exception for a pre-flight gap only where project policy permits it and publication is separately authorized; disclose the gap, keep delivery draft, and keep mandatory external review unmet. This exception does not apply to phase-deliverable review or external review.
+
 ## What the Stage Reproduces, and What It Does Not
 
 The case for reviewing outside the authoring context is usually stated as one property. It is several, they separate, and none of them is recovered outright — which is why this stage can be worth running and still not replace the external review. Stating the accounting is what keeps "we already reviewed it" from being read as the external gate having been met.

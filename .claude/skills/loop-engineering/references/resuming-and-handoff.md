@@ -6,6 +6,8 @@ Apply this reference whenever a run resumes after interruption or moves to anoth
 
 Start from the current approval target, scoped operation grants, assignments, execution and review results, actual files and revisions, uncommitted changes, processes, external effects, required checks, and open findings. Then resume only the pending phase.
 
+When a phase deliverable's review is pending or interrupted, use [reviewing-phase-deliverables.md](./reviewing-phase-deliverables.md) to recover its identity, consumed rounds, and current-review coverage before selecting the next phase.
+
 **Guidelines:**
 
 - MUST compare stored or reported recovery information with actual state before acting.

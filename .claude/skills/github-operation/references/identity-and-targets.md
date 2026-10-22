@@ -56,5 +56,7 @@ These API facts were verified against [GitHub's issue-assignee reference](https:
 **Guidelines:**
 
 - SHOULD assign the authenticated operator to issues and pull requests the session creates, within the authorization for those operations.
+- MUST apply the human's or project's required ownership and explicit exceptions; the portable default does not override them.
 - MUST resolve that login from the selected authenticated channel's identity operation, never from a commit author, branch name, or repository owner.
+- MUST preserve existing assignees when adding the authenticated operator unless the human has authorized replacing or removing them.
 - MUST assign a pull request through the issues route against its own number when using the API, and read back its assignees before reporting assignment as complete.

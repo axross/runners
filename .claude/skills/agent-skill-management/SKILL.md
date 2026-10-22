@@ -1,12 +1,12 @@
 ---
 name: agent-skill-management
-description: Deciding whether material belongs in a skill or project documentation, choosing its tier, and managing skill installation and active loading. Triggers on adding, editing, renaming, moving, or removing a skill; installed-copy or lockfile drift; same-name collisions, missing discovery, stale loaded content, or a loaded skill with a defective rule. Metadata authoring belongs to skill-authoring practices; host-specific reload and source-inspection commands belong to project operations. Covers source ownership, targeted installation, drift checks, and separate discovery and active-loading evidence.
+description: Deciding whether guidance belongs in agent instructions, project documentation, host configuration or a skill, choosing its tier, and managing installation, active loading and actor-local acquisition. Triggers on adding, editing, renaming, moving or removing skills; installed-copy or lockfile drift; missing discovery; same-name masking; stale, truncated or missing material; retained-context recovery; a defective loaded rule. Metadata belongs to skill-authoring practices; selection/output assessment follow task-specific development/review practices; acquisition-safeguard qualification owns guard claims; host commands belong to project operations. Covers source ownership, targeted refresh, acquisition coverage and retention/recovery.
 user-invocable: false
 ---
 
 # Agent Skill Management
 
-Use this capability to manage agent skills in a two-tier project, or to verify and diagnose their discovery and active loading. Management includes adding, editing, renaming, moving, and removing skills. **Distributable** skills — portable capabilities other projects can install — are authored in a source directory (conventionally `skills/`, the source of truth) and **installed** into the skill root (the directory the agent actually loads — `.claude/skills/` for Claude Code, `.agents/skills/` for Codex and several others) with the [vercel-labs/skills](https://github.com/vercel-labs/skills) CLI (`npx skills`); a `skills-lock.json` file records what was installed. **Repository-local** skills — capabilities that encode a single project's own process and have to fire while a surface is being edited, never a document the project's own instructions could route to on demand — are committed directly under the skill root and are never touched by the CLI.
+Use this capability to manage agent skills in a two-tier project, verify their discovery and active loading, or establish actor-local acquisition, retention and recovery. Management includes adding, editing, renaming, moving, and removing skills. **Distributable** skills — portable capabilities other projects can install — are authored in a source directory (conventionally `skills/`, the source of truth) and **installed** into the skill root (the directory the agent actually loads — `.claude/skills/` for Claude Code, `.agents/skills/` for Codex and several others) with the [vercel-labs/skills](https://github.com/vercel-labs/skills) CLI (`npx skills`); a `skills-lock.json` file records what was installed. **Repository-local** skills — capabilities that encode a single project's own process and have to fire while a surface is being edited, never a document the project's own instructions could route to on demand — are committed directly under the skill root and are never touched by the CLI.
 
 Discovery is what routes to a skill in either tier: each skill advertises when it applies through its own `description`, so no written index is required. Some hosts maintain one anyway (e.g. an `AGENTS.md` table), which then becomes a second record to keep current.
 
@@ -22,19 +22,27 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 Before asking which tier a skill belongs in, ask whether the material should be a skill at all. A skill's one functional advantage over a document is discovery — it fires unasked while a matching surface is being edited, without anyone remembering to consult it — and that advantage is also its whole recurring cost: every skill's `description` competes for room in every session's listing, on every task, whether or not that task needs it. Material that never has to fire unasked pays that cost for nothing, because an always-loaded instruction file can route to it on demand instead.
 
-| The material is…                                               | Route it to                                                     |
-| -------------------------------------------------------------- | --------------------------------------------------------------- |
-| A rule that has to fire while a surface is being edited        | A skill — continue to [Choosing a Tier](#choosing-a-tier) below |
-| What the product is, means, does, and is constrained by        | The project's own living documentation of the product           |
-| How the project is laid out, written, built, operated, and run | The project's contributor documentation                         |
+One incident can expose several kinds of guidance. A project's choice of who an agent must assign, a portable procedure for verifying assignment, and a host's configured permissions have different owners. Split those statements before choosing a destination; a whole paragraph need not move together.
+
+| The material is…                                                                      | Route it to                                                                                        |
+| ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| What the product is, means, does, and is constrained by                               | The project's own living documentation of the product                                              |
+| A project-specific obligation for agents alone                                        | The project's agent instructions, such as `AGENTS.md`                                              |
+| How human contributors and agents lay out, write, build, operate, and run the project | The project's contributor documentation                                                            |
+| An actual personal, host, or environment preference or configured value               | That owner's supported configuration surface and workflow                                          |
+| A capability that needs discovery while a matching task or surface is being worked on | Its existing skill owner, or [Choosing a Tier](#choosing-a-tier) below if a new skill is justified |
+
+The configuration row concerns the setting itself, not the reusable procedure that uses it. A host-specific runbook may explain that workflow, but copying a portable rule into every personal setting would give it several owners without making it environment-specific. A project's explicit placement policy and the active host's instruction hierarchy still apply.
 
 The portability question below cannot make this call. A repository-layout _document_ is exactly as unportable as a repository-layout _skill_, so portability returns "no" for both — asking it first leaves a reader concluding the material must be a repository-local skill, having never asked whether it should be a skill in the first place.
 
 **Guidelines:**
 
 - MUST answer this question before [Choosing a Tier](#choosing-a-tier), for new material and for material a change is about to add to an existing skill.
+- MUST split mixed guidance by project scope, intended actor, and actual environment dependence before assigning each statement its owner.
+- MUST keep a reusable procedure with its applicable capability owner rather than copying it into project instructions or personal settings; follow the supported configuration workflow for actual settings.
 - MUST NOT write a skill for material an always-loaded instruction file can already route to on demand; that routing costs one line there and nothing in every other session's listing.
-- MUST retire an existing skill into documentation when this question reclassifies it — move its content into the project's own living documentation or its contributor documentation, and remove the skill rather than leaving both in place.
+- MUST retire an existing skill when this question reclassifies it — move its content to the owning instructions, documentation, or supported configuration under the applicable change gates, and remove the skill rather than leaving both in place.
 
 ## Choosing a Tier
 
@@ -107,6 +115,27 @@ See [active-loading.md](./references/active-loading.md) for:
 - verifying an installation or refresh through separate observations of installation, source agreement, discovery, and active content
 - diagnosing missing discovery or unexpected loaded content, including same-name precedence, stale sessions, and unavailable source evidence
 - diagnosis before an authorized installation change
+
+## Actor-local Acquisition and Recovery
+
+See [actor-local-acquisition.md](./references/actor-local-acquisition.md) for:
+
+- establishing complete applicable bodies and references in each controlled internal actor's current context
+- applying task-sensitive development or internal-review selection and output-assessment ownership
+- distinguishing native loading, direct acquisition and retained text, with full, partial, unknown, mismatch or unavailable coverage
+- correlating expected and observed material without inferring acquisition from a parent or reused assignment identifier
+- recovering truncation or lost retention from one verified revision, without redundant reads of complete retained text
+- separating acquisition from output verification and verification-evidence assessment, without adding external-review attestations
+
+## Referencing an Optional Safeguard Claim
+
+When assessing a claim that an optional safeguard observes acquisition without
+interference or prevents dependent mutations, consult acquisition-safeguard
+qualification practices where present. Without that owner, report the
+qualification assessment as unperformed; acquisition coverage alone cannot
+qualify a safeguard or its audit fallback. Establishing acquisition meanings
+does not itself require guard qualification or reloading the qualification
+caller for the same question.
 
 ## Proposing a Change to an Installed Skill
 

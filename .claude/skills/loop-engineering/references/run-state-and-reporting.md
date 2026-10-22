@@ -6,6 +6,10 @@ Apply this reference when persisting recoverable state or reporting a phase resu
 
 Durable state is whatever a fresh executor cannot safely derive: target, phase, approved plan revision and approval evidence, scoped operation grants, assignments and attempts, latest results, self-review evidence, checks, review round, open findings at their permitted durability, unresolved decisions or authorization, the execution arrangement and how it was settled, actual revision and uncommitted state, remaining processes, and unknown external effects.
 
+Keep [checkpoint qualifications](./subagent-delegation.md#checkpoint-qualification) separate for implementation delegation, phase-deliverable review, and implementation pre-flight. Each review record identifies whether it ran, actual target and required-material coverage, policy, result, and limitations. A relevant change prompts requalification, not rewriting the old determination or restarting its budget.
+
+For research, plan, or design deliverables, [reviewing-phase-deliverables.md](./reviewing-phase-deliverables.md) integrates artifact-review identity, consumed rounds, and latest reviewed revision into this existing state; its conduct owner defines the retained review evidence and completion boundary.
+
 For example, a human-dismissed external finding can have a verified disposition reply but failed conversation closure. Preserve the actual human decision and its rationale separately from the verified reply and pending closure; resume only the pending effect under its valid grant. Finding disposition is not delivery completion. Pending, failed, and outcome-unknown reply/closure effects retain their own evidence without requiring a new storage schema or result vocabulary.
 
 **Guidelines:**
@@ -13,7 +17,7 @@ For example, a human-dismissed external finding can have a verified disposition 
 - MUST persist only through a currently permitted project mechanism and preserve append-only history.
 - MUST NOT require an HTML status block, a particular service, a local path, or a byte-extraction command in the portable core.
 - MUST keep evidence locators and revision identities sufficient to detect stale state.
-- MUST record how the execution arrangement was settled, not only which one ran: what the determination rested on, quoted where it rests on a stated condition and recorded as an observation where it rests on none, and whether a question was ever put to the human. A record naming no grounds is incomplete, and recording a decline the human never gave claims an answer nobody made.
+- MUST preserve each checkpoint's qualification and review coverage as described above, including how its arrangement was settled: what the determination rested on, quoted where it rests on a stated condition and recorded as an observation where it rests on none, and whether a question was ever put to the human. A record naming no grounds is incomplete, and recording a decline the human never gave claims an answer nobody made.
 - MUST preserve the substantive self-review outcome, unresolved findings, and limitations in permitted internal handoffs. When a persistence surface prohibits requirement-derived text, project only code or process observations and requirement locators onto that surface; the projection replaces neither the plan nor fresh review input.
 
 ## Scoped Operation Grants
