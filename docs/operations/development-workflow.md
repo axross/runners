@@ -83,7 +83,9 @@ describes Claude Code's plan-gate confirmation. The run MUST, in order:
 Agent-created ownership requirements are stated in
 [AGENTS.md](../../AGENTS.md#ownership-of-agent-created-work).
 
-The run MUST stop watching at the ready transition or at any reported stop.
+The run MUST stop watching at the ready transition or at any reported stop,
+unless a higher-priority host instruction requires otherwise; the run then
+follows that instruction and reports the project requirement as unmet.
 
 After approval, the run MUST NOT ask again for confirmation to deliver the
 pull request or request review, except for the session-resumption recovery
@@ -160,8 +162,9 @@ grant as merged does not cover the head branch the authoring cloud session was
 assigned. That pull request is delivered from the host-assigned head branch
 `ccr-315645f9-p43xyx`, which the maintainer explicitly permitted for that run in
 the authoring session. This is a second one-time exception for an adopting pull
-request; every later change uses a branch named under
-[Branches and Merging](#branches-and-merging).
+request; later changes use a branch named under
+[Branches and Merging](#branches-and-merging), subject to the host-assigned
+branch rule there.
 
 The grant's targets are:
 
@@ -310,6 +313,14 @@ stops before the first such push and asks the maintainer to choose a compliant
 delivery target; it does not silently replace the pull request or exempt the
 branch from this rule. An agent MUST NOT rename the branch automatically.
 
+A host can restrict a session to pushing only a branch it assigns, as Claude
+Code cloud sessions have done for this repository's adopting pull requests.
+When the assigned branch does not follow this naming rule and the session
+cannot push a compliant one, the run MUST surface that at the plan gate and
+push only on the maintainer's explicit exception for that run, recorded in run
+state; without it, the run stops before the first push and reports delivery as
+blocked.
+
 When the base branch moves and a topic branch conflicts, merge the current base
 into the topic branch and record any resolution in a new commit. Do not rebase,
 amend, reset away, or force-push published history as conflict recovery.
@@ -429,7 +440,7 @@ of which are read _inside_ the session, which is exactly where a run that has
 already skipped the loop is doing its reasoning. Nothing here holds the loop
 from outside the session; what follows is narrower than that.
 
-The Claude Code `Stop` hook runs `mise run check` when the checkout has
+When opted in, the Claude Code `Stop` hook runs `mise run check` when the checkout has
 uncommitted changes or commits ahead of its upstream, and Amp's turn-end hook
 runs `mise run lint` under the same condition; [Agent Sessions](./agent-sessions.md#the-claude-code-quality-hooks)
 states both. They test the checkout, not how far the loop got, so a run stopped

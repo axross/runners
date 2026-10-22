@@ -98,7 +98,8 @@ skips the hook entirely, so opting in there stays a manual copy.
 
 That example file also contains `permissions.allow` entries for
 `mcp__Claude_Code_Remote__send_later` and `mcp__Claude_Code_Remote__delete_trigger`.
-These are tool-permission rules, subject to Claude Code's
+They exist only to spare a permission prompt when a host exposes those tools.
+They are tool-permission rules, subject to Claude Code's
 [permission precedence](https://code.claude.com/docs/en/permissions), not
 standalone evidence of live availability, human adoption, or a scoped operation
 grant. Waiting belongs to the host; `loop-engineering` requires no scheduler or
@@ -217,7 +218,9 @@ its findings through the tools the session exposes, and respect each read's
 pagination and completeness limits; missing output is not a successful check or
 completed review. Development Workflow owns review-completion evidence.
 
-Claude's documented mechanisms have different scopes:
+Claude's documented mechanisms have different scopes. The summary below follows
+the linked pages and has not been exercised in this repository; the tools the
+actual host exposes decide what a run can use:
 
 - **Local CLI session:** [session scheduling](https://code.claude.com/docs/en/scheduled-tasks)
   uses `/loop` or `CronCreate`, with `CronList` to inspect tasks and

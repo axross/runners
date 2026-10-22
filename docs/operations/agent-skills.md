@@ -194,9 +194,11 @@ dependency order."
 Claude Code's plan-gate confirmation is the bounded counterexample: declining
 delivery removes the pull request on which review and watching depend, but
 splitting those confirmations would replace the single delivery answer the
-maintainer chose to prevent repeated delivery prompts. The maintainer adopted
-the combined confirmation by approving the plan in
-[issue #35](https://github.com/axross/runners/issues/35), which states it.
+maintainer chose to prevent repeated delivery prompts. This entry is adopted
+the same way as the standing delivery grant: by the maintainer's merge of the
+pull request that closes
+[issue #35](https://github.com/axross/runners/issues/35), which adds it together
+with the plan-gate confirmation it serves.
 
 For this confirmation only, the maintainer retains the combined interaction
 governed by [Agent Sessions](./agent-sessions.md#confirming-delivery-at-the-plan-gate-in-claude-code),
