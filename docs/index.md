@@ -26,23 +26,18 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   threat model for shared runner storage, per-repository isolation on a runner
   host, the accepted LAN-egress risk, what is never committed, and why the review
   gate admits one bot identity by login.
-- [conventions/documentation.md](./conventions/documentation.md) - how this
-  project's own documentation is kept true: correcting what a change
-  invalidated, making a new document reachable, standing on its own, and the
-  checks a documentation change owes.
+- [conventions/documentation.md](./conventions/documentation.md) - which
+  document a change to each runner surface invalidates, and what the
+  documentation checks cover.
 
 ## Operations
 
 - [operations/development-workflow.md](./operations/development-workflow.md) -
-  the change loop, the post-approval delivery sequence, the standing delivery
-  grant and its exclusions, branch naming and merging, run-state storage and
-  resume retrieval, what catches a loop stopped mid-flight, and the independent
-  review route with its coverage evidence.
+  the change loop, the delivery grant, branch naming, and the independent review
+  route.
 - [operations/agent-sessions.md](./operations/agent-sessions.md) - how Claude
-  Code and Amp sessions start, the format and check hooks, Claude Code's
-  plan-gate delivery confirmation, waiting on CI and review, the subagents and
-  how an unavailable role is recorded, telemetry tagging, and recommended
-  environment variables.
+  Code and Amp sessions start, their hooks, the plan-gate delivery confirmation,
+  subagents, and telemetry.
 - [operations/windows-runner-host.md](./operations/windows-runner-host.md) -
   running ephemeral runners for several repositories on a Windows machine with
   Docker Desktop: prerequisites, the per-repository token, the host

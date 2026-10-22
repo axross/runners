@@ -201,8 +201,8 @@ pull request that closes
 with the plan-gate confirmation it serves.
 
 For this confirmation only, the maintainer retains the combined interaction
-governed by [Agent Sessions](./agent-sessions.md#confirming-delivery-at-the-plan-gate-in-claude-code),
-including its coherent outcomes. The scope includes the same confirmation at
+governed by the Confirming Delivery at the Plan Gate in Claude Code section of
+[Agent Sessions](./agent-sessions.md), including its coherent outcomes. The scope includes the same confirmation at
 session resumption; other interviews retain the installed dependency rule. This
 exception changes no installed skill, host restriction, operation grant, or plan
 and review gate, and authorizes no upstream publication. It records the chosen

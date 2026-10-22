@@ -97,25 +97,25 @@ gate is the maintainer's approval of that plan.
 with every plan-approval question: delivery of the run's draft pull request, the
 Claude review request on it, and watching its activity. A confirming answer is
 the user's explicit request for that run's pull request. See
-[operations/agent-sessions.md](./operations/agent-sessions.md#confirming-delivery-at-the-plan-gate-in-claude-code).
+[operations/agent-sessions.md](./operations/agent-sessions.md).
 
 **Run State** - the recoverable record of a change loop's progress, saved as
 append-only status comments on the **Tracking Issue**, or as dated entries in a
 pull request description when there is no issue. A fresh session reads it to
 resume the run. See
-[operations/development-workflow.md](./operations/development-workflow.md#save-and-resume-run-state).
+[operations/development-workflow.md](./operations/development-workflow.md).
 
 **Review Coverage Evidence** - the facts a run keeps separate when it assesses
 an independent review: which policy was available, what input the reviewer is
 known to have consumed, what it reported, and what it published. Availability
 never stands in for consumption. See
-[operations/development-workflow.md](./operations/development-workflow.md#review-coverage-evidence).
+[operations/development-workflow.md](./operations/development-workflow.md).
 
-**Branch Naming Rule** - the rule that a working branch is named
-`issue-<issue number>-<short description>` when a source or tracking issue
-exists and `noissue-<short description>` when none does, so a branch name
-identifies the source of the change rather than the agent host. See
-[operations/development-workflow.md](./operations/development-workflow.md#branches-and-merging).
+**Branch Naming Rule** - the rule that names a working branch after the issue
+that is the source of the change, or marks the change as having none, so a
+branch name identifies where the change came from rather than which agent host
+wrote it. See
+[operations/development-workflow.md](./operations/development-workflow.md).
 
 **Agent Marker** - the `<!-- ai-agent -->` comment that marks an issue or comment
 as written by an agent.

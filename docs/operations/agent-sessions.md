@@ -103,7 +103,7 @@ They are tool-permission rules, subject to Claude Code's
 [permission precedence](https://code.claude.com/docs/en/permissions), not
 standalone evidence of live availability, human adoption, or a scoped operation
 grant. Waiting belongs to the host; `loop-engineering` requires no scheduler or
-particular wake tool. [Waiting on CI and Review](#waiting-on-ci-and-review)
+particular wake tool. The Waiting on CI and Review section below
 distinguishes Claude's documented mechanisms from those configured names.
 
 A blocking `Stop` check is expensive in a way a `PostToolUse` repair is not: it
@@ -129,18 +129,16 @@ is purely mechanical:
 The hook decides from the checkout's Git state, not from what the session edited,
 and it does not fetch refs. It therefore says nothing about whether the change
 loop ran to its end: a session stopped after a push and before its draft pull
-request passes it when the check passes. Development Workflow's
-[What Catches a Loop Stopped Mid-Flight](./development-workflow.md#what-catches-a-loop-stopped-mid-flight)
-states what that leaves uncovered.
+request passes it when the check passes. The What Catches a Loop Stopped
+Mid-Flight section of [Development Workflow](./development-workflow.md) states
+what that leaves uncovered.
 
 ## Confirming Delivery at the Plan Gate in Claude Code
 
 Claude Code's host conditions pull request creation on an explicit request from
 the user. The checked-in request in [`AGENTS.md`](../../AGENTS.md) does not
-establish that on its own: a run that relied on it would stop after push to ask
-whether to open a pull request, and might treat its own subagent reviews as the
-review step. A Claude Code run therefore collects that request where the human
-is already answering: in the plan-approval question.
+establish that on its own, so a Claude Code run collects that request where the
+human is already answering: in the plan-approval question.
 
 Every plan-approval question, including the one for a revised plan, MUST also
 ask the human to confirm, in the same answer:
@@ -153,14 +151,15 @@ ask the human to confirm, in the same answer:
 Only pull request creation carries the host's condition. The maintainer chose
 to settle the review request and the watch in the same answer, so that one
 answer covers the whole delivery path. This bounded exception to dependent
-question ordering is recorded in [Agent Skills](./agent-skills.md#deviation---delivery-review-and-watching-share-one-confirmation).
+question ordering is recorded in the delivery, review, and watching deviation in the register of
+[Agent Skills](./agent-skills.md).
 The run MUST offer coherent combined outcomes in that single question, with
 review and watching inapplicable when delivery is declined.
 
 A confirming answer is the user's explicit request for that run's pull
-request. The run then MUST follow the post-approval sequence in
-[Development Workflow](./development-workflow.md)'s After Approval section
-without asking again. For a revision approved after the pull request exists, the
+request. The run then follows the post-approval sequence in
+[Development Workflow](./development-workflow.md)'s After Approval section,
+which also says when a run obtains this confirmation. For a revision approved after the pull request exists, the
 delivery item confirms continuing on that pull request.
 
 The confirmation meets the host's condition and nothing more. It is not a
@@ -179,10 +178,8 @@ follows stays under the delivery grant.
   The host's condition is per session, so the record shows what an earlier
   session confirmed, not a request made in this one. A session whose own
   conversation lacks the confirming exchange, such as a fresh session that
-  resumes the run, asks for the confirmation once, at resumption and before
-  any further change, even when the run is already past push.
-- MUST NOT stop after push to ask about the pull request. Asking at
-  resumption, as above, is recovery, not such a stop.
+  resumes the run, asks for the same confirmation once, before any further
+  change.
 - MUST, when the human declines delivery, stop after push, report the
   external-review gate as unmet and the loop as not complete, and substitute
   no other review.
@@ -201,7 +198,7 @@ whose Waiting Bound section owns capability resolution, deadlines, budget
 resets, human waits, and teardown at each stop. A scheduler's expiry or cloud
 environment's lifetime is not that deadline. Authorization and recovery state
 belong to [Loop Engineering's grant and run-state reference](../../.claude/skills/loop-engineering/references/run-state-and-reporting.md).
-This project's [delivery grant](./development-workflow.md#authorizing-delivery-operations)
+This project's delivery grant, in [Development Workflow](./development-workflow.md),
 does not name scheduling or subscriptions.
 
 For a Codex-authored pull request, the awaited results are its required GitHub
@@ -285,10 +282,9 @@ artifacts, and the documentation behind a factual claim. A reviewer that cannot
 reach one of those does not fail to start; it returns a report short by exactly
 those checks, and an under-equipped review reads exactly like a clean one. The
 denial covers editing tools and nested spawning, not every possible shell write.
-Its review is advisory: it never satisfies or stands in for the independent
-review that [Development Workflow](./development-workflow.md#the-independent-review)
-requires, and a run that has not opened its pull request has not reached that
-gate.
+Its review is advisory; the independent-review rule in
+[Development Workflow](./development-workflow.md) says it never stands in for
+that review.
 
 `investigator.md` is the reader for a payload the main actor needs only one
 conclusion from: a log, a long thread, a wide search across files or history, a
@@ -327,10 +323,9 @@ parent or a child implemented it. A compatible fresh reader must be permitted
 and available; its findings and round limits follow
 [the pre-flight contract](../../.claude/skills/loop-engineering/references/pre-flight-review.md).
 If no reader qualifies, record the exact unavailable or prohibited reason and the
-resulting delivery restriction. That outcome is not a clean review and does not
-waive the independent review; Development Workflow's
-[draft delivery exception](./development-workflow.md#deliver-a-draft-when-advisory-pre-flight-is-unavailable)
-states what it permits.
+resulting delivery restriction. That outcome is not a clean review; the Deliver a
+draft when advisory pre-flight is unavailable section of
+[Development Workflow](./development-workflow.md) states what it permits.
 
 For Claude Code reads, keep the exact object of a judgment and the rules governing
 that judgment in the judging actor's context. Route other large material wanted
@@ -370,7 +365,8 @@ used to bypass a missing role or a prohibited purpose. For unavailable research,
 plan, or design review, the driver MUST use
 [Loop Engineering's non-complete human handoff](../../.claude/skills/loop-engineering/references/reviewing-phase-deliverables.md).
 The parent retains delivery responsibility, and the independent review follows
-[Development Workflow's host mapping](./development-workflow.md#the-independent-review).
+the host mapping in the Independent Review section of
+[Development Workflow](./development-workflow.md).
 
 ## Telemetry Tagging
 

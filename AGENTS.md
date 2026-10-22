@@ -37,10 +37,8 @@ change run deliver through its required verification and the independent review
 selected by
 [Development Workflow](./docs/operations/development-workflow.md), then reach
 ready or a reported stop naming an unmet gate, without a further prompt.
-That workflow owns the delivery sequence and handoff boundary. Where a host
-still requires a per-session confirmation, the run obtains it at the plan gate,
-or when a new session resumes the run, and never by stopping after push;
-Agent Sessions describes
+That workflow owns the delivery sequence and handoff boundary, including when a
+run obtains a host's per-session confirmation; Agent Sessions describes
 [Claude Code's confirmation](./docs/operations/agent-sessions.md#confirming-delivery-at-the-plan-gate-in-claude-code).
 Current host instructions and tool usage conditions still apply; for Amp, see
 [Handle Amp delivery authorization](#handle-amp-delivery-authorization); for
@@ -213,6 +211,6 @@ adds the document that owns its procedure and the row that routes to it.
 | Project terminology                                                                                                                                                          | [Glossary](./docs/glossary.md)                                                                                                                         |
 | Whether something should be a comment at all, or the code reshaped instead                                                                                                   | [Code Maintainability](./.claude/skills/code-maintainability/SKILL.md)                                                                                 |
 | Where a document goes and how it is indexed                                                                                                                                  | [docs/index.md](./docs/index.md) and [Living Project Documentation](./.claude/skills/living-project-documentation/SKILL.md)                            |
-| Keeping a document true, and what a documentation change owes                                                                                                                | [Documentation](./docs/conventions/documentation.md)                                                                                                   |
+| Which document a change to a runner surface invalidates, and the documentation checks                                                                                        | [Documentation](./docs/conventions/documentation.md)                                                                                                   |
 | Runner image (`images/actions-runner/`), the Windows host scripts (`hosts/windows-docker-desktop/`), the host configuration, scheduled tasks, tokens, updating, and recovery | [Windows Runner Host](./docs/operations/windows-runner-host.md), with the per-repository isolation rules in [Security](./docs/conventions/security.md) |
 | Planned agent-host configuration (`agent-hosts/{claude-code,amp}/`)                                                                                                          | The operations document that change adds; until then [Security](./docs/conventions/security.md) and [REVIEW.md](./REVIEW.md)                           |
