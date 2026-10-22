@@ -437,12 +437,10 @@ of which are read _inside_ the session, which is exactly where a run that has
 already skipped the loop is doing its reasoning. Nothing here holds the loop
 from outside the session; what follows is narrower than that.
 
-When opted in, the Claude Code `Stop` hook runs `mise run check` when the checkout has
-uncommitted changes or commits ahead of its upstream, and Amp's turn-end hook
-runs `mise run lint` under the same condition; the Claude Code Quality Hooks
-section of [Agent Sessions](./agent-sessions.md) states both. They test the
-checkout, not how far the loop got, so a run stopped between the push and the
-draft pull request passes them whenever the checks pass. Such a run is, today, caught by nothing inside the session. The plan-gate
+The opt-in Claude Code `Stop` hook and Amp's turn-end hook, described in
+[Agent Sessions](./agent-sessions.md), test the checkout, not how far the loop
+got. A run stopped between the push and the draft pull request is, today, caught
+by nothing inside the session. The plan-gate
 rule against stopping after push is a rule the run follows, not a mechanism that
 enforces it, and the maintainer seeing a pushed branch with no pull request is
 the only backstop.

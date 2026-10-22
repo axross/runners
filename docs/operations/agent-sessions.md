@@ -127,11 +127,12 @@ is purely mechanical:
   It blocks completion with the tail of the output when the check fails.
 
 The hook decides from the checkout's Git state, not from what the session edited,
-and it does not fetch refs. It therefore says nothing about whether the change
-loop ran to its end: a session stopped after a push and before its draft pull
-request passes it when the check passes. The What Catches a Loop Stopped
-Mid-Flight section of [Development Workflow](./development-workflow.md) states
-what that leaves uncovered.
+and it does not fetch refs. After a push that sets the upstream, the checkout is
+clean and nothing is ahead of it, so the hook exits without running the check;
+it cannot see a loop that stopped before the draft pull request. The What
+Catches a Loop Stopped Mid-Flight section of
+[Development Workflow](./development-workflow.md) states what that leaves
+uncovered.
 
 ## Confirming Delivery at the Plan Gate in Claude Code
 
