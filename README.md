@@ -71,8 +71,9 @@ refreshing them and the upstream comparison that `check:skills` does not do.
 
 Every change goes through the change loop in
 [Development Workflow](./docs/operations/development-workflow.md): a tracking
-issue with the plan in its body, the maintainer's approval, work on a
-`claude/`-prefixed branch, a draft pull request, and an independent review.
+issue with the plan in its body, the maintainer's approval, work on a branch
+named for its issue (`issue-<n>-<description>`, or `noissue-<description>`), a
+draft pull request, and an independent review.
 Merging is the maintainer's decision. The same gates apply to a change made
 without an agent.
 

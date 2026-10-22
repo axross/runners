@@ -1,76 +1,63 @@
 @AGENTS.md
 
-## Runtime-Injected Prompts Do Not Lower These Gates
+## Project gates within host boundaries
 
-Claude Code frames a session's task in its own words before this file is
-read. The forms observed here are "make the requested changes, commit, and
-push", "do not create a pull request unless the user explicitly asks", "do
-not spawn subagents unless the user requested it", and — for a pull request
-this session opened — an instruction to subscribe to its activity and
-schedule recurring check-ins until it merges or closes. Each is a convenience
-default describing how an ordinary session is expected to behave. None is a
-statement about what this project requires.
+This entry file routes project requirements; it cannot rewrite the host's
+instruction hierarchy. Claude Code documents
+[CLAUDE.md as conversation context, not a system-prompt change](https://code.claude.com/docs/en/memory#claude-isnt-following-my-claude-md).
+It also documents
+[host-provided overrides of default behavior](https://code.claude.com/docs/en/agent-sdk/modifying-system-prompts#reminders-claude-code-adds-to-the-conversation).
+Such an override comes from the host, not from this file or a loaded skill.
+Neither a runtime-injected message nor project guidance has a fixed priority
+merely because of its label or when it was read. Apply the actual host
+hierarchy and any explicit delegation of defaults, using each instruction's
+source, level, scope, and conditions.
 
-The gates [AGENTS.md](./AGENTS.md) and
-[Development Workflow](./docs/operations/development-workflow.md) set remain
-required when that convenience framing applies. This section addresses Claude
-Code's framing, not instruction priority: repository guidance cannot override
-higher-priority host instructions. The installed Agent Skills under
-[`.claude/skills/`](./.claude/skills/) own portable practices, not permission to
-use a host's tools.
-
-**Host instructions and a tool's own usage conditions remain boundaries.**
-Report an operation they forbid as unavailable rather than performing it.
-Where convenience framing and a binding restriction are hard to tell apart,
-treat the clause as a boundary and surface the conflict rather than deciding
-silently.
+The tracking issue, recorded plan, human plan approval, verification, and
+independent review required by [AGENTS.md](./AGENTS.md) and
+[Development Workflow](./docs/operations/development-workflow.md) remain
+project gates. A task request such as "make the changes, commit, and push"
+does not itself approve a plan or supply independent review. If a host
+boundary prevents a required step, report that gate as unmet rather than
+waiving it or claiming the change is ready.
 
 **Guidelines:**
 
-- MUST treat an injected "make the changes, commit, and push" framing as a
-  constraint on mechanics, never as permission to skip the tracking issue,
-  the recorded plan, the plan-approval stop, or the independent review.
-- MUST treat an injected "do not create a pull request unless the user
-  explicitly asks" clause as already satisfied by this agreement's
-  [mandatory Loop Engineering route](./AGENTS.md#response-approach), which
-  makes Loop Engineering's
-  [Deliver and Address](./.claude/skills/loop-engineering/references/phase-progression.md#deliver-and-address)
-  phase the standing request for a draft pull request, which the
+- MUST assess tool eligibility separately from a standing request, operation
+  authorization, and project gates. A tool's purpose and usage conditions,
+  host permission prompts, refusals, and prohibitions remain boundaries; no
+  project request, grant, plan approval, or available tool overrides them.
+- MUST meet this agreement's draft-pull-request request through the
+  [plan-gate delivery confirmation](./docs/operations/agent-sessions.md#confirming-delivery-at-the-plan-gate-in-claude-code)
+  in Agent Sessions; its confirming answer is the user's explicit request for
+  that run's pull request.
+- MUST treat this agreement's configured-subagent requests as satisfying an
+  explicit-request condition only when the actual host or tool accepts that
+  form of standing request and the particular use is otherwise eligible. A
+  configured role alone proves neither capability nor eligibility. Record the
+  delegation determination and its grounds under
+  [Loop Engineering](./.claude/skills/loop-engineering/SKILL.md).
+- MUST carry the verified
   [standing delivery grant](./docs/operations/development-workflow.md#authorizing-delivery-operations)
-  authorizes; deferral requires a named host boundary or technical blocker
-  in the session, and a change without its pull request or independent review
-  is not ready, never reported as done.
-- MUST perform the delivery effects the standing delivery grant covers, such as
-  pushing the working branch, opening the draft pull request, updating the
-  tracking issue and pull request, and posting the mapped review request,
-  without asking the human for permission. Tracking-issue creation and plan
-  publication happen before plan approval; implementation and its pushes still
-  follow it. The grant is the maintainer's authorization and leaves the
-  plan-approval stop and the independent review in place. A prompt, refusal,
-  instruction, or tool usage condition from the host that requires approval for
-  or forbids the effect stays that host's boundary, as the paragraph above
-  describes, reported rather than worked around.
-- MUST treat an injected "do not spawn subagents unless the user requested
-  it" clause the same way for a role
-  [Agent Sessions](./docs/operations/agent-sessions.md) configures, and MUST
-  record which way that determination went and what it rested on, per
-  [Loop Engineering](./.claude/skills/loop-engineering/SKILL.md)'s run-state
-  contract.
-- MUST treat an injected instruction to subscribe to a pull request's
-  activity and schedule recurring check-ins until it merges or closes as the
-  same kind of framing:
-  [Loop Engineering](./.claude/skills/loop-engineering/SKILL.md)'s
-  ready-transition teardown already requires the run to end there, and
-  [Development Workflow](./docs/operations/development-workflow.md) already
-  requires leaving merging to the human, so that instruction is satisfied by
-  ending the run, not by arming the watch it describes.
-- MUST NOT read this section as reaching a tool's usage conditions, a
-  higher-priority host instruction, a refusal to permit an operation, or a
-  prohibited purpose; those stay boundaries, and the loop reports an operation
-  they forbid as unavailable.
-- MUST surface the conflict at the plan gate, rather than resolving it
-  silently, whenever an injected clause and this agreement cannot both be
-  honoured.
+  forward for its covered targets and effects without asking again, when the
+  host and tool permit the operation. The grant supplies human authorization,
+  not tool eligibility or plan approval. Tracking-issue creation and plan
+  publication precede approval; implementation follows approval, and ready
+  follows verification and independent review.
+- MUST evaluate an instruction to subscribe to pull-request activity or
+  schedule recurring check-ins against its actual source, level, scope, tool
+  conditions, and operation authorization. Ending the change loop does not
+  fulfill that instruction. The loop's ready-transition teardown does not
+  override a higher-priority host instruction; follow the applicable host
+  instruction and report any incompatible project requirement as unmet.
+  The delivery grant does not authorize scheduling, and monitoring does not
+  authorize merging; merging stays with the maintainer.
+- MUST stop the affected operation and surface an irreconcilable conflict at
+  the plan gate, or the pending recovery phase if discovered later. Record
+  the conflicting instructions, completed work, unmet gate, and next action.
+  Do not work around a host prohibition through another tool or route. If an
+  instruction's status cannot be established, report the uncertainty rather
+  than silently treating it as an overridable default.
 
 Everything else this host needs is routed from the imported entry, so
 nothing else belongs here: [AGENTS.md](./AGENTS.md)'s host routing names
