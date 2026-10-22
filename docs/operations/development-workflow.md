@@ -7,8 +7,11 @@ holds that path in place from outside an agent session.
 
 Every change, code or document, one line or one feature, goes through
 `loop-engineering`: plan, approve, code, verify, independent review, address,
-ready. The skill owns the loop's stages, its gates, and its caps; this document
-states only what is this project's own.
+ready. The skill owns phase meaning, checkpoint qualification, and evidence,
+with separate review boundaries for research, plan, and design outputs. This
+document chooses this project's delivery gates; [Agent Sessions](./agent-sessions.md)
+owns host-specific actor selection and read routing, including the configured
+subagents.
 
 The loop is **model-invoked**. It carries `user-invocable: false`, so there is
 no slash command to type and nothing to wait for: describing the work is what
@@ -26,7 +29,9 @@ lifts either gate. This project's **delivery grant** is a standing operation
 grant: the maintainer's authorization, issued in
 [Authorizing delivery operations](#authorizing-delivery-operations), for named
 external delivery effects. It is separate from plan approval but held by every
-run, so an agent never asks for a covered effect.
+run, so an agent never asks permission for a covered effect. A host's own
+condition on such an effect is a separate boundary, which the grant's guidelines
+address.
 
 Commit messages and pull request titles follow `conventional-commits`. The pull
 request body follows
@@ -42,12 +47,79 @@ If an existing pull request has no tracking issue and needs fixes:
 2. Link it in the existing pull request body with a closing keyword.
 3. Publish the plan in the issue body.
 4. Obtain human approval for that plan.
-5. Apply fixes to that same pull request under the standing delivery grant.
+5. Confirm that the head follows the naming rule in Branches and Merging, below,
+   before pushing fixes to that same pull request under the standing delivery
+   grant. If the head no longer complies, follow that section's recovery stop.
 
 Steps 1 to 3 are covered effects of the
 [standing delivery grant](#authorizing-delivery-operations) and are performed
 without asking; step 4 is the plan gate. Requesting review without making
 fixes does not itself require an implementation plan.
+
+### After Approval: Delivery Without Another Prompt
+
+Once its plan is approved and implemented, a run MUST carry the change through
+its pull request and review without another prompt. On a host that conditions
+pull request creation on a per-session request, the run MUST obtain that
+request at the plan gate, or when a new session resumes the run, and MUST NOT
+stop after push to ask for it. The Confirming Delivery at the Plan Gate in Claude
+Code section of [Agent Sessions](./agent-sessions.md) describes Claude Code's
+plan-gate confirmation. The run MUST, in order:
+
+1. verify locally with the commands in the [README](../../README.md), run the
+   advisory pre-flight (or follow its unavailability exception in Deliver a draft
+   when advisory pre-flight is unavailable, below), and push the working
+   branch;
+2. open the draft pull request from the template, linking the tracking issue
+   with a closing keyword;
+3. start watching the pull request's activity, where the host offers it and
+   the run holds authorization for it; in Claude Code, that is the plan-gate
+   confirmation;
+4. request review from the provider The Independent Review, below, maps to its
+   host, address its findings, and request a fresh review after each fix batch,
+   up to the four-round cap;
+5. move the pull request to ready only after review convergence. Merging stays
+   with the maintainer.
+
+Agent-created ownership requirements are stated in the Ownership of
+agent-created work section of [AGENTS.md](../../AGENTS.md).
+
+The run MUST stop watching at the ready transition or at any reported stop,
+unless a higher-priority host instruction requires otherwise; the run then
+follows that instruction and reports the project requirement as unmet.
+
+After approval, the run MUST NOT ask again for confirmation to deliver the
+pull request or request review, except for the session-resumption recovery
+above. It waits on a human only for:
+
+- approval of a plan revision;
+- a product, architecture, or finding-disposition decision that Loop
+  Engineering requires the maintainer to make;
+- each review or check result, when the human declined watching or no
+  permitted, authorized wait mechanism delivers that result.
+
+The review cap reached without convergence is a blocker. The run MUST record it
+in run state, report it, and keep the pull request draft.
+
+A run MUST NOT report itself complete except at the ready transition or at a
+reported stop that names its unmet gate. Stopping after push, or without the
+draft pull request, is never a completed loop.
+
+### Deliver a draft when advisory pre-flight is unavailable
+
+This project permits limited draft delivery when current advisory implementation
+pre-flight qualification finds no eligible reader or unavailable required review
+material. This exception preserves access to external review without inventing
+an advisory reviewer. The driver MUST record the actual qualification and gap
+under [Loop Engineering's pre-flight contract](../../.claude/skills/loop-engineering/references/pre-flight-review.md)
+and disclose the unavailable review in delivery, never as a clean result.
+Publication MUST have its own valid operation grant; this policy grants none.
+Delivery MUST remain draft, with mandatory external review unmet until it runs.
+
+This exception covers unavailability only. It MUST NOT bypass phase-deliverable
+review or outstanding findings from an advisory review that ran. It MUST NOT
+waive any other approval, verification, evidence, or readiness requirement.
+The independent-review gate remains mandatory.
 
 ## Authorizing delivery operations
 
@@ -61,9 +133,15 @@ request that closes
 [issue #1](https://github.com/axross/runners/issues/1), which added this
 section following the plan approved in that issue. An amendment to this section
 is adopted the same way, by the maintainer's merge of the pull request that
-carries it. Agent runs share the maintainer's operator identity, so the signal
-that distinguishes such a merge as a human act is that agents never merge on
-their own: merge is excluded from this grant, and it is the maintainer's
+carries it. The amendment for
+[issue #35](https://github.com/axross/runners/issues/35), which replaces the
+branch prefix in the targets and exclusions with the naming rule in Branches and
+Merging, below, adds the operator-assignment
+effect, and adds the Claude Code explicit-request sentence below, takes effect
+only on the maintainer's merge of the pull request that closes that issue.
+Agent runs share the maintainer's operator identity, so the signal that
+distinguishes such a merge as a human act is that agents never merge on their
+own: merge is excluded from this grant, and it is the maintainer's
 decision, per [Branches and Merging](#branches-and-merging). The grant is
 separate from plan approval, which releases implementation and is not what
 authorizes a delivery effect, but every run already holds it, so no run asks
@@ -77,13 +155,23 @@ request was in fact delivered from the host-assigned head branch
 `ccr-fd09e38c-631o65`, because the authoring cloud session could push only to
 that branch, and `main` was seeded with an empty root commit with the
 maintainer's explicit permission. This is a one-time exception for the adopting
-pull request; every later change uses a `claude/`-prefixed branch.
+pull request.
+
+The pull request that closes issue #35 cannot rely on its own amendment either,
+because the amendment takes effect only on merge, and the branch target in the
+grant as merged does not cover the head branch the authoring cloud session was
+assigned. That pull request is delivered from the host-assigned head branch
+`ccr-315645f9-p43xyx`, which the maintainer explicitly permitted for that run in
+the authoring session. This is a second one-time exception for an adopting pull
+request; later changes use a branch named under
+Branches and Merging, below, subject to the host-assigned branch rule there.
 
 The grant's targets are:
 
 - this repository
-- the run's `claude/`-prefixed working branch; for recovery, the existing pull
-  request's head branch when it is `claude/`-prefixed, for pushes only
+- the run's working branch named under Branches and Merging, below; for
+  recovery, the existing pull request's head branch when it follows that naming
+  rule, for pushes only
 - the run's tracking issue, if any; review-only recovery can have none, while
   fixes require a linked issue and an approved plan
 - the run's draft pull request against the default branch; for recovery, the
@@ -97,6 +185,10 @@ Its covered effects, each performed without asking, are:
   body, and status comments and labels on it
 - append-only pushes of the working branch, including review fixes
 - creation of the draft pull request for new delivery
+- addition of the authenticated operator as an assignee on the run's newly
+  created tracking issue and draft pull request, and read-back of their
+  assignees; this covers additions that preserve existing assignees, not
+  removal, assignment of other people, or changes to unrelated existing targets
 - conversion of a previously ready pull request back to draft for new changes
 - maintenance of that pull request's description throughout the review loop,
   including approach changes
@@ -121,13 +213,17 @@ grant to flip its pull request to ready.
 
 - MUST perform a covered effect without asking the human for permission, before
   or after plan approval, and MUST NOT report a run as authorization-waiting on
-  a covered effect.
+  a covered effect. Meeting a host's own condition on such an effect, as the
+  host-boundary guideline below describes, is not asking for permission.
 - MUST still obtain plan approval before implementation and the independent
   review before ready; the grant releases neither gate.
 - MUST honor a host permission prompt, refusal, instruction, or tool usage
   condition that requires approval for or forbids a covered effect as the
   host's boundary: report it, and never work around it or try another route. The
   grant is the maintainer's authorization, not a change to what a host allows.
+  Claude Code's explicit-request condition on pull request creation is one such
+  condition, and the Confirming Delivery at the Plan Gate in Claude Code section
+  of [Agent Sessions](./agent-sessions.md) describes how a run meets it.
 - MUST NOT read the grant as covering an effect it does not name, or a target it
   does not list.
 - MUST read the grant as it stands on the default branch. A change to this
@@ -178,23 +274,50 @@ instruction:
 - setup, settings, or secret changes, including adding the
   `CLAUDE_CODE_OAUTH_TOKEN` repository secret
 - other delivery targets or review providers
-- a push to a head branch that is not `claude/`-prefixed; on an existing pull
-  request with such a head, the grant covers review requests and comments but no
-  push
+- a push to a head branch that does not follow the naming rule in Branches and
+  Merging, below; on an existing pull request with such a head, the grant covers
+  review requests and comments but no push
 
 For Amp's host-permission boundary, follow the
 [Amp entry guidance](../../AGENTS.md#handle-amp-delivery-authorization).
 
 ## Branches and Merging
 
-Work happens on a `claude/`-prefixed branch. Pushing to the default branch is
-forbidden, and merging is the maintainer's decision rather than the session's; a
-run that has flipped its pull request to ready is finished, whether or not the
-merge has happened. An existing pull request with a non-`claude/` head can still
-receive independent review, but an agent MUST NOT push fixes to that head.
-Recovery stops before the first such push and asks the maintainer to choose a
-compliant delivery target; it does not silently replace the pull request or
-exempt the branch from this rule.
+Branch names identify the source of the change rather than the agent host.
+Work MUST use one of these forms:
+
+- `issue-<issue number>-<short description>` when a source or execution-plan
+  issue exists, including a tracking issue used by Loop Engineering. Use that
+  issue's number, not the pull request's number.
+- `noissue-<short description>` when no source issue exists, for an unplanned
+  change without an issue-backed plan.
+
+The short description summarizes the change, for example
+`issue-123-fix-runner-label` or `noissue-fix-readme-typo`. The `noissue-` form
+does not exempt a change from applicable tracking, plan-approval, or review
+requirements; agent changes still follow The Change Loop, above.
+
+Compliance follows the current issue state, not the issue state at branch
+creation. If a source or execution-plan issue is created later for a
+`noissue-` change, work MUST use `issue-<issue number>-<short description>`
+from that point, including when recovery creates a tracking issue.
+
+Pushing to the default branch is forbidden, and merging is the maintainer's
+decision rather than the session's; a run that has flipped its pull request to
+ready is finished, whether or not the merge has happened. An existing pull
+request whose head does not follow this naming rule can still receive
+independent review, but an agent MUST NOT push fixes to that head. Recovery
+stops before the first such push and asks the maintainer to choose a compliant
+delivery target; it does not silently replace the pull request or exempt the
+branch from this rule. An agent MUST NOT rename the branch automatically.
+
+A host can restrict a session to pushing only a branch it assigns, as Claude
+Code cloud sessions have done for this repository's adopting pull requests.
+When the assigned branch does not follow this naming rule and the session
+cannot push a compliant one, the run MUST surface that at the plan gate and
+push only on the maintainer's explicit exception for that run, recorded in run
+state; without it, the run stops before the first push and reports delivery as
+blocked.
 
 When the base branch moves and a topic branch conflicts, merge the current base
 into the topic branch and record any resolution in a new commit. Do not rebase,
@@ -208,51 +331,130 @@ template, and obtain review before merge. Agents likewise MUST use a branch
 outside the default branch, preserve pushed history, and leave merging to the
 human.
 
-## Configured Actors
+## Save and resume run state
 
-The Claude Code definitions live under
-[`.claude/agents/`](../../.claude/agents/), and
-[Agent Sessions](./agent-sessions.md#subagents) describes each:
+A run with a tracking issue MUST save recoverable state as append-only status
+comments on that issue. The issue body stays the canonical plan; keeping state
+in comments avoids changing its approval identity. A delivery pull request
+already links that issue through its closing keyword, so a fresh executor can
+find the state from either target.
 
-- `implementer.md` supplies the implementation-capable actor. Local results
-  return to the parent; publication is not delegated merely by choosing this
-  actor.
-- `reviewer.md` supplies the advisory pre-flight reader. Its tool denial covers
-  editing tools and nested spawning, not every possible shell write.
-- `investigator.md` supplies a reader for bounded investigation questions. It is
-  not required for an exact local lookup or when the host prohibits that
-  delegation purpose.
+For review-only recovery without a tracking issue, the run MUST instead append
+dated entries under a separate **Run state** heading in the existing pull
+request description, preserving earlier entries and the rest of the body. Do not
+create an issue solely for storage. If fixes later require a tracking issue
+under The Change Loop, above, the first issue-side state comment
+MUST link the retained description-side history; subsequent checkpoints belong
+on the issue.
 
-Each of these exists to keep some context out of the main actor's own: the
-implementer so it does not inherit the planning phase's accumulated context, the
-reviewer so it does not inherit the implementer's reasoning state, and the
-investigator so a large payload never enters the main actor's context at all.
-All three run Sonnet at `effort: high`. The investigator runs at `high` rather
-than a lower level because its output is a judgment the main actor cannot check
-without re-reading the payload it delegated away; the maintainer approved that
-default in the plan for [issue #1](https://github.com/axross/runners/issues/1),
-and it is reported as declared, not measured.
+These publications use the status-comment or pull-request-description effects of
+the standing delivery grant in Authorizing delivery operations, above. A run
+MUST still qualify its current route under GitHub Operation and validate the
+current default-branch grant before relying on it. A storage choice neither
+authorizes an ineligible tool nor expands the grant.
 
-These are configured candidates, not a permission grant. A session MUST check
-the capabilities its host actually permits before using one. Delegating to the
-matching configured actor is the default; parent implementation is valid only
-when delegation is unavailable or disallowed, and mandatory verification and
-external review remain unchanged.
+### Write a checkpoint
 
-The advisory pre-flight review applies after every verified initial
-implementation, before the first branch push and draft pull request, whether the
-parent or a child implemented it. A compatible fresh reader must be permitted
-and available; its findings and round limits follow
-[the pre-flight contract](../../.claude/skills/loop-engineering/references/pre-flight-review.md).
-If no reader qualifies, record the exact unavailable or prohibited reason and the
-resulting delivery restriction. That outcome is not a clean review and does not
-waive the independent review.
+A run MUST checkpoint at each of these boundaries:
+
+- At a phase transition.
+- Before a review request.
+- After a review result.
+- Before stopping or handing off.
+
+Use the existing `<!-- ai-agent -->` marker and a readable **Run state** heading.
+Identify this run by its source-session and work-target locators. Include its
+phase and review round to distinguish checkpoints in that history. Link
+preceding checkpoints when continuing a run from another session.
+[Agent Sessions](./agent-sessions.md) describes what a Claude Code run adds to
+its checkpoints.
+
+What each checkpoint preserves follows Loop Engineering's
+[Semantic Run State](../../.claude/skills/loop-engineering/references/run-state-and-reporting.md).
+Advisory-finding durability follows its
+[Durable Parks](../../.claude/skills/loop-engineering/references/pre-flight-review.md)
+restrictions. This project adds no schema, adapter, or mandatory local state
+file. Public storage does not promise reviewer invisibility.
+
+At ready, the checkpoint MUST reflect the pull request's actual ready state and
+link the independent-review and required-check evidence that allowed the
+transition. It MUST leave maintainer merge as the remaining action. Append a
+correction that supersedes any obsolete instruction to keep the pull request
+draft or request an already completed review, preserving the earlier entries.
+
+Checkpoint publications on both surfaces MUST follow GitHub Operation's
+[Body Integrity](../../.claude/skills/github-operation/references/body-integrity.md)
+and [Publication and Recovery](../../.claude/skills/github-operation/references/publication-and-recovery.md)
+contracts. A pull-request-description append is a whole-body replacement, so the
+exception path depends on full-body fidelity before and after publication.
+Retain verified status-comment URLs in the next checkpoint or handoff. If the
+required route or fidelity is unavailable, retain the current permitted handoff
+instead of publishing through an unverified path. The run MUST name that handoff
+in its report. When it is retained in the current conversation or returned to
+the assigning parent, identify its executor-local scope: it is not published
+issue history, and a fresh executor cannot recover it from the issue alone.
+Transfer that handoff explicitly to the next executor; this fallback creates no
+alternative public destination or raw write route.
+
+### Retrieve state on resume
+
+A resuming executor MUST use this procedure before acting on saved state:
+
+1. Identify the work target from the current session or an explicit handoff.
+   From a pull request, follow its tracking-issue link when present. Without an
+   issue, review-only recovery uses the description exception above; fixes use
+   The Change Loop's issue-creation path. If the work target is absent or
+   ambiguous, ask the maintainer which run to resume rather than selecting the
+   newest unrelated issue or pull request.
+2. Qualify a current read route that supplies full stored bodies under GitHub
+   Operation. Retrieve the tracking issue's complete body and **all pages** of
+   comments, including approval evidence. For issue-less review-only recovery,
+   retrieve the complete pull request description and its Run state entries
+   instead.
+3. Find this run's entries by their target and source-session locators, follow
+   predecessor links, and read the matching history in order. Do not infer
+   authority from the connected operator's login: agent publications share the
+   maintainer's identity. Follow recorded approval and human-decision evidence.
+4. Retrieve the standing grant from the current default branch, then apply
+   Loop Engineering's [Resuming and Handoff](../../.claude/skills/loop-engineering/references/resuming-and-handoff.md)
+   to the retrieved issue or pull request history. That capability owns
+   reconciliation and selection of the pending phase or effect.
+5. Append the recovery checkpoint to the applicable issue or pull request
+   surface above.
+
+For example, an authenticated GitHub CLI route qualified in the current session
+can retrieve stored fields with `gh api repos/axross/runners/issues/ISSUE_NUMBER`
+and `gh api --paginate --slurp repos/axross/runners/issues/ISSUE_NUMBER/comments`.
+The issue-less alternative reads `gh api repos/axross/runners/pulls/PR_NUMBER`.
+Replace the numbered placeholders with the identified target and handle the
+structured response fields under Body Integrity. These are read examples, not
+mandatory tools or permission for raw writes.
+
+## What Catches a Loop Stopped Mid-Flight
+
+The loop's own rules live in a skill and in [`AGENTS.md`](../../AGENTS.md), both
+of which are read _inside_ the session, which is exactly where a run that has
+already skipped the loop is doing its reasoning. Nothing here holds the loop
+from outside the session; what follows is narrower than that.
+
+The opt-in Claude Code `Stop` hook and Amp's turn-end hook, described in
+[Agent Sessions](./agent-sessions.md), test the checkout, not how far the loop
+got. A run stopped between the push and the draft pull request is, today, caught
+by nothing inside the session. The plan-gate
+rule against stopping after push is a rule the run follows, not a mechanism that
+enforces it, and the maintainer seeing a pushed branch with no pull request is
+the only backstop.
 
 ## The Independent Review
 
 The review is a separate session under a separate identity, never the authoring
-session, whatever it calls its own assessment. The authoring host determines the
-provider and request route:
+session, whatever it calls its own assessment. A run MUST NOT count in-session
+subagent review as satisfying or standing in for it: not the advisory pre-flight
+reviewer, not a phase-deliverable reviewer, and not the author's own checks. The
+review is reachable only through the run's draft pull request, so a run that has
+not opened it has not reached this gate and is not complete.
+
+The authoring host determines the provider and request route:
 
 | Authoring host         | Review provider | Request                                                    |
 | ---------------------- | --------------- | ---------------------------------------------------------- |
@@ -267,7 +469,8 @@ App. Manual changes have no agent host, so they use Codex rather than claiming
 the Claude Code route.
 
 Before the first request, an agent run MUST record its authoring host and the
-selected provider in recoverable Loop Engineering run state. For a manually
+selected provider in recoverable Loop Engineering run state, through
+Save and resume run state, above. For a manually
 authored pull request, the author MUST record "manual" and "Codex review" in the
 pull request description before requesting review and keep that record current
 across rounds. Before each later request, confirm that the recorded host and
@@ -285,6 +488,45 @@ the applicable phrase by name. This prevents a comment-triggered integration
 from starting a duplicate review while permitting a fresh request after a fix
 batch. The review has a cap of four rounds; see
 [Loop Engineering's external round cap](../../.claude/skills/loop-engineering/references/independent-review.md#external-round-cap).
+
+### Review coverage evidence
+
+For every round, the author MUST compare the reviewer-origin result with
+[`REVIEW.md`](../../REVIEW.md)'s Reporting section. In recoverable run state,
+saved through Save and resume run state, above, correlate
+the request and posted result with the reviewed material identity, including the
+commit and pull-request-body criteria. Keep the following facts separate:
+
+- Which policy was available at a named revision.
+- What input the reviewer is actually known to have consumed.
+- What findings or explicit limitations the reviewer reports.
+- What output was published.
+
+A policy link or a proposed policy change in the diff establishes availability,
+not consumption. Unverified provider input MUST remain unknown. The author's
+reconstruction cannot establish what the reviewer consumed or checked.
+
+A completed, identifiable independent review uses REVIEW.md's treatment of
+unflagged items; missing affirmative check-by-check coverage is not a blocker.
+This readiness rule accepts the risk of unreported reviewer omissions rather
+than requiring a positive checklist as proof of review. A service marked
+Completed without a posted reviewer-origin result does not satisfy the gate.
+The author MUST keep the review gate unresolved and the pull request in draft
+for any of these blockers:
+
+- No posted independent review identifiable against the reviewed material.
+- An explicit report of missing required material or unchecked review scope.
+- Unresolved blocking findings.
+- Known material fixes after the review that lack fresh review.
+
+Record the specific blocker and resume the applicable recovery or address
+phase; return a decision to the maintainer when that phase cannot resolve it.
+Do not request repeated reviews merely to obtain affirmative coverage or invent
+findings to explain missing assertions. All other prerequisites in
+[Loop Engineering's independent-review reference](../../.claude/skills/loop-engineering/references/independent-review.md),
+in its Ready Gate section, remain required. Known unmet requirements and the
+contributor's out-of-tree obligations in Acceptance Criteria Verified Out of
+Tree, below, remain blockers even when the review is silent about them.
 
 ### Claude review from Claude Code
 

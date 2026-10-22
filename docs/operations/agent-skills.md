@@ -179,3 +179,35 @@ rather than inventing a convention. **Upstream status:** not filed. The
 maintainer has not yet given the go-ahead for an issue on `axross/skills`; the
 completion report of any change that touches one of these surfaces names the gap
 as pending.
+
+### Deviation - delivery, review, and watching share one confirmation
+
+The project installation of `professional-behavior`, from `axross/skills`
+revision `c1022da` (the refresh in #34), whose capability hash in
+`skills-lock.json` is
+`e948104355e4675bbd99e1e11f7a5c6db45380ed76c269a2c6ba9c595ff79a14`,
+requires in
+[Asking the Human](../../.claude/skills/professional-behavior/references/asking-the-human.md):
+"MUST NOT put two decisions in one prompt when the answer to one would change,
+prune, or reframe the other; hold the dependent one for a later round, in
+dependency order."
+
+Claude Code's plan-gate confirmation is the bounded counterexample: declining
+delivery removes the pull request on which review and watching depend, but
+splitting those confirmations would replace the single delivery answer the
+maintainer chose to prevent repeated delivery prompts. This entry is adopted
+the same way as the standing delivery grant: by the maintainer's merge of the
+pull request that closes
+[issue #35](https://github.com/axross/runners/issues/35), which adds it together
+with the plan-gate confirmation it serves.
+
+For this confirmation only, the maintainer retains the combined interaction
+governed by the Confirming Delivery at the Plan Gate in Claude Code section of
+[Agent Sessions](./agent-sessions.md), including its coherent outcomes. The scope includes the same confirmation at
+session resumption; other interviews retain the installed dependency rule. This
+exception changes no installed skill, host restriction, operation grant, or plan
+and review gate, and authorizes no upstream publication. It records the chosen
+project interaction rather than a general defect in the skill. Reassess it if
+the installed ordering rule or the delivery confirmation's dependencies change,
+or the maintainer withdraws this choice. A host rule requiring sequential
+questions takes precedence over this project exception.

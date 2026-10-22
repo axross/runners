@@ -1,24 +1,26 @@
-# Review Instructions
+# Code review policy
 
-This file defines this repository's review policy, complementing the
-[Code Review](.claude/skills/code-review/SKILL.md) methodology. Where posted-report
-instructions differ, this file governs. The Claude adapter in
-[`claude-review.yaml`](.github/workflows/claude-review.yaml) supplies the policy
-through its system prompt. The root [`AGENTS.md`](AGENTS.md) `Code Review Rules`
-section directs Codex here. These routes do not prove provider consumption;
-unobserved provider input remains unknown, not proof of a failed review.
-[Development Workflow](docs/operations/development-workflow.md) owns provider
+Apply this file when reviewing changes, not when implementing them. It is this
+repository's highest-priority review-only policy and complements the
+[Code Review](./.claude/skills/code-review/SKILL.md) methodology. Where
+posted-report instructions differ, this file governs. The Claude adapter in
+[claude-review.yaml](./.github/workflows/claude-review.yaml) supplies the policy
+through its system prompt; [AGENTS.md](./AGENTS.md) instructs reviewers to read
+and apply it. Availability does not prove consumption or compliance: check the
+reviewer-origin result against this policy, and treat unobserved provider input
+as unknown, not as proof of a failed review.
+[Development Workflow](./docs/operations/development-workflow.md) owns provider
 invocation and completion evidence. Code Review's
-[Posted and CI Reviews](.claude/skills/code-review/SKILL.md#posted-and-ci-reviews)
+[Posted and CI Reviews](./.claude/skills/code-review/SKILL.md#posted-and-ci-reviews)
 section owns the default posted-review rules.
 
-This is a **strict** review: run every mandatory check within its stated scope
-and report findings under the adopted arrangement below. Assess the criteria
-carried in the pull request body's
-**Acceptance criteria** section. Do not open the tracking issue to find them;
-an absent criteria section is itself a finding (Important in Claude review).
+This is a **strict** review: run every mandatory check and report every finding
+within the scope below. Review the acceptance criteria carried in the pull
+request body's **Acceptance criteria** section. Do not open the tracking issue
+to find them; an absent criteria section is itself a finding (Important in
+Claude review).
 
-## Adopted Review Arrangements
+## Adopted review arrangements
 
 Substantive checks apply to both routes. These arrangements replace conflicting
 presentation and reporting-scope defaults in this file and Code Review:
@@ -43,33 +45,38 @@ exhaustive checking. Explicitly unchecked required scope, outstanding findings,
 fresh-review requirements, and contributor evidence still constrain readiness
 under [Loop Engineering](.claude/skills/loop-engineering/SKILL.md).
 
-## Severity Vocabulary for Posted Reviews
+## Severity labels for posted reviews
 
 Claude review uses Code Review's two posted labels, **Important** and **Nit**,
 instead of its internal Critical/Major/Minor/Nit triage or an
-Approve/Request-Changes verdict. Codex managed review uses native priority labels;
-its presentation and reporting scope follow the adopted arrangement above.
-In this repository, a hard project rule includes every MUST rule of a skill
-whose `description` matches the changed files, and every MUST rule of
-[Security](docs/conventions/security.md), subject to Code Review's
-acceptance-criteria finding boundary.
+Approve/Request-Changes verdict. Codex managed review uses native priority
+labels; its presentation and reporting scope follow the adopted arrangements
+above. In this repository, a hard project rule includes every MUST rule of a
+skill whose `description` matches the changed files and every applicable MUST
+rule in project conventions, such as [Security](./docs/conventions/security.md),
+subject to registered deviations in the
+[Agent Skills register](./docs/operations/agent-skills.md#the-register), the
+reporting exclusions below, and Code Review's acceptance-criteria finding
+boundary.
 
 **Guidelines:**
 
-- MUST flag a matching skill's MUST-rule violation and cite the skill and
-  rule. Claude review MUST label it Important; Codex review uses its native
-  priority label without implying an exact equivalence.
+- MUST flag an applicable hard-rule violation and cite its owning skill or
+  project convention and rule. Claude review MUST label it Important; Codex
+  review uses its native priority label without implying an exact equivalence.
 
-## Mandatory Checks
+## Mandatory checks
 
-Run all three checks on every review and report findings within each check's
-scope:
+Run the following checks on every review and raise findings within their scope:
 
-- **Skill conformance** - verify the change against every skill whose
-  `description` matches the changed files. Cite the owning skill and rule for
-  each deviation, without reintroducing external-evidence absence-only findings.
+- **Skills and project conventions conformance** - verify the change against
+  every skill whose `description` matches the changed files and every applicable
+  project convention. Honor the
+  [Agent Skills register](./docs/operations/agent-skills.md#the-register). Cite
+  the owning skill or convention and rule for each deviation, without
+  reintroducing external-evidence absence-only findings.
 - **Acceptance criteria** - assess every criterion in the pull request body
-  under [Code Review's review lenses](.claude/skills/code-review/references/review-lenses.md),
+  under [Code Review's review lenses](./.claude/skills/code-review/references/review-lenses.md),
   Acceptance Criteria boundary. Report violations demonstrable by inspecting
   the changed material, inline where a changed line supports the finding.
   Claude review labels these Important; Codex uses its native priorities. A
@@ -78,19 +85,33 @@ scope:
   or lacks an evidence link, whether designated or not. Do not re-run or judge
   external evidence in this inspection check. Contributor verification and
   required evidence remain separate readiness obligations in
-  [Development Workflow](docs/operations/development-workflow.md).
+  [Development Workflow](./docs/operations/development-workflow.md).
 - **Public-repository safety** - this repository is public and is meant to hold
-  nothing that identifies a person or a machine. Verify the lenses below for
-  every changed file.
+  nothing that identifies a person or a machine. Verify the
+  [safety lenses](#public-repository-safety-lenses) below for every changed
+  file, and apply the [language lenses](#language-lenses) for each kind of file
+  in the diff.
+- **Refactoring opportunities** - examine changed code, scripts, workflow
+  definitions, and documentation for concrete ways to simplify
+  responsibilities, remove duplication, or reduce unnecessary complexity. Report
+  opportunities supported by the changed material using Code Review's existing
+  evidence and severity rules, not a new severity floor. MUST NOT expand this
+  check into unrelated pre-existing material or speculative abstractions and
+  cleanup.
 
 **Guidelines:**
 
-- MUST run all three checks on every review.
+- MUST run every check above on every review.
 - MUST give each finding a severity label supported by the selected provider,
   `file:line` evidence, and a concrete fix according to
-  [Code Review](.claude/skills/code-review/SKILL.md).
+  [Code Review](./.claude/skills/code-review/SKILL.md).
 
-## Public-Repository Safety Lenses
+The code-inspection limit on the acceptance-criteria check does not waive
+implementation verification or self-review's reporting of required checks.
+Known unmet requirements remain unmet; silence in a review cannot replace the
+contributor's verification.
+
+## Public-repository safety lenses
 
 Each lens is a hard project rule. Claude review labels a violation Important;
 Codex review uses its native priority label.
@@ -154,7 +175,7 @@ Codex review uses its native priority label.
   a command line that a process listing exposes, written into an image layer
   (`ENV`, `ARG`, `COPY`), or left in a build cache.
 
-## Language Lenses
+## Language lenses
 
 Apply the lens for each kind of file in the diff.
 
@@ -181,12 +202,12 @@ Apply the lens for each kind of file in the diff.
   described as planned. A document that describes a file, image, or script
   that does not exist yet says so.
 
-## Reading Beyond the Diff
+## Reading beyond the diff
 
-[Code Review's review scoping](.claude/skills/code-review/SKILL.md#review-scoping)
+[Code Review's review scoping](./.claude/skills/code-review/SKILL.md#review-scoping)
 owns boundary checks: open each owner a change names and every scope-overlapping
 neighbor, even outside the diff. For installed-skill changes, follow
-[Agent Skills](docs/operations/agent-skills.md); installed directories are
+[Agent Skills](./docs/operations/agent-skills.md); installed directories are
 generated and must match their selected lockfile inventory.
 
 **Guidelines:**
@@ -195,13 +216,12 @@ generated and must match their selected lockfile inventory.
   overlapping owners that could expose duplication or a conflicting rule.
 - MUST NOT infer whole-change compliance from one compliant instance.
 
-## Do Not Report
+## Reporting exclusions
 
-Do not repeat mechanically enforced failures in a posted review when the
-matching path filter means that check runs. The exclusion is only the exact
-mechanical defect named below; broader design judgment and missing coverage
-remain review findings. [`merge-checks.yaml`](.github/workflows/merge-checks.yaml)
-runs `mise run check` on every pull request, which enforces:
+In posted reviews, MUST NOT repeat exact mechanical failures from the checks
+that [`merge-checks.yaml`](./.github/workflows/merge-checks.yaml) runs through
+`mise run check` on every pull request. The exclusion is only the exact
+mechanical defect named below:
 
 - Prettier formatting (`mise run format:check`) of Markdown, JSON, YAML, and
   TypeScript files.
@@ -217,26 +237,41 @@ runs `mise run check` on every pull request, which enforces:
   (`mise run check:skills`). Whether an installed copy matches its upstream
   source is not checked in CI and remains reportable.
 
-**Guidelines:**
+Internal self-review still flags these mechanical failures.
 
-- MUST NOT report a posted finding covered exactly by this list.
-- MUST report broader prose-rule failures when a listed check is only a narrow
-  proxy. A linter passing does not show that a Dockerfile, script, or workflow
-  is safe, only that it is well-formed.
-- MUST NOT generalize this list to every check CI happens to run.
+MUST report broader rule failures these checks do not establish:
+
+- Design failures.
+- Inaccurate documentation.
+- Wrong owners.
+- Missing coverage.
+
+A linter passing does not show that a Dockerfile, script, or workflow is safe,
+only that it is well-formed. MUST NOT generalize these exclusions to every check
+CI happens to run.
 
 ## Reporting
 
-[Code Review's posted-review policy](.claude/skills/code-review/SKILL.md#posted-and-ci-reviews)
-owns default reporting, subject to the adopted arrangements above. Review
-completion and contributor readiness are separate; a quiet review cannot
-discharge author-side verification or evidence obligations.
+Reviewers need not enumerate passed criteria, applied skills, changed files, or
+successful refactoring checks. Report findings and explicit limitations in the
+provider's presentation, as the adopted review arrangements above describe.
+When required material remains unavailable or review scope remains unchecked,
+MUST name that material or scope and why. MUST reference findings instead of
+repeating them.
+
+An identifiable completed independent review treats unflagged items as
+satisfied for the review gate, without positive per-check assertions. This
+review outcome is not proof that each rule was consumed or each check ran; the
+[delivery procedure](./docs/operations/development-workflow.md#review-coverage-evidence)
+owns the remaining readiness blockers. Review completion and contributor
+readiness are separate; a quiet review cannot discharge author-side
+verification or evidence obligations.
 
 **Guidelines:**
 
 - Model-authored review prose MUST NOT include either provider's review trigger
-  phrase, documented
-  in [the independent review](docs/operations/development-workflow.md#the-independent-review),
+  phrase, documented in
+  [the independent review](./docs/operations/development-workflow.md#the-independent-review),
   anywhere in a summary or an inline comment. Refer to it by name instead, for
   example "the review request". App-generated status and help text are exempt;
   the model does not control that fixed text. The Claude workflow's loop guard
