@@ -95,20 +95,16 @@ gate is the maintainer's approval of that plan.
 
 **Plan-Gate Delivery Confirmation** - the answer a Claude Code run collects
 with every plan-approval question: delivery of the run's draft pull request, the
-Claude review request on it, and watching its activity. A confirming answer is
-the user's explicit request for that run's pull request. See
+Claude review request on it, and watching its activity. See
 [operations/agent-sessions.md](./operations/agent-sessions.md).
 
-**Run State** - the recoverable record of a change loop's progress, saved as
-append-only status comments on the **Tracking Issue**, or as dated entries in a
-pull request description when there is no issue. A fresh session reads it to
-resume the run. See
+**Run State** - the recoverable record of a change loop's progress, which a
+fresh session reads to resume the run. See
 [operations/development-workflow.md](./operations/development-workflow.md).
 
 **Review Coverage Evidence** - the facts a run keeps separate when it assesses
 an independent review: which policy was available, what input the reviewer is
-known to have consumed, what it reported, and what it published. Availability
-never stands in for consumption. See
+known to have consumed, what it reported, and what it published. See
 [operations/development-workflow.md](./operations/development-workflow.md).
 
 **Branch Naming Rule** - the rule that names a working branch after the issue

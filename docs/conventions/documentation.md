@@ -52,8 +52,8 @@ a relative link within `docs/` that does not resolve. The
 [README](../../README.md) states that `mise run check` runs both along with the
 rest of the gate.
 
-Neither check resolves a `#fragment`, which is one reason a link under `docs/`
-goes to the file and names the section in prose. What the checks cannot see
+Neither check resolves a `#fragment`, so a link that carries one is verified by
+hand; prefer linking the file and naming the section in prose. What the checks cannot see
 stays a reviewer's job: whether a fact sits in the one document that owns it,
 whether a document says anything the tree does not already say, and whether a
 claim about runner behavior is verified.

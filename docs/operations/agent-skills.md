@@ -183,8 +183,9 @@ as pending.
 ### Deviation - delivery, review, and watching share one confirmation
 
 The project installation of `professional-behavior`, from `axross/skills`
-revision `c1022da` in `skills-lock.json` (capability hash
-`e948104355e4675bbd99e1e11f7a5c6db45380ed76c269a2c6ba9c595ff79a14`),
+revision `c1022da` (the refresh in #34), whose capability hash in
+`skills-lock.json` is
+`e948104355e4675bbd99e1e11f7a5c6db45380ed76c269a2c6ba9c595ff79a14`,
 requires in
 [Asking the Human](../../.claude/skills/professional-behavior/references/asking-the-human.md):
 "MUST NOT put two decisions in one prompt when the answer to one would change,
