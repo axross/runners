@@ -1,46 +1,37 @@
 # Direct and Delegated Execution
 
-Apply this reference when choosing who or what executes an assignment. The loop specifies contracts and phase meaning; the host supplies execution mechanisms and their permission boundaries.
+Apply this reference when qualifying an implementation assignment or selected review checkpoint, and when integrating a contribution. The loop specifies evidence and phase meaning; applicable host guidance owns general actor selection, read routing, and invocation mechanisms.
 
-## Executor Selection
+## Checkpoint Qualification
 
-Delegation to a subagent is the default choice for change-work execution. Direct loop-driver execution is the fallback, valid only where delegation is unavailable through currently permitted tools or disallowed by host policy. That much — use only what the session permits, and execute in the driver only in that fallback case — is stated in [SKILL.md](../SKILL.md) under its carve-out and is not restated here; what follows is what applies once delegation is actually on the table.
-
-**Guidelines:**
-
-- MUST NOT require a universal actor ranking, role name, model, tool, separate checkout, live conversation, or resumable child.
-- MUST report missing capability as `unavailable` and missing authorization as `authorization-waiting`.
-
-## Read Routing
-
-Not every read belongs in the context of the actor making the judgment, and size alone does not decide which. Some reads are the object of the judgment about to be made: the exact wording is what the judgment is about, and no summary of it does the same work. Others are inputs to a judgment about something else — a large payload one conclusion is wanted from, where carrying the whole payload into that actor's context spends exactly what routing the read away would have saved. A third case is neither, because fidelity is the requirement while only part of the payload is wanted, and a summarizing intermediary cannot serve that at all.
-
-| The read                                                   | Where it goes               | Examples                                                                                                              |
-| ---------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| the object of the judgment being made                      | the judging actor's context | the diff under review, two plan revisions being compared, a body about to be written back, the rules that actor obeys |
-| large material wanted for one conclusion, not its own text | an investigator             | logs, a long thread, a wide search across files or history, a file tree being located in                              |
-| fidelity required, but only part of the payload wanted     | narrowed at the tool call   | one failing assertion line, field selection on a structured response, a bounded line range of a file                  |
+A qualification belongs to one proposed assignment at one checkpoint, not to the host for the whole run. A configured role or visible tool alone establishes neither permitted purpose nor access to current material. [SKILL.md](../SKILL.md) states the independent-checkpoint rule; this reference defines the evidence for applying it.
 
 **Guidelines:**
 
-- MUST keep in the context of the actor making the judgment any read whose exact text is the object of that judgment, along with the rules that actor is itself obeying.
-- MUST route any other large payload wanted only for a conclusion to an investigator wherever a permitted one is available, and read it directly otherwise.
-- MUST narrow the read at the tool call, rather than delegating it or reading it whole, wherever fidelity is the requirement but only part of the payload is wanted.
+- MUST identify the checkpoint, assignment purpose, proposed invocation route, applicable eligibility conditions, role and material access, and required authorization before relying on that route.
+- MUST record the determination and its grounds for that assignment, including which condition failed when no route qualifies. Distinguish missing capability, prohibited purpose, missing material, missing authorization, failed execution, and unknown outcome through [the handoff result contract](./implementation-package.md).
+- MUST record whether each selected review ran and which actual current artifact, required materials, and policy it covered; qualify completion under [the review-result contract](./implementation-package.md#review-result), not from a role name or zero findings alone.
+- MUST requalify after a relevant purpose, material, policy, or capability change, preserving earlier results and the applicable retry and review budgets. Requalification does not renew authorization or make stale coverage current.
+- MUST NOT repeat permission requests for an unchanged prohibited purpose or manufacture assignments to make an otherwise ineligible invocation appear eligible.
 
-## The Investigator Return Contract
+## Conditional Host Defaults
 
-An investigator earns its place only by returning what the caller needs next: a conclusion, and a locator the caller can follow when the conclusion turns out not to be enough. Handing back the source text instead puts into the caller's context exactly what routing the read away existed to keep out, so it saves nothing. The returned result must stand on its own rather than depend on mid-run dialogue. These rules constrain that result, not the executor's possible communication channels — nothing here bounds what the investigator reads to get there. Where the caller is the investigator's only human communication channel, the investigator returns its findings there and the caller handles the human exchange under [the assignment contract](./implementation-package.md#assignment).
+Use applicable host guidance for the current operation, without requiring a private setting, plugin, named actor, or adapter. Without such guidance, the bounded default is eligible subagent implementation, with driver execution only when delegation is unavailable or disallowed. A review still requires an eligible fresh non-author context; driver execution is not that context.
 
 **Guidelines:**
 
-- MUST give an investigation assignment a target it may widen if the answer requires it, one question answerable as an enumeration or a yes/no, and the shape its answer must take — a verdict, a list, or a bounded extract.
-- MUST require a conclusion and a locator rather than the source text, admitting a quotation only where the conclusion cannot stand without one and bounded to what the conclusion needs.
-- MUST NOT impose a read budget, a token cap, or a tool-call cap on an investigation; instruct it to read as much as settling the answer takes, stopping short only by reporting the material unresolved.
-- MUST NOT let an investigation paste its source back, return a full summary, propose further investigation, or explore outside its target beyond what the question requires.
+- MUST follow applicable host guidance within actual tool conditions; when that guidance is absent, use the bounded defaults above and current permitted tool contracts, reporting any required capability that cannot be established.
+- MUST NOT require a universal actor ranking, role name, model, tool, separate checkout, live conversation, or resumable child, or use another invocation mechanism to evade a prohibited purpose.
 
 ## Compatibility Preflight
 
 An executor should fail before effects, not after them. Preflight checks the assignment's required reads, writes, commands, return path, and material fidelity against actual permitted capabilities.
+
+When preflight concerns applicable skill material in a controlled internal actor,
+consult the project's actor-local skill-acquisition practices, where present,
+for required versus observed material in that actor's current context. Without
+that owner, report the acquisition-assessment limit; the required access and
+judging-actor context rules here still apply.
 
 **Guidelines:**
 
@@ -50,6 +41,8 @@ An executor should fail before effects, not after them. Preflight checks the ass
 ## Integration Boundary
 
 This boundary applies when an actor assigns a contribution and retains responsibility for the whole change. The contribution's `complete` result closes only that assignment; the responsible actor still verifies integrated evidence and advances the loop.
+
+Before accepting an investigation conclusion or using a returned plan or design in dependent work, apply [reviewing-phase-deliverables.md](./reviewing-phase-deliverables.md). Receiving the contribution alone does not establish current artifact review.
 
 **Guidelines:**
 

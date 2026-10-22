@@ -18,7 +18,9 @@ See [verification-evidence.md](./references/verification-evidence.md) for:
 
 - Assessing missing verification under the review finding scope, without waiving contributor verification
 - Assessing `tests pass` or `tested manually` claims against commands or routes, exit status, and relevant output
-- The evidence-adequacy decision flow from changed surface to covered-or-flag
+- The evidence-adequacy decision flow, keeping reasoned skips accounted for but unverified
+- Separating skill acquisition from integrated-output conformity without positive external-review attestations
+- Assessing relevance and currency against the claimed obligation, material, platform and observed stage
 - Assessing a green check's unique behavioral coverage, whether its result could have differed, and fixture or harness failures that make a check carry no information
 - Manual checks matched to changed output surfaces
 - Assessing skip reasons for required checks and their residual risk

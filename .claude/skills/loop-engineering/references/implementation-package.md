@@ -31,10 +31,17 @@ Writing assignments additionally name permitted paths or effects, protected chan
 
 Each required material declares one fidelity: **verbatim** for exact bytes, **visual** for an image the actor actually sees, or **prose** for a faithful meaning-preserving summary. Access available to a sender is not evidence that a recipient has access.
 
+For applicable skill material in controlled internal actors, consult the project's
+actor-local skill-acquisition practices, where present, when establishing
+required versus observed material and current-context completeness. Without that
+owner, retain the fidelity contract here and report the unperformed acquisition
+assessment rather than infer a recipient's acquisition from sender access.
+
 **Guidelines:**
 
 - MUST name each material's locator, revision, required states or frames, fidelity, and whether it is required.
 - MUST NOT substitute a textual description for visual fidelity or a paraphrase for verbatim fidelity.
+- MUST have the judging actor itself inspect the actual object of its judgment and applicable governing rules at the required fidelity; a returned conclusion or receipt cannot replace those materials.
 - MUST deliver required material through an adequate permitted channel or return `unavailable`; missing required material blocks success.
 - MUST identify an adequate permitted read channel for each required material, carrying it directly at the declared fidelity when sender access can bridge a recipient's gap; verify all required material before editing.
 
@@ -56,7 +63,9 @@ A writing result carries compact self-review evidence for the current loop drive
 
 ## Review Result
 
-An internal review handoff identifies the reviewed source, target revision or content identifier, actual diff and files, policy applied, evidence inspected, and every finding. A clean result is valid only when all required materials were available.
+An internal review handoff identifies the reviewed source, target revision or content identifier, actual diff and files, policy applied, evidence inspected, and every finding. A clean result requires a complete review of the current required scope and materials under the applicable policy. Historical completion and present coverage are distinct: stale coverage is unusable, not a new result state or a clean current review.
+
+For an investigation, plan, or design artifact review, [reviewing-phase-deliverables.md](./reviewing-phase-deliverables.md) binds this result to the current artifact and places it before phase reliance; the conduct practice owns the review method and budget.
 
 For a posted independent review, [Review Completion Evidence](./independent-review.md#review-completion-evidence) owns completion instead. The loop driver records observable request/result correlation metadata; that record is not a demand for the reviewer to enumerate passed checks or assert policy consumption. Unobserved inspection details are not the same as missing required review material.
 
@@ -64,6 +73,7 @@ For a posted independent review, [Review Completion Evidence](./independent-revi
 
 - MUST give every internal handoff finding a stable identifier, severity, precise citation, claim, and suggested correction; preserve posted independent findings in their project's adopted form rather than imposing this handoff shape.
 - MUST use the same seven result states as execution when classifying a review result, with missing required review material or explicitly unchecked required scope producing `unavailable` or another non-complete state rather than zero findings; assess posted independent-review completion under the reference above.
+- MUST preserve unavailable, incomplete, failed, stale, and unknown review evidence with its actual target, materials, policy, coverage, and limitations; none establishes a clean current review. A later correction or successful check is not fresh reviewer confirmation.
 
 ## Recovery
 

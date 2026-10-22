@@ -38,6 +38,12 @@ can pass while active loading is a mismatch. A matching path with an old body
 instead indicates stale content; a current file read alone cannot establish
 that the session loaded the new body.
 
+When completeness, current retention or another actor's acquisition is in
+question, use [actor-local-acquisition.md](./actor-local-acquisition.md).
+Native loading remains one observation, not proof that every applicable
+reference reached the actor. Direct acquisition can supply required text
+without establishing which source the host selected for native loading.
+
 ## Diagnose before changing an installation
 
 Reload and precedence mechanisms differ by host. Project operations own their
