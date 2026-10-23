@@ -18,3 +18,6 @@ token.txt
 .runner
 .credentials
 .credentials_rsaparams
+
+# Rust build output.
+/cli/target/

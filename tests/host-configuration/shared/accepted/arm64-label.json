@@ -1,0 +1,19 @@
+{
+  "imageName": "actions-runner:local",
+  "repositories": [
+    {
+      "owner": "example-owner",
+      "repository": "example-repo-1",
+      "name": "example-repo-1",
+      "slots": 1,
+      "tokenPath": "C:\\path\\to\\example-repo-1.token",
+      "labels": ["ARM64", "macOS"],
+      "volumes": [
+        {
+          "suffix": "npm",
+          "mountPath": "/home/runner/.npm"
+        }
+      ]
+    }
+  ]
+}

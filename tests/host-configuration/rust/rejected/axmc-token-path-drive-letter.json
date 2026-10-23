@@ -1,0 +1,18 @@
+{
+  "budget": {
+    "cpus": 8,
+    "memoryGb": 32,
+    "diskGb": 200
+  },
+  "repositories": [
+    {
+      "owner": "example-owner",
+      "repository": "example-repo-1",
+      "name": "example-pool-1",
+      "os": "linux",
+      "slots": 1,
+      "tokenPath": "C:\\path\\to\\token",
+      "diskGb": 40
+    }
+  ]
+}

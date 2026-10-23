@@ -122,8 +122,8 @@ Codex review uses its native priority label.
   address, or account name is committed, in a file, a default, an example, a
   comment, or a test fixture. The public maintainer handle and the owner and
   repository names of this repository and of `axross/skills` are allowed, and so
-  is the default runner label `axpc`, the one committed host label, kept by the
-  maintainer's decision (see
+  are the default runner labels `axpc` and `axmc`, the two committed host labels,
+  kept by the maintainer's decision (see
   [Security](docs/conventions/security.md#nothing-identifying-or-secret-is-committed)).
   An example uses an obviously fake
   placeholder (`<owner>`, `<repo>`, `example.invalid`). A value a runner needs
@@ -131,9 +131,11 @@ Codex review uses its native priority label.
 - **No values specific to the repository this code was extracted from.** The
   runner material is generic. An owner, repository, image, container, volume,
   or scheduled-task name belonging to a particular consumer is a parameter,
-  never a literal. The default runner label `axpc` is the one exception.
+  never a literal. The default runner labels `axpc` and `axmc` are the two
+  exceptions.
 - **No self-hosted runners for this repository's own jobs.** Every workflow
-  here uses a GitHub-hosted runner (`ubuntu-latest` or another hosted label).
+  here uses a GitHub-hosted runner (`ubuntu-latest`, `ubuntu-24.04-arm`,
+  `windows-latest`, `macos-latest`, or another hosted label).
   A `runs-on` that names `self-hosted`, or a label only a self-hosted runner
   carries, is a finding. A runner image or host script in this repository is a
   product the repository ships, not a runner it uses.
@@ -145,7 +147,10 @@ Codex review uses its native priority label.
   [Security](docs/conventions/security.md#actions-stays-on-major-tags); do not
   report it. A reusable workflow, a `docker://` reference, and a `run:` step
   that downloads and executes remote code without a checksum are held to the
-  same standard.
+  same standard. The one recorded exception is a step that installs the Rust
+  toolchain `cli/rust-toolchain.toml` names through `rustup`; see
+  [Security](docs/conventions/security.md#pinning-convention). Any other unpinned
+  download is still a finding.
 - **Least-privilege workflow permissions.** Every workflow declares a
   top-level `permissions:` block that starts from `contents: read`. A broader
   scope is granted on the job that needs it, is justified in a comment or in
@@ -198,6 +203,14 @@ Apply the lens for each kind of file in the diff.
   (`github.event.*.title`, `body`, `head_ref`, a comment body) is passed through
   an `env:` variable and quoted, never expanded inside `run:`. A job has a
   `timeout-minutes`. `concurrency` cancels superseded pull request runs only.
+- **Rust.** The CLI under `cli/` has no `unsafe` and no panic on an input path
+  (`unwrap`, `expect`, `panic!`, indexing); it collects every error in the
+  PowerShell validator's order rather than returning the first. A new crate has an
+  entry in [CLI](docs/operations/cli.md) and passes `cli/deny.toml`. A new
+  procedural-macro crate, such as one a derive feature brings, is flagged for the
+  maintainer's review. A change to a rule on the shared fixtures changes both
+  validators or declares a divergence. Give `file:line` evidence as in the other
+  lenses.
 - **Documentation.** A claim about runner behavior is either verified or
   described as planned. A document that describes a file, image, or script
   that does not exist yet says so.
@@ -233,6 +246,10 @@ mechanical defect named below:
 - The `docs/` structural validators (`mise run check:docs`). Their narrow
   structural findings are excluded; documentation accuracy and ownership are
   not.
+- Rust formatting (`mise run format:check`), clippy (`mise run lint:rust`), the
+  CLI's tests (`mise run test:rust`), its licence, source, and duplicate checks
+  (`mise run deny:rust`), and the parity test (`mise run test:parity`). The
+  advisory check runs in its own workflow and is not required.
 - The agreement of `skills-lock.json` with `.claude/skills/`
   (`mise run check:skills`). Whether an installed copy matches its upstream
   source is not checked in CI and remains reportable.

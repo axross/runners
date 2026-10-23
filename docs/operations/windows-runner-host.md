@@ -13,7 +13,10 @@ trust rules they are reviewed against are in
 
 **Verification status.** CI builds the image and runs a smoke test on it for every
 pull request, and runs the configuration validation test under PowerShell 7 and
-under Windows PowerShell 5.1 (`windows-latest`). The supervisor's runtime paths
+under Windows PowerShell 5.1 (`windows-latest`). Its fixtures are shared with the
+Rust CLI's validator and live in
+[`tests/host-configuration/`](../../tests/host-configuration); see
+[CLI](./cli.md). The supervisor's runtime paths
 were exercised once, in the authoring session, on PowerShell 7 on Linux, with a
 stub `docker` executable and a stub HTTP endpoint standing in for GitHub; that
 harness is not committed, so nothing re-runs it. The paths it covered are the

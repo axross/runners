@@ -36,7 +36,8 @@ platform is Windows with Docker Desktop, under `hosts/windows-docker-desktop/`.
 **Host Configuration** - the machine-local JSON file, kept outside the repository,
 that names a runner host's image and lists its **Execution Pools** for
 **Target Repositories**. The
-**Supervisor** and the host's other scripts read it.
+**Supervisor** and the host's other scripts read it. The **CLI** reads it too,
+checked against a **Host Profile**.
 
 **Target Repository** - a GitHub repository a runner host serves. Its
 **Execution Pools** share one repository-scoped token file.
@@ -46,8 +47,9 @@ that names a runner host's image and lists its **Execution Pools** for
 container, runner, and cache-volume namespace.
 
 **Routing Label** - the label a workflow uses in `runs-on` to select an
-**Execution Pool**. Missing or empty host `labels` default to `axpc`; a non-empty
-list supplies that pool's routing labels instead.
+**Execution Pool**. Missing or empty host `labels` default to the host's own
+label, `axpc` or `axmc`; a non-empty list supplies that pool's routing labels
+instead.
 
 **Custom Label** - an optional runner label an entry of the **Host Configuration**
 lists beside `self-hosted`, `linux`, and `x64`. A workflow
@@ -60,6 +62,22 @@ previous one exits.
 **Supervisor** - the host-side script that keeps each slot of every **Execution
 Pool** filled: it requests a **JIT Config** with the target repository's token,
 starts a runner container, waits for it to exit, and repeats.
+
+**CLI** - this project's Rust command line tool, under `cli/`. So far it has one
+command, `validate`, which checks a **Host Configuration**.
+
+**Host Profile** - the host a **Host Configuration** is checked for: `axpc`, the
+Windows machine with Docker Desktop, or `axmc`, the macOS machine. A profile fixes
+the fields, the platform labels, the **Routing Label**, and the path form. See
+[operations/cli.md](./operations/cli.md).
+
+**Shared Fixtures** - the configuration files under `tests/host-configuration/`
+that the PowerShell validator's test, the **CLI**'s tests, and the **Parity Test**
+read, with one `expectations.json` recording what each must give.
+
+**Parity Test** - the check that runs the PowerShell validator and the **CLI** over
+the **Shared Fixtures** and fails when their outcomes, ordered errors, or summaries
+differ. It ends when the PowerShell validator is removed.
 
 **Shared Volume** - storage, such as a named Docker volume for a package cache,
 mounted into more than one runner container over time. It is the surface the

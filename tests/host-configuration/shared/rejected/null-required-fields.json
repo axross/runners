@@ -1,0 +1,14 @@
+{
+  "imageName": "actions-runner:local",
+  "repositories": [
+    {
+      "owner": null,
+      "repository": null,
+      "name": null,
+      "slots": null,
+      "tokenPath": null,
+      "labels": ["example-label-1"],
+      "volumes": null
+    }
+  ]
+}

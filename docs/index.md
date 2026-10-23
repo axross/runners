@@ -42,14 +42,18 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   running ephemeral runners for several repositories on a Windows machine with
   Docker Desktop: prerequisites, the per-repository token, the host
   configuration, scheduled tasks, health checks, updating, and recovery.
+- [operations/cli.md](./operations/cli.md) - the CLI under `cli/`: what `validate`
+  accepts and prints for the axpc and axmc host profiles, how it stays equal to the
+  PowerShell validator, the shared fixtures and the parity test, the toolchain and
+  Rust gates, the allowed dependencies, and what a rename touches.
 - [operations/agent-skills.md](./operations/agent-skills.md) - installing and
   refreshing the skills from `axross/skills`, the drift checks, and the register
   of deviations and gaps.
 
 ## Glossary
 
-- [glossary.md](./glossary.md) - runner, image, host, agent-host, and change-loop
-  vocabulary.
+- [glossary.md](./glossary.md) - runner, image, host, CLI, agent-host, and
+  change-loop vocabulary.
 
 For what this project is, how to start it, and the commands it has, see
 [`README.md`](../README.md). [`AGENTS.md`](../AGENTS.md) is the working agreement

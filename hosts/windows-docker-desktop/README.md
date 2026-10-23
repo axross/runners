@@ -20,7 +20,7 @@ recovery.
 | `diagnostic-export.ps1`           | Exports bounded private evidence before diagnostic-container removal, without changing runner outcomes      |
 | `diagnostic-process-lifetime.ps1` | Initializes the Windows Job Object lifetime boundary before enabled container work                          |
 | `export-runner-diagnostics.ps1`   | Private export worker; isolates storage I/O so the supervisor can enforce its deadline                      |
-| `tests/`                          | The validation test and its rejected and accepted fixtures, run by `mise run test:host`                     |
+| `tests/`                          | The validation test and the other host tests, run by `mise run test:host`; the fixtures are shared          |
 
 The scripts target Windows PowerShell 5.1, which the scheduled tasks use, and are
 written to run on PowerShell 7 as well. CI runs the configuration test under both;
@@ -98,10 +98,18 @@ mise run test:host
 ```
 
 runs [`tests/test-host-configuration.ps1`](./tests/test-host-configuration.ps1).
-Each fixture in `tests/fixtures/` breaks one rule and must be rejected with a
-message naming its field; each in `tests/accepted/` sits on the edge of a rule
-(no volumes, a UNC token path, the maximum slot count, the limit bounds) and must
-be accepted; the example must be accepted with distinct names and volume names.
+The fixtures live in [`tests/host-configuration/`](../../tests/host-configuration)
+at the repository root, shared with the Rust CLI's validator, and one
+`expectations.json` there records the outcome and the strings each must give; the
+test fails on a fixture without an expectation and on an expectation without a
+fixture. Each fixture in `shared/rejected/` breaks one rule and must be rejected
+with a message naming its field; each in `shared/accepted/` sits on the edge of a
+rule (no volumes, a UNC token path, the maximum slot count, the limit bounds) and
+must be accepted; the example must be accepted with distinct names and volume
+names. The test skips `shared/pwsh7/`, whose fixtures Windows PowerShell 5.1 may
+judge differently, below PowerShell 7, and ignores `rust/`, which holds the macOS
+profile and Rust-only fixtures. [CLI](../../docs/operations/cli.md) describes the
+set and the parity test that compares the two validators.
 The split-pool fixture checks label defaults and replacement, isolated same-repository
 storage, a one-slot dedicated pool, and rejection of cross-route labels or
 incorrect token sharing. The test also builds a job container's `docker run` arguments, checks the limit

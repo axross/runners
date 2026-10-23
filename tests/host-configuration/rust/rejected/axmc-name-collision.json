@@ -1,0 +1,27 @@
+{
+  "budget": {
+    "cpus": 8,
+    "memoryGb": 32,
+    "diskGb": 200
+  },
+  "repositories": [
+    {
+      "owner": "example-owner",
+      "repository": "example-repo-1",
+      "name": "example",
+      "os": "linux",
+      "slots": 1,
+      "tokenPath": "/path/to/example-repo-1.token",
+      "diskGb": 40
+    },
+    {
+      "owner": "example-owner",
+      "repository": "example-repo-2",
+      "name": "example-nested",
+      "os": "linux",
+      "slots": 1,
+      "tokenPath": "/path/to/example-repo-2.token",
+      "diskGb": 40
+    }
+  ]
+}

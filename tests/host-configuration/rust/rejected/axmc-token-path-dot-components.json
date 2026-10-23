@@ -1,0 +1,45 @@
+{
+  "budget": {
+    "cpus": 8,
+    "memoryGb": 32,
+    "diskGb": 200
+  },
+  "repositories": [
+    {
+      "owner": "example-owner",
+      "repository": "example-repo-1",
+      "name": "example-pool-1",
+      "os": "linux",
+      "slots": 1,
+      "tokenPath": "/path/../token",
+      "diskGb": 40
+    },
+    {
+      "owner": "example-owner",
+      "repository": "example-repo-2",
+      "name": "example-pool-2",
+      "os": "linux",
+      "slots": 1,
+      "tokenPath": "/path/./token",
+      "diskGb": 40
+    },
+    {
+      "owner": "example-owner",
+      "repository": "example-repo-3",
+      "name": "example-pool-3",
+      "os": "linux",
+      "slots": 1,
+      "tokenPath": "/path//token",
+      "diskGb": 40
+    },
+    {
+      "owner": "example-owner",
+      "repository": "example-repo-4",
+      "name": "example-pool-4",
+      "os": "linux",
+      "slots": 1,
+      "tokenPath": "/path/token/",
+      "diskGb": 40
+    }
+  ]
+}

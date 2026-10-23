@@ -5,12 +5,17 @@
     -ValidateOnly mode, and a few rules the host scripts must keep.
 
 .DESCRIPTION
-    each fixture under fixtures/ breaks exactly one rule and must be rejected
-    with a non-zero exit code and a message naming the offending field. each
-    fixture under accepted/ sits on the edge of a rule and must be accepted.
-    the example configuration must be accepted and plan distinct names and
-    volume names for its two repositories, with the default limits where it
-    sets none. the job container's `docker run` arguments, a slot job's
+    the shared fixtures under tests/host-configuration/shared/ and the
+    expectations in tests/host-configuration/expectations.json are read by this
+    test and by the Rust validator's tests. each fixture under rejected/ breaks
+    exactly one rule, or a few in a known order, and must be rejected with a
+    non-zero exit code and a message holding the expected text. each fixture
+    under accepted/ sits on the edge of a rule and must be accepted. the
+    fixtures under pwsh7/ are judged differently by Windows PowerShell 5.1 and
+    are skipped below PowerShell 7. a fixture without an expectation, or an
+    expectation without a fixture, fails the test. the example configuration
+    must be accepted and plan distinct names and volume names for its two
+    repositories, with the default limits where it sets none. the job container's `docker run` arguments, a slot job's
     positional arguments against its worker script block's parameters, and the
     stale container name pattern are built and checked without Docker. runs under the PowerShell that runs it, on Windows
     PowerShell 5.1 as well as PowerShell 7, and calls neither Docker nor
@@ -21,8 +26,8 @@ $ErrorActionPreference = 'Stop'
 $hostDirectory = Split-Path -Parent $PSScriptRoot
 $supervisor = Join-Path $hostDirectory 'supervisor.ps1'
 $example = Join-Path $hostDirectory 'runner-host.example.json'
-$fixtureDirectory = Join-Path $PSScriptRoot 'fixtures'
-$acceptedDirectory = Join-Path $PSScriptRoot 'accepted'
+$sharedRoot = Join-Path (Split-Path -Parent (Split-Path -Parent $hostDirectory)) 'tests/host-configuration'
+$sharedDirectory = Join-Path $sharedRoot 'shared'
 $powershell = (Get-Process -Id $PID).Path
 
 . (Join-Path $hostDirectory 'host-configuration.ps1')
@@ -57,88 +62,43 @@ function Assert-Case {
     }
 }
 
-# each fixture maps to the text its rejection message must contain.
-$rejections = [ordered]@{
-    'default-labels-only.json'       = @('repositories[0].labels:', 'list only non-platform labels')
-    'labels-not-list.json'           = @('repositories[0].labels: must be a list of labels')
-    'labels-null.json'               = @('repositories[0].labels: must be a list of labels')
-    'duplicate-repository.json'      = @('repositories[1].labels: ambiguous same-repository routing')
-    'colliding-name.json'            = @('repositories[1].name: name', 'collides')
-    'colliding-name-nested.json'     = @('repositories[1].name: name', 'collides')
-    'colliding-name-nested-reverse.json' = @('repositories[1].name: name', 'collides')
-    'missing-owner.json'             = @('repositories[0].owner: required field is missing')
-    'missing-token-path.json'        = @('repositories[0].tokenPath: required field is missing')
-    'missing-volumes.json'           = @('repositories[0].volumes: required field is missing')
-    'missing-name.json'              = @('repositories[0].name: required field is missing')
-    'name-bad-pattern.json'          = @('repositories[0].name: must be lowercase letters, digits and hyphens')
-    'name-too-long.json'             = @('repositories[0].name: name is 65 characters', 'at most 64')
-    'name-trailing-newline.json'     = @('repositories[0].name: must be lowercase letters, digits and hyphens')
-    'owner-trailing-newline.json'    = @('repositories[0].owner: must be a GitHub owner name')
-    'repository-trailing-newline.json' = @('repositories[0].repository: must be a GitHub repository name')
-    'image-name-trailing-newline.json' = @('imageName: must be a local Docker image name')
-    'label-trailing-newline.json'    = @('repositories[0].labels: each label must be a string of letters')
-    'volume-suffix-trailing-newline.json' = @('repositories[0].volumes[0].suffix: must be lowercase letters, digits and hyphens')
-    'mount-path-trailing-newline.json' = @('repositories[0].volumes[0].mountPath: must be an absolute container path')
-    'leftover-host-prefix.json'      = @('configuration.hostPrefix: unknown field')
-    'leftover-prefix.json'           = @('repositories[0].prefix: unknown field')
-    'cpus-zero.json'                 = @('repositories[0].cpus: must be a number greater than 0 and at most 64')
-    'cpus-negative.json'             = @('repositories[0].cpus: must be a number greater than 0 and at most 64')
-    'cpus-too-many.json'             = @('repositories[0].cpus: must be a number greater than 0 and at most 64')
-    'cpus-string.json'               = @('repositories[0].cpus: must be a number greater than 0 and at most 64')
-    'cpus-rounds-to-zero.json'       = @('repositories[0].cpus: must be a number greater than 0 and at most 64, and large enough not to be written as 0')
-    'memory-zero.json'               = @('repositories[0].memoryGb: must be an integer from 1 to 256')
-    'memory-too-many.json'           = @('repositories[0].memoryGb: must be an integer from 1 to 256')
-    'memory-fractional.json'         = @('repositories[0].memoryGb: must be an integer from 1 to 256')
-    'memory-string.json'             = @('repositories[0].memoryGb: must be an integer from 1 to 256')
-    'slots-zero.json'                = @('repositories[0].slots: must be an integer')
-    'mount-path-injection.json'      = @('repositories[0].volumes[0].mountPath: must be an absolute container path')
-    'mount-path-dotdot.json'         = @("repositories[0].volumes[0].mountPath: must not contain '..'")
-    'slots-too-many.json'            = @('repositories[0].slots: must be an integer from 1 to 16')
-    'token-path-relative.json'       = @('repositories[0].tokenPath: must be an absolute Windows path')
-    'token-path-drive-relative.json' = @('repositories[0].tokenPath: must be an absolute Windows path')
-    'token-path-rooted-without-drive.json' = @('repositories[0].tokenPath: must be an absolute Windows path')
-    'shared-token-path.json'         = @('repositories[1].tokenPath: token file', 'is already used at repositories[0]')
-    'unknown-field.json'             = @('repositories[0].label: unknown field')
+# every shared fixture has an entry in expectations.json, keyed by its path below
+# tests/host-configuration/: the outcome, and the text its output must and must
+# not contain. arrays are wrapped in @() because Windows PowerShell 5.1 unrolls a
+# one-element array it reads from JSON.
+$expectations = Get-Content -LiteralPath (Join-Path $sharedRoot 'expectations.json') -Raw | ConvertFrom-Json
+$sharedExpectations = @($expectations.PSObject.Properties | Where-Object { $_.Name.StartsWith('shared/') })
+$sharedFixtures = @(Get-ChildItem -LiteralPath $sharedDirectory -Recurse -File -Filter '*.json' |
+        ForEach-Object { $_.FullName.Substring($sharedRoot.Length + 1).Replace('\', '/') })
+
+foreach ($property in $sharedExpectations) {
+    $name = $property.Name
+    $expectation = $property.Value
+    if ($name.StartsWith('shared/pwsh7/') -and $PSVersionTable.PSVersion.Major -lt 7) {
+        Write-Output "SKIP  $name - PowerShell 7 only"
+        continue
+    }
+    if ($sharedFixtures -notcontains $name) {
+        continue
+    }
+    $result = Invoke-Validation -ConfigPath (Join-Path $sharedRoot $name)
+    $missing = @(@($expectation.contains) | Where-Object { -not $result.Text.Contains($_) })
+    $unwanted = @(@($expectation.lacks) | Where-Object { $result.Text.Contains($_) })
+    if ($expectation.outcome -ceq 'reject') {
+        Assert-Case -Name "rejects $name" -Passed ($result.ExitCode -ne 0 -and $missing.Count -eq 0 -and $unwanted.Count -eq 0) `
+            -Detail "exit code $($result.ExitCode); message lacks: $($missing -join ' | '); message has: $($unwanted -join ' | '); message: $($result.Text)"
+    } else {
+        Assert-Case -Name "accepts $name" -Passed ($result.ExitCode -eq 0 -and $missing.Count -eq 0 -and $unwanted.Count -eq 0) `
+            -Detail "exit code $($result.ExitCode); message lacks: $($missing -join ' | '); message has: $($unwanted -join ' | '); message: $($result.Text)"
+    }
 }
 
-foreach ($fixture in $rejections.Keys) {
-    $result = Invoke-Validation -ConfigPath (Join-Path $fixtureDirectory $fixture)
-    $missing = @($rejections[$fixture] | Where-Object { -not $result.Text.Contains($_) })
-    Assert-Case -Name "rejects $fixture" -Passed ($result.ExitCode -ne 0 -and $missing.Count -eq 0) `
-        -Detail "exit code $($result.ExitCode); message lacks: $($missing -join ' | '); message: $($result.Text)"
-}
-
-$unlisted = @(Get-ChildItem -LiteralPath $fixtureDirectory -Filter '*.json' | Where-Object { -not $rejections.Contains($_.Name) })
-Assert-Case -Name 'every fixture has an expectation' -Passed ($unlisted.Count -eq 0) `
-    -Detail "no expectation for: $($unlisted.Name -join ', ')"
-
-# each fixture maps to the text its plan summary must contain and the text it
-# must not.
-$acceptances = [ordered]@{
-    'no-labels-field.json' = @{ Contains = @("labels:            self-hosted, linux, x64, axpc`n"); Lacks = @() }
-    'empty-labels.json'   = @{ Contains = @("labels:            self-hosted, linux, x64, axpc`n"); Lacks = @() }
-    'axpc-label.json'     = @{ Contains = @("labels:            self-hosted, linux, x64, AXPC, example-label-one`n"); Lacks = @() }
-    'no-volumes.json'     = @{ Contains = @('Host configuration is valid: 1 entries', 'cpus:              2', 'memory:            8 GB'); Lacks = @('volume:') }
-    'unc-token-path.json' = @{ Contains = @('token file:        \\example-server\example-share\example-repo-one.token'); Lacks = @() }
-    'max-slots.json'      = @{ Contains = @('slots:             16'); Lacks = @() }
-    'explicit-limits.json' = @{ Contains = @('cpus:              1.5', 'memory:            16 GB'); Lacks = @('cpus:              2') }
-    'limit-bounds.json'   = @{ Contains = @('cpus:              64', 'memory:            256 GB'); Lacks = @() }
-    'max-name-length.json' = @{ Contains = @("name:              $('n' * 64)"); Lacks = @() }
-    'similar-names.json'  = @{ Contains = @('Host configuration is valid: 3 entries', "name:              example-repos`n"); Lacks = @() }
-    'split-pools.json'    = @{ Contains = @('entries, image actions-runner:local', 'labels:            self-hosted, linux, x64, example-android-route', 'slots:             3'); Lacks = @('example-android-route, axpc') }
-}
-
-foreach ($fixture in $acceptances.Keys) {
-    $result = Invoke-Validation -ConfigPath (Join-Path $acceptedDirectory $fixture)
-    $missing = @($acceptances[$fixture].Contains | Where-Object { -not $result.Text.Contains($_) })
-    $unwanted = @($acceptances[$fixture].Lacks | Where-Object { $result.Text.Contains($_) })
-    Assert-Case -Name "accepts $fixture" -Passed ($result.ExitCode -eq 0 -and $missing.Count -eq 0 -and $unwanted.Count -eq 0) `
-        -Detail "exit code $($result.ExitCode); message lacks: $($missing -join ' | '); message has: $($unwanted -join ' | '); message: $($result.Text)"
-}
-
-$unexpected = @(Get-ChildItem -LiteralPath $acceptedDirectory -Filter '*.json' | Where-Object { -not $acceptances.Contains($_.Name) })
-Assert-Case -Name 'every accepted fixture has an expectation' -Passed ($unexpected.Count -eq 0) `
-    -Detail "no expectation for: $($unexpected.Name -join ', ')"
+$withoutExpectation = @($sharedFixtures | Where-Object { $expectations.PSObject.Properties.Name -notcontains $_ })
+Assert-Case -Name 'every shared fixture has an expectation' -Passed ($withoutExpectation.Count -eq 0) `
+    -Detail "no expectation for: $($withoutExpectation -join ', ')"
+$withoutFixture = @($sharedExpectations | Where-Object { $sharedFixtures -notcontains $_.Name } | ForEach-Object { $_.Name })
+Assert-Case -Name 'every shared expectation has a fixture' -Passed ($withoutFixture.Count -eq 0) `
+    -Detail "no fixture for: $($withoutFixture -join ', ')"
 
 $accepted = Invoke-Validation -ConfigPath $example
 Assert-Case -Name 'accepts the example configuration' -Passed ($accepted.ExitCode -eq 0) -Detail $accepted.Text
@@ -159,11 +119,11 @@ Assert-Case -Name 'example registers the default labels and the custom label' `
 Assert-Case -Name 'example registers the default labels and the second custom label' `
     -Passed ($accepted.Text.Contains('labels:            self-hosted, linux, x64, axpc, example-label-two')) -Detail $accepted.Text
 
-# the job container's arguments for the entry in accepted/explicit-limits.json,
+# the job container's arguments for the entry in shared/accepted/explicit-limits.json,
 # with the limits formatted the way the supervisor formats them for a slot job.
 # the limits and the name must sit before the image, because Docker reads
 # whatever follows the image as the container's own command.
-$limitsPlan = Read-HostConfiguration -Path (Join-Path $acceptedDirectory 'explicit-limits.json')
+$limitsPlan = Read-HostConfiguration -Path (Join-Path $sharedDirectory 'accepted/explicit-limits.json')
 $limitsEntry = $limitsPlan.Repositories[0]
 $mountArguments = @('--mount', "type=volume,source=$($limitsEntry.Volumes[0].Name),target=$($limitsEntry.Volumes[0].MountPath)")
 $jobName = Get-JobContainerName -EntryName $limitsEntry.Name -Slot 2 -Now (New-Object DateTime 2024, 3, 5, 6, 7, 8, 9)
@@ -243,7 +203,7 @@ Assert-Case -Name 'slot job arguments carry the entry, the slot, and the limits'
         -and $workerArguments.ImageName -ceq 'actions-runner:local' -and $workerArguments.InitialBackoffSeconds -eq 5 -and $workerArguments.MaxBackoffSeconds -eq 300) `
     -Detail (($workerArguments.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join '; ')
 
-$poolFixture = Join-Path $acceptedDirectory 'split-pools.json'
+$poolFixture = Join-Path $sharedDirectory 'accepted/split-pools.json'
 $poolPlan = Read-HostConfiguration -Path $poolFixture
 $general = $poolPlan.Repositories[0]
 $android = $poolPlan.Repositories[1]
@@ -270,31 +230,7 @@ foreach ($entry in $poolPlan.Repositories) {
         -Detail 'cleanup crossed pool names'
 }
 
-$poolRejections = @(
-    @{ Name = 'duplicate routes'; Field = 'labels'; Change = { param($c) $c.repositories[1].labels = @('AXPC') } },
-    @{ Name = 'general carries Android route'; Field = 'labels'; Change = { param($c) $c.repositories[0].labels += 'EXAMPLE-ANDROID-ROUTE' } },
-    @{ Name = 'Android carries general custom route'; Field = 'labels'; Change = { param($c) $c.repositories[1].labels += 'example-general-route' } },
-    @{ Name = 'Android carries axpc'; Field = 'labels'; Change = { param($c) $c.repositories[1].labels += 'axpc' } },
-    @{ Name = 'duplicate label'; Field = 'labels'; Change = { param($c) $c.repositories[1].labels += 'EXAMPLE-ANDROID-ROUTE' } },
-    @{ Name = 'shared custom alias'; Field = 'labels'; Change = { param($c) $c.repositories[0].labels += 'shared'; $c.repositories[1].labels += 'SHARED' } },
-    @{ Name = 'same repository with different token'; Field = 'tokenPath'; Change = { param($c) $c.repositories[1].tokenPath = 'C:\path\to\other.token' } },
-    @{ Name = 'cross repository with shared token'; Field = 'tokenPath'; Change = { param($c) $c.repositories[1].repository = 'other-repo' } },
-    @{ Name = 'colliding pool names'; Field = 'name'; Change = { param($c) $c.repositories[1].name = 'example-general-nested' } },
-    @{ Name = 'platform label'; Field = 'labels'; Change = { param($c) $c.repositories[1].labels = @('SELF-HOSTED') } },
-    @{ Name = 'removed entry image field'; Field = 'imageName'; Change = { param($c) $c.repositories[1] | Add-Member imageName 'actions-runner:other' } },
-    @{ Name = 'removed routing field'; Field = 'routingLabel'; Change = { param($c) $c.repositories[1] | Add-Member routingLabel 'other-route' } }
-)
-$poolScratch = [IO.Path]::GetTempFileName()
-try {
-    foreach ($case in $poolRejections) {
-        $config = Get-Content -LiteralPath $poolFixture -Raw | ConvertFrom-Json
-        & $case.Change $config
-        [IO.File]::WriteAllText($poolScratch, ($config | ConvertTo-Json -Depth 8), [Text.Encoding]::ASCII)
-        $result = Invoke-Validation -ConfigPath $poolScratch
-        Assert-Case -Name "rejects $($case.Name) before external effects" `
-            -Passed ($result.ExitCode -ne 0 -and $result.Text.Contains(".$($case.Field):")) -Detail $result.Text
-    }
-} finally { Remove-Item -LiteralPath $poolScratch -Force }
+# the former inline mutations of split-pools.json are shared/rejected/pool-*.json.
 
 # the stale-container cleanup matches only the containers Get-JobContainerName
 # gives this entry.

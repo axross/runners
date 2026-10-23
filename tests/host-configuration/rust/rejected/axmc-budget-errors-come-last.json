@@ -1,0 +1,27 @@
+{
+  "budget": {
+    "cpus": 8,
+    "memoryGb": 32,
+    "diskGb": 200
+  },
+  "repositories": [
+    {
+      "owner": "example-owner",
+      "repository": "example-repo",
+      "name": "example",
+      "os": "macos",
+      "slots": 2,
+      "tokenPath": "/path/to/example-repo-1.token",
+      "diskGb": 40
+    },
+    {
+      "owner": "example-owner",
+      "repository": "example-repo",
+      "name": "example",
+      "os": "macos",
+      "slots": 1,
+      "tokenPath": "/path/to/other.token",
+      "diskGb": 1000
+    }
+  ]
+}

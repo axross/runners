@@ -1,0 +1,22 @@
+{
+  "imageName": "actions-runner:local",
+  "repositories": [
+    {
+      "owner": "example-owner",
+      "repository": "example-repo-1",
+      "name": "example-repo-1",
+      "slots": 1,
+      "zzz": 1,
+      "yyy": 2,
+      "zzz": 3,
+      "tokenPath": "C:\\path\\to\\example-repo-1.token",
+      "labels": ["example-label-1"],
+      "volumes": [
+        {
+          "suffix": "npm",
+          "mountPath": "/home/runner/.npm"
+        }
+      ]
+    }
+  ]
+}
