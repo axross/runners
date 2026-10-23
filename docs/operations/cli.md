@@ -33,6 +33,17 @@ one line per error, a hyphen then `<path>: <problem>`, where the path uses the n
 `repositories[0].labels`. A configuration that is not an object prints the header
 without the path and `configuration: must be an object`.
 
+A configuration larger than 1 MiB (1048576 bytes) is refused before it is parsed:
+`Host configuration cannot be read: <path>: the file is larger than 1048576 bytes (1 MiB)`,
+exit 1. Real configurations are a few kilobytes, so the limit only stops a mistaken
+path from being read whole. It is a Rust-only rule, pinned by
+`a_file_over_the_size_limit_is_rejected_without_being_parsed` in
+`cli/tests/command.rs`, which also checks a file of exactly 1 MiB is read.
+
+Known limitation: when `validate` cannot write its output, for example a closed
+pipe, it exits 1, the same code as a rejected configuration. The behaviour is
+unchanged on purpose; a caller that must tell the two apart reads the output.
+
 ## Profiles
 
 A profile names a host. The shared rules and messages are the PowerShell
@@ -142,17 +153,25 @@ These inputs are outside parity. Each is either a Rust-only fixture under
 bytes MUST NOT be reformatted, or a Rust test where the input is not a file. A
 fixture's expectation records PowerShell's own outcome, or `skip` where PowerShell
 cannot run it or its result depends on the platform's globalization data.
+The case-folding rows are not files: `fold::tests::simple_folding_differs_from_powershell_eq_on_declared_pairs`
+in `cli/src/fold.rs` pins Rust's side of them, and the PowerShell side is
+recorded in the table. The `rust/raw/` fixtures `leading-zero-integer.json`,
+`single-quoted-string.json`, `unquoted-property-name.json`, and
+`lone-surrogate-escape.json` record `powershell: accept` for the strict-JSON row, and
+the parity test runs PowerShell on them to confirm it. The other inputs in that row
+were probed by hand with PowerShell 7.6.6 and have no fixture.
 
-| Input                                                           | Rust                                                               | PowerShell                                                  |
-| --------------------------------------------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------- |
-| A missing file, invalid JSON, two keys that differ only in case | Rejects with its own wording                                       | Rejects with a .NET message                                 |
-| Invalid UTF-8                                                   | Rejects                                                            | Substitutes U+FFFD and may accept                           |
-| A non-object root                                               | Rejects and keeps the path in the header; a root array is rejected | Omits the path; unrolls a one-object array                  |
-| Comments and trailing commas                                    | Rejects                                                            | Windows PowerShell 5.1 rejects; PowerShell 7 accepts        |
-| Token paths that `-eq` equates but simple case folding does not | Treats them as different                                           | Treats them as equal                                        |
-| A `null` entry in `repositories`                                | Rejects: `repositories[0]: must be an object`                      | Rejects with a binding error                                |
-| The checkout rule                                               | Applies it on both profiles                                        | Anchors on the supervisor's own repository, on Windows only |
-| Case folding outside simple folding (U+017F, U+0345, U+1E9B)    | Differs from `-eq` on these code points                            | Culture-sensitive comparison                                |
+| Input                                                                                                                                                                                                                                                                       | Rust                                                               | PowerShell                                                                                                                                                                                                |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A missing file, truncated or otherwise invalid JSON, two keys that differ only in case                                                                                                                                                                                      | Rejects with its own wording                                       | Rejects with a .NET message                                                                                                                                                                               |
+| Invalid UTF-8                                                                                                                                                                                                                                                               | Rejects                                                            | Substitutes U+FFFD and may accept                                                                                                                                                                         |
+| A non-object root                                                                                                                                                                                                                                                           | Rejects and keeps the path in the header; a root array is rejected | Omits the path; unrolls a one-object array                                                                                                                                                                |
+| Anything outside RFC 8259 (strict JSON): comments, trailing commas, single-quoted strings, unquoted property names, leading zeros (`01`), `.5`, `0x2`, `NaN`, no-break space or form-feed whitespace, a trailing NUL, U+2028 after the document, and lone surrogate escapes | Rejects with its own wording                                       | PowerShell 7 (Json.NET) accepts each at the JSON level, and `NaN` is then rejected by the field's own rule; Windows PowerShell 5.1 rejects comments and trailing commas, and the rest is not probed there |
+| Token paths that `-eq` equates but simple case folding does not                                                                                                                                                                                                             | Treats them as different                                           | Treats them as equal                                                                                                                                                                                      |
+| A `null` entry in `repositories`                                                                                                                                                                                                                                            | Rejects: `repositories[0]: must be an object`                      | Rejects with a binding error                                                                                                                                                                              |
+| The checkout rule                                                                                                                                                                                                                                                           | Applies it on both profiles                                        | Anchors on the supervisor's own repository, on Windows only                                                                                                                                               |
+| U+017F against `s` or `S`, U+0345 against U+03B9 or U+0399, U+1E9B against U+1E61 or U+1E60                                                                                                                                                                                 | Equal under simple case folding                                    | `-eq` treats each pair as different (PowerShell 7.6.6 on Linux)                                                                                                                                           |
+| The Kelvin sign U+212A against `k` or `K`                                                                                                                                                                                                                                   | Equal under simple case folding                                    | The result follows the platform's globalization data (equal on PowerShell 7.6.6 on Linux)                                                                                                                 |
 
 ## Fixtures and Tests
 
@@ -223,22 +242,28 @@ fetches the RustSec database, so it runs in
 
 ## Dependencies
 
-A new crate MUST NOT be added without an entry here. [`cli/deny.toml`](../../cli/deny.toml)
-allows crates.io only, one version of each crate, and the licences below. Both
-licences are permissive and the CLI is unpublished, so it carries no licence field
-of its own; `deny.toml` ignores private crates for that reason.
+A new crate MUST NOT be added without an entry here, and every crate in
+[`cli/Cargo.lock`](../../cli/Cargo.lock) has one. [`cli/deny.toml`](../../cli/deny.toml)
+allows crates.io only, one version of each crate, and the licences below. The CLI
+is unpublished, so it carries no licence field of its own; `deny.toml` ignores
+private crates for that reason.
 
 | Crate                                                  | Why                                                         | Licence           |
 | ------------------------------------------------------ | ----------------------------------------------------------- | ----------------- |
 | `clap`, with `clap_builder`, `clap_lex`, and `anstyle` | Argument parsing, with default features off                 | MIT OR Apache-2.0 |
 | `regex`, with `regex-automata` and `regex-syntax`      | The whole-value patterns for names, labels, and image names | MIT OR Apache-2.0 |
+| `aho-corasick` and `memchr`                            | Optional dependencies of `regex`                            | Unlicense OR MIT  |
 
-The JSON parser is in the crate, not a dependency. Parity needs the behaviours of
+`aho-corasick` and `memchr` are in the lockfile because `regex` lists them as
+optional, but the CLI's feature set (`std` and `unicode-perl`, no `perf`) does not
+build them. They are accepted under their MIT alternative, so the Unlicense is not
+on the allowlist and need not be. The JSON parser is in the crate, not a dependency. Parity needs the behaviours of
 `ConvertFrom-Json` listed above: order-preserving objects, the last-position
 duplicate rule, case-conflict errors, and number literals kept as text. The crate
 owns that parser, and the fixtures pin it. Allowed
-licences are `MIT` and `Apache-2.0`; adding another requires the maintainer's
-review of that licence.
+licences are `MIT` and `Apache-2.0`; a crate whose licence is an `OR` expression is
+accepted when one alternative is on that list. Adding another licence requires the
+maintainer's review of it.
 
 ## Renaming the CLI
 
