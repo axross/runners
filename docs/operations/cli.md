@@ -40,6 +40,18 @@ path from being read whole. It is a Rust-only rule, pinned by
 `a_file_over_the_size_limit_is_rejected_without_being_parsed` in
 `cli/tests/command.rs`, which also checks a file of exactly 1 MiB is read.
 
+The uniqueness checks compare every pair of entries, so their time grows with the
+square of the number of entries, and it grows with the labels per entry too. On a
+release build in a 4-CPU cloud container, 8,000 entries (about 0.8 MB) in distinct
+repositories take about 0.6 s when nothing collides, and 8,000 entries in one
+repository with a distinct label each take about 0.9 s. With many labels per entry it takes
+longer: 1,500 entries in one repository with 50 labels each take about 3 s. Colliding
+entries grow the error output with the square too, because every error is reported:
+8,000 entries in one repository with the default labels print about 32 million error
+lines and use about 9 GB of memory, and several collisions per pair or shorter entries
+(the 1 MiB limit fits about 11,900) give more. The 1 MiB limit bounds both. Real
+configurations are expected to have about ten entries.
+
 Known limitation: when `validate` cannot write its output, for example a closed
 pipe, it exits 1, the same code as a rejected configuration. The behaviour is
 unchanged on purpose; a caller that must tell the two apart reads the output.

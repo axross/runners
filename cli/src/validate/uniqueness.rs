@@ -7,16 +7,42 @@ use super::fields::Errors;
 use super::plan::Entry;
 
 fn names_collide(first: &str, second: &str) -> bool {
-    first == second
-        || first.starts_with(&format!("{second}-"))
-        || second.starts_with(&format!("{first}-"))
+    first == second || extends(first, second) || extends(second, first)
 }
 
-fn same_repository(first: &Entry, second: &Entry) -> bool {
-    fold::eq_ascii(
-        &format!("{}/{}", first.owner, first.repository),
-        &format!("{}/{}", second.owner, second.repository),
-    )
+/// Reports whether `name` is `prefix`, a `-`, and more.
+fn extends(name: &str, prefix: &str) -> bool {
+    name.strip_prefix(prefix)
+        .is_some_and(|rest| rest.starts_with('-'))
+}
+
+/// An entry with the values the pairwise checks compare, prepared once so that a
+/// pair without a collision allocates nothing.
+struct Keys<'a> {
+    entry: &'a Entry,
+    repository: String,
+    token_path: String,
+    /// The labels that are not platform labels of this entry's own OS, each with its
+    /// ASCII lowercase form. Two entries' lists compare only when their OS is the
+    /// same, as the check in `check_entries` ensures.
+    routing_labels: Vec<(&'a str, String)>,
+}
+
+impl<'a> Keys<'a> {
+    fn new(entry: &'a Entry, profile: Profile) -> Self {
+        let platform = profile.platform_labels(entry.os);
+        Self {
+            entry,
+            repository: format!("{}/{}", entry.owner, entry.repository).to_ascii_lowercase(),
+            token_path: fold::folded(&entry.token_path),
+            routing_labels: entry
+                .labels
+                .iter()
+                .filter(|label| !platform.iter().any(|known| fold::eq_ascii(known, label)))
+                .map(|label| (label.as_str(), label.to_ascii_lowercase()))
+                .collect(),
+        }
+    }
 }
 
 /// Records every collision between a later entry and an earlier one, in the order
@@ -25,28 +51,32 @@ fn same_repository(first: &Entry, second: &Entry) -> bool {
 /// shared non-platform label makes same-repository routing ambiguous, and pools
 /// whose OS differs can share one because their platform labels differ.
 pub fn check_entries(entries: &[Entry], profile: Profile, errors: &mut Errors) {
-    for (later, b) in entries.iter().enumerate().skip(1) {
-        for a in entries.iter().take(later) {
-            if names_collide(&a.name, &b.name) {
+    let keys: Vec<Keys> = entries
+        .iter()
+        .map(|entry| Keys::new(entry, profile))
+        .collect();
+    for (later, b) in keys.iter().enumerate().skip(1) {
+        for a in keys.iter().take(later) {
+            if names_collide(&a.entry.name, &b.entry.name) {
                 errors.add(format!(
                     "{}.name: name '{}' collides with '{}' at {}; set a distinct name on one entry",
-                    b.path, b.name, a.name, a.path
+                    b.entry.path, b.entry.name, a.entry.name, a.entry.path
                 ));
             }
-            if same_repository(a, b) {
-                if !fold::eq_folded(&a.token_path, &b.token_path) {
+            if a.repository == b.repository {
+                if a.token_path != b.token_path {
                     errors.add(format!(
                         "{}.tokenPath: pools for the same repository must use the same token file as {}",
-                        b.path, a.path
+                        b.entry.path, a.entry.path
                     ));
                 }
-                let platform = profile.platform_labels(b.os);
-                let overlap: Vec<&str> = if a.os == b.os {
-                    b.labels
+                let overlap: Vec<&str> = if a.entry.os == b.entry.os {
+                    b.routing_labels
                         .iter()
-                        .filter(|label| !platform.iter().any(|known| fold::eq_ascii(known, label)))
-                        .filter(|label| a.labels.iter().any(|known| fold::eq_ascii(known, label)))
-                        .map(String::as_str)
+                        .filter(|(_, label)| {
+                            a.routing_labels.iter().any(|(_, known)| known == label)
+                        })
+                        .map(|(label, _)| *label)
                         .collect()
                 } else {
                     Vec::new()
@@ -54,15 +84,15 @@ pub fn check_entries(entries: &[Entry], profile: Profile, errors: &mut Errors) {
                 if !overlap.is_empty() {
                     errors.add(format!(
                         "{}.labels: ambiguous same-repository routing; labels '{}' also appear at {}",
-                        b.path,
+                        b.entry.path,
                         overlap.join(", "),
-                        a.path
+                        a.entry.path
                     ));
                 }
-            } else if fold::eq_folded(&a.token_path, &b.token_path) {
+            } else if a.token_path == b.token_path {
                 errors.add(format!(
                     "{}.tokenPath: token file '{}' is already used at {}; each repository needs its own token",
-                    b.path, b.token_path, a.path
+                    b.entry.path, b.entry.token_path, a.entry.path
                 ));
             }
         }
