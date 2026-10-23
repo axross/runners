@@ -43,10 +43,12 @@ jobs:
           sha256: 63049bc35fb9065e8dc35ac8b25fdae53e9bd6f1885a843aedeba398e046a1ee
       # the Rust gates in mise run check need the toolchain that
       # cli/rust-toolchain.toml pins. rustup is on the hosted runner; naming no
-      # toolchain installs the one the file names, so the pin lives in one place.
+      # toolchain installs the one the file names, so the pin lives in one place. a
+      # rustup older than 1.28 cannot run toolchain install without a name, so
+      # show active-toolchain comes first.
       - name: Install Pinned Rust Toolchain
         working-directory: cli
-        run: rustup toolchain install
+        run: rustup show active-toolchain || rustup toolchain install
       - name: Run Checks
         run: mise run check
 
@@ -72,7 +74,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install Pinned Rust Toolchain
-        run: rustup toolchain install
+        run: rustup show active-toolchain || rustup toolchain install
       - name: Check Formatting
         run: cargo fmt --check
       - name: Lint With Clippy

@@ -37,7 +37,7 @@ jobs:
       # cargo-deny reads the crate metadata, which needs the pinned toolchain.
       - name: Install Pinned Rust Toolchain
         working-directory: cli
-        run: rustup toolchain install
+        run: rustup show active-toolchain || rustup toolchain install
       - name: Install Pinned Tools
         uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5.0.0
         with:
