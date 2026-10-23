@@ -110,6 +110,11 @@ summary on standard output stays equal to the PowerShell one. The rule applies o
 both profiles but can only bite where the profile's path form matches the
 operating system: axpc on Windows, axmc on Linux and macOS.
 
+Known limitation: the axmc comparison is case-sensitive, while macOS's default APFS
+volume is case-insensitive. A `diagnosticDirectory` that differs from the checkout
+only in case therefore passes the rule even though it names the same directory. The
+validator cannot know a volume's case sensitivity, so it does not guess.
+
 ## Parity With the PowerShell Validator
 
 On the shared fixtures the CLI accepts and rejects what the PowerShell validator
@@ -155,11 +160,13 @@ fixture's expectation records PowerShell's own outcome, or `skip` where PowerShe
 cannot run it or its result depends on the platform's globalization data.
 The case-folding rows are not files: `fold::tests::simple_folding_differs_from_powershell_eq_on_declared_pairs`
 in `cli/src/fold.rs` pins Rust's side of them, and the PowerShell side is
-recorded in the table. The `rust/raw/` fixtures `leading-zero-integer.json`,
+recorded in the table. Eight `rust/raw/` fixtures record `powershell: accept`:
+`comment.json`, `trailing-comma.json`, `leading-zero-integer.json`,
 `single-quoted-string.json`, `unquoted-property-name.json`, and
-`lone-surrogate-escape.json` record `powershell: accept` for the strict-JSON row, and
-the parity test runs PowerShell on them to confirm it. The other inputs in that row
-were probed by hand with PowerShell 7.6.6 and have no fixture.
+`lone-surrogate-escape.json` for the strict-JSON row, `invalid-utf8.json` for the
+UTF-8 row, and `root-array.json` for the root row. The parity test runs PowerShell on
+them to confirm it. The other inputs in the strict-JSON row were probed by hand with
+PowerShell 7.6.6 and have no fixture.
 
 | Input                                                                                                                                                                                                                                                                       | Rust                                                               | PowerShell                                                                                                                                                                                                                                |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -274,13 +281,16 @@ maintainer's review of it.
 only these places:
 
 - the binary name in [`cli/Cargo.toml`](../../cli/Cargo.toml) (`[[bin]]`), the
-  command name in `cli/src/command.rs`, and the package and library names if they
-  change with it;
+  command name in `cli/src/command.rs`, and, if they change with it, the package
+  and library names in `Cargo.toml` and `Cargo.lock` and the `runners_cli` imports
+  in `cli/src/main.rs` and `cli/tests/`;
 - `CARGO_BIN_EXE_runners` in `cli/tests/support/mod.rs`, and the default binary
   path in `tests/host-configuration/parity.ps1`;
-- the `cli/target/debug/runners` path in the README Commands table, and this
-  document.
+- the `cli/target/debug/runners` path in the README Commands table, and the
+  binary name and the example command in this document.
 
 [Security](../conventions/security.md), [REVIEW.md](../../REVIEW.md),
-[AGENTS.md](../../AGENTS.md), and the [glossary](../glossary.md) say "the CLI", so a
-rename leaves them unchanged.
+[AGENTS.md](../../AGENTS.md), the [glossary](../glossary.md), and the README Layout
+table say "the CLI", so a rename leaves them unchanged. The `runners` in the
+`.cache/runners` directory, the login-profile markers in `.agents/setup`, and the
+Amp continuation marker are the repository's name, not the binary's.

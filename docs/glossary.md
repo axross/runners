@@ -63,9 +63,8 @@ previous one exits.
 Pool** filled: it requests a **JIT Config** with the target repository's token,
 starts a runner container, waits for it to exit, and repeats.
 
-**CLI** - this project's Rust command line tool, under `cli/`. Its binary is
-`runners`, a provisional name. So far it has one command, `validate`, which checks
-a **Host Configuration**.
+**CLI** - this project's Rust command line tool, under `cli/`. So far it has one
+command, `validate`, which checks a **Host Configuration**.
 
 **Host Profile** - the host a **Host Configuration** is checked for: `axpc`, the
 Windows machine with Docker Desktop, or `axmc`, the macOS machine. A profile fixes
