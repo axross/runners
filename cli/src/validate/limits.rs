@@ -28,6 +28,21 @@ pub fn bounded_integer(value: &Value, max: u32) -> Option<u32> {
         .filter(|n| (1..=max).contains(n))
 }
 
+/// Reads an integer field with [`bounded_integer`], recording `<path>: must be an
+/// integer from 1 to <max>` when it is not one.
+pub fn read_bounded_integer(
+    value: &Value,
+    path: &str,
+    max: u32,
+    errors: &mut Errors,
+) -> Option<u32> {
+    let integer = bounded_integer(value, max);
+    if integer.is_none() {
+        errors.add(format!("{path}: must be an integer from 1 to {max}"));
+    }
+    integer
+}
+
 /// Reads a CPU count, recording why it is unusable. A count must be above 0 and at
 /// most 64, and large enough that its text form is not 0, which Docker reads as no
 /// limit.

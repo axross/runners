@@ -22,22 +22,10 @@ pub fn read_budget(root: &Object, errors: &mut Errors) -> Option<Budget> {
         .and_then(|value| limits::cpu_count(value, "budget.cpus", errors));
     let memory_gb =
         fields::required(node, "memoryGb", "budget.memoryGb", errors).and_then(|value| {
-            let memory = limits::bounded_integer(value, MAX_BUDGET_MEMORY_GB);
-            if memory.is_none() {
-                errors.add(format!(
-                    "budget.memoryGb: must be an integer from 1 to {MAX_BUDGET_MEMORY_GB}"
-                ));
-            }
-            memory
+            limits::read_bounded_integer(value, "budget.memoryGb", MAX_BUDGET_MEMORY_GB, errors)
         });
     let disk_gb = fields::required(node, "diskGb", "budget.diskGb", errors).and_then(|value| {
-        let disk = limits::bounded_integer(value, MAX_DISK_GB);
-        if disk.is_none() {
-            errors.add(format!(
-                "budget.diskGb: must be an integer from 1 to {MAX_DISK_GB}"
-            ));
-        }
-        disk
+        limits::read_bounded_integer(value, "budget.diskGb", MAX_DISK_GB, errors)
     });
     Some(Budget {
         cpus: cpus?,

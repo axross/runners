@@ -69,13 +69,7 @@ pub fn read_entry(value: &Value, path: &str, cx: &mut Context) -> Option<Entry> 
     let volumes = read_volumes(node, path, profile, &mut cx.errors);
     let slots = fields::required(node, "slots", &format!("{path}.slots"), &mut cx.errors).and_then(
         |value| {
-            let slots = limits::bounded_integer(value, MAX_SLOTS);
-            if slots.is_none() {
-                cx.errors.add(format!(
-                    "{path}.slots: must be an integer from 1 to {MAX_SLOTS}"
-                ));
-            }
-            slots
+            limits::read_bounded_integer(value, &format!("{path}.slots"), MAX_SLOTS, &mut cx.errors)
         },
     );
     let name = read_name(node, path, &mut cx.errors);
@@ -197,25 +191,13 @@ fn read_memory(node: &Object, path: &str, errors: &mut Errors) -> Option<u32> {
     let Some(value) = node.get("memoryGb") else {
         return Some(DEFAULT_MEMORY_GB);
     };
-    let memory = limits::bounded_integer(value, MAX_MEMORY_GB);
-    if memory.is_none() {
-        errors.add(format!(
-            "{path}.memoryGb: must be an integer from 1 to {MAX_MEMORY_GB}"
-        ));
-    }
-    memory
+    limits::read_bounded_integer(value, &format!("{path}.memoryGb"), MAX_MEMORY_GB, errors)
 }
 
 fn read_disk(node: &Object, path: &str, errors: &mut Errors) -> Option<u32> {
     let field = format!("{path}.diskGb");
     let value = fields::required(node, "diskGb", &field, errors)?;
-    let disk = limits::bounded_integer(value, MAX_DISK_GB);
-    if disk.is_none() {
-        errors.add(format!(
-            "{field}: must be an integer from 1 to {MAX_DISK_GB}"
-        ));
-    }
-    disk
+    limits::read_bounded_integer(value, &field, MAX_DISK_GB, errors)
 }
 
 /// Returns the two diagnostic switches, each false when absent or not a boolean.

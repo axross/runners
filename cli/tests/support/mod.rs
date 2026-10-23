@@ -49,7 +49,7 @@ impl TempDir {
     pub fn new() -> Self {
         static COUNTER: AtomicUsize = AtomicUsize::new(0);
         let path = std::env::temp_dir().join(format!(
-            "runners-cli-test-{}-{}",
+            "cli-test-{}-{}",
             std::process::id(),
             COUNTER.fetch_add(1, Ordering::Relaxed)
         ));
