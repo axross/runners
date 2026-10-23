@@ -3,17 +3,17 @@
 use std::collections::HashSet;
 
 use crate::fold;
-use crate::json::{Object, Value};
+use crate::json::Value;
 use crate::profile::{Os, Profile};
 
-use super::fields::Errors;
+use super::fields::{Errors, Field};
 use super::patterns;
 
 /// Returns the registration labels: the platform labels followed by the entry's own,
 /// or the platform labels and the routing label when the field is absent or empty.
 /// Returns `None` after recording why a present list is unusable.
 pub fn registration_labels(
-    node: &Object,
+    field: &Field,
     path: &str,
     profile: Profile,
     os: Option<Os>,
@@ -28,7 +28,7 @@ pub fn registration_labels(
             .map(str::to_string)
             .collect()
     };
-    let Some(value) = node.get("labels") else {
+    let Some(value) = field.get() else {
         return Some(defaults());
     };
     let Value::Array(items) = value else {

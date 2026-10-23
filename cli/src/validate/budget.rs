@@ -1,30 +1,41 @@
 //! The host-wide budget of an axmc configuration.
 
-use crate::json::Object;
+use serde::Deserialize;
+
 use crate::profile::Os;
 
-use super::fields::{self, Errors};
+use super::fields::{self, Errors, Field};
 use super::limits::{self, MAX_BUDGET_MEMORY_GB, MAX_DISK_GB};
 use super::plan::{Budget, Entry};
 
-const BUDGET_FIELDS: [&str; 3] = ["cpus", "memoryGb", "diskGb"];
+pub(super) const BUDGET_FIELDS: [&str; 3] = ["cpus", "memoryGb", "diskGb"];
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct BudgetFields {
+    #[serde(default)]
+    cpus: Field,
+    #[serde(default)]
+    memory_gb: Field,
+    #[serde(default)]
+    disk_gb: Field,
+}
 
 /// The most macOS virtual machines the host runs at once.
 pub const MAX_MACOS_VMS: u32 = 2;
 
 /// Reads the root `budget` object, or records why it is unusable.
-pub fn read_budget(root: &Object, errors: &mut Errors) -> Option<Budget> {
-    let value = fields::required(root, "budget", "budget", errors)?;
-    let node = fields::object(value, "budget", errors)?;
-    fields::unknown_fields(node, &BUDGET_FIELDS, "budget", errors);
+pub fn read_budget(budget: &Field, errors: &mut Errors) -> Option<Budget> {
+    let value = fields::required(budget, "budget", errors)?;
+    let node = fields::read_object::<BudgetFields>(value, "budget", &BUDGET_FIELDS, errors)?;
 
-    let cpus = fields::required(node, "cpus", "budget.cpus", errors)
+    let cpus = fields::required(&node.cpus, "budget.cpus", errors)
         .and_then(|value| limits::cpu_count(value, "budget.cpus", errors));
     let memory_gb =
-        fields::required(node, "memoryGb", "budget.memoryGb", errors).and_then(|value| {
+        fields::required(&node.memory_gb, "budget.memoryGb", errors).and_then(|value| {
             limits::read_bounded_integer(value, "budget.memoryGb", MAX_BUDGET_MEMORY_GB, errors)
         });
-    let disk_gb = fields::required(node, "diskGb", "budget.diskGb", errors).and_then(|value| {
+    let disk_gb = fields::required(&node.disk_gb, "budget.diskGb", errors).and_then(|value| {
         limits::read_bounded_integer(value, "budget.diskGb", MAX_DISK_GB, errors)
     });
     Some(Budget {

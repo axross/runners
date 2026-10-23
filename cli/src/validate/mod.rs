@@ -18,14 +18,16 @@ mod volumes;
 
 use std::path::Path;
 
-use crate::json::{self, Object, Value};
+use serde::Deserialize;
+
+use crate::json::{self, Value};
 use crate::profile::Profile;
 
 pub use budget::{MAX_MACOS_VMS, Usage, usage};
 pub use limits::{format_cpu_count, format_nanos};
 pub use plan::{Budget, Entry, Plan, PlannedVolume};
 
-use fields::Errors;
+use fields::{Errors, Field};
 
 /// Why a configuration was not accepted.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,6 +45,18 @@ pub struct Validation {
     /// True when an entry's `diagnosticDirectory` could not be compared with a
     /// checkout because none was given.
     pub checkout_rule_skipped: bool,
+}
+
+/// The members of the configuration's root, named for both profiles.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RootFields {
+    #[serde(default)]
+    image_name: Field,
+    #[serde(default)]
+    repositories: Field,
+    #[serde(default)]
+    budget: Field,
 }
 
 struct Context<'a> {
@@ -82,16 +96,20 @@ pub fn validate(bytes: &[u8], profile: Profile, checkout: Option<&Path>) -> Vali
 }
 
 fn read_root(root: &Value, cx: &mut Context) -> Option<Plan> {
-    let root = fields::object(root, "configuration", &mut cx.errors)?;
     let profile = cx.profile;
-    fields::unknown_fields(root, profile.root_fields(), "configuration", &mut cx.errors);
+    let root = fields::read_object::<RootFields>(
+        root,
+        "configuration",
+        profile.root_fields(),
+        &mut cx.errors,
+    )?;
 
-    let image_name = read_image_name(root, cx);
+    let image_name = read_image_name(&root.image_name, cx);
     let budget = match profile {
         Profile::Axpc => None,
-        Profile::Axmc => budget::read_budget(root, &mut cx.errors),
+        Profile::Axmc => budget::read_budget(&root.budget, &mut cx.errors),
     };
-    let entries = read_repositories(root, cx);
+    let entries = read_repositories(&root.repositories, cx);
     if profile == Profile::Axmc {
         budget::check_budget(&entries, budget.as_ref(), &mut cx.errors);
     }
@@ -108,10 +126,10 @@ fn read_root(root: &Value, cx: &mut Context) -> Option<Plan> {
 
 /// Reads the image name: required on axpc, optional on axmc, where its use is
 /// undecided. A present value follows the same rule on both.
-fn read_image_name(root: &Object, cx: &mut Context) -> Option<String> {
+fn read_image_name(image_name: &Field, cx: &mut Context) -> Option<String> {
     let expectation = "a local Docker image name with a tag, such as name:tag";
     if cx.profile == Profile::Axmc {
-        return match root.get("imageName") {
+        return match image_name.get() {
             None => None,
             Some(Value::String(name)) if patterns::is_image_name(name) => Some(name.clone()),
             Some(_) => {
@@ -121,8 +139,7 @@ fn read_image_name(root: &Object, cx: &mut Context) -> Option<String> {
         };
     }
     fields::string(
-        root,
-        "imageName",
+        image_name,
         "imageName",
         &mut cx.errors,
         patterns::is_image_name,
@@ -131,9 +148,9 @@ fn read_image_name(root: &Object, cx: &mut Context) -> Option<String> {
     .map(str::to_string)
 }
 
-fn read_repositories(root: &Object, cx: &mut Context) -> Vec<Entry> {
+fn read_repositories(repositories: &Field, cx: &mut Context) -> Vec<Entry> {
     let mut entries = Vec::new();
-    let Some(value) = fields::required(root, "repositories", "repositories", &mut cx.errors) else {
+    let Some(value) = fields::required(repositories, "repositories", &mut cx.errors) else {
         return entries;
     };
     let Value::Array(nodes) = value else {
@@ -153,4 +170,79 @@ fn read_repositories(root: &Object, cx: &mut Context) -> Vec<Entry> {
         uniqueness::check_entries(&entries, cx.profile, &mut cx.errors);
     }
     entries
+}
+
+#[cfg(test)]
+mod tests {
+    use serde::de::{self, Visitor};
+
+    use crate::de::Error;
+
+    use super::*;
+
+    /// Records the field names a derived type asks its deserializer for.
+    struct Probe<'a>(&'a mut Vec<String>);
+
+    impl<'de> de::Deserializer<'de> for Probe<'_> {
+        type Error = Error;
+
+        fn deserialize_any<V: Visitor<'de>>(self, _visitor: V) -> Result<V::Value, Error> {
+            Err(de::Error::custom("only the field names are wanted"))
+        }
+
+        fn deserialize_struct<V: Visitor<'de>>(
+            self,
+            _name: &'static str,
+            fields: &'static [&'static str],
+            _visitor: V,
+        ) -> Result<V::Value, Error> {
+            self.0
+                .extend(fields.iter().map(|field| (*field).to_string()));
+            Err(de::Error::custom("only the field names are wanted"))
+        }
+
+        serde::forward_to_deserialize_any! {
+            bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
+            bytes byte_buf option unit unit_struct newtype_struct seq tuple
+            tuple_struct map enum identifier ignored_any
+        }
+    }
+
+    fn field_names<T: for<'de> Deserialize<'de>>() -> Vec<String> {
+        let mut names = Vec::new();
+        let _ = T::deserialize(Probe(&mut names));
+        names.sort();
+        names
+    }
+
+    fn union(first: &[&str], second: &[&str]) -> Vec<String> {
+        let mut names: Vec<String> = first
+            .iter()
+            .chain(second)
+            .map(|n| (*n).to_string())
+            .collect();
+        names.sort();
+        names.dedup();
+        names
+    }
+
+    #[test]
+    fn each_derived_type_names_the_union_of_both_profiles_fields() {
+        assert_eq!(
+            field_names::<RootFields>(),
+            union(Profile::Axpc.root_fields(), Profile::Axmc.root_fields())
+        );
+        assert_eq!(
+            field_names::<entry::EntryFields>(),
+            union(Profile::Axpc.entry_fields(), Profile::Axmc.entry_fields())
+        );
+        assert_eq!(
+            field_names::<budget::BudgetFields>(),
+            union(&budget::BUDGET_FIELDS, &[])
+        );
+        assert_eq!(
+            field_names::<volumes::VolumeFields>(),
+            union(&volumes::VOLUME_FIELDS, &[])
+        );
+    }
 }

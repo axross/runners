@@ -2,12 +2,23 @@
 
 use std::collections::HashSet;
 
-use crate::json::{Object, Value};
+use serde::Deserialize;
 
-use super::fields::{self, Errors};
+use crate::json::Value;
+
+use super::fields::{self, Errors, Field};
 use super::patterns;
 
-const VOLUME_FIELDS: [&str; 2] = ["suffix", "mountPath"];
+pub(super) const VOLUME_FIELDS: [&str; 2] = ["suffix", "mountPath"];
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct VolumeFields {
+    #[serde(default)]
+    suffix: Field,
+    #[serde(default)]
+    mount_path: Field,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Volume {
@@ -16,9 +27,9 @@ pub struct Volume {
 }
 
 /// Returns the volume definitions, or `None` after recording every problem.
-pub fn volume_definitions(node: &Object, path: &str, errors: &mut Errors) -> Option<Vec<Volume>> {
+pub fn volume_definitions(volumes: &Field, path: &str, errors: &mut Errors) -> Option<Vec<Volume>> {
     let field = format!("{path}.volumes");
-    let value = fields::required(node, "volumes", &field, errors)?;
+    let value = fields::required(volumes, &field, errors)?;
     let Value::Array(items) = value else {
         errors.add(format!("{field}: must be a list"));
         return None;
@@ -29,22 +40,21 @@ pub fn volume_definitions(node: &Object, path: &str, errors: &mut Errors) -> Opt
     let mut valid = true;
     for (index, item) in items.iter().enumerate() {
         let item_path = format!("{field}[{index}]");
-        let Some(object) = fields::object(item, &item_path, errors) else {
+        let Some(volume) =
+            fields::read_object::<VolumeFields>(item, &item_path, &VOLUME_FIELDS, errors)
+        else {
             valid = false;
             continue;
         };
-        fields::unknown_fields(object, &VOLUME_FIELDS, &item_path, errors);
         let suffix = fields::string(
-            object,
-            "suffix",
+            &volume.suffix,
             &format!("{item_path}.suffix"),
             errors,
             patterns::is_name,
             "lowercase letters, digits and hyphens, starting with a letter or digit",
         );
         let mut mount_path = fields::string(
-            object,
-            "mountPath",
+            &volume.mount_path,
             &format!("{item_path}.mountPath"),
             errors,
             patterns::is_mount_path,
