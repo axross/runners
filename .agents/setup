@@ -89,8 +89,7 @@ verify_toolchain() {
       return 1
     }
   done
-  # the pinned toolchain, not whichever default rustup holds: run from the crate.
-  (cd cli && RUSTUP_AUTO_INSTALL=0 cargo fmt --version && RUSTUP_AUTO_INSTALL=0 cargo clippy --version) >/dev/null || {
+  ./.agents/install-rust --check || {
     echo "The Rust toolchain in cli/rust-toolchain.toml is not usable" >&2
     return 1
   }

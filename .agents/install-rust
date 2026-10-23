@@ -4,6 +4,7 @@
 # by SHA-256, as .agents/setup does for mise; the toolchain itself is fetched by
 # rustup over HTTPS (docs/conventions/security.md records that exception).
 # Idempotent: it does nothing once the pinned toolchain has cargo, rustfmt and clippy.
+# With --check it only reports that, by its exit status, and installs nothing.
 # Refresh the version and the hash together, the hash computed from the real download.
 set -euo pipefail
 
@@ -22,6 +23,7 @@ require_linux_x86_64() {
 }
 
 toolchain_is_ready() {
+  # Run from the crate so rustup resolves the pinned toolchain, not its default.
   # RUSTUP_AUTO_INSTALL=0 makes a missing toolchain fail here instead of downloading.
   command -v cargo >/dev/null 2>&1 \
     && (cd cli && RUSTUP_AUTO_INSTALL=0 cargo fmt --version && RUSTUP_AUTO_INSTALL=0 cargo clippy --version) >/dev/null 2>&1
@@ -53,6 +55,18 @@ install_toolchain() {
 }
 
 cd "$(dirname "$0")/.."
+case "${1:-}" in
+  --check)
+    # Answers for the caller's PATH on any platform, so it precedes the platform gate and the PATH change.
+    if toolchain_is_ready; then exit 0; fi
+    exit 1
+    ;;
+  "") ;;
+  *)
+    echo "Usage: .agents/install-rust [--check]" >&2
+    exit 2
+    ;;
+esac
 require_linux_x86_64
 export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
 

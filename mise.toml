@@ -26,11 +26,10 @@ PSSCRIPTANALYZER_SHA256 = "14e634c828eb98efb9f40b2918ba90f139ed5eccdf663a2a74773
 description = "Fail at once, with one line, when the pinned Rust toolchain is not available"
 run = '''
 #!/usr/bin/env bash
-set -uo pipefail
-# RUSTUP_AUTO_INSTALL=0 keeps rustup from downloading the toolchain here: the
-# fix is the provisioning script, and a gate must not start a long install.
-if ! command -v cargo >/dev/null 2>&1 \
-  || ! (cd cli && RUSTUP_AUTO_INSTALL=0 cargo fmt --version && RUSTUP_AUTO_INSTALL=0 cargo clippy --version) >/dev/null 2>&1; then
+set -euo pipefail
+# --check installs nothing: the fix is the provisioning script, and a gate must
+# not start a long install.
+if ! .agents/install-rust --check; then
   echo "error: cargo, rustfmt or clippy for the toolchain in cli/rust-toolchain.toml is not available; run .agents/install-rust and put ~/.cargo/bin on PATH." >&2
   exit 1
 fi

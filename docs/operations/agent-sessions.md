@@ -164,6 +164,11 @@ its components. `RUSTUP_HOME` and `CARGO_HOME` are honoured, so the script can b
 exercised against an empty directory. On any other platform it stops with a
 message: install the pinned toolchain with `rustup` there.
 
+`.agents/install-rust --check` runs only that readiness test and exits 0 or 1,
+installing nothing, on any platform and against the caller's `PATH`. The
+`rust:require` task and the verification step of `.agents/setup` call it, so the
+probe is written once.
+
 [`.agents/setup`](../../.agents/setup) and the session-start hook both call the
 script, so the `rustup-init` version and hash live in the script alone. Refresh
 them together, with the hash computed from the real download and checked against
