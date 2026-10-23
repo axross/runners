@@ -79,15 +79,6 @@ impl PartialEq for Object {
 }
 
 impl Object {
-    /// Returns the member whose name equals `name` ignoring ASCII case, the way
-    /// PowerShell finds a property.
-    #[must_use]
-    pub fn get(&self, name: &str) -> Option<&Value> {
-        self.iter()
-            .find(|(key, _)| fold::eq_ascii(key, name))
-            .map(|(_, value)| value)
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (&str, &Value)> {
         self.members
             .iter()
@@ -425,30 +416,38 @@ mod tests {
         object.iter().map(|(key, _)| key).collect()
     }
 
+    fn member<'a>(object: &'a Object, name: &str) -> Option<&'a Value> {
+        object
+            .iter()
+            .find(|(key, _)| *key == name)
+            .map(|(_, value)| value)
+    }
+
     #[test]
     fn keeps_document_order_and_number_literals() {
         let parsed = object(r#"{"b": 1e400, "a": 8.0, "c": -0}"#);
         assert_eq!(keys(&parsed), ["b", "a", "c"]);
         assert_eq!(
-            parsed.get("b"),
+            member(&parsed, "b"),
             Some(&Value::Number(Number {
                 literal: "1e400".into()
             }))
         );
         assert!(
-            parsed
-                .get("b")
+            member(&parsed, "b")
                 .is_some_and(|v| matches!(v, Value::Number(n) if n.as_f64().is_infinite()))
         );
-        assert!(matches!(parsed.get("a"), Some(Value::Number(n)) if n.as_integer().is_none()));
-        assert!(matches!(parsed.get("c"), Some(Value::Number(n)) if n.as_integer() == Some(0)));
+        assert!(matches!(member(&parsed, "a"), Some(Value::Number(n)) if n.as_integer().is_none()));
+        assert!(
+            matches!(member(&parsed, "c"), Some(Value::Number(n)) if n.as_integer() == Some(0))
+        );
     }
 
     #[test]
     fn a_repeated_key_keeps_its_last_value_at_its_last_position() {
         let parsed = object(r#"{"x": 1, "y": 2, "x": 3}"#);
         assert_eq!(keys(&parsed), ["y", "x"]);
-        assert!(matches!(parsed.get("x"), Some(Value::Number(n)) if n.literal() == "3"));
+        assert!(matches!(member(&parsed, "x"), Some(Value::Number(n)) if n.literal() == "3"));
     }
 
     #[test]
@@ -465,20 +464,13 @@ mod tests {
         assert_eq!(names.len(), count);
         assert_eq!(names.first().copied(), Some("k1"));
         assert_eq!(names.last().copied(), Some("k0"));
-        assert!(matches!(parsed.get("k0"), Some(Value::Number(n)) if n.literal() == "-1"));
+        assert!(matches!(member(&parsed, "k0"), Some(Value::Number(n)) if n.literal() == "-1"));
     }
 
     #[test]
     fn keys_that_differ_only_in_case_are_an_error() {
         let error = parse(br#"{"a": 1, "A": 2}"#).unwrap_err();
         assert!(error.message.contains("different casing"), "{error}");
-    }
-
-    #[test]
-    fn lookup_ignores_ascii_case() {
-        let parsed = object(r#"{"Owner": "x"}"#);
-        assert!(parsed.get("owner").is_some());
-        assert!(parsed.get("OWNER").is_some());
     }
 
     #[test]
