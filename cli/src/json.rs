@@ -7,6 +7,8 @@
 //! key keeps its last value at the position of its last occurrence, while two keys
 //! that differ only in case are an error.
 
+use std::collections::HashMap;
+
 use crate::fold;
 
 /// The deepest nesting the reader accepts, so that hostile input cannot exhaust
@@ -55,9 +57,20 @@ impl Number {
 }
 
 /// A JSON object whose members keep document order.
-#[derive(Debug, Clone, PartialEq, Default)]
+///
+/// A repeated key leaves a gap where its earlier occurrence was, so inserting
+/// stays linear: `index` maps each key's folded form to its slot, and a slot
+/// holds `None` once a later occurrence replaced it.
+#[derive(Debug, Clone, Default)]
 pub struct Object {
-    members: Vec<(String, Value)>,
+    members: Vec<Option<(String, Value)>>,
+    index: HashMap<String, usize>,
+}
+
+impl PartialEq for Object {
+    fn eq(&self, other: &Self) -> bool {
+        self.iter().eq(other.iter())
+    }
 }
 
 impl Object {
@@ -65,8 +78,7 @@ impl Object {
     /// PowerShell finds a property.
     #[must_use]
     pub fn get(&self, name: &str) -> Option<&Value> {
-        self.members
-            .iter()
+        self.iter()
             .find(|(key, _)| fold::eq_ascii(key, name))
             .map(|(_, value)| value)
     }
@@ -74,25 +86,26 @@ impl Object {
     pub fn iter(&self) -> impl Iterator<Item = (&str, &Value)> {
         self.members
             .iter()
+            .flatten()
             .map(|(key, value)| (key.as_str(), value))
     }
 
     fn insert(&mut self, key: String, value: Value) -> Result<(), String> {
-        let existing = self
-            .members
-            .iter()
-            .position(|(known, _)| fold::eq_folded(known, &key));
-        if let Some(position) = existing {
-            if self
-                .members
-                .get(position)
-                .is_some_and(|(known, _)| *known != key)
+        let folded = fold::folded(&key);
+        if let Some(&slot) = self.index.get(&folded) {
+            let earlier = self.members.get_mut(slot);
+            if earlier
+                .as_ref()
+                .is_some_and(|member| member.as_ref().is_some_and(|(known, _)| *known != key))
             {
                 return Err(format!("keys with different casing: '{key}'"));
             }
-            self.members.remove(position);
+            if let Some(member) = earlier {
+                *member = None;
+            }
         }
-        self.members.push((key, value));
+        self.index.insert(folded, self.members.len());
+        self.members.push(Some((key, value)));
         Ok(())
     }
 }
@@ -431,6 +444,23 @@ mod tests {
         let parsed = object(r#"{"x": 1, "y": 2, "x": 3}"#);
         assert_eq!(keys(&parsed), ["y", "x"]);
         assert!(matches!(parsed.get("x"), Some(Value::Number(n)) if n.literal() == "3"));
+    }
+
+    #[test]
+    fn many_keys_and_repeats_keep_order_without_quadratic_work() {
+        // a quadratic insert would take minutes on this much input
+        let count = 100_000;
+        let mut text = String::from("{");
+        for number in 0..count {
+            text.push_str(&format!("\"k{number}\": {number}, "));
+        }
+        text.push_str("\"k0\": -1}");
+        let parsed = object(&text);
+        let names = keys(&parsed);
+        assert_eq!(names.len(), count);
+        assert_eq!(names.first().copied(), Some("k1"));
+        assert_eq!(names.last().copied(), Some("k0"));
+        assert!(matches!(parsed.get("k0"), Some(Value::Number(n)) if n.literal() == "-1"));
     }
 
     #[test]

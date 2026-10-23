@@ -33,6 +33,13 @@ pub fn eq_folded(first: &str, second: &str) -> bool {
     }
 }
 
+/// Returns `text` with every character folded as [`eq_folded`] folds it, so two
+/// strings are `eq_folded` exactly when their folded forms are equal.
+#[must_use]
+pub fn folded(text: &str) -> String {
+    text.chars().map(fold_char).collect()
+}
+
 /// Reports whether `text` starts with `prefix` under the same folding as
 /// [`eq_folded`].
 #[must_use]
@@ -83,6 +90,23 @@ mod tests {
         assert!(!eq_folded("\u{df}", "ss"));
         assert!(!eq_folded("\u{131}", "i"));
         assert!(!eq_folded("a\u{ad}", "a"));
+    }
+
+    #[test]
+    fn simple_folding_differs_from_powershell_eq_on_declared_pairs() {
+        // PowerShell 7 on Linux compares these as different; Unicode simple case
+        // folding equates each with its partner. docs/operations/cli.md declares
+        // them as divergences.
+        assert!(eq_folded("\u{17f}", "s"));
+        assert!(eq_folded("\u{17f}", "S"));
+        assert!(eq_folded("\u{345}", "\u{3b9}"));
+        assert!(eq_folded("\u{345}", "\u{399}"));
+        assert!(eq_folded("\u{1e9b}", "\u{1e61}"));
+        assert!(eq_folded("\u{1e9b}", "\u{1e60}"));
+        // The Kelvin sign folds to k here; PowerShell's answer follows the
+        // platform's globalization data.
+        assert!(eq_folded("\u{212a}", "k"));
+        assert!(eq_folded("\u{212a}", "K"));
     }
 
     #[test]

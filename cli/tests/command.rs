@@ -90,6 +90,35 @@ fn a_missing_file_is_rejected_with_exit_1() {
 }
 
 #[test]
+fn a_file_over_the_size_limit_is_rejected_without_being_parsed() {
+    let limit = usize::try_from(runners_cli::command::MAX_CONFIG_BYTES).unwrap();
+    let mut valid = fs::read(axpc_example()).unwrap();
+    let scratch = TempDir::new();
+
+    // exactly at the limit, padded with whitespace after a valid document
+    valid.resize(limit, b' ');
+    let at_limit = scratch.write("at-limit.json", &valid);
+    let output = run_path(&at_limit, Some("axpc"));
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+
+    // one byte more is refused before parsing
+    valid.push(b' ');
+    let over = scratch.write("over.json", &valid);
+    let output = run_path(&over, Some("axpc"));
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(stdout(&output), "");
+    let message = stderr(&output);
+    assert!(
+        message.starts_with("Host configuration cannot be read: "),
+        "{message}"
+    );
+    assert!(
+        message.contains("the file is larger than 1048576 bytes (1 MiB)"),
+        "{message}"
+    );
+}
+
+#[test]
 fn invalid_json_and_invalid_utf8_are_rejected_with_exit_1() {
     let scratch = TempDir::new();
     for (name, bytes) in [

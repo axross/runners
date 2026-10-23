@@ -1,7 +1,7 @@
 //! The command line: argument parsing, reading the file, printing, and the exit code.
 
 use std::ffi::OsString;
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -11,6 +11,10 @@ use crate::checkout;
 use crate::profile::Profile;
 use crate::summary::plan_summary;
 use crate::validate::{Failure, validate};
+
+/// The largest configuration `validate` reads. Real files are a few kilobytes, so
+/// this is generous; it only stops a mistaken or hostile path from being read whole.
+pub const MAX_CONFIG_BYTES: u64 = 1024 * 1024;
 
 const EXIT_INVALID: u8 = 1;
 const EXIT_USAGE: u8 = 2;
@@ -97,6 +101,21 @@ fn run_validate(matches: &ArgMatches, out: &mut dyn Write, err: &mut dyn Write) 
     }
 }
 
+/// Reads the file, refusing one over [`MAX_CONFIG_BYTES`] without reading past the
+/// limit.
+fn read_limited(path: &Path) -> io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)?
+        .take(MAX_CONFIG_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_CONFIG_BYTES {
+        return Err(io::Error::other(format!(
+            "the file is larger than {MAX_CONFIG_BYTES} bytes (1 MiB)"
+        )));
+    }
+    Ok(bytes)
+}
+
 /// Validates the file and prints the outcome. Returns the exit code, or the error
 /// that stopped output.
 fn validate_file(
@@ -105,7 +124,7 @@ fn validate_file(
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> io::Result<u8> {
-    let bytes = match std::fs::read(config) {
+    let bytes = match read_limited(config) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             writeln!(
