@@ -1,9 +1,9 @@
 //! The parsed JSON tree as a serde data format.
 //!
 //! [`Deserializer`] reads any type that derives `Deserialize` from a
-//! [`Value`](crate::json::Value). A failed read is an [`Error`], never a panic, and
-//! reading a struct from anything but an object is one. Only reading is
-//! implemented: nothing in the crate writes JSON.
+//! [`Value`]. A failed read is an [`Error`], never a panic, and reading a struct
+//! from anything but an object is one. Only reading is implemented: nothing in
+//! the crate writes JSON.
 //!
 //! A foreign target sees a number as `i64`, `u64`, `i128` or `f64`, so `1e400` is
 //! infinity there. The tree's own [`Value`] keeps the literal text instead: its
@@ -30,13 +30,6 @@ const VALUE_TOKEN: &str = "$runners::Value";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Error {
     message: String,
-}
-
-impl Error {
-    #[must_use]
-    pub fn message(&self) -> &str {
-        &self.message
-    }
 }
 
 impl fmt::Display for Error {
@@ -472,11 +465,11 @@ mod tests {
     #[test]
     fn a_serde_type_error_comes_back_as_an_error() {
         let error = read::<Sample>(r#"{ "name": 5 }"#).unwrap_err();
-        assert!(error.message().contains("invalid type"), "{error}");
+        assert!(error.to_string().contains("invalid type"), "{error}");
         let error = read::<u8>("300").unwrap_err();
-        assert!(error.message().contains("300"), "{error}");
+        assert!(error.to_string().contains("300"), "{error}");
         let error = read::<Sample>(r#"{ "name": "n" }"#).unwrap_err();
-        assert!(error.message().contains("missing field"), "{error}");
+        assert!(error.to_string().contains("missing field"), "{error}");
         assert!(read::<Vec<String>>(r#"["a", 1]"#).is_err());
     }
 
@@ -484,7 +477,10 @@ mod tests {
     fn a_struct_read_from_a_node_that_is_not_an_object_is_an_error() {
         for text in ["null", "true", "3", r#""text""#, "[]", r#"["a", [], 3]"#] {
             let error = read::<Sample>(text).unwrap_err();
-            assert!(error.message().contains("invalid type"), "{text}: {error}");
+            assert!(
+                error.to_string().contains("invalid type"),
+                "{text}: {error}"
+            );
         }
     }
 
@@ -530,7 +526,7 @@ mod tests {
     fn field_names_match_exactly_unless_the_caller_opts_in() {
         let text = r#"{ "Owner": "o", "MEMORYGB": 4 }"#;
         let error = read::<Strict>(text).unwrap_err();
-        assert!(error.message().contains("unknown field"), "{error}");
+        assert!(error.to_string().contains("unknown field"), "{error}");
         let strict: Strict = read_ignoring_case(text).unwrap();
         assert_eq!(strict.owner, "o");
         assert_eq!(strict.memory_gb, Some(4));
@@ -539,7 +535,7 @@ mod tests {
     #[test]
     fn opting_in_to_case_folding_does_not_make_an_unknown_field_known() {
         let error = read_ignoring_case::<Strict>(r#"{ "owner": "o", "other": 1 }"#).unwrap_err();
-        assert!(error.message().contains("unknown field"), "{error}");
+        assert!(error.to_string().contains("unknown field"), "{error}");
     }
 
     #[test]

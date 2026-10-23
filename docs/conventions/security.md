@@ -78,9 +78,9 @@ new procedural-macro crate needs the maintainer's review. `rustup` itself is
 installed by [`.agents/install-rust`](../../.agents/install-rust) from a pinned
 `rustup-init` release for `x86_64-unknown-linux-gnu`, refused unless its SHA-256
 matches. The release and its hash are refreshed by hand together, the hash
-computed from the real download, and are not covered by Dependabot. Dependabot does cover the
-CLI's own dependencies: its `cargo` and `rust-toolchain` entries for `/cli` propose
-the crate and toolchain refreshes as pull requests.
+computed from the real download, and are not covered by Dependabot. Dependabot
+does cover the CLI's own dependencies: its `cargo` and `rust-toolchain` entries
+for `/cli` propose the crate and toolchain refreshes as pull requests.
 
 The Rust toolchain is the one download in this repository that is not
 checksum-pinned, and the maintainer accepted that exception when approving the
