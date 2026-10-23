@@ -148,8 +148,10 @@ PowerShell one is removed. Behaviour that is easy to miss:
   PowerShell, including one that fails its own pattern.
 - **Input.** The file is UTF-8 strict JSON. A leading byte-order mark is ignored.
   An exact duplicate key keeps its last value at the position of its last
-  occurrence. Two keys that differ only in case, and an empty key, are errors.
-  Nesting deeper than 128 levels is an error.
+  occurrence. Two keys that differ only in case, and an empty key, are errors. A
+  value more than 128 levels below the root is an error, and so is a file over 1
+  MiB (see Running It). PowerShell 7 reads about 1024 levels and accepts large
+  files, and it rejects an empty key as Rust does.
 
 ### Declared Divergences
 
@@ -166,11 +168,14 @@ recorded in the table. Eight `rust/raw/` fixtures record `powershell: accept`:
 `lone-surrogate-escape.json` for the strict-JSON row, `invalid-utf8.json` for the
 UTF-8 row, and `root-array.json` for the root row. The parity test runs PowerShell on
 them to confirm it. The other inputs in the strict-JSON row were probed by hand with
-PowerShell 7.6.6 and have no fixture.
+PowerShell 7.6.6 and have no fixture. The depth and size rows are Rust tests, not
+fixtures: `the_depth_limit_is_128_levels_below_the_root` in `cli/src/json.rs` and the
+size test named under Running It, with PowerShell's side probed by hand.
 
 | Input                                                                                                                                                                                                                                                                       | Rust                                                               | PowerShell                                                                                                                                                                                                                                |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A missing file, truncated or otherwise invalid JSON, two keys that differ only in case                                                                                                                                                                                      | Rejects with its own wording                                       | Rejects with a .NET message                                                                                                                                                                                                               |
+| A missing file, truncated or otherwise invalid JSON, two keys that differ only in case, an empty key                                                                                                                                                                        | Rejects with its own wording                                       | Rejects with a .NET message                                                                                                                                                                                                               |
+| A value more than 128 levels below the root, a file over 1 MiB                                                                                                                                                                                                              | Rejects                                                            | Reads them; PowerShell 7 reads about 1024 levels                                                                                                                                                                                          |
 | Invalid UTF-8                                                                                                                                                                                                                                                               | Rejects                                                            | Substitutes U+FFFD and may accept                                                                                                                                                                                                         |
 | A non-object root                                                                                                                                                                                                                                                           | Rejects and keeps the path in the header; a root array is rejected | Omits the path; unrolls a one-object array                                                                                                                                                                                                |
 | Anything outside RFC 8259 (strict JSON): comments, trailing commas, single-quoted strings, unquoted property names, leading zeros (`01`), `.5`, `0x2`, `NaN`, no-break space or form-feed whitespace, a trailing NUL, U+2028 after the document, and lone surrogate escapes | Rejects with its own wording                                       | PowerShell 7 (Json.NET) accepts each at the JSON level, and accepts `NaN` for `cpus`, where it passes the range check (`slots` rejects it); Windows PowerShell 5.1 rejects comments and trailing commas, and the rest is not probed there |
@@ -195,7 +200,9 @@ which the Rust tests, the PowerShell test, and the parity harness all read:
   `.gitattributes` (`-text`) keep their bytes unchanged.
 
 Each expectation names the fixture's profile, its outcome, `contains` and `lacks`
-string arrays, and for a divergence fixture PowerShell's own outcome. Expected
+string arrays, and for a divergence fixture PowerShell's own outcome. The Rust tests
+read the file into derived types through the crate's serde reader, with exact key
+spelling, so an unknown or misspelled key fails the read. Expected
 strings are ASCII, with newlines as JSON `\n` escapes. Both readers fail when a
 fixture has no expectation or an expectation has no fixture. The byte-order-mark
 input is built at run time from the axpc example, because a formatter or editor
@@ -255,11 +262,14 @@ allows crates.io only, one version of each crate, and the licences below. The CL
 is unpublished, so it carries no licence field of its own; `deny.toml` ignores
 private crates for that reason.
 
-| Crate                                                  | Why                                                         | Licence           |
-| ------------------------------------------------------ | ----------------------------------------------------------- | ----------------- |
-| `clap`, with `clap_builder`, `clap_lex`, and `anstyle` | Argument parsing, with default features off                 | MIT OR Apache-2.0 |
-| `regex`, with `regex-automata` and `regex-syntax`      | The whole-value patterns for names, labels, and image names | MIT OR Apache-2.0 |
-| `aho-corasick` and `memchr`                            | Optional dependencies of `regex`                            | Unlicense OR MIT  |
+| Crate                                                  | Why                                                                                                    | Licence                             |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ | ----------------------------------- |
+| `clap`, with `clap_builder`, `clap_lex`, and `anstyle` | Argument parsing, with default features off                                                            | MIT OR Apache-2.0                   |
+| `regex`, with `regex-automata` and `regex-syntax`      | The whole-value patterns for names, labels, and image names                                            | MIT OR Apache-2.0                   |
+| `aho-corasick` and `memchr`                            | Optional dependencies of `regex`                                                                       | Unlicense OR MIT                    |
+| `serde`, with `serde_core`                             | Reading the parsed JSON tree and the shared expectations into derived types, with default features off | MIT OR Apache-2.0                   |
+| `serde_derive`, `syn`, `quote`, and `proc-macro2`      | The `Deserialize` derive; these run at build time                                                      | MIT OR Apache-2.0                   |
+| `unicode-ident`                                        | A dependency of `syn` and `proc-macro2`                                                                | (MIT OR Apache-2.0) AND Unicode-3.0 |
 
 `aho-corasick` and `memchr` are in the lockfile because `regex` lists them as
 optional, but the CLI's feature set (`std` and `unicode-perl`, no `perf`) does not
@@ -271,9 +281,27 @@ The JSON parser is in the crate, not a dependency. Parity needs the behaviours o
 duplicate rule, case-conflict errors, and number literals kept as text. The crate
 owns that parser, and the fixtures pin it.
 
-Allowed licences are `MIT` and `Apache-2.0`; a crate whose licence is an `OR` expression is
-accepted when one alternative is on that list. Adding another licence requires the
+The reader implements serde's `Deserializer`, so a type that derives `Deserialize`
+can be read from the parsed tree. A failed read is an error, never a panic, and
+reading a struct from a node that is not an object is an error. Number literals
+reach the tree's own value type as text; any other target sees an `i64`, `u64`,
+`i128`, or `f64`, so `1e400` reads as infinity there. Field names match ignoring
+ASCII case only when the caller asks, and only for struct fields. The validator
+reads each configuration object (root, entry, volume, and budget) into a derived
+type of wrapped fields, and keeps lists and nested objects raw so a wrong container
+type is reported with its path. Nothing implements or derives `Serialize`, because
+nothing writes JSON.
+
+Allowed licences are `MIT`, `Apache-2.0`, and `Unicode-3.0`; a crate whose licence is
+an `OR` expression is accepted when one alternative is on that list. `Unicode-3.0`
+is on the list because `unicode-ident`, which `syn` uses, is
+`(MIT OR Apache-2.0) AND Unicode-3.0`, and an `AND` needs both sides allowed. The
+maintainer approved it at plan revision 10. Adding another licence requires the
 maintainer's review of it.
+
+`serde_derive`, `syn`, `quote`, and `proc-macro2` run at build time. A new
+procedural-macro crate needs the maintainer's review; see
+[Security](../conventions/security.md).
 
 ## Renaming the CLI
 

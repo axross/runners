@@ -206,9 +206,11 @@ Apply the lens for each kind of file in the diff.
 - **Rust.** The CLI under `cli/` has no `unsafe` and no panic on an input path
   (`unwrap`, `expect`, `panic!`, indexing); it collects every error in the
   PowerShell validator's order rather than returning the first. A new crate has an
-  entry in [CLI](docs/operations/cli.md) and passes `cli/deny.toml`. A change to a
-  rule on the shared fixtures changes both validators or declares a divergence.
-  Give `file:line` evidence as in the other lenses.
+  entry in [CLI](docs/operations/cli.md) and passes `cli/deny.toml`. A new
+  procedural-macro crate, such as one a derive feature brings, is flagged for the
+  maintainer's review. A change to a rule on the shared fixtures changes both
+  validators or declares a divergence. Give `file:line` evidence as in the other
+  lenses.
 - **Documentation.** A claim about runner behavior is either verified or
   described as planned. A document that describes a file, image, or script
   that does not exist yet says so.
