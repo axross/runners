@@ -257,10 +257,10 @@ change as checked when it was not.
 
 The `rust` job in
 [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) runs format check,
-clippy, and tests on Linux, Windows, and macOS, and the axpc checkout-rule test on
-Windows, which needs drive-letter paths. Tests find fixtures relative to the crate's
-manifest directory, and the checkout-rule tests build a temporary directory with the
-marker files at test time. The advisory check, `cargo deny --locked check advisories`,
+clippy, and tests on Linux, Windows, and macOS; the axpc checkout-rule cases need
+drive-letter paths, so they run only on Windows. Tests find fixtures relative to the
+crate's manifest directory, and the checkout-rule tests build a temporary directory
+with the marker files at test time. The advisory check, `cargo deny --locked check advisories`,
 fetches the RustSec database, so it runs in
 [`rust-advisories.yaml`](../../.github/workflows/rust-advisories.yaml) and not in
 `mise run check`; see [Development Workflow](./development-workflow.md).
