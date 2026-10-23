@@ -290,7 +290,7 @@ fn axpc_accepts_a_directory_outside_the_checkout() {
 fn axpc_ignores_a_directory_holding_only_dot_git() {
     let tree = TempDir::new();
     tree.write("repository/.git/HEAD", b"ref: refs/heads/main\n");
-    let directory = tree.path().join("repository/evidence");
+    let directory = tree.path().join("repository").join("evidence");
     let config = tree.write(
         "repository/config/host.json",
         axpc_configuration(directory.to_str().unwrap()).as_bytes(),
