@@ -16,13 +16,15 @@ fn extends(name: &str, prefix: &str) -> bool {
         .is_some_and(|rest| rest.starts_with('-'))
 }
 
-/// An entry with the values the pairwise checks compare, prepared once so that no
-/// pair allocates.
+/// An entry with the values the pairwise checks compare, prepared once so that a
+/// pair without a collision allocates nothing.
 struct Keys<'a> {
     entry: &'a Entry,
     repository: String,
     token_path: String,
-    /// The labels that are not platform labels, each with its ASCII lowercase form.
+    /// The labels that are not platform labels of this entry's own OS, each with its
+    /// ASCII lowercase form. Two entries' lists compare only when their OS is the
+    /// same, as the check in `check_entries` ensures.
     routing_labels: Vec<(&'a str, String)>,
 }
 
