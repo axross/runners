@@ -1,0 +1,28 @@
+# cargo-deny policy for the CLI. `mise run deny:rust` runs the bans, licenses and
+# sources checks, which read the crate metadata `cargo fetch --locked` provides
+# and need no advisory database. The advisory check fetches the RustSec database,
+# so it runs in its own workflow (.github/workflows/rust-advisories.yaml), not here.
+# docs/operations/cli.md records why each allowed licence and each crate is accepted.
+
+[graph]
+# The three operating systems the CLI is built and tested on in CI.
+targets = [
+  "x86_64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+  "aarch64-apple-darwin",
+]
+
+[licenses]
+allow = ["MIT", "Apache-2.0"]
+confidence-threshold = 0.93
+# The CLI itself is unpublished and carries no licence field.
+private = { ignore = true }
+
+[bans]
+multiple-versions = "deny"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

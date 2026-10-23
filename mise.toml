@@ -1,7 +1,9 @@
 # Pins the lint and format toolchain. `README.md` documents the tasks, and
 # `merge-checks.yaml` runs `mise run check`, so a local run and CI use the same
 # tool versions. The agent hooks call these tools or tasks too; docs/operations/
-# agent-sessions.md states which command each hook runs.
+# agent-sessions.md states which command each hook runs. The Rust toolchain is
+# not a mise tool: cli/rust-toolchain.toml pins it, and .agents/install-rust
+# provisions it. cargo-deny is, so it is pinned and locked here like the rest.
 
 [tools]
 node = "24.21.0"
@@ -11,6 +13,7 @@ shellcheck = "0.11.0"
 hadolint = "2.15.1"
 actionlint = "1.7.12"
 powershell = "7.6.6"
+cargo-deny = "0.20.2"
 
 [env]
 # PSScriptAnalyzer is a PowerShell module, not a mise tool, so `lint:powershell`
@@ -19,12 +22,75 @@ powershell = "7.6.6"
 PSSCRIPTANALYZER_VERSION = "1.25.0"
 PSSCRIPTANALYZER_SHA256 = "14e634c828eb98efb9f40b2918ba90f139ed5eccdf663a2a747736d996995d60"
 
+[tasks."rust:require"]
+description = "Fail at once, with one line, when the pinned Rust toolchain is not available"
+run = '''
+#!/usr/bin/env bash
+set -uo pipefail
+# RUSTUP_AUTO_INSTALL=0 keeps rustup from downloading the toolchain here: the
+# fix is the provisioning script, and a gate must not start a long install.
+if ! command -v cargo >/dev/null 2>&1 \
+  || ! (cd cli && RUSTUP_AUTO_INSTALL=0 cargo fmt --version && RUSTUP_AUTO_INSTALL=0 cargo clippy --version) >/dev/null 2>&1; then
+  echo "error: cargo, rustfmt or clippy for the toolchain in cli/rust-toolchain.toml is not available; run .agents/install-rust and put ~/.cargo/bin on PATH." >&2
+  exit 1
+fi
+'''
+
+[tasks."fetch:rust"]
+description = "Fetch the crates in cli/Cargo.lock, which cargo test and cargo deny read"
+depends = ["rust:require"]
+dir = "cli"
+run = "cargo fetch --locked"
+
+[tasks."build:rust"]
+description = "Build the CLI's debug binary, which the parity test runs"
+depends = ["rust:require", "fetch:rust"]
+dir = "cli"
+run = "cargo build --locked"
+
+[tasks."format:rust"]
+description = "Rewrite the CLI's Rust files with rustfmt"
+depends = ["rust:require"]
+dir = "cli"
+run = "cargo fmt"
+
+[tasks."format:check:rust"]
+description = "Fail when rustfmt would change a Rust file"
+depends = ["rust:require"]
+dir = "cli"
+run = "cargo fmt --check"
+
+[tasks."lint:rust"]
+description = "Lint the CLI with clippy, warnings as errors"
+depends = ["rust:require", "fetch:rust"]
+dir = "cli"
+run = "cargo clippy --locked --all-targets -- -D warnings"
+
+[tasks."test:rust"]
+description = "Run the CLI's unit and integration tests, which read the shared fixtures"
+depends = ["rust:require", "fetch:rust"]
+dir = "cli"
+run = "cargo test --locked"
+
+[tasks."deny:rust"]
+description = "Check the CLI's crates for banned or duplicate versions, unreviewed licences, and other sources; the advisory check runs in its own workflow"
+depends = ["rust:require", "fetch:rust"]
+dir = "cli"
+run = "cargo deny --locked check bans licenses sources"
+
+[tasks."test:parity"]
+description = "Check the Rust validator against the PowerShell one on the shared fixtures, after its self-test"
+depends = ["build:rust"]
+run = "pwsh -NoProfile -NonInteractive -File tests/host-configuration/parity.ps1"
+
 [tasks.format]
-description = "Rewrite Markdown, JSON, YAML, and TypeScript files with Prettier"
+description = "Rewrite Markdown, JSON, YAML, and TypeScript files with Prettier, and Rust files with rustfmt"
+depends = ["format:rust"]
 run = "prettier --write ."
 
 [tasks."format:check"]
-description = "Fail when Prettier would change a file"
+description = "Fail when Prettier or rustfmt would change a file"
+depends = ["format:check:rust"]
 run = "prettier --check ."
 
 [tasks."lint:markdown"]
@@ -32,14 +98,14 @@ description = "Lint Markdown with markdownlint-cli2"
 run = "markdownlint-cli2 \"**/*.md\""
 
 [tasks."lint:shell"]
-description = "Lint shell scripts (*.sh and .agents/setup) with shellcheck"
+description = "Lint shell scripts (*.sh, .agents/setup, and .agents/install-rust) with shellcheck"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 files=()
 while IFS= read -r file; do
   files+=("$file")
-done < <(git ls-files --cached --others --exclude-standard -- '*.sh' '.agents/setup' ':!:.claude/skills')
+done < <(git ls-files --cached --others --exclude-standard -- '*.sh' '.agents/setup' '.agents/install-rust' ':!:.claude/skills')
 if [ -z "${files[*]-}" ]; then
   echo "No shell scripts to lint."
   exit 0
@@ -154,6 +220,7 @@ depends = [
   "lint:docker",
   "lint:actions",
   "lint:powershell",
+  "lint:rust",
 ]
 
 [tasks."check:links"]
@@ -204,7 +271,7 @@ description = "Check the Windows host configuration validation against its fixtu
 run = "pwsh -NoProfile -NonInteractive -File hosts/windows-docker-desktop/tests/test-host-configuration.ps1"
 
 [tasks.check]
-description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, host test"
+description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, host test, Rust tests, Rust dependency check, parity test"
 depends = [
   "format:check",
   "lint",
@@ -213,4 +280,7 @@ depends = [
   "check:skills",
   "check:amp",
   "test:host",
+  "test:rust",
+  "deny:rust",
+  "test:parity",
 ]
