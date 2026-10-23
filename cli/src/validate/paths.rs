@@ -99,30 +99,30 @@ mod tests {
 
     #[test]
     fn the_checkout_rule_is_lexical_and_respects_the_profile_case_rule() {
-        let checkout = Path::new("/home/user/runners");
+        let checkout = Path::new("/path/to/checkout");
         assert!(is_inside_checkout(
-            "/home/user/runners",
+            "/path/to/checkout",
             checkout,
             Profile::Axmc
         ));
         assert!(is_inside_checkout(
-            "/home/user/runners/",
+            "/path/to/checkout/",
             checkout,
             Profile::Axmc
         ));
         assert!(is_inside_checkout(
-            "/home/user//runners/out",
+            "/path/to//checkout/out",
             checkout,
             Profile::Axmc
         ));
         assert!(!is_inside_checkout(
-            "/home/user/runners-out",
+            "/path/to/checkout-out",
             checkout,
             Profile::Axmc
         ));
-        assert!(!is_inside_checkout("/home/user", checkout, Profile::Axmc));
+        assert!(!is_inside_checkout("/path/to", checkout, Profile::Axmc));
         assert!(!is_inside_checkout(
-            "/home/user/Runners/out",
+            "/path/to/Checkout/out",
             checkout,
             Profile::Axmc
         ));
@@ -130,34 +130,34 @@ mod tests {
 
     #[test]
     fn windows_directories_compare_without_case_and_resolve_dot_components() {
-        let checkout = Path::new("C:\\Users\\me\\runners");
+        let checkout = Path::new("C:\\path\\to\\checkout");
         assert!(is_inside_checkout(
-            "c:\\users\\ME\\runners",
+            "c:\\PATH\\to\\CHECKOUT",
             checkout,
             Profile::Axpc
         ));
         assert!(is_inside_checkout(
-            "C:\\Users\\me\\runners\\out\\",
+            "C:\\path\\to\\checkout\\out\\",
             checkout,
             Profile::Axpc
         ));
         assert!(is_inside_checkout(
-            "C:\\Users\\me\\x\\..\\runners\\out",
+            "C:\\path\\to\\x\\..\\checkout\\out",
             checkout,
             Profile::Axpc
         ));
         assert!(is_inside_checkout(
-            "C:\\Users\\\\me\\runners\\out",
+            "C:\\path\\\\to\\checkout\\out",
             checkout,
             Profile::Axpc
         ));
         assert!(!is_inside_checkout(
-            "C:\\Users\\me\\runners-out",
+            "C:\\path\\to\\checkout-out",
             checkout,
             Profile::Axpc
         ));
         assert!(!is_inside_checkout(
-            "D:\\Users\\me\\runners",
+            "D:\\path\\to\\checkout",
             checkout,
             Profile::Axpc
         ));
