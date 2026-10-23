@@ -1,10 +1,12 @@
 name: Merge Checks
 
 # the repository's own CI: the format, lint, link, documentation, skills lock,
-# and host configuration gates, run through the same mise task the README
-# documents, plus a build of the runner image that is never pushed and a run of
-# the host configuration test under Windows PowerShell 5.1. it runs on
-# GitHub-hosted runners only. this repository is public, and GitHub advises
+# host configuration, and Rust gates, run through the same mise task the README
+# documents, plus a build of the runner image that is never pushed, a run of the
+# host configuration test under Windows PowerShell 5.1, and the CLI's format,
+# lint, and tests on Linux, Windows, and macOS. the CLI's advisory check needs the
+# network and runs in rust-advisories.yaml, which is not a required check. it runs
+# on GitHub-hosted runners only. this repository is public, and GitHub advises
 # against self-hosted runners on public repositories; see
 # docs/conventions/security.md.
 
@@ -39,8 +41,49 @@ jobs:
           # SHA-256 of the extracted mise binary, not of the archive the action
           # downloads. Update with the version; see docs/operations/agent-sessions.md.
           sha256: 63049bc35fb9065e8dc35ac8b25fdae53e9bd6f1885a843aedeba398e046a1ee
+      # the Rust gates in mise run check need the toolchain that
+      # cli/rust-toolchain.toml pins. rustup is on the hosted runner; naming no
+      # toolchain installs the one the file names, so the pin lives in one place.
+      - name: Install Pinned Rust Toolchain
+        working-directory: cli
+        run: rustup toolchain install
       - name: Run Checks
         run: mise run check
+
+  # the CLI on each operating system a runner host can be: format, lint, and tests.
+  # the parity test needs PowerShell 7 and the pinned mise tools, so it runs in the
+  # check job on Linux only. no cache action: a cache would be a trust boundary
+  # for a job that builds code, and the build is small.
+  rust:
+    name: Test CLI On ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    defaults:
+      run:
+        shell: bash
+        working-directory: cli
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install Pinned Rust Toolchain
+        run: rustup toolchain install
+      - name: Check Formatting
+        run: cargo fmt --check
+      - name: Lint With Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Run Tests
+        run: cargo test --locked
+      # needs drive-letter paths, so only Windows can run it; the step names it so
+      # the log shows the axpc checkout rule ran.
+      - name: Run Checkout Rule Tests
+        if: runner.os == 'Windows'
+        run: cargo test --locked --test checkout_rule
 
   image:
     name: Build Runner Image
