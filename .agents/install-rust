@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# Installs the Rust toolchain that cli/rust-toolchain.toml pins, installing rustup
+# first when it is absent. rustup comes from a pinned rustup-init release verified
+# by SHA-256, as .agents/setup does for mise; the toolchain itself is fetched by
+# rustup over HTTPS (docs/conventions/security.md records that exception).
+# Idempotent: it does nothing once the pinned toolchain has cargo, rustfmt and clippy.
+# Refresh the version and the hash together, the hash computed from the real download.
+set -euo pipefail
+
+RUSTUP_INIT_VERSION='1.29.2'
+RUSTUP_INIT_SHA256='5be191e8c70a5007074254cb74d78dbfdd25cd5a61c27de7b8e5410122ec24f4'
+RUSTUP_INIT_TARGET='x86_64-unknown-linux-gnu'
+
+require_linux_x86_64() {
+  local system machine
+  system="$(uname -s)"
+  machine="$(uname -m)"
+  [[ "$system" == Linux && "$machine" == x86_64 ]] || {
+    echo "Unsupported platform: ${system} ${machine}. This script installs rustup for ${RUSTUP_INIT_TARGET} only; install the toolchain in cli/rust-toolchain.toml with rustup on this platform." >&2
+    return 1
+  }
+}
+
+toolchain_is_ready() {
+  # RUSTUP_AUTO_INSTALL=0 makes a missing toolchain fail here instead of downloading.
+  command -v cargo >/dev/null 2>&1 \
+    && (cd cli && RUSTUP_AUTO_INSTALL=0 cargo fmt --version && RUSTUP_AUTO_INSTALL=0 cargo clippy --version) >/dev/null 2>&1
+}
+
+install_rustup() (
+  # rustup-init picks its mode from its own file name, so the download keeps that name.
+  local directory download
+  directory="$(mktemp -d)"
+  trap 'rm -rf -- "$directory"' EXIT
+  download="${directory}/rustup-init"
+  curl -fsSL \
+    "https://static.rust-lang.org/rustup/archive/${RUSTUP_INIT_VERSION}/${RUSTUP_INIT_TARGET}/rustup-init" \
+    -o "$download"
+  if ! printf '%s  %s\n' "$RUSTUP_INIT_SHA256" "$download" | sha256sum --check --status; then
+    echo "SHA-256 mismatch for the downloaded rustup-init ${RUSTUP_INIT_VERSION} binary (expected ${RUSTUP_INIT_SHA256}); refusing to run it." >&2
+    exit 1
+  fi
+  chmod 0755 "$download"
+  # No toolchain, so the next step installs exactly the one the project pins; the
+  # profile is minimal; and the shell profiles stay untouched (PATH is the caller's).
+  "$download" -y --default-toolchain none --profile minimal --no-modify-path
+)
+
+install_toolchain() {
+  # With no argument, rustup 1.28 and later installs what rust-toolchain.toml names:
+  # the pinned channel, its profile and its components.
+  (cd cli && rustup toolchain install)
+}
+
+cd "$(dirname "$0")/.."
+require_linux_x86_64
+export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
+
+if toolchain_is_ready; then
+  echo "The Rust toolchain in cli/rust-toolchain.toml is already installed."
+  exit 0
+fi
+
+if ! command -v rustup >/dev/null 2>&1; then
+  echo "==> Install rustup ${RUSTUP_INIT_VERSION}"
+  install_rustup
+fi
+echo "==> Install the pinned Rust toolchain"
+install_toolchain
+
+toolchain_is_ready || {
+  echo "The Rust toolchain in cli/rust-toolchain.toml is still not usable after installing it." >&2
+  exit 1
+}
+echo "Installed the Rust toolchain in cli/rust-toolchain.toml. Put ${CARGO_HOME:-$HOME/.cargo}/bin on PATH to use it."

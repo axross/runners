@@ -17,6 +17,7 @@ const FORMAT_EXTENSIONS = new Set([
   ".ts",
   ".js",
   ".mjs",
+  ".rs",
 ]);
 const CONTINUATION_MARKER = "[runners-quality-hooks:lint-follow-up]";
 const OUTPUT_TAIL_LENGTH = 8_000;
@@ -52,7 +53,7 @@ async function run(
     maxBuffer: 10 * 1024 * 1024,
     env: {
       ...process.env,
-      PATH: `${process.env.HOME}/.local/bin:${process.env.PATH}`,
+      PATH: `${process.env.HOME}/.local/bin:${process.env.HOME}/.cargo/bin:${process.env.PATH}`,
     },
   });
 }

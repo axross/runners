@@ -63,14 +63,37 @@ PROFILE
   fi
 }
 
+persist_rust_environment() {
+  local marker='# runners rust toolchain'
+  touch "$HOME/.bash_profile"
+  if ! grep -Fqx "$marker" "$HOME/.bash_profile"; then
+    cat >>"$HOME/.bash_profile" <<'PROFILE'
+
+# runners rust toolchain
+export PATH="$HOME/.cargo/bin:$PATH"
+PROFILE
+  fi
+}
+
 verify_toolchain() {
   local tool
-  for tool in node prettier markdownlint-cli2 shellcheck hadolint actionlint pwsh; do
+  for tool in node prettier markdownlint-cli2 shellcheck hadolint actionlint pwsh cargo-deny; do
     mise exec -- which "$tool" >/dev/null || {
       echo "Missing pinned tool: $tool" >&2
       return 1
     }
   done
+  for tool in cargo rustfmt cargo-clippy; do
+    command -v "$tool" >/dev/null || {
+      echo "Missing pinned Rust tool: $tool" >&2
+      return 1
+    }
+  done
+  # the pinned toolchain, not whichever default rustup holds: run from the crate.
+  (cd cli && RUSTUP_AUTO_INSTALL=0 cargo fmt --version && RUSTUP_AUTO_INSTALL=0 cargo clippy --version) >/dev/null || {
+    echo "The Rust toolchain in cli/rust-toolchain.toml is not usable" >&2
+    return 1
+  }
 }
 
 require_x86_64() {
@@ -89,5 +112,8 @@ step "Install required system packages" install_system_packages
 step "Install mise" install_mise
 export PATH="$HOME/.local/bin:$PATH"
 step "Install the pinned lint toolchain" install_toolchain
+export PATH="$HOME/.cargo/bin:$PATH"
+step "Install the pinned Rust toolchain" ./.agents/install-rust
 step "Persist the toolchain for login shells" persist_login_environment
+step "Persist the Rust toolchain for login shells" persist_rust_environment
 step "Verify the pinned tools" verify_toolchain

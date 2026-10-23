@@ -63,6 +63,14 @@ test("formats after a successful tool result that changed a formatted file", asy
   assert.deepEqual(calls, [["mise", "run", "format"]]);
 });
 
+test("formats after a tool result that changed a Rust file", async () => {
+  const { handlers, calls, context } = setup({
+    changedFiles: ["cli/src/lib.rs"],
+  });
+  await handlers["tool.result"]!({ status: "done" }, context);
+  assert.deepEqual(calls, [["mise", "run", "format"]]);
+});
+
 test("ignores a failed tool result and files that are not formatted", async () => {
   const failed = setup({ changedFiles: ["README.md"] });
   await failed.handlers["tool.result"]!({ status: "error" }, failed.context);
