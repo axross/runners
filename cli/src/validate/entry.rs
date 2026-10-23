@@ -97,8 +97,7 @@ pub fn read_entry(value: &Value, path: &str, cx: &mut Context) -> Option<Entry> 
         ),
     };
     let os = read_os(&node.os, path, profile, &mut cx.errors);
-    let usable_os = if profile == Profile::Axmc { os } else { None };
-    let labels = registration_labels(&node.labels, path, profile, usable_os, &mut cx.errors);
+    let labels = registration_labels(&node.labels, path, profile, os, &mut cx.errors);
     let volumes = read_volumes(&node, path, profile, &mut cx.errors);
     let slots =
         fields::required(&node.slots, &format!("{path}.slots"), &mut cx.errors).and_then(|value| {
