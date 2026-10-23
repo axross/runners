@@ -30,8 +30,8 @@ maintainer, the tests, and CI check either host's configuration anywhere.
 
 A rejected configuration prints `Invalid host configuration (<path>):` and then
 one line per error, a hyphen then `<path>: <problem>`, where the path uses the notation
-`repositories[0].labels`. A configuration that is not an object prints the header
-without the path and `configuration: must be an object`.
+`repositories[0].labels`. A configuration that is not an object keeps the path in
+the header and has the single error `configuration: must be an object`.
 
 A configuration larger than 1 MiB (1048576 bytes) is refused before it is parsed:
 `Host configuration cannot be read: <path>: the file is larger than 1048576 bytes (1 MiB)`,
@@ -89,12 +89,11 @@ unusable.
 
 ### Labels
 
-Two entries for the same repository may share a non-platform label only when their
-`os` differs. On axpc every entry is Linux, so the existing rule and message stand.
-On axmc a Linux pool and a macOS pool may both carry `axmc`, and a consumer then
-names the operating system label as well, because a bare `runs-on: axmc` matches
-both. [Security](../conventions/security.md) states the rule, including the
-cross-host case that `validate` cannot see.
+`validate` rejects two entries for the same repository that share a non-platform
+label and have the same `os`, and accepts them when `os` differs. On axpc every
+entry is Linux, so the existing rule and message stand.
+[Security](../conventions/security.md) owns the rule, including what a consumer
+names in `runs-on` and the cross-host case that `validate` cannot see.
 
 ### The Checkout Rule
 
