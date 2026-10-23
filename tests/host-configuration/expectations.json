@@ -108,6 +108,24 @@
     "lacks": [],
     "powershell": "accept"
   },
+  "rust/raw/leading-zero-integer.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "Host configuration is not valid JSON: a number must not have leading zeros"
+    ],
+    "lacks": [],
+    "powershell": "accept"
+  },
+  "rust/raw/lone-surrogate-escape.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "Host configuration is not valid JSON: a high surrogate must be followed by a low surrogate escape"
+    ],
+    "lacks": [],
+    "powershell": "accept"
+  },
   "rust/raw/null-entry.json": {
     "profile": "axpc",
     "outcome": "reject",
@@ -143,6 +161,13 @@
     "lacks": [],
     "powershell": "reject"
   },
+  "rust/raw/single-quoted-string.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["Host configuration is not valid JSON: unexpected character"],
+    "lacks": [],
+    "powershell": "accept"
+  },
   "rust/raw/token-path-canonically-equivalent.json": {
     "profile": "axpc",
     "outcome": "reject",
@@ -162,6 +187,15 @@
     "powershell": "skip"
   },
   "rust/raw/trailing-comma.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "Host configuration is not valid JSON: expected a property name in double quotes"
+    ],
+    "lacks": [],
+    "powershell": "accept"
+  },
+  "rust/raw/unquoted-property-name.json": {
     "profile": "axpc",
     "outcome": "reject",
     "contains": [
