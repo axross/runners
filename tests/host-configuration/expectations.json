@@ -1,0 +1,1023 @@
+{
+  "rust/accepted/axmc-budget-at-limit.json": {
+    "profile": "axmc",
+    "outcome": "accept",
+    "contains": [
+      "macOS VMs:         2 of 2",
+      "cpus:              8 of 8\n",
+      "memory:            32 of 32 GB",
+      "disk:              150 of 150 GB"
+    ],
+    "lacks": []
+  },
+  "rust/accepted/axmc-defaults.json": {
+    "profile": "axmc",
+    "outcome": "accept",
+    "contains": [
+      "labels:            self-hosted, linux, ARM64, axmc\n",
+      "cpus:              2\n",
+      "memory:            8 GB\n",
+      "disk:              40 GB\n",
+      "Budget use"
+    ],
+    "lacks": ["image"]
+  },
+  "rust/accepted/axmc-diagnostics.json": {
+    "profile": "axmc",
+    "outcome": "accept",
+    "contains": ["diagnostics:       True", "raw records:       True"],
+    "lacks": []
+  },
+  "rust/accepted/axmc-fractional-cpus.json": {
+    "profile": "axmc",
+    "outcome": "accept",
+    "contains": ["cpus:              1.5 of 1.5"],
+    "lacks": []
+  },
+  "rust/accepted/axmc-image-name.json": {
+    "profile": "axmc",
+    "outcome": "accept",
+    "contains": ["profile axmc, image example-image:tag"],
+    "lacks": []
+  },
+  "rust/accepted/axmc-os-labels.json": {
+    "profile": "axmc",
+    "outcome": "accept",
+    "contains": [
+      "labels:            self-hosted, macOS, ARM64, axmc\n",
+      "labels:            self-hosted, linux, ARM64, example-route\n"
+    ],
+    "lacks": ["example-route, axmc"]
+  },
+  "rust/accepted/axmc-shared-label-different-os.json": {
+    "profile": "axmc",
+    "outcome": "accept",
+    "contains": [
+      "Host configuration is valid: 2 entries, profile axmc",
+      "macOS VMs:         1 of 2"
+    ],
+    "lacks": []
+  },
+  "rust/raw/case-variant-keys.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "Host configuration is not valid JSON: keys with different casing"
+    ],
+    "lacks": [],
+    "powershell": "reject"
+  },
+  "rust/raw/comment.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "Host configuration is not valid JSON: expected a property name in double quotes"
+    ],
+    "lacks": [],
+    "powershell": "accept"
+  },
+  "rust/raw/empty-key.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "Host configuration is not valid JSON: a property name must not be empty"
+    ],
+    "lacks": [],
+    "powershell": "reject"
+  },
+  "rust/raw/empty.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["configuration: must be an object"],
+    "lacks": [],
+    "powershell": "reject"
+  },
+  "rust/raw/invalid-json.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["Host configuration is not valid JSON:"],
+    "lacks": [],
+    "powershell": "reject"
+  },
+  "rust/raw/invalid-utf8.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "Host configuration is not valid JSON: the file is not valid UTF-8"
+    ],
+    "lacks": [],
+    "powershell": "accept"
+  },
+  "rust/raw/null-entry.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["repositories[0]: must be an object"],
+    "lacks": [],
+    "powershell": "reject"
+  },
+  "rust/raw/root-array.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["configuration: must be an object"],
+    "lacks": [],
+    "powershell": "accept"
+  },
+  "rust/raw/root-empty-array.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["configuration: must be an object"],
+    "lacks": [],
+    "powershell": "reject"
+  },
+  "rust/raw/root-null.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["configuration: must be an object"],
+    "lacks": [],
+    "powershell": "reject"
+  },
+  "rust/raw/root-scalar.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["configuration: must be an object"],
+    "lacks": [],
+    "powershell": "reject"
+  },
+  "rust/raw/token-path-canonically-equivalent.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[1].tokenPath: pools for the same repository must use the same token file as repositories[0]"
+    ],
+    "lacks": [],
+    "powershell": "skip"
+  },
+  "rust/raw/token-path-ignorable-character.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[1].tokenPath: pools for the same repository must use the same token file as repositories[0]"
+    ],
+    "lacks": [],
+    "powershell": "skip"
+  },
+  "rust/raw/trailing-comma.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "Host configuration is not valid JSON: expected a property name in double quotes"
+    ],
+    "lacks": [],
+    "powershell": "accept"
+  },
+  "rust/rejected/axmc-budget-errors-come-last.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[1].name: name 'example' collides with 'example' at repositories[0]; set a distinct name on one entry\n  - repositories[1].tokenPath: pools for the same repository must use the same token file as repositories[0]\n  - repositories[1].labels: ambiguous same-repository routing; labels 'axmc' also appear at repositories[0]\n  - budget: macOS pools total 3 VMs (the sum of their slots), above the limit of 2\n  - budget: pools total 1080 GB of disk (the sum of slots times diskGb), above the budget of 200 GB"
+    ],
+    "lacks": []
+  },
+  "rust/rejected/axmc-budget-members.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": [
+      "budget.extra: unknown field\n  - budget.cpus: must be a number greater than 0 and at most 64\n  - budget.memoryGb: must be an integer from 1 to 1024\n  - budget.diskGb: required field is missing"
+    ],
+    "lacks": []
+  },
+  "rust/rejected/axmc-budget-missing.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": ["budget: required field is missing"],
+    "lacks": []
+  },
+  "rust/rejected/axmc-budget-not-object.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": ["budget: must be an object"],
+    "lacks": []
+  },
+  "rust/rejected/axmc-budget-null-members.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": [
+      "budget.cpus: required field is missing\n  - budget.memoryGb: required field is missing\n  - budget.diskGb: required field is missing"
+    ],
+    "lacks": []
+  },
+  "rust/rejected/axmc-cpus-over-budget.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": [
+      "budget: pools total 10 CPUs (the sum of slots times cpus), above the budget of 8"
+    ],
+    "lacks": ["memory", "disk"]
+  },
+  "rust/rejected/axmc-diagnostic-directory-relative.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].diagnosticDirectory: must be an absolute local POSIX directory outside the checkout"
+    ],
+    "lacks": []
+  },
+  "rust/rejected/axmc-diagnostic-directory-without-diagnostics.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].diagnosticDirectory: requires diagnostics\n  - repositories[0].diagnosticRawRecords: requires diagnostics"
+    ],
+    "lacks": []
+  },
+  "rust/rejected/axmc-different-os-shared-label-different-token.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[1].tokenPath: pools for the same repository must use the same token file as repositories[0]"
+    ],
+    "lacks": ["ambiguous"]
+  },
+  "rust/rejected/axmc-disk-invalid.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].diskGb: must be an integer from 1 to 16384\n  - repositories[1].diskGb: must be an integer from 1 to 16384"
+    ],
+    "lacks": []
+  },
+  "rust/rejected/axmc-disk-missing.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": ["repositories[0].diskGb: required field is missing"],
+    "lacks": []
+  },
+  "rust/rejected/axmc-disk-over-budget.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": [
+      "budget: pools total 300 GB of disk (the sum of slots times diskGb), above the budget of 200 GB"
+    ],
+    "lacks": ["CPUs", "memory"]
+  },
+  "rust/rejected/axmc-empty-repositories.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": ["repositories: must list at least one repository"],
+    "lacks": []
+  },
+  "rust/rejected/axmc-image-name-invalid.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": [
+      "imageName: must be a local Docker image name with a tag, such as name:tag"
+    ],
+    "lacks": []
+  },
+  "rust/rejected/axmc-image-name-null.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": [
+      "imageName: must be a local Docker image name with a tag, such as name:tag"
+    ],
+    "lacks": []
+  },
+  "rust/rejected/axmc-label-linux-on-macos.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].labels: 'LINUX' is a platform label that a macos pool on axmc cannot provide, so list only non-platform labels"
+    ],
+    "lacks": []
+  },
+  "rust/rejected/axmc-label-macos-on-linux.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].labels: 'macOS' is a platform label that a linux pool on axmc cannot provide, so list only non-platform labels"
+    ],
+    "lacks": []
+  },
+  "rust/rejected/axmc-label-own-platform.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].labels: 'arm64' is always added, so list only non-platform labels\n  - repositories[1].labels: 'macos' is always added, so list only non-platform labels"
+    ],
+    "lacks": []
+  },
+  "rust/rejected/axmc-label-platform-with-unusable-os.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].os: must be \"linux\" or \"macos\"\n  - repositories[0].labels: 'x64' is a platform label, so list only non-platform labels\n  - repositories[0].labels: 'ARM64' is always added, so list only non-platform labels"
+    ],
+    "lacks": []
+  },
+  "rust/rejected/axmc-label-x64.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].labels: 'x64' is a platform label that a macos pool on axmc cannot provide, so list only non-platform labels"
+    ],
+    "lacks": []
+  },
+  "rust/rejected/axmc-memory-over-budget.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": [
+      "budget: pools total 40 GB of memory (the sum of slots times memoryGb), above the budget of 32 GB"
+    ],
+    "lacks": ["CPUs", "disk"]
+  },
+  "rust/rejected/axmc-name-collision.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[1].name: name 'example-nested' collides with 'example' at repositories[0]"
+    ],
+    "lacks": []
+  },
+  "rust/rejected/axmc-os-invalid.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": ["repositories[0].os: must be \"linux\" or \"macos\""],
+    "lacks": []
+  },
+  "rust/rejected/axmc-os-missing.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": ["repositories[0].os: required field is missing"],
+    "lacks": []
+  },
+  "rust/rejected/axmc-same-os-shared-custom-label.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[1].labels: ambiguous same-repository routing; labels 'shared' also appear at repositories[0]"
+    ],
+    "lacks": []
+  },
+  "rust/rejected/axmc-same-os-shared-label.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[1].labels: ambiguous same-repository routing; labels 'axmc' also appear at repositories[0]"
+    ],
+    "lacks": []
+  },
+  "rust/rejected/axmc-shared-token-other-repository.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[1].tokenPath: token file '/path/to/example-repo-1.token' is already used at repositories[0]; each repository needs its own token"
+    ],
+    "lacks": []
+  },
+  "rust/rejected/axmc-three-macos-vms.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": [
+      "budget: macOS pools total 3 VMs (the sum of their slots), above the limit of 2"
+    ],
+    "lacks": []
+  },
+  "rust/rejected/axmc-token-path-control-character.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": ["repositories[0].tokenPath: must be an absolute POSIX path"],
+    "lacks": []
+  },
+  "rust/rejected/axmc-token-path-dot-components.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].tokenPath: must be an absolute POSIX path",
+      "repositories[1].tokenPath: must be an absolute POSIX path",
+      "repositories[2].tokenPath: must be an absolute POSIX path",
+      "repositories[3].tokenPath: must be an absolute POSIX path"
+    ],
+    "lacks": []
+  },
+  "rust/rejected/axmc-token-path-drive-letter.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": ["repositories[0].tokenPath: must be an absolute POSIX path"],
+    "lacks": []
+  },
+  "rust/rejected/axmc-token-path-relative.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": ["repositories[0].tokenPath: must be an absolute POSIX path"],
+    "lacks": []
+  },
+  "rust/rejected/axmc-unknown-fields.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": [
+      "configuration.hostPrefix: unknown field",
+      "repositories[0].label: unknown field"
+    ],
+    "lacks": []
+  },
+  "rust/rejected/axmc-volumes-null.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].volumes: not supported on axmc, because VM pools keep no volumes"
+    ],
+    "lacks": ["unknown field"]
+  },
+  "rust/rejected/axmc-volumes.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].volumes: not supported on axmc, because VM pools keep no volumes"
+    ],
+    "lacks": ["unknown field"]
+  },
+  "rust/rejected/axpc-axmc-only-fields.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "configuration.budget: unknown field\n  - repositories[0].os: unknown field\n  - repositories[0].diskGb: unknown field"
+    ],
+    "lacks": []
+  },
+  "rust/rejected/axpc-diagnostic-directory-dot-components.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].diagnosticDirectory: must not contain dot path components"
+    ],
+    "lacks": []
+  },
+  "rust/rejected/axpc-posix-token-path.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["repositories[0].tokenPath: must be an absolute Windows path"],
+    "lacks": []
+  },
+  "shared/accepted/arm64-label.json": {
+    "profile": "axpc",
+    "outcome": "accept",
+    "contains": ["labels:            self-hosted, linux, x64, ARM64, macOS\n"],
+    "lacks": []
+  },
+  "shared/accepted/axpc-label.json": {
+    "profile": "axpc",
+    "outcome": "accept",
+    "contains": [
+      "labels:            self-hosted, linux, x64, AXPC, example-label-one\n"
+    ],
+    "lacks": []
+  },
+  "shared/accepted/cpus-nine-decimals.json": {
+    "profile": "axpc",
+    "outcome": "accept",
+    "contains": [
+      "cpus:              0.000000001\n",
+      "cpus:              0.000000002\n",
+      "cpus:              10\n",
+      "cpus:              0.12345679\n"
+    ],
+    "lacks": []
+  },
+  "shared/accepted/empty-labels.json": {
+    "profile": "axpc",
+    "outcome": "accept",
+    "contains": ["labels:            self-hosted, linux, x64, axpc\n"],
+    "lacks": []
+  },
+  "shared/accepted/explicit-limits.json": {
+    "profile": "axpc",
+    "outcome": "accept",
+    "contains": ["cpus:              1.5", "memory:            16 GB"],
+    "lacks": ["cpus:              2"]
+  },
+  "shared/accepted/limit-bounds.json": {
+    "profile": "axpc",
+    "outcome": "accept",
+    "contains": ["cpus:              64", "memory:            256 GB"],
+    "lacks": []
+  },
+  "shared/accepted/max-name-length.json": {
+    "profile": "axpc",
+    "outcome": "accept",
+    "contains": [
+      "name:              nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn"
+    ],
+    "lacks": []
+  },
+  "shared/accepted/max-slots.json": {
+    "profile": "axpc",
+    "outcome": "accept",
+    "contains": ["slots:             16"],
+    "lacks": []
+  },
+  "shared/accepted/no-labels-field.json": {
+    "profile": "axpc",
+    "outcome": "accept",
+    "contains": ["labels:            self-hosted, linux, x64, axpc\n"],
+    "lacks": []
+  },
+  "shared/accepted/no-volumes.json": {
+    "profile": "axpc",
+    "outcome": "accept",
+    "contains": [
+      "Host configuration is valid: 1 entries",
+      "cpus:              2",
+      "memory:            8 GB"
+    ],
+    "lacks": ["volume:"]
+  },
+  "shared/accepted/similar-names.json": {
+    "profile": "axpc",
+    "outcome": "accept",
+    "contains": [
+      "Host configuration is valid: 3 entries",
+      "name:              example-repos\n"
+    ],
+    "lacks": []
+  },
+  "shared/accepted/split-pools.json": {
+    "profile": "axpc",
+    "outcome": "accept",
+    "contains": [
+      "entries, image actions-runner:local",
+      "labels:            self-hosted, linux, x64, example-android-route",
+      "slots:             3"
+    ],
+    "lacks": ["example-android-route, axpc"]
+  },
+  "shared/accepted/token-path-case-fold-same-repository.json": {
+    "profile": "axpc",
+    "outcome": "accept",
+    "contains": ["Host configuration is valid: 2 entries"],
+    "lacks": []
+  },
+  "shared/accepted/unc-token-path.json": {
+    "profile": "axpc",
+    "outcome": "accept",
+    "contains": [
+      "token file:        \\\\example-server\\example-share\\example-repo-one.token"
+    ],
+    "lacks": []
+  },
+  "shared/pwsh7/cpus-out-of-range-literal.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].cpus: must be a number greater than 0 and at most 64"
+    ],
+    "lacks": ["large enough"]
+  },
+  "shared/pwsh7/duplicate-key-last-wins.json": {
+    "profile": "axpc",
+    "outcome": "accept",
+    "contains": ["slots:             2\n"],
+    "lacks": ["slots:             1"]
+  },
+  "shared/pwsh7/duplicate-unknown-key-position.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].yyy: unknown field\n  - repositories[0].zzz: unknown field"
+    ],
+    "lacks": []
+  },
+  "shared/rejected/colliding-name-nested-reverse.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["repositories[1].name: name", "collides"],
+    "lacks": []
+  },
+  "shared/rejected/colliding-name-nested.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["repositories[1].name: name", "collides"],
+    "lacks": []
+  },
+  "shared/rejected/colliding-name.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["repositories[1].name: name", "collides"],
+    "lacks": []
+  },
+  "shared/rejected/cpus-negative.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].cpus: must be a number greater than 0 and at most 64"
+    ],
+    "lacks": []
+  },
+  "shared/rejected/cpus-rounds-to-zero-below-half.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].cpus: must be a number greater than 0 and at most 64, and large enough not to be written as 0, which Docker reads as no limit"
+    ],
+    "lacks": []
+  },
+  "shared/rejected/cpus-rounds-to-zero.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].cpus: must be a number greater than 0 and at most 64, and large enough not to be written as 0"
+    ],
+    "lacks": []
+  },
+  "shared/rejected/cpus-string.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].cpus: must be a number greater than 0 and at most 64"
+    ],
+    "lacks": []
+  },
+  "shared/rejected/cpus-too-many.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].cpus: must be a number greater than 0 and at most 64"
+    ],
+    "lacks": []
+  },
+  "shared/rejected/cpus-zero.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].cpus: must be a number greater than 0 and at most 64"
+    ],
+    "lacks": []
+  },
+  "shared/rejected/default-labels-only.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["repositories[0].labels:", "list only non-platform labels"],
+    "lacks": []
+  },
+  "shared/rejected/duplicate-repository.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["repositories[1].labels: ambiguous same-repository routing"],
+    "lacks": []
+  },
+  "shared/rejected/field-name-case.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "configuration.ImageName: unknown field\n  - repositories[0].Owner: unknown field\n  - repositories[0].Slots: unknown field"
+    ],
+    "lacks": ["required field is missing"]
+  },
+  "shared/rejected/image-name-trailing-newline.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["imageName: must be a local Docker image name"],
+    "lacks": []
+  },
+  "shared/rejected/integer-literals.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].slots: must be an integer from 1 to 16\n  - repositories[0].memoryGb: must be an integer from 1 to 256"
+    ],
+    "lacks": []
+  },
+  "shared/rejected/label-trailing-newline.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].labels: each label must be a string of letters"
+    ],
+    "lacks": []
+  },
+  "shared/rejected/labels-not-list.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["repositories[0].labels: must be a list of labels"],
+    "lacks": []
+  },
+  "shared/rejected/labels-null.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["repositories[0].labels: must be a list of labels"],
+    "lacks": []
+  },
+  "shared/rejected/leftover-host-prefix.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["configuration.hostPrefix: unknown field"],
+    "lacks": []
+  },
+  "shared/rejected/leftover-prefix.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["repositories[0].prefix: unknown field"],
+    "lacks": []
+  },
+  "shared/rejected/memory-fractional.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["repositories[0].memoryGb: must be an integer from 1 to 256"],
+    "lacks": []
+  },
+  "shared/rejected/memory-string.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["repositories[0].memoryGb: must be an integer from 1 to 256"],
+    "lacks": []
+  },
+  "shared/rejected/memory-too-many.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["repositories[0].memoryGb: must be an integer from 1 to 256"],
+    "lacks": []
+  },
+  "shared/rejected/memory-zero.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["repositories[0].memoryGb: must be an integer from 1 to 256"],
+    "lacks": []
+  },
+  "shared/rejected/missing-name.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["repositories[0].name: required field is missing"],
+    "lacks": []
+  },
+  "shared/rejected/missing-owner.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["repositories[0].owner: required field is missing"],
+    "lacks": []
+  },
+  "shared/rejected/missing-token-path.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["repositories[0].tokenPath: required field is missing"],
+    "lacks": []
+  },
+  "shared/rejected/missing-volumes.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["repositories[0].volumes: required field is missing"],
+    "lacks": []
+  },
+  "shared/rejected/mount-path-dotdot.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["repositories[0].volumes[0].mountPath: must not contain '..'"],
+    "lacks": []
+  },
+  "shared/rejected/mount-path-injection.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].volumes[0].mountPath: must be an absolute container path"
+    ],
+    "lacks": []
+  },
+  "shared/rejected/mount-path-trailing-newline.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].volumes[0].mountPath: must be an absolute container path"
+    ],
+    "lacks": []
+  },
+  "shared/rejected/name-bad-pattern.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].name: must be lowercase letters, digits and hyphens"
+    ],
+    "lacks": []
+  },
+  "shared/rejected/name-collision-beside-bad-cpus.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[1].cpus: must be a number greater than 0 and at most 64"
+    ],
+    "lacks": ["collides"]
+  },
+  "shared/rejected/name-collision-beside-bad-diagnostics.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[1].diagnostics: must be a boolean\n  - repositories[1].name: name",
+      "collides with"
+    ],
+    "lacks": []
+  },
+  "shared/rejected/name-too-long.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["repositories[0].name: name is 65 characters", "at most 64"],
+    "lacks": []
+  },
+  "shared/rejected/name-trailing-newline.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].name: must be lowercase letters, digits and hyphens"
+    ],
+    "lacks": []
+  },
+  "shared/rejected/null-direct-fields.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].labels: must be a list of labels\n  - repositories[0].cpus: must be a number greater than 0 and at most 64\n  - repositories[0].memoryGb: must be an integer from 1 to 256\n  - repositories[0].diagnostics: must be a boolean\n  - repositories[0].diagnosticRawRecords: must be a boolean\n  - repositories[0].diagnosticDirectory: requires diagnostics"
+    ],
+    "lacks": ["required field is missing"]
+  },
+  "shared/rejected/null-required-fields.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].owner: required field is missing\n  - repositories[0].repository: required field is missing\n  - repositories[0].tokenPath: required field is missing\n  - repositories[0].volumes: required field is missing\n  - repositories[0].slots: required field is missing\n  - repositories[0].name: required field is missing"
+    ],
+    "lacks": []
+  },
+  "shared/rejected/null-root-fields.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "imageName: required field is missing\n  - repositories: required field is missing"
+    ],
+    "lacks": []
+  },
+  "shared/rejected/owner-trailing-newline.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["repositories[0].owner: must be a GitHub owner name"],
+    "lacks": []
+  },
+  "shared/rejected/pool-android-carries-axpc.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[1].labels: ambiguous same-repository routing; labels 'axpc' also appear at repositories[0]"
+    ],
+    "lacks": []
+  },
+  "shared/rejected/pool-android-carries-general-route.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[1].labels: ambiguous same-repository routing; labels 'example-general-route' also appear at repositories[0]"
+    ],
+    "lacks": []
+  },
+  "shared/rejected/pool-colliding-names.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[1].name: name 'example-general-nested' collides with 'example-general' at repositories[0]"
+    ],
+    "lacks": []
+  },
+  "shared/rejected/pool-cross-repository-shared-token.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[1].tokenPath: token file",
+      "is already used at repositories[0]; each repository needs its own token"
+    ],
+    "lacks": []
+  },
+  "shared/rejected/pool-different-token.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[1].tokenPath: pools for the same repository must use the same token file as repositories[0]"
+    ],
+    "lacks": []
+  },
+  "shared/rejected/pool-duplicate-label.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[1].labels: duplicate label 'EXAMPLE-ANDROID-ROUTE'"
+    ],
+    "lacks": []
+  },
+  "shared/rejected/pool-duplicate-route.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[1].labels: ambiguous same-repository routing; labels 'AXPC' also appear at repositories[0]"
+    ],
+    "lacks": []
+  },
+  "shared/rejected/pool-entry-image-name.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["repositories[1].imageName: unknown field"],
+    "lacks": []
+  },
+  "shared/rejected/pool-general-carries-android-route.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[1].labels: ambiguous same-repository routing; labels 'example-android-route' also appear at repositories[0]"
+    ],
+    "lacks": []
+  },
+  "shared/rejected/pool-platform-label.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[1].labels: 'SELF-HOSTED' is always added, so list only non-platform labels"
+    ],
+    "lacks": []
+  },
+  "shared/rejected/pool-routing-label-field.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["repositories[1].routingLabel: unknown field"],
+    "lacks": []
+  },
+  "shared/rejected/pool-shared-alias.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[1].labels: ambiguous same-repository routing; labels 'SHARED' also appear at repositories[0]"
+    ],
+    "lacks": []
+  },
+  "shared/rejected/repository-trailing-newline.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].repository: must be a GitHub repository name"
+    ],
+    "lacks": []
+  },
+  "shared/rejected/shared-token-path.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[1].tokenPath: token file",
+      "is already used at repositories[0]"
+    ],
+    "lacks": []
+  },
+  "shared/rejected/slots-too-many.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["repositories[0].slots: must be an integer from 1 to 16"],
+    "lacks": []
+  },
+  "shared/rejected/slots-zero.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["repositories[0].slots: must be an integer"],
+    "lacks": []
+  },
+  "shared/rejected/token-path-case-variant-other-repository.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[1].tokenPath: token file",
+      "is already used at repositories[0]"
+    ],
+    "lacks": []
+  },
+  "shared/rejected/token-path-drive-relative.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["repositories[0].tokenPath: must be an absolute Windows path"],
+    "lacks": []
+  },
+  "shared/rejected/token-path-relative.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["repositories[0].tokenPath: must be an absolute Windows path"],
+    "lacks": []
+  },
+  "shared/rejected/token-path-rooted-without-drive.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["repositories[0].tokenPath: must be an absolute Windows path"],
+    "lacks": []
+  },
+  "shared/rejected/unknown-field.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": ["repositories[0].label: unknown field"],
+    "lacks": []
+  },
+  "shared/rejected/volume-suffix-trailing-newline.json": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].volumes[0].suffix: must be lowercase letters, digits and hyphens"
+    ],
+    "lacks": []
+  }
+}

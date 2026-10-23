@@ -1,0 +1,31 @@
+{
+  "budget": {
+    "cpus": 8,
+    "memoryGb": 32,
+    "diskGb": 150
+  },
+  "repositories": [
+    {
+      "owner": "example-owner",
+      "repository": "example-repo-1",
+      "name": "example-pool-1",
+      "os": "macos",
+      "slots": 2,
+      "tokenPath": "/path/to/example-repo-1.token",
+      "diskGb": 50,
+      "cpus": 2,
+      "memoryGb": 8
+    },
+    {
+      "owner": "example-owner",
+      "repository": "example-repo-2",
+      "name": "example-pool-2",
+      "os": "linux",
+      "slots": 2,
+      "tokenPath": "/path/to/example-repo-2.token",
+      "diskGb": 25,
+      "cpus": 2,
+      "memoryGb": 8
+    }
+  ]
+}

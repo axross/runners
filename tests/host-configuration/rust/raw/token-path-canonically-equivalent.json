@@ -1,0 +1,21 @@
+{
+  "imageName": "actions-runner:local",
+  "repositories": [
+    {
+      "owner": "example-owner",
+      "repository": "example-repo",
+      "name": "example-general",
+      "slots": 1,
+      "tokenPath": "C:\\path\\to\\\u00e9.token",
+      "volumes": []
+    },
+    {
+      "owner": "example-owner",
+      "repository": "example-repo",
+      "name": "example-other",
+      "slots": 1,
+      "tokenPath": "C:\\path\\to\\e\u0301.token",
+      "volumes": []
+    }
+  ]
+}

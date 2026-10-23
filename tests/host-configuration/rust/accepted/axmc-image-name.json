@@ -1,0 +1,19 @@
+{
+  "imageName": "example-image:tag",
+  "budget": {
+    "cpus": 8,
+    "memoryGb": 32,
+    "diskGb": 200
+  },
+  "repositories": [
+    {
+      "owner": "example-owner",
+      "repository": "example-repo-1",
+      "name": "example-pool-1",
+      "os": "linux",
+      "slots": 1,
+      "tokenPath": "/path/to/example-repo-1.token",
+      "diskGb": 40
+    }
+  ]
+}

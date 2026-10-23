@@ -13,3 +13,10 @@ mise.lock
 
 # Machine-local Claude Code settings.
 .claude/settings.local.json
+
+# Declared-divergence fixtures whose exact bytes are the test: invalid JSON, a byte
+# order mark, comments, trailing commas, and invalid UTF-8. No formatter may touch them.
+tests/host-configuration/rust/raw/
+
+# The Rust build directory.
+cli/target/
