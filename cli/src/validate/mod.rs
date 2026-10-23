@@ -176,7 +176,7 @@ fn read_repositories(repositories: &Field, cx: &mut Context) -> Vec<Entry> {
 mod tests {
     use serde::de::{self, Visitor};
 
-    use crate::de::Error;
+    use crate::de::{Deserializer, Error};
 
     use super::*;
 
@@ -244,5 +244,39 @@ mod tests {
             field_names::<volumes::VolumeFields>(),
             union(&volumes::VOLUME_FIELDS, &[])
         );
+    }
+
+    fn read<T: for<'de> Deserialize<'de>>(text: &str) -> Result<T, Error> {
+        let tree = json::parse(text.as_bytes()).unwrap();
+        T::deserialize(Deserializer::new(&tree).ignoring_field_case())
+    }
+
+    /// Reads an object with every member set to `value`, then an empty object.
+    fn reads_any_value<T: for<'de> Deserialize<'de>>() {
+        for value in ["1", "[]", "{}"] {
+            let members: Vec<_> = field_names::<T>()
+                .iter()
+                .map(|name| format!("\"{name}\": {value}"))
+                .collect();
+            let text = format!("{{{}}}", members.join(", "));
+            assert!(read::<T>(&text).is_ok(), "{text}");
+        }
+        assert!(read::<T>("{}").is_ok());
+    }
+
+    #[test]
+    fn every_derived_field_is_a_wrapper_that_reads_any_value() {
+        reads_any_value::<RootFields>();
+        reads_any_value::<entry::EntryFields>();
+        reads_any_value::<budget::BudgetFields>();
+        reads_any_value::<volumes::VolumeFields>();
+    }
+
+    #[test]
+    fn a_wrapper_tells_a_missing_member_from_a_null() {
+        let missing = read::<RootFields>("{}").unwrap();
+        assert!(missing.image_name.get().is_none());
+        let null = read::<RootFields>(r#"{"imageName": null}"#).unwrap();
+        assert!(matches!(null.image_name.get(), Some(Value::Null)));
     }
 }
