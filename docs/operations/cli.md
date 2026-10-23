@@ -44,7 +44,7 @@ The uniqueness checks compare every pair of entries, so their time grows with th
 square of the number of entries, and it grows with the labels per entry too. On a
 release build in a 4-CPU cloud container, 8,000 entries (about 0.8 MB) in distinct
 repositories take about 0.6 s when nothing collides, and 8,000 entries in one
-repository with one label each take about 0.9 s. With many labels per entry it takes
+repository with a distinct label each take about 0.9 s. With many labels per entry it takes
 longer: 1,500 entries in one repository with 50 labels each take about 3 s. Colliding
 entries grow the error output with the square too, because every error is reported:
 8,000 entries in one repository with the default labels print about 32 million error
