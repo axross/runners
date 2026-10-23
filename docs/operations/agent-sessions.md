@@ -12,9 +12,10 @@ reads [`AGENTS.md`](../../AGENTS.md) and has no configuration here.
 
 Amp loads [`.amp/plugins/quality-hooks.ts`](../../.amp/plugins/quality-hooks.ts)
 as a project plugin. Its `tool.result` handler reacts only to successful tool
-results for project-owned Markdown, JSON, YAML, TypeScript, and JavaScript files
-reported by Amp's file-modification helper, and runs `mise run format` once for
-the event. The repair is best effort: a failure is recorded in the plugin log
+results for project-owned Markdown, JSON, YAML, TypeScript, JavaScript, and Rust
+files reported by Amp's file-modification helper, and runs `mise run format` once
+for the event, which formats the Rust files with the pinned `rustfmt`. Every
+command it runs has `~/.cargo/bin` on its `PATH` beside mise's directory. The repair is best effort: a failure is recorded in the plugin log
 without replacing the tool's original result.
 
 On a successfully completed turn, the plugin's `agent.end` handler runs
@@ -48,11 +49,16 @@ the hook runs before relying on it.
 idempotent: it installs any missing system packages (`ca-certificates`, `curl`,
 `git`), installs the pinned mise release only when the installed version differs
 and verifies the download against a SHA-256 recorded in the script, runs
-`mise trust` and `mise install`, persists mise activation in the login shell, and
-verifies that every pinned tool resolves. When changing the pinned mise version,
-update it in both places together: the `version` and `sha256` inputs of the
-`jdx/mise-action` step in
-[`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml), and the
+`mise trust` and `mise install`, runs [`.agents/install-rust`](../../.agents/install-rust)
+(see [Rust Provisioning](#rust-provisioning)), persists mise activation and the
+`~/.cargo/bin` `PATH` entry in the login shell, and verifies that every pinned
+tool resolves, including `cargo`, `rustfmt`, and `clippy` for the toolchain
+`cli/rust-toolchain.toml` pins. The login-profile block for Rust has its own
+marker, so an environment provisioned before Rust support gains the line when
+setup runs again. When changing the pinned mise version, update it in every place
+together: the `version` and `sha256` inputs of each `jdx/mise-action` step in
+[`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) and
+[`rust-advisories.yaml`](../../.github/workflows/rust-advisories.yaml), and the
 `version` and `expected_sha256` in `.agents/setup`. Both hold the SHA-256 of the
 bare `mise-v<version>-linux-x64` binary, taken from the release's published
 `SHASUMS256.txt`; the action hashes the binary it extracts from its archive, so
@@ -62,7 +68,8 @@ it does not use the archive's checksum.
 
 In a cloud session, [`.claude/hooks/session-start.sh`](../../.claude/hooks/session-start.sh)
 activates mise, runs `mise trust` and `mise install` to provision the pinned
-toolchain, copies the opt-in quality hooks into place, and echoes a pointer to
+toolchain, runs [`.agents/install-rust`](../../.agents/install-rust) to provision
+the pinned Rust toolchain, copies the opt-in quality hooks into place, and echoes a pointer to
 [`AGENTS.md`](../../AGENTS.md) so every session carries the working agreement
 into its context. It installs no JavaScript dependencies, because this
 repository has no `package.json`; Prettier and markdownlint come from mise.
@@ -77,6 +84,13 @@ transient network failure into a failed session start, a failure that surfaces
 as every later command missing its tools rather than as an install error. When
 mise is absent the hook warns and continues. [`.agents/setup`](../../.agents/setup)
 is the place that installs mise, with a checksum, for hosts that provision it.
+
+The Rust provisioning follows the same rule: the hook calls
+`.agents/install-rust` as warn-and-continue, with its output on standard error, so
+a network failure never fails a session start. The Rust tasks then fail at once
+with a line naming the script. The hook puts `~/.cargo/bin` on its own `PATH` and
+appends that line to the session environment file once, so a later run of the hook
+in the same session does not repeat it.
 
 The hook is wired in [`.claude/settings.json`](../../.claude/settings.json),
 which also sets the session's default reasoning effort, `effortLevel`, shipped as
@@ -115,7 +129,10 @@ is purely mechanical:
 - **Formatting** is mechanical.
   [`format.sh`](../../.claude/hooks/format.sh) runs `prettier --write` on a
   Markdown, JSON, YAML, TypeScript, or JavaScript file the moment it is written
-  through `Edit`, `Write`, or `MultiEdit`. A file changed another way, such as a
+  through `Edit`, `Write`, or `MultiEdit`, and runs `cargo fmt` from `cli/` for a
+  Rust file, so the `rustfmt` that `cli/rust-toolchain.toml` pins formats it. The
+  Rust branch never starts a toolchain download: with no pinned toolchain it does
+  nothing, and `format:check` at `Stop` catches the file. A file changed another way, such as a
   Bash heredoc or `sed -i`, is not reached and is caught by `format:check` at
   `Stop` and in CI.
 - **Lint, link, documentation, and skills-lock findings** need a decision:
@@ -133,6 +150,30 @@ it cannot see a loop that stopped before the draft pull request. The What
 Catches a Loop Stopped Mid-Flight section of
 [Development Workflow](./development-workflow.md) states what that leaves
 uncovered.
+
+## Rust Provisioning
+
+[`.agents/install-rust`](../../.agents/install-rust) makes the Rust gates usable in
+a session. It does nothing when the toolchain `cli/rust-toolchain.toml` names
+already has `cargo`, `rustfmt`, and `clippy`. Otherwise it installs `rustup` when
+that is absent, from a pinned `rustup-init` release for
+`x86_64-unknown-linux-gnu` whose SHA-256 the script checks before running it, with
+no default toolchain, the minimal profile, and no shell-profile edits. Then it
+runs `rustup toolchain install` from `cli/`, which installs the pinned channel and
+its components. `RUSTUP_HOME` and `CARGO_HOME` are honoured, so the script can be
+exercised against an empty directory. On any other platform it stops with a
+message: install the pinned toolchain with `rustup` there.
+
+[`.agents/setup`](../../.agents/setup) and the session-start hook both call the
+script, so the `rustup-init` version and hash live in the script alone. Refresh
+them together, with the hash computed from the real download and checked against
+the `.sha256` file Rust publishes beside it; Dependabot does not cover them. The
+Rust toolchain itself is the recorded exception to the checksum rule in
+[Security](../conventions/security.md).
+
+A Rust task run without the toolchain fails at once with one line that names this
+script, never with a long tool error and never by skipping, so a session cannot
+report a change as checked when the Rust gates did not run.
 
 ## Confirming Delivery at the Plan Gate in Claude Code
 

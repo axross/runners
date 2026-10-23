@@ -234,8 +234,16 @@ Creating the draft pull request and pushing fixes while it is open trigger
 [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml). It runs on a
 GitHub-hosted runner with `contents: read`, checks out the pull request, and
 runs `mise run check`, which executes the pull request's own task definitions
-and the linters they call. A pull request from a fork runs without repository
-secrets. Codex review may:
+and the linters they call, including the CLI's Rust gates. The same workflow
+also runs a `rust` job that formats, lints, and tests the CLI on Linux, Windows,
+and macOS hosted runners, and the host configuration test under Windows
+PowerShell 5.1. A pull request from a fork runs without repository secrets.
+[`rust-advisories.yaml`](../../.github/workflows/rust-advisories.yaml) checks the
+CLI's locked crates against the RustSec advisory database every week, on manual
+dispatch, and on a pull request that changes `cli/Cargo.lock`, `cli/deny.toml`, or
+the workflow itself. It needs the network and moves with the outside world, so it
+is not part of `mise run check` and is not a required check: a new advisory turns
+it red and the maintainer triages it. Codex review may:
 
 - incur charges
 - read the pull request and repository content, including files outside the diff

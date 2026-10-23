@@ -63,6 +63,30 @@ refresh of a mise tool version is: edit `mise.toml`, run
 `mise lock --platform linux-x64`, and commit `mise.toml`, `mise.lock`, and
 `.mise/locks/` together.
 
+The CLI under [`cli/`](../../cli) is pinned the same way. Its Rust toolchain is
+one exact stable release in
+[`cli/rust-toolchain.toml`](../../cli/rust-toolchain.toml), and
+[`cli/Cargo.lock`](../../cli/Cargo.lock) is committed and used with `--locked`
+everywhere, so every build resolves the crates the lock records and Cargo checks
+each against the lock's checksum. `cargo-deny` is a mise tool, pinned in
+`mise.toml` and locked in `mise.lock` like the others, and its
+[`cli/deny.toml`](../../cli/deny.toml) allows crates.io only, a reviewed licence
+allowlist, and one version of each crate. `rustup` itself is installed by
+[`.agents/install-rust`](../../.agents/install-rust) from a pinned `rustup-init`
+release for `x86_64-unknown-linux-gnu`, refused unless its SHA-256 matches. The
+release and its hash are refreshed by hand together, the hash computed from the
+real download, and are not covered by Dependabot.
+
+The Rust toolchain is the one download in this repository that is not
+checksum-pinned, and the maintainer accepted that exception when approving the
+CLI's plan. `rustup` fetches a channel manifest over HTTPS and checks each
+component's hash against that manifest, but it does not verify the manifest's
+signature, so the trust rests on the HTTPS connection to the Rust project's
+distribution server. Recording the manifest's hash here would need a refresh for
+every release without adding a signature check. A step that installs the toolchain
+`cli/rust-toolchain.toml` names through `rustup` is this recorded exception; any
+other unpinned download remains a finding.
+
 ## `actions/*` Stays on Major Tags
 
 GitHub's own `actions/` organization is excluded from the SHA-pinning rule above
@@ -92,7 +116,8 @@ on a job that runs pull-request-controlled code. `actions/checkout` sets
 API with the checkout's credential. A workflow triggered by `issue_comment` checks
 out the default branch, never the pull request's head, so no code a commenter
 could have introduced runs in a job that holds a secret.
-[`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) holds only
+[`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) and
+[`rust-advisories.yaml`](../../.github/workflows/rust-advisories.yaml) hold only
 `contents: read`. [`claude-review.yaml`](../../.github/workflows/claude-review.yaml)
 holds `contents: read` at the top and, on its one job, `contents: read` plus
 `id-token: write`. It needs no pull request, issue, or check write scope: at the
@@ -169,9 +194,11 @@ above does it without a new action or Claude Code feature.
 This repository is public. GitHub advises against self-hosted runners on public
 repositories, because a pull request from a fork can run arbitrary code on the
 runner, and a persistent runner then lets that code outlive the job. Every
-workflow in this repository therefore runs on a GitHub-hosted runner
-(`ubuntu-latest`), its CI and its review alike. A `runs-on` naming `self-hosted`
-is a review finding.
+workflow in this repository therefore runs on a GitHub-hosted runner, its CI and
+its review alike: a hosted label such as `ubuntu-latest`, `ubuntu-24.04-arm`,
+`windows-latest`, or `macos-latest`. The CLI's tests run on three of those so each
+operating system a runner host can be is exercised. A `runs-on` naming
+`self-hosted` is a review finding.
 
 That rule is about this repository's own jobs. A runner image or host script kept
 here is a product the repository ships for other repositories to use, and this
@@ -252,21 +279,33 @@ later host:
 - Multiple execution pools for one repository MUST use the same token file;
   entries for different repositories MUST NOT share it. Extra pools do not expand
   the token's repository authority.
-- A registration is made with the entry's own token and carries `self-hosted`,
-  `linux`, `x64`, and the entry's `labels` (`axpc` when absent or empty), so a job's runner
-  is identifiable. A job is assigned to a runner whose labels include every label
-  in the job's `runs-on`, so a job naming only `self-hosted` also lands on the
-  host; the label selects the host, it does not keep jobs off it. What keeps a
-  repository's jobs off another repository's runner is the entry's token, which
-  scopes the registration to one repository, so an entry needs no label of its
-  own and a label shared across entries cannot route one repository's job to
-  another's runner. Platform labels alone do not isolate same-repository pools;
-  consumers MUST include the intended pool's routing label. Same-repository
-  entries MUST NOT share any non-platform label: even a shared custom alias
-  could make a job eligible for both pools. A non-empty `labels` list replaces
-  `axpc` and MUST NOT include a platform label. General pools explicitly list
-  `axpc` alongside any aliases; dedicated pools omit it. Adding a label while
-  retaining `axpc` does not reserve a pool.
+- A registration is made with the entry's own token and carries `self-hosted`, the
+  host's platform labels, and the entry's `labels`, so a job's runner is
+  identifiable. An axpc pool carries `self-hosted`, `linux`, and `x64`, and its
+  `labels` default to `axpc` when absent or empty. An axmc pool carries
+  `self-hosted`, its operating system's labels (`linux` and `ARM64`, or `macOS`
+  and `ARM64`), and its `labels`, which default to `axmc` the same way. A job is
+  assigned to a runner whose labels include every label in the job's `runs-on`,
+  so a job naming only `self-hosted` also lands on the host; the label selects the
+  host, it does not keep jobs off it. What keeps a repository's jobs off another
+  repository's runner is the entry's token, which scopes the registration to one
+  repository, so an entry needs no label of its own and a label shared across
+  entries cannot route one repository's job to another's runner. Platform labels
+  alone do not isolate same-repository pools; consumers MUST include the intended
+  pool's routing label. Same-repository pools on one host MUST NOT share a
+  non-platform label unless their operating system labels differ: pools that
+  differ only in architecture are not distinguished, and a pool that differs in
+  operating system is, provided the consumer also names the operating system label.
+  A bare `runs-on: axmc` is therefore ambiguous on a host with a Linux pool and a
+  macOS pool, and a consumer of a shared label names the operating system label
+  too. A non-empty `labels` list replaces the default and MUST NOT include a
+  platform label. General pools explicitly list the host's routing label alongside
+  any aliases; dedicated pools omit it. Adding a label while retaining the routing
+  label does not reserve a pool.
+- Pools for one repository on different hosts MUST NOT share a custom label unless
+  their operating system labels differ. `validate` reads one host's configuration
+  and cannot see across hosts, so this is a rule for the maintainer and for
+  review, not a check.
 - A registration reaches the runner through the `ACTIONS_RUNNER_INPUT_JITCONFIG`
   environment variable, set only in the process that starts the container and
   passed to `docker run` by name. It MUST NOT be placed on a command line, in a log
@@ -325,10 +364,11 @@ home-directory path, or account name, other than the public maintainer handle an
 the owner and repository names of this repository and of `axross/skills`, and no
 consumer-specific owner, repository, image, volume, or task name. Examples use
 placeholders (`<owner>`, `<repo>`). A value a runner needs is read from the
-environment or supplied at run time. The one exception is the default runner label
-`axpc`, which the host scripts add when `labels` is absent or empty and which is committed by
-the maintainer's decision; every other host, consumer, or machine value stays a
-parameter.
+environment or supplied at run time. The exceptions are the two default runner labels, `axpc`
+and `axmc`, which a host adds when `labels` is absent or empty and which are
+committed by the maintainer's decision: `axpc` names the Windows Docker Desktop
+host and `axmc` the macOS host. Every other host, consumer, or machine value stays
+a parameter.
 
 [`.gitignore`](../../.gitignore) excludes `settings.local.json`, `.env.local`,
 token files, and private keys so that a local working file cannot be committed by
