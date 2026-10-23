@@ -32,6 +32,11 @@ pub struct Number {
 }
 
 impl Number {
+    /// Wraps the literal text of a number the reader produced.
+    pub(crate) fn from_literal(literal: String) -> Self {
+        Self { literal }
+    }
+
     /// Returns the value of an integer literal such as `8` or `-3`, or `None` for
     /// a literal with a fraction or an exponent, such as `8.0` or `1e1`, and for
     /// an integer too large to represent.
@@ -90,7 +95,7 @@ impl Object {
             .map(|(key, value)| (key.as_str(), value))
     }
 
-    fn insert(&mut self, key: String, value: Value) -> Result<(), String> {
+    pub(crate) fn insert(&mut self, key: String, value: Value) -> Result<(), String> {
         let folded = fold::folded(&key);
         if let Some(&slot) = self.index.get(&folded) {
             let earlier = self.members.get_mut(slot);
@@ -535,6 +540,13 @@ mod tests {
         assert!(parse(deep.as_bytes()).is_err());
         let shallow = "[".repeat(MAX_DEPTH) + &"]".repeat(MAX_DEPTH);
         assert!(parse(shallow.as_bytes()).is_ok());
+    }
+
+    #[test]
+    fn the_depth_limit_is_128_levels_below_the_root() {
+        let nested = |levels: usize| "[".repeat(levels) + &"]".repeat(levels);
+        assert!(parse(nested(MAX_DEPTH + 1).as_bytes()).is_ok());
+        assert!(parse(nested(MAX_DEPTH + 2).as_bytes()).is_err());
     }
 
     #[test]

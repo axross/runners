@@ -6,6 +6,7 @@
 
 pub mod checkout;
 pub mod command;
+pub mod de;
 pub mod fold;
 pub mod json;
 pub mod profile;

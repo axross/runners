@@ -19,9 +19,13 @@ path = "src/lib.rs"
 name = "runners"
 path = "src/main.rs"
 
+# serde is declared without its default features. Its derive feature runs
+# procedural macros (serde_derive, syn, quote, proc-macro2) at build time, and the
+# JSON reader is in this crate, so there is no JSON parser dependency.
 [dependencies]
 clap = { version = "4.6.7", default-features = false, features = ["std", "help", "usage", "error-context"] }
 regex = { version = "1.13.1", default-features = false, features = ["std", "unicode-perl"] }
+serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
 
 [lints.rust]
 unsafe_code = "forbid"

@@ -3,6 +3,8 @@
 # and need no advisory database. The advisory check fetches the RustSec database,
 # so it runs in its own workflow (.github/workflows/rust-advisories.yaml), not here.
 # docs/operations/cli.md records why each allowed licence and each crate is accepted.
+# serde brings serde_derive and syn, which run at build time, and unicode-ident, whose
+# licence expression needs Unicode-3.0.
 
 [graph]
 # The three operating systems the CLI is built and tested on in CI.
@@ -13,7 +15,7 @@ targets = [
 ]
 
 [licenses]
-allow = ["MIT", "Apache-2.0"]
+allow = ["MIT", "Apache-2.0", "Unicode-3.0"]
 confidence-threshold = 0.93
 # The CLI itself is unpublished and carries no licence field.
 private = { ignore = true }
