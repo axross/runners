@@ -324,6 +324,10 @@ async fn a_held_container_client_runs_in_its_own_process_group() {
             tokio::time::sleep(Duration::from_millis(20)).await;
         };
         let group = process_group_of(pid);
+        while !fake.containers().contains(&spec.name) {
+            assert!(started.elapsed() < Duration::from_secs(20));
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
         assert_eq!(
             fake.backend.running_containers(),
             std::slice::from_ref(&spec.name)

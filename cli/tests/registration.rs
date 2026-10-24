@@ -160,7 +160,7 @@ async fn a_stalled_response_fails_at_the_total_timeout() {
         .await
         .unwrap_err()
         .to_string();
-    assert!(!error.is_empty());
+    assert!(error.contains("timed out"), "{error}");
     assert!(
         started.elapsed() < Duration::from_secs(10),
         "{:?}",
@@ -189,14 +189,17 @@ async fn a_response_over_one_mebibyte_fails_whether_declared_or_streamed() {
         .to_string();
     assert!(error.contains("larger than 1048576 bytes"), "{error}");
 
+    let (prefix, suffix) = ("{\"encoded_jit_config\":\"", "\"}");
+    let body = format!(
+        "{prefix}{}{suffix}",
+        "a".repeat(1_048_576 - prefix.len() - suffix.len())
+    )
+    .into_bytes();
+    assert_eq!(body.len(), 1_048_576);
     let exact = Stub::start(vec![Reply::Respond {
         status: "200 OK",
         headers: Vec::new(),
-        body: format!(
-            "{{\"encoded_jit_config\":\"{}\"}}",
-            "a".repeat(1_048_576 - 30)
-        )
-        .into_bytes(),
+        body,
     }]);
     assert!(register(&exact, HttpLimits::default(), TOKEN).await.is_ok());
 }
