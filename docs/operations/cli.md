@@ -349,7 +349,7 @@ replacement at once. A wait ends early when a stop is asked for, and a stop that
 come through a `Clock` seam, so the tests do not wait.
 
 Preparing the pools follows the PowerShell supervisor. A pool whose token file is
-missing or blank, and a pool with diagnostics on (they come in a later phase), is
+missing or blank, and a pool with diagnostics on (this runtime does not support them yet), is
 skipped with a warning that names the pool and the reason, and never the token.
 Docker is waited for once. Each remaining pool's own stale containers are removed
 and its volumes prepared; a pool that fails either is skipped. When no pool is left

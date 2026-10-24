@@ -210,7 +210,7 @@ pub async fn prepare_pools<B: Backend>(
             warn_skipped(
                 log,
                 &pool,
-                "diagnostics are not supported until Phase 3, so the pool is skipped.",
+                "diagnostics are not supported by this runtime yet, so the pool is skipped.",
             );
         } else {
             startable.push(pool);

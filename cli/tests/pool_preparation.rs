@@ -9,7 +9,7 @@
 mod support;
 
 use runners_cli::profile::Profile;
-use runners_cli::runtime::backend::BackendError;
+use runners_cli::runtime::backend::{Backend, BackendError};
 use runners_cli::runtime::fake::{Call, FakeBackend, FakeContainer, MemoryLog};
 use runners_cli::runtime::pool::{NoPoolStartable, PoolSpec, pools_from_plan, prepare_pools};
 use runners_cli::validate::validate;
@@ -81,7 +81,7 @@ async fn a_missing_or_blank_token_and_a_diagnostics_pool_are_skipped_and_the_res
     assert!(
         warnings[0]
             .starts_with("WARN: repositories[1] (o/bravo) is not started and gets no slots: ")
-            && warnings[0].contains("Phase 3"),
+            && warnings[0].contains("diagnostics are not supported by this runtime yet"),
         "{warnings:?}"
     );
     assert!(
@@ -176,6 +176,32 @@ async fn stale_cleanup_removes_only_the_pools_own_unlabelled_containers() {
     assert!(log.lines().contains(&format!(
         "WARN: Removing stale container '{own}' left over from an earlier run."
     )));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_name_that_only_contains_the_pool_is_listed_but_not_removed() {
+    let scratch = TempDir::new();
+    let backend = FakeBackend::default();
+    let lookalike = format!("my-alpha-1-{STAMP}");
+    backend.state.borrow_mut().containers = vec![container(&lookalike, false)];
+    // Docker's name filter matches anywhere in a name, and the fake does too.
+    let listing = backend.list_pool_containers("alpha").await.unwrap();
+    assert_eq!(listing.names, std::slice::from_ref(&lookalike));
+    prepare_pools(
+        &backend,
+        pools(&scratch, &[("alpha", "t")]),
+        &MemoryLog::default(),
+    )
+    .await
+    .unwrap();
+    let state = backend.state.borrow();
+    assert!(
+        !state
+            .calls
+            .iter()
+            .any(|call| matches!(call, Call::RemoveContainers(_)))
+    );
+    assert_eq!(state.containers.len(), 1);
 }
 
 #[tokio::test(flavor = "current_thread")]

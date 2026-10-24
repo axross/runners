@@ -83,11 +83,11 @@ impl Backend for FakeBackend {
         if let Some(error) = state.list_error.clone() {
             return Err(error);
         }
-        let prefix = format!("{pool}-");
+        let needle = format!("{pool}-");
         let found: Vec<&FakeContainer> = state
             .containers
             .iter()
-            .filter(|container| container.name.starts_with(&prefix))
+            .filter(|container| container.name.contains(&needle))
             .collect();
         Ok(PoolContainers {
             names: found

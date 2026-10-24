@@ -89,8 +89,10 @@ pub trait Backend {
     /// Completes once the backend can take commands, retrying until then.
     fn wait_until_available(&self) -> impl Future<Output = ()>;
 
-    /// Lists the containers whose names begin with `pool` and a hyphen, and those
-    /// of them that carry the diagnostics label.
+    /// Lists the containers whose names contain `pool` and a hyphen, as Docker's
+    /// name filter matches them anywhere in a name, and those of them that carry
+    /// the diagnostics label. A caller keeps only the names `is_own_container_name`
+    /// accepts.
     fn list_pool_containers(
         &self,
         pool: &str,
