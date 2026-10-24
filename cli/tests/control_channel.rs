@@ -12,7 +12,9 @@ mod support;
 
 use std::time::Duration;
 
-use runners_cli::instance::channel::{ChannelServer, ClientError, exchange};
+use runners_cli::instance::channel::{
+    ChannelServer, ClientError, MAX_CONNECTIONS_FOR_TESTS, exchange,
+};
 use runners_cli::instance::fake::FakeCore;
 use runners_cli::instance::lifecycle::{Instance, Settings, Source};
 use runners_cli::instance::lock::InstanceLock;
@@ -30,7 +32,7 @@ const PATIENCE: Duration = Duration::from_secs(10);
 /// An open channel whose requests arrive at `requests`.
 struct Open {
     roots: Roots,
-    _server: ChannelServer,
+    server: ChannelServer,
     _lock: InstanceLock,
 }
 
@@ -41,7 +43,7 @@ fn open(root: &TempDir) -> (Open, mpsc::UnboundedReceiver<Incoming>) {
     let server = ChannelServer::open(&lock, &roots, sender).unwrap();
     let channel = Open {
         roots,
-        _server: server,
+        server,
         _lock: lock,
     };
     (channel, requests)
@@ -295,6 +297,97 @@ async fn no_request_makes_the_instance_read_a_configuration_path_other_than_its_
         .await
         .unwrap();
     assert_eq!(core.runs.get(), 1, "the core ran only with the first plan");
+}
+
+/// A connection that sends nothing, so it holds one of the server's connections.
+#[cfg(unix)]
+fn connect_idle(address: &str) -> std::os::unix::net::UnixStream {
+    std::os::unix::net::UnixStream::connect(address).unwrap()
+}
+
+/// A connection that sends nothing, so it holds one of the server's connections.
+#[cfg(windows)]
+fn connect_idle(
+    address: &str,
+) -> interprocess::os::windows::named_pipe::DuplexPipeStream<
+    interprocess::os::windows::named_pipe::pipe_mode::Bytes,
+> {
+    interprocess::os::windows::named_pipe::DuplexPipeStream::connect_by_path_with_wait_mode(
+        std::ffi::OsStr::new(address),
+        interprocess::ConnectWaitMode::Timeout(PATIENCE),
+    )
+    .unwrap()
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_client_past_the_connection_limit_is_not_served_until_a_connection_closes() {
+    let root = TempDir::new();
+    let (channel, mut requests) = open(&root);
+    let roots = channel.roots.clone();
+    let address = channel.server.address();
+    let mut idle: Vec<_> = (0..MAX_CONNECTIONS_FOR_TESTS)
+        .map(|_| connect_idle(&address))
+        .collect();
+
+    // on Unix the client waits its turn; on Windows the server closes it unanswered
+    let past_limit = {
+        let roots = roots.clone();
+        tokio::spawn(async move { ask(&roots, Request::Status).await })
+    };
+    #[cfg(unix)]
+    {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        assert!(
+            !past_limit.is_finished(),
+            "the client past the limit was served"
+        );
+    }
+    #[cfg(windows)]
+    {
+        let outcome = past_limit.await.unwrap();
+        assert!(outcome.is_err(), "{outcome:?}");
+    }
+    assert!(
+        requests.try_recv().is_err(),
+        "the request reached the instance"
+    );
+
+    answer_all(requests, Response::ok("running"));
+    drop(idle.pop());
+
+    #[cfg(unix)]
+    {
+        let response = past_limit.await.unwrap().unwrap();
+        assert_eq!(response.message, "running");
+        // the others are still open, so the turn came from the closed one and not from
+        // the server's request timeout
+        use std::io::Read;
+        for stream in &mut idle {
+            stream.set_nonblocking(true).unwrap();
+            let read = stream.read(&mut [0; 1]);
+            assert!(
+                read.as_ref()
+                    .is_err_and(|error| error.kind() == std::io::ErrorKind::WouldBlock),
+                "{read:?}"
+            );
+        }
+    }
+    #[cfg(windows)]
+    {
+        // the server counts the closed connection out on a thread of its own, so a
+        // client that arrives first can still be closed unanswered
+        let deadline = std::time::Instant::now() + PATIENCE;
+        let response = loop {
+            match ask(&roots, Request::Status).await {
+                Ok(response) => break response,
+                Err(_) if std::time::Instant::now() < deadline => {
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+                Err(error) => panic!("no client was served after a connection closed: {error}"),
+            }
+        };
+        assert_eq!(response.message, "running");
+    }
 }
 
 #[cfg(unix)]

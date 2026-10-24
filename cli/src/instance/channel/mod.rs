@@ -40,6 +40,11 @@ use windows::connect as platform_connect;
 /// a turn; on Windows it is closed unanswered.
 const MAX_CONNECTIONS: usize = 16;
 
+/// [`MAX_CONNECTIONS`], for the test that fills every connection; a debug build only.
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub const MAX_CONNECTIONS_FOR_TESTS: usize = MAX_CONNECTIONS;
+
 /// Why the channel could not be opened.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChannelError {
