@@ -9,8 +9,8 @@ helper="${1:?usage: other-user-lock.sh <instance-helper>}"
 # the exit code of `instance-helper try` when the lock is held
 held=3
 
-# under /tmp, not the runner's temporary directory, so nobody can reach it on
-# macOS too, where a user's own temporary directory is private
+# under /tmp, not the runner's temporary directory, so the nobody account can
+# reach it on macOS too, where a user's own temporary directory is private
 work_dir="$(mktemp -d /tmp/runners-other-user.XXXXXX)"
 holder=""
 cleanup() {

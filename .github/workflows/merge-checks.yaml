@@ -86,10 +86,11 @@ jobs:
       - name: Run Tests
         run: cargo test --locked
       # another OS user must be refused the instance lock while it is held. the
-      # script copies the debug helper to a directory under /tmp that nobody can
-      # reach, holds the lock in a debug-only root there, and runs the copy as
-      # nobody through sudo, which the Linux and macOS hosted runners allow without
-      # a password. a hosted Windows runner has one account, so it has no such step.
+      # script copies the debug helper to a directory under /tmp that the `nobody`
+      # account can reach, holds the lock in a debug-only root there, and runs the
+      # copy as nobody through sudo, which the Linux and macOS hosted runners allow
+      # without a password. a hosted Windows runner has one account, so it has no
+      # such step.
       - name: Test That Another User Cannot Take The Instance Lock
         if: runner.os != 'Windows'
         run: |

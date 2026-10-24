@@ -69,9 +69,17 @@ finally {
         $client.Dispose()
     }
     $process.StandardInput.Close()
-    if (-not $process.WaitForExit(10000)) {
+    $ended = $process.WaitForExit(10000)
+    if (-not $ended) {
         $process.Kill()
+        $process.WaitForExit()
+    }
+    # the helper has exited either way, so its root can go before any check throws
+    Remove-Item -LiteralPath $root -Recurse -Force
+    if (-not $ended) {
         throw 'The helper did not end when its input closed.'
     }
-    Remove-Item -LiteralPath $root -Recurse -Force
+    if ($process.ExitCode -ne 0) {
+        throw "The helper exited with code $($process.ExitCode), not 0."
+    }
 }
