@@ -5,7 +5,8 @@ name: Merge Checks
 # documents, plus a build of the runner image that is never pushed, a run of the
 # host configuration test under Windows PowerShell 5.1, and the CLI's format,
 # lint, and tests on Linux, Windows, and macOS, with a real-Docker test and a
-# release-profile test on Linux. the CLI's advisory check needs the
+# release-profile test on Linux, an other-user lock test on Linux and macOS, and a
+# control-pipe security test on Windows. the CLI's advisory check needs the
 # network and runs in rust-advisories.yaml, which is not a required check. it runs
 # on GitHub-hosted runners only. this repository is public, and GitHub advises
 # against self-hosted runners on public repositories; see
@@ -84,6 +85,25 @@ jobs:
         run: cargo clippy --locked --all-targets -- -D warnings
       - name: Run Tests
         run: cargo test --locked
+      # another OS user must be refused the instance lock while it is held. the
+      # script copies the debug helper to a directory under /tmp that nobody can
+      # reach, holds the lock in a debug-only root there, and runs the copy as
+      # nobody through sudo, which the Linux and macOS hosted runners allow without
+      # a password. a hosted Windows runner has one account, so it has no such step.
+      - name: Test That Another User Cannot Take The Instance Lock
+        if: runner.os != 'Windows'
+        run: |
+          cargo build --locked --bin instance-helper
+          bash tests/ci/other-user-lock.sh target/debug/instance-helper
+      # the CLI cannot read a live pipe's security descriptor without unsafe code,
+      # so PowerShell reads it from a client handle to the control pipe the debug
+      # helper opens, and fails unless it grants the current user alone.
+      - name: Read Back The Control Pipe Security Descriptor
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo build --locked --bin instance-helper
+          ./tests/ci/control-pipe-security.ps1 -Helper target/debug/instance-helper.exe
       # the base address of the GitHub API can move only in a debug build, for the
       # loopback tests. the plain test run above is a debug build, so this step
       # builds the same test in the release profile and shows that it cannot move.
