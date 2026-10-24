@@ -549,36 +549,19 @@ reads it.
 
 ### What the Instance Tests Cover
 
-`instance_state.rs` and `core_restart.rs` run the instance on the fake backend, a
-fake clock, a scripted core and a scripted source: every transition, the refusals
-while stopping and resuming, a resume with another path or profile, an invalid
-configuration, and the 10, 30 and 60 s restarts with the sliding window.
-`instance_lock.rs` runs the lock in this process and in the `instance-helper`
-process: a second acquisition is refused while the helper runs, a helper that holds
-the lock and has a child is killed and the lock is free at once while the child runs,
-and on Unix the file is `0644` under a umask of `077`, a read-only open still locks,
-and an unusable path is "cannot be opened". So, at once, are a FIFO at the lock
-path, with or without a reader, and a link to a regular file, whose target keeps
-its contents and modification time. Its tests run one at a time, because a
-process one test spawns holds this process's descriptors until it calls `exec`.
-`control_channel.rs` runs the server and the client: every request, refusals,
-timeouts, several clients at once, a request that cannot make the instance read
-another configuration file, and on Unix the modes, also in the helper under a umask
-of `077` and of `000`, a link or open directory, a long path, a leftover socket, a
-request line at and over the length limit, and a peer of another user ID, which the
-test stands in for by telling the server to expect a different one.
-
-Two CI steps cover what one account cannot. On the Linux and macOS hosted runners,
-`tests/ci/other-user-lock.sh` copies the helper to a directory under `/tmp`, holds
-the lock in a debug-only root there, and runs the copy as `nobody` through `sudo`;
-it fails unless `nobody` is refused with the "held" exit code. On the Windows hosted
-runner, `tests/ci/control-pipe-security.ps1` has the helper open the control pipe,
-connects to it, reads the live pipe's descriptor through .NET, and fails unless the
-access control list is protected and holds one entry, allowing the current user
-full access. Neither crate the CLI uses reads a live pipe's descriptor without
-`unsafe`, so that check is in PowerShell. Not verified: the Windows lock against a
-second OS user, and the rejection of remote clients, which a hosted runner cannot
-show; and macOS and Windows behaviour beyond what the hosted runners show.
+`instance_state.rs`, `core_restart.rs`, `instance_lock.rs`, and `control_channel.rs`
+drive the instance layer through its seams as one OS user, and each test's name says
+what it shows. Two CI steps cover what one account cannot. On the Linux and macOS
+hosted runners, `tests/ci/other-user-lock.sh` copies the helper to a directory under
+`/tmp`, holds the lock in a debug-only root there, and runs the copy as `nobody`
+through `sudo`; it fails unless `nobody` is refused with the "held" exit code. On
+the Windows hosted runner, `tests/ci/control-pipe-security.ps1` has the helper open
+the control pipe, connects to it, reads the live pipe's descriptor through .NET, and
+fails unless the access control list is protected and holds one entry, allowing the
+current user full access. Neither crate the CLI uses reads a live pipe's descriptor
+without `unsafe`, so that check is in PowerShell. Not verified: the Windows lock
+against a second OS user, and the rejection of remote clients, which a hosted runner
+cannot show; and macOS and Windows behaviour beyond what the hosted runners show.
 
 ## Fixtures and Tests
 
