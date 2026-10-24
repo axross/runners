@@ -44,8 +44,9 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   configuration, scheduled tasks, health checks, updating, and recovery.
 - [operations/cli.md](./operations/cli.md) - the CLI under `cli/`: what `validate`
   accepts and prints for the axpc and axmc host profiles, how it stays equal to the
-  PowerShell validator, the shared fixtures and the parity test, the toolchain and
-  Rust gates, the allowed dependencies, and what a rename touches.
+  PowerShell validator, the shared fixtures and the parity test, the runtime layer
+  (container backend, JIT registration, CPU placement, and the slot loop), the
+  toolchain and Rust gates, the allowed dependencies, and what a rename touches.
 - [operations/agent-skills.md](./operations/agent-skills.md) - installing and
   refreshing the skills from `axross/skills`, the drift checks, and the register
   of deviations and gaps.

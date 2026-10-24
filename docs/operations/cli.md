@@ -2,9 +2,11 @@
 
 The Rust command line tool under [`cli/`](../../cli): what `validate` accepts and
 prints, how it stays equal to the PowerShell validator, the shared fixtures both
-read, the toolchain and the gates that cover it, and what to touch when its
-provisional name changes. The binary is `runners`. It has one command so far,
-`validate`; nothing that runs jobs uses it yet, and the PowerShell supervisor under
+read, the runtime layer that will run a host's pools (the container backend, JIT
+registration, CPU placement, and the slot loop), the toolchain and the gates that
+cover it, and what to touch when its provisional name changes. The binary is
+`runners`. It has one command so far, `validate`; nothing that runs jobs uses it
+yet, and the PowerShell supervisor under
 [`hosts/windows-docker-desktop/`](../../hosts/windows-docker-desktop) still runs the
 axpc host. The code that will run the pools is already in the library, reachable
 from tests only; see The Runtime Layer.
@@ -229,8 +231,9 @@ another way. A fake backend implements the same seam for the tests of the code
 above it.
 
 The container backend runs `docker` with the PowerShell supervisor's argument
-lists, byte for byte, and a test reads the launcher guard and the probe's reader
-script out of `docker-commands.ps1` and compares them:
+lists, byte for byte, except for the stop call below. A test reads the launcher
+guard and the probe's reader script out of `docker-commands.ps1` and compares
+them; the tests compare every other list with one written out in the test:
 
 | Purpose                    | Command                                                                                                                                                                                                           |
 | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -241,6 +244,11 @@ script out of `docker-commands.ps1` and compares them:
 | Probe a slot's CPUs        | `docker run --rm --pull never --network none --name <pool>-cpu-probe-<slot> --label runners.cpu-probe=1 <image> bash -c <reader>`                                                                                 |
 | Run a job container        | `docker run --rm --pull never --name <n> --cpus <q> --cpuset-cpus <set> --memory <G>g --memory-swap <G>g <--mount ...> -e ACTIONS_RUNNER_INPUT_JITCONFIG <image> bash -c <launcher> -- <set> /home/runner/run.sh` |
 | Stop, for the later `stop` | `docker stop --time <seconds> <names>`, one call for all names                                                                                                                                                    |
+
+The stop call differs from the supervisor's. `supervisor.ps1` runs
+`docker stop <names>`, so Docker's default grace of 10 s applies. The backend always
+passes `--time <seconds>`, the grace its caller chose, so no caller inherits a
+default it did not pick.
 
 The launcher is the guard script followed by `exec "$@"`. It reads
 `Cpus_allowed_list` from `/proc/self/status` and exits 125 unless it equals the set
