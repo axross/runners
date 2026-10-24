@@ -44,8 +44,9 @@ const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
 /// The time bounds on the clients other than a job container's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DockerLimits {
-    /// A bound on a listing, a removal, a stop, a volume command or an info call.
-    /// The PowerShell supervisor had none.
+    /// A bound on a listing, a volume command or an info call. A removal and a
+    /// stop take the budget their caller passes instead. The PowerShell
+    /// supervisor had none.
     pub command_budget: Duration,
     /// The whole budget of one CPU probe, client termination included.
     pub probe_budget: Duration,

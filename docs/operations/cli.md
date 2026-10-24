@@ -264,9 +264,11 @@ the fake `docker` sees on Linux and macOS; no safe API reads a Windows process's
 creation flags, so the Windows flag is checked by review. A client is killed when
 the future that waits for it is dropped.
 
-Every client other than a job container is bounded at 120 s, which the PowerShell
-supervisor did not do, except the CPU probe and the removal of a leftover probe, which
-have the budgets under CPU Placement. A `docker info` that fails, hangs, or cannot start (the
+Every client other than a job container is bounded, which the PowerShell
+supervisor did not do. A listing, a volume command, and an info call are bounded at
+120 s. A removal and a stop take the budget their caller passes; stale cleanup removes
+within 120 s. The CPU probe and the removal of a leftover probe have the budgets
+under CPU Placement. A `docker info` that fails, hangs, or cannot start (the
 program is missing) means Docker is not available yet. Output from a job container
 is forwarded to the log line by line, in pieces of at most 64 KiB; masking a
 secret in forwarded output belongs to the logging that comes with `start`.
