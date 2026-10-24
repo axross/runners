@@ -2,10 +2,9 @@
 
 use std::path::PathBuf;
 
-use crate::checkout;
-use crate::command::read_limited;
+use crate::command::{LoadError, load_plan};
 use crate::profile::Profile;
-use crate::validate::{Failure, Plan, validate};
+use crate::validate::Plan;
 
 use super::lifecycle::Source;
 
@@ -26,19 +25,8 @@ impl FileSource {
 
 impl Source for FileSource {
     async fn load(&self) -> Result<Plan, Vec<String>> {
-        let bytes = read_limited(&self.path).map_err(|error| {
-            vec![format!(
-                "Host configuration cannot be read: {}: {error}",
-                self.path.display()
-            )]
-        })?;
-        let checkout = checkout::find(&self.path);
-        match validate(&bytes, self.profile, checkout.as_deref()).outcome {
-            Ok(plan) => Ok(plan),
-            Err(Failure::Unreadable(problem)) => Err(vec![format!(
-                "Host configuration is not valid JSON: {problem}"
-            )]),
-            Err(Failure::Invalid(errors)) => Err(errors),
-        }
+        load_plan(&self.path, self.profile)
+            .outcome
+            .map_err(LoadError::into_problems)
     }
 }
