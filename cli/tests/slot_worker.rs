@@ -316,6 +316,33 @@ async fn a_stop_that_is_already_asked_for_does_nothing() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn a_stop_asked_for_as_registration_completes_starts_no_container() {
+    // select! picks among ready branches at random, so one run could pass by luck.
+    for _ in 0..32 {
+        let rig = Rig::new();
+        let (stop, receiver) = stop_channel();
+        *rig.registrar.stop_during_request.borrow_mut() = Some(stop);
+        let slot = slot_spec(rig.scratch.path().join("token"));
+        run_slot(
+            &slot,
+            &rig.backend,
+            &rig.clock,
+            &rig.registrar,
+            &rig.log,
+            receiver,
+        )
+        .await;
+        assert_eq!(rig.registrar.seen.borrow().len(), 1);
+        assert!(
+            !rig.backend
+                .calls()
+                .iter()
+                .any(|call| matches!(call, Call::RunContainer(_)))
+        );
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn a_stop_ends_a_backoff_wait_at_once() {
     let rig = Rig::new();
     rig.backend

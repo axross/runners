@@ -151,6 +151,9 @@ pub async fn run_slot<B: Backend, K: Clock, R: Registrar>(
             }
         };
 
+        if stopped(&stop) {
+            return;
+        }
         log.info(&format!("{label}: starting container {name}."));
         let spec = ContainerSpec {
             name,

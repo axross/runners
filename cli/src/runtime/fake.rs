@@ -1,7 +1,8 @@
 //! In-memory stand-ins for the seams, for tests of the code above them.
 //!
 //! They record what they were asked and answer from a script. They are part of the
-//! library so the integration tests and the later instance layer can use them.
+//! library so the integration tests and the later instance layer can use them. They
+//! are test-only and never wired into a command.
 
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
@@ -178,7 +179,7 @@ impl Backend for FakeBackend {
 }
 
 /// What a [`FakeRegistrar`] was asked for.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct SeenRegistration {
     pub owner: String,
     pub repository: String,
@@ -187,11 +188,25 @@ pub struct SeenRegistration {
     pub token: String,
 }
 
+impl std::fmt::Debug for SeenRegistration {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SeenRegistration")
+            .field("owner", &self.owner)
+            .field("repository", &self.repository)
+            .field("name", &self.name)
+            .field("labels", &self.labels)
+            .field("token", &"<redacted>")
+            .finish()
+    }
+}
+
 #[derive(Default)]
 pub struct FakeRegistrar {
     /// The answers, then `jit` for every call after them.
     pub results: RefCell<VecDeque<Result<String, RegistrationError>>>,
     pub seen: RefCell<Vec<SeenRegistration>>,
+    /// Asked for the stop during the first request, before it answers.
+    pub stop_during_request: RefCell<Option<watch::Sender<bool>>>,
 }
 
 impl Registrar for FakeRegistrar {
@@ -203,6 +218,9 @@ impl Registrar for FakeRegistrar {
             labels: request.labels.to_vec(),
             token: request.token.expose().to_string(),
         });
+        if let Some(stop) = self.stop_during_request.borrow().as_ref() {
+            let _ = stop.send(true);
+        }
         self.results
             .borrow_mut()
             .pop_front()

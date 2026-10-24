@@ -8,6 +8,7 @@ pub mod backend;
 pub mod clock;
 pub mod docker;
 pub mod docker_args;
+#[doc(hidden)]
 pub mod fake;
 pub mod log;
 pub mod name;
