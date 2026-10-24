@@ -113,6 +113,12 @@ fn parse_list(available: &str) -> Result<Vec<Span>, CpuError> {
     if available.len() > MAX_CPU_LIST_BYTES {
         return Err(CpuError::InvalidList);
     }
+    // The whole list's syntax is judged before any ID's range or order, as the
+    // PowerShell `Select-CpuAffinity` does, so a list with several defects gets the
+    // same refusal from both.
+    if !available.split(',').all(is_well_formed_range) {
+        return Err(CpuError::InvalidList);
+    }
     let mut spans: Vec<Span> = Vec::new();
     let mut previous_last: Option<i32> = None;
     for part in available.split(',') {
@@ -134,15 +140,24 @@ fn parse_list(available: &str) -> Result<Vec<Span>, CpuError> {
     Ok(spans)
 }
 
-/// Parses decimal digits with no sign, space, or leading zero (a lone `0` is fine).
-fn parse_id(text: &str) -> Result<i32, CpuError> {
-    let digits = text.as_bytes();
-    let well_formed = !digits.is_empty()
-        && digits.iter().all(u8::is_ascii_digit)
-        && (digits.len() == 1 || digits.first() != Some(&b'0'));
-    if !well_formed {
-        return Err(CpuError::InvalidList);
+/// An ID or an `ID-ID` range, with at most one `-`.
+fn is_well_formed_range(part: &str) -> bool {
+    match part.split_once('-') {
+        Some((first, last)) => is_well_formed_id(first) && is_well_formed_id(last),
+        None => is_well_formed_id(part),
     }
+}
+
+/// Decimal digits with no sign, space, or leading zero (a lone `0` is fine).
+fn is_well_formed_id(text: &str) -> bool {
+    let digits = text.as_bytes();
+    !digits.is_empty()
+        && digits.iter().all(u8::is_ascii_digit)
+        && (digits.len() == 1 || digits.first() != Some(&b'0'))
+}
+
+/// Parses an ID that [`is_well_formed_id`] accepted; one beyond `i32` is refused.
+fn parse_id(text: &str) -> Result<i32, CpuError> {
     text.parse().map_err(|_| CpuError::UnrepresentableId)
 }
 
@@ -208,6 +223,36 @@ mod tests {
             "2,5\nextra",
         ] {
             assert!(select_cpus(inventory, 2, 0).is_err(), "{inventory:?}");
+        }
+    }
+
+    #[test]
+    fn the_syntax_of_the_whole_list_is_judged_before_ranges_and_order() {
+        // PowerShell matches the whole list against one pattern first, so each of
+        // these is an invalid list there, not an unrepresentable or misordered one.
+        for list in ["2,1,x", "2147483648,x", "4-2,x", "x,2147483648", "2,1,"] {
+            assert_eq!(
+                select_cpus(list, 1, 0),
+                Err(CpuError::InvalidList),
+                "{list}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_list_with_one_defect_keeps_its_own_refusal() {
+        for (list, error) in [
+            ("2,1", CpuError::NotOrderedAndDistinct),
+            ("0,0", CpuError::NotOrderedAndDistinct),
+            ("4-2", CpuError::NotOrderedAndDistinct),
+            ("2147483648", CpuError::UnrepresentableId),
+            ("0-2147483648", CpuError::UnrepresentableId),
+            ("2147483648,2", CpuError::UnrepresentableId),
+            ("x", CpuError::InvalidList),
+            ("01", CpuError::InvalidList),
+            ("1-2-3", CpuError::InvalidList),
+        ] {
+            assert_eq!(select_cpus(list, 1, 0), Err(error), "{list}");
         }
     }
 

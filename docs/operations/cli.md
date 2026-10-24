@@ -294,7 +294,9 @@ returns an unrestricted set.
 The selection starts at the offset modulo the number of allowed CPUs and takes
 consecutive IDs from the sorted list, wrapping. It writes them as `a,b-c`. The list
 must be ordered, distinct ranges of IDs that fit a 32-bit signed integer, with no
-space, sign or leading zero. The PowerShell golden case is a test: the inventory
+space, sign or leading zero. The syntax of the whole list is judged before any ID's
+range or order, as PowerShell does, so a list with several defects is refused as
+invalid. The PowerShell golden case is a test: the inventory
 `2,5-6,11,14-15` with five slots of two CPUs gives `2,5`, `6,11`, `14-15`, `2,5`,
 and `2,15`, and the rejected inventories are the PowerShell test's.
 
