@@ -452,13 +452,25 @@ process inherits it.
   admits only the creating user. The process keeps it open and it carries no
   message. Creating the name again fails for every user, with access denied or pipe
   busy, and that is "held".
-- **Unix.** The lock is an exclusive advisory lock (`flock`) on a file: on macOS
-  `/Users/Shared/.runners-instance.lock`, and on Linux only a debug build's test
-  root, because Linux is not a supported host. The creator sets the file's mode to
-  `0644` after creating it, whatever the umask, so another user can open it. The
-  file is opened for writing and, when the user may not write it, read-only; the
-  lock then refuses that user rather than the open. After locking, the path must
-  still name the locked file, not a link or a replacement, or the lock is "lost".
+- **Unix.** The lock is an exclusive advisory lock (`flock`) on a regular file: on
+  macOS `/Users/Shared/.runners-instance.lock`, and on Linux only a debug build's
+  test root, because Linux is not a supported host. The creator sets the file's
+  mode to `0644` after creating it, whatever the umask, so another user can open
+  it. The file is opened for writing and, when the user may not write it,
+  read-only; the lock then refuses that user rather than the open. Both opens pass
+  `O_NOFOLLOW` and `O_NONBLOCK`, and what they open must be a regular file. So a
+  link at the path is refused without its target being opened, a FIFO is refused
+  at once instead of waiting for a reader, and anything that is not a regular file
+  is "cannot be opened", never "held". `libc` is not a direct dependency, so the
+  lock writes the two flags' values for macOS and for Linux on x86 and Arm, and
+  does not build for another Unix target. After locking, the path must still name
+  the locked file, not a replacement, or the lock is "lost".
+- **Unix residual case.** That last check runs once, when the lock is taken. The
+  lock file's owner, the user who created it first, can remove it while an
+  instance holds it and create a new one, and a second instance can then lock the
+  new file while the first still holds the old one. So can anyone else who may
+  remove the file from its directory. The owner can also hold the lock and keep
+  every other user's `start` from running.
 
 The three refusals read differently: the lock is held by another process; the lock
 cannot be opened, with the reason; or the lock file was replaced or removed after
@@ -535,7 +547,9 @@ configuration, and the 10, 30 and 60 s restarts with the sliding window.
 process: a second acquisition is refused while the helper runs, a helper that holds
 the lock and has a child is killed and the lock is free at once while the child runs,
 and on Unix the file is `0644` under a umask of `077`, a read-only open still locks,
-and an unusable path is "cannot be opened". Its tests run one at a time, because a
+and an unusable path is "cannot be opened". So, at once, are a FIFO at the lock
+path, with or without a reader, and a link to a regular file, whose target keeps
+its contents and modification time. Its tests run one at a time, because a
 process one test spawns holds this process's descriptors until it calls `exec`.
 `control_channel.rs` runs the server and the client: every request, refusals,
 timeouts, several clients at once, a request that cannot make the instance read

@@ -252,6 +252,95 @@ mod unix {
         );
     }
 
+    /// Acquires on a thread of its own, so an open that waits fails the test
+    /// instead of hanging it.
+    fn acquire_promptly(roots: &Roots) -> Result<InstanceLock, LockError> {
+        let (sender, receiver) = mpsc::channel();
+        let roots = roots.clone();
+        std::thread::spawn(move || {
+            let _ = sender.send(InstanceLock::acquire(&roots));
+        });
+        receiver
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the acquisition waited instead of returning")
+    }
+
+    fn make_fifo(path: &std::path::Path) {
+        let status = Command::new("mkfifo").arg(path).status().unwrap();
+        assert!(status.success(), "mkfifo failed");
+    }
+
+    #[test]
+    fn a_fifo_at_the_lock_path_cannot_be_opened_and_does_not_hang() {
+        let _serial = serial();
+        let root = TempDir::new();
+        let roots = Roots::for_tests(root.path());
+        make_fifo(roots.lock_file());
+
+        let error = acquire_promptly(&roots).unwrap_err();
+
+        assert!(matches!(error, LockError::CannotOpen(_)), "{error}");
+    }
+
+    #[test]
+    fn a_fifo_with_a_reader_is_not_a_regular_file_and_is_not_locked() {
+        let _serial = serial();
+        let root = TempDir::new();
+        let roots = Roots::for_tests(root.path());
+        make_fifo(roots.lock_file());
+        // a reader on the FIFO lets an open for writing succeed at once
+        let (sender, receiver) = mpsc::channel();
+        let fifo = roots.lock_file().to_path_buf();
+        std::thread::spawn(move || {
+            let _ = sender.send(
+                fs::OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .open(fifo)
+                    .unwrap(),
+            );
+        });
+        let _party = receiver.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        let error = acquire_promptly(&roots).unwrap_err();
+
+        assert!(
+            matches!(&error, LockError::CannotOpen(detail) if detail.contains("not a regular file")),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_link_at_the_lock_path_is_refused_without_opening_its_target() {
+        let _serial = serial();
+        let root = TempDir::new();
+        let roots = Roots::for_tests(root.path());
+        let target = root.path().join("target");
+        fs::write(&target, b"precious").unwrap();
+        let modified = std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000_000);
+        fs::File::options()
+            .write(true)
+            .open(&target)
+            .unwrap()
+            .set_modified(modified)
+            .unwrap();
+        std::os::unix::fs::symlink(&target, roots.lock_file()).unwrap();
+
+        let error = acquire_promptly(&roots).unwrap_err();
+
+        // following the link would lock the target and then find the path is a
+        // link, which reads as lost
+        assert!(matches!(error, LockError::CannotOpen(_)), "{error}");
+        assert_eq!(fs::read(&target).unwrap(), b"precious");
+        assert_eq!(fs::metadata(&target).unwrap().modified().unwrap(), modified);
+        assert!(
+            fs::symlink_metadata(roots.lock_file())
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+    }
+
     #[test]
     fn a_lock_that_is_a_directory_cannot_be_opened() {
         let _serial = serial();

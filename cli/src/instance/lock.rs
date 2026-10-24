@@ -12,7 +12,9 @@
 //! On Unix it is an exclusive advisory lock on a file that every user may open: on
 //! macOS `/Users/Shared/.runners-instance.lock`. The creator sets its mode to `0644`
 //! whatever the umask. A user who may not write it opens it read-only, and the lock
-//! then refuses that user rather than the open.
+//! then refuses that user rather than the open. The open follows no link at the
+//! path and never waits, so a link, a FIFO or anything else that is not a regular
+//! file there cannot be opened, rather than held.
 
 use std::fmt;
 
@@ -86,6 +88,28 @@ mod unix {
     /// How often creating the file races with its removal before giving up.
     const OPEN_ATTEMPTS: usize = 3;
 
+    // `O_NOFOLLOW` and `O_NONBLOCK`, which `std` does not name; libc is not a direct
+    // dependency, so the values are libc's for each target the lock is built for
+    #[cfg(target_os = "macos")]
+    const NO_FOLLOW_NO_WAIT: i32 = 0x0100 | 0x0004;
+    #[cfg(all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x86")))]
+    const NO_FOLLOW_NO_WAIT: i32 = 0x2_0000 | 0x0800;
+    #[cfg(all(target_os = "linux", any(target_arch = "aarch64", target_arch = "arm")))]
+    const NO_FOLLOW_NO_WAIT: i32 = 0x8000 | 0x0800;
+    #[cfg(not(any(
+        target_os = "macos",
+        all(
+            target_os = "linux",
+            any(
+                target_arch = "x86_64",
+                target_arch = "x86",
+                target_arch = "aarch64",
+                target_arch = "arm"
+            )
+        )
+    )))]
+    compile_error!("the instance lock knows O_NOFOLLOW and O_NONBLOCK only on macOS and Linux");
+
     /// The open file; the lock lasts as long as it does.
     #[derive(Debug)]
     pub struct Holder {
@@ -96,11 +120,35 @@ mod unix {
         LockError::CannotOpen(format!("{}: {error}", path.display()))
     }
 
+    /// Opens an existing file without following a link at `path` and without
+    /// waiting, as a FIFO with no reader would make an open wait.
+    fn open_existing(path: &Path, write: bool) -> io::Result<File> {
+        OpenOptions::new()
+            .read(!write)
+            .write(write)
+            .custom_flags(NO_FOLLOW_NO_WAIT)
+            .open(path)
+    }
+
     /// Creates the file with mode `0644` regardless of the umask, or opens the one
-    /// that exists, for writing when the user may and read-only when not.
+    /// that exists, for writing when the user may and read-only when not. What is
+    /// opened must be a regular file.
     fn open(path: &Path) -> Result<File, LockError> {
+        let file = open_any(path)?;
+        let metadata = file.metadata().map_err(|error| cannot_open(path, &error))?;
+        if !metadata.is_file() {
+            return Err(LockError::CannotOpen(format!(
+                "{} is not a regular file",
+                path.display()
+            )));
+        }
+        Ok(file)
+    }
+
+    fn open_any(path: &Path) -> Result<File, LockError> {
         let mut last = io::Error::other("no attempt was made");
         for _ in 0..OPEN_ATTEMPTS {
+            // an exclusive create follows no link, so it never creates a link's target
             match OpenOptions::new()
                 .write(true)
                 .create_new(true)
@@ -115,13 +163,10 @@ mod unix {
                 Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
                 Err(error) => return Err(cannot_open(path, &error)),
             }
-            match OpenOptions::new().write(true).open(path) {
+            match open_existing(path, true) {
                 Ok(file) => return Ok(file),
                 Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
-                    return OpenOptions::new()
-                        .read(true)
-                        .open(path)
-                        .map_err(|error| cannot_open(path, &error));
+                    return open_existing(path, false).map_err(|error| cannot_open(path, &error));
                 }
                 Err(error) if error.kind() == io::ErrorKind::NotFound => last = error,
                 Err(error) => return Err(cannot_open(path, &error)),

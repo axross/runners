@@ -362,11 +362,17 @@ query the process that holds every pool's token, so their rules are security rul
   first instance of `\\.\pipe\runners-instance`, which admits only its creator and
   carries no message; on macOS it is an advisory lock on
   `/Users/Shared/.runners-instance.lock`, mode `0644` whatever the umask, so another
-  user's `start` is refused by the lock rather than unable to open it. After locking,
-  the path must still name the locked file, so a link or a replacement planted in
-  the shared directory makes the lock count as lost. The lock does not say who holds
+  user's `start` is refused by the lock rather than unable to open it. The open
+  follows no link at that path and never waits, and only a regular file is locked,
+  so a link, a FIFO, or anything else planted there is "cannot be opened": nothing
+  behind a link is opened, and a FIFO cannot hang `start`. After locking, the path
+  must still name the locked file, so a replacement makes the lock count as lost.
+  That check runs once, when the lock is taken. The lock does not say who holds
   it, and another local user can hold it or squat the name first and so keep `start`
-  from running; that is accepted on a single-user host, and `start` reports it.
+  from running. A user who created the lock file first owns it, so that user, or
+  anyone else who may remove it from its directory, can remove and recreate it
+  while an instance holds it, and a second instance can then lock the new file.
+  Both are accepted on a single-user host, and `start` reports a held lock.
 - The control channel is per user. On Windows it is
   `\\.\pipe\runners-control-<user SID>`, created as the first instance with the
   descriptor `D:P(A;;GA;;;<user SID>)` and remote clients rejected; a CI step reads
