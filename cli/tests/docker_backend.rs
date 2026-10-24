@@ -405,6 +405,47 @@ async fn container_output_is_forwarded_and_a_stop_is_one_call_with_the_grace() {
     );
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn a_line_over_sixty_four_kibibytes_is_forwarded_in_pieces_that_hold_all_of_it() {
+    const PIECE_CAP: usize = 64 * 1024;
+    const LINE_BYTES: usize = 150_000;
+    let fake = Fake::new();
+    let spec = ContainerSpec {
+        name: "long-1-20240305060708009".to_string(),
+        cpus: "1".to_string(),
+        cpuset: "0".to_string(),
+        memory_gb: 1,
+        mounts: Vec::new(),
+        image: "img:tag".to_string(),
+        run_command: "/home/runner/run.sh".to_string(),
+    };
+    fake.script("run_mode", "longline");
+    let code = fake
+        .backend
+        .run_container(&spec, &Secret::new("jit".to_string()))
+        .await
+        .unwrap();
+    assert_eq!(code, 0);
+    let pieces: Vec<String> = fake
+        .log
+        .lines()
+        .into_iter()
+        .filter_map(|line| line.strip_prefix("INFO: ").map(str::to_string))
+        .filter(|text| text.bytes().all(|byte| byte.is_ascii_lowercase()))
+        .collect();
+    assert!(
+        pieces.len() > 1 && pieces.iter().all(|piece| piece.len() <= PIECE_CAP),
+        "{:?}",
+        pieces.iter().map(String::len).collect::<Vec<_>>()
+    );
+    let expected: String = (b'a'..=b'z')
+        .cycle()
+        .take(LINE_BYTES)
+        .map(char::from)
+        .collect();
+    assert_eq!(pieces.concat(), expected);
+}
+
 fn request(name: &str) -> CpuRequest {
     CpuRequest {
         probe_name: format!("{name}-cpu-probe-1"),

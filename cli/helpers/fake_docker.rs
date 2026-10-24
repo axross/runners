@@ -10,12 +10,14 @@
 //!   line, which `ps`, `rm`, `stop` and `run` read and change;
 //! - the files `info_failures` (a count, decremented per call), `ps_fails`,
 //!   `ps_label_fails`, `rm_fails`, `stop_fails`, `volume_fails`, `probe_mode`
-//!   (`fail`, `hang`, `flood`, `garbage`), `probe_cpus`, `run_mode` (`hold`) and
-//!   `run_exit` change what the call does.
+//!   (`fail`, `hang`, `flood`, `garbage`), `probe_cpus`, `run_mode` (`hold`,
+//!   `longline`) and `run_exit` change what the call does.
 //!
 //! A `hold` job container stays until its entry leaves `containers`, then exits
 //! 137, so `rm -f` and `stop` end it as they would end a real one. Every wait is
-//! bounded, so a test that fails does not leave the helper running.
+//! bounded, so a test that fails does not leave the helper running. A `longline` job
+//! container prints one line of [`LONG_LINE_BYTES`] bytes, the letters `a` to `z` in
+//! turn, then exits as an ordinary job does.
 
 use std::fs;
 use std::io::Write;
@@ -26,6 +28,7 @@ use std::time::{Duration, Instant};
 const JIT_VARIABLE: &str = "ACTIONS_RUNNER_INPUT_JITCONFIG";
 const PROBE_LABEL: &str = "runners.cpu-probe=1";
 const LONGEST_WAIT: Duration = Duration::from_secs(60);
+const LONG_LINE_BYTES: usize = 150_000;
 
 fn main() -> ExitCode {
     match run() {
@@ -262,6 +265,13 @@ fn job(dir: &Path, name: &str) -> Result<u8, String> {
     save(dir, &containers)?;
     let _ = writeln!(std::io::stdout(), "fake runner started");
     let _ = writeln!(std::io::stderr(), "fake runner warning");
+    if text(dir, "run_mode").as_deref() == Some("longline") {
+        let line: Vec<u8> = (b'a'..=b'z').cycle().take(LONG_LINE_BYTES).collect();
+        let mut out = std::io::stdout();
+        let _ = out.write_all(&line);
+        let _ = out.write_all(b"\n");
+        let _ = out.flush();
+    }
     let code = if text(dir, "run_mode").as_deref() == Some("hold") {
         sleep_while(|| load(dir).iter().any(|container| container.name == name));
         137
