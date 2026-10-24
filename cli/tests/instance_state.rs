@@ -347,6 +347,30 @@ async fn a_failed_container_removal_is_reported_in_how_the_instance_ended() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn a_removal_that_failed_at_a_restart_is_reported_when_a_later_stop_removes_nothing() {
+    let rig = Rig::new();
+    {
+        let mut state = rig.backend.state.borrow_mut();
+        state.running = vec![JOB.to_string()];
+        state.remove_error = Some(runners_cli::runtime::backend::BackendError::new("busy"));
+    }
+    rig.source.results.borrow_mut().push_back(invalid());
+    let (ended, ()) = rig
+        .drive(|control| async move {
+            control.ask(Request::Restart).await;
+            assert_eq!(control.state().await, "stopped");
+            assert_eq!(control.stop().await.outcome, Outcome::Ok);
+        })
+        .await;
+    assert!(!ended.containers_removed);
+    assert_eq!(
+        rig.backend.calls().last(),
+        Some(&Call::RemoveContainers(vec![JOB.to_string()])),
+        "the stop from the stopped state touched no container"
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn a_core_that_ends_without_a_stop_is_a_failure_that_restarts_it() {
     let rig = Rig::new();
     rig.core.push(CoreStep::EndWithoutStop);

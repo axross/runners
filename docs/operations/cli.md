@@ -427,7 +427,9 @@ The container steps stop every container the backend has started and not seen en
 in one `docker stop` call with a grace of 15 s, ended at 20 s, and then force-remove
 them in one call ended 6 s later, so they take 26 s at the most. The instance reads
 the containers before it tells the core to stop, because dropping a worker forgets
-its container. How the instance ended records whether the removal succeeded.
+its container. How the instance ended records whether every removal in its life
+succeeded, at a stop, a restart, or a failure of the core, so a failed removal is
+still reported when a later stop has nothing to remove.
 
 The runtime core is the part that runs the pools. It fails when it ends, with an
 error or without one, while no stop was asked for. A slot's registration or

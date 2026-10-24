@@ -126,14 +126,15 @@ pub struct Settings {
 /// How the instance ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Ended {
-    /// Whether the last stop removed every container it was asked to.
+    /// Whether every removal of containers in the instance's life succeeded: at a
+    /// stop, a restart, or a failure of the runtime core.
     pub containers_removed: bool,
 }
 
 enum Next {
     Run(Plan),
     Idle,
-    Exit { containers_removed: bool },
+    Exit,
 }
 
 enum CycleEnd {
@@ -159,6 +160,7 @@ pub struct Instance<'a, B, K, C, S> {
     state: RefCell<State>,
     policy: RefCell<RestartPolicy>,
     exit_requested: Cell<bool>,
+    containers_removed: Cell<bool>,
 }
 
 impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
@@ -181,6 +183,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
             state: RefCell::new(State::Running),
             policy: RefCell::new(RestartPolicy::default()),
             exit_requested: Cell::new(false),
+            containers_removed: Cell::new(true),
         }
     }
 
@@ -193,7 +196,11 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
             next = match next {
                 Next::Run(plan) => self.running(&plan, requests).await,
                 Next::Idle => self.stopped(requests).await,
-                Next::Exit { containers_removed } => return Ended { containers_removed },
+                Next::Exit => {
+                    return Ended {
+                        containers_removed: self.containers_removed.get(),
+                    };
+                }
             };
         }
     }
@@ -235,7 +242,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
                             self.set_state(State::Stopped(StopReason::RestartLimit));
                             Next::Idle
                         }
-                        CycleEnd::StopRequested => Next::Exit { containers_removed: true },
+                        CycleEnd::StopRequested => Next::Exit,
                     };
                 }
                 incoming = requests.recv(), if open => {
@@ -286,16 +293,15 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
         let _ = stop.send(true);
         self.set_state(State::Stopping);
         let work = async {
-            let (removed, _) = tokio::join!(self.container_steps(containers), cycle);
-            removed
+            tokio::join!(self.container_steps(containers), cycle);
         };
-        let containers_removed = self.serve(requests, false, work).await.unwrap_or(false);
+        self.serve(requests, false, work).await;
         match after {
-            After::Exit => Next::Exit { containers_removed },
+            After::Exit => Next::Exit,
             After::Restart(reply) => {
                 if self.exit_requested.get() {
                     let _ = reply.send(self.refuse_busy());
-                    Next::Exit { containers_removed }
+                    Next::Exit
                 } else {
                     self.resume(requests, Some(reply)).await
                 }
@@ -306,9 +312,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
     async fn stopped(&self, requests: &mut Requests) -> Next {
         loop {
             let Some(incoming) = requests.recv().await else {
-                return Next::Exit {
-                    containers_removed: true,
-                };
+                return Next::Exit;
             };
             match incoming.request {
                 Request::Status => {
@@ -317,9 +321,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
                 Request::Stop => {
                     let _ = incoming.reply.send(Response::ok("stopping"));
                     self.set_state(State::Stopping);
-                    return Next::Exit {
-                        containers_removed: true,
-                    };
+                    return Next::Exit;
                 }
                 Request::Restart => return self.resume(requests, Some(incoming.reply)).await,
                 Request::Resume(resume) => {
@@ -353,12 +355,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
         self.log.info("Resuming: reading the configuration again.");
         let loaded = self.serve(requests, true, self.source.load()).await;
         let (next, response) = match loaded {
-            None => (
-                Next::Exit {
-                    containers_removed: true,
-                },
-                Response::refused("the instance is stopping"),
-            ),
+            None => (Next::Exit, Response::refused("the instance is stopping")),
             Some(Ok(plan)) => {
                 self.set_state(State::Running);
                 (
@@ -461,10 +458,10 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
     }
 
     /// Stops the containers in one call, and removes whatever remains in another.
-    /// Returns whether the removal succeeded.
-    async fn container_steps(&self, containers: Vec<String>) -> bool {
+    /// A failed removal is remembered until the instance ends.
+    async fn container_steps(&self, containers: Vec<String>) {
         if containers.is_empty() {
-            return true;
+            return;
         }
         let request = StopRequest {
             names: containers.clone(),
@@ -475,17 +472,14 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
             self.log
                 .warn(&format!("Stopping the containers failed: {error}"));
         }
-        match self
+        if let Err(error) = self
             .backend
             .remove_containers(&containers, REMOVE_BUDGET)
             .await
         {
-            Ok(()) => true,
-            Err(error) => {
-                self.log
-                    .warn(&format!("Removing the containers failed: {error}"));
-                false
-            }
+            self.log
+                .warn(&format!("Removing the containers failed: {error}"));
+            self.containers_removed.set(false);
         }
     }
 }
