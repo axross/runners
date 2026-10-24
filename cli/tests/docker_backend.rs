@@ -745,6 +745,29 @@ async fn a_failed_stale_removal_is_a_warning_and_the_pool_still_starts() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn a_failed_clients_long_output_is_cut_in_the_error_text() {
+    let fake = Fake::new();
+    fake.script("containers", "s-1-20240101000000000\t\n");
+    fake.script("stop_fails", "longline");
+
+    let error = fake
+        .backend
+        .stop_containers(&StopRequest {
+            names: vec!["s-1-20240101000000000".to_string()],
+            grace: Duration::from_secs(15),
+            budget: Duration::from_secs(20),
+        })
+        .await
+        .unwrap_err();
+
+    let cut: String = (b'a'..=b'z').cycle().take(500).map(char::from).collect();
+    assert_eq!(
+        error.to_string(),
+        format!("Failed to stop containers: {cut}...")
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn a_failed_stop_is_an_error_and_the_container_remains() {
     let fake = Fake::new();
     fake.script("containers", "s-1-20240101000000000\t\n");

@@ -2,8 +2,10 @@
 //!
 //! Every client starts in its own process group, so a Ctrl+C in the terminal reaches
 //! the CLI only, which then stops the containers in order. A client's output is
-//! never trusted to be short or valid text: the probe's is capped, and a job
-//! container's lines are forwarded in bounded pieces.
+//! never trusted to be short or valid text: the probe's is capped, a job
+//! container's lines are forwarded in bounded pieces, and any other client's is read
+//! within its time budget and cut to the length of a registration error when it
+//! becomes error text.
 
 use std::cell::RefCell;
 use std::collections::BTreeSet;
@@ -28,6 +30,7 @@ use super::docker_args::{
     stop_arguments, volume_chown_arguments, volume_create_arguments,
 };
 use super::log::Log;
+use super::scrub::scrub_error_text;
 use super::secret::Secret;
 
 /// How long Docker is given between checks while it is not answering.
@@ -103,12 +106,9 @@ impl Captured {
     }
 
     /// The client's output for an error message, standard output then standard
-    /// error, on one line.
+    /// error, on one line and cut as a registration error is.
     fn output_text(&self) -> String {
-        format!("{} {}", self.stdout, self.stderr)
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ")
+        scrub_error_text(&format!("{} {}", self.stdout, self.stderr), "")
     }
 }
 

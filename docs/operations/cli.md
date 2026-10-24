@@ -273,6 +273,9 @@ under CPU Placement. A `docker info` that fails, hangs, or cannot start (the
 program is missing) means Docker is not available yet. Output from a job container
 is forwarded to the log line by line, in pieces of at most 64 KiB; masking a
 secret in forwarded output belongs to the logging that comes with `start`.
+The output of any other client is read within its budget, and when it becomes error
+text it is joined onto one line and cut to 500 characters followed by `...`, as a
+registration error is.
 
 ### CPU Placement
 

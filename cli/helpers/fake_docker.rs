@@ -11,7 +11,8 @@
 //! - the files `info_failures` (a count, decremented per call), `ps_fails`,
 //!   `ps_label_fails`, `rm_fails`, `stop_fails`, `volume_fails`, `probe_mode`
 //!   (`fail`, `hang`, `flood`, `garbage`), `probe_cpus`, `run_mode` (`hold`,
-//!   `longline`) and `run_exit` change what the call does.
+//!   `longline`) and `run_exit` change what the call does; a `stop_fails` that
+//!   holds `longline` also prints a long line to standard error.
 //!
 //! A `hold` job container stays until its entry leaves `containers`, then exits
 //! 137, so `rm -f` and `stop` end it as they would end a real one. Every wait is
@@ -202,6 +203,9 @@ fn remove(dir: &Path, names: &[&str]) -> Result<u8, String> {
 
 fn stop(dir: &Path, names: &[&str]) -> Result<u8, String> {
     if exists(dir, "stop_fails") {
+        if text(dir, "stop_fails").as_deref() == Some("longline") {
+            print_long_line(&mut std::io::stderr());
+        }
         return Ok(1);
     }
     remove(dir, names)
@@ -266,11 +270,7 @@ fn job(dir: &Path, name: &str) -> Result<u8, String> {
     let _ = writeln!(std::io::stdout(), "fake runner started");
     let _ = writeln!(std::io::stderr(), "fake runner warning");
     if text(dir, "run_mode").as_deref() == Some("longline") {
-        let line: Vec<u8> = (b'a'..=b'z').cycle().take(LONG_LINE_BYTES).collect();
-        let mut out = std::io::stdout();
-        let _ = out.write_all(&line);
-        let _ = out.write_all(b"\n");
-        let _ = out.flush();
+        print_long_line(&mut std::io::stdout());
     }
     let code = if text(dir, "run_mode").as_deref() == Some("hold") {
         sleep_while(|| load(dir).iter().any(|container| container.name == name));
@@ -287,6 +287,14 @@ fn job(dir: &Path, name: &str) -> Result<u8, String> {
         exit
     };
     Ok(code)
+}
+
+/// Writes one line of [`LONG_LINE_BYTES`] bytes, the letters `a` to `z` in turn.
+fn print_long_line(out: &mut impl Write) {
+    let line: Vec<u8> = (b'a'..=b'z').cycle().take(LONG_LINE_BYTES).collect();
+    let _ = out.write_all(&line);
+    let _ = out.write_all(b"\n");
+    let _ = out.flush();
 }
 
 fn sleep_while(mut condition: impl FnMut() -> bool) {
