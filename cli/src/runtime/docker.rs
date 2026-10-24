@@ -6,10 +6,15 @@
 //! container's lines are forwarded in bounded pieces, and any other client's is read
 //! within its time budget and cut to the length of a registration error when it
 //! becomes error text.
+//!
+//! On Unix `start` runs each job container's client through the shim, so a
+//! container is removed even when the CLI is killed; see [`JobLauncher`].
 
 use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::ffi::OsString;
+#[cfg(unix)]
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -73,6 +78,20 @@ impl Default for DockerLimits {
     }
 }
 
+/// How a job container's `docker run` client is started.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum JobLauncher {
+    /// As a child of this process, killed when the run is dropped.
+    #[default]
+    Direct,
+    /// By the shim: this program run again as `<program> shim`, which starts the
+    /// client and holds the read end of a liveness pipe from this process. When the
+    /// pipe closes, because the run was dropped or this process ended however it
+    /// ended, the shim force-removes the container, kills the client and exits.
+    #[cfg(unix)]
+    Shim(PathBuf),
+}
+
 /// How to reach the `docker` client.
 #[derive(Debug, Clone)]
 pub struct DockerConfig {
@@ -81,6 +100,7 @@ pub struct DockerConfig {
     /// Variables to add to every client's environment.
     pub environment: Vec<(OsString, OsString)>,
     pub limits: DockerLimits,
+    pub launcher: JobLauncher,
 }
 
 impl Default for DockerConfig {
@@ -89,6 +109,7 @@ impl Default for DockerConfig {
             program: OsString::from("docker"),
             environment: Vec::new(),
             limits: DockerLimits::default(),
+            launcher: JobLauncher::Direct,
         }
     }
 }
@@ -119,9 +140,11 @@ pub struct DockerBackend<C> {
     running: RefCell<BTreeSet<String>>,
 }
 
-/// Removes a container from the running set when its run ends, however it ends,
-/// including when the future that waits for it is dropped, which kills the `docker`
-/// client and leaves the container running in the daemon.
+/// Removes a container from the running set when its run ends, including when the
+/// future that waits for it is dropped, which kills the `docker` client and leaves
+/// the container running in the daemon. A panic that unwinds through the run
+/// leaves the name in the set, so whoever supervises the panicking code can still
+/// read the container and remove it; a successful removal forgets it.
 struct RunningGuard<'a> {
     set: &'a RefCell<BTreeSet<String>>,
     name: String,
@@ -129,7 +152,9 @@ struct RunningGuard<'a> {
 
 impl Drop for RunningGuard<'_> {
     fn drop(&mut self) {
-        self.set.borrow_mut().remove(&self.name);
+        if !std::thread::panicking() {
+            self.set.borrow_mut().remove(&self.name);
+        }
     }
 }
 
@@ -161,6 +186,40 @@ impl<C: Clock> DockerBackend<C> {
         #[cfg(windows)]
         command.creation_flags(CREATE_NEW_PROCESS_GROUP);
         command
+    }
+
+    /// The command that starts a job container: the client itself, or the shim that
+    /// starts it. The shim's standard input is the liveness pipe, it is not killed
+    /// when the run is dropped, because closing that pipe makes it clean up, and it
+    /// writes the client's standard error into its standard output.
+    fn job_command(&self, spec: &ContainerSpec) -> Command {
+        let arguments = job_run_arguments(spec);
+        match &self.config.launcher {
+            JobLauncher::Direct => {
+                let mut command = self.command(&arguments);
+                command.stderr(Stdio::piped());
+                command
+            }
+            #[cfg(unix)]
+            JobLauncher::Shim(shim) => {
+                let mut command = Command::new(shim);
+                command
+                    .arg(crate::shim::SHIM_COMMAND)
+                    .arg("--name")
+                    .arg(&spec.name)
+                    .arg("--")
+                    .arg(&self.config.program)
+                    .args(&arguments)
+                    .stdin(Stdio::piped())
+                    .stderr(Stdio::inherit())
+                    .kill_on_drop(false)
+                    .process_group(0);
+                for (name, value) in &self.config.environment {
+                    command.env(name, value);
+                }
+                command
+            }
+        }
     }
 
     /// Runs a client to its end within `budget` and returns what it printed.
@@ -421,6 +480,10 @@ impl<C: Clock> Backend for DockerBackend<C> {
         }
         let captured = self.capture(&remove_arguments(names), budget).await?;
         if captured.succeeded() {
+            let mut running = self.running.borrow_mut();
+            for name in names {
+                running.remove(name);
+            }
             return Ok(());
         }
         Err(BackendError::new(format!(
@@ -461,14 +524,15 @@ impl<C: Clock> Backend for DockerBackend<C> {
     }
 
     async fn run_container(&self, spec: &ContainerSpec, jit: &Secret) -> Result<i32, BackendError> {
-        let mut command = self.command(&job_run_arguments(spec));
+        let mut command = self.job_command(spec);
         command
             .env(JIT_VARIABLE, jit.expose())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+            .stdout(Stdio::piped());
         let mut child = command.spawn().map_err(|error| {
             BackendError::new(format!("the docker client could not start: {error}"))
         })?;
+        // the shim's liveness pipe, closed when this run ends or is dropped
+        let _liveness = child.stdin.take();
         self.running.borrow_mut().insert(spec.name.clone());
         let _running = RunningGuard {
             set: &self.running,

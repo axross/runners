@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 
 use runners_cli::profile::Profile;
 use runners_cli::runtime::backend::{Backend, ContainerSpec, CpuRequest, Mount, StopRequest};
+use runners_cli::runtime::board::Board;
 use runners_cli::runtime::docker::DockerLimits;
 use runners_cli::runtime::fake::FakeRegistrar;
 use runners_cli::runtime::log::Log;
@@ -132,7 +133,7 @@ async fn the_example_configuration_runs_the_powershell_contract() {
     fake.script("probe_cpus", "2,5-6,11,14-15");
     fake.script("run_exit", "1");
 
-    let prepared = prepare_pools(&fake.backend, pools, &*fake.log)
+    let prepared = prepare_pools(&fake.backend, pools, &*fake.log, &Board::default())
         .await
         .unwrap();
     assert_eq!(prepared.len(), 2);
@@ -148,6 +149,7 @@ async fn the_example_configuration_runs_the_powershell_contract() {
                 &fake.clock,
                 &registrar,
                 &*fake.log,
+                &Board::default(),
                 receiver,
             )
             .await;
@@ -273,7 +275,7 @@ async fn the_jit_configuration_reaches_only_the_run_client_through_its_environme
         .results
         .borrow_mut()
         .push_back(Ok("super-secret-jit-config".to_string()));
-    let prepared = prepare_pools(&fake.backend, pools, &*fake.log)
+    let prepared = prepare_pools(&fake.backend, pools, &*fake.log, &Board::default())
         .await
         .unwrap();
     let slot = prepared[0].slot_specs().remove(0);
@@ -285,6 +287,7 @@ async fn the_jit_configuration_reaches_only_the_run_client_through_its_environme
         &fake.clock,
         &registrar,
         &*fake.log,
+        &Board::default(),
         receiver,
     )
     .await;
@@ -640,7 +643,7 @@ async fn stale_cleanup_through_docker_removes_only_own_unlabelled_containers() {
             "{own}\t\n{evidence}\trunners.diagnostic-lifecycle=1\nexample-repo-one-cpu-probe-1\trunners.cpu-probe=1\nexample-repo-two-1-20240101000000000\t\n"
         ),
     );
-    let result = prepare_pools(&fake.backend, pools.clone(), &*fake.log).await;
+    let result = prepare_pools(&fake.backend, pools.clone(), &*fake.log, &Board::default()).await;
     // the labelled container refuses the pool, so nothing can start.
     assert!(result.is_err());
     assert_eq!(
@@ -655,7 +658,7 @@ async fn stale_cleanup_through_docker_removes_only_own_unlabelled_containers() {
 
     // with the labelled container gone, the pool starts.
     fake.script("containers", &format!("{own}\t\n"));
-    let prepared = prepare_pools(&fake.backend, pools, &*fake.log)
+    let prepared = prepare_pools(&fake.backend, pools, &*fake.log, &Board::default())
         .await
         .unwrap();
     assert_eq!(prepared.len(), 1);
@@ -685,7 +688,7 @@ async fn a_failed_diagnostic_listing_refuses_cleanup_and_removes_nothing() {
     let before = fake.containers();
     assert_eq!(before.len(), 2);
 
-    let result = prepare_pools(&fake.backend, vec![pool], &*fake.log).await;
+    let result = prepare_pools(&fake.backend, vec![pool], &*fake.log, &Board::default()).await;
 
     assert!(result.is_err());
     assert_eq!(fake.containers(), before);
@@ -706,7 +709,7 @@ async fn a_failed_listing_skips_the_pool_and_removes_nothing() {
     fake.script("ps_fails", "1");
     let before = fake.containers();
 
-    let result = prepare_pools(&fake.backend, vec![pool], &*fake.log).await;
+    let result = prepare_pools(&fake.backend, vec![pool], &*fake.log, &Board::default()).await;
 
     assert!(result.is_err());
     assert_eq!(fake.containers(), before);
@@ -729,7 +732,7 @@ async fn a_failed_stale_removal_is_a_warning_and_the_pool_still_starts() {
     fake.script("containers", &format!("{own}\t\n"));
     fake.script("rm_fails", "1");
 
-    let prepared = prepare_pools(&fake.backend, vec![pool], &*fake.log)
+    let prepared = prepare_pools(&fake.backend, vec![pool], &*fake.log, &Board::default())
         .await
         .unwrap();
 

@@ -5,9 +5,10 @@ use std::time::Duration;
 use tokio::sync::watch;
 
 use super::backend::{Backend, ContainerSpec, CpuRequest};
+use super::board::{Board, SlotState};
 use super::clock::Clock;
 use super::docker_args::RUN_COMMAND;
-use super::log::Log;
+use super::log::{Log, Masked};
 use super::name::job_container_name;
 use super::pool::SlotSpec;
 use super::registration::{JitRequest, Registrar};
@@ -85,20 +86,34 @@ pub(crate) async fn sleep_or_stop<K: Clock>(
     }
 }
 
+/// Where a slot reports: its log and the status board.
+struct Report<'a> {
+    log: &'a dyn Log,
+    board: &'a Board,
+    label: String,
+}
+
+impl Report<'_> {
+    fn state(&self, state: SlotState) {
+        self.board.set_slot(&self.label, state);
+    }
+}
+
 /// Warns that an attempt failed and waits out the backoff, ending early on a stop.
 /// Returns whether a stop was asked for.
 async fn back_off<K: Clock>(
-    log: &dyn Log,
+    report: &Report<'_>,
     clock: &K,
     stop: &mut watch::Receiver<bool>,
     backoff: &mut Backoff,
-    label: &str,
     reason: &str,
 ) -> bool {
-    log.warn(&format!(
-        "{label}: {reason} - retrying in {}s.",
+    report.log.warn(&format!(
+        "{}: {reason} - retrying in {}s.",
+        report.label,
         backoff.current().as_secs()
     ));
+    report.state(SlotState::BackingOff);
     sleep_or_stop(clock, stop, backoff.fail()).await
 }
 
@@ -107,18 +122,25 @@ async fn back_off<K: Clock>(
 ///
 /// Each attempt probes the CPUs, then registers, then runs the container. A failed
 /// probe or registration, or a non-zero exit, waits out the backoff; an exit of 0
-/// starts the replacement at once.
+/// starts the replacement at once. The slot's state goes on `board`, and the token
+/// it reads and the JIT configuration it holds are masked in `log`.
 pub async fn run_slot<B: Backend, K: Clock, R: Registrar>(
     slot: &SlotSpec,
     backend: &B,
     clock: &K,
     registrar: &R,
     log: &dyn Log,
+    board: &Board,
     mut stop: watch::Receiver<bool>,
 ) {
-    let label = slot.label();
+    let report = Report {
+        log,
+        board,
+        label: slot.label(),
+    };
     let mut backoff = Backoff::default();
     while !stopped(&stop) {
+        report.state(SlotState::Registering);
         let request = CpuRequest {
             probe_name: slot.probe_name(),
             image: slot.image.clone(),
@@ -127,7 +149,7 @@ pub async fn run_slot<B: Backend, K: Clock, R: Registrar>(
         };
         let Ok(cpuset) = backend.select_cpuset(&request).await else {
             let reason = "CPU discovery or probe cleanup failed; no registration";
-            if back_off(log, clock, &mut stop, &mut backoff, &label, reason).await {
+            if back_off(&report, clock, &mut stop, &mut backoff, reason).await {
                 return;
             }
             continue;
@@ -136,6 +158,7 @@ pub async fn run_slot<B: Backend, K: Clock, R: Registrar>(
         let name = job_container_name(&slot.pool, slot.number, clock.now());
         let registration = async {
             let token = read_token(&slot.token_path).map_err(|error| error.to_string())?;
+            log.mask(&token);
             registrar
                 .request_jit(&JitRequest {
                     owner: &slot.owner,
@@ -155,17 +178,19 @@ pub async fn run_slot<B: Backend, K: Clock, R: Registrar>(
             Ok(jit) => jit,
             Err(reason) => {
                 let reason = format!("failed to request a JIT registration ({reason})");
-                if back_off(log, clock, &mut stop, &mut backoff, &label, &reason).await {
+                if back_off(&report, clock, &mut stop, &mut backoff, &reason).await {
                     return;
                 }
                 continue;
             }
         };
 
+        let _masked = Masked::new(log, &jit);
         if stopped(&stop) {
             return;
         }
-        log.info(&format!("{label}: starting container {name}."));
+        log.info(&format!("{}: starting container {name}.", report.label));
+        report.state(SlotState::Running(name.clone()));
         let spec = ContainerSpec {
             name,
             cpus: slot.cpus.clone(),
@@ -175,12 +200,14 @@ pub async fn run_slot<B: Backend, K: Clock, R: Registrar>(
             image: slot.image.clone(),
             run_command: RUN_COMMAND.to_string(),
         };
+        // the JIT configuration stays masked until the outcome below is reported,
+        // since a failed run's error text could hold it
         let exit = backend.run_container(&spec, &jit).await;
-        drop(jit);
         match exit {
             Ok(0) => {
                 log.info(&format!(
-                    "{label}: container exited successfully (GitHub owns the job result) - starting a replacement."
+                    "{}: container exited successfully (GitHub owns the job result) - starting a replacement.",
+                    report.label
                 ));
                 backoff.reset();
             }
@@ -189,7 +216,7 @@ pub async fn run_slot<B: Backend, K: Clock, R: Registrar>(
                     Ok(code) => format!("container exited with code {code}"),
                     Err(error) => format!("container could not run ({error})"),
                 };
-                if back_off(log, clock, &mut stop, &mut backoff, &label, &reason).await {
+                if back_off(&report, clock, &mut stop, &mut backoff, &reason).await {
                     return;
                 }
             }

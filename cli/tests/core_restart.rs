@@ -218,3 +218,54 @@ async fn a_restart_request_clears_the_failure_count_too() {
     assert_eq!(state, "running");
     assert_eq!(rig.clock.sleeps(), seconds(&[10, 30, 10, 30, 60]));
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_panicking_core_is_a_failure_whose_containers_are_removed_before_it_restarts() {
+    let rig = Rig::new();
+    rig.backend.state.borrow_mut().running = vec!["r-1-20240305060708009".to_string()];
+    rig.core
+        .push(CoreStep::Panic("index out of bounds".to_string()));
+    let core = &rig.core;
+    let (ended, ()) = rig
+        .drive(|control| async move {
+            settle(&control, core, 2).await;
+            control.stop().await;
+        })
+        .await;
+    assert!(ended.containers_removed);
+    assert_eq!(rig.core.runs.get(), 2);
+    assert_eq!(rig.clock.sleeps(), seconds(&[10]));
+    assert!(rig.backend.calls().contains(&Call::RemoveContainers(vec![
+        "r-1-20240305060708009".to_string()
+    ])));
+    assert!(rig.log.lines().iter().any(|line| {
+        line.contains("The runtime core failed: the runtime core panicked: index out of bounds")
+    }));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn no_startable_pool_at_the_first_run_ends_the_instance() {
+    let rig = Rig::new();
+    rig.core.push(CoreStep::NothingToRun);
+    let (ended, ()) = rig.drive(|_control| async {}).await;
+    assert!(ended.nothing_to_run);
+    assert_eq!(rig.core.runs.get(), 1);
+    assert!(rig.clock.sleeps().is_empty(), "it is not restarted");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn no_startable_pool_at_a_later_run_is_a_failure_like_any_other() {
+    let rig = Rig::new();
+    rig.core.push(FakeCore::failure("worker task panicked"));
+    rig.core.push(CoreStep::NothingToRun);
+    let core = &rig.core;
+    let (ended, ()) = rig
+        .drive(|control| async move {
+            settle(&control, core, 3).await;
+            assert_eq!(control.state().await, "running");
+            control.stop().await;
+        })
+        .await;
+    assert!(!ended.nothing_to_run);
+    assert_eq!(rig.clock.sleeps(), seconds(&[10, 30]));
+}

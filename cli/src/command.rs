@@ -1,4 +1,5 @@
 //! The command line: argument parsing, reading the file, printing, and the exit code.
+//! `start` and the clients live in their own modules; this one routes to them.
 
 use std::ffi::OsString;
 use std::io::{self, Read, Write};
@@ -8,7 +9,9 @@ use std::process::ExitCode;
 use clap::{Arg, ArgMatches, Command, value_parser};
 
 use crate::checkout;
+use crate::control::{Client, run_client};
 use crate::profile::Profile;
+use crate::start::{StartRequest, start};
 use crate::summary::plan_summary;
 use crate::validate::{Failure, Plan, validate};
 
@@ -19,30 +22,72 @@ pub const MAX_CONFIG_BYTES: u64 = 1024 * 1024;
 const EXIT_INVALID: u8 = 1;
 const EXIT_USAGE: u8 = 2;
 
+/// Moves the lock, channel and log roots; only a debug build honours it.
+const TEST_ROOT_VARIABLE: &str = "RUNNERS_TEST_ROOT";
+
+/// Moves the GitHub base address; only a debug build honours it.
+const TEST_GITHUB_API_VARIABLE: &str = "RUNNERS_TEST_GITHUB_API";
+
+fn config_arg(help: &'static str) -> Arg {
+    Arg::new("config")
+        .long("config")
+        .value_name("PATH")
+        .required(true)
+        .value_parser(value_parser!(PathBuf))
+        .help(help)
+}
+
+fn profile_arg(help: &'static str) -> Arg {
+    Arg::new("profile")
+        .long("profile")
+        .value_name("PROFILE")
+        .value_parser(["axpc", "axmc"])
+        .help(help)
+}
+
 fn command() -> Command {
-    Command::new("runners")
+    let command = Command::new("runners")
         .about("Manages the self-hosted runner hosts in this repository")
         .subcommand_required(true)
         .arg_required_else_help(true)
         .subcommand(
             Command::new("validate")
                 .about("Check a host configuration and print its plan")
-                .arg(
-                    Arg::new("config")
-                        .long("config")
-                        .value_name("PATH")
-                        .required(true)
-                        .value_parser(value_parser!(PathBuf))
-                        .help("The host configuration file"),
-                )
-                .arg(
-                    Arg::new("profile")
-                        .long("profile")
-                        .value_name("PROFILE")
-                        .value_parser(["axpc", "axmc"])
-                        .help("The host to check it for; defaults to axpc on Windows and axmc on macOS"),
-                ),
+                .arg(config_arg("The host configuration file"))
+                .arg(profile_arg(
+                    "The host to check it for; defaults to axpc on Windows and axmc on macOS",
+                )),
         )
+        .subcommand(
+            Command::new("start")
+                .about("Run the host's pools in the foreground, or resume a stopped instance")
+                .arg(config_arg("The host configuration file"))
+                .arg(profile_arg(
+                    "The host to run it as; defaults to axpc on Windows and axmc on macOS",
+                )),
+        )
+        .subcommand(Command::new("stop").about("Stop the running instance and wait for it to end"))
+        .subcommand(
+            Command::new("restart")
+                .about("Stop the instance's containers, read its configuration again, and resume"),
+        )
+        .subcommand(
+            Command::new("status").about("Print what the instance and its pools are doing"),
+        );
+    #[cfg(unix)]
+    let command = command.subcommand(
+        Command::new(crate::shim::SHIM_COMMAND)
+            .hide(true)
+            .arg(Arg::new("name").long("name").required(true))
+            .arg(
+                Arg::new("client")
+                    .required(true)
+                    .num_args(1..)
+                    .last(true)
+                    .value_parser(value_parser!(OsString)),
+            ),
+    );
+    command
 }
 
 /// Runs the CLI with the given arguments, the first being the program name.
@@ -64,10 +109,73 @@ pub fn run(
             return finish(written, u8::try_from(code).unwrap_or(EXIT_USAGE));
         }
     };
+    let test_root = std::env::var_os(TEST_ROOT_VARIABLE).map(PathBuf::from);
+    let test_root = test_root.as_deref();
     match matches.subcommand() {
         Some(("validate", validate_matches)) => run_validate(validate_matches, out, err),
+        Some(("start", start_matches)) => run_start(start_matches, test_root, err),
+        Some(("stop", _)) => ExitCode::from(run_client(Client::Stop, test_root, out, err)),
+        Some(("restart", _)) => ExitCode::from(run_client(Client::Restart, test_root, out, err)),
+        Some(("status", _)) => ExitCode::from(run_client(Client::Status, test_root, out, err)),
+        #[cfg(unix)]
+        Some((crate::shim::SHIM_COMMAND, shim_matches)) => run_shim(shim_matches),
         _ => ExitCode::from(EXIT_USAGE),
     }
+}
+
+#[cfg(unix)]
+fn run_shim(matches: &ArgMatches) -> ExitCode {
+    let (Some(name), Some(mut client)) = (
+        matches.get_one::<String>("name"),
+        matches.get_many::<OsString>("client"),
+    ) else {
+        return ExitCode::from(EXIT_USAGE);
+    };
+    let Some(program) = client.next() else {
+        return ExitCode::from(EXIT_USAGE);
+    };
+    let arguments: Vec<OsString> = client.cloned().collect();
+    crate::shim::run(name, program, &arguments)
+}
+
+/// The profile named on the command line, or the one this OS implies.
+///
+/// # Errors
+///
+/// Prints the usage error and returns its exit code when the OS implies none.
+fn profile_of(matches: &ArgMatches, err: &mut dyn Write) -> Result<Profile, ExitCode> {
+    matches
+        .get_one::<String>("profile")
+        .and_then(|name| Profile::from_name(name))
+        .or_else(Profile::of_this_machine)
+        .ok_or_else(|| {
+            finish(
+                writeln!(
+                    err,
+                    "error: --profile axpc or --profile axmc is required on this operating system, \
+                     because the profile follows the OS only on Windows (axpc) and macOS (axmc)"
+                ),
+                EXIT_USAGE,
+            )
+        })
+}
+
+fn run_start(matches: &ArgMatches, test_root: Option<&Path>, err: &mut dyn Write) -> ExitCode {
+    let Some(config) = matches.get_one::<PathBuf>("config") else {
+        return ExitCode::from(EXIT_USAGE);
+    };
+    let profile = match profile_of(matches, err) {
+        Ok(profile) => profile,
+        Err(code) => return code,
+    };
+    let github_api = std::env::var(TEST_GITHUB_API_VARIABLE).ok();
+    let request = StartRequest {
+        config,
+        profile,
+        test_root,
+        github_api: github_api.as_deref(),
+    };
+    ExitCode::from(start(&request, err))
 }
 
 fn finish(written: io::Result<()>, code: u8) -> ExitCode {
@@ -81,19 +189,9 @@ fn run_validate(matches: &ArgMatches, out: &mut dyn Write, err: &mut dyn Write) 
     let Some(config) = matches.get_one::<PathBuf>("config") else {
         return ExitCode::from(EXIT_USAGE);
     };
-    let profile = matches
-        .get_one::<String>("profile")
-        .and_then(|name| Profile::from_name(name))
-        .or_else(Profile::of_this_machine);
-    let Some(profile) = profile else {
-        return finish(
-            writeln!(
-                err,
-                "error: --profile axpc or --profile axmc is required on this operating system, \
-                 because the profile follows the OS only on Windows (axpc) and macOS (axmc)"
-            ),
-            EXIT_USAGE,
-        );
+    let profile = match profile_of(matches, err) {
+        Ok(profile) => profile,
+        Err(code) => return code,
     };
     match validate_file(config, profile, out, err) {
         Ok(code) => ExitCode::from(code),
@@ -126,6 +224,14 @@ pub(crate) enum LoadError {
 }
 
 impl LoadError {
+    /// The message `validate` and `start` print for the file at `config`.
+    pub(crate) fn message(&self, config: &Path) -> String {
+        match self {
+            Self::Unreadable(message) => message.clone(),
+            Self::Invalid(errors) => invalid_message(config, errors),
+        }
+    }
+
     /// Every problem, one per entry.
     pub(crate) fn into_problems(self) -> Vec<String> {
         match self {
@@ -187,11 +293,7 @@ fn validate_file(
 ) -> io::Result<u8> {
     let loaded = load_plan(config, profile);
     if loaded.checkout_rule_skipped {
-        writeln!(
-            err,
-            "note: no checkout of this project was found above {}, so diagnosticDirectory was not compared with it",
-            config.display()
-        )?;
+        writeln!(err, "{}", checkout_rule_note(config))?;
     }
     match loaded.outcome {
         Ok(plan) => {
@@ -200,15 +302,20 @@ fn validate_file(
             }
             Ok(0)
         }
-        Err(LoadError::Unreadable(message)) => {
-            writeln!(err, "{message}")?;
-            Ok(EXIT_INVALID)
-        }
-        Err(LoadError::Invalid(errors)) => {
-            writeln!(err, "{}", invalid_message(config, &errors))?;
+        Err(error) => {
+            writeln!(err, "{}", error.message(config))?;
             Ok(EXIT_INVALID)
         }
     }
+}
+
+/// The note that no checkout was found above `config`, so the checkout rule was
+/// skipped.
+pub(crate) fn checkout_rule_note(config: &Path) -> String {
+    format!(
+        "note: no checkout of this project was found above {}, so diagnosticDirectory was not compared with it",
+        config.display()
+    )
 }
 
 /// Returns the message that lists every problem, in the PowerShell validator's

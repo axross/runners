@@ -6,12 +6,16 @@
 //! request that arrives during a transition is answered at once: `status` tells the
 //! truth, `stop` is taken, and `restart` and `resume` are refused until the
 //! transition ends. The pools themselves run in a [`Core`], which this module
-//! restarts when it fails; what starts and stops a process is the caller's.
+//! supervises: an error or a panic of the core while no stop was asked for is a
+//! failure, and the core is restarted. What starts and stops a process is the
+//! caller's.
 
 use std::cell::{Cell, RefCell};
 use std::fmt;
 use std::future::Future;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::pin::{Pin, pin};
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use tokio::sync::{mpsc, oneshot, watch};
@@ -27,13 +31,36 @@ use crate::validate::Plan;
 use super::protocol::{Incoming, Request, Response};
 use super::restart::{RestartPolicy, Verdict, WINDOW};
 
-/// The grace `docker stop` gives each container before it kills it.
-const STOP_GRACE: Duration = Duration::from_secs(15);
-/// The stop call is ended at this budget, counted from its start.
-const STOP_BUDGET: Duration = Duration::from_secs(20);
-/// The removal of what remains is ended at this budget, so the container steps take
-/// 26 s at the most.
-const REMOVE_BUDGET: Duration = Duration::from_secs(6);
+/// What `status` shows for the image's age, which the image contract brings later.
+const IMAGE_AGE: &str = "not available until Phase 3";
+
+/// The times of the stop sequence, each counted from the step's own start except
+/// the last.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StopTimes {
+    /// The grace `docker stop` gives each container before it kills it.
+    pub grace: Duration,
+    /// The stop call is ended at this budget.
+    pub stop_budget: Duration,
+    /// The removal of what remains is ended at this budget, so the container steps
+    /// take 26 s at the most.
+    pub remove_budget: Duration,
+    /// Counted from the stop request: whatever still runs then, the container
+    /// steps, the core's workers and their clients, is dropped, which kills the
+    /// clients, and the instance ends.
+    pub exit_deadline: Duration,
+}
+
+impl Default for StopTimes {
+    fn default() -> Self {
+        Self {
+            grace: Duration::from_secs(15),
+            stop_budget: Duration::from_secs(20),
+            remove_budget: Duration::from_secs(6),
+            exit_deadline: Duration::from_secs(28),
+        }
+    }
+}
 
 /// Why the instance is stopped.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,13 +117,15 @@ pub struct CoreFailure {
     /// The containers the core had started and not seen end. The core is gone, so
     /// only it can say; the instance stops and removes them.
     pub containers: Vec<String>,
+    /// No pool could start. At the instance's first run of the core this ends the
+    /// instance; at a later run it is a failure like any other.
+    pub nothing_to_run: bool,
 }
 
 /// The part of `start` that runs the pools.
 ///
 /// A real core prepares the pools and runs their slots until the stop is asked for.
-/// A panic is a failure: whatever supervises the core turns it into a
-/// [`CoreFailure`].
+/// A panic is a failure: the instance turns it into a [`CoreFailure`].
 pub trait Core {
     /// Runs until `stop` becomes true, then returns `Ok`. Returning in any other
     /// way, with or without an error, is a failure of the core.
@@ -105,6 +134,10 @@ pub trait Core {
         plan: &Plan,
         stop: watch::Receiver<bool>,
     ) -> impl Future<Output = Result<(), CoreFailure>>;
+
+    /// What the core is doing now, as `status` fields: each pool's and each slot's
+    /// state. A core that is not running reports nothing.
+    fn report(&self) -> Vec<(&'static str, String)>;
 }
 
 /// The instance's own configuration file, read again at a restart or a resume. It
@@ -129,6 +162,8 @@ pub struct Ended {
     /// Whether every removal of containers in the instance's life succeeded: at a
     /// stop, a restart, or a failure of the runtime core.
     pub containers_removed: bool,
+    /// Whether the instance ended because no pool could start at its first run.
+    pub nothing_to_run: bool,
 }
 
 enum Next {
@@ -140,12 +175,33 @@ enum Next {
 enum CycleEnd {
     StopRequested,
     LimitReached,
+    NothingToRun,
 }
 
-/// What a stop out of the running state leads to.
-enum After {
-    Exit,
-    Restart(oneshot::Sender<Response>),
+/// Polls the core and turns a panic into an error carrying the panic's message, so
+/// a panicking core is a failure rather than the end of the process.
+struct CatchPanic<F>(Pin<Box<F>>);
+
+impl<F: Future> Future for CatchPanic<F> {
+    type Output = Result<F::Output, String>;
+
+    fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+        let inner = self.get_mut().0.as_mut();
+        match catch_unwind(AssertUnwindSafe(|| inner.poll(context))) {
+            Ok(Poll::Ready(output)) => Poll::Ready(Ok(output)),
+            Ok(Poll::Pending) => Poll::Pending,
+            Err(payload) => Poll::Ready(Err(panic_message(payload.as_ref()))),
+        }
+    }
+}
+
+fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+    let detail = payload
+        .downcast_ref::<&str>()
+        .map(|text| (*text).to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "no message".to_string());
+    format!("the runtime core panicked: {detail}")
 }
 
 type Requests = mpsc::UnboundedReceiver<Incoming>;
@@ -157,10 +213,14 @@ pub struct Instance<'a, B, K, C, S> {
     core: &'a C,
     source: &'a S,
     log: &'a dyn Log,
+    times: StopTimes,
     state: RefCell<State>,
     policy: RefCell<RestartPolicy>,
     exit_requested: Cell<bool>,
     containers_removed: Cell<bool>,
+    core_has_run: Cell<bool>,
+    nothing_to_run: Cell<bool>,
+    force: watch::Sender<bool>,
 }
 
 impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
@@ -180,11 +240,32 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
             core,
             source,
             log,
+            times: StopTimes::default(),
             state: RefCell::new(State::Running),
             policy: RefCell::new(RestartPolicy::default()),
             exit_requested: Cell::new(false),
             containers_removed: Cell::new(true),
+            core_has_run: Cell::new(false),
+            nothing_to_run: Cell::new(false),
+            force: watch::Sender::new(false),
         }
+    }
+
+    /// The instance with other stop times, so a test can reach the exit deadline
+    /// quickly; a debug build only.
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    #[must_use]
+    pub fn with_stop_times(mut self, times: StopTimes) -> Self {
+        self.times = times;
+        self
+    }
+
+    /// Skips the grace period: a `docker stop` under way, or one still to come, is
+    /// abandoned and what remains is force-removed at once. A second Ctrl+C or
+    /// SIGINT asks for it.
+    pub fn force_removal(&self) {
+        self.force.send_replace(true);
     }
 
     /// Runs the instance with its first plan until a stop is asked for. It answers
@@ -199,6 +280,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
                 Next::Exit => {
                     return Ended {
                         containers_removed: self.containers_removed.get(),
+                        nothing_to_run: self.nothing_to_run.get(),
                     };
                 }
             };
@@ -215,9 +297,13 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
         if let State::Stopped(reason) = &*state {
             response = response.with("reason", &reason.to_string());
         }
-        response
+        response = response
             .with("config", &self.settings.config_path)
-            .with("profile", self.settings.profile.name())
+            .with("profile", self.settings.profile.name());
+        for (name, value) in self.core.report() {
+            response = response.with(name, &value);
+        }
+        response.with("image-age", IMAGE_AGE)
     }
 
     fn refuse_busy(&self) -> Response {
@@ -228,7 +314,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
     async fn running(&self, plan: &Plan, requests: &mut Requests) -> Next {
         self.set_state(State::Running);
         let (stop, stop_receiver) = watch::channel(false);
-        let mut cycle = pin!(self.core_cycle(plan, stop_receiver));
+        let mut cycle = Box::pin(self.core_cycle(plan, stop_receiver));
         let mut open = true;
         loop {
             tokio::select! {
@@ -243,6 +329,10 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
                             Next::Idle
                         }
                         CycleEnd::StopRequested => Next::Exit,
+                        CycleEnd::NothingToRun => {
+                            self.nothing_to_run.set(true);
+                            Next::Exit
+                        }
                     };
                 }
                 incoming = requests.recv(), if open => {
@@ -259,19 +349,16 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
                         }
                         Request::Stop => {
                             let _ = incoming.reply.send(Response::ok("stopping"));
-                            return self
-                                .stop_running(&stop, cycle, requests, After::Exit)
-                                .await;
+                            self.wind_down(&stop, cycle, requests).await;
+                            return Next::Exit;
                         }
                         Request::Restart => {
-                            return self
-                                .stop_running(
-                                    &stop,
-                                    cycle,
-                                    requests,
-                                    After::Restart(incoming.reply),
-                                )
-                                .await;
+                            self.wind_down(&stop, cycle, requests).await;
+                            if self.exit_requested.get() {
+                                let _ = incoming.reply.send(self.refuse_busy());
+                                return Next::Exit;
+                            }
+                            return self.resume(requests, incoming.reply).await;
                         }
                     }
                 }
@@ -279,34 +366,42 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
         }
     }
 
-    /// Asks the core to stop, runs the container steps while it winds down, and then
-    /// either ends or resumes. The containers are read before the core's workers go,
-    /// because dropping a worker forgets its container.
-    async fn stop_running<F: Future<Output = CycleEnd>>(
+    /// Asks the core to stop and runs the container steps while it winds down, all
+    /// within the exit deadline; whatever still runs then is dropped with `cycle`,
+    /// which kills its clients. The containers are read before the core's workers
+    /// go, because dropping a worker forgets its container.
+    async fn wind_down<F: Future<Output = CycleEnd>>(
         &self,
         stop: &watch::Sender<bool>,
-        cycle: Pin<&mut F>,
+        cycle: Pin<Box<F>>,
         requests: &mut Requests,
-        after: After,
-    ) -> Next {
+    ) {
         let containers = self.backend.running_containers();
         let _ = stop.send(true);
         self.set_state(State::Stopping);
+        let steps_done = Cell::new(false);
         let work = async {
-            tokio::join!(self.container_steps(containers), cycle);
-        };
-        self.serve(requests, false, work).await;
-        match after {
-            After::Exit => Next::Exit,
-            After::Restart(reply) => {
-                if self.exit_requested.get() {
-                    let _ = reply.send(self.refuse_busy());
-                    Next::Exit
-                } else {
-                    self.resume(requests, reply).await
+            let steps = async {
+                self.container_steps(containers).await;
+                steps_done.set(true);
+            };
+            let both = async {
+                tokio::join!(steps, cycle);
+            };
+            if tokio::time::timeout(self.times.exit_deadline, both)
+                .await
+                .is_err()
+            {
+                self.log.warn(&format!(
+                    "The stop did not finish within {} s, so what still runs is ended now.",
+                    self.times.exit_deadline.as_secs()
+                ));
+                if !steps_done.get() {
+                    self.containers_removed.set(false);
                 }
             }
-        }
+        };
+        self.serve(requests, false, work).await;
     }
 
     async fn stopped(&self, requests: &mut Requests) -> Next {
@@ -418,22 +513,35 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
     /// or a stop is asked for.
     async fn core_cycle(&self, plan: &Plan, mut stop: watch::Receiver<bool>) -> CycleEnd {
         loop {
-            let result = self.core.run(plan, stop.clone()).await;
+            let result = CatchPanic(Box::pin(self.core.run(plan, stop.clone()))).await;
             let failed_at = self.clock.now();
+            let first_run = !self.core_has_run.replace(true);
             if *stop.borrow() {
                 return CycleEnd::StopRequested;
             }
             let failure = match result {
-                Err(failure) => failure,
-                Ok(()) => CoreFailure {
+                Ok(Err(failure)) => failure,
+                Ok(Ok(())) => CoreFailure {
                     message: "the runtime core ended without being asked to".to_string(),
                     containers: Vec::new(),
+                    nothing_to_run: false,
+                },
+                // the panic unwound through the workers, so their containers are
+                // still recorded by the backend and nowhere else.
+                Err(message) => CoreFailure {
+                    message,
+                    containers: self.backend.running_containers(),
+                    nothing_to_run: false,
                 },
             };
-            self.log.warn(&format!(
-                "The runtime core failed: {}",
-                scrub_error_text(&failure.message, "")
-            ));
+            let message = scrub_error_text(&failure.message, "");
+            if failure.nothing_to_run && first_run {
+                self.log.warn(&message);
+                self.container_steps(failure.containers).await;
+                return CycleEnd::NothingToRun;
+            }
+            self.log
+                .warn(&format!("The runtime core failed: {message}"));
             let verdict = self.policy.borrow_mut().record_failure(failed_at);
             self.container_steps(failure.containers).await;
             match verdict {
@@ -451,29 +559,70 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
         }
     }
 
-    /// Stops the containers in one call, and removes whatever remains in another.
-    /// A failed removal is remembered until the instance ends.
+    /// Stops the containers in one call, and removes whatever remains in another. A
+    /// forced removal abandons the stop, or skips it. A failed removal is
+    /// remembered until the instance ends.
     async fn container_steps(&self, containers: Vec<String>) {
         if containers.is_empty() {
             return;
         }
         let request = StopRequest {
             names: containers.clone(),
-            grace: STOP_GRACE,
-            budget: STOP_BUDGET,
+            grace: self.times.grace,
+            budget: self.times.stop_budget,
         };
-        if let Err(error) = self.backend.stop_containers(&request).await {
-            self.log
-                .warn(&format!("Stopping the containers failed: {error}"));
+        let mut force = self.force.subscribe();
+        tokio::select! {
+            biased;
+            _ = force.wait_for(|forced| *forced) => {
+                self.log.warn("Forced removal: the grace period is skipped.");
+            }
+            stopped = self.backend.stop_containers(&request) => {
+                if let Err(error) = stopped {
+                    self.log
+                        .warn(&format!("Stopping the containers failed: {error}"));
+                }
+            }
         }
         if let Err(error) = self
             .backend
-            .remove_containers(&containers, REMOVE_BUDGET)
+            .remove_containers(&containers, self.times.remove_budget)
             .await
         {
             self.log
                 .warn(&format!("Removing the containers failed: {error}"));
             self.containers_removed.set(false);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_stop_sequence_takes_15_20_6_and_28_seconds() {
+        assert_eq!(
+            StopTimes::default(),
+            StopTimes {
+                grace: Duration::from_secs(15),
+                stop_budget: Duration::from_secs(20),
+                remove_budget: Duration::from_secs(6),
+                exit_deadline: Duration::from_secs(28),
+            }
+        );
+    }
+
+    #[test]
+    fn a_panic_message_is_read_from_either_payload() {
+        assert_eq!(panic_message(&"boom"), "the runtime core panicked: boom");
+        assert_eq!(
+            panic_message(&String::from("bang")),
+            "the runtime core panicked: bang"
+        );
+        assert_eq!(
+            panic_message(&7_u8),
+            "the runtime core panicked: no message"
+        );
     }
 }

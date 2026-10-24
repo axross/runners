@@ -16,7 +16,7 @@ use super::backend::{
     Backend, BackendError, ContainerSpec, CpuRequest, PoolContainers, StopRequest,
 };
 use super::clock::Clock;
-use super::log::Log;
+use super::log::{Log, Masks};
 use super::registration::{JitRequest, Registrar, RegistrationError};
 use super::secret::Secret;
 
@@ -62,6 +62,9 @@ pub struct FakeState {
     pub running: Vec<String>,
     /// A stop request fails with this error, once it is recorded.
     pub stop_error: Option<BackendError>,
+    /// A stop request, once recorded, never ends, as a `docker stop` whose
+    /// containers ignore the grace period would not before its budget.
+    pub stop_hangs: bool,
 }
 
 #[derive(Default)]
@@ -175,8 +178,15 @@ impl Backend for FakeBackend {
     }
 
     async fn stop_containers(&self, request: &StopRequest) -> Result<(), BackendError> {
+        let hangs = {
+            let mut state = self.state.borrow_mut();
+            state.calls.push(Call::StopContainers(request.clone()));
+            state.stop_hangs
+        };
+        if hangs {
+            std::future::pending::<()>().await;
+        }
         let mut state = self.state.borrow_mut();
-        state.calls.push(Call::StopContainers(request.clone()));
         if let Some(error) = state.stop_error.clone() {
             return Err(error);
         }
@@ -294,10 +304,12 @@ impl Clock for FakeClock {
     }
 }
 
-/// Collects the lines, each prefixed `INFO: ` or `WARN: `.
+/// Collects the lines, each prefixed `INFO: ` or `WARN: `, with every masked secret
+/// replaced as a real sink replaces it.
 #[derive(Default)]
 pub struct MemoryLog {
     pub lines: RefCell<Vec<String>>,
+    masks: Masks,
 }
 
 impl MemoryLog {
@@ -309,10 +321,20 @@ impl MemoryLog {
 
 impl Log for MemoryLog {
     fn info(&self, line: &str) {
+        let line = self.masks.apply(line);
         self.lines.borrow_mut().push(format!("INFO: {line}"));
     }
 
     fn warn(&self, line: &str) {
+        let line = self.masks.apply(line);
         self.lines.borrow_mut().push(format!("WARN: {line}"));
+    }
+
+    fn mask(&self, secret: &Secret) {
+        self.masks.add(secret);
+    }
+
+    fn unmask(&self, secret: &Secret) {
+        self.masks.remove(secret);
     }
 }

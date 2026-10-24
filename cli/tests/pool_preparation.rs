@@ -10,7 +10,9 @@ mod support;
 
 use runners_cli::profile::Profile;
 use runners_cli::runtime::backend::{Backend, BackendError};
+use runners_cli::runtime::board::Board;
 use runners_cli::runtime::fake::{Call, FakeBackend, FakeContainer, MemoryLog};
+use runners_cli::runtime::log::Log;
 use runners_cli::runtime::pool::{NoPoolStartable, PoolSpec, pools_from_plan, prepare_pools};
 use runners_cli::validate::validate;
 use support::{TempDir, write_token_file};
@@ -74,8 +76,26 @@ async fn a_missing_or_blank_token_and_a_diagnostics_pool_are_skipped_and_the_res
     );
     let backend = FakeBackend::default();
     let log = MemoryLog::default();
-    let prepared = prepare_pools(&backend, all.clone(), &log).await.unwrap();
+    let board = Board::default();
+    let prepared = prepare_pools(&backend, all.clone(), &log, &board)
+        .await
+        .unwrap();
     assert_eq!(names(&prepared), ["alpha"]);
+    let fields = board.fields();
+    assert_eq!(fields.len(), 3, "{fields:?}");
+    assert_eq!(fields[0], ("pool", "alpha: running".to_string()));
+    assert!(
+        fields[1]
+            .1
+            .starts_with("bravo: skipped: diagnostics are not supported"),
+        "{fields:?}"
+    );
+    assert!(
+        fields[2]
+            .1
+            .starts_with("charlie: skipped: repositories[2]: token file at "),
+        "{fields:?}"
+    );
     let warnings = log.lines();
     assert_eq!(warnings.len(), 2, "{warnings:?}");
     assert!(
@@ -89,12 +109,18 @@ async fn a_missing_or_blank_token_and_a_diagnostics_pool_are_skipped_and_the_res
             && warnings[1].ends_with(" is empty."),
         "{warnings:?}"
     );
+    // every token read is masked from then on, whatever line it reaches.
+    log.info("forwarded: ghp_a and ghp_b");
+    assert_eq!(
+        log.lines().last().unwrap(),
+        "INFO: forwarded: <masked> and <masked>"
+    );
 
     // a missing file is named as missing.
     let fresh = TempDir::new();
     let missing = pools(&fresh, &[("alpha", "ghp_a")]);
     let log = MemoryLog::default();
-    let prepared = prepare_pools(&FakeBackend::default(), missing, &log)
+    let prepared = prepare_pools(&FakeBackend::default(), missing, &log, &Board::default())
         .await
         .unwrap();
     assert_eq!(names(&prepared), ["alpha"]);
@@ -138,9 +164,14 @@ async fn on_macos_a_token_file_that_is_not_0600_skips_its_pool_and_the_rest_run(
     let charlie = all.iter().find(|pool| pool.name == "charlie").unwrap();
     std::fs::set_permissions(&charlie.token_path, std::fs::Permissions::from_mode(0o644)).unwrap();
     let log = MemoryLog::default();
-    let prepared = prepare_pools(&FakeBackend::default(), all.clone(), &log)
-        .await
-        .unwrap();
+    let prepared = prepare_pools(
+        &FakeBackend::default(),
+        all.clone(),
+        &log,
+        &Board::default(),
+    )
+    .await
+    .unwrap();
     assert_eq!(names(&prepared), ["alpha"]);
     let warnings = log.lines();
     assert!(
@@ -157,7 +188,7 @@ async fn without_a_startable_pool_docker_is_not_waited_for_and_there_is_nothing_
     let scratch = TempDir::new();
     let backend = FakeBackend::default();
     let log = MemoryLog::default();
-    let result = prepare_pools(&backend, pools(&scratch, &[]), &log).await;
+    let result = prepare_pools(&backend, pools(&scratch, &[]), &log, &Board::default()).await;
     assert_eq!(result.unwrap_err(), NoPoolStartable);
     assert!(backend.calls().is_empty());
     assert_eq!(log.lines().len(), 3);
@@ -182,9 +213,14 @@ async fn stale_cleanup_removes_only_the_pools_own_unlabelled_containers() {
         ];
     }
     let log = MemoryLog::default();
-    let prepared = prepare_pools(&backend, pools(&scratch, &[("alpha", "t")]), &log)
-        .await
-        .unwrap();
+    let prepared = prepare_pools(
+        &backend,
+        pools(&scratch, &[("alpha", "ghp_pooltoken")]),
+        &log,
+        &Board::default(),
+    )
+    .await
+    .unwrap();
     assert_eq!(names(&prepared), ["alpha"]);
     let state = backend.state.borrow();
     let removed: Vec<&Vec<String>> = state
@@ -220,8 +256,9 @@ async fn a_name_that_only_contains_the_pool_is_listed_but_not_removed() {
     assert_eq!(listing.names, std::slice::from_ref(&lookalike));
     prepare_pools(
         &backend,
-        pools(&scratch, &[("alpha", "t")]),
+        pools(&scratch, &[("alpha", "ghp_pooltoken")]),
         &MemoryLog::default(),
+        &Board::default(),
     )
     .await
     .unwrap();
@@ -246,8 +283,12 @@ async fn a_labelled_container_is_never_removed_and_refuses_the_pool() {
     let log = MemoryLog::default();
     let result = prepare_pools(
         &backend,
-        pools(&scratch, &[("alpha", "t"), ("charlie", "t")]),
+        pools(
+            &scratch,
+            &[("alpha", "ghp_pooltoken"), ("charlie", "ghp_pooltoken")],
+        ),
         &log,
+        &Board::default(),
     )
     .await;
     let prepared = result.unwrap();
@@ -288,7 +329,13 @@ async fn a_listing_a_removal_or_a_volume_failure_is_handled_per_pool() {
         "Diagnostic lifecycle identification unavailable; stale cleanup refused.",
     ));
     let log = MemoryLog::default();
-    let result = prepare_pools(&backend, pools(&scratch, &[("alpha", "t")]), &log).await;
+    let result = prepare_pools(
+        &backend,
+        pools(&scratch, &[("alpha", "ghp_pooltoken")]),
+        &log,
+        &Board::default(),
+    )
+    .await;
     assert_eq!(result.unwrap_err(), NoPoolStartable);
     assert!(
         log.lines()[2].ends_with("stale cleanup refused."),
@@ -304,9 +351,14 @@ async fn a_listing_a_removal_or_a_volume_failure_is_handled_per_pool() {
         state.remove_error = Some(BackendError::new("no such daemon"));
     }
     let log = MemoryLog::default();
-    let prepared = prepare_pools(&backend, pools(&scratch, &[("alpha", "t")]), &log)
-        .await
-        .unwrap();
+    let prepared = prepare_pools(
+        &backend,
+        pools(&scratch, &[("alpha", "ghp_pooltoken")]),
+        &log,
+        &Board::default(),
+    )
+    .await
+    .unwrap();
     assert_eq!(names(&prepared), ["alpha"]);
     assert!(
         log.lines()
@@ -320,8 +372,12 @@ async fn a_listing_a_removal_or_a_volume_failure_is_handled_per_pool() {
     let log = MemoryLog::default();
     let prepared = prepare_pools(
         &backend,
-        pools(&scratch, &[("alpha", "t"), ("charlie", "t")]),
+        pools(
+            &scratch,
+            &[("alpha", "ghp_pooltoken"), ("charlie", "ghp_pooltoken")],
+        ),
         &log,
+        &Board::default(),
     )
     .await
     .unwrap();

@@ -11,6 +11,7 @@ use std::time::Duration;
 use tokio::sync::{Notify, watch};
 
 use crate::runtime::fake::FakeClock;
+use crate::runtime::pool::NoPoolStartable;
 use crate::runtime::worker::wait_for_stop;
 use crate::validate::Plan;
 
@@ -28,6 +29,12 @@ pub enum CoreStep {
     },
     /// Returns `Ok` at once, though no stop was asked for.
     EndWithoutStop,
+    /// Panics with `message`.
+    Panic(String),
+    /// Fails at once because no pool could start.
+    NothingToRun,
+    /// Never ends, even when the stop is asked for.
+    IgnoreStop,
     /// Runs until the stop is asked for.
     RunUntilStop,
 }
@@ -44,6 +51,8 @@ pub struct FakeCore {
     /// When set, a core that was asked to stop waits for this before it ends, which
     /// holds the instance in its stopping state.
     pub end_gate: RefCell<Option<Rc<Notify>>>,
+    /// What the core reports to `status`.
+    pub report: RefCell<Vec<(&'static str, String)>>,
 }
 
 impl FakeCore {
@@ -78,9 +87,18 @@ impl Core for FakeCore {
                 Err(CoreFailure {
                     message,
                     containers,
+                    nothing_to_run: false,
                 })
             }
             Some(CoreStep::EndWithoutStop) => Ok(()),
+            #[allow(clippy::panic)]
+            Some(CoreStep::Panic(message)) => panic!("{message}"),
+            Some(CoreStep::NothingToRun) => Err(CoreFailure {
+                message: NoPoolStartable.to_string(),
+                containers: Vec::new(),
+                nothing_to_run: true,
+            }),
+            Some(CoreStep::IgnoreStop) => std::future::pending().await,
             Some(CoreStep::RunUntilStop) | None => {
                 wait_for_stop(&mut stop).await;
                 let gate = self.end_gate.borrow().clone();
@@ -90,6 +108,10 @@ impl Core for FakeCore {
                 Ok(())
             }
         }
+    }
+
+    fn report(&self) -> Vec<(&'static str, String)> {
+        self.report.borrow().clone()
     }
 }
 

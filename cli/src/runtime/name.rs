@@ -12,9 +12,15 @@ const MILLIS_PER_DAY: u64 = 86_400_000;
 /// Returns the next container name of a pool's slot, counting slots from 1.
 #[must_use]
 pub fn job_container_name(pool: &str, slot: u32, now: SystemTime) -> String {
-    let since_epoch = now.duration_since(UNIX_EPOCH).unwrap_or(Duration::ZERO);
-    let millis = u64::try_from(since_epoch.as_millis()).unwrap_or(u64::MAX);
-    format!("{pool}-{slot}-{}", format_stamp(millis))
+    format!("{pool}-{slot}-{}", stamp(now))
+}
+
+/// Writes `time` as `yyyyMMddHHmmssfff` in UTC; a time before the epoch as the
+/// epoch.
+#[must_use]
+pub fn stamp(time: SystemTime) -> String {
+    let since_epoch = time.duration_since(UNIX_EPOCH).unwrap_or(Duration::ZERO);
+    format_stamp(u64::try_from(since_epoch.as_millis()).unwrap_or(u64::MAX))
 }
 
 /// Writes milliseconds since the Unix epoch as `yyyyMMddHHmmssfff` in UTC. A time

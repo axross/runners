@@ -9,6 +9,7 @@
 )]
 
 pub mod docker;
+pub mod host;
 pub mod instance;
 pub mod stub;
 
