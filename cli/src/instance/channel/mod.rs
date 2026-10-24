@@ -36,7 +36,8 @@ use unix::connect as platform_connect;
 #[cfg(windows)]
 use windows::connect as platform_connect;
 
-/// How many connections the server serves at once; more wait for a turn.
+/// How many connections the server serves at once. On Unix a further one waits for
+/// a turn; on Windows it is closed unanswered.
 const MAX_CONNECTIONS: usize = 16;
 
 /// Why the channel could not be opened.

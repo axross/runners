@@ -492,7 +492,13 @@ it.
   request to the instance and waits for the answer. Up to 16 connections are served
   at once; a further one is closed unanswered. A connection that sends nothing
   holds its thread until it disconnects, because the blocking calls have no
-  timeout. Another user who creates this user's pipe name first stops the channel
+  timeout. Closing the channel wakes the accepting thread with a connection of its
+  own, trying twice, and waits for that thread only when a wake connects; otherwise
+  the thread stays blocked until the next client, which it closes unanswered, or
+  until the process ends. Serving threads are not joined, and a connection that
+  sends nothing keeps its thread's handle on the instance's request queue, so the
+  instance cannot rely on that queue closing to learn that the channel has closed.
+  Another user who creates this user's pipe name first stops the channel
   from opening, and a client of this user would then reach that user's pipe; that
   is the accepted cost of squatting a name on a single-user host.
 - **Unix.** The socket `control.sock` is in a directory that must be a directory,

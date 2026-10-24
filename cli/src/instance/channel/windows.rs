@@ -20,11 +20,22 @@ use super::{CONNECT_TIMEOUT, ChannelError, ClientError, MAX_CONNECTIONS};
 
 type Stream = DuplexPipeStream<pipe_mode::Bytes>;
 
-/// How long closing the server waits to connect to its own pipe.
+/// How long closing the server waits to connect to its own pipe, each time.
 const WAKE_TIMEOUT: Duration = Duration::from_millis(500);
+/// How often closing the server tries to connect to its own pipe.
+const WAKE_ATTEMPTS: usize = 2;
 
-/// The listening pipe. Dropping it stops the accepting thread, and once that thread
-/// has ended no new client can reach the pipe.
+/// The listening pipe.
+///
+/// Dropping it tells the accepting thread to stop and wakes it with a connection of
+/// its own, and waits for the thread to end only when that connection is made. A
+/// client the thread accepts after the drop is closed unanswered. When no wake
+/// connects, the thread stays blocked in `accept` and keeps the pipe open until the
+/// next client arrives or the process ends.
+///
+/// Serving threads are never joined. A client that has connected and sends nothing
+/// holds its thread, and that thread's clone of the request sender, until it
+/// disconnects, so the request channel need not close when the server is dropped.
 #[derive(Debug)]
 pub struct Server {
     closing: Arc<AtomicBool>,
@@ -37,11 +48,16 @@ impl Drop for Server {
         self.closing.store(true, Ordering::SeqCst);
         // accept() returns only when a client connects, and it skips a client that is
         // already gone, so the waking connection stays open until the thread ends
-        let wake = Stream::connect_by_path_with_wait_mode(
-            OsStr::new(&self.name),
-            ConnectWaitMode::Timeout(WAKE_TIMEOUT),
-        );
-        if wake.is_ok()
+        let wake = (0..WAKE_ATTEMPTS).find_map(|_| {
+            Stream::connect_by_path_with_wait_mode(
+                OsStr::new(&self.name),
+                ConnectWaitMode::Timeout(WAKE_TIMEOUT),
+            )
+            .ok()
+        });
+        // without a wake the join could wait for a client that never comes, so the
+        // thread is left to end at the next client or with the process
+        if wake.is_some()
             && let Some(accepting) = self.accepting.take()
         {
             let _ = accepting.join();
