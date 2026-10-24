@@ -88,27 +88,7 @@ mod unix {
     /// How often creating the file races with its removal before giving up.
     const OPEN_ATTEMPTS: usize = 3;
 
-    // `O_NOFOLLOW` and `O_NONBLOCK`, which `std` does not name; libc is not a direct
-    // dependency, so the values are libc's for each target the lock is built for
-    #[cfg(target_os = "macos")]
-    const NO_FOLLOW_NO_WAIT: i32 = 0x0100 | 0x0004;
-    #[cfg(all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x86")))]
-    const NO_FOLLOW_NO_WAIT: i32 = 0x2_0000 | 0x0800;
-    #[cfg(all(target_os = "linux", any(target_arch = "aarch64", target_arch = "arm")))]
-    const NO_FOLLOW_NO_WAIT: i32 = 0x8000 | 0x0800;
-    #[cfg(not(any(
-        target_os = "macos",
-        all(
-            target_os = "linux",
-            any(
-                target_arch = "x86_64",
-                target_arch = "x86",
-                target_arch = "aarch64",
-                target_arch = "arm"
-            )
-        )
-    )))]
-    compile_error!("the instance lock knows O_NOFOLLOW and O_NONBLOCK only on macOS and Linux");
+    const NO_FOLLOW_NO_WAIT: i32 = libc::O_NOFOLLOW | libc::O_NONBLOCK;
 
     /// The open file; the lock lasts as long as it does.
     #[derive(Debug)]

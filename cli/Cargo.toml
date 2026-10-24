@@ -54,6 +54,11 @@ rustls = { version = "0.23.46", default-features = false, features = ["ring", "s
 interprocess = { version = "2.4.7", default-features = false }
 winsafe = { version = "0.0.29", default-features = false, features = ["advapi"] }
 
+# The Unix lock opens its file with O_NOFOLLOW and O_NONBLOCK, which std does not
+# name. tokio already depends on libc, so this adds no crate.
+[target.'cfg(unix)'.dependencies]
+libc = { version = "0.2.191", default-features = false }
+
 [lints.rust]
 unsafe_code = "forbid"
 
