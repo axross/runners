@@ -35,9 +35,16 @@ doc = false
 clap = { version = "4.6.7", default-features = false, features = ["std", "help", "usage", "error-context"] }
 regex = { version = "1.13.1", default-features = false, features = ["std", "unicode-perl"] }
 serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
-tokio = { version = "1.54.1", default-features = false, features = ["rt", "time", "sync", "io-util", "process", "macros"] }
+tokio = { version = "1.54.1", default-features = false, features = ["rt", "time", "sync", "io-util", "process", "macros", "net"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider"] }
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
+
+# The single-instance lock and the control channel are named pipes on Windows, where
+# interprocess owns the pipe calls and winsafe reads the current user's SID. Unix needs
+# neither: std and tokio cover its lock and socket.
+[target.'cfg(windows)'.dependencies]
+interprocess = { version = "2.4.7", default-features = false }
+winsafe = { version = "0.0.29", default-features = false, features = ["advapi"] }
 
 [lints.rust]
 unsafe_code = "forbid"

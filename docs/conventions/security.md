@@ -73,12 +73,12 @@ each against the lock's checksum. `cargo-deny` is a mise tool, pinned in
 [`cli/deny.toml`](../../cli/deny.toml) allows crates.io only, a reviewed licence
 allowlist, and one version of each crate. `serde_derive` and the crates it uses
 (`syn`, `quote`, `proc-macro2`) run code at build time, as do `tokio-macros`,
-`displaydoc`, `yoke-derive`, `zerofrom-derive`, and `zerovec-derive`, which the async
-runtime and the HTTPS client's URL parser bring. They are locked by
+`displaydoc`, `yoke-derive`, `zerofrom-derive`, `zerovec-derive`, and `doctest-file`,
+which the async runtime, the HTTPS client's URL parser, and the Windows pipe crate bring. They are locked by
 `Cargo.lock` checksums and covered by `cargo-deny` like the other crates, and a
 new procedural-macro crate needs the maintainer's review. The HTTPS client's TLS
-stack also needs the `ISC` and `BSD-3-Clause` licences on the allowlist; the
-maintainer approved both, and [CLI](../operations/cli.md#dependencies) records why
+stack also needs the `ISC` and `BSD-3-Clause` licences on the allowlist, and the
+Windows pipe crate needs `0BSD`; the maintainer approved all three, and [CLI](../operations/cli.md#dependencies) records why
 each crate is there. `rustup` itself is
 installed by [`.agents/install-rust`](../../.agents/install-rust) from a pinned
 `rustup-init` release for `x86_64-unknown-linux-gnu`, refused unless its SHA-256
