@@ -1,7 +1,10 @@
 //! Reading a pool's token file.
 //!
 //! The file is read again at every registration, so a rotated token applies to the
-//! next job without a restart. The token is trimmed and never printed.
+//! next job without a restart. The token is trimmed and never printed. On macOS the
+//! file must also be private: a regular file owned by the current user with mode
+//! `0600`. On Windows its access control list is not checked, because no safe call
+//! reads it.
 
 use std::fmt;
 use std::io::{self, Read};
@@ -20,6 +23,8 @@ pub enum TokenFileError {
     Empty(String),
     TooLarge(String),
     NotText(String),
+    /// The file is not private to the current user; the text says how.
+    NotPrivate(String),
     Unreadable(String, io::ErrorKind),
 }
 
@@ -33,6 +38,11 @@ impl fmt::Display for TokenFileError {
                 "token file at {path} is larger than {MAX_TOKEN_FILE_BYTES} bytes"
             ),
             Self::NotText(path) => write!(f, "token file at {path} is not UTF-8 text"),
+            Self::NotPrivate(detail) => write!(
+                f,
+                "token file is not private: {detail}; it must be a regular file owned by the \
+                 current user with mode 0600"
+            ),
             Self::Unreadable(path, kind) => {
                 write!(f, "token file at {path} cannot be read ({kind})")
             }
@@ -43,7 +53,8 @@ impl fmt::Display for TokenFileError {
 impl std::error::Error for TokenFileError {}
 
 /// Reads and trims the token. A file that is missing, is not a regular file, is
-/// blank after trimming, or is not UTF-8 text is an error.
+/// blank after trimming, or is not UTF-8 text is an error, and so on macOS is one
+/// that is not private.
 ///
 /// # Errors
 ///
@@ -55,6 +66,8 @@ pub fn read_token(path: &Path) -> Result<Secret, TokenFileError> {
     if !metadata.is_file() {
         return Err(TokenFileError::NotFound(shown));
     }
+    #[cfg(target_os = "macos")]
+    require_private(path, &metadata, current_uid(&shown)?)?;
     let mut bytes = Vec::new();
     file.take(MAX_TOKEN_FILE_BYTES + 1)
         .read_to_end(&mut bytes)
@@ -68,6 +81,23 @@ pub fn read_token(path: &Path) -> Result<Secret, TokenFileError> {
         return Err(TokenFileError::Empty(shown));
     }
     Ok(Secret::new(token.to_string()))
+}
+
+/// Checks the open file's metadata, so the answer is about the file that is read.
+/// Only macOS calls it; the tests on the other Unix systems check it too.
+#[cfg(all(unix, any(target_os = "macos", test)))]
+fn require_private(
+    path: &Path,
+    metadata: &std::fs::Metadata,
+    uid: u32,
+) -> Result<(), TokenFileError> {
+    crate::private::check_private_file(path, metadata, uid)
+        .map_err(|error| TokenFileError::NotPrivate(error.to_string()))
+}
+
+#[cfg(target_os = "macos")]
+fn current_uid(shown: &str) -> Result<u32, TokenFileError> {
+    crate::private::current_uid().map_err(|error| classify(shown, &error))
 }
 
 fn classify(path: &str, error: &io::Error) -> TokenFileError {
@@ -87,7 +117,15 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("token");
         std::fs::write(&file, bytes).unwrap();
+        #[cfg(unix)]
+        set_mode(&file, 0o600);
         (dir, file)
+    }
+
+    #[cfg(unix)]
+    fn set_mode(path: &Path, mode: u32) {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
     }
 
     #[test]
@@ -125,6 +163,39 @@ mod tests {
         assert!(matches!(
             read_token(&file),
             Err(TokenFileError::TooLarge(_))
+        ));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_file_that_is_not_0600_or_not_the_users_own_is_not_private() {
+        let (dir, file) = temp("private", b"ghp_abc\n");
+        let uid = crate::private::current_uid().unwrap();
+        let metadata = std::fs::metadata(&file).unwrap();
+        assert_eq!(require_private(&file, &metadata, uid), Ok(()));
+        let error = require_private(&file, &metadata, uid.wrapping_add(1)).unwrap_err();
+        assert!(matches!(error, TokenFileError::NotPrivate(_)), "{error}");
+        assert!(error.to_string().contains("owned by user"), "{error}");
+        for mode in [0o644, 0o640, 0o400] {
+            set_mode(&file, mode);
+            let metadata = std::fs::metadata(&file).unwrap();
+            let error = require_private(&file, &metadata, uid).unwrap_err();
+            assert!(error.to_string().contains("0600"), "{mode:o}: {error}");
+            assert!(!error.to_string().contains("ghp_abc"), "{error}");
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn on_macos_a_token_file_that_is_not_private_is_refused() {
+        let (dir, file) = temp("macos", b"ghp_abc\n");
+        assert_eq!(read_token(&file).unwrap().expose(), "ghp_abc");
+        set_mode(&file, 0o644);
+        assert!(matches!(
+            read_token(&file),
+            Err(TokenFileError::NotPrivate(_))
         ));
         std::fs::remove_dir_all(dir).unwrap();
     }

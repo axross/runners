@@ -15,7 +15,7 @@ use runners_cli::runtime::clock::SystemClock;
 use runners_cli::runtime::fake::{Call, FakeBackend, FakeClock, FakeRegistrar, MemoryLog};
 use runners_cli::runtime::registration::RegistrationError;
 use runners_cli::runtime::worker::{run_slot, stop_channel};
-use support::{TempDir, slot_spec};
+use support::{TempDir, slot_spec, write_token_file};
 
 const TOKEN: &str = "ghp_slottoken";
 const START: u64 = 1_709_618_828_009;
@@ -31,7 +31,7 @@ struct Rig {
 impl Rig {
     fn new() -> Self {
         let scratch = TempDir::new();
-        scratch.write("token", format!("  {TOKEN}\n").as_bytes());
+        scratch.write_token("token", format!("  {TOKEN}\n").as_bytes());
         Self {
             scratch,
             backend: FakeBackend::default(),
@@ -194,7 +194,7 @@ async fn a_missing_or_blank_token_file_is_a_backoff_not_a_registration() {
             receiver,
         )
         .await;
-        std::fs::write(&path, "  \r\n").unwrap();
+        write_token_file(&path, b"  \r\n");
     }
     let warnings = rig.warnings();
     assert!(

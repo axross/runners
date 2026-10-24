@@ -286,7 +286,7 @@ async fn each_registration_failure_goes_into_the_slots_backoff_and_a_later_succe
         Reply::json(r#"{"encoded_jit_config":"the-jit-config"}"#),
     ]);
     let scratch = TempDir::new();
-    let token = scratch.write("token", format!("{TOKEN}\n").as_bytes());
+    let token = scratch.write_token("token", format!("{TOKEN}\n").as_bytes());
     let slot = slot_spec(token);
     let registrar = GitHubRegistrar::new(Some(&stub.address), short()).unwrap();
     let backend = FakeBackend::default();
