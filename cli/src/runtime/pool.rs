@@ -139,14 +139,7 @@ impl PoolSpec {
                 cpu_count: self.cpu_count,
                 cpu_offset: *offset,
                 memory_gb: self.memory_gb,
-                mounts: self
-                    .volumes
-                    .iter()
-                    .map(|volume| Mount {
-                        volume: volume.name.clone(),
-                        target: volume.mount_path.clone(),
-                    })
-                    .collect(),
+                mounts: self.volumes.iter().map(Mount::from).collect(),
                 image: self.image.clone(),
             })
             .collect()

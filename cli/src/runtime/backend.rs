@@ -40,6 +40,15 @@ pub struct Mount {
     pub target: String,
 }
 
+impl From<&PlannedVolume> for Mount {
+    fn from(volume: &PlannedVolume) -> Self {
+        Self {
+            volume: volume.name.clone(),
+            target: volume.mount_path.clone(),
+        }
+    }
+}
+
 /// What `run_container` needs under the run contract.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContainerSpec {

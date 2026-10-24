@@ -167,13 +167,8 @@ pub fn volume_create_arguments(volume: &PlannedVolume) -> Vec<String> {
 #[must_use]
 pub fn volume_chown_arguments(image: &str, volumes: &[PlannedVolume]) -> Vec<String> {
     let mut arguments = strings(&["run", "--rm", "--pull", "never", "--user", "root"]);
-    for volume in volumes {
-        arguments.push("--mount".to_string());
-        arguments.push(format!(
-            "type=volume,source={},target={}",
-            volume.name, volume.mount_path
-        ));
-    }
+    let mounts: Vec<Mount> = volumes.iter().map(Mount::from).collect();
+    arguments.extend(mount_arguments(&mounts));
     arguments.extend(strings(&[image, "chown", "runner:docker"]));
     arguments.extend(volumes.iter().map(|volume| volume.mount_path.clone()));
     arguments
