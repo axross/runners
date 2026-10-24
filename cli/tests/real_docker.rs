@@ -30,7 +30,8 @@ struct Cleanup {
 }
 
 impl Cleanup {
-    fn leftovers(&self) -> Vec<String> {
+    /// The pool's containers, or `None` when `docker ps` could not run or failed.
+    fn try_leftovers(&self) -> Option<Vec<String>> {
         let output = Command::new("docker")
             .args([
                 "ps",
@@ -41,18 +42,24 @@ impl Cleanup {
                 "{{.Names}}",
             ])
             .output()
-            .unwrap();
-        assert!(output.status.success(), "docker ps failed");
-        String::from_utf8_lossy(&output.stdout)
-            .lines()
-            .map(str::to_string)
-            .collect()
+            .ok()?;
+        output.status.success().then(|| {
+            String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .map(str::to_string)
+                .collect()
+        })
+    }
+
+    fn leftovers(&self) -> Vec<String> {
+        self.try_leftovers().expect("docker ps failed")
     }
 }
 
 impl Drop for Cleanup {
+    // a panic here while another unwinds would abort, so a failed listing is empty.
     fn drop(&mut self) {
-        let names = self.leftovers_quietly();
+        let names = self.try_leftovers().unwrap_or_default();
         if !names.is_empty() {
             let _ = Command::new("docker")
                 .arg("rm")
@@ -63,28 +70,6 @@ impl Drop for Cleanup {
         let _ = Command::new("docker")
             .args(["volume", "rm", "-f", &self.volume])
             .output();
-    }
-}
-
-impl Cleanup {
-    fn leftovers_quietly(&self) -> Vec<String> {
-        Command::new("docker")
-            .args([
-                "ps",
-                "-a",
-                "--filter",
-                &format!("name={}", self.pool),
-                "--format",
-                "{{.Names}}",
-            ])
-            .output()
-            .map(|output| {
-                String::from_utf8_lossy(&output.stdout)
-                    .lines()
-                    .map(str::to_string)
-                    .collect()
-            })
-            .unwrap_or_default()
     }
 }
 

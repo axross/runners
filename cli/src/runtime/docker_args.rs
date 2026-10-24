@@ -73,7 +73,7 @@ fn mount_arguments(mounts: &[Mount]) -> Vec<String> {
 #[must_use]
 pub fn job_run_arguments(spec: &ContainerSpec) -> Vec<String> {
     let memory = format!("{}g", spec.memory_gb);
-    let mut arguments: Vec<String> = [
+    let mut arguments = strings(&[
         "run",
         "--rm",
         "--pull",
@@ -88,26 +88,19 @@ pub fn job_run_arguments(spec: &ContainerSpec) -> Vec<String> {
         &memory,
         "--memory-swap",
         &memory,
-    ]
-    .iter()
-    .map(|argument| (*argument).to_string())
-    .collect();
+    ]);
     arguments.extend(mount_arguments(&spec.mounts));
-    arguments.extend(
-        [
-            "-e",
-            JIT_VARIABLE,
-            &spec.image,
-            "bash",
-            "-c",
-            &launcher(),
-            "--",
-            &spec.cpuset,
-            &spec.run_command,
-        ]
-        .iter()
-        .map(|argument| (*argument).to_string()),
-    );
+    arguments.extend(strings(&[
+        "-e",
+        JIT_VARIABLE,
+        &spec.image,
+        "bash",
+        "-c",
+        &launcher(),
+        "--",
+        &spec.cpuset,
+        &spec.run_command,
+    ]));
     arguments
 }
 
