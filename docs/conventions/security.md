@@ -354,33 +354,21 @@ later host:
 
 ## One Instance per Machine, Reached Only by Its User
 
-The CLI's single-instance lock and control channel (see
-[CLI](../operations/cli.md#the-instance-layer)) decide who can start, stop, or
-query the process that holds every pool's token, so their rules are security rules:
+The CLI's single-instance lock and control channel decide who can start, stop, or
+query the process that holds every pool's token, so who can reach them is a
+security rule. [CLI](../operations/cli.md#the-instance-layer) owns how each is
+built: its names, modes, and checks.
 
-- The lock is machine-wide and no child process inherits it. On Windows it is the
-  first instance of `\\.\pipe\runners-instance`, which admits only its creator and
-  carries no message; on macOS it is an advisory lock on
-  `/Users/Shared/.runners-instance.lock`, mode `0644` whatever the umask, so another
-  user's `start` is refused by the lock rather than unable to open it. The open
-  follows no link at that path and never waits, and only a regular file is locked,
-  so a link, a FIFO, or anything else planted there is "cannot be opened": nothing
-  behind a link is opened, and a FIFO cannot hang `start`. After locking, the path
-  must still name the locked file, so a replacement makes the lock count as lost.
-  That check runs once, when the lock is taken. The lock does not say who holds
-  it, and another local user can hold it or squat the name first and so keep `start`
-  from running. A user who created the lock file first owns it, so that user, or
-  anyone else who may remove it from its directory, can remove and recreate it
-  while an instance holds it, and a second instance can then lock the new file.
-  Both are accepted on a single-user host, and `start` reports a held lock.
-- The control channel is per user. On Windows it is
-  `\\.\pipe\runners-control-<user SID>`, created as the first instance with the
-  descriptor `D:P(A;;GA;;;<user SID>)` and remote clients rejected; a CI step reads
-  the live pipe's descriptor back. On Unix it is `control.sock`, mode `0600`, in a
-  directory that must be a real directory owned by the current user with mode
-  `0700`, which the CLI checks and never repairs; the server also requires each
-  peer's user ID to be its own, and a client checks the directory before it
-  connects.
+- The lock is machine-wide and no child process inherits it. Every local user can
+  try it, and anything planted at its path is refused rather than opened or waited
+  on. The lock does not say who holds it, so another local user can hold it or take
+  its name first and so keep `start` from running. On Unix the lock file's owner
+  can also replace the file while an instance holds it, so a second instance can
+  start: the [Unix residual case](../operations/cli.md#single-instance-lock). Both
+  are accepted on a single-user host, and `start` reports a held lock.
+- The control channel is per user: only the instance's own user can reach it, and
+  no remote client can. Another user who takes this user's pipe name first stops
+  the channel from opening, which is also accepted on a single-user host.
 - No request carries a configuration path for the instance to read, and no
   response carries a token or a JIT configuration. A resume names a path only so
   the instance can compare it with the one it started with.
