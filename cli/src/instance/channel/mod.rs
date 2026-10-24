@@ -111,12 +111,13 @@ impl ChannelServer {
     }
 
     /// Like [`open`](Self::open), but accepts only peers whose user ID is `peer_uid`.
-    /// A test uses it to show that a peer of another user is turned away.
+    /// A test uses it to show that a peer of another user is turned away; a debug
+    /// build only.
     ///
     /// # Errors
     ///
     /// See [`ChannelError`].
-    #[cfg(unix)]
+    #[cfg(all(unix, debug_assertions))]
     #[doc(hidden)]
     pub fn open_for_peer(
         lock: &InstanceLock,
@@ -126,7 +127,7 @@ impl ChannelServer {
     ) -> Result<Self, ChannelError> {
         let _ = lock;
         Ok(Self {
-            inner: Inner::open_for_peer(roots, requests, peer_uid)?,
+            inner: Inner::open_accepting(roots, requests, peer_uid)?,
         })
     }
 }

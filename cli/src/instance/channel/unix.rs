@@ -89,10 +89,11 @@ impl Server {
         requests: mpsc::UnboundedSender<Incoming>,
     ) -> Result<Self, ChannelError> {
         let uid = private::current_uid().map_err(|error| io_error("finding the user", &error))?;
-        Self::open_for_peer(roots, requests, uid)
+        Self::open_accepting(roots, requests, uid)
     }
 
-    pub fn open_for_peer(
+    /// Opens the socket and accepts only peers whose user ID is `peer_uid`.
+    pub fn open_accepting(
         roots: &Roots,
         requests: mpsc::UnboundedSender<Incoming>,
         peer_uid: u32,
