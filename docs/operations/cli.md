@@ -207,16 +207,17 @@ JIT registration, and the loop of one slot. No command reaches it yet, because
 through its seams. It reproduces the PowerShell supervisor, and where it differs
 the difference is listed here.
 
-| Module                                              | Holds                                                                                |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `affinity`                                          | The CPU offsets `validate` and the backend share, and the selection of a slot's CPUs |
-| `runtime::backend`                                  | The backend seam                                                                     |
-| `runtime::docker`, `runtime::docker_args`           | The container backend and the exact `docker` argument lists                          |
-| `runtime::registration`, `token`, `scrub`, `secret` | JIT registration, the token file, error text, and the type that hides a secret       |
-| `runtime::name`                                     | Runner and container names, and the test for a pool's own                            |
-| `runtime::pool`                                     | Pools from a plan, and their preparation                                             |
-| `runtime::worker`                                   | The slot loop and its backoff                                                        |
-| `runtime::fake`                                     | In-memory stand-ins for the seams, used by tests                                     |
+| Module                                              | Holds                                                                                  |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `affinity`                                          | The CPU offsets `validate` and the backend share, and the selection of a slot's CPUs   |
+| `runtime::backend`                                  | The backend seam                                                                       |
+| `runtime::docker`, `runtime::docker_args`           | The container backend and the exact `docker` argument lists                            |
+| `runtime::registration`, `token`, `scrub`, `secret` | JIT registration, the token file, error text, and the type that hides a secret         |
+| `runtime::clock`, `runtime::log`                    | The time source and the sink for the runtime's messages, each a seam the tests replace |
+| `runtime::name`                                     | Runner and container names, and the test for a pool's own                              |
+| `runtime::pool`                                     | Pools from a plan, and their preparation                                               |
+| `runtime::worker`                                   | The slot loop and its backoff                                                          |
+| `runtime::fake`                                     | In-memory stand-ins for the seams, used by tests                                       |
 
 ### Backend
 
