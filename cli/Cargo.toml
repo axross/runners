@@ -19,6 +19,14 @@ path = "src/lib.rs"
 name = "runners"
 path = "src/main.rs"
 
+# A stand-in for the `docker` client, built so the tests can run the container backend
+# as a real process. Windows finds only `.exe` programs, so it cannot be a script.
+[[bin]]
+name = "fake-docker"
+path = "helpers/fake_docker.rs"
+test = false
+doc = false
+
 # serde is declared without its default features. Its derive feature runs
 # procedural macros (serde_derive, syn, quote, proc-macro2) at build time, and the
 # JSON reader is in this crate, so there is no JSON parser dependency.
