@@ -12,7 +12,7 @@ use std::fmt;
 use std::io::{self, BufRead, Read};
 use std::path::Path;
 
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::profile::Profile;
 
@@ -223,6 +223,12 @@ impl Response {
         }
     }
 
+    /// The answer to a request the instance ended before it could take or answer.
+    #[must_use]
+    pub fn ending() -> Self {
+        Self::refused("the instance is ending")
+    }
+
     /// Adds a field. `name` is a fixed word without a space.
     #[must_use]
     pub fn with(mut self, name: &str, value: &str) -> Self {
@@ -310,6 +316,25 @@ pub struct Incoming {
     pub reply: oneshot::Sender<Response>,
 }
 
+/// Hands the request on `line` to the instance and returns the receiver its answer
+/// arrives on. Each transport waits on that receiver in its own way.
+///
+/// # Errors
+///
+/// The answer to send at once: the refusal of a line that is not a request, or
+/// [`Response::ending`] when the instance takes no more requests.
+pub fn submit(
+    line: &[u8],
+    requests: &mpsc::UnboundedSender<Incoming>,
+) -> Result<oneshot::Receiver<Response>, Response> {
+    let request = Request::parse(line).map_err(|error| Response::refused(&error.to_string()))?;
+    let (reply, answer) = oneshot::channel();
+    requests
+        .send(Incoming { request, reply })
+        .map_err(|_| Response::ending())?;
+    Ok(answer)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -372,6 +397,29 @@ mod tests {
         assert_eq!(Request::parse(b"\xFF\n"), Err(RequestError::NotText));
         let long = vec![b'a'; MAX_REQUEST_BYTES + 1];
         assert_eq!(Request::parse(&long), Err(RequestError::TooLong));
+    }
+
+    #[test]
+    fn submit_hands_a_request_on_and_answers_anything_else_at_once() {
+        let (requests, mut instance) = mpsc::unbounded_channel();
+        let answer = submit(b"status\n", &requests).unwrap();
+        let incoming = instance.try_recv().unwrap();
+        assert_eq!(incoming.request, Request::Status);
+        incoming.reply.send(Response::ok("running")).unwrap();
+        assert_eq!(answer.blocking_recv(), Ok(Response::ok("running")));
+
+        let refusal = submit(b"STATUS\n", &requests).unwrap_err();
+        assert_eq!(
+            refusal,
+            Response::refused(&RequestError::Unknown.to_string())
+        );
+        assert!(instance.try_recv().is_err());
+
+        drop(instance);
+        assert_eq!(
+            submit(b"stop\n", &requests).unwrap_err(),
+            Response::ending()
+        );
     }
 
     #[test]

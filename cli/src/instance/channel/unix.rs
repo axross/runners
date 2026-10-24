@@ -10,12 +10,12 @@ use std::time::Duration;
 
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::{Semaphore, mpsc, oneshot};
+use tokio::sync::{Semaphore, mpsc};
 use tokio::task::JoinHandle;
 
 use crate::private::{self, FILE_MODE};
 
-use super::super::protocol::{Incoming, MAX_REQUEST_BYTES, Request, Response, line_is_cut};
+use super::super::protocol::{Incoming, MAX_REQUEST_BYTES, Response, line_is_cut, submit};
 use super::super::roots::Roots;
 use super::{ChannelError, ClientError, MAX_CONNECTIONS};
 
@@ -153,23 +153,13 @@ async fn serve(stream: UnixStream, requests: mpsc::UnboundedSender<Incoming>, pe
         Ok(Ok(count)) if count > 0 && !line_is_cut(&line, MAX_REQUEST_BYTES) => {}
         _ => return,
     }
-    let response = match Request::parse(&line) {
-        Ok(request) => dispatch(request, &requests).await,
-        Err(error) => Response::refused(&error.to_string()),
+    let response = match submit(&line, &requests) {
+        Ok(answer) => answer.await.unwrap_or_else(|_| Response::ending()),
+        Err(refusal) => refusal,
     };
     if write.write_all(response.encode().as_bytes()).await.is_ok() {
         let _ = write.shutdown().await;
     }
-}
-
-async fn dispatch(request: Request, requests: &mpsc::UnboundedSender<Incoming>) -> Response {
-    let (reply, answer) = oneshot::channel();
-    if requests.send(Incoming { request, reply }).is_err() {
-        return Response::refused("the instance is ending");
-    }
-    answer
-        .await
-        .unwrap_or_else(|_| Response::refused("the instance is ending"))
 }
 
 /// Connects to this user's socket, after checking its directory is private.

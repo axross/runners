@@ -11,9 +11,9 @@ use interprocess::ConnectWaitMode;
 use interprocess::os::windows::named_pipe::{
     DuplexPipeStream, PipeListener, PipeListenerOptions, PipeMode, pipe_mode,
 };
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 
-use super::super::protocol::{Incoming, MAX_REQUEST_BYTES, Request, Response, read_line_limited};
+use super::super::protocol::{Incoming, MAX_REQUEST_BYTES, Response, read_line_limited, submit};
 use super::super::roots::Roots;
 use super::super::windows::{current_user_sid, name_is_taken, only_user_descriptor};
 use super::{CONNECT_TIMEOUT, ChannelError, ClientError, MAX_CONNECTIONS};
@@ -138,24 +138,16 @@ fn serve(stream: &Stream, requests: &mpsc::UnboundedSender<Incoming>) {
     let Ok(Some(line)) = read_line_limited(&mut reader, MAX_REQUEST_BYTES) else {
         return;
     };
-    let response = match Request::parse(&line) {
-        Ok(request) => dispatch(request, requests),
-        Err(error) => Response::refused(&error.to_string()),
+    let response = match submit(&line, requests) {
+        Ok(answer) => answer
+            .blocking_recv()
+            .unwrap_or_else(|_| Response::ending()),
+        Err(refusal) => refusal,
     };
     let mut writer = stream;
     let _ = writer
         .write_all(response.encode().as_bytes())
         .and_then(|()| writer.flush());
-}
-
-fn dispatch(request: Request, requests: &mpsc::UnboundedSender<Incoming>) -> Response {
-    let (reply, answer) = oneshot::channel();
-    if requests.send(Incoming { request, reply }).is_err() {
-        return Response::refused("the instance is ending");
-    }
-    answer
-        .blocking_recv()
-        .unwrap_or_else(|_| Response::refused("the instance is ending"))
 }
 
 /// Connects to this user's pipe.
