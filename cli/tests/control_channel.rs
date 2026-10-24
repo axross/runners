@@ -300,16 +300,19 @@ async fn no_request_makes_the_instance_read_a_configuration_path_other_than_its_
 #[cfg(unix)]
 mod socket {
     use std::fs;
-    use std::io::{Read, Write};
+    use std::io::{BufRead, BufReader, Read, Write};
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
     use std::os::unix::net::{UnixListener, UnixStream};
     use std::path::Path;
+    use std::process::{Command, Stdio};
 
     use runners_cli::instance::channel::ChannelError;
     use runners_cli::instance::protocol::MAX_REQUEST_BYTES;
     use runners_cli::private::{PrivateError, current_uid};
 
     use super::*;
+
+    const HELPER: &str = env!("CARGO_BIN_EXE_instance-helper");
 
     fn mode(path: &Path) -> u32 {
         fs::symlink_metadata(path).unwrap().mode() & 0o7777
@@ -347,18 +350,52 @@ mod socket {
         assert_eq!(mode(open.roots.channel_directory()), 0o700);
     }
 
-    #[tokio::test(flavor = "current_thread")]
-    async fn the_directory_is_created_private_whatever_the_umask() {
+    /// Has the helper open the channel under `umask`, and returns the directory's
+    /// mode and owner and the socket's mode while it serves.
+    fn opened_under_umask(umask: &str) -> (u32, u32, u32) {
         let root = TempDir::new();
         let roots = Roots::for_tests(root.path());
-        let lock = InstanceLock::acquire(&roots).unwrap();
-        let (sender, _requests) = mpsc::unbounded_channel();
+        let mut helper = Command::new("/bin/sh")
+            .arg("-c")
+            .arg(format!("umask {umask} && exec \"$0\" \"$@\""))
+            .arg(HELPER)
+            .arg("serve")
+            .arg("--root")
+            .arg(root.path())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut address = String::new();
+        BufReader::new(helper.stdout.take().unwrap())
+            .read_line(&mut address)
+            .unwrap();
+        assert_eq!(
+            address.trim_end(),
+            roots.socket_path().display().to_string(),
+            "the helper did not open the channel"
+        );
+        let directory = fs::symlink_metadata(roots.channel_directory()).unwrap();
+        let opened = (
+            directory.mode() & 0o7777,
+            directory.uid(),
+            mode(&roots.socket_path()),
+        );
+        drop(helper.stdin.take());
+        assert!(helper.wait().unwrap().success());
+        opened
+    }
 
-        let _server = ChannelServer::open(&lock, &roots, sender).unwrap();
-
-        assert_eq!(mode(roots.channel_directory()), 0o700);
+    #[test]
+    fn the_directory_and_socket_are_private_under_a_restrictive_and_a_permissive_umask() {
         let uid = current_uid().unwrap();
-        assert_eq!(fs::metadata(roots.channel_directory()).unwrap().uid(), uid);
+        for umask in ["077", "000"] {
+            assert_eq!(
+                opened_under_umask(umask),
+                (0o700, uid, 0o600),
+                "umask {umask}"
+            );
+        }
     }
 
     #[tokio::test(flavor = "current_thread")]

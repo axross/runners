@@ -561,9 +561,10 @@ its contents and modification time. Its tests run one at a time, because a
 process one test spawns holds this process's descriptors until it calls `exec`.
 `control_channel.rs` runs the server and the client: every request, refusals,
 timeouts, several clients at once, a request that cannot make the instance read
-another configuration file, and on Unix the modes, a link or open directory, a long
-path, a leftover socket, and a peer of another user ID, which the test stands in for
-by telling the server to expect a different one.
+another configuration file, and on Unix the modes, also in the helper under a umask
+of `077` and of `000`, a link or open directory, a long path, a leftover socket, a
+request line at and over the length limit, and a peer of another user ID, which the
+test stands in for by telling the server to expect a different one.
 
 Two CI steps cover what one account cannot. On the Linux and macOS hosted runners,
 `tests/ci/other-user-lock.sh` copies the helper to a directory under `/tmp`, holds

@@ -237,7 +237,7 @@ mod tests {
     }
 
     #[test]
-    fn a_directory_is_created_private_whatever_the_umask_allows() {
+    fn a_missing_directory_is_created_0700_and_then_accepted_as_it_is() {
         let parent = scratch("create");
         let dir = parent.join("channel");
         let uid = current_uid().unwrap();
