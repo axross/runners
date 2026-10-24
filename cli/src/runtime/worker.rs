@@ -85,6 +85,23 @@ async fn sleep_or_stop<K: Clock>(
     }
 }
 
+/// Warns that an attempt failed and waits out the backoff, ending early on a stop.
+/// Returns whether a stop was asked for.
+async fn back_off<K: Clock>(
+    log: &dyn Log,
+    clock: &K,
+    stop: &mut watch::Receiver<bool>,
+    backoff: &mut Backoff,
+    label: &str,
+    reason: &str,
+) -> bool {
+    log.warn(&format!(
+        "{label}: {reason} - retrying in {}s.",
+        backoff.current().as_secs()
+    ));
+    sleep_or_stop(clock, stop, backoff.fail()).await
+}
+
 /// Runs one slot until a stop is asked for. A container already running is left to
 /// the stop sequence, which ends it; the loop then returns.
 ///
@@ -109,11 +126,8 @@ pub async fn run_slot<B: Backend, K: Clock, R: Registrar>(
             offset: slot.cpu_offset,
         };
         let Ok(cpuset) = backend.select_cpuset(&request).await else {
-            log.warn(&format!(
-                "{label}: CPU discovery or probe cleanup failed; no registration - retrying in {}s.",
-                backoff.current().as_secs()
-            ));
-            if sleep_or_stop(clock, &mut stop, backoff.fail()).await {
+            let reason = "CPU discovery or probe cleanup failed; no registration";
+            if back_off(log, clock, &mut stop, &mut backoff, &label, reason).await {
                 return;
             }
             continue;
@@ -140,11 +154,8 @@ pub async fn run_slot<B: Backend, K: Clock, R: Registrar>(
         let jit = match registered {
             Ok(jit) => jit,
             Err(reason) => {
-                log.warn(&format!(
-                    "{label}: failed to request a JIT registration ({reason}) - retrying in {}s.",
-                    backoff.current().as_secs()
-                ));
-                if sleep_or_stop(clock, &mut stop, backoff.fail()).await {
+                let reason = format!("failed to request a JIT registration ({reason})");
+                if back_off(log, clock, &mut stop, &mut backoff, &label, &reason).await {
                     return;
                 }
                 continue;
@@ -178,11 +189,7 @@ pub async fn run_slot<B: Backend, K: Clock, R: Registrar>(
                     Ok(code) => format!("container exited with code {code}"),
                     Err(error) => format!("container could not run ({error})"),
                 };
-                log.warn(&format!(
-                    "{label}: {reason} - retrying in {}s.",
-                    backoff.current().as_secs()
-                ));
-                if sleep_or_stop(clock, &mut stop, backoff.fail()).await {
+                if back_off(log, clock, &mut stop, &mut backoff, &label, &reason).await {
                     return;
                 }
             }
