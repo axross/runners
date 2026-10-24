@@ -239,7 +239,13 @@ also runs a `rust` job that formats, lints, and tests the CLI on Linux, Windows,
 and macOS hosted runners, with three more steps on Linux only: the base-address test
 built in the release profile, a build of the runner image's base stage on that
 runner (never pushed), and a test that runs a container through the hosted
-runner's Docker daemon against that image. It also runs the host configuration test under Windows
+runner's Docker daemon against that image. On Linux and macOS a further step holds
+the CLI's single-instance lock with a debug-only test helper and runs a copy of the
+helper as `nobody` through the hosted runner's passwordless `sudo`, failing unless
+that other user is refused the lock. On Windows a further step has the helper open
+the control pipe and reads the live pipe's security descriptor back with
+PowerShell 7, failing unless it grants the current user alone. Neither step needs a
+new action, permission, or secret. It also runs the host configuration test under Windows
 PowerShell 5.1. A pull request from a fork runs without repository secrets.
 [`rust-advisories.yaml`](../../.github/workflows/rust-advisories.yaml) checks the
 CLI's locked crates against the RustSec advisory database every week, on manual

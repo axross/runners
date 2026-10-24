@@ -285,7 +285,13 @@ later host:
   several repositories, or a classic token, would let one leak register runners
   for all of them, and a secret that can register runners for the automation that
   reads it is not a boundary. The token is read from a file on the host on every
-  registration, and the file is restricted to the host user.
+  registration, and the file is restricted to the host user. On macOS the CLI
+  refuses a token file that is not a regular file owned by the current user with
+  mode `0600`, and skips its pool with a warning. On Windows the CLI does not check
+  the token file's access control list, because no safe call reads it, so the
+  restriction rests on the operator's setup: today the Task Scheduler setup
+  restricts each file, and an operator procedure that replaces that setup has to
+  keep an explicit step for it.
 - Multiple execution pools for one repository MUST use the same token file;
   entries for different repositories MUST NOT share it. Extra pools do not expand
   the token's repository authority.
@@ -345,6 +351,36 @@ later host:
   step.
 - `docker run` uses `--pull never`, so a missing local image fails instead of
   pulling a same-named public image.
+
+## One Instance per Machine, Reached Only by Its User
+
+The CLI's single-instance lock and control channel (see
+[CLI](../operations/cli.md#the-instance-layer)) decide who can start, stop, or
+query the process that holds every pool's token, so their rules are security rules:
+
+- The lock is machine-wide and no child process inherits it. On Windows it is the
+  first instance of `\\.\pipe\runners-instance`, which admits only its creator and
+  carries no message; on macOS it is an advisory lock on
+  `/Users/Shared/.runners-instance.lock`, mode `0644` whatever the umask, so another
+  user's `start` is refused by the lock rather than unable to open it. After locking,
+  the path must still name the locked file, so a link or a replacement planted in
+  the shared directory makes the lock count as lost. The lock does not say who holds
+  it, and another local user can hold it or squat the name first and so keep `start`
+  from running; that is accepted on a single-user host, and `start` reports it.
+- The control channel is per user. On Windows it is
+  `\\.\pipe\runners-control-<user SID>`, created as the first instance with the
+  descriptor `D:P(A;;GA;;;<user SID>)` and remote clients rejected; a CI step reads
+  the live pipe's descriptor back. On Unix it is `control.sock`, mode `0600`, in a
+  directory that must be a real directory owned by the current user with mode
+  `0700`, which the CLI checks and never repairs; the server also requires each
+  peer's user ID to be its own, and a client checks the directory before it
+  connects.
+- No request carries a configuration path for the instance to read, and no
+  response carries a token or a JIT configuration. A resume names a path only so
+  the instance can compare it with the one it started with.
+- Only a debug build can move the lock, the channel, or their roots, for the tests;
+  a release build always uses the host's fixed locations. The `instance-helper`
+  binary that the tests and CI run does nothing in a release build.
 
 ## CPU Placement Is Not Resource Reservation
 

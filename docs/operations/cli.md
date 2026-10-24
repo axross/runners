@@ -3,13 +3,14 @@
 The Rust command line tool under [`cli/`](../../cli): what `validate` accepts and
 prints, how it stays equal to the PowerShell validator, the shared fixtures both
 read, the runtime layer that will run a host's pools (the container backend, JIT
-registration, CPU placement, and the slot loop), the toolchain and the gates that
-cover it, and what to touch when its provisional name changes. The binary is
+registration, CPU placement, and the slot loop), the instance layer that will keep
+`start` to one instance per machine (the instance state, the single-instance lock,
+and the control channel), the toolchain and the gates that cover it, and what to touch when its provisional name changes. The binary is
 `runners`. It has one command so far, `validate`; nothing that runs jobs uses it
 yet, and the PowerShell supervisor under
 [`hosts/windows-docker-desktop/`](../../hosts/windows-docker-desktop) still runs the
-axpc host. The code that will run the pools is already in the library, reachable
-from tests only; see The Runtime Layer.
+axpc host. The code that will run the pools and the instance is already in the
+library, reachable from tests only; see The Runtime Layer and The Instance Layer.
 
 ## Running It
 
@@ -380,6 +381,180 @@ own step, where it fails when Docker or the image is missing. Not verified: a re
 Docker daemon outside that CI step, the TLS handshake with GitHub, and Windows and
 macOS runtime behaviour beyond what the hosted runners show.
 
+## The Instance Layer
+
+The library also holds what will make `start` one instance per machine: the
+instance's state and the restarts of its runtime core, the single-instance lock,
+the control channel that other terminals use, and the checks for private files and
+directories. No command reaches it yet, because `start`, `stop`, `restart`, and
+`status` arrive in a later pull request of the same phase, so the tests drive it
+through its seams, the runtime layer's fake backend and clock, and a helper process.
+
+| Module                                    | Holds                                                                                |
+| ----------------------------------------- | ------------------------------------------------------------------------------------ |
+| `instance::lifecycle`                     | The instance's state, the answer to each request, and the runtime core's restarts    |
+| `instance::restart`                       | When a failed runtime core starts again, and when the instance gives up              |
+| `instance::source`                        | The instance's own configuration file, read again at a restart or a resume           |
+| `instance::lock`, `instance::roots`       | The single-instance lock, and where the lock and the channel live                    |
+| `instance::channel`, `instance::protocol` | The control channel's server and client, and its text protocol                       |
+| `instance::windows`                       | The current user's security identifier and the descriptor that admits only that user |
+| `private`                                 | The Unix checks for a private directory and a private file, and the current user ID  |
+| `instance::fake`                          | A scripted runtime core and configuration source, used by tests                      |
+
+### Instance State
+
+An instance is running or stopped, with stopping and resuming between them, and it
+starts running. One task owns the state and answers every request, so a request
+that arrives during a transition is answered at once: `status` reports the state,
+`stop` is taken, and `restart` and `resume` are refused, naming the state. A
+running instance refuses a resume too.
+
+- `stop` ends the instance from every state. From running it first runs the
+  container steps; from stopping it lets the stop finish; from resuming it ends
+  without waiting for the configuration; from stopped it touches no container.
+- `restart` runs the container steps, then resumes. On a stopped instance it
+  resumes directly.
+- A resume names a profile and a path. A stopped instance refuses one whose profile
+  or path is not the one it was started with, and reads nothing. The path is the
+  canonical one `start` will send; the instance only compares it.
+- Resuming clears the runtime core's failures, reads the instance's own
+  configuration file again, and validates it. A valid file runs the core with the
+  new plan; an invalid one leaves the instance stopped, with the errors as its
+  reason. The file is fixed when the instance is built, and no request names
+  another, so nothing a client sends makes the instance read a different file.
+
+The container steps stop every container the backend has started and not seen end,
+in one `docker stop` call with a grace of 15 s, ended at 20 s, and then force-remove
+them in one call ended 6 s later, so they take 26 s at the most. The instance reads
+the containers before it tells the core to stop, because dropping a worker forgets
+its container. How the instance ended records whether the removal succeeded.
+
+The runtime core is the part that runs the pools. It fails when it ends, with an
+error or without one, while no stop was asked for. A slot's registration or
+container failure stays in that slot's backoff and is not a core failure. After a
+failure the instance runs the container steps for the containers the core reports,
+then starts the core again after 10 s for the first failure in a sliding 10-minute
+window, 30 s for the second, and 60 s for the third. A fourth failure in the window
+stops the instance, with the restart limit as its reason. A failure exactly 10
+minutes old still counts and an older one does not; this window replaces the
+PowerShell supervisor's reset after 10 healthy minutes. A clock that moves back
+forgets nothing.
+
+### Single-Instance Lock
+
+The lock is machine-wide, across every OS user and configuration file. The
+operating system releases it when the process ends, however it ends, and no child
+process inherits it.
+
+- **Windows.** The lock is the first instance of the named pipe
+  `\\.\pipe\runners-instance`, created with an instance limit of one, remote
+  clients rejected, a handle no child inherits, and the descriptor below that
+  admits only the creating user. The process keeps it open and it carries no
+  message. Creating the name again fails for every user, with access denied or pipe
+  busy, and that is "held".
+- **Unix.** The lock is an exclusive advisory lock (`flock`) on a file: on macOS
+  `/Users/Shared/.runners-instance.lock`, and on Linux only a debug build's test
+  root, because Linux is not a supported host. The creator sets the file's mode to
+  `0644` after creating it, whatever the umask, so another user can open it. The
+  file is opened for writing and, when the user may not write it, read-only; the
+  lock then refuses that user rather than the open. After locking, the path must
+  still name the locked file, not a link or a replacement, or the lock is "lost".
+
+The three refusals read differently: the lock is held by another process; the lock
+cannot be opened, with the reason; or the lock file was replaced or removed after
+it was locked.
+
+### Control Channel
+
+The channel is per user, and only the instance's own user can reach it. The
+holder of the lock opens it, so a leftover Unix socket proves that no instance owns
+it.
+
+- **Windows.** The named pipe `\\.\pipe\runners-control-<user SID>` is created as
+  the first instance, with the descriptor `D:P(A;;GA;;;<user SID>)`, which grants
+  all access to that user, to no one else, and inherits nothing, and with remote
+  clients rejected. The pipe crate's blocking calls run on threads of their own: one
+  accepts, and each connection is served on its own thread, which hands the
+  request to the instance and waits for the answer. Up to 16 connections are served
+  at once; a further one is closed unanswered. A connection that sends nothing
+  holds its thread until it disconnects, because the blocking calls have no
+  timeout. Another user who creates this user's pipe name first stops the channel
+  from opening, and a client of this user would then reach that user's pipe; that
+  is the accepted cost of squatting a name on a single-user host.
+- **Unix.** The socket `control.sock` is in a directory that must be a directory,
+  not a link, owned by the current user, with mode `0700`: on macOS
+  `~/Library/Application Support/runners/`, and on Linux only a debug build's test
+  root. The server creates the directory with that mode when it is missing and
+  refuses one that is not private, without changing it. It removes a leftover
+  socket of the current user and refuses anything else at the path. It sets the
+  socket to `0600` and checks it. It accepts a peer only when the peer's user ID
+  is its own, and closes any other unanswered. Up to 16 connections are served at
+  once, and a further one waits its turn. A request must arrive within 5 s.
+  A socket path longer than the operating system allows is a startup failure.
+  The client checks the directory before it connects, so it does not talk to a
+  socket another user placed.
+
+The protocol is UTF-8 lines. A request is one line of at most 16 KiB: `status`,
+`stop`, `restart`, or `resume <profile> <path>`, where the path is the rest of the
+line and may hold spaces. A path with a line break, or one that is not UTF-8, is
+refused before the client connects. A response is a line `ok` or `refused` with an
+optional message, then a line per field, a name, a space and its value, and then a
+line `end`; a line break in a value becomes a space, so it cannot end the response
+early. A response carries states, reasons, paths, and names, never a token or a JIT
+configuration. Any other line is answered with `refused`, or closed unanswered
+when it is too long, and never reaches the instance.
+
+A client gives up connecting after 2 s and treats that as no instance, as it does a
+missing socket or pipe, so the moment before a new instance opens its channel and
+after an ending one closes it reads as no instance. It then waits for the answer as
+long as its caller allows, and an answer that does not arrive in time is "did not
+answer in time". The client reads at most 64 KiB.
+
+### Roots and Private Files
+
+The lock file, the socket directory and the pipe names are fixed for a host. Only a
+debug build can move them, to a test root, which suffixes the Windows pipe names
+with a hash of the root; a release build ignores the request, as it ignores a
+GitHub base address. `std` has no call for the process's own user ID and `unsafe`
+is forbidden, so the CLI reads its user ID as the owner of a file it creates in the
+temporary directory.
+
+On macOS a token file must also be a regular file owned by the current user with
+mode `0600`, checked on the file that is opened, or reading it fails and the pool is
+skipped with a warning; at a registration the failure goes into the slot's backoff.
+On Windows the token file's access control list is not checked, because no safe call
+reads it.
+
+### What the Instance Tests Cover
+
+`instance_state.rs` and `core_restart.rs` run the instance on the fake backend, a
+fake clock, a scripted core and a scripted source: every transition, the refusals
+while stopping and resuming, a resume with another path or profile, an invalid
+configuration, and the 10, 30 and 60 s restarts with the sliding window.
+`instance_lock.rs` runs the lock in this process and in the `instance-helper`
+process: a second acquisition is refused while the helper runs, a helper that holds
+the lock and has a child is killed and the lock is free at once while the child runs,
+and on Unix the file is `0644` under a umask of `077`, a read-only open still locks,
+and an unusable path is "cannot be opened". Its tests run one at a time, because a
+process one test spawns holds this process's descriptors until it calls `exec`.
+`control_channel.rs` runs the server and the client: every request, refusals,
+timeouts, several clients at once, a request that cannot make the instance read
+another configuration file, and on Unix the modes, a link or open directory, a long
+path, a leftover socket, and a peer of another user ID, which the test stands in for
+by telling the server to expect a different one.
+
+Two CI steps cover what one account cannot. On the Linux and macOS hosted runners,
+`tests/ci/other-user-lock.sh` copies the helper to a directory under `/tmp`, holds
+the lock in a debug-only root there, and runs the copy as `nobody` through `sudo`;
+it fails unless `nobody` is refused with the "held" exit code. On the Windows hosted
+runner, `tests/ci/control-pipe-security.ps1` has the helper open the control pipe,
+connects to it, reads the live pipe's descriptor through .NET, and fails unless the
+access control list is protected and holds one entry, allowing the current user
+full access. Neither crate the CLI uses reads a live pipe's descriptor without
+`unsafe`, so that check is in PowerShell. Not verified: the Windows lock against a
+second OS user, and the rejection of remote clients, which a hosted runner cannot
+show; and macOS and Windows behaviour beyond what the hosted runners show.
+
 ## Fixtures and Tests
 
 [`tests/host-configuration/`](../../tests/host-configuration) holds every fixture
@@ -448,11 +623,14 @@ it fail if built in the wrong profile; `docker build --target base` of
 [`images/actions-runner`](../../images/actions-runner), tagged and never pushed; and
 the `real_docker` test with `--ignored`, pointed at that tag by
 `RUNNERS_REAL_DOCKER_IMAGE`. The Windows and macOS hosted runners have no Linux
-Docker daemon, and the test fails rather than skips when one is missing. The
-`fake-docker` helper is a second binary in the package (`cli/helpers/fake_docker.rs`,
-`test = false`) that only the tests run, and `default-run = "runners"` keeps
-`cargo run` on the CLI. A release MUST NOT ship `fake-docker`; the release phase
-that packages the binary has to name `runners` alone. Tests find fixtures relative to the
+Docker daemon, and the test fails rather than skips when one is missing. One more
+step runs on Linux and macOS, `tests/ci/other-user-lock.sh`, and one on Windows,
+`tests/ci/control-pipe-security.ps1` under PowerShell 7; What the Instance Tests
+Cover says what each shows. The `fake-docker` and `instance-helper` helpers are
+further binaries in the package (`cli/helpers/`, `test = false`) that only the tests
+and those steps run, and `default-run = "runners"` keeps `cargo run` on the CLI.
+`instance-helper` does nothing in a release build. A release MUST NOT ship either
+helper; the release phase that packages the binary has to name `runners` alone. Tests find fixtures relative to the
 crate's manifest directory, and the checkout-rule tests build a temporary directory
 with the marker files at test time. The advisory check, `cargo deny --locked check advisories`,
 fetches the RustSec database, so it runs in
