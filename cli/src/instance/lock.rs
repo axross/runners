@@ -145,6 +145,7 @@ mod unix {
         Ok(file)
     }
 
+    /// Creates or opens what is at `path`, whatever it is; [`open`] checks it.
     fn open_any(path: &Path) -> Result<File, LockError> {
         let mut last = io::Error::other("no attempt was made");
         for _ in 0..OPEN_ATTEMPTS {
