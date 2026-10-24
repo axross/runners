@@ -1,7 +1,8 @@
 //! The plan summary `validate` prints.
 
+use crate::affinity::{affinity_count, affinity_offset};
 use crate::profile::Profile;
-use crate::validate::{Entry, Plan, format_cpu_count, format_nanos, usage};
+use crate::validate::{Plan, format_cpu_count, format_nanos, usage};
 
 /// Returns the lines of the summary. On axpc they are the PowerShell supervisor's
 /// `-ValidateOnly` lines, one for one.
@@ -64,21 +65,6 @@ fn axpc_summary(plan: &Plan) -> Vec<String> {
         }
     }
     lines
-}
-
-/// The CPUs a slot's affinity selects: the quota rounded up.
-fn affinity_count(entry: &Entry) -> u64 {
-    entry.cpus.ceil() as u64
-}
-
-/// Where the entry's first slot starts among the affinity positions, after every
-/// preceding entry's slots.
-fn affinity_offset(entries: &[Entry], index: usize) -> u64 {
-    entries
-        .iter()
-        .take(index)
-        .map(|preceding| u64::from(preceding.slots) * affinity_count(preceding))
-        .sum()
 }
 
 fn axmc_summary(plan: &Plan) -> Vec<String> {

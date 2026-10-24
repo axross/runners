@@ -72,9 +72,14 @@ each against the lock's checksum. `cargo-deny` is a mise tool, pinned in
 `mise.toml` and locked in `mise.lock` like the others, and its
 [`cli/deny.toml`](../../cli/deny.toml) allows crates.io only, a reviewed licence
 allowlist, and one version of each crate. `serde_derive` and the crates it uses
-(`syn`, `quote`, `proc-macro2`) run code at build time. They are locked by
+(`syn`, `quote`, `proc-macro2`) run code at build time, as do `tokio-macros`,
+`displaydoc`, `yoke-derive`, `zerofrom-derive`, and `zerovec-derive`, which the async
+runtime and the HTTPS client's URL parser bring. They are locked by
 `Cargo.lock` checksums and covered by `cargo-deny` like the other crates, and a
-new procedural-macro crate needs the maintainer's review. `rustup` itself is
+new procedural-macro crate needs the maintainer's review. The HTTPS client's TLS
+stack also needs the `ISC` and `BSD-3-Clause` licences on the allowlist; the
+maintainer approved both, and [CLI](../operations/cli.md#dependencies) records why
+each crate is there. `rustup` itself is
 installed by [`.agents/install-rust`](../../.agents/install-rust) from a pinned
 `rustup-init` release for `x86_64-unknown-linux-gnu`, refused unless its SHA-256
 matches. The release and its hash are refreshed by hand together, the hash
@@ -315,6 +320,16 @@ later host:
   environment variable, set only in the process that starts the container and
   passed to `docker run` by name. It MUST NOT be placed on a command line, in a log
   line, or in an image layer.
+- The CLI's registration request (see [CLI](../operations/cli.md#registration)) is
+  one HTTPS `POST` to `https://api.github.com` that follows no redirect, so a
+  redirect cannot carry the token to another host. It fails a connection after
+  10 s, a request after 30 s, and a response over 1 MiB. The token lives in a type
+  with no `Display` and a redacted `Debug`, the header that carries it is marked
+  sensitive, and error text has the token replaced before it is logged. Only a
+  debug build can move the base address, and only to `http://127.0.0.1:<port>`, for
+  the loopback tests; a release build always uses GitHub, which a CI step checks in
+  the release profile. The JIT variable is removed from the environment of every
+  `docker` client but the one that starts the container.
 - Volume and container names start with the entry's `name`, which the operator
   sets. An entry's volumes are mounted only into its own containers. Two entries
   whose names are equal, or where one is the other followed by a hyphen, are

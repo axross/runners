@@ -8,6 +8,9 @@
     clippy::indexing_slicing
 )]
 
+pub mod docker;
+pub mod stub;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -72,5 +75,31 @@ impl TempDir {
 impl Drop for TempDir {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.path);
+    }
+}
+
+/// A slot of a two-slot pool named `example-repo-one`, reading its token from `token`.
+pub fn slot_spec(token: PathBuf) -> runners_cli::runtime::pool::SlotSpec {
+    runners_cli::runtime::pool::SlotSpec {
+        pool: "example-repo-one".to_string(),
+        owner: "example-owner".to_string(),
+        repository: "example-repo-one".to_string(),
+        number: 2,
+        token_path: token,
+        labels: vec![
+            "self-hosted".to_string(),
+            "linux".to_string(),
+            "x64".to_string(),
+            "axpc".to_string(),
+        ],
+        cpus: "1.5".to_string(),
+        cpu_count: 2,
+        cpu_offset: 2,
+        memory_gb: 16,
+        mounts: vec![runners_cli::runtime::backend::Mount {
+            volume: "example-repo-one-npm".to_string(),
+            target: "/home/runner/.npm".to_string(),
+        }],
+        image: "actions-runner:local".to_string(),
     }
 }

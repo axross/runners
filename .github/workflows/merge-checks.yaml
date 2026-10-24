@@ -4,7 +4,8 @@ name: Merge Checks
 # host configuration, and Rust gates, run through the same mise task the README
 # documents, plus a build of the runner image that is never pushed, a run of the
 # host configuration test under Windows PowerShell 5.1, and the CLI's format,
-# lint, and tests on Linux, Windows, and macOS. the CLI's advisory check needs the
+# lint, and tests on Linux, Windows, and macOS, with a real-Docker test and a
+# release-profile test on Linux. the CLI's advisory check needs the
 # network and runs in rust-advisories.yaml, which is not a required check. it runs
 # on GitHub-hosted runners only. this repository is public, and GitHub advises
 # against self-hosted runners on public repositories; see
@@ -54,12 +55,14 @@ jobs:
 
   # the CLI on each operating system a runner host can be: format, lint, and tests.
   # the parity test needs PowerShell 7 and the pinned mise tools, so it runs in the
-  # check job on Linux only. no cache action: a cache would be a trust boundary
-  # for a job that builds code, and the build is small.
+  # check job on Linux only. two more tests run on Linux only, each in its own step:
+  # the release-profile base-address test and the real-Docker test. no cache action:
+  # a cache would be a trust boundary for a job that builds code, and the build is
+  # small.
   rust:
     name: Test CLI On ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -81,6 +84,29 @@ jobs:
         run: cargo clippy --locked --all-targets -- -D warnings
       - name: Run Tests
         run: cargo test --locked
+      # the base address of the GitHub API can move only in a debug build, for the
+      # loopback tests. the plain test run above is a debug build, so this step
+      # builds the same test in the release profile and shows that it cannot move.
+      # RUNNERS_EXPECT_RELEASE makes the test fail if it was built in the wrong
+      # profile, so a mistake in this step cannot pass quietly.
+      - name: Test That A Release Build Ignores The Base Address
+        if: runner.os == 'Linux'
+        env:
+          RUNNERS_EXPECT_RELEASE: "1"
+        run: cargo test --locked --release --test base_address
+      # the real-Docker test needs the runner image's base stage, which is digest
+      # pinned, and a daemon: ubuntu-latest has one, and the Windows and macOS
+      # hosted runners have no Linux daemon. a missing daemon or image fails the
+      # test, so it cannot be skipped without anyone seeing. the image is built on
+      # the runner host and never pushed, so the job holds no credential.
+      - name: Build Runner Base Image For The Docker Test
+        if: runner.os == 'Linux'
+        run: docker build --target base --tag runners-docker-test:ci ../images/actions-runner
+      - name: Run Real Docker Test
+        if: runner.os == 'Linux'
+        env:
+          RUNNERS_REAL_DOCKER_IMAGE: runners-docker-test:ci
+        run: cargo test --locked --test real_docker -- --ignored
 
   image:
     name: Build Runner Image

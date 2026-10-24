@@ -8,6 +8,7 @@ version = "0.1.0"
 edition = "2024"
 description = "Management CLI for the self-hosted runner hosts in this repository"
 publish = false
+default-run = "runners"
 
 [lib]
 name = "runners_cli"
@@ -19,6 +20,14 @@ path = "src/lib.rs"
 name = "runners"
 path = "src/main.rs"
 
+# A stand-in for the `docker` client, built so the tests can run the container backend
+# as a real process. Windows finds only `.exe` programs, so it cannot be a script.
+[[bin]]
+name = "fake-docker"
+path = "helpers/fake_docker.rs"
+test = false
+doc = false
+
 # serde is declared without its default features. Its derive feature runs
 # procedural macros (serde_derive, syn, quote, proc-macro2) at build time, and the
 # JSON reader is in this crate, so there is no JSON parser dependency.
@@ -26,6 +35,9 @@ path = "src/main.rs"
 clap = { version = "4.6.7", default-features = false, features = ["std", "help", "usage", "error-context"] }
 regex = { version = "1.13.1", default-features = false, features = ["std", "unicode-perl"] }
 serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
+tokio = { version = "1.54.1", default-features = false, features = ["rt", "time", "sync", "io-util", "process", "macros"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider"] }
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
 
 [lints.rust]
 unsafe_code = "forbid"

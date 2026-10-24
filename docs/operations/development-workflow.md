@@ -236,7 +236,10 @@ GitHub-hosted runner with `contents: read`, checks out the pull request, and
 runs `mise run check`, which executes the pull request's own task definitions
 and the linters they call, including the CLI's Rust gates. The same workflow
 also runs a `rust` job that formats, lints, and tests the CLI on Linux, Windows,
-and macOS hosted runners, and the host configuration test under Windows
+and macOS hosted runners, with three more steps on Linux only: the base-address test
+built in the release profile, a build of the runner image's base stage on that
+runner (never pushed), and a test that runs a container through the hosted
+runner's Docker daemon against that image. It also runs the host configuration test under Windows
 PowerShell 5.1. A pull request from a fork runs without repository secrets.
 [`rust-advisories.yaml`](../../.github/workflows/rust-advisories.yaml) checks the
 CLI's locked crates against the RustSec advisory database every week, on manual
