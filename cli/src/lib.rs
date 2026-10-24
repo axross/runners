@@ -11,6 +11,8 @@ pub mod de;
 pub mod fold;
 pub mod instance;
 pub mod json;
+#[cfg(unix)]
+pub mod private;
 pub mod profile;
 pub mod runtime;
 pub mod summary;

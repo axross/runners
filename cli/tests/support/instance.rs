@@ -24,10 +24,12 @@ pub const CONFIG_PATH: &str = "/etc/runners/host.json";
 
 pub const START: u64 = 1_709_618_828_009;
 
-fn plan() -> Plan {
-    let config = r#"{"imageName":"actions-runner:local","repositories":[{"owner":"o","repository":"r",
+/// A valid axpc configuration with one pool of one slot.
+pub const CONFIG: &str = r#"{"imageName":"actions-runner:local","repositories":[{"owner":"o","repository":"r",
         "name":"r","slots":1,"tokenPath":"C:\\r.token","volumes":[]}]}"#;
-    validate(config.as_bytes(), Profile::Axpc, None)
+
+fn plan() -> Plan {
+    validate(CONFIG.as_bytes(), Profile::Axpc, None)
         .outcome
         .unwrap()
 }

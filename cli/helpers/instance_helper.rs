@@ -7,6 +7,9 @@
 //! ```text
 //! instance-helper hold --root DIR [--child]   take the lock, print `locked`, wait
 //! instance-helper try --root DIR              try the lock and exit with the outcome
+//! instance-helper serve --root DIR            take the lock, open the channel, print
+//!                                             its address, answer `ok` to every
+//!                                             request until end of input
 //! instance-helper idle                        wait for end of input
 //! ```
 //!
@@ -25,7 +28,11 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 #[cfg(debug_assertions)]
+use runners_cli::instance::channel::ChannelServer;
+#[cfg(debug_assertions)]
 use runners_cli::instance::lock::{InstanceLock, LockError};
+#[cfg(debug_assertions)]
+use runners_cli::instance::protocol::Response;
 #[cfg(debug_assertions)]
 use runners_cli::instance::roots::Roots;
 
@@ -37,6 +44,7 @@ mod exit {
     pub const HELD: u8 = 3;
     pub const CANNOT_OPEN: u8 = 4;
     pub const LOST: u8 = 5;
+    pub const NO_CHANNEL: u8 = 6;
 }
 
 #[cfg(debug_assertions)]
@@ -55,6 +63,56 @@ fn lock_exit(error: &LockError) -> u8 {
     }
 }
 
+/// Waits on a thread of its own for standard input to end.
+#[cfg(debug_assertions)]
+fn input_closed() -> tokio::sync::oneshot::Receiver<()> {
+    let (closed, receiver) = tokio::sync::oneshot::channel();
+    std::thread::spawn(move || {
+        let _ = std::io::copy(&mut std::io::stdin(), &mut std::io::sink());
+        let _ = closed.send(());
+    });
+    receiver
+}
+
+#[cfg(debug_assertions)]
+fn serve(lock: &InstanceLock, roots: &Roots) -> ExitCode {
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            eprintln!("the runtime cannot start: {error}");
+            return ExitCode::from(exit::NO_CHANNEL);
+        }
+    };
+    runtime.block_on(async {
+        let (sender, mut requests) = tokio::sync::mpsc::unbounded_channel();
+        let server = match ChannelServer::open(lock, roots, sender) {
+            Ok(server) => server,
+            Err(error) => {
+                println!("refused: {error}");
+                return ExitCode::from(exit::NO_CHANNEL);
+            }
+        };
+        println!("{}", server.address());
+        let mut closed = input_closed();
+        loop {
+            tokio::select! {
+                _ = &mut closed => break,
+                incoming = requests.recv() => match incoming {
+                    Some(incoming) => {
+                        let _ = incoming.reply.send(Response::ok("helper"));
+                    }
+                    None => break,
+                },
+            }
+        }
+        drop(server);
+        ExitCode::SUCCESS
+    })
+}
+
 #[cfg(debug_assertions)]
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -66,7 +124,7 @@ fn main() -> ExitCode {
             let _ = std::io::copy(&mut std::io::stdin(), &mut std::io::sink());
             ExitCode::SUCCESS
         }
-        "try" | "hold" => {
+        "try" | "hold" | "serve" => {
             let Some(roots) = root_from(&args) else {
                 eprintln!("--root DIR is required");
                 return ExitCode::from(exit::USAGE);
@@ -78,6 +136,9 @@ fn main() -> ExitCode {
                     return ExitCode::from(lock_exit(&error));
                 }
             };
+            if mode == "serve" {
+                return serve(&lock, &roots);
+            }
             if mode == "try" {
                 println!("acquired");
                 drop(lock);
