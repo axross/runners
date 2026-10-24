@@ -56,8 +56,8 @@ jobs:
 
   # the CLI on each operating system a runner host can be: format, lint, and tests.
   # the parity test needs PowerShell 7 and the pinned mise tools, so it runs in the
-  # check job on Linux only. two more tests run on Linux only, each in its own step:
-  # the release-profile base-address test and the real-Docker test. no cache action:
+  # check job on Linux only. two more steps run on Linux only: the release-profile
+  # tests of the debug-only overrides and the real-Docker test. no cache action:
   # a cache would be a trust boundary for a job that builds code, and the build is
   # small.
   rust:
@@ -106,16 +106,16 @@ jobs:
           cargo build --locked --bin instance-helper
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ./tests/ci/control-pipe-security.ps1 -Helper target/debug/instance-helper.exe
-      # the base address of the GitHub API can move only in a debug build, for the
-      # loopback tests. the plain test run above is a debug build, so this step
-      # builds the same test in the release profile and shows that it cannot move.
-      # RUNNERS_EXPECT_RELEASE makes the test fail if it was built in the wrong
-      # profile, so a mistake in this step cannot pass quietly.
-      - name: Test That A Release Build Ignores The Base Address
+      # the GitHub API base address and the instance's roots can move only in a
+      # debug build, for the tests. the plain test run above is a debug build, so
+      # this step builds the same tests in the release profile and shows that
+      # neither moves. RUNNERS_EXPECT_RELEASE makes each test fail if it was built
+      # in the wrong profile, so a mistake in this step cannot pass quietly.
+      - name: Test That A Release Build Ignores The Debug-Only Overrides
         if: runner.os == 'Linux'
         env:
           RUNNERS_EXPECT_RELEASE: "1"
-        run: cargo test --locked --release --test base_address
+        run: cargo test --locked --release --test base_address --test instance_roots
       # the real-Docker test needs the runner image's base stage, which is digest
       # pinned, and a daemon: ubuntu-latest has one, and the Windows and macOS
       # hosted runners have no Linux daemon. a missing daemon or image fails the

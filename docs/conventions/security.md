@@ -373,7 +373,8 @@ built: its names, modes, and checks.
   response carries a token or a JIT configuration. A resume names a path only so
   the instance can compare it with the one it started with.
 - Only a debug build can move the lock, the channel, or their roots, for the tests;
-  a release build always uses the host's fixed locations. The `instance-helper`
+  a release build always uses the host's fixed locations, and a CI step checks in
+  the release profile that it ignores the request. The `instance-helper`
   binary that the tests and CI run does nothing in a release build.
 
 ## CPU Placement Is Not Resource Reservation

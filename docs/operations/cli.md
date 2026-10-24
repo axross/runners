@@ -532,12 +532,13 @@ answer in time". The client reads at most 64 KiB.
 
 The lock file, the socket directory and the pipe names are fixed for a host. Only a
 debug build can move them, to a test root, which suffixes the Windows pipe names
-with a hash of the root; a release build ignores the request, as it ignores a
-GitHub base address. `std` has no call for the process's own user ID and `unsafe`
-is forbidden, so the CLI reads its user ID as the owner of a file it creates in the
-temporary directory. The file's name has a random part, and the CLI only ever
-creates it new: a name that already exists is skipped, never opened, and after
-eight taken names reading the user ID fails.
+with a hash of the root; a release build ignores the request, as it ignores a GitHub
+base address. `tests/instance_roots.rs` shows both halves and each host's fixed
+roots, and CI runs it again in the release profile. `std` has no call for the
+process's own user ID and `unsafe` is forbidden, so the CLI reads its user ID as the
+owner of a file it creates in the temporary directory. The file's name has a random
+part, and the CLI only ever creates it new: a name that already exists is skipped,
+never opened, and after eight taken names reading the user ID fails.
 
 On macOS a token file must also be a regular file owned by the current user with
 mode `0600`, checked on the file that is opened, or reading it fails and the pool is
@@ -547,19 +548,20 @@ reads it.
 
 ### What the Instance Tests Cover
 
-`instance_state.rs`, `core_restart.rs`, `instance_lock.rs`, and `control_channel.rs`
-drive the instance layer through its seams as one OS user, and each test's name says
-what it shows. Two CI steps cover what one account cannot. On the Linux and macOS
-hosted runners, `tests/ci/other-user-lock.sh` copies the helper to a directory under
-`/tmp`, holds the lock in a debug-only root there, and runs the copy as `nobody`
-through `sudo`; it fails unless `nobody` is refused with the "held" exit code. On
-the Windows hosted runner, `tests/ci/control-pipe-security.ps1` has the helper open
-the control pipe, connects to it, reads the live pipe's descriptor through .NET, and
-fails unless the access control list is protected and holds one entry, allowing the
-current user full access. Neither crate the CLI uses reads a live pipe's descriptor
-without `unsafe`, so that check is in PowerShell. Not verified: the Windows lock
-against a second OS user, and the rejection of remote clients, which a hosted runner
-cannot show; and macOS and Windows behaviour beyond what the hosted runners show.
+`instance_state.rs`, `core_restart.rs`, `instance_lock.rs`, `control_channel.rs`,
+and `instance_roots.rs` drive the instance layer through its seams as one OS user,
+and each test's name says what it shows. Two CI steps cover what one account cannot.
+On the Linux and macOS hosted runners, `tests/ci/other-user-lock.sh` copies the
+helper to a directory under `/tmp`, holds the lock in a debug-only root there, and
+runs the copy as `nobody` through `sudo`; it fails unless `nobody` is refused with
+the "held" exit code. On the Windows hosted runner,
+`tests/ci/control-pipe-security.ps1` has the helper open the control pipe, connects
+to it, reads the live pipe's descriptor through .NET, and fails unless the access
+control list is protected and holds one entry, allowing the current user full
+access. Neither crate the CLI uses reads a live pipe's descriptor without `unsafe`,
+so that check is in PowerShell. Not verified: the Windows lock against a second OS
+user, and the rejection of remote clients, which a hosted runner cannot show; and
+macOS and Windows behaviour beyond what the hosted runners show.
 
 ## Fixtures and Tests
 
@@ -624,8 +626,9 @@ The `rust` job in
 [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) runs format check,
 clippy, and tests on Linux, Windows, and macOS; the axpc checkout-rule cases that
 need drive-letter paths run only on Windows. Three more steps run on Linux only: the
-base-address test again with `--release` and `RUNNERS_EXPECT_RELEASE=1`, which makes
-it fail if built in the wrong profile; `docker build --target base` of
+base-address and instance-roots tests again with `--release` and
+`RUNNERS_EXPECT_RELEASE=1`, which makes each fail if built in the wrong profile;
+`docker build --target base` of
 [`images/actions-runner`](../../images/actions-runner), tagged and never pushed; and
 the `real_docker` test with `--ignored`, pointed at that tag by
 `RUNNERS_REAL_DOCKER_IMAGE`. The Windows and macOS hosted runners have no Linux

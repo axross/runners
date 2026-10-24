@@ -236,8 +236,8 @@ GitHub-hosted runner with `contents: read`, checks out the pull request, and
 runs `mise run check`, which executes the pull request's own task definitions
 and the linters they call, including the CLI's Rust gates. The same workflow
 also runs a `rust` job that formats, lints, and tests the CLI on Linux, Windows,
-and macOS hosted runners, with three more steps on Linux only: the base-address test
-built in the release profile, a build of the runner image's base stage on that
+and macOS hosted runners, with three more steps on Linux only: the release-profile
+tests of the debug-only overrides, a build of the runner image's base stage on that
 runner (never pushed), and a test that runs a container through the hosted
 runner's Docker daemon against that image. On Linux and macOS a further step holds
 the CLI's single-instance lock with a debug-only test helper and runs a copy of the
