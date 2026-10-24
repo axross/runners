@@ -72,6 +72,15 @@ fn spec(name: &str) -> ContainerSpec {
     }
 }
 
+/// The calls that removed containers.
+fn removals(fake: &Fake) -> Vec<Vec<String>> {
+    fake.invocations()
+        .into_iter()
+        .filter(|i| i.arguments.first().is_some_and(|a| a == "rm"))
+        .map(|i| i.arguments)
+        .collect()
+}
+
 fn probe_calls(probe: &str) -> Vec<Vec<String>> {
     vec![
         words(&format!(
@@ -641,13 +650,7 @@ async fn stale_cleanup_through_docker_removes_only_own_unlabelled_containers() {
             "example-repo-two-1-20240101000000000"
         ]
     );
-    let removals: Vec<_> = fake
-        .invocations()
-        .into_iter()
-        .filter(|i| i.arguments.first().is_some_and(|a| a == "rm"))
-        .map(|i| i.arguments)
-        .collect();
-    assert_eq!(removals, [words(&format!("rm -f {own}"))]);
+    assert_eq!(removals(&fake), [words(&format!("rm -f {own}"))]);
 
     // with the labelled container gone, the pool starts.
     fake.script("containers", &format!("{own}\t\n"));
@@ -656,4 +659,110 @@ async fn stale_cleanup_through_docker_removes_only_own_unlabelled_containers() {
         .unwrap();
     assert_eq!(prepared.len(), 1);
     assert!(fake.containers().is_empty());
+}
+
+/// One pool with a stale container of its own and one labelled as diagnostics evidence.
+fn pool_with_stale_containers(
+    scratch: &TempDir,
+    fake: &Fake,
+) -> runners_cli::runtime::pool::PoolSpec {
+    let mut pool = example_pools(scratch).remove(0);
+    pool.volumes.clear();
+    fake.script(
+        "containers",
+        "example-repo-one-1-20240101000000000\t\nexample-repo-one-2-20240101000000000\trunners.diagnostic-lifecycle=1\n",
+    );
+    pool
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_failed_diagnostic_listing_refuses_cleanup_and_removes_nothing() {
+    let scratch = TempDir::new();
+    let fake = Fake::new();
+    let pool = pool_with_stale_containers(&scratch, &fake);
+    fake.script("ps_label_fails", "1");
+    let before = fake.containers();
+    assert_eq!(before.len(), 2);
+
+    let result = prepare_pools(&fake.backend, vec![pool], &*fake.log).await;
+
+    assert!(result.is_err());
+    assert_eq!(fake.containers(), before);
+    assert!(removals(&fake).is_empty());
+    let lines = fake.log.lines();
+    assert!(
+        lines.iter().any(|line| line.starts_with("WARN: ")
+            && line.contains("gets no slots: Diagnostic lifecycle identification unavailable; stale cleanup refused.")),
+        "{lines:?}"
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_failed_listing_skips_the_pool_and_removes_nothing() {
+    let scratch = TempDir::new();
+    let fake = Fake::new();
+    let pool = pool_with_stale_containers(&scratch, &fake);
+    fake.script("ps_fails", "1");
+    let before = fake.containers();
+
+    let result = prepare_pools(&fake.backend, vec![pool], &*fake.log).await;
+
+    assert!(result.is_err());
+    assert_eq!(fake.containers(), before);
+    assert!(removals(&fake).is_empty());
+    let lines = fake.log.lines();
+    assert!(
+        lines.iter().any(|line| line.starts_with("WARN: ")
+            && line.contains("gets no slots: Failed to list containers")),
+        "{lines:?}"
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_failed_stale_removal_is_a_warning_and_the_pool_still_starts() {
+    let scratch = TempDir::new();
+    let fake = Fake::new();
+    let pool = pool_with_stale_containers(&scratch, &fake);
+    // only the unlabelled container is left, so the pool is not refused.
+    let own = "example-repo-one-1-20240101000000000";
+    fake.script("containers", &format!("{own}\t\n"));
+    fake.script("rm_fails", "1");
+
+    let prepared = prepare_pools(&fake.backend, vec![pool], &*fake.log)
+        .await
+        .unwrap();
+
+    assert_eq!(prepared.len(), 1);
+    assert_eq!(removals(&fake), [words(&format!("rm -f {own}"))]);
+    assert_eq!(fake.containers(), [own]);
+    let lines = fake.log.lines();
+    assert!(
+        lines.iter().any(|line| line.starts_with(&format!(
+            "WARN: Failed to remove stale container '{own}': Failed to remove containers"
+        ))),
+        "{lines:?}"
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_failed_stop_is_an_error_and_the_container_remains() {
+    let fake = Fake::new();
+    fake.script("containers", "s-1-20240101000000000\t\n");
+    fake.script("stop_fails", "1");
+
+    let error = fake
+        .backend
+        .stop_containers(&StopRequest {
+            names: vec!["s-1-20240101000000000".to_string()],
+            grace: Duration::from_secs(15),
+            budget: Duration::from_secs(20),
+        })
+        .await
+        .unwrap_err();
+
+    assert!(
+        error.to_string().starts_with("Failed to stop containers"),
+        "{error}"
+    );
+    assert_eq!(fake.containers(), ["s-1-20240101000000000"]);
 }
