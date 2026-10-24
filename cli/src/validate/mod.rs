@@ -11,7 +11,7 @@ mod fields;
 mod labels;
 mod limits;
 mod paths;
-mod patterns;
+pub(crate) mod patterns;
 mod plan;
 mod uniqueness;
 mod volumes;

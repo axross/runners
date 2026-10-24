@@ -228,6 +228,41 @@ async fn a_token_that_cannot_be_a_header_fails_without_naming_it() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn an_owner_or_repository_that_would_leave_the_repos_path_is_refused_unsent() {
+    let stub = Stub::start(Vec::new());
+    let registrar = GitHubRegistrar::new(Some(&stub.address), HttpLimits::default()).unwrap();
+    let labels = vec!["self-hosted".to_string()];
+    let token = Secret::new(TOKEN.to_string());
+    for (owner, repository) in [
+        (".", "example-repo-one"),
+        ("..", "example-repo-one"),
+        ("example-owner", "."),
+        ("example-owner", ".."),
+        ("", "example-repo-one"),
+        ("example-owner", ""),
+        ("example/owner", "example-repo-one"),
+        ("example-owner", "example/repo"),
+    ] {
+        let error = registrar
+            .request_jit(&JitRequest {
+                owner,
+                repository,
+                name: "example-repo-one-2-20240305060708009",
+                labels: &labels,
+                token: &token,
+            })
+            .await
+            .unwrap_err()
+            .to_string();
+        assert_eq!(
+            error, "the repository owner or name is not usable in a URL",
+            "{owner:?}/{repository:?}"
+        );
+    }
+    assert!(stub.requests().is_empty());
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn a_base_address_that_is_not_loopback_is_refused_in_a_debug_build() {
     for bad in [
         "https://api.github.com",

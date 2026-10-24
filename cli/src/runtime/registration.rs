@@ -13,6 +13,7 @@ use std::time::Duration;
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderValue};
 
 use crate::json::{self, Value};
+use crate::validate::patterns::{is_owner, is_repository};
 
 use super::scrub::scrub_error_text;
 use super::secret::Secret;
@@ -204,14 +205,10 @@ impl GitHubRegistrar {
     }
 
     async fn send(&self, request: &JitRequest<'_>) -> Result<Secret, String> {
-        for part in [request.owner, request.repository] {
-            let safe = !part.is_empty()
-                && part
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'));
-            if !safe {
-                return Err("the repository owner or name is not usable in a URL".to_string());
-            }
+        // the configuration's own patterns, which also refuse the `.` and `..`
+        // components that would climb out of `/repos/`.
+        if !is_owner(request.owner) || !is_repository(request.repository) {
+            return Err("the repository owner or name is not usable in a URL".to_string());
         }
         let mut authorization =
             HeaderValue::from_str(&format!("Bearer {}", request.token.expose()))
