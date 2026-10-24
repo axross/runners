@@ -4,6 +4,7 @@
 //! profile to either a plan or an ordered list of errors; the command layer reads
 //! the file, finds the checkout, prints, and sets the exit code.
 
+pub mod affinity;
 pub mod checkout;
 pub mod command;
 pub mod de;
