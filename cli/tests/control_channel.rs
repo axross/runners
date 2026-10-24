@@ -306,6 +306,7 @@ mod socket {
     use std::path::Path;
 
     use runners_cli::instance::channel::ChannelError;
+    use runners_cli::instance::protocol::MAX_REQUEST_BYTES;
     use runners_cli::private::{PrivateError, current_uid};
 
     use super::*;
@@ -496,25 +497,39 @@ mod socket {
         assert!(requests.try_recv().is_err());
     }
 
-    #[tokio::test(flavor = "current_thread")]
-    async fn a_line_longer_than_the_limit_is_refused_and_never_reaches_the_instance() {
-        let root = TempDir::new();
-        let (channel, mut requests) = open(&root);
-        let roots = channel.roots.clone();
-
-        let thread_roots = roots.clone();
-        let answer = tokio::task::spawn_blocking(move || {
-            let mut long = vec![b'a'; 64 * 1024];
-            long.push(b'\n');
-            raw_exchange(&thread_roots, &long)
+    /// Sends a line of `length` bytes, its line break included.
+    async fn send_line_of(roots: &Roots, length: usize) -> String {
+        let roots = roots.clone();
+        tokio::task::spawn_blocking(move || {
+            let mut line = vec![b'a'; length - 1];
+            line.push(b'\n');
+            raw_exchange(&roots, &line)
         })
         .await
-        .unwrap();
+        .unwrap()
+    }
 
-        assert!(
-            answer.is_empty() || answer.starts_with("refused"),
-            "{answer}"
-        );
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_line_longer_than_the_limit_is_closed_unanswered_and_never_reaches_the_instance() {
+        let root = TempDir::new();
+        let (channel, mut requests) = open(&root);
+
+        // one byte over the limit, so the server reads the whole limit and no break
+        let answer = send_line_of(&channel.roots, MAX_REQUEST_BYTES + 1).await;
+
+        assert_eq!(answer, "");
+        assert!(requests.try_recv().is_err());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_line_exactly_at_the_limit_is_answered() {
+        let root = TempDir::new();
+        let (channel, mut requests) = open(&root);
+
+        let answer = send_line_of(&channel.roots, MAX_REQUEST_BYTES).await;
+
+        assert!(answer.starts_with("refused"), "{answer}");
+        assert!(answer.ends_with("end\n"), "{answer}");
         assert!(requests.try_recv().is_err());
     }
 

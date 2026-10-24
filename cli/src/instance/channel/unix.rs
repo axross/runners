@@ -15,7 +15,7 @@ use tokio::task::JoinHandle;
 
 use crate::private::{self, FILE_MODE};
 
-use super::super::protocol::{Incoming, MAX_REQUEST_BYTES, Request, Response};
+use super::super::protocol::{Incoming, MAX_REQUEST_BYTES, Request, Response, line_is_cut};
 use super::super::roots::Roots;
 use super::{ChannelError, ClientError, MAX_CONNECTIONS};
 
@@ -137,7 +137,8 @@ async fn accept(listener: UnixListener, requests: mpsc::UnboundedSender<Incoming
     }
 }
 
-/// Serves one connection: a peer of another user is dropped without an answer.
+/// Serves one connection: a peer of another user, a request that does not arrive in
+/// time, and a line longer than the limit are dropped without an answer.
 async fn serve(stream: UnixStream, requests: mpsc::UnboundedSender<Incoming>, peer_uid: u32) {
     match stream.peer_cred() {
         Ok(credentials) if credentials.uid() == peer_uid => {}
@@ -149,7 +150,7 @@ async fn serve(stream: UnixStream, requests: mpsc::UnboundedSender<Incoming>, pe
     let mut limited = (&mut reader).take(MAX_REQUEST_BYTES as u64);
     let read_line = limited.read_until(b'\n', &mut line);
     match tokio::time::timeout(REQUEST_TIMEOUT, read_line).await {
-        Ok(Ok(count)) if count > 0 => {}
+        Ok(Ok(count)) if count > 0 && !line_is_cut(&line, MAX_REQUEST_BYTES) => {}
         _ => return,
     }
     let response = match Request::parse(&line) {

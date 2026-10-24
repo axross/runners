@@ -145,13 +145,20 @@ pub fn read_line_limited<R: BufRead>(reader: &mut R, limit: usize) -> io::Result
     if read == 0 {
         return Ok(None);
     }
-    if line.last() != Some(&b'\n') && line.len() >= limit {
+    if line_is_cut(&line, limit) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "the line is too long",
         ));
     }
     Ok(Some(line))
+}
+
+/// Whether `line`, read with a limit of `limit` bytes, stopped at the limit before
+/// its line break, so the line is longer than the limit allows.
+#[must_use]
+pub fn line_is_cut(line: &[u8], limit: usize) -> bool {
+    line.last() != Some(&b'\n') && line.len() >= limit
 }
 
 /// Whether the instance did what was asked.
