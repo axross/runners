@@ -272,7 +272,7 @@ impl Response {
     pub fn read<R: BufRead>(reader: &mut R) -> Result<Self, ResponseError> {
         let mut consumed = 0usize;
         let mut next = |reader: &mut R| -> Result<String, ResponseError> {
-            let limit = MAX_RESPONSE_BYTES.saturating_sub(consumed).max(1);
+            let limit = MAX_RESPONSE_BYTES.saturating_sub(consumed);
             let line = read_line_limited(reader, limit)
                 .map_err(|_| ResponseError::Truncated)?
                 .ok_or(ResponseError::Truncated)?;
@@ -429,5 +429,28 @@ mod tests {
         let long = [b'a'; 11];
         assert!(read_line_limited(&mut &long[..], 10).is_err());
         assert_eq!(read_line_limited(&mut &b""[..], 10).unwrap(), None);
+    }
+
+    /// A field line that, after `ok\n`, leaves `room` bytes of the response limit.
+    fn field_leaving(room: usize) -> String {
+        let value = "a".repeat(MAX_RESPONSE_BYTES - "ok\n".len() - "f \n".len() - room);
+        format!("f {value}\n")
+    }
+
+    #[test]
+    fn a_response_of_exactly_the_limit_is_read() {
+        let text = format!("ok\n{}end\n", field_leaving("end\n".len()));
+        assert_eq!(text.len(), MAX_RESPONSE_BYTES);
+        let read = Response::read(&mut text.as_bytes()).unwrap();
+        assert_eq!(read.fields().len(), 1);
+    }
+
+    #[test]
+    fn once_the_limit_is_reached_not_even_an_empty_line_is_read() {
+        let tail = format!("{}end\n", "\n".repeat(1000));
+        let text = format!("ok\n{}{tail}", field_leaving(0));
+        let mut rest = text.as_bytes();
+        assert_eq!(Response::read(&mut rest), Err(ResponseError::Truncated));
+        assert_eq!(rest.len(), tail.len());
     }
 }
