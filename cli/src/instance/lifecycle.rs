@@ -303,7 +303,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
                     let _ = reply.send(self.refuse_busy());
                     Next::Exit
                 } else {
-                    self.resume(requests, Some(reply)).await
+                    self.resume(requests, reply).await
                 }
             }
         }
@@ -323,7 +323,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
                     self.set_state(State::Stopping);
                     return Next::Exit;
                 }
-                Request::Restart => return self.resume(requests, Some(incoming.reply)).await,
+                Request::Restart => return self.resume(requests, incoming.reply).await,
                 Request::Resume(resume) => {
                     if resume.profile != self.settings.profile
                         || resume.path != self.settings.config_path
@@ -337,7 +337,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
                         );
                         continue;
                     }
-                    return self.resume(requests, Some(incoming.reply)).await;
+                    return self.resume(requests, incoming.reply).await;
                 }
             }
         }
@@ -345,11 +345,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
 
     /// Reads and validates the instance's own configuration again, clearing the
     /// core's failure count, and answers `reply` with the result.
-    async fn resume(
-        &self,
-        requests: &mut Requests,
-        reply: Option<oneshot::Sender<Response>>,
-    ) -> Next {
+    async fn resume(&self, requests: &mut Requests, reply: oneshot::Sender<Response>) -> Next {
         self.policy.borrow_mut().clear();
         self.set_state(State::Resuming);
         self.log.info("Resuming: reading the configuration again.");
@@ -374,9 +370,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
                 (Next::Idle, response)
             }
         };
-        if let Some(reply) = reply {
-            let _ = reply.send(response);
-        }
+        let _ = reply.send(response);
         next
     }
 
