@@ -49,6 +49,7 @@ impl RestartPolicy {
     }
 
     /// How many failures are held, counted or not yet forgotten.
+    #[cfg(test)]
     #[must_use]
     pub fn held(&self) -> usize {
         self.failures.len()
