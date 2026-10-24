@@ -4,7 +4,10 @@
 # so it runs in its own workflow (.github/workflows/rust-advisories.yaml), not here.
 # docs/operations/cli.md records why each allowed licence and each crate is accepted.
 # serde brings serde_derive and syn, which run at build time, and unicode-ident, whose
-# licence expression needs Unicode-3.0.
+# licence expression needs Unicode-3.0. The HTTPS client brings rustls-webpki, untrusted
+# and ring, whose licences need ISC, and subtle, which needs BSD-3-Clause, and its URL
+# parser brings the proc-macro crates displaydoc, yoke-derive, zerofrom-derive and
+# zerovec-derive; tokio-macros comes with the async runtime's macros.
 
 [graph]
 # The three operating systems the CLI is built and tested on in CI.
@@ -15,7 +18,7 @@ targets = [
 ]
 
 [licenses]
-allow = ["MIT", "Apache-2.0", "Unicode-3.0"]
+allow = ["MIT", "Apache-2.0", "Unicode-3.0", "ISC", "BSD-3-Clause"]
 confidence-threshold = 0.93
 # The CLI itself is unpublished and carries no licence field.
 private = { ignore = true }
