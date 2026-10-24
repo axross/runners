@@ -58,11 +58,11 @@ pub fn stop_channel() -> (watch::Sender<bool>, watch::Receiver<bool>) {
     watch::channel(false)
 }
 
-fn stopped(stop: &watch::Receiver<bool>) -> bool {
+pub(crate) fn stopped(stop: &watch::Receiver<bool>) -> bool {
     *stop.borrow()
 }
 
-async fn wait_for_stop(stop: &mut watch::Receiver<bool>) {
+pub(crate) async fn wait_for_stop(stop: &mut watch::Receiver<bool>) {
     while !stopped(stop) {
         if stop.changed().await.is_err() {
             return;
@@ -71,7 +71,7 @@ async fn wait_for_stop(stop: &mut watch::Receiver<bool>) {
 }
 
 /// Sleeps `delay` unless a stop arrives first. Returns whether a stop was asked for.
-async fn sleep_or_stop<K: Clock>(
+pub(crate) async fn sleep_or_stop<K: Clock>(
     clock: &K,
     stop: &mut watch::Receiver<bool>,
     delay: Duration,

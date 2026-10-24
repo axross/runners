@@ -58,6 +58,10 @@ pub struct FakeState {
     pub on_run: Option<Box<dyn FnMut()>>,
     /// The JIT configurations handed to `run_container`, in order.
     pub jit_values: Vec<String>,
+    /// What `running_containers` reports; stopping or removing a name drops it.
+    pub running: Vec<String>,
+    /// A stop request fails with this error, once it is recorded.
+    pub stop_error: Option<BackendError>,
 }
 
 #[derive(Default)]
@@ -115,6 +119,7 @@ impl Backend for FakeBackend {
         state
             .containers
             .retain(|container| !names.contains(&container.name));
+        state.running.retain(|name| !names.contains(name));
         Ok(())
     }
 
@@ -166,14 +171,16 @@ impl Backend for FakeBackend {
     }
 
     fn running_containers(&self) -> Vec<String> {
-        Vec::new()
+        self.state.borrow().running.clone()
     }
 
     async fn stop_containers(&self, request: &StopRequest) -> Result<(), BackendError> {
-        self.state
-            .borrow_mut()
-            .calls
-            .push(Call::StopContainers(request.clone()));
+        let mut state = self.state.borrow_mut();
+        state.calls.push(Call::StopContainers(request.clone()));
+        if let Some(error) = state.stop_error.clone() {
+            return Err(error);
+        }
+        state.running.retain(|name| !request.names.contains(name));
         Ok(())
     }
 }
@@ -254,6 +261,11 @@ impl FakeClock {
     pub fn stop_after(&self, sleeps: usize, stop: watch::Sender<bool>) {
         self.stop_after_sleeps.set(Some(sleeps));
         *self.stop.borrow_mut() = Some(stop);
+    }
+
+    /// Moves the time forward without a sleep, as time passing between events.
+    pub fn advance(&self, duration: Duration) {
+        self.now.set(self.now.get() + duration);
     }
 
     #[must_use]

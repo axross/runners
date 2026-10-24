@@ -103,7 +103,7 @@ fn run_validate(matches: &ArgMatches, out: &mut dyn Write, err: &mut dyn Write) 
 
 /// Reads the file, refusing one over [`MAX_CONFIG_BYTES`] without reading past the
 /// limit.
-fn read_limited(path: &Path) -> io::Result<Vec<u8>> {
+pub(crate) fn read_limited(path: &Path) -> io::Result<Vec<u8>> {
     let mut bytes = Vec::new();
     std::fs::File::open(path)?
         .take(MAX_CONFIG_BYTES + 1)

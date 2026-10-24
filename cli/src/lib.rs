@@ -9,6 +9,7 @@ pub mod checkout;
 pub mod command;
 pub mod de;
 pub mod fold;
+pub mod instance;
 pub mod json;
 pub mod profile;
 pub mod runtime;
