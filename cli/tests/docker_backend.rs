@@ -59,6 +59,19 @@ fn example_pools(scratch: &TempDir) -> Vec<runners_cli::runtime::pool::PoolSpec>
     pools
 }
 
+/// A job container's spec with the shared defaults; a test that differs updates it.
+fn spec(name: &str) -> ContainerSpec {
+    ContainerSpec {
+        name: name.to_string(),
+        cpus: "1".to_string(),
+        cpuset: "0".to_string(),
+        memory_gb: 1,
+        mounts: Vec::new(),
+        image: "img:tag".to_string(),
+        run_command: "/home/runner/run.sh".to_string(),
+    }
+}
+
 fn probe_calls(probe: &str) -> Vec<Vec<String>> {
     vec![
         words(&format!(
@@ -303,15 +316,7 @@ fn process_group_of(pid: u32) -> u32 {
 async fn a_held_container_client_runs_in_its_own_process_group() {
     let fake = Fake::new();
     fake.script("run_mode", "hold");
-    let spec = ContainerSpec {
-        name: "pg-2-20240305060708009".to_string(),
-        cpus: "1".to_string(),
-        cpuset: "0".to_string(),
-        memory_gb: 1,
-        mounts: Vec::new(),
-        image: "img:tag".to_string(),
-        run_command: "/home/runner/run.sh".to_string(),
-    };
+    let spec = spec("pg-2-20240305060708009");
     let jit = Secret::new("jit".to_string());
     let held = fake.backend.run_container(&spec, &jit);
     let observe = async {
@@ -355,16 +360,11 @@ async fn a_held_container_client_runs_in_its_own_process_group() {
 async fn container_output_is_forwarded_and_a_stop_is_one_call_with_the_grace() {
     let fake = Fake::new();
     let spec = ContainerSpec {
-        name: "out-1-20240305060708009".to_string(),
-        cpus: "1".to_string(),
-        cpuset: "0".to_string(),
-        memory_gb: 1,
         mounts: vec![Mount {
             volume: "v".to_string(),
             target: "/t".to_string(),
         }],
-        image: "img:tag".to_string(),
-        run_command: "/home/runner/run.sh".to_string(),
+        ..spec("out-1-20240305060708009")
     };
     fake.script("run_exit", "7");
     let code = fake
@@ -410,15 +410,7 @@ async fn a_line_over_sixty_four_kibibytes_is_forwarded_in_pieces_that_hold_all_o
     const PIECE_CAP: usize = 64 * 1024;
     const LINE_BYTES: usize = 150_000;
     let fake = Fake::new();
-    let spec = ContainerSpec {
-        name: "long-1-20240305060708009".to_string(),
-        cpus: "1".to_string(),
-        cpuset: "0".to_string(),
-        memory_gb: 1,
-        mounts: Vec::new(),
-        image: "img:tag".to_string(),
-        run_command: "/home/runner/run.sh".to_string(),
-    };
+    let spec = spec("long-1-20240305060708009");
     fake.script("run_mode", "longline");
     let code = fake
         .backend
@@ -592,15 +584,7 @@ async fn a_missing_docker_client_counts_as_not_available_and_a_run_fails_cleanly
             fake.log.clone() as Rc<dyn Log>,
         )
     };
-    let spec = ContainerSpec {
-        name: "n".to_string(),
-        cpus: "1".to_string(),
-        cpuset: "0".to_string(),
-        memory_gb: 1,
-        mounts: Vec::new(),
-        image: "i".to_string(),
-        run_command: "c".to_string(),
-    };
+    let spec = spec("n");
     let error = missing
         .run_container(&spec, &Secret::new("jit".to_string()))
         .await
