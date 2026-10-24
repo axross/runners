@@ -12,6 +12,7 @@
 
 use std::fmt;
 use std::fs::{self, Metadata};
+use std::hash::{BuildHasher, RandomState};
 use std::io;
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
@@ -26,6 +27,9 @@ pub const FILE_MODE: u32 = 0o600;
 
 /// The permission bits that count, including the special ones.
 const MODE_MASK: u32 = 0o7777;
+
+/// How many names [`current_uid`] tries for its file before giving up.
+const UID_FILE_ATTEMPTS: usize = 8;
 
 /// Why a path is not private.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -191,20 +195,42 @@ pub fn current_uid() -> io::Result<u32> {
 
 fn uid_from_new_file() -> io::Result<u32> {
     static COUNTER: AtomicU32 = AtomicU32::new(0);
-    let path = std::env::temp_dir().join(format!(
-        ".runners-uid-{}-{}",
-        std::process::id(),
-        COUNTER.fetch_add(1, Ordering::Relaxed)
-    ));
-    let file = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(FILE_MODE)
-        .open(&path)?;
-    let uid = file.metadata().map(|metadata| metadata.uid());
-    drop(file);
-    let _ = fs::remove_file(&path);
-    uid
+    // a random part, so another user cannot create the names first
+    let names = (0..UID_FILE_ATTEMPTS).map(|_| {
+        let random = RandomState::new().hash_one(COUNTER.fetch_add(1, Ordering::Relaxed));
+        format!(".runners-uid-{}-{random:016x}", std::process::id())
+    });
+    uid_from_new_file_in(&std::env::temp_dir(), names)
+}
+
+/// Creates a file in `directory` under the first of `names` that is free, reads its
+/// owner, and removes it. A name that is taken is skipped, never opened.
+fn uid_from_new_file_in(
+    directory: &Path,
+    names: impl IntoIterator<Item = String>,
+) -> io::Result<u32> {
+    let mut last = io::Error::other("no name was tried");
+    for name in names {
+        let path = directory.join(name);
+        let file = match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(FILE_MODE)
+            .open(&path)
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                last = error;
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
+        let uid = file.metadata().map(|metadata| metadata.uid());
+        drop(file);
+        let _ = fs::remove_file(&path);
+        return uid;
+    }
+    Err(last)
 }
 
 #[cfg(test)]
@@ -234,6 +260,25 @@ mod tests {
             .unwrap();
         assert_eq!(current_uid().unwrap(), reported);
         assert_eq!(current_uid().unwrap(), reported);
+    }
+
+    #[test]
+    fn a_name_another_user_created_first_is_skipped_and_left_alone() {
+        let parent = scratch("uid");
+        let taken = parent.join("taken");
+        fs::write(&taken, b"theirs").unwrap();
+        let names = ["taken", "free"].map(String::from);
+
+        assert_eq!(
+            uid_from_new_file_in(&parent, names).unwrap(),
+            current_uid().unwrap()
+        );
+
+        assert_eq!(fs::read(&taken).unwrap(), b"theirs");
+        assert!(!parent.join("free").exists(), "the file was removed");
+        let error = uid_from_new_file_in(&parent, ["taken".to_string()]).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+        fs::remove_dir_all(parent).unwrap();
     }
 
     #[test]

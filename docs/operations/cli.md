@@ -537,7 +537,9 @@ debug build can move them, to a test root, which suffixes the Windows pipe names
 with a hash of the root; a release build ignores the request, as it ignores a
 GitHub base address. `std` has no call for the process's own user ID and `unsafe`
 is forbidden, so the CLI reads its user ID as the owner of a file it creates in the
-temporary directory.
+temporary directory. The file's name has a random part, and the CLI only ever
+creates it new: a name that already exists is skipped, never opened, and after
+eight taken names reading the user ID fails.
 
 On macOS a token file must also be a regular file owned by the current user with
 mode `0600`, checked on the file that is opened, or reading it fails and the pool is
