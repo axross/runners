@@ -7,6 +7,10 @@
 #[doc(hidden)]
 pub mod fake;
 pub mod lifecycle;
+pub mod lock;
 pub mod protocol;
 pub mod restart;
+pub mod roots;
 pub mod source;
+#[cfg(windows)]
+pub mod windows;

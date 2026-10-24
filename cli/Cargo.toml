@@ -28,6 +28,14 @@ path = "helpers/fake_docker.rs"
 test = false
 doc = false
 
+# A stand-in for a second process, for the lock and channel tests and the CI step that
+# runs it as another user. Like fake-docker it is for tests; a release must not ship it.
+[[bin]]
+name = "instance-helper"
+path = "helpers/instance_helper.rs"
+test = false
+doc = false
+
 # serde is declared without its default features. Its derive feature runs
 # procedural macros (serde_derive, syn, quote, proc-macro2) at build time, and the
 # JSON reader is in this crate, so there is no JSON parser dependency.
