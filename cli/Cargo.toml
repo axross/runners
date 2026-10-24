@@ -8,6 +8,7 @@ version = "0.1.0"
 edition = "2024"
 description = "Management CLI for the self-hosted runner hosts in this repository"
 publish = false
+default-run = "runners"
 
 [lib]
 name = "runners_cli"
