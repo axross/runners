@@ -257,7 +257,8 @@ creation flags, so the Windows flag is checked by review. A client is killed whe
 the future that waits for it is dropped.
 
 Every client other than a job container is bounded at 120 s, which the PowerShell
-supervisor did not do. A `docker info` that fails, hangs, or cannot start (the
+supervisor did not do, except the CPU probe and the removal of a leftover probe, which
+have the budgets under CPU Placement. A `docker info` that fails, hangs, or cannot start (the
 program is missing) means Docker is not available yet. Output from a job container
 is forwarded to the log line by line, in pieces of at most 64 KiB; masking a
 secret in forwarded output belongs to the logging that comes with `start`.
@@ -334,7 +335,7 @@ pool's name, a hyphen, a slot number, a hyphen, and exactly 17 ASCII digits.
 A slot loops until it is asked to stop. Each attempt probes the CPUs, then registers,
 then runs the container. A failed probe or registration, or a non-zero exit, waits
 5 s, then 10 s, doubling to 300 s; an exit of 0 resets the delay and starts the
-replacement at once. A wait ends early when a stop is asked for. Time and sleeping
+replacement at once. A wait ends early when a stop is asked for, and a stop that arrives as a registration completes starts no container. Time and sleeping
 come through a `Clock` seam, so the tests do not wait.
 
 Preparing the pools follows the PowerShell supervisor. A pool whose token file is
@@ -433,7 +434,9 @@ the `real_docker` test with `--ignored`, pointed at that tag by
 `RUNNERS_REAL_DOCKER_IMAGE`. The Windows and macOS hosted runners have no Linux
 Docker daemon, and the test fails rather than skips when one is missing. The
 `fake-docker` helper is a second binary in the package (`cli/helpers/fake_docker.rs`,
-`test = false`) that only the tests run. Tests find fixtures relative to the
+`test = false`) that only the tests run, and `default-run = "runners"` keeps
+`cargo run` on the CLI. A release MUST NOT ship `fake-docker`; the release phase
+that packages the binary has to name `runners` alone. Tests find fixtures relative to the
 crate's manifest directory, and the checkout-rule tests build a temporary directory
 with the marker files at test time. The advisory check, `cargo deny --locked check advisories`,
 fetches the RustSec database, so it runs in

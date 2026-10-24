@@ -2,8 +2,8 @@
 //!
 //! [`Deserializer`] reads any type that derives `Deserialize` from a
 //! [`Value`]. A failed read is an [`Error`], never a panic, and reading a struct
-//! from anything but an object is one. Only reading is implemented: nothing in
-//! the crate writes JSON.
+//! from anything but an object is one. Only reading is implemented: nothing uses
+//! serde's `Serialize`, and the one JSON body the crate sends is written by hand.
 //!
 //! A foreign target sees a number as `i64`, `u64`, `i128` or `f64`, so `1e400` is
 //! infinity there. The tree's own [`Value`] keeps the literal text instead: its

@@ -127,7 +127,10 @@ pub trait Backend {
         jit: &Secret,
     ) -> impl Future<Output = Result<i32, BackendError>>;
 
-    /// The containers this backend has started and not seen end.
+    /// The containers this backend has started and not seen end. Dropping a
+    /// `run_container` future removes its container from this list, though the
+    /// container itself may live on in the engine, so a stop sequence reads this
+    /// list before it cancels the workers that hold those futures.
     fn running_containers(&self) -> Vec<String>;
 
     /// Stops the containers, in one call to the container engine.

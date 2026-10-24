@@ -118,7 +118,9 @@ pub struct DockerBackend<C> {
     running: RefCell<BTreeSet<String>>,
 }
 
-/// Removes a container from the running set when its run ends, however it ends.
+/// Removes a container from the running set when its run ends, however it ends,
+/// including when the future that waits for it is dropped, which kills the `docker`
+/// client and leaves the container running in the daemon.
 struct RunningGuard<'a> {
     set: &'a RefCell<BTreeSet<String>>,
     name: String,
