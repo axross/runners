@@ -9,6 +9,7 @@
 )]
 
 pub mod docker;
+pub mod instance;
 pub mod stub;
 
 use std::fs;
@@ -70,7 +71,29 @@ impl TempDir {
         fs::write(&path, contents).unwrap();
         path
     }
+
+    /// Writes a token file private to the user, as macOS requires.
+    pub fn write_token(&self, relative: &str, contents: &[u8]) -> PathBuf {
+        let path = self.write(relative, contents);
+        make_private(&path);
+        path
+    }
 }
+
+/// Writes a file and makes it private to the user, as macOS requires of a token file.
+pub fn write_token_file(path: &Path, contents: &[u8]) {
+    fs::write(path, contents).unwrap();
+    make_private(path);
+}
+
+#[cfg(unix)]
+fn make_private(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600)).unwrap();
+}
+
+#[cfg(not(unix))]
+fn make_private(_path: &Path) {}
 
 impl Drop for TempDir {
     fn drop(&mut self) {

@@ -13,7 +13,7 @@ use runners_cli::runtime::backend::{Backend, BackendError};
 use runners_cli::runtime::fake::{Call, FakeBackend, FakeContainer, MemoryLog};
 use runners_cli::runtime::pool::{NoPoolStartable, PoolSpec, pools_from_plan, prepare_pools};
 use runners_cli::validate::validate;
-use support::TempDir;
+use support::{TempDir, write_token_file};
 
 const STAMP: &str = "20240305060708009";
 
@@ -44,7 +44,7 @@ fn pools(scratch: &TempDir, with_token: &[(&str, &str)]) -> Vec<PoolSpec> {
     for pool in &mut pools {
         pool.token_path = scratch.path().join(format!("{}.token", pool.name));
         if let Some((_, content)) = with_token.iter().find(|(name, _)| *name == pool.name) {
-            std::fs::write(&pool.token_path, content).unwrap();
+            write_token_file(&pool.token_path, content.as_bytes());
         }
     }
     pools
@@ -119,6 +119,37 @@ async fn a_missing_or_blank_token_and_a_diagnostics_pool_are_skipped_and_the_res
             },
         ]
     );
+}
+
+#[cfg(target_os = "macos")]
+#[tokio::test(flavor = "current_thread")]
+async fn on_macos_a_token_file_that_is_not_0600_skips_its_pool_and_the_rest_run() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let scratch = TempDir::new();
+    let all = pools(
+        &scratch,
+        &[
+            ("alpha", "ghp_a\n"),
+            ("bravo", "ghp_b\n"),
+            ("charlie", "ghp_c\n"),
+        ],
+    );
+    let charlie = all.iter().find(|pool| pool.name == "charlie").unwrap();
+    std::fs::set_permissions(&charlie.token_path, std::fs::Permissions::from_mode(0o644)).unwrap();
+    let log = MemoryLog::default();
+    let prepared = prepare_pools(&FakeBackend::default(), all.clone(), &log)
+        .await
+        .unwrap();
+    assert_eq!(names(&prepared), ["alpha"]);
+    let warnings = log.lines();
+    assert!(
+        warnings[1].starts_with("WARN: repositories[2] (o/charlie) is not started")
+            && warnings[1].contains("token file is not private")
+            && warnings[1].contains("has mode 0644"),
+        "{warnings:?}"
+    );
+    assert!(warnings.iter().all(|line| !line.contains("ghp_")));
 }
 
 #[tokio::test(flavor = "current_thread")]

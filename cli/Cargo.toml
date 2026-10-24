@@ -28,6 +28,14 @@ path = "helpers/fake_docker.rs"
 test = false
 doc = false
 
+# A stand-in for a second process, for the lock and channel tests and the CI step that
+# runs it as another user. Like fake-docker it is for tests; a release must not ship it.
+[[bin]]
+name = "instance-helper"
+path = "helpers/instance_helper.rs"
+test = false
+doc = false
+
 # serde is declared without its default features. Its derive feature runs
 # procedural macros (serde_derive, syn, quote, proc-macro2) at build time, and the
 # JSON reader is in this crate, so there is no JSON parser dependency.
@@ -35,9 +43,21 @@ doc = false
 clap = { version = "4.6.7", default-features = false, features = ["std", "help", "usage", "error-context"] }
 regex = { version = "1.13.1", default-features = false, features = ["std", "unicode-perl"] }
 serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
-tokio = { version = "1.54.1", default-features = false, features = ["rt", "time", "sync", "io-util", "process", "macros"] }
+tokio = { version = "1.54.1", default-features = false, features = ["rt", "time", "sync", "io-util", "process", "macros", "net"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider"] }
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
+
+# The single-instance lock and the control channel are named pipes on Windows, where
+# interprocess owns the pipe calls and winsafe reads the current user's SID. Unix needs
+# neither: std and tokio cover its lock and socket.
+[target.'cfg(windows)'.dependencies]
+interprocess = { version = "2.4.7", default-features = false }
+winsafe = { version = "0.0.29", default-features = false, features = ["advapi"] }
+
+# The Unix lock opens its file with O_NOFOLLOW and O_NONBLOCK, which std does not
+# name. tokio already depends on libc, so this adds no crate.
+[target.'cfg(unix)'.dependencies]
+libc = { version = "0.2.191", default-features = false }
 
 [lints.rust]
 unsafe_code = "forbid"

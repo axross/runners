@@ -73,12 +73,12 @@ each against the lock's checksum. `cargo-deny` is a mise tool, pinned in
 [`cli/deny.toml`](../../cli/deny.toml) allows crates.io only, a reviewed licence
 allowlist, and one version of each crate. `serde_derive` and the crates it uses
 (`syn`, `quote`, `proc-macro2`) run code at build time, as do `tokio-macros`,
-`displaydoc`, `yoke-derive`, `zerofrom-derive`, and `zerovec-derive`, which the async
-runtime and the HTTPS client's URL parser bring. They are locked by
+`displaydoc`, `yoke-derive`, `zerofrom-derive`, `zerovec-derive`, and `doctest-file`,
+which the async runtime, the HTTPS client's URL parser, and the Windows pipe crate bring. They are locked by
 `Cargo.lock` checksums and covered by `cargo-deny` like the other crates, and a
 new procedural-macro crate needs the maintainer's review. The HTTPS client's TLS
-stack also needs the `ISC` and `BSD-3-Clause` licences on the allowlist; the
-maintainer approved both, and [CLI](../operations/cli.md#dependencies) records why
+stack also needs the `ISC` and `BSD-3-Clause` licences on the allowlist, and the
+Windows pipe crate needs `0BSD`; the maintainer approved all three, and [CLI](../operations/cli.md#dependencies) records why
 each crate is there. `rustup` itself is
 installed by [`.agents/install-rust`](../../.agents/install-rust) from a pinned
 `rustup-init` release for `x86_64-unknown-linux-gnu`, refused unless its SHA-256
@@ -285,7 +285,13 @@ later host:
   several repositories, or a classic token, would let one leak register runners
   for all of them, and a secret that can register runners for the automation that
   reads it is not a boundary. The token is read from a file on the host on every
-  registration, and the file is restricted to the host user.
+  registration, and the file is restricted to the host user. On macOS the CLI
+  refuses a token file that is not a regular file owned by the current user with
+  mode `0600`, and skips its pool with a warning. On Windows the CLI does not check
+  the token file's access control list, because no safe call reads it, so the
+  restriction rests on the operator's setup: today the Task Scheduler setup
+  restricts each file, and an operator procedure that replaces that setup has to
+  keep an explicit step for it.
 - Multiple execution pools for one repository MUST use the same token file;
   entries for different repositories MUST NOT share it. Extra pools do not expand
   the token's repository authority.
@@ -345,6 +351,31 @@ later host:
   step.
 - `docker run` uses `--pull never`, so a missing local image fails instead of
   pulling a same-named public image.
+
+## One Instance per Machine, Reached Only by Its User
+
+The CLI's single-instance lock and control channel decide who can start, stop, or
+query the process that holds every pool's token, so who can reach them is a
+security rule. [CLI](../operations/cli.md#the-instance-layer) owns how each is
+built: its names, modes, and checks.
+
+- The lock is machine-wide and no child process inherits it. Every local user can
+  try it, and anything planted at its path is refused rather than opened or waited
+  on. The lock does not say who holds it, so another local user can hold it or take
+  its name first and so keep `start` from running. On Unix the lock file's owner
+  can also replace the file while an instance holds it, so a second instance can
+  start: the [Unix residual case](../operations/cli.md#single-instance-lock). Both
+  are accepted on a single-user host, and `start` reports a held lock.
+- The control channel is per user: only the instance's own user can reach it, and
+  no remote client can. Another user who takes this user's pipe name first stops
+  the channel from opening, which is also accepted on a single-user host.
+- No request carries a configuration path for the instance to read, and no
+  response carries a token or a JIT configuration. A resume names a path only so
+  the instance can compare it with the one it started with.
+- Only a debug build can move the lock, the channel, or their roots, for the tests;
+  a release build always uses the host's fixed locations, and a CI step checks in
+  the release profile that it ignores the request. The `instance-helper`
+  binary that the tests and CI run does nothing in a release build.
 
 ## CPU Placement Is Not Resource Reservation
 

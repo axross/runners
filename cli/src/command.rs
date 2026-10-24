@@ -10,7 +10,7 @@ use clap::{Arg, ArgMatches, Command, value_parser};
 use crate::checkout;
 use crate::profile::Profile;
 use crate::summary::plan_summary;
-use crate::validate::{Failure, validate};
+use crate::validate::{Failure, Plan, validate};
 
 /// The largest configuration `validate` reads. Real files are a few kilobytes, so
 /// this is generous; it only stops a mistaken or hostile path from being read whole.
@@ -116,6 +116,67 @@ fn read_limited(path: &Path) -> io::Result<Vec<u8>> {
     Ok(bytes)
 }
 
+/// Why a host configuration file gave no plan.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum LoadError {
+    /// The file is missing, cannot be read, or is not JSON; the message says which.
+    Unreadable(String),
+    /// The document breaks rules, listed in the order they were found.
+    Invalid(Vec<String>),
+}
+
+impl LoadError {
+    /// Every problem, one per entry.
+    pub(crate) fn into_problems(self) -> Vec<String> {
+        match self {
+            Self::Unreadable(message) => vec![message],
+            Self::Invalid(errors) => errors,
+        }
+    }
+}
+
+/// A host configuration file, read and validated against the checkout above it.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Loaded {
+    pub(crate) outcome: Result<Plan, LoadError>,
+    /// True when no checkout was found above the file, so `diagnosticDirectory` was
+    /// not compared with one.
+    pub(crate) checkout_rule_skipped: bool,
+}
+
+/// Reads the file and validates it for `profile`.
+pub(crate) fn load_plan(config: &Path, profile: Profile) -> Loaded {
+    let bytes = match read_limited(config) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let message = if error.kind() == io::ErrorKind::NotFound {
+                format!("Host configuration file not found: {}", config.display())
+            } else {
+                format!(
+                    "Host configuration cannot be read: {}: {error}",
+                    config.display()
+                )
+            };
+            return Loaded {
+                outcome: Err(LoadError::Unreadable(message)),
+                checkout_rule_skipped: false,
+            };
+        }
+    };
+    let checkout = checkout::find(config);
+    let validation = validate(&bytes, profile, checkout.as_deref());
+    let outcome = validation.outcome.map_err(|failure| match failure {
+        Failure::Unreadable(problem) => {
+            LoadError::Unreadable(format!("Host configuration is not valid JSON: {problem}"))
+        }
+        Failure::Invalid(errors) => LoadError::Invalid(errors),
+    });
+    Loaded {
+        outcome,
+        checkout_rule_skipped: validation.checkout_rule_skipped,
+    }
+}
+
 /// Validates the file and prints the outcome. Returns the exit code, or the error
 /// that stopped output.
 fn validate_file(
@@ -124,46 +185,26 @@ fn validate_file(
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> io::Result<u8> {
-    let bytes = match read_limited(config) {
-        Ok(bytes) => bytes,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            writeln!(
-                err,
-                "Host configuration file not found: {}",
-                config.display()
-            )?;
-            return Ok(EXIT_INVALID);
-        }
-        Err(error) => {
-            writeln!(
-                err,
-                "Host configuration cannot be read: {}: {error}",
-                config.display()
-            )?;
-            return Ok(EXIT_INVALID);
-        }
-    };
-    let checkout = checkout::find(config);
-    let validation = validate(&bytes, profile, checkout.as_deref());
-    if validation.checkout_rule_skipped {
+    let loaded = load_plan(config, profile);
+    if loaded.checkout_rule_skipped {
         writeln!(
             err,
             "note: no checkout of this project was found above {}, so diagnosticDirectory was not compared with it",
             config.display()
         )?;
     }
-    match validation.outcome {
+    match loaded.outcome {
         Ok(plan) => {
             for line in plan_summary(&plan) {
                 writeln!(out, "{line}")?;
             }
             Ok(0)
         }
-        Err(Failure::Unreadable(problem)) => {
-            writeln!(err, "Host configuration is not valid JSON: {problem}")?;
+        Err(LoadError::Unreadable(message)) => {
+            writeln!(err, "{message}")?;
             Ok(EXIT_INVALID)
         }
-        Err(Failure::Invalid(errors)) => {
+        Err(LoadError::Invalid(errors)) => {
             writeln!(err, "{}", invalid_message(config, &errors))?;
             Ok(EXIT_INVALID)
         }

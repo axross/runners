@@ -54,7 +54,8 @@ fn example_pools(scratch: &TempDir) -> Vec<runners_cli::runtime::pool::PoolSpec>
     let plan = validate(&bytes, Profile::Axpc, None).outcome.unwrap();
     let mut pools = pools_from_plan(&plan).unwrap();
     for pool in &mut pools {
-        pool.token_path = scratch.write(&format!("{}.token", pool.name), b"ghp_exampletoken\n");
+        pool.token_path =
+            scratch.write_token(&format!("{}.token", pool.name), b"ghp_exampletoken\n");
     }
     pools
 }
