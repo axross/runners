@@ -62,11 +62,7 @@ impl fmt::Display for PrivateError {
                 )
             }
             Self::NotARegularFile(path) => {
-                write!(
-                    f,
-                    "{} is not a regular file (a link does not count)",
-                    path.display()
-                )
+                write!(f, "{} is not a regular file", path.display())
             }
             Self::OwnedByAnother {
                 path,
