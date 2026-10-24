@@ -33,6 +33,11 @@ not observed. The same holds for the container limits: a test checks the
 `docker run` arguments, and what Docker Desktop enforces and `docker inspect`
 reports is described from Docker's documentation.
 
+The CLI's `start` command can run the same pools, but on axpc this procedure keeps
+using the PowerShell supervisor until Phase 4b moves the host to the CLI. Do not run
+`runners start` beside the supervisor: its stale cleanup removes the supervisor's job
+containers. See [CLI](./cli.md#running-a-host).
+
 ## Prerequisites
 
 - **Windows 11 Pro, version 23H2 or later**, the minimum for Docker Desktop's WSL 2

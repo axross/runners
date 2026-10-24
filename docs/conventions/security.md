@@ -73,10 +73,13 @@ each against the lock's checksum. `cargo-deny` is a mise tool, pinned in
 [`cli/deny.toml`](../../cli/deny.toml) allows crates.io only, a reviewed licence
 allowlist, and one version of each crate. `serde_derive` and the crates it uses
 (`syn`, `quote`, `proc-macro2`) run code at build time, as do `tokio-macros`,
-`displaydoc`, `yoke-derive`, `zerofrom-derive`, `zerovec-derive`, and `doctest-file`,
-which the async runtime, the HTTPS client's URL parser, and the Windows pipe crate bring. They are locked by
-`Cargo.lock` checksums and covered by `cargo-deny` like the other crates, and a
-new procedural-macro crate needs the maintainer's review. The HTTPS client's TLS
+`displaydoc`, `yoke-derive`, `zerofrom-derive`, `zerovec-derive`, `doctest-file`,
+`thiserror-impl`, `windows-implement`, and `windows-interface`, which the async
+runtime, the HTTPS client's URL parser, the Windows pipe crate, and the Windows Job
+Object crate bring. They are locked by `Cargo.lock` checksums and covered by
+`cargo-deny` like the other crates, and a new procedural-macro crate needs the
+maintainer's review, as does a second version of a crate beyond the two that
+`deny.toml` lists. The HTTPS client's TLS
 stack also needs the `ISC` and `BSD-3-Clause` licences on the allowlist, and the
 Windows pipe crate needs `0BSD`; the maintainer approved all three, and [CLI](../operations/cli.md#dependencies) records why
 each crate is there. `rustup` itself is
@@ -372,10 +375,42 @@ built: its names, modes, and checks.
 - No request carries a configuration path for the instance to read, and no
   response carries a token or a JIT configuration. A resume names a path only so
   the instance can compare it with the one it started with.
-- Only a debug build can move the lock, the channel, or their roots, for the tests;
+- Only a debug build can move the lock, the channel, the log directory, or their
+  roots, for the tests;
   a release build always uses the host's fixed locations, and a CI step checks in
   the release profile that it ignores the request. The `instance-helper`
   binary that the tests and CI run does nothing in a release build.
+
+## Tokens Stay Out of the Log, and Job Clients End With `start`
+
+`start` holds every pool's token and each slot's JIT configuration for as long as it
+runs, and it writes a log that lives after it. [CLI](../operations/cli.md#running-a-host)
+owns how the log is written and masked and how its children are contained.
+
+- No token or JIT configuration reaches a log line, the terminal, a debug form, an
+  error message, a command line, or a control-channel response. A token is masked
+  from its first read, and a JIT configuration from its registration until its
+  container's outcome is reported, including the container output `start` forwards.
+  A JIT configuration reaches the job container through its environment, never
+  through an argument.
+- The log directory is per user. On macOS it and each file are private and checked;
+  on Windows the directory under `%LOCALAPPDATA%` is not checked and relies on the
+  profile's access control.
+- A panic's message never reaches the terminal unmasked: `start` replaces the default
+  panic hook.
+- Every job container's `docker` client ends when `start` ends, however it ends: on
+  Windows through a kill-on-close Job Object, and on Unix through a shim that removes
+  its container when `start`'s liveness pipe closes.
+
+Residual risks, accepted on a single-user host:
+
+- A secret split across two 64 KiB pieces of forwarded container output is not
+  masked.
+- On Unix a shim outlives `start` by up to 5 s, and a shim that is itself killed
+  leaves its container running until the next `start` removes it. On Windows a
+  container outlives its killed client, with the same backstop.
+- On Windows, logoff and shutdown events never reach an interactive process, so
+  containers left by them wait for the next `start`.
 
 ## CPU Placement Is Not Resource Reservation
 

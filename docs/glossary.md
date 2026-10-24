@@ -59,12 +59,23 @@ can use a custom label to select that pool for its **Target Repository**.
 can run two jobs at once; each slot starts a fresh ephemeral runner when its
 previous one exits.
 
-**Supervisor** - the host-side script that keeps each slot of every **Execution
+**Supervisor** - the host-side process that keeps each slot of every **Execution
 Pool** filled: it requests a **JIT Config** with the target repository's token,
-starts a runner container, waits for it to exit, and repeats.
+starts a runner container, waits for it to exit, and repeats. On axpc it is still
+the PowerShell script; the **CLI**'s `start` is the supervisor that replaces it.
 
-**CLI** - this project's Rust command line tool, under `cli/`. So far it has one
-command, `validate`, which checks a **Host Configuration**.
+**CLI** - this project's Rust command line tool, under `cli/`. `validate` checks a
+**Host Configuration**; `start` runs a host's pools in the foreground as the
+**Supervisor**, and `stop`, `restart`, and `status` talk to it.
+
+**Instance State** - where the one running `start` on a machine stands: running,
+stopping, stopped with a reason, or resuming. `status` reports it, and it decides
+which requests the instance accepts. See
+[operations/cli.md](./operations/cli.md#instance-state).
+
+**Runtime Core** - the part of `start` that prepares the **Execution Pools** and
+runs every **Slot**'s loop until a stop. The instance restarts it after a failure;
+see [operations/cli.md](./operations/cli.md#the-instance-layer).
 
 **Host Profile** - the host a **Host Configuration** is checked for: `axpc`, the
 Windows machine with Docker Desktop, or `axmc`, the macOS machine. A profile fixes
