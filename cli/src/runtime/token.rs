@@ -26,6 +26,8 @@ pub enum TokenFileError {
     /// The file is not private to the current user; the text says how.
     NotPrivate(String),
     Unreadable(String, io::ErrorKind),
+    /// The current user's ID, which the privacy check needs, cannot be read.
+    CurrentUserUnknown(io::ErrorKind),
 }
 
 impl fmt::Display for TokenFileError {
@@ -46,6 +48,11 @@ impl fmt::Display for TokenFileError {
             Self::Unreadable(path, kind) => {
                 write!(f, "token file at {path} cannot be read ({kind})")
             }
+            Self::CurrentUserUnknown(kind) => write!(
+                f,
+                "the current user's ID cannot be read from a file in the temporary \
+                 directory ({kind}), so no token file can be checked"
+            ),
         }
     }
 }
@@ -67,7 +74,7 @@ pub fn read_token(path: &Path) -> Result<Secret, TokenFileError> {
         return Err(TokenFileError::NotFound(shown));
     }
     #[cfg(target_os = "macos")]
-    require_private(path, &metadata, current_uid(&shown)?)?;
+    require_private(path, &metadata, current_uid()?)?;
     let mut bytes = Vec::new();
     file.take(MAX_TOKEN_FILE_BYTES + 1)
         .read_to_end(&mut bytes)
@@ -96,8 +103,8 @@ fn require_private(
 }
 
 #[cfg(target_os = "macos")]
-fn current_uid(shown: &str) -> Result<u32, TokenFileError> {
-    crate::private::current_uid().map_err(|error| classify(shown, &error))
+fn current_uid() -> Result<u32, TokenFileError> {
+    crate::private::current_uid().map_err(|error| TokenFileError::CurrentUserUnknown(error.kind()))
 }
 
 fn classify(path: &str, error: &io::Error) -> TokenFileError {
@@ -154,6 +161,17 @@ mod tests {
         std::fs::write(&file, [0xFF, 0xFE, b'a']).unwrap();
         assert!(matches!(read_token(&file), Err(TokenFileError::NotText(_))));
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_current_user_that_cannot_be_read_is_reported_as_itself_and_names_no_token_file() {
+        let text = TokenFileError::CurrentUserUnknown(io::ErrorKind::PermissionDenied).to_string();
+        assert!(
+            text.starts_with("the current user's ID cannot be read"),
+            "{text}"
+        );
+        assert!(text.contains("permission denied"), "{text}");
+        assert!(!text.contains("token file at"), "{text}");
     }
 
     #[test]
