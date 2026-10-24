@@ -104,6 +104,7 @@ jobs:
         shell: pwsh
         run: |
           cargo build --locked --bin instance-helper
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ./tests/ci/control-pipe-security.ps1 -Helper target/debug/instance-helper.exe
       # the base address of the GitHub API can move only in a debug build, for the
       # loopback tests. the plain test run above is a debug build, so this step
