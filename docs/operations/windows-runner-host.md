@@ -56,11 +56,12 @@ Desktop; CI runs it only against a small test definition on Linux. See
 The CLI's `start` also runs diagnostics-enabled pools and exports their containers'
 evidence, and `runners diagnostics` finalises the diagnostic containers an instance
 still retains; on axpc the supervisor keeps doing this until Phase 4b, and the CLI's
-diagnostics are unverified there until then, including the console close. The CLI
-does not check a Windows sink's owner or access rules, so the ACL step under
-[Collecting private diagnostics](#collecting-private-diagnostics) is what keeps a
-sink private. The CLI does not take the PowerShell exporter's named mutex either:
-its own instance lock is what keeps two of its exports apart, so the CLI instance
+diagnostics are unverified there until then, including the console close. Keep
+the ACL step under [Collecting private diagnostics](#collecting-private-diagnostics)
+for a sink the CLI exports to;
+[Security](../conventions/security.md#diagnostic-evidence-stays-private) records
+why the CLI relies on it. The CLI does not take the PowerShell exporter's named
+mutex: its own instance lock is what keeps two of its exports apart, so the CLI instance
 MUST be stopped with `runners stop` before a manual export under
 [Recover before disabling diagnostics](#recover-before-disabling-diagnostics). See
 [CLI](./cli.md#diagnostics).

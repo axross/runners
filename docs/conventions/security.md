@@ -430,10 +430,11 @@ A diagnostic container's bundle holds what the collector observed during a job, 
 the job ran code from the repository. [CLI](../operations/cli.md#diagnostics) owns
 how a bundle is written.
 
-- The sink is one the operator created: the CLI never creates, repairs, or relaxes
-  it. It must lie outside the checkout, and neither it nor a directory above it may
-  be a link or a Windows reparse point. On Unix it must be owned by the current
-  user with mode `0700`, and the CLI creates each bundle `0700` and each file `0600`.
+- The sink is a directory the operator created, outside the checkout and private
+  to the user who runs the CLI, so the evidence reaches no other user and none of
+  the repository's files. The CLI refuses a sink that fails its checks and never
+  creates, repairs, or relaxes one; the checks and the modes a bundle is written
+  with are under Sink checks in [CLI](../operations/cli.md#diagnostics).
 - On Windows the CLI does not check the sink's owner or access rules, because no
   safe call reads them; a bundle inherits the sink's rules. The PowerShell exporter
   checks them, so the operator's ACL step in
