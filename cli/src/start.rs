@@ -7,6 +7,7 @@
 //! that finds the lock held changes nothing locally: it asks this user's instance
 //! to resume, which only a stopped instance does.
 
+use std::convert::Infallible;
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io::{self, Write};
@@ -234,20 +235,17 @@ async fn run_instance(parts: Parts<'_>, plan: crate::validate::Plan) -> u8 {
         let mut requests = requests;
         let mut run = std::pin::pin!(instance.run(plan, &mut requests));
         tokio::select! {
-            ended = &mut run => Some(ended),
-            () = signals(&sender, &force, log) => None,
+            ended = &mut run => ended,
+            never = signals(&sender, &force, log) => match never {},
             () = console_closed(log) => {
                 request_stop(&sender);
                 force();
                 let stopped = tokio::time::timeout(CLOSE_REMOVE_BUDGET, &mut run).await;
-                Some(stopped.unwrap_or(Ended { containers_removed: false, nothing_to_run: false }))
+                stopped.unwrap_or(Ended { containers_removed: false, nothing_to_run: false })
             }
         }
     };
     server.close(ANSWERS_WITHIN).await;
-    let Some(ended) = ended else {
-        return EXIT_FAILED;
-    };
     if ended.nothing_to_run {
         log.warn("The instance ended because no pool could start.");
         EXIT_FAILED
@@ -336,8 +334,11 @@ fn listeners(log: &dyn Log) -> Vec<Listener> {
 
 /// Turns each signal [`listeners`] could open into a stop, and a second interrupt
 /// into forced removal. A signal that could not be opened keeps its default action.
-/// Never ends.
-async fn signals(sender: &mpsc::UnboundedSender<Incoming>, force: &dyn Fn(), log: &dyn Log) {
+async fn signals(
+    sender: &mpsc::UnboundedSender<Incoming>,
+    force: &dyn Fn(),
+    log: &dyn Log,
+) -> Infallible {
     let mut listeners = listeners(log);
     if listeners.is_empty() {
         log.warn("No signal can be handled, so only `runners stop` stops the instance.");
