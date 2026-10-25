@@ -17,12 +17,12 @@ use runners_cli::runtime::board::Board;
 use runners_cli::runtime::docker::DockerLimits;
 use runners_cli::runtime::fake::FakeRegistrar;
 use runners_cli::runtime::log::Log;
-use runners_cli::runtime::pool::{pools_from_plan, prepare_pools};
+use runners_cli::runtime::pool::pools_from_plan;
 use runners_cli::runtime::secret::Secret;
 use runners_cli::runtime::worker::{run_slot, stop_channel};
 use runners_cli::validate::{PlannedVolume, validate};
 use support::docker::Fake;
-use support::{TempDir, repository_root};
+use support::{TempDir, prepare_pools, repository_root};
 
 const PROBE_READER: &str = "while read -r key value; do if [ \"$key\" = Cpus_allowed_list: ]; then printf \"%s\\n\" \"$value\"; exit; fi; done < /proc/self/status; exit 1";
 
