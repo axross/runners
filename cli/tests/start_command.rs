@@ -12,6 +12,8 @@ mod support;
 use std::fs;
 use std::time::{Duration, Instant};
 
+use runners_cli::image::contract::{CONTRACT_VERSION, RUNNER_VERSION_LABEL};
+use runners_cli::image::definition::declared_label;
 use support::host::{Host, JIT, Started, TOKEN, registered, texts};
 use support::stub::{Reply, Stub};
 use support::{TempDir, repository_root};
@@ -44,6 +46,14 @@ fn wait_for_job(host: &Host) -> String {
         std::thread::sleep(Duration::from_millis(20));
     }
     status
+}
+
+/// The runner version the embedded Dockerfile declares, which the fake engine's
+/// images carry.
+fn declared_runner_version() -> String {
+    declared_label(RUNNER_VERSION_LABEL)
+        .expect("the Dockerfile declares no runner version")
+        .to_string()
 }
 
 fn job_containers(host: &Host) -> Vec<String> {
@@ -222,7 +232,13 @@ fn a_run_keeps_the_token_and_the_jit_config_out_of_every_output_it_writes() {
         lines[4].starts_with("slot: r slot 1: running container r-1-"),
         "{status}"
     );
-    assert_eq!(lines[5], "image-age: not available until Phase 3");
+    assert_eq!(lines[5], "image: actions-runner:local");
+    assert_eq!(lines[6], format!("image-contract: {CONTRACT_VERSION}"));
+    assert_eq!(lines[7], "image-built: 0 days ago");
+    assert!(
+        lines[8].starts_with(&format!("runner: {}, released ", declared_runner_version())),
+        "{status}"
+    );
 
     // the secrets did reach the places they belong
     let authorization = stub.requests()[0]

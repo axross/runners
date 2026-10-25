@@ -15,7 +15,7 @@ use crate::runtime::pool::NoPoolStartable;
 use crate::runtime::worker::wait_for_stop;
 use crate::validate::Plan;
 
-use super::lifecycle::{Core, CoreFailure, Source};
+use super::lifecycle::{Core, CoreFailure, Ending, Source};
 
 /// What one run of a [`FakeCore`] does.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,6 +33,8 @@ pub enum CoreStep {
     Panic(String),
     /// Fails at once because no pool could start.
     NothingToRun,
+    /// Fails at once because the image cannot run jobs, as `message` says.
+    RefuseImage(String),
     /// Never ends, even when the stop is asked for.
     IgnoreStop,
     /// Runs until the stop is asked for.
@@ -53,6 +55,10 @@ pub struct FakeCore {
     pub end_gate: RefCell<Option<Rc<Notify>>>,
     /// What the core reports to `status`.
     pub report: RefCell<Vec<(&'static str, String)>>,
+    /// The answers to `check_image`; when they run out, every check passes.
+    pub image_checks: RefCell<VecDeque<Result<(), String>>>,
+    /// How many times the image was checked.
+    pub image_checked: Cell<usize>,
 }
 
 impl FakeCore {
@@ -87,7 +93,7 @@ impl Core for FakeCore {
                 Err(CoreFailure {
                     message,
                     containers,
-                    nothing_to_run: false,
+                    ending: Ending::Ordinary,
                 })
             }
             Some(CoreStep::EndWithoutStop) => Ok(()),
@@ -96,7 +102,12 @@ impl Core for FakeCore {
             Some(CoreStep::NothingToRun) => Err(CoreFailure {
                 message: NoPoolStartable.to_string(),
                 containers: Vec::new(),
-                nothing_to_run: true,
+                ending: Ending::NothingToRun,
+            }),
+            Some(CoreStep::RefuseImage(message)) => Err(CoreFailure {
+                message,
+                containers: Vec::new(),
+                ending: Ending::ImageRefused,
             }),
             Some(CoreStep::IgnoreStop) => std::future::pending().await,
             Some(CoreStep::RunUntilStop) | None => {
@@ -108,6 +119,11 @@ impl Core for FakeCore {
                 Ok(())
             }
         }
+    }
+
+    async fn check_image(&self, _plan: &Plan) -> Result<(), String> {
+        self.image_checked.set(self.image_checked.get() + 1);
+        self.image_checks.borrow_mut().pop_front().unwrap_or(Ok(()))
     }
 
     fn report(&self) -> Vec<(&'static str, String)> {

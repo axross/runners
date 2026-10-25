@@ -23,6 +23,9 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
 use tokio::process::{Child, Command};
 
 use crate::affinity::{MAX_CPU_LIST_BYTES, select_cpus};
+use crate::image::check::{
+    IMAGE_CHECK_BUDGET, ImageCheck, ImageLabels, MAX_INSPECT_BYTES, checked_reference,
+};
 use crate::validate::PlannedVolume;
 
 use super::backend::{
@@ -30,9 +33,9 @@ use super::backend::{
 };
 use super::clock::Clock;
 use super::docker_args::{
-    JIT_VARIABLE, info_arguments, job_run_arguments, pool_diagnostic_list_arguments,
-    pool_list_arguments, probe_find_arguments, probe_run_arguments, remove_arguments,
-    stop_arguments, volume_chown_arguments, volume_create_arguments,
+    JIT_VARIABLE, image_inspect_arguments, image_list_arguments, info_arguments, job_run_arguments,
+    pool_diagnostic_list_arguments, pool_list_arguments, probe_find_arguments, probe_run_arguments,
+    remove_arguments, stop_arguments, volume_chown_arguments, volume_create_arguments,
 };
 use super::log::Log;
 use super::scrub::scrub_error_text;
@@ -60,6 +63,8 @@ pub struct DockerLimits {
     pub probe_budget: Duration,
     /// The budget of reconciling and removing a leftover probe.
     pub probe_cleanup_budget: Duration,
+    /// The budget of one image check, both its clients together.
+    pub image_check_budget: Duration,
     /// The time reserved at the end of a budget to end a client that overran it.
     pub client_termination: Duration,
     /// The most bytes of probe output read.
@@ -72,6 +77,7 @@ impl Default for DockerLimits {
             command_budget: Duration::from_secs(120),
             probe_budget: Duration::from_secs(30),
             probe_cleanup_budget: Duration::from_secs(5),
+            image_check_budget: IMAGE_CHECK_BUDGET,
             client_termination: Duration::from_secs(1),
             probe_output_bytes: MAX_CPU_LIST_BYTES,
         }
@@ -155,6 +161,30 @@ impl Captured {
     }
 }
 
+/// Builds a client command. The JIT variable is cleared, so only the one `run`
+/// that sets it carries a registration; the client is killed when its future is
+/// dropped, and starts in its own process group.
+pub(crate) fn client_command(
+    program: &OsStr,
+    environment: &[(OsString, OsString)],
+    arguments: &[String],
+) -> Command {
+    let mut command = Command::new(program);
+    command
+        .args(arguments)
+        .env_remove(JIT_VARIABLE)
+        .stdin(Stdio::null())
+        .kill_on_drop(true);
+    for (name, value) in environment {
+        command.env(name, value);
+    }
+    #[cfg(unix)]
+    command.process_group(0);
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NEW_PROCESS_GROUP);
+    command
+}
+
 pub struct DockerBackend<C> {
     config: DockerConfig,
     clock: C,
@@ -190,24 +220,8 @@ impl<C: Clock> DockerBackend<C> {
         }
     }
 
-    /// Builds a client command. The JIT variable is cleared, so only the one `run`
-    /// that sets it carries a registration; the client is killed when its future is
-    /// dropped, and starts in its own process group.
     fn command(&self, arguments: &[String]) -> Command {
-        let mut command = Command::new(&self.config.program);
-        command
-            .args(arguments)
-            .env_remove(JIT_VARIABLE)
-            .stdin(Stdio::null())
-            .kill_on_drop(true);
-        for (name, value) in &self.config.environment {
-            command.env(name, value);
-        }
-        #[cfg(unix)]
-        command.process_group(0);
-        #[cfg(windows)]
-        command.creation_flags(CREATE_NEW_PROCESS_GROUP);
-        command
+        client_command(&self.config.program, &self.config.environment, arguments)
     }
 
     /// The command that starts a job container: the client itself, or the shim that
@@ -291,28 +305,23 @@ impl<C: Clock> DockerBackend<C> {
     /// Runs a client with standard error discarded and at most `cap` bytes of
     /// standard output, ending it at `budget` less the time reserved to terminate
     /// it. A client over the cap or the budget is ended and refused.
-    async fn bounded(
+    async fn run_capped(
         &self,
         arguments: &[String],
         budget: Duration,
         cap: usize,
-    ) -> Result<(i32, Vec<u8>), BackendError> {
-        let unavailable = || {
-            BackendError::new("CPU discovery: Docker client unavailable, invalid or over budget.")
-        };
+    ) -> Result<(i32, Vec<u8>), CappedFailure> {
         let termination = self.config.limits.client_termination;
         let read_budget = budget
             .checked_sub(termination)
-            .filter(|left| !left.is_zero());
-        let Some(read_budget) = read_budget else {
-            return Err(BackendError::new("CPU discovery: deadline spent."));
-        };
+            .filter(|left| !left.is_zero())
+            .ok_or(CappedFailure::DeadlineSpent)?;
         let mut command = self.command(arguments);
         command.stdout(Stdio::piped()).stderr(Stdio::null());
-        let mut child = command.spawn().map_err(|_| unavailable())?;
+        let mut child = command.spawn().map_err(|_| CappedFailure::Unavailable)?;
         let Some(mut stdout) = child.stdout.take() else {
             end_client(&mut child, termination).await;
-            return Err(unavailable());
+            return Err(CappedFailure::Unavailable);
         };
         let outcome = tokio::time::timeout(read_budget, async {
             let bytes = read_capped(&mut stdout, cap).await?;
@@ -324,9 +333,27 @@ impl<C: Clock> DockerBackend<C> {
             Ok(Some(result)) => Ok(result),
             Ok(None) | Err(_) => {
                 end_client(&mut child, termination).await;
-                Err(unavailable())
+                Err(CappedFailure::Unavailable)
             }
         }
+    }
+
+    /// [`run_capped`](Self::run_capped) for the CPU probe, whose failures read as
+    /// CPU discovery errors.
+    async fn bounded(
+        &self,
+        arguments: &[String],
+        budget: Duration,
+        cap: usize,
+    ) -> Result<(i32, Vec<u8>), BackendError> {
+        self.run_capped(arguments, budget, cap)
+            .await
+            .map_err(|failure| match failure {
+                CappedFailure::DeadlineSpent => BackendError::new("CPU discovery: deadline spent."),
+                CappedFailure::Unavailable => BackendError::new(
+                    "CPU discovery: Docker client unavailable, invalid or over budget.",
+                ),
+            })
     }
 
     /// Removes a leftover CPU probe of this exact name, and only one that carries
@@ -400,6 +427,15 @@ impl<C: Clock> DockerBackend<C> {
     }
 }
 
+/// Why a capped client gave no result.
+enum CappedFailure {
+    /// The budget left no time to run it.
+    DeadlineSpent,
+    /// It could not start, overran its cap or its budget, or its output could not
+    /// be read.
+    Unavailable,
+}
+
 /// Removes one trailing `\n` or `\r\n`.
 fn strip_line_end(text: &str) -> &str {
     let text = text.strip_suffix('\n').unwrap_or(text);
@@ -465,6 +501,52 @@ impl<C: Clock> Backend for DockerBackend<C> {
                 "Docker Desktop is not responding yet (still starting, or not running) - waiting.",
             );
             self.clock.sleep(DOCKER_POLL_INTERVAL).await;
+        }
+    }
+
+    async fn check_image(&self, image: &str) -> ImageCheck {
+        let budget = self.config.limits.image_check_budget;
+        let started = Instant::now();
+        let unanswered = || {
+            ImageCheck::Unavailable(format!(
+                "Docker did not answer the image check within {} s",
+                budget.as_secs()
+            ))
+        };
+        let reference = checked_reference(image);
+        let inspected = self
+            .run_capped(
+                &image_inspect_arguments(&reference),
+                budget,
+                MAX_INSPECT_BYTES,
+            )
+            .await;
+        match inspected {
+            Ok((0, output)) => {
+                // an inspect that succeeds but prints something else is an image
+                // whose labels cannot be read, so its contract is malformed
+                return ImageLabels::from_inspect(&output).map_or_else(
+                    || ImageCheck::Mismatched(ImageLabels::default()),
+                    ImageCheck::of_labels,
+                );
+            }
+            Ok(_) => {}
+            Err(_) => return unanswered(),
+        }
+        let remaining = budget.saturating_sub(started.elapsed());
+        match self
+            .run_capped(
+                &image_list_arguments(&reference),
+                remaining,
+                MAX_INSPECT_BYTES,
+            )
+            .await
+        {
+            Ok((0, output)) if output.iter().all(u8::is_ascii_whitespace) => ImageCheck::Missing,
+            Ok((0, _)) => ImageCheck::Unavailable(
+                "docker image inspect failed for an image that exists".to_string(),
+            ),
+            Ok(_) | Err(_) => unanswered(),
         }
     }
 

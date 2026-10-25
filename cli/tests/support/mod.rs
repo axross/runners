@@ -127,3 +127,21 @@ pub fn slot_spec(token: PathBuf) -> runners_cli::runtime::pool::SlotSpec {
         image: "actions-runner:local".to_string(),
     }
 }
+
+/// Prepares the pools as the runtime core does, without its image check: admits
+/// them, waits for Docker once when one is admitted, then prepares those admitted.
+pub async fn prepare_pools<B: runners_cli::runtime::backend::Backend>(
+    backend: &B,
+    pools: Vec<runners_cli::runtime::pool::PoolSpec>,
+    log: &dyn runners_cli::runtime::log::Log,
+    board: &runners_cli::runtime::board::Board,
+) -> Result<Vec<runners_cli::runtime::pool::PoolSpec>, runners_cli::runtime::pool::NoPoolStartable>
+{
+    use runners_cli::runtime::pool::{NoPoolStartable, admit_pools, prepare_admitted};
+    let admitted = admit_pools(pools, log, board);
+    if admitted.is_empty() {
+        return Err(NoPoolStartable);
+    }
+    backend.wait_until_available().await;
+    prepare_admitted(backend, admitted, log, board).await
+}

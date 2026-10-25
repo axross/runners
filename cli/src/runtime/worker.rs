@@ -1,13 +1,17 @@
-//! The loop of one slot: probe the CPUs, register, run one job container, repeat.
+//! The loop of one slot: check the image, probe the CPUs, register, run one job
+//! container, repeat.
 
 use std::time::Duration;
 
 use tokio::sync::watch;
 
+use crate::image::check::ImageCheck;
+
 use super::backend::{Backend, ContainerSpec, CpuRequest};
 use super::board::{Board, SlotState};
 use super::clock::Clock;
 use super::docker_args::RUN_COMMAND;
+use super::image::check_image;
 use super::log::{Log, Masked};
 use super::name::job_container_name;
 use super::pool::SlotSpec;
@@ -120,10 +124,12 @@ async fn back_off<K: Clock>(
 /// Runs one slot until a stop is asked for. A container already running is left to
 /// the stop sequence, which ends it; the loop then returns.
 ///
-/// Each attempt probes the CPUs, then registers, then runs the container. A failed
-/// probe or registration, or a non-zero exit, waits out the backoff; an exit of 0
-/// starts the replacement at once. The slot's state goes on `board`, and the token
-/// it reads and the JIT configuration it holds are masked in `log`.
+/// Each attempt checks the image, then probes the CPUs, then registers, then runs
+/// the container. An image that cannot run jobs, a Docker that does not answer the
+/// check, a failed probe or registration, or a non-zero exit, waits out the
+/// backoff; an exit of 0 starts the replacement at once. The slot's state goes on
+/// `board`, and the token it reads and the JIT configuration it holds are masked in
+/// `log`.
 pub async fn run_slot<B: Backend, K: Clock, R: Registrar>(
     slot: &SlotSpec,
     backend: &B,
@@ -141,6 +147,25 @@ pub async fn run_slot<B: Backend, K: Clock, R: Registrar>(
     let mut backoff = Backoff::default();
     while !stopped(&stop) {
         report.state(SlotState::Registering);
+        let checked = tokio::select! {
+            checked = check_image(backend, board, &slot.image) => checked,
+            () = wait_for_stop(&mut stop) => return,
+        };
+        let refused = match &checked {
+            ImageCheck::Unavailable(reason) => Some(format!(
+                "the image check failed ({reason}); no registration"
+            )),
+            other => other
+                .refusal(&slot.image)
+                .map(|refusal| format!("{refusal}; no registration")),
+        };
+        if let Some(reason) = refused {
+            if back_off(&report, clock, &mut stop, &mut backoff, &reason).await {
+                return;
+            }
+            continue;
+        }
+
         let request = CpuRequest {
             probe_name: slot.probe_name(),
             image: slot.image.clone(),

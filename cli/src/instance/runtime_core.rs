@@ -1,22 +1,28 @@
-//! The runtime core `start` runs: it prepares the pools and runs every slot's loop
-//! until the stop is asked for.
+//! The runtime core `start` runs: it prepares the pools, checks their image once
+//! Docker answers, and runs every slot's loop until the stop is asked for.
 
+use std::cell::Cell;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::Poll;
 
 use tokio::sync::watch;
 
+use crate::image::check::{ImageCheck, freshness_warnings};
 use crate::runtime::backend::Backend;
 use crate::runtime::board::Board;
 use crate::runtime::clock::Clock;
+use crate::runtime::docker::DOCKER_POLL_INTERVAL;
+use crate::runtime::image::check_image;
 use crate::runtime::log::Log;
-use crate::runtime::pool::{NoPoolStartable, pools_from_plan, prepare_pools};
+use crate::runtime::pool::{
+    NoPoolStartable, PoolSpec, admit_pools, pools_from_plan, prepare_admitted,
+};
 use crate::runtime::registration::Registrar;
 use crate::runtime::worker::{run_slot, wait_for_stop};
 use crate::validate::Plan;
 
-use super::lifecycle::{Core, CoreFailure};
+use super::lifecycle::{Core, CoreFailure, Ending};
 
 /// The pools of the plan on one backend, with their state on a board of their own.
 pub struct RuntimeCore<'a, B, K, R> {
@@ -25,6 +31,7 @@ pub struct RuntimeCore<'a, B, K, R> {
     registrar: &'a R,
     log: &'a dyn Log,
     board: Board,
+    running: Cell<bool>,
 }
 
 impl<'a, B: Backend, K: Clock, R: Registrar> RuntimeCore<'a, B, K, R> {
@@ -36,24 +43,67 @@ impl<'a, B: Backend, K: Clock, R: Registrar> RuntimeCore<'a, B, K, R> {
             registrar,
             log,
             board: Board::default(),
+            running: Cell::new(false),
+        }
+    }
+
+    /// Admits the pools, waits for Docker, checks the image, and prepares the
+    /// pools, in that order, so no pool is prepared for an image that cannot run.
+    async fn prepare(
+        &self,
+        pools: Vec<PoolSpec>,
+        image: &str,
+    ) -> Result<Vec<PoolSpec>, CoreFailure> {
+        let admitted = admit_pools(pools, self.log, &self.board);
+        if admitted.is_empty() {
+            return Err(failure(NoPoolStartable.to_string(), Ending::NothingToRun));
+        }
+        self.backend.wait_until_available().await;
+        self.verify_image(image).await?;
+        prepare_admitted(self.backend, admitted, self.log, &self.board)
+            .await
+            .map_err(|NoPoolStartable| failure(NoPoolStartable.to_string(), Ending::NothingToRun))
+    }
+
+    /// Checks the image until Docker answers the check, then logs its freshness
+    /// warnings, or fails when it cannot run jobs.
+    async fn verify_image(&self, image: &str) -> Result<(), CoreFailure> {
+        loop {
+            let check = check_image(self.backend, &self.board, image).await;
+            if let Some(refusal) = check.refusal(image) {
+                return Err(failure(refusal, Ending::ImageRefused));
+            }
+            let ImageCheck::Unavailable(reason) = check else {
+                for warning in freshness_warnings(&check, self.clock.now()) {
+                    self.log.warn(&format!("Image freshness: {warning}."));
+                }
+                return Ok(());
+            };
+            self.log.warn(&format!(
+                "{reason}, so the image {image} is checked again in {} s.",
+                DOCKER_POLL_INTERVAL.as_secs()
+            ));
+            self.clock.sleep(DOCKER_POLL_INTERVAL).await;
+            self.backend.wait_until_available().await;
         }
     }
 }
 
 /// Empties the board when a run of the core ends, however it ends.
-struct Cleared<'a>(&'a Board);
+struct Cleared<'a>(&'a Board, &'a Cell<bool>);
 
 impl Drop for Cleared<'_> {
     fn drop(&mut self) {
         self.0.clear();
+        self.1.set(false);
     }
 }
 
-fn failure(message: String, nothing_to_run: bool) -> CoreFailure {
+fn failure(message: String, ending: Ending) -> CoreFailure {
     CoreFailure {
         message,
         containers: Vec::new(),
-        nothing_to_run,
+        ending,
     }
 }
 
@@ -73,14 +123,16 @@ async fn run_all<F: Future<Output = ()>>(mut workers: Vec<Pin<Box<F>>>) {
 impl<B: Backend, K: Clock, R: Registrar> Core for RuntimeCore<'_, B, K, R> {
     async fn run(&self, plan: &Plan, mut stop: watch::Receiver<bool>) -> Result<(), CoreFailure> {
         self.board.clear();
-        let _cleared = Cleared(&self.board);
-        let pools = pools_from_plan(plan).map_err(|error| failure(error.to_string(), false))?;
+        self.running.set(true);
+        let _cleared = Cleared(&self.board, &self.running);
+        let pools =
+            pools_from_plan(plan).map_err(|error| failure(error.to_string(), Ending::Ordinary))?;
+        let image = plan.image_name.as_deref().unwrap_or_default();
+        self.board.expect_image(image);
         let prepared = tokio::select! {
-            prepared = prepare_pools(self.backend, pools, self.log, &self.board) => prepared,
+            prepared = self.prepare(pools, image) => prepared?,
             () = wait_for_stop(&mut stop) => return Ok(()),
         };
-        let prepared =
-            prepared.map_err(|NoPoolStartable| failure(NoPoolStartable.to_string(), true))?;
         let slots: Vec<_> = prepared.iter().flat_map(|pool| pool.slot_specs()).collect();
         let workers = slots
             .iter()
@@ -100,7 +152,26 @@ impl<B: Backend, K: Clock, R: Registrar> Core for RuntimeCore<'_, B, K, R> {
         Ok(())
     }
 
+    async fn check_image(&self, plan: &Plan) -> Result<(), String> {
+        let Some(image) = plan.image_name.as_deref() else {
+            return Ok(());
+        };
+        let check = check_image(self.backend, &self.board, image).await;
+        if let ImageCheck::Unavailable(reason) = &check {
+            self.log.warn(&format!(
+                "{reason}, so the image {image} is checked once Docker answers."
+            ));
+        }
+        check.refusal(image).map_or(Ok(()), Err)
+    }
+
     fn report(&self) -> Vec<(&'static str, String)> {
-        self.board.fields()
+        let mut fields = if self.running.get() {
+            self.board.fields()
+        } else {
+            Vec::new()
+        };
+        fields.extend(self.board.image_fields(self.clock.now()));
+        fields
     }
 }

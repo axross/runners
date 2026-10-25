@@ -12,7 +12,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use runners_cli::instance::fake::CoreStep;
-use runners_cli::instance::lifecycle::StopTimes;
+use runners_cli::instance::lifecycle::{Ending, StopTimes};
 use runners_cli::instance::protocol::{Outcome, Request};
 use runners_cli::profile::Profile;
 use runners_cli::runtime::backend::StopRequest;
@@ -392,7 +392,7 @@ async fn a_core_that_ends_without_a_stop_is_a_failure_that_restarts_it() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn status_shows_what_the_core_reports_and_the_image_age_placeholder() {
+async fn status_shows_what_the_core_reports() {
     let rig = Rig::new();
     *rig.core.report.borrow_mut() = vec![
         ("pool", "r: running".to_string()),
@@ -418,7 +418,6 @@ async fn status_shows_what_the_core_reports_and_the_image_age_placeholder() {
             ("profile", "axpc"),
             ("pool", "r: running"),
             ("slot", "r slot 1: running container r-1-x"),
-            ("image-age", "not available until Phase 3"),
         ]
     );
 }
@@ -498,5 +497,5 @@ async fn a_core_that_ignores_the_stop_is_dropped_at_the_exit_deadline() {
         })
         .await;
     assert!(ended.containers_removed, "the container steps had finished");
-    assert!(!ended.nothing_to_run);
+    assert_eq!(ended.ending, Ending::Ordinary);
 }

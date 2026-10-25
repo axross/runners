@@ -13,9 +13,9 @@ use runners_cli::runtime::backend::{Backend, BackendError};
 use runners_cli::runtime::board::Board;
 use runners_cli::runtime::fake::{Call, FakeBackend, FakeContainer, MemoryLog};
 use runners_cli::runtime::log::Log;
-use runners_cli::runtime::pool::{NoPoolStartable, PoolSpec, pools_from_plan, prepare_pools};
+use runners_cli::runtime::pool::{NoPoolStartable, PoolSpec, pools_from_plan};
 use runners_cli::validate::validate;
-use support::{TempDir, write_token_file};
+use support::{TempDir, prepare_pools, write_token_file};
 
 const STAMP: &str = "20240305060708009";
 

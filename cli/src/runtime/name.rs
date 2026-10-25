@@ -5,7 +5,7 @@
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-const DIGITS_IN_STAMP: usize = 17;
+pub(crate) const DIGITS_IN_STAMP: usize = 17;
 const LATEST_UNIX_MILLIS: u64 = 253_402_300_799_999;
 const MILLIS_PER_DAY: u64 = 86_400_000;
 
@@ -42,7 +42,7 @@ pub fn format_stamp(unix_millis: u64) -> String {
 
 /// Converts days since 1970-01-01 to a proleptic Gregorian date (Howard Hinnant's
 /// `civil_from_days`), for days from the epoch on.
-fn civil_from_days(days: u64) -> (u64, u64, u64) {
+pub(crate) fn civil_from_days(days: u64) -> (u64, u64, u64) {
     let shifted = days + 719_468;
     let era = shifted / 146_097;
     let day_of_era = shifted % 146_097;
@@ -58,6 +58,18 @@ fn civil_from_days(days: u64) -> (u64, u64, u64) {
     };
     let year = year_of_era + era * 400 + u64::from(month <= 2);
     (year, month, day)
+}
+
+/// Converts a proleptic Gregorian date from 1970 on to days since 1970-01-01
+/// (Howard Hinnant's `days_from_civil`), the inverse of `civil_from_days`.
+pub(crate) fn days_from_civil(year: u64, month: u64, day: u64) -> u64 {
+    let year = if month <= 2 { year - 1 } else { year };
+    let era = year / 400;
+    let year_of_era = year - era * 400;
+    let month_index = if month > 2 { month - 3 } else { month + 9 };
+    let day_of_year = (153 * month_index + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    (era * 146_097 + day_of_era).saturating_sub(719_468)
 }
 
 /// Returns the name of a pool's CPU probe container for a slot.

@@ -10,6 +10,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tokio::sync::watch;
 
+use crate::image::check::{ImageCheck, ImageLabels};
+use crate::image::contract::CONTRACT_VERSION;
 use crate::validate::PlannedVolume;
 
 use super::backend::{
@@ -65,6 +67,22 @@ pub struct FakeState {
     /// A stop request, once recorded, never ends, as a `docker stop` whose
     /// containers ignore the grace period would not before its budget.
     pub stop_hangs: bool,
+    /// The images each `check_image` was asked about, in order. They are kept out
+    /// of `calls`, so a test of the other calls sees only those.
+    pub image_checks: Vec<String>,
+    /// The answers to `check_image`; when they run out, every check matches, with
+    /// [`matching_labels`] as the image's labels.
+    pub image_answers: VecDeque<ImageCheck>,
+}
+
+/// The labels of the image a [`FakeBackend`] answers with by default: this CLI's
+/// contract and nothing else.
+#[must_use]
+pub fn matching_labels() -> ImageLabels {
+    ImageLabels {
+        contract: Some(CONTRACT_VERSION.to_string()),
+        ..ImageLabels::default()
+    }
 }
 
 #[derive(Default)]
@@ -82,6 +100,15 @@ impl FakeBackend {
 impl Backend for FakeBackend {
     async fn wait_until_available(&self) {
         self.state.borrow_mut().calls.push(Call::WaitUntilAvailable);
+    }
+
+    async fn check_image(&self, image: &str) -> ImageCheck {
+        let mut state = self.state.borrow_mut();
+        state.image_checks.push(image.to_string());
+        state
+            .image_answers
+            .pop_front()
+            .unwrap_or_else(|| ImageCheck::Matching(matching_labels()))
     }
 
     async fn list_pool_containers(&self, pool: &str) -> Result<PoolContainers, BackendError> {

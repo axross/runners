@@ -27,7 +27,15 @@ and is usable once.
 
 **Runner Image** - the container image a runner runs in, built from a Dockerfile
 under `images/<name>/`, such as `images/actions-runner/`. It carries the runner
-and the tools jobs need.
+and the tools jobs need, and declares the **Image Contract Version** it was built
+for.
+
+**Image Contract Version** - the positive integer a **Runner Image** declares in
+its `com.github.axross.runners.contract` label, naming the run contract it was
+built for: the argument lists, launcher, and labels the **CLI** runs it with, and
+what they need from the image. The **CLI** reads its own from the Dockerfile it
+embeds and runs jobs only in an image that declares the same. See
+[operations/cli.md](./operations/cli.md#the-image-contract).
 
 **Runner Host** - the machine that builds runner images and starts runner
 containers, together with the scripts under `hosts/<platform>/`. The first
@@ -65,12 +73,14 @@ starts a runner container, waits for it to exit, and repeats. On axpc it is stil
 the PowerShell script; the **CLI**'s `start` is the supervisor that replaces it.
 
 **CLI** - this project's Rust command line tool, under `cli/`. `validate` checks a
-**Host Configuration**; `start` runs a host's pools in the foreground as the
+**Host Configuration**; `build` builds its **Runner Image** from the definition
+the binary embeds; `start` runs a host's pools in the foreground as the
 **Supervisor**, and `stop`, `restart`, and `status` talk to it.
 
 **Instance State** - where the one running `start` on a machine stands: running,
-stopping, stopped with a reason, or resuming. `status` reports it, and it decides
-which requests the instance accepts. See
+stopping, stopped with a reason, or resuming; or `building`, while a `build` holds
+the instance lock instead. `status` reports it, and it decides which requests the
+instance accepts. See
 [operations/cli.md](./operations/cli.md#instance-state).
 
 **Runtime Core** - the part of `start` that prepares the **Execution Pools** and

@@ -17,12 +17,12 @@ use runners_cli::runtime::board::Board;
 use runners_cli::runtime::docker::DockerLimits;
 use runners_cli::runtime::fake::FakeRegistrar;
 use runners_cli::runtime::log::Log;
-use runners_cli::runtime::pool::{pools_from_plan, prepare_pools};
+use runners_cli::runtime::pool::pools_from_plan;
 use runners_cli::runtime::secret::Secret;
 use runners_cli::runtime::worker::{run_slot, stop_channel};
 use runners_cli::validate::{PlannedVolume, validate};
 use support::docker::Fake;
-use support::{TempDir, repository_root};
+use support::{TempDir, prepare_pools, repository_root};
 
 const PROBE_READER: &str = "while read -r key value; do if [ \"$key\" = Cpus_allowed_list: ]; then printf \"%s\\n\" \"$value\"; exit; fi; done < /proc/self/status; exit 1";
 
@@ -99,6 +99,23 @@ fn probe_calls(probe: &str) -> Vec<Vec<String>> {
             "ps -a --filter name=^{probe}$ --filter label=runners.cpu-probe=1 --format {{{{.Names}}}}"
         )),
     ]
+}
+
+/// The image check a job launch runs first, written out here independently of the
+/// code under test.
+fn inspect_call(image: &str) -> Vec<String> {
+    let format = [
+        "com.github.axross.runners.contract",
+        "com.github.axross.runners.built",
+        "com.github.axross.runners.runner-version",
+        "com.github.axross.runners.runner-released",
+    ]
+    .map(|label| format!("{{{{json (index .Config.Labels \"{label}\")}}}}"))
+    .join(",");
+    let mut call = words("image inspect --format");
+    call.push(format!("[{format}]"));
+    call.push(image.to_string());
+    call
 }
 
 fn job_call(
@@ -244,6 +261,7 @@ async fn the_example_configuration_runs_the_powershell_contract() {
         ),
     ];
     for (pool, slot, stamp, cpus, cpuset, memory, mounts) in slots {
+        expected.push(inspect_call("actions-runner:local"));
         expected.extend(probe_calls(&format!("{pool}-cpu-probe-{slot}")));
         let refs: Vec<(&str, &str)> = mounts
             .iter()

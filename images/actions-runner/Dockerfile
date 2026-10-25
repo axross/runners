@@ -138,3 +138,11 @@ RUN g++ -std=c++17 -O2 -Wall -Wextra -Werror /tmp/runner-diagnostics.cpp -o /usr
 
 # hadolint ignore=DL3066
 USER runner
+
+# the image contract: the run contract version this image serves, and the runner
+# release the base image pins with that release's date. the CLI embeds this file
+# and reads its own contract version from these labels. a runner bump in the FROM
+# line above edits both runner labels by hand; see docs/operations/cli.md.
+LABEL com.github.axross.runners.contract="1" \
+      com.github.axross.runners.runner-version="2.337.0" \
+      com.github.axross.runners.runner-released="2026-08-26"

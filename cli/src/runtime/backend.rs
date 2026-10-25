@@ -1,15 +1,17 @@
 //! The seam between the runtime and whatever runs containers.
 //!
-//! The runtime asks a backend to wait until it is available, list and remove a
-//! pool's leftover containers, prepare volumes, choose a slot's CPUs, run a
-//! container under the run contract and report its exit, and stop or remove a set
-//! of containers within a budget. The container backend runs `docker`; a later
-//! backend can run the same containers inside a virtual machine.
+//! The runtime asks a backend to wait until it is available, read the configured
+//! image's labels, list and remove a pool's leftover containers, prepare volumes,
+//! choose a slot's CPUs, run a container under the run contract and report its
+//! exit, and stop or remove a set of containers within a budget. The container
+//! backend runs `docker`; a later backend can run the same containers inside a
+//! virtual machine.
 
 use std::fmt;
 use std::future::Future;
 use std::time::Duration;
 
+use crate::image::check::ImageCheck;
 use crate::validate::PlannedVolume;
 
 use super::secret::Secret;
@@ -97,6 +99,12 @@ pub struct StopRequest {
 pub trait Backend {
     /// Completes once the backend can take commands, retrying until then.
     fn wait_until_available(&self) -> impl Future<Output = ()>;
+
+    /// Reads the labels of the image `image` names, as `docker run` resolves the
+    /// name, and sorts them into the four outcomes, within the image-check bound.
+    /// Anything that is not a clear answer is [`ImageCheck::Unavailable`], never a
+    /// mismatch.
+    fn check_image(&self, image: &str) -> impl Future<Output = ImageCheck>;
 
     /// Lists the containers whose names contain `pool` and a hyphen, as Docker's
     /// name filter matches them anywhere in a name, and those of them that carry

@@ -338,9 +338,9 @@ later host:
   debug build can move the base address, and only to `http://127.0.0.1:<port>`, for
   the loopback tests; a release build always uses GitHub, which a CI step checks in
   the release profile. Likewise only a debug build can name the `docker` client
-  `start` runs, and a release build always runs `docker`. The JIT variable is
-  removed from the environment of every `docker` client but the one that starts
-  the container.
+  `start` and `build` run, and a release build always runs `docker`. The JIT
+  variable is removed from the environment of every `docker` client but the one
+  that starts the container.
 - Volume and container names start with the entry's `name`, which the operator
   sets. An entry's volumes are mounted only into its own containers. Two entries
   whose names are equal, or where one is the other followed by a hyphen, are
@@ -405,6 +405,29 @@ Residual risks, accepted on a single-user host:
   user profile's.
 - A JIT configuration that a runtime-core panic's message carried would reach the
   log unmasked, because its mask ends as the panic unwinds.
+
+## `build` Builds Only What the Binary Embeds
+
+The runner image every job runs in is built by `build` from the definition the CLI
+embeds when it is compiled, so what a host builds is what was reviewed and merged.
+[CLI](../operations/cli.md#build) owns the steps.
+
+- `build` reads nothing from a checkout, the working directory, or the
+  environment for its context: the embedded Dockerfile and the files it copies,
+  streamed as an archive the CLI writes, are the whole context. A unit test fails
+  when the embedded set is not exactly the Dockerfile and every file it copies.
+- Only a debug build can name another definition, for the real-Docker test, and a
+  release build ignores the request, as it ignores the other test overrides; a CI
+  step checks this in the release profile.
+- The context's base image is pinned by digest, and `--pull --no-cache` rebuilds
+  every layer from it, so no cache left by another build feeds the image.
+- The image CI builds is tagged on the hosted runner and never pushed, and the job
+  holds no credential.
+- `build` holds the instance lock, so it cannot replace the image under a running
+  instance, and the instance checks the image's contract before each job, so an
+  image replaced by one with another contract, or removed, registers no runner. A
+  replacement between that check and `docker run` is accepted on a single-user
+  host.
 
 ## CPU Placement Is Not Resource Reservation
 

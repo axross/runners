@@ -11,9 +11,10 @@ runner setup of a private application repository, in steps. It holds its agent
 foundation (the entry files, agent configuration, documentation, and lint
 toolchain), the `images/actions-runner/` runner image, the
 `hosts/windows-docker-desktop/` runner host scripts, and the CLI under `cli/`,
-a Rust command line tool that validates a host configuration and runs a host's
-pools with `start`, `stop`, `restart`, and `status`, though no real host uses it
-yet; the agent-host configuration is still planned.
+a Rust command line tool that validates a host configuration, builds its runner
+image with `build`, and runs a host's pools with `start`, `stop`, `restart`, and
+`status`, though no real host uses it yet; the agent-host configuration is still
+planned.
 [README.md](./README.md) owns project commands; [docs/index.md](./docs/index.md)
 indexes conventions, operations, and the glossary. mise pins the toolchain, and
 Prettier, markdownlint, shellcheck, hadolint, actionlint, PSScriptAnalyzer,

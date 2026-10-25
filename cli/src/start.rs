@@ -20,7 +20,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::command::{EXIT_FAILED, EXIT_OK, checkout_rule_note, load_plan, print_error};
 use crate::instance::channel::{ChannelServer, ClientError, exchange};
-use crate::instance::lifecycle::{Ended, Instance, Settings};
+use crate::instance::lifecycle::{Ended, Ending, Instance, Settings};
 use crate::instance::lock::{InstanceLock, LockError};
 use crate::instance::log_file::{StartLog, open_log_file};
 use crate::instance::protocol::{Incoming, Outcome, Request};
@@ -44,7 +44,12 @@ const CLOSE_REMOVE_BUDGET: Duration = Duration::from_secs(4);
 
 /// How long the ending instance gives the answers it has already sent, such as the
 /// one to `stop`, to reach their clients before the channel closes.
-const ANSWERS_WITHIN: Duration = Duration::from_millis(500);
+pub(crate) const ANSWERS_WITHIN: Duration = Duration::from_millis(500);
+
+/// What a command that needs the instance lock says when the lock is held and this
+/// user's channel does not answer.
+pub(crate) const LOCK_HELD_ELSEWHERE: &str = "the instance lock is held, by another OS user or by an instance of this user \
+     that is still starting or ending; the lock does not say which";
 
 /// What `start` was given.
 pub struct StartRequest<'a> {
@@ -185,11 +190,7 @@ fn resume(roots: &Roots, request: &StartRequest<'_>, err: &mut dyn Write) -> u8 
             err,
             &format!("the instance did not resume: {}", response.message),
         ),
-        Err(ClientError::NoInstance) => print_error(
-            err,
-            &"the instance lock is held, by another OS user or by an instance of this user \
-              that is still starting or ending; the lock does not say which",
-        ),
+        Err(ClientError::NoInstance) => print_error(err, &LOCK_HELD_ELSEWHERE),
         Err(error) => print_error(err, &error),
     }
 }
@@ -236,33 +237,44 @@ async fn run_instance(parts: Parts<'_>, plan: crate::validate::Plan) -> u8 {
         let mut run = std::pin::pin!(instance.run(plan, &mut requests));
         tokio::select! {
             ended = &mut run => ended,
-            never = signals(&sender, &force, log) => match never {},
+            never = signals(&sender, Some(&force), log) => match never {},
             () = console_closed(log) => {
                 request_stop(&sender);
                 force();
                 let stopped = tokio::time::timeout(CLOSE_REMOVE_BUDGET, &mut run).await;
-                stopped.unwrap_or(Ended { containers_removed: false, nothing_to_run: false })
+                stopped.unwrap_or(Ended {
+                    containers_removed: false,
+                    ending: Ending::Ordinary,
+                })
             }
         }
     };
     server.close(ANSWERS_WITHIN).await;
-    if ended.nothing_to_run {
-        log.warn("The instance ended because no pool could start.");
-        EXIT_FAILED
-    } else if ended.containers_removed {
-        log.info("The instance has stopped.");
-        EXIT_OK
-    } else {
-        log.warn(
-            "The instance has stopped, but a container could not be removed; \
-             the next start removes it.",
-        );
-        EXIT_FAILED
+    match ended.ending {
+        Ending::NothingToRun => {
+            log.warn("The instance ended because no pool could start.");
+            EXIT_FAILED
+        }
+        Ending::ImageRefused => {
+            log.warn("The instance ended because its image cannot run jobs.");
+            EXIT_FAILED
+        }
+        Ending::Ordinary if ended.containers_removed => {
+            log.info("The instance has stopped.");
+            EXIT_OK
+        }
+        Ending::Ordinary => {
+            log.warn(
+                "The instance has stopped, but a container could not be removed; \
+                 the next start removes it.",
+            );
+            EXIT_FAILED
+        }
     }
 }
 
 /// Asks the instance to stop, as `stop` does, through its own request channel.
-fn request_stop(sender: &mpsc::UnboundedSender<Incoming>) {
+pub(crate) fn request_stop(sender: &mpsc::UnboundedSender<Incoming>) {
     let (reply, _) = oneshot::channel();
     let _ = sender.send(Incoming {
         request: Request::Stop,
@@ -333,10 +345,11 @@ fn listeners(log: &dyn Log) -> Vec<Listener> {
 }
 
 /// Turns each signal [`listeners`] could open into a stop, and a second interrupt
-/// into forced removal. A signal that could not be opened keeps its default action.
-async fn signals(
+/// into `force`, when there is one. A signal that could not be opened keeps its
+/// default action.
+pub(crate) async fn signals(
     sender: &mpsc::UnboundedSender<Incoming>,
-    force: &dyn Fn(),
+    force: Option<&dyn Fn()>,
     log: &dyn Log,
 ) -> Infallible {
     let mut listeners = listeners(log);
@@ -364,14 +377,14 @@ fn on_signal(
     is_interrupt: bool,
     stopping: &mut bool,
     sender: &mpsc::UnboundedSender<Incoming>,
-    force: &dyn Fn(),
+    force: Option<&dyn Fn()>,
     log: &dyn Log,
 ) {
     if !*stopping {
         *stopping = true;
         log.info(&format!("{name} received: stopping the instance."));
         request_stop(sender);
-    } else if is_interrupt {
+    } else if is_interrupt && let Some(force) = force {
         log.warn(&format!(
             "{name} received again: the containers are removed without their grace period."
         ));
@@ -412,7 +425,7 @@ async fn console_closed(_log: &dyn Log) {
 /// handle closes. The handle is never closed by the CLI, so the operating system
 /// closes it when the process ends, however it ends, after the exit code is set.
 #[cfg(windows)]
-fn contain() -> Result<JobLauncher, String> {
+pub(crate) fn contain() -> Result<JobLauncher, String> {
     use win32job::{ExtendedLimitInfo, Job};
     fn described(error: win32job::JobError) -> String {
         let call = error.to_string();

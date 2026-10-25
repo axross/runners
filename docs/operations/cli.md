@@ -5,17 +5,19 @@ prints, how it stays equal to the PowerShell validator, the shared fixtures both
 read, the runtime layer that runs a host's pools (the container backend, JIT
 registration, CPU placement, and the slot loop), the instance layer that keeps
 `start` to one instance per machine (the instance state, the single-instance lock,
-and the control channel), running a host with `start`, `stop`, `restart`, and
-`status`, the toolchain and the gates that cover it, and what to touch when its
-provisional name changes. The binary is `runners`. The PowerShell supervisor under
-[`hosts/windows-docker-desktop/`](../../hosts/windows-docker-desktop) still runs the
-axpc host until Phase 4b, and the CLI must not be started beside it; see
+and the control channel), the image contract every runner image declares and the
+check of it, running a host with `build`, `start`, `stop`, `restart`, and `status`,
+the toolchain and the gates that cover it, and what to touch when its provisional
+name changes. The binary is `runners`. The PowerShell supervisor and rebuild task
+under [`hosts/windows-docker-desktop/`](../../hosts/windows-docker-desktop) still
+run the axpc host until Phase 4b, and the CLI must not be started beside them; see
 [Windows Runner Host](./windows-runner-host.md).
 
 ## Running It
 
 ```bash
 runners validate --config <path> [--profile axpc|axmc]
+runners build --config <path> [--profile axpc|axmc]
 runners start --config <path> [--profile axpc|axmc]
 runners stop
 runners restart
@@ -24,8 +26,8 @@ runners status
 
 `validate` reads the configuration file and the marker files above it, and writes
 nothing. It does not check that a token file exists or who can read it; `start`
-does. Running a Host describes `start` and the three clients, and their exit
-codes. This section is about `validate`.
+does. Running a Host describes `build`, `start` and the three clients, and their
+exit codes. This section is about `validate`.
 
 | Exit | Meaning                                                                                                                                                                                              |
 | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -227,7 +229,8 @@ PowerShell supervisor, and where it differs the difference is listed here.
 
 ### Backend
 
-The runtime asks a backend to wait until it is available; list a pool's
+The runtime asks a backend to wait until it is available; check the configured
+image, as [The Image Contract](#the-image-contract) describes; list a pool's
 containers and remove containers; prepare volumes; choose a slot's CPUs; run a
 container under the run contract and report its exit code; name the containers it
 has started and not seen end; and stop a set of containers within a budget. The JIT
@@ -245,6 +248,7 @@ them; the tests compare every other list with one written out in the test:
 | Purpose                    | Command                                                                                                                                                                                                           |
 | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Wait for Docker            | `docker info`, again every 5 s with a warning while it fails or cannot start                                                                                                                                      |
+| Check the image            | `docker image inspect --format <labels> <image>`, then `docker image ls --quiet <image>` when it fails                                                                                                            |
 | List a pool                | `docker ps -a --filter name=<pool>- --format {{.Names}}`, then the same with `--filter label=runners.diagnostic-lifecycle=1`                                                                                      |
 | Remove                     | `docker rm -f <names>`                                                                                                                                                                                            |
 | Volumes                    | `docker volume create <name>` for each, then `docker run --rm --pull never --user root --mount type=volume,source=<name>,target=<path>... <image> chown runner:docker <paths>`                                    |
@@ -355,13 +359,16 @@ the same name. PowerShell used local time; the pattern, and so the cleanup of it
 leftovers, is unchanged. A name is recognised as a pool's own only when it is the
 pool's name, a hyphen, a slot number, a hyphen, and exactly 17 ASCII digits.
 
-A slot loops until it is asked to stop. Each attempt probes the CPUs, then registers,
-then runs the container. A failed probe or registration, or a non-zero exit, waits
+A slot loops until it is asked to stop. Each attempt checks the image, then probes
+the CPUs, then registers, then runs the container. An image that cannot run jobs,
+or a check Docker does not answer, registers nothing and goes into the backoff. A
+failed probe or registration, or a non-zero exit, waits
 5 s, then 10 s, doubling to 300 s; an exit of 0 resets the delay and starts the
 replacement at once. A wait ends early when a stop is asked for, and a stop that arrives as a registration completes starts no container. Time and sleeping
 come through a `Clock` seam, so the tests do not wait.
 
-Preparing the pools follows the PowerShell supervisor. A pool whose token file is
+Preparing the pools follows the PowerShell supervisor, with the image check
+between the wait for Docker and the pools' cleanup. A pool whose token file is
 missing or blank, and a pool with diagnostics on (this runtime does not support them yet), is
 skipped with a warning that names the pool and the reason, and never the token.
 Docker is waited for once. Each remaining pool's own stale containers are removed
@@ -381,7 +388,9 @@ client and no argument, the process groups, the probe limits, the stale cleanup 
 the wait for Docker. `registration.rs` runs the client against a loopback stub for
 the request, the error text, a redirect, a stalled response and an oversize
 response. `slot_worker.rs`, `pool_preparation.rs` and `cpu_affinity.rs` use the
-fake seams. `real_docker.rs` runs a container and the probe through a real Docker
+fake seams, and `image_check.rs` drives the image check through the fake backend,
+the instance, and the real backend against `fake-docker`. `real_docker.rs` runs a
+container and the probe through a real Docker
 daemon on Linux; it is `#[ignore]`d for a local `cargo test`, and CI runs it in its
 own step, where it fails when Docker or the image is missing. Not verified: a real
 Docker daemon outside that CI step, the TLS handshake with GitHub, and Windows and
@@ -412,7 +421,9 @@ backend and clock, and a helper process.
 ### Instance State
 
 An instance is running or stopped, with stopping and resuming between them, and it
-starts running. One task owns the state and answers every request, so a request
+starts running. `build` holds the lock as an instance of its own, in the state
+`building`, or `stopping` once it is asked to stop; [Build](#build) describes it.
+One task owns the state and answers every request, so a request
 that arrives during a transition is answered at once: `status` reports the state,
 `stop` is taken, and `restart` and `resume` are refused, naming the state. A
 running instance refuses a resume too.
@@ -433,6 +444,13 @@ running instance refuses a resume too.
   `start` fixes it as the path it was given, made absolute but not resolved, so
   each read finds the checkout above it as the first validation did; the
   canonical path is kept only to compare with a resume's.
+- A resume and a `restart` check the image after the file validates, before the
+  instance answers. An image that cannot run jobs leaves the instance stopped,
+  with a reason that names the image and says to run `runners stop`, then
+  `runners build --config <path>`, then `runners start --config <path>`, because
+  `build` is refused while the instance exists. When Docker does not answer the
+  check, the instance answers as before and runs the core, which checks again once
+  Docker answers and moves the instance to stopped with that reason.
 
 The container steps stop every container the backend has started and not seen end,
 in one `docker stop` call with a grace of 15 s, ended at 20 s, and then force-remove
@@ -459,7 +477,9 @@ container failure stays in that slot's backoff and is not a core failure. After 
 failure the instance runs the container steps for the containers the core reports,
 then starts the core again after 10 s for the first failure in a sliding 10-minute
 window, 30 s for the second, and 60 s for the third. A fourth failure in the window
-stops the instance, with the restart limit as its reason. A failure exactly 10
+stops the instance, with the restart limit as its reason. A core restart that
+finds an image that cannot run jobs moves the instance straight to stopped, with
+the reason a resume gives, and counts no failure. A failure exactly 10
 minutes old still counts and an older one does not; this window replaces the
 PowerShell supervisor's reset after 10 healthy minutes. A clock that moves back
 forgets nothing.
@@ -592,17 +612,138 @@ so that check is in PowerShell. Not verified: the Windows lock against a second 
 user, and the rejection of remote clients, which a hosted runner cannot show; and
 macOS and Windows behaviour beyond what the hosted runners show.
 
+## The Image Contract
+
+The CLI runs jobs only in an image built for its run contract: the argument lists,
+the launcher, and the labels under [Backend](#backend), and what they need from the
+image. The image declares the contract it was built for, and the CLI checks it
+before any pool runs and before each job.
+
+| Module              | Holds                                                                                    |
+| ------------------- | ---------------------------------------------------------------------------------------- |
+| `image::contract`   | The label names, and this CLI's contract version, read from the embedded Dockerfile      |
+| `image::definition` | The image definition embedded in the binary, and the debug-only test definition          |
+| `image::archive`    | The build context: a ustar archive of the definition, written by the CLI itself          |
+| `image::check`      | The image check's format and outcomes, the refusal, the freshness warnings, and `status` |
+
+### Labels
+
+An image `build` makes carries five labels. The Dockerfile's final stage declares
+the first three, so an image built from the definition another way, in CI, by hand,
+or by the PowerShell rebuild task, carries those three only; `build` adds the last
+two on its command line, because they describe the build, not the definition.
+
+| Label                                       | Value                                           | Set by         |
+| ------------------------------------------- | ----------------------------------------------- | -------------- |
+| `com.github.axross.runners.contract`        | The image contract version, a positive integer  | The Dockerfile |
+| `com.github.axross.runners.runner-version`  | The runner version the base image pins          | The Dockerfile |
+| `com.github.axross.runners.runner-released` | That release's date, `YYYY-MM-DD`, at 00:00 UTC | The Dockerfile |
+| `com.github.axross.runners.image`           | `actions-runner`, which the prune filters by    | `build`        |
+| `com.github.axross.runners.built`           | The build time, in Unix seconds                 | `build`        |
+
+The CLI's own contract version is read from the same embedded Dockerfile when the
+binary is compiled, so the two cannot drift inside one binary; a Dockerfile without
+a well-formed version does not compile. Contract 1 is the run contract as Phase 2
+left it, plus the diagnostic variant's use of the collector's path and output
+directory.
+
+Unit tests in `cli/src/image/contract.rs` keep the declaration honest:
+
+- `APPROVED_CONTRACTS` pins a fingerprint of the run contract's argument lists, the
+  launcher, the diagnostic variant's argument lists and launcher as
+  `docker-commands.ps1` gives them, the label keys and the inspect format, against
+  the version they were approved for. Changing any of them without raising the
+  contract version fails, and the failure names the row to add with the new
+  version.
+- `RUNNER_RELEASES` holds each runner version's release date. The declared runner
+  version must equal the base image's tag, have a row, and declare the row's date.
+  A Dependabot runner bump stays red until both labels and the row are updated by
+  hand; see
+  [Development Workflow](./development-workflow.md#bumping-the-runner).
+- The embedded set must be exactly the Dockerfile and every file it copies, and
+  `cli/tests/build-definition/Dockerfile` must start from the same base and declare
+  the same labels.
+
+### The Image Check
+
+The check reads the configured image's labels with one
+`docker image inspect --format [{{json (index .Config.Labels "<label>")}},...]`, for
+the contract, build-time, and runner labels. A name whose last path part has no tag
+is checked as `<name>:latest`, as `docker run` resolves it. When inspect fails, a
+`docker image ls --quiet <name>` tells a missing image from Docker not answering.
+Both calls share a bound of 4 s, so a resume's check fits inside `start`'s 10 s
+wait, and the container steps and the check fit inside `restart`'s 35 s.
+
+| Outcome            | When                                                                         |
+| ------------------ | ---------------------------------------------------------------------------- |
+| Matching           | Inspect succeeds, and the contract label equals the CLI's                    |
+| Mismatched         | Inspect succeeds, but the contract label is missing, malformed, or different |
+| Missing            | Inspect fails, and the listing succeeds with empty output                    |
+| Docker unavailable | Any other failure, or the 4 s running out                                    |
+
+Docker unavailable is never a mismatch. A mismatched image's message is
+`the image <name> has image contract <m>, but this CLI needs image contract <n>`,
+and a missing one's is
+`the image <name> is missing; this CLI needs one with image contract <n>`. The
+check runs:
+
+- **At the first run of the core.** Once Docker answers, before any pool is
+  prepared. An image that cannot run jobs ends the instance, and `start` exits 1.
+- **At a resume, a `restart`, and a core restart.** As
+  [Instance State](#instance-state) describes: the instance stays stopped, with
+  the stop, build, start sequence as its reason.
+- **At each job launch.** Before the CPU probe and registration. An image that
+  cannot run jobs registers nothing and goes into the slot's backoff with the
+  message; a check Docker does not answer goes into the backoff as a Docker
+  failure. `build` cannot run while an instance exists, so a mismatch here means the
+  image was replaced another way, such as by the PowerShell rebuild task.
+  `docker run` resolves the name again after the check, and a replacement between
+  the two is the accepted residual case.
+
+### Freshness
+
+The check also reads the build-time and runner-release labels. An age is
+⌊(now − t) / 86,400 s⌋ in days, where t is the build time, or the release date at
+00:00 UTC. An age under 7 days gives no warning, 7 to 20 days the first, and 21 or
+more the second:
+
+| Age        | Build age                                                                                     | Runner release age                                                                                                                                        |
+| ---------- | --------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 7 to 20    | `` the image is <d> days old and should be rebuilt with `runners build` ``                    | `runner <v> was released <d> days ago, and a newer runner may exist`                                                                                      |
+| 21 or more | `` the image's operating-system packages are <d> days old; rebuild it with `runners build` `` | `runner <v> was released <d> days ago, so each job's runner likely updates itself at start; update the CLI to get a newer runner, then rebuild the image` |
+
+An image without a build-time label, such as one the PowerShell rebuild task or CI
+built, has an unknown build age, and its warning says it was not built by
+`runners build`. `start` logs the current warnings at each run of the core, at
+start, a resume, a `restart`, and a core restart, and not at a job launch. Neither
+the warnings nor an unknown age block a start.
+
+`status` shows the image as of the latest check, a job launch's included:
+
+- `image: <name>`;
+- `image-contract: <n>`, `mismatch (image <m>, CLI <n>)`, `missing`, or
+  `not checked`, which shows only before the first check Docker answers; a later
+  check Docker does not answer leaves the latest answer in place;
+- `image-built: <d> days ago`, or `unknown`;
+- `runner: <version>, released <d> days ago`, or `unknown`;
+- one `warning: <text>` line per freshness warning.
+
+`image-built` and `runner` read `unknown` before the first check Docker answers, and
+when the image is missing or its labels are missing or malformed.
+
 ## Running a Host
 
 `start` runs the host's pools in the foreground through the instance layer and the
 runtime layer, and `stop`, `restart`, and `status` talk to it from another terminal
-over the control channel. On axpc the PowerShell supervisor keeps running the host
-until Phase 4b, and `start` must not run beside it; see
+over the control channel. `build` builds the runner image, and the same clients
+talk to it. On axpc the PowerShell supervisor and rebuild task keep running the
+host until Phase 4b, and neither `start` nor `build` may run beside them; see
 [Windows Runner Host](./windows-runner-host.md).
 
 | Module                   | Holds                                                                                                |
 | ------------------------ | ---------------------------------------------------------------------------------------------------- |
 | `start`                  | `start`: the lock, validation, the log file, containment, the channel, the instance, and its signals |
+| `build`                  | `build`: the lock, validation, the channel, its states, and its `docker` steps and their aborts      |
 | `control`                | The clients `stop`, `restart`, and `status`                                                          |
 | `shim`                   | The Unix shim between `start` and one job container's `docker run` client                            |
 | `instance::runtime_core` | The runtime core, listed under The Instance Layer                                                    |
@@ -620,21 +761,25 @@ A fresh `start` does these in order:
 3. It opens its log file and logs the plan summary.
 4. It contains its children, builds the HTTPS client, and opens the control
    channel. A failure of any of them, including a TLS setup failure, exits 1.
-5. It runs the instance. The runtime core prepares the pools as
-   [Names and the Slot Loop](#names-and-the-slot-loop) describes, waiting for
-   Docker every 5 s, and then runs every slot's loop until a stop. When no pool can
-   start, `start` exits 1.
+5. It runs the instance. The runtime core waits for Docker every 5 s, checks the
+   image as [The Image Contract](#the-image-contract) describes, prepares the pools
+   as [Names and the Slot Loop](#names-and-the-slot-loop) describes, and then runs
+   every slot's loop until a stop. When the image cannot run jobs, the instance
+   ends, and `start` exits 1, saying to run `runners build --config <path>`, then
+   `runners start --config <path>`. When no pool can start, `start` exits 1.
 
 On Linux a release build exits 1 at the first step, because Linux is not a
 supported host, and `tests/instance_roots.rs` shows it in the release profile. A
 debug build runs on a test root, for the tests. On macOS, `start --profile axpc`
 runs the container backend with Unix containment, which serves the tests, not an
 operated host. `RUNNERS_TEST_ROOT` moves the lock, the channel, and the log
-directory, `RUNNERS_TEST_GITHUB_API` moves the GitHub base address, and
-`RUNNERS_TEST_DOCKER` names the `docker` client that `start` runs, the Unix shim's
-removal included; only a debug build honours any of them, and
-`tests/base_address.rs` shows in the release profile that the client stays
-`docker`. The tests name the fake client rather than put it first on `PATH`,
+directory, `RUNNERS_TEST_GITHUB_API` moves the GitHub base address,
+`RUNNERS_TEST_DOCKER` names the `docker` client that `start` and `build` run, the
+Unix shim's removal in `start` included, and `RUNNERS_TEST_BUILD_DEFINITION` names
+a test definition that `build` builds instead of the embedded one. Only a debug
+build honours any of them: in the release profile `tests/base_address.rs` shows
+that the client stays `docker`, and `tests/build_definition.rs` that `build` keeps
+the embedded definition. The tests name the fake client rather than put it first on `PATH`,
 because Windows searches the program's directory and the system directories before
 `PATH`, so a real `docker.exe` in `System32` would win.
 
@@ -644,8 +789,10 @@ configuration path, sends `resume <profile> <path>`, and waits up to 10 s:
 - A stopped instance started with the same path and profile reads its own file
   again. A valid file runs it and `start` exits 0; an invalid one leaves it stopped
   with the new reason and `start` exits 1.
-- A running, stopping, or resuming instance refuses, naming its state, and so does
-  a stopped one started with another path or profile. `start` exits 1.
+- A running, stopping, resuming, or building instance refuses, naming its state,
+  and so does a stopped one started with another path or profile. `start` exits 1.
+- A stopped instance whose image cannot run jobs stays stopped with that reason,
+  and `start` exits 1.
 - When nothing answers on this user's channel, `start` exits 1, saying that the
   lock is held by another OS user or by an instance of this user that is still
   starting or ending. The lock does not say which, and `start` never connects to
@@ -661,11 +808,14 @@ answer in time.
   `reason`, when stopped; `config`; `profile`; one `pool` line per pool, which is
   `waiting for Docker`, `preparing`, `running`, or `skipped: <reason>`; one `slot`
   line per slot, which is `registering` (the CPU probe included), `backing off`,
-  or `running container <name>`; and `image-age: not available until Phase 3`.
-  Pools and slots are listed while the runtime core runs.
+  or `running container <name>`; and the image lines under
+  [The Image Contract](#the-image-contract). Pools and slots are listed while the
+  runtime core runs; the image lines are listed on every call, as of the latest
+  check. A `build` answers `state`, `image`, and `elapsed: <s> s`.
 - `restart` waits up to 35 s for the instance to run its container steps, read its
-  file again, and answer. An invalid file leaves the instance stopped, and
-  `restart` exits 1. It is refused while the instance is stopping or resuming.
+  file again, check the image, and answer. An invalid file or an image that cannot
+  run jobs leaves the instance stopped, and `restart` exits 1. It is refused while
+  the instance is stopping, resuming, or building.
 - `stop` asks the instance to stop, then checks about every 200 ms whether the
   instance lock is free, by taking it and letting it go at once, until 35 s after
   its request. It exits 0 once the lock is free, so a `start` right after it finds
@@ -701,6 +851,78 @@ Ctrl+C from it, but whether it also keeps Ctrl+Break from it is unverified.
 | 0    | `start` stopped and every removal of containers in its life succeeded, or a client's request succeeded                                                                                           |
 | 1    | An invalid configuration, a refused or failed `start`, a failed resume, no pool that can start, a client with no instance, a refused request or no answer in time, or a failed removal at a stop |
 | 2    | A usage error                                                                                                                                                                                    |
+
+### Build
+
+`build` builds the image the configuration names, from the definition embedded in
+the binary, and reads nothing from a checkout or the working directory. It does
+these in order:
+
+1. It takes the instance lock. When the lock is held it exits 1 and changes
+   nothing, naming the instance's state when this user's channel answers within
+   5 s, and otherwise giving `start`'s message for a lock held elsewhere.
+2. It validates the configuration as `validate` does; an invalid one exits 1.
+   `--profile axmc` exits 1 after validation, because axmc's image is a golden VM,
+   which comes in Phase 6. An image name given by digest is refused, because it
+   cannot be tagged. It prints the name it builds.
+3. It contains its children as `start` does on Windows, and opens the control
+   channel. While it builds, `status` answers `state: building`, `image: <name>`,
+   and `elapsed: <s> s`; a `start`, a resume, and `restart` are refused, naming
+   the build; `stop` aborts it.
+4. Docker must answer `docker info` within 30 s, or `build` exits 1 before any
+   build. A `docker info` that fails ends it at once, and the message gives the
+   client's output, or why the client could not start. `build` is run by hand, so
+   it does not wait for Docker as `start` does.
+5. It removes the temporary tags of the image's repository that carry the image
+   label, which an earlier `build` that was killed left. A failed removal is a
+   warning.
+6. It runs one
+   `docker build --pull --no-cache --label com.github.axross.runners.image=actions-runner --label com.github.axross.runners.built=<s> --tag <temporary> -`,
+   with the context on standard input and the client's output on the terminal.
+   The temporary tag is `<repository>:runners-build-<yyyyMMddHHmmssfff>` in UTC,
+   where the repository is the name without its tag: everything before the last
+   `:` that follows the last `/`, so a registry port stays.
+7. It tags the build as the configured name, which commits it. It then removes the
+   temporary tag, and prunes the dangling images that carry the image label, as
+   the PowerShell rebuild script does. A failed tag removal is a warning naming the
+   tag, which the next `build` removes, and a failed prune is a warning; both still
+   exit 0.
+8. A failed build or a failed retag removes the temporary tag, leaves the
+   configured name as it was, and exits 1. A retag that stalls for 120 s with no
+   stop asked is ended, and a `docker image inspect` of the configured name, as
+   below, decides whether it committed; one that committed still prunes.
+
+The context is a ustar archive of the embedded files at their paths in
+`images/actions-runner/`, sorted by path, with mode `0644`, owner 0, and time 0, so
+the same binary always sends the same bytes. A debug build builds the directory
+named by `RUNNERS_TEST_BUILD_DEFINITION` instead, for the real-Docker test; a
+release build ignores it, and `tests/build_definition.rs` shows both halves.
+
+`stop`, SIGINT, SIGTERM, and SIGHUP on Unix, and Ctrl+C and Ctrl+Break on Windows
+abort a build within 30 s of the request. The build client is killed at once; the
+CLI has no graceful way to end it.
+
+- **Before the retag.** The temporary tag is removed, by 26 s, and `build` exits 1.
+  The configured name keeps its previous image. A failed removal names the tag.
+- **During the retag.** The `docker tag` client gets up to 5 s from the stop. When
+  it succeeds within them, the build has committed, and `build` exits 0. Otherwise
+  a `docker image inspect` of the configured name, within 4 s, decides. This
+  build's build-time label means the build committed, and `build` exits 0; another
+  means it did not, and `build` exits 1. A failed or late inspect is "commit
+  unknown", which names the image, and `build` exits 1.
+- **After the retag.** The build has committed: the tag removal finishes, the prune
+  is skipped for the next `build`, and `build` exits 0.
+- At 28 s whatever still runs is dropped, and `build` exits 1.
+
+An orphaned build client can still apply the temporary tag after `build` removed
+it, on Unix always and on Windows until the Job Object closes, and a hard kill or a
+console close can leave one too. The next `build` removes it.
+
+| Exit | Meaning                                                                              |
+| ---- | ------------------------------------------------------------------------------------ |
+| 0    | The configured name holds the new image                                              |
+| 1    | A refused, invalid, or failed `build`, Docker not answering, or an uncommitted abort |
+| 2    | A usage error                                                                        |
 
 ### The Log
 
@@ -796,9 +1018,28 @@ left; on Windows, a handle to the job container's client is signalled when
 `start` is killed. `runtime_core.rs`, and the board and masking cases in
 `pool_preparation.rs` and `slot_worker.rs`, use the fake seams, and
 `instance_state.rs` and `core_restart.rs` cover forced removal, the exit deadline,
-a panicking core, and no startable pool. Not verified: Ctrl+C, Ctrl+Break, and the
-console close on Windows, and macOS and Windows behaviour beyond what the hosted
-runners show.
+a panicking core, and no startable pool.
+
+`build_command.rs` runs `build` the same way, from an empty directory, with
+`fake-docker` keeping an image store: the one build's arguments, labels, temporary
+tag, and context bytes, equal to the definition's files and the same on a second
+run; the order of the calls; the leftover, tag-removal, and prune cases; a failed
+build and a failed retag; Docker not answering; the digest, axmc, usage, and
+validation refusals; `stop` and SIGINT at each step of an abort, a stalled retag
+and its inspect included; and the refusals while an instance exists and while a
+build runs. The unit tests in `cli/src/build/steps.rs` run the steps against a
+`docker` script on Unix, with a short command budget: a retag that stalls with no
+stop, which prunes when it committed and is reported as a stall when it did not,
+and one that succeeds within a stop's grace, which commits without an inspect.
+`image_check.rs` runs `start` against images that cannot run jobs.
+`real_docker_build.rs` runs `build` through a real Docker daemon on Linux, with the
+test definition in `cli/tests/build-definition/`, the runner image's digest-pinned
+base and its declared labels, and fails unless the result carries all five labels,
+no temporary tag remains, and the container backend's image check finds the image
+matching and an absent tag missing; it is `#[ignore]`d for a local `cargo test`. Not
+verified: Ctrl+C, Ctrl+Break, and the console close on Windows, a `build` of the
+full image by the CLI, which axpc shows in Phase 4b, and macOS and Windows behaviour
+beyond what the hosted runners show.
 
 ## Fixtures and Tests
 
@@ -862,17 +1103,18 @@ change as checked when it was not.
 The `rust` job in
 [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) runs format check,
 clippy, and tests on Linux, Windows, and macOS; the axpc checkout-rule cases that
-need drive-letter paths run only on Windows. Three more steps run on Linux only: the
-base-address and instance-roots tests again with `--release` and
+need drive-letter paths run only on Windows. Four more steps run on Linux only: the
+base-address, instance-roots, and build-definition tests again with `--release` and
 `RUNNERS_EXPECT_RELEASE=1`, which makes each fail if built in the wrong profile;
 `docker build --target base` of
-[`images/actions-runner`](../../images/actions-runner), tagged and never pushed; and
+[`images/actions-runner`](../../images/actions-runner), tagged and never pushed;
 the `real_docker` test with `--ignored`, pointed at that tag by
-`RUNNERS_REAL_DOCKER_IMAGE`. The Windows and macOS hosted runners have no Linux
-Docker daemon, and the test fails rather than skips when one is missing. One more
-step runs on Linux and macOS, `tests/ci/other-user-lock.sh`, and one on Windows,
-`tests/ci/control-pipe-security.ps1` under PowerShell 7; What the Instance Tests
-Cover says what each shows. The `fake-docker` and `instance-helper` helpers are
+`RUNNERS_REAL_DOCKER_IMAGE`; and the `real_docker_build` test with `--ignored`,
+which removes the image it builds. The Windows and macOS hosted runners have no
+Linux Docker daemon, and each test fails rather than skips when one is missing.
+One more step runs on Linux and macOS, `tests/ci/other-user-lock.sh`, and one on
+Windows, `tests/ci/control-pipe-security.ps1` under PowerShell 7; What the Instance
+Tests Cover says what each shows. The `fake-docker` and `instance-helper` helpers are
 further binaries in the package (`cli/helpers/`, `test = false`) that only the tests
 and those steps run, and `default-run = "runners"` keeps `cargo run` on the CLI.
 `instance-helper` does nothing in a release build. A release MUST NOT ship either
@@ -992,8 +1234,12 @@ only these places:
   command name in `cli/src/command.rs`, and, if they change with it, the package
   and library names in `Cargo.toml` and `Cargo.lock` and the `runners_cli` imports
   in `cli/src/main.rs` and `cli/tests/`;
-- `CARGO_BIN_EXE_runners` in `cli/tests/support/mod.rs`, and the default binary
-  path in `tests/host-configuration/parity.ps1`;
+- `CARGO_BIN_EXE_runners` in `cli/tests/support/mod.rs`,
+  `cli/tests/instance_roots.rs`, and `cli/tests/build_definition.rs`, and the
+  default binary path in `tests/host-configuration/parity.ps1`;
+- the `runners build`, `runners start`, and `runners stop` the messages name, in
+  `cli/src/build/`, `cli/src/image/check.rs`, `cli/src/instance/lifecycle.rs`, and
+  `cli/src/start.rs`, and the tests that read them;
 - the `cli/target/debug/runners` path in the README Commands table, and the
   binary name and the example command in this document.
 
