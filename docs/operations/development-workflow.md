@@ -238,8 +238,10 @@ and the linters they call, including the CLI's Rust gates. The same workflow
 also runs a `rust` job that formats, lints, and tests the CLI on Linux, Windows,
 and macOS hosted runners, with four more steps on Linux only: the release-profile
 tests of the debug-only overrides, the test definition `build` reads among them; a
-build of the runner image's base stage on that runner (never pushed); a test that
-runs a container through the hosted runner's Docker daemon against that image; and
+build of the runner image's base stage on that runner (never pushed); tests that
+run a container through the hosted runner's Docker daemon against that image, and
+export a diagnostic container's evidence through the CLI's exporter child from a
+real `docker cp` stream into a private temporary sink; and
 a test that runs `runners build` through the same daemon against the debug-only
 test definition in `cli/tests/build-definition/`, checks the image's five labels,
 that no temporary tag remains, and that the CLI's image check finds the image

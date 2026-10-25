@@ -48,8 +48,9 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   (container backend, JIT registration, CPU placement, and the slot loop), the
   instance layer (instance state, single-instance lock, and control channel),
   the image contract (its labels, the image check, and freshness), building the
-  runner image with `build`, running a host with `start`, `stop`, `restart`, and
-  `status` (the log, containment, and the stop sequence), the toolchain and Rust
+  runner image with `build`, running a host with `start`, `stop`, `restart`,
+  `status`, and `diagnostics` (the log, containment, the stop sequence, and the
+  diagnostic containers and their export), the toolchain and Rust
   gates, the allowed
   dependencies, and what a rename touches.
 - [operations/agent-skills.md](./operations/agent-skills.md) - installing and

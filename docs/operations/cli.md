@@ -6,9 +6,10 @@ read, the runtime layer that runs a host's pools (the container backend, JIT
 registration, CPU placement, and the slot loop), the instance layer that keeps
 `start` to one instance per machine (the instance state, the single-instance lock,
 and the control channel), the image contract every runner image declares and the
-check of it, running a host with `build`, `start`, `stop`, `restart`, and `status`,
-the toolchain and the gates that cover it, and what to touch when its provisional
-name changes. The binary is `runners`. The PowerShell supervisor and rebuild task
+check of it, running a host with `build`, `start`, `stop`, `restart`, `status`, and
+`diagnostics`, the diagnostic containers a diagnostics-enabled pool runs and their
+export, the toolchain and the gates that cover it, and what to touch when its
+provisional name changes. The binary is `runners`. The PowerShell supervisor and rebuild task
 under [`hosts/windows-docker-desktop/`](../../hosts/windows-docker-desktop) still
 run the axpc host until Phase 4b, and the CLI must not be started beside them; see
 [Windows Runner Host](./windows-runner-host.md).
@@ -22,11 +23,12 @@ runners start --config <path> [--profile axpc|axmc]
 runners stop
 runners restart
 runners status
+runners diagnostics
 ```
 
 `validate` reads the configuration file and the marker files above it, and writes
 nothing. It does not check that a token file exists or who can read it; `start`
-does. Running a Host describes `build`, `start` and the three clients, and their
+does. Running a Host describes `build`, `start` and the four clients, and their
 exit codes. This section is about `validate`.
 
 | Exit | Meaning                                                                                                                                                                                              |
@@ -224,6 +226,10 @@ PowerShell supervisor, and where it differs the difference is listed here.
 | `runtime::name`                                     | Runner and container names, and the test for a pool's own                              |
 | `runtime::pool`                                     | Pools from a plan, and their preparation                                               |
 | `runtime::worker`                                   | The slot loop and its backoff                                                          |
+| `runtime::retained`                                 | The diagnostic containers the backend retains, their records, and who finalises each   |
+| `runtime::diagnostic`                               | Finalising diagnostic containers at job end, in the container steps, and at startup    |
+| `diagnostics`, `diagnostics::exporter`              | The exporter child and the lines and exit codes it answers with                        |
+| `diagnostics::sink`, `archive`, `identity`          | The sink checks and admission, the strict archive reader, and the identity readback    |
 | `runtime::board`                                    | Each pool's and each slot's state, which `status` reports                              |
 | `runtime::fake`                                     | In-memory stand-ins for the seams, used by tests; a debug or test build only           |
 
@@ -233,7 +239,10 @@ The runtime asks a backend to wait until it is available; check the configured
 image, as [The Image Contract](#the-image-contract) describes; list a pool's
 containers and remove containers; prepare volumes; choose a slot's CPUs; run a
 container under the run contract and report its exit code; name the containers it
-has started and not seen end; and stop a set of containers within a budget. The JIT
+has started and not seen end; stop, end, or remove a set of containers within a
+budget; and, for a diagnostics-enabled pool, retain each diagnostic container it
+starts with the settings it ran with, finalise one under a clock, and count a pool's
+bundles in its sink, as [Diagnostics](#diagnostics) describes. The JIT
 configuration reaches the backend as a `Secret`, whose `Debug` form is redacted and
 which has no `Display`. The container backend passes it as an environment variable
 by name; a later backend that runs the containers in a virtual machine can pass it
@@ -245,16 +254,20 @@ lists, byte for byte, except for the stop call below. A test reads the launcher
 guard and the probe's reader script out of `docker-commands.ps1` and compares
 them; the tests compare every other list with one written out in the test:
 
-| Purpose                    | Command                                                                                                                                                                                                           |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Wait for Docker            | `docker info`, again every 5 s with a warning while it fails or cannot start                                                                                                                                      |
-| Check the image            | `docker image inspect --format <labels> <image>`, then `docker image ls --quiet <image>` when it fails                                                                                                            |
-| List a pool                | `docker ps -a --filter name=<pool>- --format {{.Names}}`, then the same with `--filter label=runners.diagnostic-lifecycle=1`                                                                                      |
-| Remove                     | `docker rm -f <names>`                                                                                                                                                                                            |
-| Volumes                    | `docker volume create <name>` for each, then `docker run --rm --pull never --user root --mount type=volume,source=<name>,target=<path>... <image> chown runner:docker <paths>`                                    |
-| Probe a slot's CPUs        | `docker run --rm --pull never --network none --name <pool>-cpu-probe-<slot> --label runners.cpu-probe=1 <image> bash -c <reader>`                                                                                 |
-| Run a job container        | `docker run --rm --pull never --name <n> --cpus <q> --cpuset-cpus <set> --memory <G>g --memory-swap <G>g <--mount ...> -e ACTIONS_RUNNER_INPUT_JITCONFIG <image> bash -c <launcher> -- <set> /home/runner/run.sh` |
-| Stop, for the later `stop` | `docker stop --time <seconds> <names>`, one call for all names                                                                                                                                                    |
+| Purpose                    | Command                                                                                                                                                                                                                                                        |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Wait for Docker            | `docker info`, again every 5 s with a warning while it fails or cannot start                                                                                                                                                                                   |
+| Check the image            | `docker image inspect --format <labels> <image>`, then `docker image ls --quiet <image>` when it fails                                                                                                                                                         |
+| List a pool                | `docker ps -a --filter name=<pool>- --format {{.Names}}`, then the same with `--filter label=runners.diagnostic-lifecycle=1`                                                                                                                                   |
+| Remove                     | `docker rm -f <names>`                                                                                                                                                                                                                                         |
+| Volumes                    | `docker volume create <name>` for each, then `docker run --rm --pull never --user root --mount type=volume,source=<name>,target=<path>... <image> chown runner:docker <paths>`                                                                                 |
+| Probe a slot's CPUs        | `docker run --rm --pull never --network none --name <pool>-cpu-probe-<slot> --label runners.cpu-probe=1 <image> bash -c <reader>`                                                                                                                              |
+| Run a job container        | `docker run --rm --pull never --name <n> --cpus <q> --cpuset-cpus <set> --memory <G>g --memory-swap <G>g <--mount ...> -e ACTIONS_RUNNER_INPUT_JITCONFIG <image> bash -c <launcher> -- <set> /home/runner/run.sh`                                              |
+| Run a diagnostic container | `docker run --pull never --name <n> --label runners.diagnostic-lifecycle=1 --cpus <q> --cpuset-cpus <set> --memory <G>g --memory-swap <G>g <--mount ...> -e ACTIONS_RUNNER_INPUT_JITCONFIG <image> bash -c <diagnostic launcher> -- <set> /home/runner/run.sh` |
+| Read its identity          | `docker inspect --format <allowlist> <n>`                                                                                                                                                                                                                      |
+| Copy its evidence          | `docker cp <n>:/tmp/runner-diagnostics/. -`                                                                                                                                                                                                                    |
+| Stop, for the later `stop` | `docker stop --time <seconds> <names>`, one call for all names                                                                                                                                                                                                 |
+| End without removing       | `docker kill <names>`, one call for all names                                                                                                                                                                                                                  |
 
 The stop call differs from the supervisor's. `supervisor.ps1` runs
 `docker stop <names>`, so Docker's default grace of 10 s applies. The backend always
@@ -263,10 +276,21 @@ default it did not pick.
 
 The launcher is the guard script followed by `exec "$@"`. It reads
 `Cpus_allowed_list` from `/proc/self/status` and exits 125 unless it equals the set
-the container was given. A job container has no label, network option,
-`--privileged`, socket mount, or `--user`. The JIT variable is passed to the one
-`docker run` client that starts the container, in that client's environment, and
-is removed from every other client's.
+the container was given. A job container has no network option, `--privileged`,
+socket mount, or `--user`, and an ordinary one has no label. The JIT variable is
+passed to the one `docker run` client that starts the container, in that client's
+environment, and is removed from every other client's.
+
+The diagnostic variant differs from an ordinary job container only in its missing
+`--rm`, its label, and its launcher: the same guard, then
+`exec /usr/local/bin/runner-diagnostics`, with the argument `raw-run` when
+`diagnosticRawRecords` is on, or, in an image without the collector, a
+`Diagnostic gap: collector missing.` line on standard error and the runner itself.
+The identity allowlist is
+`{{.Image}}|{{.HostConfig.NanoCpus}}|{{.HostConfig.Memory}}|{{.HostConfig.MemorySwap}}|{{.HostConfig.CpuQuota}}|{{.HostConfig.CpuPeriod}}|{{.HostConfig.CpusetCpus}}|{{.State.OOMKilled}}|{{.State.ExitCode}}`,
+so the environment, and the JIT configuration in it, is never read. A unit test in
+`cli/src/image/contract.rs` fails when `docker-commands.ps1` no longer holds the
+variant's argument list and launcher as the CLI writes them.
 
 Every client starts in its own process group: `process_group(0)` on Unix, and
 `CREATE_NEW_PROCESS_GROUP` on Windows. A Ctrl+C in the terminal then reaches the CLI
@@ -369,15 +393,17 @@ come through a `Clock` seam, so the tests do not wait.
 
 Preparing the pools follows the PowerShell supervisor, with the image check
 between the wait for Docker and the pools' cleanup. A pool whose token file is
-missing or blank, and a pool with diagnostics on (this runtime does not support them yet), is
-skipped with a warning that names the pool and the reason, and never the token.
-Docker is waited for once. Each remaining pool's own stale containers are removed
-and its volumes prepared; a pool that fails either is skipped. When no pool is left
-there is nothing to run. Stale cleanup removes only containers that match the
-pool's own pattern and do not carry the `runners.diagnostic-lifecycle=1` label. A
-labelled container is never removed, and while one remains the pool is refused,
-because its diagnostics are off. A failed removal is a warning only, and a failed
-listing skips the pool.
+missing or blank is skipped with a warning that names the pool and the reason, and
+never the token. Docker is waited for once. Each remaining pool's own stale
+containers are cleaned up and its volumes prepared; a pool that fails either is
+skipped. When no pool is left there is nothing to run. Stale cleanup removes only
+containers that match the pool's own pattern and do not carry the
+`runners.diagnostic-lifecycle=1` label; a failed removal is a warning only, and a
+failed listing skips the pool. A labelled container is never removed without its
+export. The backend's own retained containers keep their records and are left
+alone. Any other labelled container is finalised with the pool's current settings
+when the pool's diagnostics are on; when they are off it gets a bounded stop and
+the pool is refused, as [Diagnostics](#diagnostics) describes.
 
 ### What the Tests Cover
 
@@ -389,10 +415,12 @@ the wait for Docker. `registration.rs` runs the client against a loopback stub f
 the request, the error text, a redirect, a stalled response and an oversize
 response. `slot_worker.rs`, `pool_preparation.rs` and `cpu_affinity.rs` use the
 fake seams, and `image_check.rs` drives the image check through the fake backend,
-the instance, and the real backend against `fake-docker`. `real_docker.rs` runs a
-container and the probe through a real Docker
-daemon on Linux; it is `#[ignore]`d for a local `cargo test`, and CI runs it in its
-own step, where it fails when Docker or the image is missing. Not verified: a real
+the instance, and the real backend against `fake-docker`. The diagnostics tests are
+listed under [Diagnostics](#diagnostics). `real_docker.rs` runs a container and the
+probe through a real Docker daemon on Linux, and exports a container's small
+`metrics.txt` through the exporter child from a real `docker cp` stream; it is
+`#[ignore]`d for a local `cargo test`, and CI runs it in its own step, where it
+fails when Docker or the image is missing. Not verified: a real
 Docker daemon outside that CI step, the TLS handshake with GitHub, and Windows and
 macOS runtime behaviour beyond what the hosted runners show.
 
@@ -452,9 +480,11 @@ running instance refuses a resume too.
   check, the instance answers as before and runs the core, which checks again once
   Docker answers and moves the instance to stopped with that reason.
 
-The container steps stop every container the backend has started and not seen end,
-in one `docker stop` call with a grace of 15 s, ended at 20 s, and then force-remove
-them in one call ended 6 s later, so they take 26 s at the most. A forced removal,
+The container steps stop every ordinary container the backend has started and not
+seen end, in one `docker stop` call with a grace of 15 s, ended at 20 s, and then
+force-remove them in one call ended 6 s later, so they take 26 s at the most.
+Alongside, they finalise the diagnostic containers the backend retains, on their
+own clock, by 24 s; [Diagnostics](#diagnostics) has the timeline. A forced removal,
 which a second Ctrl+C or SIGINT asks for, abandons the stop or skips it and removes
 at once. At a stop, the container steps and the core's wind-down share an exit
 deadline of 28 s from the request; whatever still runs then is dropped, and when the
@@ -561,8 +591,8 @@ given, such as `stop`'s, is written before the process exits. A connection still
 sending its request does not hold the exit longer than that.
 
 The protocol is UTF-8 lines. A request is one line of at most 16 KiB: `status`,
-`stop`, `restart`, or `resume <profile> <path>`, where the path is the rest of the
-line and may hold spaces. A path with a line break, or one that is not UTF-8, is
+`stop`, `restart`, `diagnostics`, or `resume <profile> <path>`, where the path is
+the rest of the line and may hold spaces. A path with a line break, or one that is not UTF-8, is
 refused before the client connects. A response is a line `ok` or `refused` with an
 optional message, then a line per field, a name, a space and its value, and then a
 line `end`; a line break in a value becomes a space, so it cannot end the response
@@ -744,8 +774,9 @@ host until Phase 4b, and neither `start` nor `build` may run beside them; see
 | ------------------------ | ---------------------------------------------------------------------------------------------------- |
 | `start`                  | `start`: the lock, validation, the log file, containment, the channel, the instance, and its signals |
 | `build`                  | `build`: the lock, validation, the channel, its states, and its `docker` steps and their aborts      |
-| `control`                | The clients `stop`, `restart`, and `status`                                                          |
+| `control`                | The clients `stop`, `restart`, `status`, and `diagnostics`                                           |
 | `shim`                   | The Unix shim between `start` and one job container's `docker run` client                            |
+| `diagnostics`            | The exporter child, listed under The Runtime Layer                                                   |
 | `instance::runtime_core` | The runtime core, listed under The Instance Layer                                                    |
 | `instance::log_file`     | The log, listed under The Instance Layer                                                             |
 
@@ -820,6 +851,10 @@ answer in time.
   instance lock is free, by taking it and letting it go at once, until 35 s after
   its request. It exits 0 once the lock is free, so a `start` right after it finds
   the lock free, and 1 when the instance still holds it.
+- `diagnostics` waits up to 30 s for the instance to finalise the diagnostic
+  containers it retains, and prints the answer; [Diagnostics](#diagnostics)
+  describes its lines and exit codes. It is refused while the instance is
+  stopping, resuming, or building, and while another `diagnostics` is under way.
 
 ### Stopping
 
@@ -832,25 +867,244 @@ default action; the others still stop the instance.
 1. The slots stop registering at once.
 2. The container steps under [Instance State](#instance-state) run: one
    `docker stop --time 15`, ended at 20 s, and then one `docker rm -f`, ended 6 s
-   later.
+   later; alongside, each diagnostic container is exported and removed by 24 s.
 3. At 28 s whatever still runs is dropped. A `docker` client is killed; on Unix a
-   job container's shim sees its liveness pipe close, removes its container within
-   5 s, and ends.
+   job container's shim sees its liveness pipe close, removes its container, or
+   ends a diagnostic one and keeps it, within 5 s, and ends.
 4. `start` gives the answers it has already sent, such as the one to `stop`, up to
    0.5 s to reach their clients, closes the channel, and exits, which releases the
    lock.
 
 A second SIGINT, Ctrl+C, or Ctrl+Break skips the grace period: a `docker stop` under
-way is abandoned and the containers are removed at once. Raising Ctrl+C in a
+way is abandoned and the ordinary containers are removed at once, while each
+diagnostic container is ended with `docker kill` and kept without its export.
+`start` then exits 1, and its last line names each kept container. Raising Ctrl+C in a
 Windows test needs `unsafe`, so the Windows handling is checked by review and on
 axpc in Phase 4b. That includes Ctrl+Break: a client's own process group keeps
 Ctrl+C from it, but whether it also keeps Ctrl+Break from it is unverified.
 
-| Exit | Meaning                                                                                                                                                                                          |
-| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 0    | `start` stopped and every removal of containers in its life succeeded, or a client's request succeeded                                                                                           |
-| 1    | An invalid configuration, a refused or failed `start`, a failed resume, no pool that can start, a client with no instance, a refused request or no answer in time, or a failed removal at a stop |
-| 2    | A usage error                                                                                                                                                                                    |
+| Exit | Meaning                                                                                                                                                                                                                                      |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | `start` stopped and every removal of containers in its life succeeded, or a client's request succeeded                                                                                                                                       |
+| 1    | An invalid configuration, a refused or failed `start`, a failed resume, no pool that can start, a client with no instance, a refused request or no answer in time, a failed removal at a stop, or a diagnostic container kept or not removed |
+| 2    | A usage error                                                                                                                                                                                                                                |
+
+### Diagnostics
+
+A pool with `diagnostics` on runs each job in the diagnostic variant under
+[Backend](#backend): no `--rm`, the label `runners.diagnostic-lifecycle=1`, and the
+guard followed by the image's collector, in raw mode when `diagnosticRawRecords` is
+on. The rest of the run contract is unchanged. Docker keeps the container after it
+ends, and the CLI finalises it: it exports the container's evidence into a bundle in
+the pool's sink, `diagnosticDirectory`, and then removes the container with
+`docker rm -f`, whatever the export did. The image's
+[README](../../images/actions-runner/README.md) owns what the collector records, and
+[Windows Runner Host](./windows-runner-host.md#collecting-private-diagnostics) the
+operator's side: the private sink, reading a bundle, and the manual recovery.
+
+**Recorded settings.** The backend retains each diagnostic container it starts,
+with the pool, the `diagnosticDirectory`, and the `diagnosticRawRecords` it ran with,
+until a removal of it succeeds. A panic that unwinds the core's workers keeps the
+record, as the backend keeps container names. Every finalisation of the container
+uses that record, never the settings of a plan read later, so a resume or a
+`restart` that changed the sink still exports into the old one. The record also
+notes once a bundle was admitted for the container, so a finalisation after a failed
+removal only removes it again and writes no second bundle.
+
+**One owner.** At most one path finalises a container at a time:
+
+- **Job end.** The slot finalises its own container on one clock, started when the
+  container ended: export by 18 s, removal by 24 s. The slot registers again only
+  after the removal was attempted. A slot that ends while a stop, a `restart`, a
+  core failure, or a move to stopped is under way leaves its container to the
+  container steps.
+- **Container steps.** Each run of them, at a stop, a `restart`, a core failure, or
+  a move to stopped, finalises every retained container nobody holds, on the steps'
+  clock, and waits, within the exit deadline, for each one another path holds.
+  When that path lets go of a container it did not remove, such as a pool
+  preparation that the stop cancelled, the steps finalise it on the same clock.
+- **Ending early.** A finalisation that ends for any reason, a panic, an error of
+  the core, a cancellation, or the exit deadline, leaves its container retained and
+  free, so the container steps under way, or the next ones, finalise it.
+- **Preparation.** Pool preparation, which runs again at every resume, `restart`,
+  and core restart, leaves the containers the backend retains alone, with their
+  records.
+- **`diagnostics`.** It acts only on retained containers nobody holds whose job has
+  ended.
+
+An export with a gap is a warning,
+`Diagnostic gap in pool <pool>, container <name>: <text>`, with the PowerShell
+supervisor's text: a missing final observation, a full sink, a failed or unsafe
+export, or a clock that left no time to begin it. It is never the slot's failure and
+does not change its backoff. A removal that fails or runs out of time is a warning,
+and the container stays retained for the next finalisation.
+
+**The stop timeline.** The container steps give the diagnostic containers one
+`docker stop --time 10`, Docker's default grace, ended at 12 s. Each export starts
+when that stop returns and ends by 18 s, and removal starts once the export child has
+ended, by 19 s. A stop that fails is a gap, and the export and removal still run. A
+container whose export cannot begin by 18 s is removed with a gap. From the request
+at 0 s:
+
+| By (s) | Ordinary containers                                   | Diagnostic containers                                 |
+| ------ | ----------------------------------------------------- | ----------------------------------------------------- |
+| 0      | registering stops                                     | registering stops                                     |
+| 12     |                                                       | one `docker stop --time 10` has returned or is killed |
+| 18     |                                                       | each export child has ended or is killed              |
+| 19     |                                                       | a killed child has ended; removal begins              |
+| 20     | one `docker stop --time 15` has returned or is killed |                                                       |
+| 24     |                                                       | one `docker rm -f` per container has ended            |
+| 26     | one `docker rm -f` for the rest has ended             |                                                       |
+| 28     | whatever still runs is dropped                        | whatever still runs is dropped                        |
+| 28.5   | answers reach their clients                           |                                                       |
+
+Both columns stay inside the 26 s container steps and the 28 s exit deadline, so
+`stop` still ends within 30 s and its 35 s wait is unchanged.
+
+**Startup.** While a pool is prepared, the CLI looks at the labelled containers of
+the pool that an earlier process left and the backend does not retain:
+
+- **Diagnostics on.** It retains them with the pool's current settings and
+  finalises them on one clock per pool, as at a stop, and reports each one:
+  `Diagnostic container <name> that an earlier run left: exported, removed.`, with
+  `export gap` or `not removed` in place of either word.
+- **Diagnostics off.** It gives them one bounded `docker stop --time 10`, ended at
+  12 s, as PowerShell does, warns for each, and refuses the pool. The reason names
+  the manual recovery in
+  [Windows Runner Host](./windows-runner-host.md#recover-before-disabling-diagnostics).
+  The CLI keeps their names until the next preparation of that pool, so
+  `diagnostics` can report them.
+
+**Forced stop and kept containers.** A second Ctrl+C or SIGINT, and the Windows
+console close, skip the export. Each diagnostic container is ended with
+`docker kill` and kept, so no job runs on unsupervised and the evidence survives,
+while the ordinary containers are removed as before. An export under way has its
+liveness pipe closed at once, before the kill; a container that has already stopped
+answers that it is not running, and that is ignored. On Unix a diagnostic
+container's shim runs in diagnostic mode: when its liveness pipe closes, it ends its
+container with `docker kill` instead of removing it. So on Unix a hard kill of
+`start` and a forced stop both leave the container stopped and kept. On Windows a
+forced stop does the same, but a hard kill ends only the `docker run` client
+through the Job Object, so the job runs on until the next `start` finalises the
+container, as an ordinary one does. At a core panic on Unix the unwound run lets the
+shim end the container before the container steps stop it, so that export has a gap
+with no final sample. `start` exits 1 when it kept a diagnostic container, or could
+not remove one, and its last line names each one. The next `start` finalises them
+while their pool's diagnostics are on, and reports each one; an export gap alone
+does not change `start`'s exit code.
+
+**The exporter.** Each export runs in a child process: the CLI run again as the
+hidden
+`runners export --pool <pool> --directory <sink> [--container <name>] [--raw-records] [--checkout <path>] --deadline-ms <ms> -- <docker>`.
+Without `--container` it only counts the pool's bundles.
+
+- **Sink checks.** Before each bundle the child checks the sink. It must be an
+  existing directory outside the checkout above the configuration, judged by the
+  checkout rule's lexical comparison, and neither it nor any directory above it may
+  be a link or, on Windows, a reparse point; so on macOS a sink under `/tmp` or
+  `/var` must be named by its `/private/…` path. A missing sink is refused, never
+  created, and nothing is repaired. On Unix the sink must be owned by the current
+  user with mode `0700`, a bundle is created `0700`, and each file in it `0600`. On
+  Windows the sink's owner and access rules are not checked, and a bundle inherits
+  the sink's rules; [Security](../conventions/security.md#diagnostic-evidence-stays-private)
+  records the risk.
+- **Admission.** The instance takes a lock for the pool and sink, then starts the
+  child. The child counts the sink's `<pool>-bundle-` entries, partial bundles
+  included, refuses at 10 as "sink full", creates
+  `<pool>-bundle-<32 hexadecimal digits>`, and prints the line `admitted` and then
+  `bundles <n>`. The instance releases the lock on `admitted`, or when the child
+  ends. A second export of the same pool waits for the lock until its own export
+  deadline, where PowerShell gave up after 0.5 s. Every export happens inside the
+  one instance, which the machine-wide lock makes unique, so this lock replaces
+  PowerShell's named mutex, which the CLI does not take.
+- **Identity and archive.** The child writes `identity.txt` from the inspect
+  allowlist under [Backend](#backend), its output capped at 1 KiB and required to
+  match a fixed shape, as PowerShell's `Get-DiagnosticIdentity` does. It reads the
+  `docker cp` archive through the same strict ustar subset as `Get-DiagnosticTar`:
+  regular files only, named `metrics.txt` or `./metrics.txt`, and `raw-<n>.log`
+  only when raw records are on; no prefix field, link, special file, absolute or
+  `..` path, bad checksum, or duplicate; at most 132 headers; `metrics.txt` at most
+  8 MiB, raw files 32 MiB together, and 40 MiB of payload in all, less 4 KiB kept
+  for the bundle's own files. It writes `metrics.txt`, each accepted raw file, and
+  `complete.txt` last, in PowerShell's formats. A `metrics.txt` without
+  `final=observed` is a gap.
+- **Isolation.** The child starts in a process group of its own, as the shim does,
+  so a terminal's first Ctrl+C reaches only `start`, and a job-end export goes on
+  during a graceful stop. Its standard input is a liveness pipe from the instance,
+  and the instance passes it the export deadline that remains. The child keeps that
+  deadline itself, and ends when it passes or when its standard input closes,
+  killing its `docker` clients first. Each client runs in a process group of its
+  own, with the JIT variable cleared and its standard error discarded, and every file
+  system call runs on a thread of its own, so a hung sink cannot keep the child from
+  ending. At the export deadline the instance closes the liveness pipe, and kills
+  the child 1 s later only if it has not ended. On Windows the child also inherits
+  `start`'s Job Object. So neither the child nor its clients outlive their deadline
+  or their instance.
+- **Exit codes.** 0 is a complete bundle, or a count; 3 a complete bundle with a
+  gap; 4 a full sink; and 1 anything else, a refused sink, a failed copy, an archive
+  outside the subset, a deadline, or a closed pipe. PowerShell's 5, "not admitted to
+  containment", is not used: the Job Object on Windows and the liveness pipe on Unix
+  are in place before the child starts.
+- **Bounded output.** The child prints only those two lines, and writes nothing to
+  standard error. The CLI never prints or logs the evidence: a warning names only
+  the pool, the container, and the gap.
+
+**`diagnostics`.** The client asks the instance to finalise every diagnostic
+container it retains whose job has ended and nobody holds: one whose removal failed,
+or one a `restart`, a core failure, or a move to stopped left unfinished. It never
+touches a container whose job still runs. It finalises them on one 24 s clock, as at
+a stop, with each one's recorded settings. A kept container whose pool now has
+diagnostics off, from an earlier process, has no recorded settings; `diagnostics`
+names it on a line of its own and leaves it to the manual recovery. It prints:
+
+- one line per pool that had a diagnostic container or has diagnostics on:
+  `pool <name>: <k> bundles written, <r> of 10 remaining`. The remaining count comes
+  from the export children that ran, or for a pool with nothing to export from a
+  count-only run of the child under the same 24 s clock; a count that fails is
+  `unknown`;
+- then one line per container whose export had a gap, whose removal failed, or
+  which was left to the manual recovery, such as
+  `container <name>: removal failed; it stays retained`.
+
+It exits 0 when every container it acted on was removed, and 1 when one was not or
+one was left to the manual recovery. With nothing to act on and no
+diagnostics-enabled pool it says so and exits 0. It is allowed while the instance
+is stopped, because a stopped instance can still retain containers, and a stop that
+arrives while it runs lets it finish within the exit deadline.
+
+No bundle file, warning, log line, or channel answer holds a token or a JIT
+configuration: the identity allowlist never reads the environment, and the archive
+holds only what the collector wrote.
+
+The tests use the `fake-docker` helper, which can keep containers, answer `inspect`
+and `cp` with a scripted archive or a stall, and stand in for the exporter child:
+
+- `diagnostic_archive.rs` ports every `Get-DiagnosticTar` case of the PowerShell
+  test, and the limits at and one past each bound;
+- `diagnostic_export.rs` runs the container backend and the real exporter child:
+  the bundle and its modes, raw mode, a gap, a container removed whatever the
+  export did, the identity cases, a retried removal with no second bundle, an 11th
+  bundle refused with two exports at once, the startup finalisation, and in real
+  time a stalled copy, a stalled copy and removal, an overrunning child, and a
+  closed liveness pipe, each ending at its deadline with its clients;
+- `diagnostic_ownership.rs` drives the instance, the runtime core, and the fake
+  backend on the system clock: a stop and a `restart` during a job-end export, a
+  stop during a startup export, a panic during a job-end export, `diagnostics` skipping a held container, a resume after a failed
+  removal, a container the stop's `docker stop` ends, a `restart` and a core failure
+  after the configuration changed, a forced stop, and the `diagnostics` answers and
+  states;
+- `diagnostic_start.rs` runs `start` and `diagnostics` as processes: a complete
+  bundle, a gap, the token and the JIT configuration kept out of every output, a
+  failed and then retried removal, the manual-recovery and `unknown` lines, an
+  exporter whose instance is killed, a mixed stop within 30 s, and on Linux and
+  macOS a first SIGINT during an export, a second SIGINT, and a hard kill;
+- `sink.rs`'s unit tests refuse a sink that is missing, under a link, inside the
+  checkout, or not private, and on Windows one that is or lies under a junction or
+  a directory symbolic link.
+
+Not verified: the Windows console-close handling below, a diagnostic job on Docker
+Desktop, and the macOS behaviour of the process-group signal the SIGINT tests send,
+beyond what the hosted runners show.
 
 ### Build
 
@@ -971,8 +1225,14 @@ failure.
   never writes to it. When the client ends while the pipe is open, the shim exits
   with its code. When the pipe has closed, because `start` dropped the run or ended
   however it ended, the shim runs `docker rm -f <container>` within 5 s, kills the
-  client, and exits, even when the client ended at the same time. The shim shares
-  `start`'s standard error, and its own warnings there name containers only.
+  client, and exits, even when the client ended at the same time. For a diagnostic container `start` runs the shim
+  as `runners shim --name <container> --diagnostic -- <docker> <arguments>`, and
+  the shim then ends its container with `docker kill` within 5 s and keeps it. The
+  shim shares `start`'s standard error, and its own warnings there name containers
+  only.
+- **Exporter.** The exporter child under [Diagnostics](#diagnostics) has a
+  liveness pipe of its own and keeps its own deadline, on every system, and on
+  Windows it is also in the Job Object.
 
 Security lists the
 [residual risks](../conventions/security.md#tokens-stay-out-of-the-log-and-job-clients-end-with-start)
@@ -982,8 +1242,11 @@ that containment and the log leave.
 
 When the console closes, the user logs off, or the machine shuts down, `start` stops
 the instance with forced removal: the slots stop registering, so no container starts
-unseen, and one `docker rm -f` removes every container it started. Whatever has not
-finished after 4 s is dropped, the answers already sent get up to 0.5 s, and `start`
+unseen, one `docker rm -f` removes every ordinary container it started, and, at the
+same time, one `docker kill` ends every diagnostic container and keeps it without its
+export, which the next `start` finalises. Whatever has not finished after 4 s is
+dropped, and a diagnostic container whose kill did not finish runs on until the next
+`start` finalises it, the answers already sent get up to 0.5 s, and `start`
 exits. The 4.5 s fits inside the 5 s the operating system gives a console-close
 handler before it ends the process, and Microsoft documents that logoff and shutdown
 events reach services only, never an interactive process
@@ -998,7 +1261,8 @@ From version 1.44.0
 handler does not return for them while a listener is registered: it notifies the
 listener and parks the handler thread, so the process lives until `start` finishes
 the removal and exits by itself. `cli/Cargo.toml` requires 1.54.1. No test can raise
-the close event, so this is checked on axpc in Phase 4b.
+the close event, so this, the diagnostic containers' kill within the 4 s included,
+is unverified until axpc checks it in Phase 4b.
 
 ### What the Command Tests Cover
 
@@ -1018,7 +1282,8 @@ left; on Windows, a handle to the job container's client is signalled when
 `start` is killed. `runtime_core.rs`, and the board and masking cases in
 `pool_preparation.rs` and `slot_worker.rs`, use the fake seams, and
 `instance_state.rs` and `core_restart.rs` cover forced removal, the exit deadline,
-a panicking core, and no startable pool.
+a panicking core, and no startable pool. The diagnostics tests are listed under
+[Diagnostics](#diagnostics).
 
 `build_command.rs` runs `build` the same way, from an empty directory, with
 `fake-docker` keeping an image store: the one build's arguments, labels, temporary
@@ -1109,7 +1374,9 @@ base-address, instance-roots, and build-definition tests again with `--release` 
 `docker build --target base` of
 [`images/actions-runner`](../../images/actions-runner), tagged and never pushed;
 the `real_docker` test with `--ignored`, pointed at that tag by
-`RUNNERS_REAL_DOCKER_IMAGE`; and the `real_docker_build` test with `--ignored`,
+`RUNNERS_REAL_DOCKER_IMAGE`, which also exports a container's evidence through the
+exporter child from a real `docker cp` stream; and the `real_docker_build` test with
+`--ignored`,
 which removes the image it builds. The Windows and macOS hosted runners have no
 Linux Docker daemon, and each test fails rather than skips when one is missing.
 One more step runs on Linux and macOS, `tests/ci/other-user-lock.sh`, and one on

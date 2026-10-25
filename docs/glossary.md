@@ -75,7 +75,7 @@ the PowerShell script; the **CLI**'s `start` is the supervisor that replaces it.
 **CLI** - this project's Rust command line tool, under `cli/`. `validate` checks a
 **Host Configuration**; `build` builds its **Runner Image** from the definition
 the binary embeds; `start` runs a host's pools in the foreground as the
-**Supervisor**, and `stop`, `restart`, and `status` talk to it.
+**Supervisor**, and `stop`, `restart`, `status`, and `diagnostics` talk to it.
 
 **Instance State** - where the one running `start` on a machine stands: running,
 stopping, stopped with a reason, or resuming; or `building`, while a `build` holds
@@ -86,6 +86,14 @@ instance accepts. See
 **Runtime Core** - the part of `start` that prepares the **Execution Pools** and
 runs every **Slot**'s loop until a stop. The instance restarts it after a failure;
 see [operations/cli.md](./operations/cli.md#the-instance-layer).
+
+**Diagnostic Container** - a job container of an **Execution Pool** with
+`diagnostics` on. It runs the runner under the image's collector, carries the
+`runners.diagnostic-lifecycle=1` label, and has no `--rm`, so it stays after its job.
+The **Supervisor** finalises it: it exports the collector's evidence into a bundle
+in the pool's private sink, then removes it. Until then it is retained with the
+settings it ran with. See
+[operations/cli.md](./operations/cli.md#diagnostics).
 
 **Host Profile** - the host a **Host Configuration** is checked for: `axpc`, the
 Windows machine with Docker Desktop, or `axmc`, the macOS machine. A profile fixes

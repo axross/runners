@@ -53,6 +53,18 @@ unverified on axpc until Phase 4b, including a full build of the image on Docker
 Desktop; CI runs it only against a small test definition on Linux. See
 [CLI](./cli.md#build).
 
+The CLI's `start` also runs diagnostics-enabled pools and exports their containers'
+evidence, and `runners diagnostics` finalises the diagnostic containers an instance
+still retains; on axpc the supervisor keeps doing this until Phase 4b, and the CLI's
+diagnostics are unverified there until then, including the console close. The CLI
+does not check a Windows sink's owner or access rules, so the ACL step under
+[Collecting private diagnostics](#collecting-private-diagnostics) is what keeps a
+sink private. The CLI does not take the PowerShell exporter's named mutex either:
+its own instance lock is what keeps two of its exports apart, so the CLI instance
+MUST be stopped with `runners stop` before a manual export under
+[Recover before disabling diagnostics](#recover-before-disabling-diagnostics). See
+[CLI](./cli.md#diagnostics).
+
 ## Prerequisites
 
 - **Windows 11 Pro, version 23H2 or later**, the minimum for Docker Desktop's WSL 2
@@ -641,7 +653,9 @@ sink/raw settings or silently enable collection.
 
 After separate host authorization, recover one marked container at a time:
 
-1. Keep the supervisor task disabled. Match the candidate's name to the entry's
+1. Keep the supervisor task disabled, and stop any CLI instance with
+   `runners stop`, because the CLI does not take the named mutex this export uses;
+   do not run `runners start` until step 4 is done. Match the candidate's name to the entry's
    `<name>-<index>-<timestamp>` pattern and confirm its immutable label with
    `docker ps -a --filter "name=<name>-" --filter "label=runners.diagnostic-lifecycle=1" --format "{{.Names}}"`.
    Never dump configuration or registration values.
