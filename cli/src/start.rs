@@ -34,9 +34,8 @@ use crate::summary::plan_summary;
 /// How long a resuming `start` waits for the instance's answer.
 const RESUME_ANSWER_WITHIN: Duration = Duration::from_secs(10);
 
-/// What a console close, a logoff or a shutdown leaves for removing the containers,
+/// What a console close, a logoff or a shutdown leaves the instance's forced stop,
 /// inside the 5 s the operating system allows a close handler.
-#[cfg(windows)]
 const CLOSE_REMOVE_BUDGET: Duration = Duration::from_secs(4);
 
 const EXIT_OK: u8 = 0;
@@ -222,11 +221,15 @@ async fn run_instance(parts: Parts<'_>, plan: crate::validate::Plan) -> u8 {
     let source = FileSource::new(parts.config_path, parts.settings.profile, log);
     let instance = Instance::new(parts.settings, &backend, &SystemClock, &core, &source, log);
     let force = || instance.force_removal();
+    let mut run = std::pin::pin!(instance.run(plan, &mut requests));
     let ended = tokio::select! {
-        ended = instance.run(plan, &mut requests) => Some(ended),
+        ended = &mut run => Some(ended),
         () = signals(&sender, &force, log) => None,
-        removed = console_closed(&backend, log) => {
-            Some(Ended { containers_removed: removed, nothing_to_run: false })
+        () = console_closed(log) => {
+            request_stop(&sender);
+            force();
+            let stopped = tokio::time::timeout(CLOSE_REMOVE_BUDGET, &mut run).await;
+            Some(stopped.unwrap_or(Ended { containers_removed: false, nothing_to_run: false }))
         }
     };
     drop(server);
@@ -318,16 +321,12 @@ fn on_signal(
 }
 
 /// On Windows, waits for the console to close or the user to log off or the
-/// machine to shut down, then removes every container within
-/// [`CLOSE_REMOVE_BUDGET`] and returns whether that worked. The async runtime's
-/// handler does not return to the operating system for these events, so the
-/// process lives until this returns and `start` exits; see the CLI document.
+/// machine to shut down. The async runtime's handler does not return to the
+/// operating system for these events, so the process lives until `start` has
+/// stopped the instance within [`CLOSE_REMOVE_BUDGET`] and exits; see the CLI
+/// document.
 #[cfg(windows)]
-async fn console_closed<C: crate::runtime::clock::Clock>(
-    backend: &DockerBackend<C>,
-    log: &dyn Log,
-) -> bool {
-    use crate::runtime::backend::Backend;
+async fn console_closed(log: &dyn Log) {
     use tokio::signal::windows::{ctrl_close, ctrl_logoff, ctrl_shutdown};
     let (close, logoff, shutdown) = (ctrl_close(), ctrl_logoff(), ctrl_shutdown());
     let (Ok(mut close), Ok(mut logoff), Ok(mut shutdown)) = (close, logoff, shutdown) else {
@@ -342,16 +341,11 @@ async fn console_closed<C: crate::runtime::clock::Clock>(
         _ = shutdown.recv() => {}
     }
     log.warn("The console is closing: removing every container now.");
-    let containers = backend.running_containers();
-    backend
-        .remove_containers(&containers, CLOSE_REMOVE_BUDGET)
-        .await
-        .is_ok()
 }
 
 /// Unix has no console close; a closed terminal is SIGHUP.
 #[cfg(unix)]
-async fn console_closed<C>(_backend: &DockerBackend<C>, _log: &dyn Log) -> bool {
+async fn console_closed(_log: &dyn Log) {
     std::future::pending().await
 }
 
@@ -402,7 +396,6 @@ mod tests {
         assert_eq!(RESUME_ANSWER_WITHIN, Duration::from_secs(10));
     }
 
-    #[cfg(windows)]
     #[test]
     fn a_console_close_leaves_four_seconds_for_the_removal() {
         assert_eq!(CLOSE_REMOVE_BUDGET, Duration::from_secs(4));

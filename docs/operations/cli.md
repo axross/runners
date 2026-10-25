@@ -734,8 +734,9 @@ happened; a panic of the runtime core reaches the log, masked, as a failure.
 ### Console Close on Windows
 
 When the console closes, the user logs off, or the machine shuts down, `start`
-runs one `docker rm -f` for every container it started, with a 4 s budget, and
-then exits. The 4 s fits inside the 5 s the operating system gives a console-close
+stops the instance with forced removal: the slots stop registering, so no container
+starts unseen, and one `docker rm -f` removes every container it started. Whatever
+has not finished after 4 s is dropped, and `start` exits. The 4 s fits inside the 5 s the operating system gives a console-close
 handler before it ends the process, and Microsoft documents that logoff and
 shutdown events reach services only, never an interactive process
 ([HandlerRoutine](https://learn.microsoft.com/en-us/windows/console/handlerroutine)).
