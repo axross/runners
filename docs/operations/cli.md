@@ -662,7 +662,9 @@ answer in time.
 
 `stop`, SIGINT, SIGTERM, and SIGHUP on Unix, and Ctrl+C on Windows end the instance
 from any state with the stop sequence, which takes 30 s at the most from the
-request. SIGHUP is how macOS reports a closed terminal.
+request. SIGHUP is how macOS reports a closed terminal. A signal `start` cannot
+listen for is a warning at startup, and that signal keeps its default action; the
+others still stop the instance.
 
 1. The slots stop registering at once.
 2. The container steps under [Instance State](#instance-state) run: one

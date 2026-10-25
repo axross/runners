@@ -11,6 +11,7 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use tokio::sync::{mpsc, oneshot};
@@ -255,43 +256,85 @@ fn request_stop(sender: &mpsc::UnboundedSender<Incoming>) {
     });
 }
 
-/// Turns SIGINT, SIGTERM and SIGHUP into a stop, and a second SIGINT into forced
-/// removal. Never ends.
-#[cfg(unix)]
-async fn signals(sender: &mpsc::UnboundedSender<Incoming>, force: &dyn Fn(), log: &dyn Log) {
-    use tokio::signal::unix::{SignalKind, signal};
-    let (interrupt, terminate, hangup) = (
-        signal(SignalKind::interrupt()),
-        signal(SignalKind::terminate()),
-        signal(SignalKind::hangup()),
-    );
-    let (Ok(mut interrupt), Ok(mut terminate), Ok(mut hangup)) = (interrupt, terminate, hangup)
-    else {
-        log.warn("Signals cannot be handled, so only `runners stop` stops the instance.");
-        return std::future::pending().await;
-    };
-    let mut stopping = false;
-    loop {
-        let (name, is_interrupt) = tokio::select! {
-            _ = interrupt.recv() => ("SIGINT", true),
-            _ = terminate.recv() => ("SIGTERM", false),
-            _ = hangup.recv() => ("SIGHUP", false),
-        };
-        on_signal(name, is_interrupt, &mut stopping, sender, force, log);
+/// Polls a signal stream for its next signal.
+type PollSignal = Box<dyn FnMut(&mut Context<'_>) -> Poll<Option<()>>>;
+
+/// One signal `start` listens for.
+struct Listener {
+    name: &'static str,
+    /// A second one forces removal.
+    is_interrupt: bool,
+    poll: PollSignal,
+}
+
+/// The listener for a stream `opened` gives, or a warning naming the signal when it
+/// could not be opened.
+fn listener<S: 'static>(
+    name: &'static str,
+    is_interrupt: bool,
+    opened: io::Result<S>,
+    poll: fn(&mut S, &mut Context<'_>) -> Poll<Option<()>>,
+    log: &dyn Log,
+) -> Option<Listener> {
+    match opened {
+        Ok(mut stream) => Some(Listener {
+            name,
+            is_interrupt,
+            poll: Box::new(move |context| poll(&mut stream, context)),
+        }),
+        Err(error) => {
+            log.warn(&format!("{name} cannot be handled: {error}"));
+            None
+        }
     }
 }
 
-/// Turns Ctrl+C into a stop, and a second Ctrl+C into forced removal. Never ends.
+/// Listens for SIGINT, SIGTERM and SIGHUP.
+#[cfg(unix)]
+fn listeners(log: &dyn Log) -> Vec<Listener> {
+    use tokio::signal::unix::{Signal, SignalKind, signal};
+    [
+        ("SIGINT", true, SignalKind::interrupt()),
+        ("SIGTERM", false, SignalKind::terminate()),
+        ("SIGHUP", false, SignalKind::hangup()),
+    ]
+    .into_iter()
+    .filter_map(|(name, is_interrupt, kind)| {
+        listener(name, is_interrupt, signal(kind), Signal::poll_recv, log)
+    })
+    .collect()
+}
+
+/// Listens for Ctrl+C.
 #[cfg(windows)]
+fn listeners(log: &dyn Log) -> Vec<Listener> {
+    use tokio::signal::windows::{CtrlC, ctrl_c};
+    listener("Ctrl+C", true, ctrl_c(), CtrlC::poll_recv, log)
+        .into_iter()
+        .collect()
+}
+
+/// Turns each signal [`listeners`] could open into a stop, and a second interrupt
+/// into forced removal. A signal that could not be opened keeps its default action.
+/// Never ends.
 async fn signals(sender: &mpsc::UnboundedSender<Incoming>, force: &dyn Fn(), log: &dyn Log) {
-    let Ok(mut interrupt) = tokio::signal::windows::ctrl_c() else {
-        log.warn("Ctrl+C cannot be handled, so only `runners stop` stops the instance.");
-        return std::future::pending().await;
-    };
+    let mut listeners = listeners(log);
+    if listeners.is_empty() {
+        log.warn("No signal can be handled, so only `runners stop` stops the instance.");
+    }
     let mut stopping = false;
     loop {
-        let _ = interrupt.recv().await;
-        on_signal("Ctrl+C", true, &mut stopping, sender, force, log);
+        let (name, is_interrupt) = std::future::poll_fn(|context| {
+            listeners
+                .iter_mut()
+                .find_map(|listener| match (listener.poll)(context) {
+                    Poll::Ready(Some(())) => Some((listener.name, listener.is_interrupt)),
+                    _ => None,
+                })
+                .map_or(Poll::Pending, Poll::Ready)
+        })
+        .await;
+        on_signal(name, is_interrupt, &mut stopping, sender, force, log);
     }
 }
 
