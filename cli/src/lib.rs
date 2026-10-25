@@ -12,6 +12,7 @@ pub mod command;
 pub mod control;
 pub mod de;
 pub mod fold;
+pub mod image;
 pub mod instance;
 pub mod json;
 #[cfg(unix)]

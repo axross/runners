@@ -4,6 +4,7 @@
 //! argument for argument. The tests compare them with the PowerShell source.
 
 use super::backend::{ContainerSpec, Mount};
+use crate::image::check::labels_format;
 use crate::validate::PlannedVolume;
 
 /// The command a job container runs after the launcher verifies its CPUs.
@@ -208,6 +209,19 @@ pub fn probe_run_arguments(probe: &str, image: &str) -> Vec<String> {
         "-c",
         PROBE_READER,
     ])
+}
+
+/// Reads the labels the image check needs, with one fixed format. `reference` is
+/// the name as `docker run` resolves it.
+#[must_use]
+pub fn image_inspect_arguments(reference: &str) -> Vec<String> {
+    strings(&["image", "inspect", "--format", &labels_format(), reference])
+}
+
+/// Lists the ID of the image `reference` names, and nothing when there is none.
+#[must_use]
+pub fn image_list_arguments(reference: &str) -> Vec<String> {
+    strings(&["image", "ls", "--quiet", reference])
 }
 
 #[cfg(test)]

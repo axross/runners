@@ -42,7 +42,7 @@ pub fn format_stamp(unix_millis: u64) -> String {
 
 /// Converts days since 1970-01-01 to a proleptic Gregorian date (Howard Hinnant's
 /// `civil_from_days`), for days from the epoch on.
-fn civil_from_days(days: u64) -> (u64, u64, u64) {
+pub(crate) fn civil_from_days(days: u64) -> (u64, u64, u64) {
     let shifted = days + 719_468;
     let era = shifted / 146_097;
     let day_of_era = shifted % 146_097;
