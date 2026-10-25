@@ -425,8 +425,9 @@ embeds when it is compiled, so what a host builds is what was reviewed and merge
   holds no credential.
 - `build` holds the instance lock, so it cannot replace the image under a running
   instance, and the instance checks the image's contract before each job, so an
-  image replaced another way registers no runner. A replacement between that check
-  and `docker run` is accepted on a single-user host.
+  image replaced by one with another contract, or removed, registers no runner. A
+  replacement between that check and `docker run` is accepted on a single-user
+  host.
 
 ## CPU Placement Is Not Resource Reservation
 
