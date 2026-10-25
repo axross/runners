@@ -712,8 +712,11 @@ configuration, from its registration until its container's outcome is reported,
 is replaced by `<masked>` in every line, including the job container's output the
 backend forwards, a secret that runs across two pieces of a long line included.
 The default panic hook would write a panic's message to the terminal unmasked, so
-`start` replaces it with one that names only where the panic happened; a panic of
-the runtime core reaches the log, masked, as a failure.
+`start` replaces it with one that names only where the panic happened. A panic of
+the runtime core reaches the log as a failure that carries its message, with every
+token read so far masked. A JIT configuration in that message is not: its mask
+ends as the panic unwinds the slot that held it, before the instance logs the
+failure.
 
 ### Containment
 

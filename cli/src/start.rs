@@ -418,8 +418,7 @@ fn contain() -> Result<JobLauncher, String> {
 }
 
 /// A panic's message could hold anything, so the default hook, which writes it to
-/// the terminal unmasked, is replaced by one that names only where it happened. The
-/// runtime core's panics reach the log, masked, as failures.
+/// the terminal unmasked, is replaced by one that names only where it happened.
 fn hide_panic_messages() {
     std::panic::set_hook(Box::new(|info| {
         let place = info.location().map_or_else(String::new, |location| {

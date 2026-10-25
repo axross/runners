@@ -401,6 +401,8 @@ Residual risks, accepted on a single-user host:
   containers left by them wait for the next `start`.
 - On Windows the log directory's access control is not checked; it relies on the
   user profile's.
+- A JIT configuration that a runtime-core panic's message carried would reach the
+  log unmasked, because its mask ends as the panic unwinds.
 
 ## CPU Placement Is Not Resource Reservation
 
