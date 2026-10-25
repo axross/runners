@@ -5,7 +5,7 @@
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-const DIGITS_IN_STAMP: usize = 17;
+pub(crate) const DIGITS_IN_STAMP: usize = 17;
 const LATEST_UNIX_MILLIS: u64 = 253_402_300_799_999;
 const MILLIS_PER_DAY: u64 = 86_400_000;
 

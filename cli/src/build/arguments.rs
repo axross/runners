@@ -2,13 +2,10 @@
 
 use crate::image::contract::{BUILT_LABEL, IMAGE_LABEL, IMAGE_LABEL_VALUE};
 use crate::runtime::docker_args::strings;
-use crate::runtime::name::stamp;
+use crate::runtime::name::{DIGITS_IN_STAMP, stamp};
 
 /// What every temporary tag's tag part starts with.
 const TEMPORARY_TAG_PREFIX: &str = "runners-build-";
-
-/// The digits of a temporary tag's stamp, `yyyyMMddHHmmssfff`.
-const STAMP_DIGITS: usize = 17;
 
 fn image_label() -> String {
     format!("{IMAGE_LABEL}={IMAGE_LABEL_VALUE}")
@@ -48,7 +45,7 @@ pub fn is_temporary_tag(image: &str, reference: &str) -> bool {
         .and_then(|rest| rest.strip_prefix(':'))
         .and_then(|tag| tag.strip_prefix(TEMPORARY_TAG_PREFIX))
         .is_some_and(|digits| {
-            digits.len() == STAMP_DIGITS && digits.bytes().all(|byte| byte.is_ascii_digit())
+            digits.len() == DIGITS_IN_STAMP && digits.bytes().all(|byte| byte.is_ascii_digit())
         })
 }
 
