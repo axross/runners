@@ -236,11 +236,14 @@ GitHub-hosted runner with `contents: read`, checks out the pull request, and
 runs `mise run check`, which executes the pull request's own task definitions
 and the linters they call, including the CLI's Rust gates. The same workflow
 also runs a `rust` job that formats, lints, and tests the CLI on Linux, Windows,
-and macOS hosted runners, with three more steps on Linux only: the release-profile
-tests of the debug-only overrides, a build of the runner image's base stage on that
-runner (never pushed), and a test that runs a container through the hosted
-runner's Docker daemon against that image. On Linux and macOS a further step holds
-the CLI's single-instance lock with a debug-only test helper and runs a copy of the
+and macOS hosted runners, with four more steps on Linux only: the release-profile
+tests of the debug-only overrides, the test definition `build` reads among them; a
+build of the runner image's base stage on that runner (never pushed); a test that
+runs a container through the hosted runner's Docker daemon against that image; and
+a test that runs `runners build` through the same daemon against the debug-only
+test definition in `cli/tests/build-definition/`, checks the image's five labels
+and that no temporary tag remains, and removes the image. On Linux and macOS a
+further step holds the CLI's single-instance lock with a debug-only test helper and runs a copy of the
 helper as `nobody` through the hosted runner's passwordless `sudo`, failing unless
 that other user is refused the lock. On Windows a further step has the helper open
 the control pipe and reads the live pipe's security descriptor back with
@@ -339,6 +342,29 @@ blocked.
 When the base branch moves and a topic branch conflicts, merge the current base
 into the topic branch and record any resolution in a new commit. Do not rebase,
 amend, reset away, or force-push published history as conflict recovery.
+
+## Bumping the Runner
+
+Dependabot's `docker` entry proposes a new runner base for
+[`images/actions-runner/Dockerfile`](../../images/actions-runner/Dockerfile), and
+its pull request stays red until three edits are made by hand on its branch, which
+the contract tests in `cli/src/image/contract.rs` ask for by name:
+
+1. Add the new version's row to `RUNNER_RELEASES` in `cli/src/image/contract.rs`,
+   with its release date from the
+   [actions/runner releases](https://github.com/actions/runner/releases) page,
+   never recalled.
+2. Set the `com.github.axross.runners.runner-version` and
+   `com.github.axross.runners.runner-released` labels in the Dockerfile to the new
+   version and that date.
+3. Set the `FROM` line and the two labels of
+   [`cli/tests/build-definition/Dockerfile`](../../cli/tests/build-definition/Dockerfile)
+   to the same base and values.
+
+A runner bump changes no part of the run contract, so the contract version stays.
+When the new runner changes something the run contract relies on, such as a path or
+the user it runs as, [REVIEW.md](../../REVIEW.md) asks for the contract version to
+be raised, as [CLI](./cli.md#the-image-contract) describes.
 
 ## Working Without an Agent
 

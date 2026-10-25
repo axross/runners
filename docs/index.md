@@ -47,8 +47,10 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   PowerShell validator, the shared fixtures and the parity test, the runtime layer
   (container backend, JIT registration, CPU placement, and the slot loop), the
   instance layer (instance state, single-instance lock, and control channel),
-  running a host with `start`, `stop`, `restart`, and `status` (the log,
-  containment, and the stop sequence), the toolchain and Rust gates, the allowed
+  the image contract (its labels, the image check, and freshness), building the
+  runner image with `build`, running a host with `start`, `stop`, `restart`, and
+  `status` (the log, containment, and the stop sequence), the toolchain and Rust
+  gates, the allowed
   dependencies, and what a rename touches.
 - [operations/agent-skills.md](./operations/agent-skills.md) - installing and
   refreshing the skills from `axross/skills`, the drift checks, and the register

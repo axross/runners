@@ -216,6 +216,17 @@ Apply the lens for each kind of file in the diff.
   A change to a rule on the shared fixtures changes both
   validators or declares a divergence. Give `file:line` evidence as in the other
   lenses.
+- **Image contract.** A change to the run contract, which is the argument lists,
+  the launcher, and the labels the CLI reads, or to what the runner image must
+  provide for it, such as a path, user, group, or tool the launcher or a job
+  relies on, raises the contract version in `images/actions-runner/Dockerfile`
+  and in `cli/tests/build-definition/Dockerfile`. A change that alters either
+  without raising the version is a finding, even when `APPROVED_CONTRACTS` in
+  `cli/src/image/contract.rs` cannot see it. A runner bump changes the
+  `runner-version` and `runner-released` labels and the test definition's base,
+  and adds the release's date from the actions/runner release page to
+  `RUNNER_RELEASES` in the same file; see
+  [CLI](docs/operations/cli.md#the-image-contract).
 - **Documentation.** A claim about runner behavior is either verified or
   described as planned. A document that describes a file, image, or script
   that does not exist yet says so.

@@ -42,6 +42,17 @@ and a real registration, and because the `actions-runner-supervisor` task starts
 supervisor again at sign-in and is set to restart it if it fails, stopping the
 supervisor by hand is not enough before running `runners start`.
 
+The CLI's `build` command can build the runner image, but on axpc the
+`actions-runner-weekly-rebuild` task keeps building it with `rebuild-image.ps1`
+until Phase 4b. Do not run `runners build` beside the task or the supervisor: both
+replace the same image name, and `build` holds only the CLI's instance lock, which
+the PowerShell scripts do not take. An image the task builds carries the contract
+labels its Dockerfile declares, so the CLI accepts it, but it has no build-time
+label, so the CLI shows its build age as unknown with a warning. `runners build` is
+unverified on axpc until Phase 4b, including a full build of the image on Docker
+Desktop; CI runs it only against a small test definition on Linux. See
+[CLI](./cli.md#build).
+
 ## Prerequisites
 
 - **Windows 11 Pro, version 23H2 or later**, the minimum for Docker Desktop's WSL 2
@@ -755,7 +766,9 @@ repositories are in [Security](../conventions/security.md).
 The host does not update its own checkout. To move to a newer runner or image:
 
 1. Pull the checkout by hand, normally after merging the Dependabot pull request
-   that bumps the `FROM` line in `images/actions-runner/Dockerfile`.
+   that bumps the `FROM` line in `images/actions-runner/Dockerfile`, which also
+   updates the image's runner labels by hand; see
+   [Development Workflow](./development-workflow.md#bumping-the-runner).
 2. Run `rebuild-image.ps1`, or wait for the weekly task. Containers already running
    finish their job on the old image; the next one starts on the new image.
 
