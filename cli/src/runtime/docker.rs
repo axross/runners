@@ -400,26 +400,32 @@ async fn end_client(child: &mut Child, limit: Duration) {
     let _ = tokio::time::timeout(limit, child.kill()).await;
 }
 
-/// Forwards each line a container prints to the log, in pieces of at most
-/// [`MAX_LINE_BYTES`], until its stream ends.
+/// Forwards each line a container prints to the log until its stream ends. A line
+/// longer than [`MAX_LINE_BYTES`] goes in pieces, each cut where it splits no masked
+/// secret: the bytes after the cut wait for the next piece.
 async fn forward_lines<R: AsyncRead + Unpin>(stream: Option<R>, log: &dyn Log) {
     let Some(stream) = stream else {
         return;
     };
     let mut reader = BufReader::new(stream);
-    let mut line = Vec::new();
+    let mut piece = Vec::new();
     loop {
-        line.clear();
-        match (&mut reader)
+        let read = (&mut reader)
             .take(MAX_LINE_BYTES)
-            .read_until(b'\n', &mut line)
+            .read_until(b'\n', &mut piece)
             .await
-        {
-            Ok(0) | Err(_) => return,
-            Ok(_) => {}
+            .unwrap_or(0);
+        let line_ended = read == 0 || piece.ends_with(b"\n");
+        let held = if line_ended { 0 } else { log.held_back(&piece) };
+        let next = piece.split_off(piece.len() - held);
+        if !piece.is_empty() {
+            let text = String::from_utf8_lossy(&piece);
+            log.info(text.trim_end_matches(['\n', '\r']));
         }
-        let text = String::from_utf8_lossy(&line);
-        log.info(text.trim_end_matches(['\n', '\r']));
+        if read == 0 {
+            return;
+        }
+        piece = next;
     }
 }
 
@@ -571,5 +577,28 @@ impl<C: Clock> Backend for DockerBackend<C> {
             "Failed to stop containers: {}",
             captured.output_text()
         )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::fake::MemoryLog;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_secret_across_two_pieces_of_a_long_line_is_masked() {
+        let log = MemoryLog::default();
+        log.mask(&Secret::new("jit-0123456789".to_string()));
+        let before = usize::try_from(MAX_LINE_BYTES).unwrap() - 4;
+        let mut output = "a".repeat(before);
+        output.push_str("jit-0123456789 and on\nnext\n");
+        forward_lines(Some(output.as_bytes()), &log).await;
+        let lines = log.lines();
+        assert_eq!(lines.len(), 3, "the long line goes in two pieces");
+        let texts: String = lines
+            .iter()
+            .map(|line| line.strip_prefix("INFO: ").unwrap())
+            .collect();
+        assert_eq!(texts, format!("{}<masked> and onnext", "a".repeat(before)));
     }
 }

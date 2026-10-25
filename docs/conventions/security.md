@@ -404,8 +404,6 @@ owns how the log is written and masked and how its children are contained.
 
 Residual risks, accepted on a single-user host:
 
-- A secret split across two 64 KiB pieces of forwarded container output is not
-  masked.
 - On Unix a shim outlives `start` by up to 5 s, and a shim that is itself killed
   leaves its container running until the next `start` removes it. On Windows a
   container outlives its killed client, with the same backstop.

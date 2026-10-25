@@ -134,6 +134,10 @@ impl Log for StartLog {
     fn unmask(&self, secret: &Secret) {
         self.masks.remove(secret);
     }
+
+    fn held_back(&self, piece: &[u8]) -> usize {
+        self.masks.held_back(piece)
+    }
 }
 
 /// Opens a new log file in `directory`, created private when missing, and removes

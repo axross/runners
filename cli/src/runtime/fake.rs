@@ -337,4 +337,8 @@ impl Log for MemoryLog {
     fn unmask(&self, secret: &Secret) {
         self.masks.remove(secret);
     }
+
+    fn held_back(&self, piece: &[u8]) -> usize {
+        self.masks.held_back(piece)
+    }
 }

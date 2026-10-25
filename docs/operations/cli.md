@@ -277,8 +277,9 @@ supervisor did not do. A listing, a volume command, and an info call are bounded
 within 120 s. The CPU probe and the removal of a leftover probe have the budgets
 under CPU Placement. A `docker info` that fails, hangs, or cannot start (the
 program is missing) means Docker is not available yet. Output from a job container
-is forwarded to the log line by line, in pieces of at most 64 KiB, and the log masks
-every secret in it; see [The Log](#the-log).
+is forwarded to the log line by line, and the log masks every secret in it. A line
+longer than 64 KiB goes in pieces, each cut where it splits no masked secret, the
+bytes after the cut waiting for the next piece; see [The Log](#the-log).
 The output of any other client is read within its budget, and when it becomes error
 text it is joined onto one line and cut to 500 characters followed by `...`, as a
 registration error is.
@@ -705,10 +706,10 @@ failed write stops the file, with a warning on the terminal.
 Every token read, from its first read in pool preparation on, and every JIT
 configuration, from its registration until its container's outcome is reported,
 is replaced by `<masked>` in every line, including the job container's output the
-backend forwards. A secret split across two forwarded pieces of 64 KiB is not
-masked. The default panic hook would write a panic's message to the terminal
-unmasked, so `start` replaces it with one that names only where the panic
-happened; a panic of the runtime core reaches the log, masked, as a failure.
+backend forwards, a secret that runs across two pieces of a long line included.
+The default panic hook would write a panic's message to the terminal unmasked, so
+`start` replaces it with one that names only where the panic happened; a panic of
+the runtime core reaches the log, masked, as a failure.
 
 ### Containment
 

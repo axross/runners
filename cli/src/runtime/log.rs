@@ -22,6 +22,9 @@ pub trait Log {
 
     /// Stops hiding `secret`.
     fn unmask(&self, secret: &Secret);
+
+    /// See [`Masks::held_back`].
+    fn held_back(&self, piece: &[u8]) -> usize;
 }
 
 /// The secrets a sink hides.
@@ -44,6 +47,28 @@ impl Masks {
         if let Some(position) = secrets.iter().position(|held| held == secret.expose()) {
             secrets.swap_remove(position);
         }
+    }
+
+    /// How many bytes at the end of `piece`, a part of a line whose rest follows,
+    /// wait to be logged with that rest: enough that cutting `piece` there splits no
+    /// secret, whether one lies whole in `piece` or runs on past its end.
+    #[must_use]
+    pub fn held_back(&self, piece: &[u8]) -> usize {
+        let secrets = self.secrets.borrow();
+        let longest = secrets.iter().map(String::len).max().unwrap_or(0);
+        let cut = piece.len().saturating_sub(longest.saturating_sub(1));
+        let split = secrets
+            .iter()
+            .filter_map(|secret| {
+                let secret = secret.as_bytes();
+                (cut.saturating_sub(secret.len().saturating_sub(1))..cut).find(|&start| {
+                    piece
+                        .get(start..)
+                        .is_some_and(|rest| rest.starts_with(secret))
+                })
+            })
+            .min();
+        piece.len() - split.unwrap_or(cut)
     }
 
     /// `line` with every secret replaced by [`MASK`], the longest first, so a
@@ -79,6 +104,10 @@ impl Log for StderrLog {
 
     fn unmask(&self, secret: &Secret) {
         self.masks.remove(secret);
+    }
+
+    fn held_back(&self, piece: &[u8]) -> usize {
+        self.masks.held_back(piece)
     }
 }
 
@@ -141,6 +170,19 @@ mod tests {
         assert_eq!(masks.secrets.borrow().len(), 1);
         masks.remove(&secret("same"));
         assert_eq!(masks.apply("same"), "same");
+    }
+
+    #[test]
+    fn a_piece_holds_back_a_secret_that_runs_past_its_end_or_across_the_cut() {
+        let masks = Masks::default();
+        assert_eq!(masks.held_back(b"no secret is masked"), 0);
+        masks.add(&secret("0123456789"));
+        assert_eq!(masks.held_back(b"plain text, nothing near"), 9);
+        assert_eq!(masks.held_back(b"short"), 5);
+        let across = b"xxxxxxxxxx0123456789yyy";
+        assert_eq!(masks.held_back(across), 13, "the cut moves to the secret");
+        let whole = b"0123456789yyyyyyyyy";
+        assert_eq!(masks.held_back(whole), 9, "a secret before the cut stays");
     }
 
     #[test]
