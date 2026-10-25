@@ -628,10 +628,10 @@ before any pool runs and before each job.
 
 ### Labels
 
-Every image carries five labels. The Dockerfile's final stage declares the first
-three, so a CI or PowerShell build of the definition carries them too; `build` adds
-the last two on its command line, because they describe the build, not the
-definition.
+An image `build` makes carries five labels. The Dockerfile's final stage declares
+the first three, so an image built from the definition another way, in CI, by hand,
+or by the PowerShell rebuild task, carries those three only; `build` adds the last
+two on its command line, because they describe the build, not the definition.
 
 | Label                                       | Value                                           | Set by         |
 | ------------------------------------------- | ----------------------------------------------- | -------------- |
