@@ -630,8 +630,13 @@ supported host, and `tests/instance_roots.rs` shows it in the release profile. A
 debug build runs on a test root, for the tests. On macOS, `start --profile axpc`
 runs the container backend with Unix containment, which serves the tests, not an
 operated host. `RUNNERS_TEST_ROOT` moves the lock, the channel, and the log
-directory, and `RUNNERS_TEST_GITHUB_API` moves the GitHub base address; only a
-debug build honours either.
+directory, `RUNNERS_TEST_GITHUB_API` moves the GitHub base address, and
+`RUNNERS_TEST_DOCKER` names the `docker` client that `start` runs, the Unix shim's
+removal included; only a debug build honours any of them, and
+`tests/base_address.rs` shows in the release profile that the client stays
+`docker`. The tests name the fake client rather than put it first on `PATH`,
+because Windows searches the program's directory and the system directories before
+`PATH`, so a real `docker.exe` in `System32` would win.
 
 A `start` that finds the lock held changes nothing. It canonicalises its
 configuration path, sends `resume <profile> <path>`, and waits up to 10 s:
@@ -776,8 +781,8 @@ the close event, so this is checked on axpc in Phase 4b.
 ### What the Command Tests Cover
 
 `start_command.rs` runs `start` and its clients as real processes on a test root,
-with the `fake-docker` helper first on `PATH` as `docker` and the loopback GitHub
-stub: the exit codes, resume, `status`'s fields, a restart that judges the file
+with the `fake-docker` helper named by `RUNNERS_TEST_DOCKER` and the loopback
+GitHub stub: the exit codes, resume, `status`'s fields, a restart that judges the file
 at the path `start` was given as `validate` does, a `stop` that gets its answer
 from an instance with no container, a second `start` that runs nothing, a stop within 30 s when `docker stop` ignores the grace period, the
 signals and a second SIGINT on Linux and macOS, at most 10 log files, and a run

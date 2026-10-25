@@ -1,5 +1,5 @@
 //! `start`, `stop`, `restart` and `status` as real processes, on a test root, with
-//! the fake `docker` first on `PATH` and a loopback GitHub stub.
+//! the fake `docker` as the client `start` runs, and a loopback GitHub stub.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,

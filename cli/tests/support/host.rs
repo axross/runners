@@ -1,6 +1,6 @@
 //! A scratch host for running `runners start` and its clients as real processes:
 //! a test root for the lock, channel and logs, a configuration with one pool, its
-//! token file, and the fake `docker` first on `PATH`.
+//! token file, and the fake `docker` named as the client `start` runs.
 #![allow(
     dead_code,
     clippy::unwrap_used,
@@ -83,14 +83,9 @@ impl Host {
         let (json_token, token) = token_path(root.path());
         let config = root.write("host.json", config_for(&json_token).as_bytes());
         root.write_token(token.to_str().unwrap(), format!("{TOKEN}\n").as_bytes());
-        for directory in ["bin", "docker", "state"] {
+        for directory in ["docker", "state"] {
             fs::create_dir_all(root.path().join(directory)).unwrap();
         }
-        let docker = root
-            .path()
-            .join("bin")
-            .join(format!("docker{}", std::env::consts::EXE_SUFFIX));
-        fs::copy(FAKE_DOCKER, docker).unwrap();
         Self { root, config }
     }
 
@@ -120,17 +115,13 @@ impl Host {
 
     /// The command for `runners <args>` on this host.
     pub fn command(&self, args: &[&str]) -> Command {
-        let mut path = vec![self.path("bin")];
-        path.extend(std::env::split_paths(
-            &std::env::var_os("PATH").unwrap_or_default(),
-        ));
         let mut command = Command::new(BINARY);
         command
             .args(args)
             .current_dir(self.root.path())
             .env("RUNNERS_TEST_ROOT", self.state())
+            .env("RUNNERS_TEST_DOCKER", FAKE_DOCKER)
             .env("FAKE_DOCKER_DIR", self.docker())
-            .env("PATH", std::env::join_paths(path).unwrap())
             .stdin(Stdio::null());
         command
     }
@@ -168,7 +159,20 @@ impl Host {
             }
             std::thread::sleep(Duration::from_millis(100));
         }
-        panic!("status never showed {needle:?}; last:\n{last}");
+        panic!(
+            "status never showed {needle:?}; the fake docker was called {} times; \
+             last:\n{last}\nthe log:\n{}",
+            self.invocations().len(),
+            self.log_text()
+        );
+    }
+
+    /// Every log file `start` wrote, joined.
+    fn log_text(&self) -> String {
+        self.log_files()
+            .iter()
+            .map(|file| fs::read_to_string(file).unwrap_or_default())
+            .collect()
     }
 
     /// The fake engine's containers, by name.

@@ -12,7 +12,7 @@
 
 use std::cell::RefCell;
 use std::collections::BTreeSet;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 #[cfg(unix)]
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -92,6 +92,28 @@ pub enum JobLauncher {
     Shim(PathBuf),
 }
 
+/// The client a release build always runs, found by the operating system's search.
+pub const DOCKER_PROGRAM: &str = "docker";
+
+/// Resolves the client `start` runs.
+///
+/// A release build always returns [`DOCKER_PROGRAM`] and ignores `requested`, so a
+/// release binary cannot be made to run another program as its client. A debug
+/// build runs `requested` when given one, for the tests: on Windows a bare name is
+/// searched for in this program's directory and the system directories before
+/// `PATH`, so a fake `docker` placed first on `PATH` loses to a real one installed
+/// in `System32`.
+#[must_use]
+pub fn resolve_program(requested: Option<&OsStr>) -> OsString {
+    #[cfg(debug_assertions)]
+    if let Some(requested) = requested {
+        return requested.to_os_string();
+    }
+    #[cfg(not(debug_assertions))]
+    let _ = requested;
+    OsString::from(DOCKER_PROGRAM)
+}
+
 /// How to reach the `docker` client.
 #[derive(Debug, Clone)]
 pub struct DockerConfig {
@@ -106,7 +128,7 @@ pub struct DockerConfig {
 impl Default for DockerConfig {
     fn default() -> Self {
         Self {
-            program: OsString::from("docker"),
+            program: OsString::from(DOCKER_PROGRAM),
             environment: Vec::new(),
             limits: DockerLimits::default(),
             launcher: JobLauncher::Direct,

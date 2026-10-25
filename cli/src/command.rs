@@ -29,6 +29,9 @@ const TEST_ROOT_VARIABLE: &str = "RUNNERS_TEST_ROOT";
 /// Moves the GitHub base address; only a debug build honours it.
 const TEST_GITHUB_API_VARIABLE: &str = "RUNNERS_TEST_GITHUB_API";
 
+/// Names the `docker` client `start` runs; only a debug build honours it.
+const TEST_DOCKER_VARIABLE: &str = "RUNNERS_TEST_DOCKER";
+
 fn config_arg(help: &'static str) -> Arg {
     Arg::new("config")
         .long("config")
@@ -170,11 +173,13 @@ fn run_start(matches: &ArgMatches, test_root: Option<&Path>, err: &mut dyn Write
         Err(code) => return code,
     };
     let github_api = std::env::var(TEST_GITHUB_API_VARIABLE).ok();
+    let docker = std::env::var_os(TEST_DOCKER_VARIABLE);
     let request = StartRequest {
         config,
         profile,
         test_root,
         github_api: github_api.as_deref(),
+        docker: docker.as_deref(),
     };
     ExitCode::from(start(&request, err))
 }

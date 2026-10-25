@@ -7,6 +7,7 @@
 //! that finds the lock held changes nothing locally: it asks this user's instance
 //! to resume, which only a stopped instance does.
 
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -27,7 +28,7 @@ use crate::instance::runtime_core::RuntimeCore;
 use crate::instance::source::FileSource;
 use crate::profile::Profile;
 use crate::runtime::clock::SystemClock;
-use crate::runtime::docker::{DockerBackend, DockerConfig, JobLauncher};
+use crate::runtime::docker::{DockerBackend, DockerConfig, JobLauncher, resolve_program};
 use crate::runtime::log::Log;
 use crate::runtime::registration::{GitHubRegistrar, HttpLimits};
 use crate::summary::plan_summary;
@@ -52,6 +53,8 @@ pub struct StartRequest<'a> {
     pub test_root: Option<&'a Path>,
     /// Moves the GitHub base address; a debug build only.
     pub github_api: Option<&'a str>,
+    /// Names the `docker` client; a debug build only.
+    pub docker: Option<&'a OsStr>,
 }
 
 /// Runs `start` and returns its exit code. Messages before the log file opens go to
@@ -138,6 +141,7 @@ pub fn start(request: &StartRequest<'_>, err: &mut dyn Write) -> u8 {
         },
         config_path,
         launcher,
+        docker: resolve_program(request.docker),
         registrar: &registrar,
         log,
     };
@@ -199,6 +203,7 @@ struct Parts<'a> {
     /// walks it lexically, as at the first validation.
     config_path: PathBuf,
     launcher: JobLauncher,
+    docker: OsString,
     registrar: &'a GitHubRegistrar,
     log: Rc<StartLog>,
 }
@@ -215,6 +220,7 @@ async fn run_instance(parts: Parts<'_>, plan: crate::validate::Plan) -> u8 {
         server.address()
     ));
     let config = DockerConfig {
+        program: parts.docker,
         launcher: parts.launcher,
         ..DockerConfig::default()
     };
