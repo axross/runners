@@ -469,7 +469,13 @@ fn docker_that_fails_to_answer_ends_the_build_at_once() {
     let host = host();
     host.script("info_failures", "1");
     let output = build(&host);
-    assert_eq!(output.status.code(), Some(1));
+    let (_, stderr) = texts(&output);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(
+        stderr.contains("`docker info` failed (Cannot connect to the Docker daemon."),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("within 30 s"), "{stderr}");
     assert_eq!(host.invocations(), [vec!["info".to_string()]]);
 }
 

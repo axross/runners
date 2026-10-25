@@ -113,16 +113,29 @@ impl Steps<'_> {
     pub async fn run(&self) -> Result<(), String> {
         let info = info_arguments();
         let answered = match self
-            .stoppable(self.capture(&info, self.limits.docker_answer))
+            .stoppable(tokio::time::timeout(
+                self.limits.docker_answer,
+                self.output_of(&info),
+            ))
             .await
         {
             Stoppable::Stopped => return self.abort_before_commit(None).await,
             Stoppable::Done(answered) => answered,
         };
-        if !answered.is_ok_and(|output| output.succeeded) {
+        let failed = match answered {
+            Ok(Ok(output)) if output.succeeded => None,
+            Ok(Ok(output)) => Some(output.text()),
+            Ok(Err(reason)) => Some(reason),
+            Err(_) => {
+                return Err(format!(
+                    "Docker did not answer within {} s, so nothing was built",
+                    self.limits.docker_answer.as_secs()
+                ));
+            }
+        };
+        if let Some(reason) = failed {
             return Err(format!(
-                "Docker did not answer within {} s, so nothing was built",
-                self.limits.docker_answer.as_secs()
+                "`docker info` failed ({reason}), so nothing was built"
             ));
         }
         if let Stoppable::Stopped = self.stoppable(self.remove_leftovers()).await {
@@ -213,12 +226,7 @@ impl Steps<'_> {
 
     /// Runs a client to its end within `budget` and returns what it printed.
     async fn capture(&self, arguments: &[String], budget: Duration) -> Result<Output, String> {
-        let mut command = client_command(&self.program, &[], arguments);
-        command.stdout(Stdio::piped()).stderr(Stdio::piped());
-        let child = command
-            .spawn()
-            .map_err(|error| format!("the docker client could not start: {error}"))?;
-        let output = tokio::time::timeout(budget, child.wait_with_output())
+        tokio::time::timeout(budget, self.output_of(arguments))
             .await
             .map_err(|_| {
                 format!(
@@ -226,6 +234,18 @@ impl Steps<'_> {
                     budget.as_secs()
                 )
             })?
+    }
+
+    /// Runs a client to its end and returns what it printed.
+    async fn output_of(&self, arguments: &[String]) -> Result<Output, String> {
+        let mut command = client_command(&self.program, &[], arguments);
+        command.stdout(Stdio::piped()).stderr(Stdio::piped());
+        let child = command
+            .spawn()
+            .map_err(|error| format!("the docker client could not start: {error}"))?;
+        let output = child
+            .wait_with_output()
+            .await
             .map_err(|error| format!("the docker client failed: {error}"))?;
         Ok(Output {
             succeeded: output.status.success(),

@@ -8,7 +8,8 @@
 //!   `inv-<n>.pid`, `inv-<n>.pgid` (on Unix), and `inv-<n>.jit` when `ACTIONS_RUNNER_INPUT_JITCONFIG` is set;
 //! - `containers` holds the fake engine's containers, one `name<TAB>label,label` per
 //!   line, which `ps`, `rm`, `stop` and `run` read and change;
-//! - the files `info_failures` (a count, decremented per call), `ps_fails`,
+//! - the files `info_failures` (a count, decremented per call, each failure
+//!   saying on standard error that the daemon cannot be reached), `ps_fails`,
 //!   `ps_label_fails`, `rm_fails`, `stop_fails`, `stop_hangs`, `volume_fails`,
 //!   `probe_mode` (`fail`, `hang`, `flood`, `garbage`), `probe_cpus`, `run_mode`
 //!   (`hold`, `longline`), `run_prints_jit` and `run_exit` change what the call
@@ -159,6 +160,10 @@ fn info(dir: &Path) -> Result<u8, String> {
     }
     fs::write(dir.join("info_failures"), (remaining - 1).to_string())
         .map_err(|error| error.to_string())?;
+    let _ = writeln!(
+        std::io::stderr(),
+        "Cannot connect to the Docker daemon. Is the docker daemon running?"
+    );
     Ok(1)
 }
 

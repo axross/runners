@@ -868,7 +868,9 @@ these in order:
    and `elapsed: <s> s`; a `start`, a resume, and `restart` are refused, naming
    the build; `stop` aborts it.
 4. Docker must answer `docker info` within 30 s, or `build` exits 1 before any
-   build. `build` is run by hand, so it does not wait for Docker as `start` does.
+   build. A `docker info` that fails ends it at once, and the message gives the
+   client's output, or why the client could not start. `build` is run by hand, so
+   it does not wait for Docker as `start` does.
 5. It removes the temporary tags of the image's repository that carry the image
    label, which an earlier `build` that was killed left. A failed removal is a
    warning.
