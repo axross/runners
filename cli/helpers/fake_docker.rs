@@ -7,7 +7,8 @@
 //! - every call writes `inv-<n>.argv` (the arguments, NUL separated) and
 //!   `inv-<n>.pid`, `inv-<n>.pgid` (on Unix), and `inv-<n>.jit` when `ACTIONS_RUNNER_INPUT_JITCONFIG` is set;
 //!   it also holds an exclusive lock on `inv-<n>.alive` until it ends, so a test
-//!   that takes that lock sees the call end, however it ends;
+//!   that takes that lock sees the call end, however it ends. It takes that lock
+//!   before it writes its arguments, so a call a test can see already holds it;
 //! - `containers` holds the fake engine's containers, one
 //!   `name<TAB>label,label<TAB>state` per line, which `ps`, `rm`, `stop`, `kill`
 //!   and `run` read and change. A container labelled as diagnostics evidence runs
@@ -132,8 +133,11 @@ fn record(dir: &Path, arguments: &[String]) -> Result<fs::File, String> {
         let Ok(mut file) = created else {
             continue;
         };
-        file.write_all(arguments.join("\0").as_bytes())
-            .map_err(|error| error.to_string())?;
+        // the arguments come last, so a call a test can name already holds its
+        // lock and has written the rest
+        let alive =
+            fs::File::create(stem.with_extension("alive")).map_err(|error| error.to_string())?;
+        alive.lock().map_err(|error| error.to_string())?;
         fs::write(stem.with_extension("pid"), std::process::id().to_string())
             .map_err(|error| error.to_string())?;
         record_process_group(&stem);
@@ -144,9 +148,8 @@ fn record(dir: &Path, arguments: &[String]) -> Result<fs::File, String> {
             )
             .map_err(|error| error.to_string())?;
         }
-        let alive =
-            fs::File::create(stem.with_extension("alive")).map_err(|error| error.to_string())?;
-        alive.lock().map_err(|error| error.to_string())?;
+        file.write_all(arguments.join("\0").as_bytes())
+            .map_err(|error| error.to_string())?;
         return Ok(alive);
     }
     Err("no invocation number".to_string())

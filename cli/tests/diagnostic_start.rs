@@ -474,11 +474,7 @@ fn an_exporter_whose_instance_is_killed_ends_with_its_clients() {
         .iter()
         .position(|words| words[0] == "cp")
         .unwrap();
-    // the fake records its call before it takes the lock that shows it lives
     let alive = host.docker().join(format!("inv-{copy:06}.alive"));
-    wait_until("the copy client holds its lock", RUNNING_WITHIN, || {
-        fs::File::open(&alive).is_ok_and(|file| file.try_lock().is_err())
-    });
     started.kill();
     assert!(
         started.wait_for_stderr_to_close(Duration::from_secs(5)),

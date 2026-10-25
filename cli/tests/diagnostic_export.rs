@@ -557,11 +557,7 @@ async fn an_exporter_that_overruns_is_killed_a_second_after_its_pipe_closes() {
     );
     let exporter = call_number(&fake, "export");
     assert!(
-        ended_within(
-            &fake,
-            exporter,
-            Duration::ZERO.max(Duration::from_millis(100))
-        ),
+        ended_within(&fake, exporter, Duration::from_millis(100)),
         "the exporter outlived its kill"
     );
     let call = &fake.invocations()[exporter];
