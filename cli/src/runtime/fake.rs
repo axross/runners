@@ -6,20 +6,23 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
+use std::rc::Rc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use tokio::sync::watch;
+use tokio::sync::{Notify, watch};
 
 use crate::image::check::{ImageCheck, ImageLabels};
 use crate::image::contract::CONTRACT_VERSION;
 use crate::validate::PlannedVolume;
 
 use super::backend::{
-    Backend, BackendError, ContainerSpec, CpuRequest, PoolContainers, StopRequest,
+    Backend, BackendError, ContainerSpec, CpuRequest, Deadlines, DiagnosticRecord, ExportOutcome,
+    Finalized, PoolContainers, StopRequest,
 };
 use super::clock::Clock;
 use super::log::{Log, Masks};
 use super::registration::{JitRequest, Registrar, RegistrationError};
+use super::retained::{Claim, Retained};
 use super::secret::Secret;
 
 /// One call a [`FakeBackend`] received.
@@ -28,10 +31,17 @@ pub enum Call {
     WaitUntilAvailable,
     ListPoolContainers(String),
     RemoveContainers(Vec<String>),
-    PrepareVolumes { image: String, volumes: Vec<String> },
+    PrepareVolumes {
+        image: String,
+        volumes: Vec<String>,
+    },
     SelectCpuset(CpuRequest),
     RunContainer(ContainerSpec),
     StopContainers(StopRequest),
+    KillContainers(Vec<String>),
+    /// A finalisation began, with the deadlines it was given.
+    FinalizeDiagnostic(String, Deadlines),
+    CountBundles(String),
 }
 
 /// A container the fake engine holds.
@@ -73,6 +83,25 @@ pub struct FakeState {
     /// The answers to `check_image`; when they run out, every check matches, with
     /// [`matching_labels`] as the image's labels.
     pub image_answers: VecDeque<ImageCheck>,
+    /// The outcomes of the exports `finalize_diagnostic` runs; when they run out,
+    /// every export is complete. A complete export or one with a gap admits a
+    /// bundle.
+    pub export_results: VecDeque<ExportOutcome>,
+    /// The bundles written, as container and record, in order.
+    pub bundles: Vec<(String, DiagnosticRecord)>,
+    /// When set, an export waits for a permit of this before it ends, which holds
+    /// its container's finalisation.
+    pub export_gate: Option<Rc<Notify>>,
+    /// Called at the start of every export.
+    pub on_export: Option<Box<dyn FnMut()>>,
+    /// The answers to `count_bundles`; when they run out, the bundles written for
+    /// the pool are counted.
+    pub bundle_counts: VecDeque<Option<u32>>,
+    /// A kill fails with this error, once it is recorded.
+    pub kill_error: Option<BackendError>,
+    /// Every `run_container` waits, as a running job does, until a stop, a kill or
+    /// a removal is asked for, of any container.
+    pub hold_runs: bool,
 }
 
 /// The labels of the image a [`FakeBackend`] answers with by default: this CLI's
@@ -88,6 +117,9 @@ pub fn matching_labels() -> ImageLabels {
 #[derive(Default)]
 pub struct FakeBackend {
     pub state: RefCell<FakeState>,
+    pub retained: Retained,
+    /// Fired by a stop, a kill or a removal, which ends every held run.
+    ended: Notify,
 }
 
 impl FakeBackend {
@@ -141,6 +173,7 @@ impl Backend for FakeBackend {
         names: &[String],
         _budget: Duration,
     ) -> Result<(), BackendError> {
+        self.ended.notify_waiters();
         let mut state = self.state.borrow_mut();
         state.calls.push(Call::RemoveContainers(names.to_vec()));
         if let Some(error) = state.remove_error.clone() {
@@ -183,12 +216,29 @@ impl Backend for FakeBackend {
     }
 
     async fn run_container(&self, spec: &ContainerSpec, jit: &Secret) -> Result<i32, BackendError> {
-        let mut state = self.state.borrow_mut();
-        state.calls.push(Call::RunContainer(spec.clone()));
-        state.jit_values.push(jit.expose().to_string());
-        if let Some(hook) = state.on_run.as_mut() {
-            hook();
+        let _job = spec
+            .diagnostic
+            .as_ref()
+            .map(|record| self.retained.started(&spec.name, record));
+        let hold = {
+            let mut state = self.state.borrow_mut();
+            state.calls.push(Call::RunContainer(spec.clone()));
+            if spec.diagnostic.is_some() {
+                state.containers.push(FakeContainer {
+                    name: spec.name.clone(),
+                    diagnostic: true,
+                });
+            }
+            state.jit_values.push(jit.expose().to_string());
+            if let Some(hook) = state.on_run.as_mut() {
+                hook();
+            }
+            state.hold_runs
+        };
+        if hold {
+            self.ended.notified().await;
         }
+        let mut state = self.state.borrow_mut();
         match state.exits.pop_front() {
             Some(exit) => exit,
             None => {
@@ -213,6 +263,7 @@ impl Backend for FakeBackend {
         if hangs {
             std::future::pending::<()>().await;
         }
+        self.ended.notify_waiters();
         let mut state = self.state.borrow_mut();
         if let Some(error) = state.stop_error.clone() {
             return Err(error);
@@ -220,6 +271,101 @@ impl Backend for FakeBackend {
         state.running.retain(|name| !request.names.contains(name));
         Ok(())
     }
+
+    async fn kill_containers(
+        &self,
+        names: &[String],
+        _budget: Duration,
+    ) -> Result<(), BackendError> {
+        self.ended.notify_waiters();
+        let mut state = self.state.borrow_mut();
+        state.calls.push(Call::KillContainers(names.to_vec()));
+        state.kill_error.clone().map_or(Ok(()), Err)
+    }
+
+    fn retained(&self) -> &Retained {
+        &self.retained
+    }
+
+    async fn finalize_diagnostic(&self, claim: &Claim<'_>, deadlines: Deadlines) -> Finalized {
+        let name = claim.name().to_string();
+        self.state
+            .borrow_mut()
+            .calls
+            .push(Call::FinalizeDiagnostic(name.clone(), deadlines));
+        let mut forced = self.retained.forced();
+        let mut finalized = Finalized {
+            export: ExportOutcome::AlreadyExported,
+            removed: false,
+            kept: false,
+            bundles: None,
+        };
+        if !claim.exported() {
+            let (hook, gate) = {
+                let mut state = self.state.borrow_mut();
+                (state.on_export.take(), state.export_gate.clone())
+            };
+            if let Some(mut hook) = hook {
+                hook();
+                self.state.borrow_mut().on_export = Some(hook);
+            }
+            if let Some(gate) = gate {
+                tokio::select! {
+                    biased;
+                    _ = forced.wait_for(|forced| *forced) => {
+                        finalized.kept = true;
+                        return finalized;
+                    }
+                    () = gate.notified() => {}
+                }
+            }
+            let mut state = self.state.borrow_mut();
+            let outcome = state
+                .export_results
+                .pop_front()
+                .unwrap_or(ExportOutcome::Complete);
+            if matches!(outcome, ExportOutcome::Complete | ExportOutcome::Gap) {
+                claim.mark_exported();
+                state.bundles.push((name.clone(), claim.record().clone()));
+            }
+            finalized.export = outcome;
+            finalized.bundles = Some(bundles_of(&state, &claim.record().pool));
+        }
+        if *forced.borrow() {
+            finalized.kept = true;
+            return finalized;
+        }
+        if self
+            .remove_containers(std::slice::from_ref(&name), Duration::ZERO)
+            .await
+            .is_ok()
+        {
+            claim.removed();
+            finalized.removed = true;
+        }
+        finalized
+    }
+
+    async fn count_bundles(
+        &self,
+        record: &DiagnosticRecord,
+        _deadline: tokio::time::Instant,
+    ) -> Option<u32> {
+        let mut state = self.state.borrow_mut();
+        state.calls.push(Call::CountBundles(record.pool.clone()));
+        let counted = state.bundle_counts.pop_front();
+        counted.unwrap_or_else(|| Some(bundles_of(&state, &record.pool)))
+    }
+}
+
+/// How many bundles the fake wrote for `pool`.
+fn bundles_of(state: &FakeState, pool: &str) -> u32 {
+    let count = state
+        .bundles
+        .iter()
+        .filter(|(_, record)| record.pool == pool)
+        .count();
+    u32::try_from(count).unwrap_or(u32::MAX)
 }
 
 /// What a [`FakeRegistrar`] was asked for.

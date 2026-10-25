@@ -125,6 +125,7 @@ pub fn slot_spec(token: PathBuf) -> runners_cli::runtime::pool::SlotSpec {
             target: "/home/runner/.npm".to_string(),
         }],
         image: "actions-runner:local".to_string(),
+        diagnostic: None,
     }
 }
 

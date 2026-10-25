@@ -27,6 +27,9 @@ pub struct Entry {
     pub memory_gb: u32,
     pub volumes: Vec<PlannedVolume>,
     pub diagnostics: bool,
+    /// Where a diagnostics-enabled pool's evidence goes, as the configuration names
+    /// it; `None` when diagnostics are off.
+    pub diagnostic_directory: Option<String>,
     pub diagnostic_raw_records: bool,
     /// The OS of an axmc pool's virtual machines.
     pub os: Option<Os>,

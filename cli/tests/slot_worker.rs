@@ -10,7 +10,9 @@ mod support;
 
 use std::time::Duration;
 
-use runners_cli::runtime::backend::{BackendError, ContainerSpec, Mount};
+use runners_cli::runtime::backend::{
+    BackendError, ContainerSpec, DiagnosticRecord, ExportOutcome, Mount,
+};
 use runners_cli::runtime::board::Board;
 use runners_cli::runtime::clock::SystemClock;
 use runners_cli::runtime::fake::{Call, FakeBackend, FakeClock, FakeRegistrar, MemoryLog};
@@ -47,9 +49,15 @@ impl Rig {
 
     /// Runs the slot until the scripted exits run out.
     async fn run(&self) {
+        self.run_with(|_| {}).await;
+    }
+
+    /// Runs the slot, changed by `change`, until the scripted exits run out.
+    async fn run_with(&self, change: impl FnOnce(&mut runners_cli::runtime::pool::SlotSpec)) {
         let (stop, receiver) = stop_channel();
         self.backend.state.borrow_mut().stop_when_exits_run_out = Some(stop);
-        let slot = slot_spec(self.scratch.path().join("token"));
+        let mut slot = slot_spec(self.scratch.path().join("token"));
+        change(&mut slot);
         run_slot(
             &slot,
             &self.backend,
@@ -286,6 +294,7 @@ async fn a_container_runs_under_the_run_contract_with_the_jit_config_and_a_utc_n
             }],
             image: "actions-runner:local".to_string(),
             run_command: "/home/runner/run.sh".to_string(),
+            diagnostic: None,
         }
     );
     let seen = &rig.registrar.seen.borrow()[0];
@@ -445,4 +454,124 @@ async fn the_token_and_the_jit_config_in_flight_are_masked_in_the_log() {
     );
     rig.log.info(&format!("late: {TOKEN}"));
     assert_eq!(rig.log.lines().last().unwrap(), "INFO: late: <masked>");
+}
+
+fn diagnostic_record() -> DiagnosticRecord {
+    DiagnosticRecord {
+        pool: "example-repo-one".to_string(),
+        directory: "/evidence".to_string(),
+        raw_records: true,
+    }
+}
+
+/// Each diagnostic run's container is finalised, on one clock of 18 s and 24 s,
+/// and removed before the slot probes and registers again; a gap is a warning
+/// that leaves the backoff as the exits alone make it. The last run ends as the
+/// stop is asked for, so its container is left retained to the stop's steps.
+#[tokio::test(flavor = "current_thread")]
+async fn a_diagnostic_container_is_finalised_before_the_slot_registers_again_and_a_gap_keeps_the_backoff()
+ {
+    let rig = Rig::new();
+    {
+        let mut state = rig.backend.state.borrow_mut();
+        state.exits.extend([Ok(0), Ok(1), Ok(0)]);
+        state.export_results.extend([
+            ExportOutcome::Gap,
+            ExportOutcome::Gap,
+            ExportOutcome::Complete,
+        ]);
+    }
+    rig.run_with(|slot| slot.diagnostic = Some(diagnostic_record()))
+        .await;
+    // exit 0, then exit 1 backs off 5 s, then exit 0 resets: as without the gaps
+    assert_eq!(rig.seconds(), [5]);
+
+    let calls = rig.backend.calls();
+    let mut runs = 0;
+    for (index, call) in calls.iter().enumerate() {
+        let Call::RunContainer(spec) = call else {
+            continue;
+        };
+        runs += 1;
+        assert_eq!(spec.diagnostic, Some(diagnostic_record()));
+        if runs == 4 {
+            assert_eq!(index, calls.len() - 1, "the last run ends the loop");
+            break;
+        }
+        let Call::FinalizeDiagnostic(name, deadlines) = &calls[index + 1] else {
+            panic!("run {runs} was not finalised next: {calls:?}");
+        };
+        assert_eq!(name, &spec.name);
+        assert_eq!(
+            deadlines.removal.duration_since(deadlines.export),
+            Duration::from_secs(6)
+        );
+        assert_eq!(
+            calls[index + 2],
+            Call::RemoveContainers(vec![spec.name.clone()]),
+            "the removal was attempted before the next registration"
+        );
+        assert!(
+            matches!(calls[index + 3], Call::SelectCpuset(_)),
+            "{calls:?}"
+        );
+    }
+    assert_eq!(runs, 4);
+    assert_eq!(rig.backend.state.borrow().bundles.len(), 3);
+    let last = rig.backend.retained.names();
+    assert_eq!(
+        last.len(),
+        1,
+        "the last container waits for the stop's steps"
+    );
+
+    let gaps: Vec<String> = rig
+        .warnings()
+        .into_iter()
+        .filter(|line| {
+            line.starts_with("WARN: Diagnostic gap in pool example-repo-one, container ")
+        })
+        .collect();
+    assert_eq!(gaps.len(), 2, "{gaps:?}");
+    assert!(
+        gaps[0].ends_with(": final observation unavailable (abrupt exit or observation limit)."),
+        "{gaps:?}"
+    );
+}
+
+/// The job-end clock bounds the whole finalisation even when the removal fails;
+/// the container then stays retained for the next finalisation.
+#[tokio::test(flavor = "current_thread")]
+async fn a_failed_removal_at_job_end_leaves_the_container_retained_and_exported() {
+    let rig = Rig::new();
+    {
+        let mut state = rig.backend.state.borrow_mut();
+        // a backoff lets the clock move, so the next run's container has a name of its own
+        state.exits.push_back(Ok(1));
+        state.remove_error = Some(BackendError::new("Failed to remove containers"));
+    }
+    rig.run_with(|slot| slot.diagnostic = Some(diagnostic_record()))
+        .await;
+    let first = rig
+        .backend
+        .calls()
+        .into_iter()
+        .find_map(|call| match call {
+            Call::RunContainer(spec) => Some(spec.name),
+            _ => None,
+        })
+        .unwrap();
+    let retained = rig.backend.retained.names();
+    assert_eq!(retained.len(), 2, "{retained:?}");
+    let claim = rig.backend.retained.claim(&first).unwrap();
+    assert!(
+        claim.exported(),
+        "the export finished; only the removal is left"
+    );
+    assert_eq!(claim.record(), &diagnostic_record());
+    assert!(
+        rig.warnings()
+            .iter()
+            .any(|line| line.contains("stays retained"))
+    );
 }

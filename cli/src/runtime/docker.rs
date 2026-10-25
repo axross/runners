@@ -8,12 +8,14 @@
 //! becomes error text.
 //!
 //! On Unix `start` runs each job container's client through the shim, so a
-//! container is removed even when the CLI is killed; see [`JobLauncher`].
+//! container is removed, or a diagnostic one ended and kept, even when the CLI is
+//! killed; see [`JobLauncher`]. A diagnostic container's export runs in the
+//! exporter child, which [`DockerBackend`] starts with a liveness pipe and ends at
+//! the export deadline.
 
-use std::cell::RefCell;
-use std::collections::BTreeSet;
+use std::cell::{Cell, RefCell};
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::{OsStr, OsString};
-#[cfg(unix)]
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::rc::Rc;
@@ -23,21 +25,25 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
 use tokio::process::{Child, Command};
 
 use crate::affinity::{MAX_CPU_LIST_BYTES, select_cpus};
+use crate::diagnostics::{ADMITTED, BUNDLES, ExportRequest, outcome_of_exit};
 use crate::image::check::{
     IMAGE_CHECK_BUDGET, ImageCheck, ImageLabels, MAX_INSPECT_BYTES, checked_reference,
 };
 use crate::validate::PlannedVolume;
 
 use super::backend::{
-    Backend, BackendError, ContainerSpec, CpuRequest, PoolContainers, StopRequest,
+    Backend, BackendError, ContainerSpec, CpuRequest, Deadlines, DiagnosticRecord, ExportOutcome,
+    Finalized, PoolContainers, StopRequest,
 };
 use super::clock::Clock;
 use super::docker_args::{
     JIT_VARIABLE, image_inspect_arguments, image_list_arguments, info_arguments, job_run_arguments,
-    pool_diagnostic_list_arguments, pool_list_arguments, probe_find_arguments, probe_run_arguments,
-    remove_arguments, stop_arguments, volume_chown_arguments, volume_create_arguments,
+    kill_arguments, pool_diagnostic_list_arguments, pool_list_arguments, probe_find_arguments,
+    probe_run_arguments, remove_arguments, stop_arguments, volume_chown_arguments,
+    volume_create_arguments,
 };
 use super::log::Log;
+use super::retained::{Claim, Retained};
 use super::scrub::scrub_error_text;
 use super::secret::Secret;
 
@@ -51,6 +57,13 @@ const MAX_LINE_BYTES: u64 = 64 * 1024;
 /// console Ctrl+C is not delivered to it.
 #[cfg(windows)]
 const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+
+/// How long an exporter gets to end after its liveness pipe closes at the export
+/// deadline, before it is killed.
+pub const EXPORTER_TERMINATION: Duration = Duration::from_secs(1);
+
+/// The most bytes of one line the exporter prints that are read.
+const MAX_EXPORTER_LINE_BYTES: u64 = 64;
 
 /// The time bounds on the clients other than a job container's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -93,7 +106,8 @@ pub enum JobLauncher {
     /// By the shim: this program run again as `<program> shim`, which starts the
     /// client and holds the read end of a liveness pipe from this process. When the
     /// pipe closes, because the run was dropped or this process ended however it
-    /// ended, the shim force-removes the container, kills the client and exits.
+    /// ended, the shim force-removes the container, or ends a diagnostic one and
+    /// keeps it, kills the client and exits.
     #[cfg(unix)]
     Shim(PathBuf),
 }
@@ -129,6 +143,11 @@ pub struct DockerConfig {
     pub environment: Vec<(OsString, OsString)>,
     pub limits: DockerLimits,
     pub launcher: JobLauncher,
+    /// The program run as the exporter child: this CLI. Without one, every export
+    /// fails, and its container is still removed.
+    pub exporter: Option<PathBuf>,
+    /// The checkout every sink must lie outside, when one was found.
+    pub checkout: Option<PathBuf>,
 }
 
 impl Default for DockerConfig {
@@ -138,6 +157,8 @@ impl Default for DockerConfig {
             environment: Vec::new(),
             limits: DockerLimits::default(),
             launcher: JobLauncher::Direct,
+            exporter: None,
+            checkout: None,
         }
     }
 }
@@ -185,11 +206,17 @@ pub(crate) fn client_command(
     command
 }
 
+/// The admission lock of one pool and sink, which an export holds until its child
+/// has created the bundle.
+type Admission = Rc<tokio::sync::Mutex<()>>;
+
 pub struct DockerBackend<C> {
     config: DockerConfig,
     clock: C,
     log: Rc<dyn Log>,
     running: RefCell<BTreeSet<String>>,
+    retained: Retained,
+    admissions: RefCell<BTreeMap<(String, String), Admission>>,
 }
 
 /// Removes a container from the running set when its run ends, including when the
@@ -217,6 +244,8 @@ impl<C: Clock> DockerBackend<C> {
             clock,
             log,
             running: RefCell::new(BTreeSet::new()),
+            retained: Retained::default(),
+            admissions: RefCell::new(BTreeMap::new()),
         }
     }
 
@@ -242,7 +271,11 @@ impl<C: Clock> DockerBackend<C> {
                 command
                     .arg(crate::shim::SHIM_COMMAND)
                     .arg("--name")
-                    .arg(&spec.name)
+                    .arg(&spec.name);
+                if spec.diagnostic.is_some() {
+                    command.arg(crate::shim::DIAGNOSTIC_FLAG);
+                }
+                command
                     .arg("--")
                     .arg(&self.config.program)
                     .args(&arguments)
@@ -424,6 +457,145 @@ impl<C: Clock> DockerBackend<C> {
             .ok_or_else(|| BackendError::new("CPU discovery: invalid allowed CPU list."))?;
         select_cpus(strip_line_end(&text), request.count, request.offset)
             .map_err(|error| BackendError::new(error.to_string()))
+    }
+}
+
+/// What one run of the exporter child did.
+struct Exported {
+    outcome: ExportOutcome,
+    /// The child created a bundle.
+    admitted: bool,
+    /// The pool's bundles in the sink, as the child counted them.
+    bundles: Option<u32>,
+}
+
+impl Exported {
+    const FAILED: Self = Self {
+        outcome: ExportOutcome::Failed,
+        admitted: false,
+        bundles: None,
+    };
+}
+
+impl<C: Clock> DockerBackend<C> {
+    fn admission(&self, record: &DiagnosticRecord) -> Admission {
+        self.admissions
+            .borrow_mut()
+            .entry((record.pool.clone(), record.directory.clone()))
+            .or_default()
+            .clone()
+    }
+
+    /// Starts the exporter child for `request`. Its standard input is the liveness
+    /// pipe, its standard output is read, and its standard error, where it writes
+    /// nothing, is this process's, so it stays open while the child lives. Closing
+    /// the pipe, not a kill, ends it when its run is dropped, so it can kill its own
+    /// clients first.
+    fn exporter(&self, request: &ExportRequest) -> Option<Child> {
+        let program = self.config.exporter.as_ref()?;
+        let mut command = Command::new(program);
+        command
+            .args(request.arguments(&self.config.program))
+            .env_remove(JIT_VARIABLE)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .kill_on_drop(false);
+        for (name, value) in &self.config.environment {
+            command.env(name, value);
+        }
+        #[cfg(unix)]
+        command.process_group(0);
+        #[cfg(windows)]
+        command.creation_flags(CREATE_NEW_PROCESS_GROUP);
+        command.spawn().ok()
+    }
+
+    /// Runs the exporter child for `request` until it ends or `deadline` passes. At
+    /// the deadline its liveness pipe closes first, and it is killed only
+    /// [`EXPORTER_TERMINATION`] later. `admission` is released when the child says
+    /// it has created the bundle, or when it ends.
+    async fn run_exporter(
+        &self,
+        request: &ExportRequest,
+        deadline: tokio::time::Instant,
+        mut admission: Option<tokio::sync::MutexGuard<'_, ()>>,
+    ) -> Exported {
+        let Some(mut child) = self.exporter(request) else {
+            return Exported::FAILED;
+        };
+        let liveness = child.stdin.take();
+        let stdout = child.stdout.take();
+        let (admitted, bundles) = (Cell::new(false), Cell::new(None));
+        let reading = async {
+            if let Some(stdout) = stdout {
+                let mut reader = BufReader::new(stdout);
+                loop {
+                    let mut line = Vec::new();
+                    let read = (&mut reader)
+                        .take(MAX_EXPORTER_LINE_BYTES)
+                        .read_until(b'\n', &mut line)
+                        .await
+                        .unwrap_or(0);
+                    if read == 0 {
+                        break;
+                    }
+                    let text = String::from_utf8_lossy(&line);
+                    let text = text.trim_end();
+                    if text == ADMITTED {
+                        admitted.set(true);
+                        admission.take();
+                    } else if let Some(count) = text.strip_prefix(BUNDLES) {
+                        bundles.set(count.parse().ok());
+                    }
+                }
+            }
+            admission.take();
+            child.wait().await.ok()
+        };
+        let outcome = match tokio::time::timeout_at(deadline, reading).await {
+            Ok(Some(status)) => outcome_of_exit(status.code()),
+            Ok(None) => ExportOutcome::Failed,
+            Err(_) => {
+                drop(liveness);
+                if tokio::time::timeout(EXPORTER_TERMINATION, child.wait())
+                    .await
+                    .is_err()
+                {
+                    let _ = child.kill().await;
+                }
+                ExportOutcome::Failed
+            }
+        };
+        Exported {
+            outcome,
+            admitted: admitted.get(),
+            bundles: bundles.get(),
+        }
+    }
+
+    /// Exports the container into its record's sink by `deadline`, once this pool
+    /// and sink's admission lock is free; an export that cannot take it by then
+    /// fails.
+    async fn export(
+        &self,
+        name: &str,
+        record: &DiagnosticRecord,
+        deadline: tokio::time::Instant,
+    ) -> Exported {
+        let lock = self.admission(record);
+        let Ok(admission) = tokio::time::timeout_at(deadline, lock.lock()).await else {
+            return Exported::FAILED;
+        };
+        let request = ExportRequest {
+            pool: record.pool.clone(),
+            container: Some(name.to_string()),
+            directory: record.directory.clone(),
+            raw_records: record.raw_records,
+            checkout: self.config.checkout.clone(),
+            deadline: deadline.saturating_duration_since(tokio::time::Instant::now()),
+        };
+        self.run_exporter(&request, deadline, Some(admission)).await
     }
 }
 
@@ -643,11 +815,19 @@ impl<C: Clock> Backend for DockerBackend<C> {
         })?;
         // the shim's liveness pipe, closed when this run ends or is dropped
         let _liveness = child.stdin.take();
-        self.running.borrow_mut().insert(spec.name.clone());
-        let _running = RunningGuard {
-            set: &self.running,
-            name: spec.name.clone(),
-        };
+        // a diagnostic container is retained instead of running, until a
+        // finalisation removes it
+        let _job = spec
+            .diagnostic
+            .as_ref()
+            .map(|record| self.retained.started(&spec.name, record));
+        let _running = spec.diagnostic.is_none().then(|| {
+            self.running.borrow_mut().insert(spec.name.clone());
+            RunningGuard {
+                set: &self.running,
+                name: spec.name.clone(),
+            }
+        });
         let (stdout, stderr) = (child.stdout.take(), child.stderr.take());
         let log = &*self.log;
         let (_, _, status) = tokio::join!(
@@ -681,6 +861,95 @@ impl<C: Clock> Backend for DockerBackend<C> {
             "Failed to stop containers: {}",
             captured.output_text()
         )))
+    }
+
+    async fn kill_containers(
+        &self,
+        names: &[String],
+        budget: Duration,
+    ) -> Result<(), BackendError> {
+        if names.is_empty() {
+            return Ok(());
+        }
+        let captured = self.capture(&kill_arguments(names), budget).await?;
+        if captured.succeeded() {
+            return Ok(());
+        }
+        Err(BackendError::new(format!(
+            "Failed to end containers: {}",
+            captured.output_text()
+        )))
+    }
+
+    fn retained(&self) -> &Retained {
+        &self.retained
+    }
+
+    async fn finalize_diagnostic(&self, claim: &Claim<'_>, deadlines: Deadlines) -> Finalized {
+        let mut forced = self.retained.forced();
+        let mut finalized = Finalized {
+            export: ExportOutcome::AlreadyExported,
+            removed: false,
+            kept: false,
+            bundles: None,
+        };
+        if !claim.exported() {
+            if tokio::time::Instant::now() >= deadlines.export {
+                finalized.export = ExportOutcome::Skipped;
+            } else {
+                let exported = tokio::select! {
+                    biased;
+                    _ = forced.wait_for(|forced| *forced) => None,
+                    exported = self.export(claim.name(), claim.record(), deadlines.export) => {
+                        Some(exported)
+                    }
+                };
+                let Some(exported) = exported else {
+                    finalized.kept = true;
+                    return finalized;
+                };
+                if exported.admitted {
+                    claim.mark_exported();
+                }
+                finalized.export = exported.outcome;
+                finalized.bundles = exported.bundles;
+            }
+        }
+        if *forced.borrow() {
+            finalized.kept = true;
+            return finalized;
+        }
+        let budget = deadlines
+            .removal
+            .saturating_duration_since(tokio::time::Instant::now());
+        if self
+            .remove_containers(&[claim.name().to_string()], budget)
+            .await
+            .is_ok()
+        {
+            claim.removed();
+            finalized.removed = true;
+        }
+        finalized
+    }
+
+    async fn count_bundles(
+        &self,
+        record: &DiagnosticRecord,
+        deadline: tokio::time::Instant,
+    ) -> Option<u32> {
+        let request = ExportRequest {
+            pool: record.pool.clone(),
+            container: None,
+            directory: record.directory.clone(),
+            raw_records: record.raw_records,
+            checkout: self.config.checkout.clone(),
+            deadline: deadline.saturating_duration_since(tokio::time::Instant::now()),
+        };
+        let counted = self.run_exporter(&request, deadline, None).await;
+        counted
+            .bundles
+            .filter(|_| counted.outcome == ExportOutcome::Complete)
     }
 }
 

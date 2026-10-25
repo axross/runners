@@ -28,6 +28,7 @@ use crate::instance::roots::Roots;
 use crate::instance::runtime_core::RuntimeCore;
 use crate::instance::source::FileSource;
 use crate::profile::Profile;
+use crate::runtime::backend::Backend;
 use crate::runtime::clock::SystemClock;
 use crate::runtime::docker::{DockerBackend, DockerConfig, JobLauncher, resolve_program};
 use crate::runtime::log::Log;
@@ -138,9 +139,12 @@ pub fn start(request: &StartRequest<'_>, err: &mut dyn Write) -> u8 {
             return log_error(&*log, &format!("the async runtime cannot start: {error}"));
         }
     };
+    let checkout = crate::checkout::find(&config_path);
     let parts = Parts {
         lock: &lock,
         roots: &roots,
+        exporter: std::env::current_exe().ok(),
+        checkout,
         settings: Settings {
             config_path: canonical.to_string_lossy().into_owned(),
             profile: request.profile,
@@ -206,6 +210,10 @@ struct Parts<'a> {
     config_path: PathBuf,
     launcher: JobLauncher,
     docker: OsString,
+    /// This program, run again as the exporter child.
+    exporter: Option<PathBuf>,
+    /// The checkout above the configuration, which every sink must lie outside.
+    checkout: Option<PathBuf>,
     registrar: &'a GitHubRegistrar,
     log: Rc<StartLog>,
 }
@@ -224,6 +232,8 @@ async fn run_instance(parts: Parts<'_>, plan: crate::validate::Plan) -> u8 {
     let config = DockerConfig {
         program: parts.docker,
         launcher: parts.launcher,
+        exporter: parts.exporter,
+        checkout: parts.checkout,
         ..DockerConfig::default()
     };
     let backend = DockerBackend::new(config, SystemClock, parts.log.clone());
@@ -242,15 +252,16 @@ async fn run_instance(parts: Parts<'_>, plan: crate::validate::Plan) -> u8 {
                 request_stop(&sender);
                 force();
                 let stopped = tokio::time::timeout(CLOSE_REMOVE_BUDGET, &mut run).await;
-                stopped.unwrap_or(Ended {
+                stopped.unwrap_or_else(|_| Ended {
                     containers_removed: false,
                     ending: Ending::Ordinary,
+                    kept: backend.retained().names(),
                 })
             }
         }
     };
     server.close(ANSWERS_WITHIN).await;
-    match ended.ending {
+    let code = match ended.ending {
         Ending::NothingToRun => {
             log.warn("The instance ended because no pool could start.");
             EXIT_FAILED
@@ -259,10 +270,11 @@ async fn run_instance(parts: Parts<'_>, plan: crate::validate::Plan) -> u8 {
             log.warn("The instance ended because its image cannot run jobs.");
             EXIT_FAILED
         }
-        Ending::Ordinary if ended.containers_removed => {
+        Ending::Ordinary if ended.containers_removed && ended.kept.is_empty() => {
             log.info("The instance has stopped.");
             EXIT_OK
         }
+        Ending::Ordinary if ended.containers_removed => EXIT_FAILED,
         Ending::Ordinary => {
             log.warn(
                 "The instance has stopped, but a container could not be removed; \
@@ -270,7 +282,16 @@ async fn run_instance(parts: Parts<'_>, plan: crate::validate::Plan) -> u8 {
             );
             EXIT_FAILED
         }
+    };
+    if !ended.kept.is_empty() {
+        log.warn(&format!(
+            "The instance has stopped and kept the diagnostic containers {}; the next start \
+             with their pools' diagnostics on exports and removes them.",
+            ended.kept.join(", ")
+        ));
+        return EXIT_FAILED;
     }
+    code
 }
 
 /// Asks the instance to stop, as `stop` does, through its own request channel.
@@ -449,7 +470,7 @@ fn contain() -> Result<JobLauncher, String> {
 
 /// A panic's message could hold anything, so the default hook, which writes it to
 /// the terminal unmasked, is replaced by one that names only where it happened.
-fn hide_panic_messages() {
+pub(crate) fn hide_panic_messages() {
     std::panic::set_hook(Box::new(|info| {
         let place = info.location().map_or_else(String::new, |location| {
             format!(" at {}:{}", location.file(), location.line())

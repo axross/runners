@@ -689,7 +689,7 @@ mod instance {
     }
 
     #[test]
-    fn while_a_build_runs_start_and_restart_are_refused_and_status_shows_it() {
+    fn while_a_build_runs_start_restart_and_diagnostics_are_refused_and_status_shows_it() {
         let host = host();
         host.script("build_hangs", "");
         let started = spawn_build(&host);
@@ -721,6 +721,11 @@ mod instance {
         let restart = host.client(&["restart"]);
         let (_, stderr) = texts(&restart);
         assert_eq!(restart.status.code(), Some(1), "{stderr}");
+        assert!(stderr.contains("the instance is building"), "{stderr}");
+
+        let diagnostics = host.client(&["diagnostics"]);
+        let (_, stderr) = texts(&diagnostics);
+        assert_eq!(diagnostics.status.code(), Some(1), "{stderr}");
         assert!(stderr.contains("the instance is building"), "{stderr}");
 
         let second = build(&host);

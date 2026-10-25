@@ -25,6 +25,7 @@ use crate::profile::Profile;
 
 pub use budget::{MAX_MACOS_VMS, Usage, usage};
 pub use limits::{format_cpu_count, format_nanos};
+pub use paths::is_inside_checkout;
 pub use plan::{Budget, Entry, Plan, PlannedVolume};
 
 use fields::{Errors, Field};

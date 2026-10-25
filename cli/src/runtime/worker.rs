@@ -10,6 +10,7 @@ use crate::image::check::ImageCheck;
 use super::backend::{Backend, ContainerSpec, CpuRequest};
 use super::board::{Board, SlotState};
 use super::clock::Clock;
+use super::diagnostic::finalize_at_job_end;
 use super::docker_args::RUN_COMMAND;
 use super::image::check_image;
 use super::log::{Log, Masked};
@@ -127,9 +128,11 @@ async fn back_off<K: Clock>(
 /// Each attempt checks the image, then probes the CPUs, then registers, then runs
 /// the container. An image that cannot run jobs, a Docker that does not answer the
 /// check, a failed probe or registration, or a non-zero exit, waits out the
-/// backoff; an exit of 0 starts the replacement at once. The slot's state goes on
-/// `board`, and the token it reads and the JIT configuration it holds are masked in
-/// `log`.
+/// backoff; an exit of 0 starts the replacement at once. A diagnostic container is
+/// finalised first, on a clock that starts when it ended, unless a stop is under
+/// way, whose container steps take it instead; its export's gaps never change the
+/// backoff. The slot's state goes on `board`, and the token it reads and the JIT
+/// configuration it holds are masked in `log`.
 pub async fn run_slot<B: Backend, K: Clock, R: Registrar>(
     slot: &SlotSpec,
     backend: &B,
@@ -224,10 +227,14 @@ pub async fn run_slot<B: Backend, K: Clock, R: Registrar>(
             mounts: slot.mounts.clone(),
             image: slot.image.clone(),
             run_command: RUN_COMMAND.to_string(),
+            diagnostic: slot.diagnostic.clone(),
         };
         // the JIT configuration stays masked until the outcome below is reported,
         // since a failed run's error text could hold it
         let exit = backend.run_container(&spec, &jit).await;
+        if spec.diagnostic.is_some() && !stopped(&stop) {
+            finalize_at_job_end(backend, log, &spec.name, tokio::time::Instant::now()).await;
+        }
         match exit {
             Ok(0) => {
                 log.info(&format!(

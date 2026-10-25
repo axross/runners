@@ -8,13 +8,13 @@
 )]
 
 use std::ffi::OsString;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use runners_cli::runtime::docker::{DockerBackend, DockerConfig, DockerLimits};
 use runners_cli::runtime::fake::{FakeClock, MemoryLog};
 
-use super::TempDir;
+use super::{BINARY, TempDir};
 
 pub const FAKE_DOCKER: &str = env!("CARGO_BIN_EXE_fake-docker");
 
@@ -31,6 +31,20 @@ impl Fake {
     }
 
     pub fn with_limits(limits: DockerLimits) -> Self {
+        Self::with(limits, None)
+    }
+
+    /// A backend whose exporter child is `exporter`.
+    pub fn exporting_with(exporter: &str) -> Self {
+        Self::with(DockerLimits::default(), Some(PathBuf::from(exporter)))
+    }
+
+    /// A backend whose exporter child is this CLI.
+    pub fn exporting() -> Self {
+        Self::exporting_with(BINARY)
+    }
+
+    fn with(limits: DockerLimits, exporter: Option<PathBuf>) -> Self {
         let dir = TempDir::new();
         let log = Rc::new(MemoryLog::default());
         let clock = Rc::new(FakeClock::at(1_709_618_828_009));
@@ -41,6 +55,7 @@ impl Fake {
                 dir.path().as_os_str().to_owned(),
             )],
             limits,
+            exporter,
             ..DockerConfig::default()
         };
         let backend = DockerBackend::new(config, clock.clone(), log.clone());

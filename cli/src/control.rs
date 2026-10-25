@@ -1,5 +1,5 @@
-//! `stop`, `restart` and `status`: the clients that talk to this user's instance
-//! over the control channel.
+//! `stop`, `restart`, `status` and `diagnostics`: the clients that talk to this
+//! user's instance over the control channel.
 
 use std::io::Write;
 use std::path::Path;
@@ -18,6 +18,10 @@ const STATUS_ANSWER_WITHIN: Duration = Duration::from_secs(5);
 /// configuration again and answer.
 const RESTART_ANSWER_WITHIN: Duration = Duration::from_secs(35);
 
+/// How long `diagnostics` waits for the instance to finalise its diagnostic
+/// containers, on their 24 s clock, and answer.
+const DIAGNOSTICS_ANSWER_WITHIN: Duration = Duration::from_secs(30);
+
 /// How long `stop` waits for the instance to end, counted from its request.
 const STOP_WAIT: Duration = Duration::from_secs(35);
 
@@ -30,6 +34,7 @@ pub enum Client {
     Stop,
     Restart,
     Status,
+    Diagnostics,
 }
 
 /// Runs the client and returns its exit code. `test_root` moves the channel's
@@ -57,7 +62,38 @@ pub fn run_client(
             Ok(response) => refused(err, &response),
             Err(error) => no_answer(err, &error),
         },
+        Client::Diagnostics => {
+            match exchange(&roots, &Request::Diagnostics, DIAGNOSTICS_ANSWER_WITHIN) {
+                Ok(response) => print_diagnostics(&response, out, err),
+                Err(error) => no_answer(err, &error),
+            }
+        }
         Client::Stop => stop(&roots, out, err),
+    }
+}
+
+/// Prints each `pool` and `container` line of a `diagnostics` answer, and fails
+/// when a container was not removed or was left to the manual recovery.
+fn print_diagnostics(response: &Response, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
+    if response.outcome == Outcome::Refused {
+        return refused(err, response);
+    }
+    if response.field("result") == Some("nothing") {
+        let _ = writeln!(
+            out,
+            "No diagnostic container is retained, and no pool has diagnostics on."
+        );
+        return EXIT_OK;
+    }
+    for (name, value) in response.fields() {
+        if name == "pool" || name == "container" {
+            let _ = writeln!(out, "{name} {value}");
+        }
+    }
+    if response.field("result") == Some("removed") {
+        EXIT_OK
+    } else {
+        EXIT_FAILED
     }
 }
 
@@ -126,9 +162,47 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_clients_wait_5_35_and_35_seconds() {
+    fn the_clients_wait_5_35_30_and_35_seconds() {
         assert_eq!(STATUS_ANSWER_WITHIN, Duration::from_secs(5));
         assert_eq!(RESTART_ANSWER_WITHIN, Duration::from_secs(35));
+        assert_eq!(DIAGNOSTICS_ANSWER_WITHIN, Duration::from_secs(30));
         assert_eq!(STOP_WAIT, Duration::from_secs(35));
+    }
+
+    fn printed(response: &Response) -> (u8, String, String) {
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let code = print_diagnostics(response, &mut out, &mut err);
+        (
+            code,
+            String::from_utf8(out).unwrap(),
+            String::from_utf8(err).unwrap(),
+        )
+    }
+
+    #[test]
+    fn a_diagnostics_answer_prints_its_lines_and_exits_by_its_result() {
+        let answer = Response::ok("")
+            .with("pool", "d: 1 bundles written, 9 of 10 remaining")
+            .with("pool", "e: 0 bundles written, unknown of 10 remaining")
+            .with("container", "d-1-x: removal failed; it stays retained");
+        let lines = "pool d: 1 bundles written, 9 of 10 remaining\n\
+                     pool e: 0 bundles written, unknown of 10 remaining\n\
+                     container d-1-x: removal failed; it stays retained\n";
+        let (code, out, err) = printed(&answer.clone().with("result", "incomplete"));
+        assert_eq!((code, out.as_str(), err.as_str()), (EXIT_FAILED, lines, ""));
+        let (code, out, _) = printed(&answer.with("result", "removed"));
+        assert_eq!((code, out.as_str()), (EXIT_OK, lines));
+
+        let (code, out, _) = printed(&Response::ok("").with("result", "nothing"));
+        assert_eq!(code, EXIT_OK);
+        assert_eq!(
+            out,
+            "No diagnostic container is retained, and no pool has diagnostics on.\n"
+        );
+
+        let (code, out, err) = printed(&Response::refused("the instance is stopping"));
+        assert_eq!(code, EXIT_FAILED);
+        assert!(out.is_empty());
+        assert!(err.contains("the instance is stopping"), "{err}");
     }
 }

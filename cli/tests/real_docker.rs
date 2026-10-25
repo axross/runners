@@ -182,6 +182,7 @@ async fn a_container_and_the_cpu_probe_run_through_the_backend_and_leave_nothing
         }],
         image,
         run_command: "true".to_string(),
+        diagnostic: None,
     };
     assert_eq!(backend.run_container(&spec, &jit).await.unwrap(), 0);
     spec.name = format!("{pool}-1-20240305060709009");

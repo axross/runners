@@ -3,17 +3,20 @@
 //! The runtime asks a backend to wait until it is available, read the configured
 //! image's labels, list and remove a pool's leftover containers, prepare volumes,
 //! choose a slot's CPUs, run a container under the run contract and report its
-//! exit, and stop or remove a set of containers within a budget. The container
-//! backend runs `docker`; a later backend can run the same containers inside a
-//! virtual machine.
+//! exit, stop, kill or remove a set of containers within a budget, and finalise a
+//! diagnostic container under a clock. The container backend runs `docker`; a
+//! later backend can run the same containers inside a virtual machine.
 
 use std::fmt;
 use std::future::Future;
 use std::time::Duration;
 
+use tokio::time::Instant;
+
 use crate::image::check::ImageCheck;
 use crate::validate::PlannedVolume;
 
+use super::retained::{Claim, Retained};
 use super::secret::Secret;
 
 /// Why a backend operation failed. The text never holds a secret.
@@ -65,6 +68,76 @@ pub struct ContainerSpec {
     pub image: String,
     /// The command the launcher runs after verifying the CPU set.
     pub run_command: String,
+    /// Where a diagnostics-enabled pool's evidence goes; such a container runs the
+    /// diagnostic variant and is retained until it is finalised.
+    pub diagnostic: Option<DiagnosticRecord>,
+}
+
+/// The settings a diagnostic container ran with, which every finalisation of it
+/// uses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiagnosticRecord {
+    /// The pool's name, which starts each of its bundles' names.
+    pub pool: String,
+    /// The sink, as the configuration names it.
+    pub directory: String,
+    pub raw_records: bool,
+}
+
+/// The time a diagnostic container's export has, and the time its whole
+/// finalisation has, its removal included.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Deadlines {
+    pub export: Instant,
+    pub removal: Instant,
+}
+
+/// From a finalisation's clock start to the end of its export.
+pub const EXPORT_WITHIN: Duration = Duration::from_secs(18);
+
+/// From a finalisation's clock start to the end of its removal.
+pub const REMOVAL_WITHIN: Duration = Duration::from_secs(24);
+
+impl Deadlines {
+    /// The deadlines of a clock that started at `start`.
+    #[must_use]
+    pub fn from(start: Instant) -> Self {
+        Self {
+            export: start + EXPORT_WITHIN,
+            removal: start + REMOVAL_WITHIN,
+        }
+    }
+}
+
+/// How a diagnostic container's export went.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExportOutcome {
+    /// The bundle is complete.
+    Complete,
+    /// The bundle is complete, but its final observation is missing.
+    Gap,
+    /// The sink already holds ten of the pool's bundles.
+    SinkFull,
+    /// The export failed, was unsafe, or ran out of time.
+    Failed,
+    /// The clock left no time to begin it.
+    Skipped,
+    /// An earlier finalisation's bundle stands, so none was made.
+    AlreadyExported,
+}
+
+/// What finalising a diagnostic container did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Finalized {
+    pub export: ExportOutcome,
+    /// The container is gone, and no longer retained.
+    pub removed: bool,
+    /// A forced stop ended the finalisation before its removal, and the container is
+    /// kept.
+    pub kept: bool,
+    /// The pool's bundles in the sink after the export, as the exporter counted
+    /// them.
+    pub bundles: Option<u32>,
 }
 
 /// A request for the CPUs of one slot.
@@ -157,4 +230,34 @@ pub trait Backend {
         &self,
         request: &StopRequest,
     ) -> impl Future<Output = Result<(), BackendError>>;
+
+    /// Ends the containers at once and keeps them, in one call, within `budget`.
+    fn kill_containers(
+        &self,
+        names: &[String],
+        budget: Duration,
+    ) -> impl Future<Output = Result<(), BackendError>>;
+
+    /// The diagnostic containers this backend retains. A `run_container` of a
+    /// diagnostic container retains it; a successful removal by a finalisation
+    /// forgets it, and nothing else does, a panic included.
+    fn retained(&self) -> &Retained;
+
+    /// Finalises a claimed diagnostic container with its record: exports it, unless
+    /// a bundle was already admitted for it, by `deadlines.export`, then removes it
+    /// whatever the export did, by `deadlines.removal`. A forced stop, asked for
+    /// through [`Retained::force`], ends the export and keeps the container.
+    fn finalize_diagnostic(
+        &self,
+        claim: &Claim<'_>,
+        deadlines: Deadlines,
+    ) -> impl Future<Output = Finalized>;
+
+    /// Counts a pool's bundles in its sink, by `deadline`, or `None` when the sink
+    /// cannot be read.
+    fn count_bundles(
+        &self,
+        record: &DiagnosticRecord,
+        deadline: Instant,
+    ) -> impl Future<Output = Option<u32>>;
 }

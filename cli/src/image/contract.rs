@@ -100,9 +100,9 @@ mod tests {
     use super::*;
     use crate::runtime::backend::{ContainerSpec, Mount};
     use crate::runtime::docker_args::{
-        DIAGNOSTIC_LABEL, JIT_VARIABLE, RUN_COMMAND, guard_script, image_inspect_arguments,
-        image_list_arguments, job_run_arguments, pool_diagnostic_list_arguments,
-        pool_list_arguments, probe_run_arguments, volume_chown_arguments,
+        RUN_COMMAND, diagnostic_run_arguments, image_inspect_arguments, image_list_arguments,
+        job_run_arguments, pool_diagnostic_list_arguments, pool_list_arguments,
+        probe_run_arguments, volume_chown_arguments,
     };
     use crate::validate::PlannedVolume;
 
@@ -264,68 +264,6 @@ mod tests {
         );
     }
 
-    /// The PowerShell diagnostic variant's launcher, as `docker-commands.ps1` builds
-    /// it: the guard, then the collector, in raw mode when asked, or the runner
-    /// itself with a gap when the collector is missing.
-    fn diagnostic_launcher(raw: bool) -> String {
-        let mode = if raw { " raw-run" } else { "" };
-        format!(
-            "{}\nif [ -x /usr/local/bin/runner-diagnostics ]; then exec /usr/local/bin/runner-diagnostics{mode}; \
-             else printf \"Diagnostic gap: collector missing.\\n\" >&2; exec /home/runner/run.sh; fi",
-            guard_script()
-        )
-    }
-
-    /// The PowerShell diagnostic variant's arguments: no `--rm`, the diagnostics
-    /// label, and the diagnostic launcher. This runtime does not build them yet;
-    /// they are here so the run contract's fingerprint covers them.
-    fn diagnostic_run_arguments(spec: &ContainerSpec, raw: bool) -> Vec<String> {
-        let memory = format!("{}g", spec.memory_gb);
-        let mut arguments: Vec<String> = [
-            "run",
-            "--pull",
-            "never",
-            "--name",
-            &spec.name,
-            "--label",
-            DIAGNOSTIC_LABEL,
-            "--cpus",
-            &spec.cpus,
-            "--cpuset-cpus",
-            &spec.cpuset,
-            "--memory",
-            &memory,
-            "--memory-swap",
-            &memory,
-        ]
-        .iter()
-        .map(|argument| (*argument).to_string())
-        .collect();
-        for mount in &spec.mounts {
-            arguments.push("--mount".to_string());
-            arguments.push(format!(
-                "type=volume,source={},target={}",
-                mount.volume, mount.target
-            ));
-        }
-        arguments.extend(
-            [
-                "-e",
-                JIT_VARIABLE,
-                &spec.image,
-                "bash",
-                "-c",
-                &diagnostic_launcher(raw),
-                "--",
-                &spec.cpuset,
-                &spec.run_command,
-            ]
-            .iter()
-            .map(|argument| (*argument).to_string()),
-        );
-        arguments
-    }
-
     #[test]
     fn the_diagnostic_variant_is_the_powershell_one() {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -359,6 +297,7 @@ mod tests {
             }],
             image: "actions-runner:local".to_string(),
             run_command: RUN_COMMAND.to_string(),
+            diagnostic: None,
         }
     }
 

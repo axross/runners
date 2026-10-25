@@ -232,7 +232,7 @@ impl Build<'_> {
                 }
                 Response::ok("stopping")
             }
-            Request::Restart | Request::Resume(_) => {
+            Request::Restart | Request::Diagnostics | Request::Resume(_) => {
                 Response::refused(&format!("the instance is building {}", self.image))
                     .with("state", state)
             }
