@@ -439,12 +439,12 @@ in one `docker stop` call with a grace of 15 s, ended at 20 s, and then force-re
 them in one call ended 6 s later, so they take 26 s at the most. A forced removal,
 which a second Ctrl+C or SIGINT asks for, abandons the stop or skips it and removes
 at once. At a stop, the container steps and the core's wind-down share an exit
-deadline of 28 s from the request; whatever still runs then is dropped, and when
-the removal had not finished, how the instance ended records a failed removal. The instance reads
-the containers before it tells the core to stop, because dropping a worker forgets
-its container. How the instance ended records whether every removal in its life
-succeeded, at a stop, a restart, or a failure of the core, so a failed removal is
-still reported when a later stop has nothing to remove.
+deadline of 28 s from the request; whatever still runs then is dropped, and when the
+removal had not finished, how the instance ended records a failed removal. The
+instance reads the containers before it tells the core to stop, because dropping a
+worker forgets its container. How the instance ended records whether every removal
+in its life succeeded, at a stop, a restart, or a failure of the core, so a failed
+removal is still reported when a later stop has nothing to remove.
 
 The runtime core is the part that runs the pools. It fails when it ends, with an
 error, a panic, or neither, while no stop was asked for. The instance polls it
@@ -553,14 +553,15 @@ answer in time". The client reads at most 64 KiB.
 ### Roots and Private Files
 
 The lock file, the socket directory, the log directory and the pipe names are fixed
-for a host. Only a debug build can move them, to a test root, which suffixes the Windows pipe names
-with a hash of the root; a release build ignores the request, as it ignores a GitHub
-base address. `tests/instance_roots.rs` shows both halves and each host's fixed
-roots, and CI runs it again in the release profile. `std` has no call for the
-process's own user ID and `unsafe` is forbidden, so the CLI reads its user ID as the
-owner of a file it creates in the temporary directory. The file's name has a random
-part, and the CLI only ever creates it new: a name that already exists is skipped,
-never opened, and after eight taken names reading the user ID fails.
+for a host. Only a debug build can move them, to a test root, which suffixes the
+Windows pipe names with a hash of the root; a release build ignores the request, as
+it ignores a GitHub base address. `tests/instance_roots.rs` shows both halves and
+each host's fixed roots, and CI runs it again in the release profile. `std` has no
+call for the process's own user ID and `unsafe` is forbidden, so the CLI reads its
+user ID as the owner of a file it creates in the temporary directory. The file's
+name has a random part, and the CLI only ever creates it new: a name that already
+exists is skipped, never opened, and after eight taken names reading the user ID
+fails.
 
 On macOS a token file must also be a regular file owned by the current user with
 mode `0600`, checked on the file that is opened, or reading it fails and the pool is
@@ -747,9 +748,10 @@ that containment and the log leave.
 When the console closes, the user logs off, or the machine shuts down, `start`
 stops the instance with forced removal: the slots stop registering, so no container
 starts unseen, and one `docker rm -f` removes every container it started. Whatever
-has not finished after 4 s is dropped, and `start` exits. The 4 s fits inside the 5 s the operating system gives a console-close
-handler before it ends the process, and Microsoft documents that logoff and
-shutdown events reach services only, never an interactive process
+has not finished after 4 s is dropped, and `start` exits. The 4 s fits inside the
+5 s the operating system gives a console-close handler before it ends the process,
+and Microsoft documents that logoff and shutdown events reach services only, never
+an interactive process
 ([HandlerRoutine](https://learn.microsoft.com/en-us/windows/console/handlerroutine)).
 The handlers are registered anyway, and for those two events the Job Object and the
 next `start` are the backstop.
@@ -780,7 +782,8 @@ left; on Windows, a handle to the job container's client is signalled when
 `pool_preparation.rs` and `slot_worker.rs`, use the fake seams, and
 `instance_state.rs` and `core_restart.rs` cover forced removal, the exit deadline,
 a panicking core, and no startable pool. Not verified: Ctrl+C, Ctrl+Break, and the
-console close on Windows, and macOS and Windows behaviour beyond what the hosted runners show.
+console close on Windows, and macOS and Windows behaviour beyond what the hosted
+runners show.
 
 ## Fixtures and Tests
 
