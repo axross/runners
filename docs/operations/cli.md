@@ -727,10 +727,12 @@ the runtime core reaches the log, masked, as a failure.
   never writes to it. When the client ends while the pipe is open, the shim exits
   with its code. When the pipe has closed, because `start` dropped the run or ended
   however it ended, the shim runs `docker rm -f <container>` within 5 s, kills the
-  client, and exits, even when the client ended at the same time.
-  So a shim can outlive `start` by up to 5 s. The shim shares `start`'s standard
-  error, and its own warnings there name containers only. A shim that is itself
-  killed leaves its container to the next `start`.
+  client, and exits, even when the client ended at the same time. The shim shares
+  `start`'s standard error, and its own warnings there name containers only.
+
+Security lists the
+[residual risks](../conventions/security.md#tokens-stay-out-of-the-log-and-job-clients-end-with-start)
+that containment and the log leave.
 
 ### Console Close on Windows
 

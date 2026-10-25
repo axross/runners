@@ -388,19 +388,9 @@ runs, and it writes a log that lives after it. [CLI](../operations/cli.md#runnin
 owns how the log is written and masked and how its children are contained.
 
 - No token or JIT configuration reaches a log line, the terminal, a debug form, an
-  error message, a command line, or a control-channel response. A token is masked
-  from its first read, and a JIT configuration from its registration until its
-  container's outcome is reported, including the container output `start` forwards.
-  A JIT configuration reaches the job container through its environment, never
-  through an argument.
-- The log directory is per user. On macOS it and each file are private and checked;
-  on Windows the directory under `%LOCALAPPDATA%` is not checked and relies on the
-  profile's access control.
-- A panic's message never reaches the terminal unmasked: `start` replaces the default
-  panic hook.
-- Every job container's `docker` client ends when `start` ends, however it ends: on
-  Windows through a kill-on-close Job Object, and on Unix through a shim that removes
-  its container when `start`'s liveness pipe closes.
+  error message, a command line, or a control-channel response.
+- Every job container's `docker` client ends when `start` ends, however it ends.
+- The log directory and its files are per user and private to that user.
 
 Residual risks, accepted on a single-user host:
 
@@ -409,6 +399,8 @@ Residual risks, accepted on a single-user host:
   container outlives its killed client, with the same backstop.
 - On Windows, logoff and shutdown events never reach an interactive process, so
   containers left by them wait for the next `start`.
+- On Windows the log directory's access control is not checked; it relies on the
+  user profile's.
 
 ## CPU Placement Is Not Resource Reservation
 
