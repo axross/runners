@@ -1,10 +1,10 @@
 //! The container backend against a real Docker daemon, on Linux only.
 //!
-//! The test is `#[ignore]`d so a plain `cargo test` never needs a daemon. CI runs it
-//! in its own step, `cargo test --locked --test real_docker -- --ignored`, after
-//! building the runner image's base stage and naming it in
-//! `RUNNERS_REAL_DOCKER_IMAGE`. The test fails when Docker or that image is
-//! missing: a step that cannot run the test must not look as if it passed.
+//! The tests are `#[ignore]`d so a plain `cargo test` never needs a daemon. CI runs
+//! them in their own step, `cargo test --locked --test real_docker -- --ignored`,
+//! after building the runner image's base stage and naming it in
+//! `RUNNERS_REAL_DOCKER_IMAGE`. Each test fails when Docker or that image is
+//! missing: a step that cannot run a test must not look as if it passed.
 #![cfg(target_os = "linux")]
 #![allow(
     clippy::unwrap_used,
@@ -16,7 +16,11 @@
 use std::process::Command;
 use std::rc::Rc;
 
-use runners_cli::runtime::backend::{Backend, ContainerSpec, CpuRequest, Mount};
+use runners_cli::diagnostics::exporter::COMPLETE_TEXT;
+use runners_cli::diagnostics::identity::IDENTITY_HEADER;
+use runners_cli::runtime::backend::{
+    Backend, ContainerSpec, CpuRequest, Deadlines, DiagnosticRecord, ExportOutcome, Mount,
+};
 use runners_cli::runtime::clock::SystemClock;
 use runners_cli::runtime::docker::{DockerBackend, DockerConfig};
 use runners_cli::runtime::log::StderrLog;
@@ -83,9 +87,8 @@ fn cpu_list_is_well_formed(list: &str) -> bool {
         })
 }
 
-#[tokio::test(flavor = "current_thread")]
-#[ignore = "needs a Docker daemon and RUNNERS_REAL_DOCKER_IMAGE; CI runs it in its own step"]
-async fn a_container_and_the_cpu_probe_run_through_the_backend_and_leave_nothing_behind() {
+/// The image `RUNNERS_REAL_DOCKER_IMAGE` names, once Docker answers and holds it.
+fn required_image() -> String {
     let image = std::env::var("RUNNERS_REAL_DOCKER_IMAGE")
         .expect("RUNNERS_REAL_DOCKER_IMAGE must name a local image, such as the runner base stage");
     let info = Command::new("docker")
@@ -105,6 +108,13 @@ async fn a_container_and_the_cpu_probe_run_through_the_backend_and_leave_nothing
         present.status.success(),
         "the image {image} is not present locally"
     );
+    image
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[ignore = "needs a Docker daemon and RUNNERS_REAL_DOCKER_IMAGE; CI runs it in its own step"]
+async fn a_container_and_the_cpu_probe_run_through_the_backend_and_leave_nothing_behind() {
+    let image = required_image();
 
     let pool = format!("runners-it-{}", std::process::id());
     let volume = format!("{pool}-cache");
@@ -194,5 +204,103 @@ async fn a_container_and_the_cpu_probe_run_through_the_backend_and_leave_nothing
         cleanup.leftovers(),
         Vec::<String>::new(),
         "a container with the test's names remains"
+    );
+}
+
+/// A container that writes a small `metrics.txt` where the collector writes it,
+/// exported by the CLI's exporter child from a real `docker cp` stream into a
+/// private sink, then removed.
+#[tokio::test(flavor = "current_thread")]
+#[ignore = "needs a Docker daemon and RUNNERS_REAL_DOCKER_IMAGE; CI runs it in its own step"]
+async fn a_real_copy_stream_is_exported_into_a_bundle_and_the_container_removed() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let image = required_image();
+    let pool = format!("runners-it-export-{}", std::process::id());
+    let cleanup = Cleanup {
+        pool: pool.clone(),
+        volume: format!("{pool}-unused"),
+    };
+    let name = format!("{pool}-1-20240305060708009");
+    let ran = Command::new("docker")
+        .args([
+            "run",
+            "--name",
+            &name,
+            "--label",
+            "runners.diagnostic-lifecycle=1",
+            "--cpus",
+            "1",
+            "--memory",
+            "1g",
+            "--memory-swap",
+            "1g",
+            &image,
+            "sh",
+            "-c",
+            "mkdir -p /tmp/runner-diagnostics && printf 'sample=1\\nfinal=observed\\n' > /tmp/runner-diagnostics/metrics.txt",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        ran.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
+
+    let sink = std::env::temp_dir().join(format!("{pool}-sink"));
+    std::fs::create_dir(&sink).unwrap();
+    std::fs::set_permissions(&sink, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let sink = std::fs::canonicalize(sink).unwrap();
+    let backend = DockerBackend::new(
+        DockerConfig {
+            exporter: Some(env!("CARGO_BIN_EXE_runners").into()),
+            ..DockerConfig::default()
+        },
+        SystemClock,
+        Rc::new(StderrLog::default()),
+    );
+    let record = DiagnosticRecord {
+        pool: pool.clone(),
+        directory: sink.to_str().unwrap().to_string(),
+        raw_records: false,
+    };
+    backend.retained().adopt(&name, &record);
+    let claim = backend.retained().claim(&name).unwrap();
+    let finalized = backend
+        .finalize_diagnostic(&claim, Deadlines::from(tokio::time::Instant::now()))
+        .await;
+    drop(claim);
+    let bundles: Vec<std::path::PathBuf> = std::fs::read_dir(&sink)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    let read = |file: &str| std::fs::read_to_string(bundles[0].join(file)).unwrap();
+    let outcome = (finalized.export, finalized.removed, bundles.len());
+    let (identity, metrics, complete) = if bundles.is_empty() {
+        Default::default()
+    } else {
+        (
+            read("identity.txt"),
+            read("metrics.txt"),
+            read("complete.txt"),
+        )
+    };
+    let _ = std::fs::remove_dir_all(&sink);
+    assert_eq!(outcome, (ExportOutcome::Complete, true, 1));
+    assert_eq!(metrics, "sample=1\nfinal=observed\n");
+    assert_eq!(complete, COMPLETE_TEXT);
+    let lines: Vec<&str> = identity.lines().collect();
+    assert_eq!(lines.len(), 2, "{identity}");
+    assert_eq!(lines[0], IDENTITY_HEADER);
+    assert!(lines[1].starts_with("sha256:"), "{identity}");
+    assert!(
+        lines[1].contains("|1000000000|1073741824|1073741824|"),
+        "{identity}"
+    );
+    assert_eq!(
+        cleanup.leftovers(),
+        Vec::<String>::new(),
+        "the exported container was not removed"
     );
 }

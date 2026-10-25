@@ -117,11 +117,14 @@ jobs:
         env:
           RUNNERS_EXPECT_RELEASE: "1"
         run: cargo test --locked --release --test base_address --test instance_roots --test build_definition
-      # the real-Docker test needs the runner image's base stage, which is digest
+      # the real-Docker tests need the runner image's base stage, which is digest
       # pinned, and a daemon: ubuntu-latest has one, and the Windows and macOS
-      # hosted runners have no Linux daemon. a missing daemon or image fails the
-      # test, so it cannot be skipped without anyone seeing. the image is built on
-      # the runner host and never pushed, so the job holds no credential.
+      # hosted runners have no Linux daemon. one runs a container and the CPU probe
+      # through the backend; the other exports a container's small metrics file
+      # through the CLI's exporter child from a real `docker cp` stream into a
+      # private temporary sink. a missing daemon or image fails each test, so it
+      # cannot be skipped without anyone seeing. the image is built on the runner
+      # host and never pushed, so the job holds no credential.
       - name: Build Runner Base Image For The Docker Test
         if: runner.os == 'Linux'
         run: docker build --target base --tag runners-docker-test:ci ../images/actions-runner
