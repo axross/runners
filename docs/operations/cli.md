@@ -660,11 +660,11 @@ answer in time.
 
 ### Stopping
 
-`stop`, SIGINT, SIGTERM, and SIGHUP on Unix, and Ctrl+C on Windows end the instance
-from any state with the stop sequence, which takes 30 s at the most from the
-request. SIGHUP is how macOS reports a closed terminal. A signal `start` cannot
-listen for is a warning at startup, and that signal keeps its default action; the
-others still stop the instance.
+`stop`, SIGINT, SIGTERM, and SIGHUP on Unix, and Ctrl+C and Ctrl+Break on Windows
+end the instance from any state with the stop sequence, which takes 30 s at the
+most from the request. SIGHUP is how macOS reports a closed terminal. A signal
+`start` cannot listen for is a warning at startup, and that signal keeps its
+default action; the others still stop the instance.
 
 1. The slots stop registering at once.
 2. The container steps under [Instance State](#instance-state) run: one
@@ -675,10 +675,11 @@ others still stop the instance.
    5 s, and ends.
 4. `start` exits, which releases the lock.
 
-A second SIGINT or Ctrl+C skips the grace period: a `docker stop` under way is
-abandoned and the containers are removed at once. Raising Ctrl+C in a Windows
-test needs `unsafe`, so the Windows handling is checked by review and on axpc in
-Phase 4b.
+A second SIGINT, Ctrl+C, or Ctrl+Break skips the grace period: a `docker stop` under
+way is abandoned and the containers are removed at once. Raising Ctrl+C in a
+Windows test needs `unsafe`, so the Windows handling is checked by review and on
+axpc in Phase 4b. That includes Ctrl+Break: a client's own process group keeps
+Ctrl+C from it, but whether it also keeps Ctrl+Break from it is unverified.
 
 | Exit | Meaning                                                                                                                                                                                          |
 | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -774,8 +775,8 @@ left; on Windows, a handle to the job container's client is signalled when
 `start` is killed. `runtime_core.rs`, and the board and masking cases in
 `pool_preparation.rs` and `slot_worker.rs`, use the fake seams, and
 `instance_state.rs` and `core_restart.rs` cover forced removal, the exit deadline,
-a panicking core, and no startable pool. Not verified: Ctrl+C and the console close
-on Windows, and macOS and Windows behaviour beyond what the hosted runners show.
+a panicking core, and no startable pool. Not verified: Ctrl+C, Ctrl+Break, and the
+console close on Windows, and macOS and Windows behaviour beyond what the hosted runners show.
 
 ## Fixtures and Tests
 

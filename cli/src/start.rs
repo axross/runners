@@ -305,13 +305,17 @@ fn listeners(log: &dyn Log) -> Vec<Listener> {
     .collect()
 }
 
-/// Listens for Ctrl+C.
+/// Listens for Ctrl+C and Ctrl+Break, which `start` treats alike.
 #[cfg(windows)]
 fn listeners(log: &dyn Log) -> Vec<Listener> {
-    use tokio::signal::windows::{CtrlC, ctrl_c};
-    listener("Ctrl+C", true, ctrl_c(), CtrlC::poll_recv, log)
-        .into_iter()
-        .collect()
+    use tokio::signal::windows::{CtrlBreak, CtrlC, ctrl_break, ctrl_c};
+    [
+        listener("Ctrl+C", true, ctrl_c(), CtrlC::poll_recv, log),
+        listener("Ctrl+Break", true, ctrl_break(), CtrlBreak::poll_recv, log),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
 }
 
 /// Turns each signal [`listeners`] could open into a stop, and a second interrupt
