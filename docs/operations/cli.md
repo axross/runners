@@ -773,11 +773,13 @@ supported host, and `tests/instance_roots.rs` shows it in the release profile. A
 debug build runs on a test root, for the tests. On macOS, `start --profile axpc`
 runs the container backend with Unix containment, which serves the tests, not an
 operated host. `RUNNERS_TEST_ROOT` moves the lock, the channel, and the log
-directory, `RUNNERS_TEST_GITHUB_API` moves the GitHub base address, and
-`RUNNERS_TEST_DOCKER` names the `docker` client that `start` runs, the Unix shim's
-removal included; only a debug build honours any of them, and
-`tests/base_address.rs` shows in the release profile that the client stays
-`docker`. The tests name the fake client rather than put it first on `PATH`,
+directory, `RUNNERS_TEST_GITHUB_API` moves the GitHub base address,
+`RUNNERS_TEST_DOCKER` names the `docker` client that `start` and `build` run, the
+Unix shim's removal in `start` included, and `RUNNERS_TEST_BUILD_DEFINITION` names
+a test definition that `build` builds instead of the embedded one. Only a debug
+build honours any of them: in the release profile `tests/base_address.rs` shows
+that the client stays `docker`, and `tests/build_definition.rs` that `build` keeps
+the embedded definition. The tests name the fake client rather than put it first on `PATH`,
 because Windows searches the program's directory and the system directories before
 `PATH`, so a real `docker.exe` in `System32` would win.
 

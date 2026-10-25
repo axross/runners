@@ -338,9 +338,9 @@ later host:
   debug build can move the base address, and only to `http://127.0.0.1:<port>`, for
   the loopback tests; a release build always uses GitHub, which a CI step checks in
   the release profile. Likewise only a debug build can name the `docker` client
-  `start` runs, and a release build always runs `docker`. The JIT variable is
-  removed from the environment of every `docker` client but the one that starts
-  the container.
+  `start` and `build` run, and a release build always runs `docker`. The JIT
+  variable is removed from the environment of every `docker` client but the one
+  that starts the container.
 - Volume and container names start with the entry's `name`, which the operator
   sets. An entry's volumes are mounted only into its own containers. Two entries
   whose names are equal, or where one is the other followed by a hyphen, are
