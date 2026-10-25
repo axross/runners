@@ -469,6 +469,24 @@ impl<C: Clock> DockerBackend<C> {
             .clone()
     }
 
+    /// The exporter request for `record`'s sink, naming `container` to export or
+    /// none to only count its bundles, with the time left until `deadline`.
+    fn export_request(
+        &self,
+        record: &DiagnosticRecord,
+        container: Option<String>,
+        deadline: tokio::time::Instant,
+    ) -> ExportRequest {
+        ExportRequest {
+            pool: record.pool.clone(),
+            container,
+            directory: record.directory.clone(),
+            raw_records: record.raw_records,
+            checkout: self.config.checkout.clone(),
+            deadline: deadline.saturating_duration_since(tokio::time::Instant::now()),
+        }
+    }
+
     /// Starts the exporter child for `request`. Its standard input is the liveness
     /// pipe, its standard output is read, and its standard error, where it writes
     /// only a panic's location, is this process's, so it stays open while the child
@@ -857,14 +875,7 @@ impl<C: Clock> Backend for DockerBackend<C> {
         let Ok(admission) = tokio::time::timeout_at(deadline, lock.lock()).await else {
             return Exported::FAILED;
         };
-        let request = ExportRequest {
-            pool: record.pool.clone(),
-            container: Some(name.to_string()),
-            directory: record.directory.clone(),
-            raw_records: record.raw_records,
-            checkout: self.config.checkout.clone(),
-            deadline: deadline.saturating_duration_since(tokio::time::Instant::now()),
-        };
+        let request = self.export_request(record, Some(name.to_string()), deadline);
         self.run_exporter(&request, deadline, Some(admission)).await
     }
 
@@ -873,14 +884,7 @@ impl<C: Clock> Backend for DockerBackend<C> {
         record: &DiagnosticRecord,
         deadline: tokio::time::Instant,
     ) -> Option<u32> {
-        let request = ExportRequest {
-            pool: record.pool.clone(),
-            container: None,
-            directory: record.directory.clone(),
-            raw_records: record.raw_records,
-            checkout: self.config.checkout.clone(),
-            deadline: deadline.saturating_duration_since(tokio::time::Instant::now()),
-        };
+        let request = self.export_request(record, None, deadline);
         let counted = self.run_exporter(&request, deadline, None).await;
         counted
             .bundles
