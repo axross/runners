@@ -4,11 +4,12 @@
 //! <arguments>`. The shim starts the client, in a process group of its own, with the
 //! client's standard error joined to its standard output, which the CLI reads. Its
 //! own standard input is the read end of a liveness pipe whose write end only the
-//! CLI holds. When the client ends, the shim exits with its code. When the pipe
-//! closes first, because the CLI dropped the run or ended however it ended, the shim
-//! force-removes the container within 5 s, kills the client, and
-//! exits. The JIT configuration reaches the client through the environment the
-//! shim inherits, and the removal's client does not get it.
+//! CLI holds. When the client ends while the pipe is open, the shim exits with its
+//! code. When the pipe has closed, because the CLI dropped the run or ended however
+//! it ended, the shim force-removes the container within 5 s, kills the client, and
+//! exits, even when the client ended at the same time. The JIT configuration
+//! reaches the client through the environment the shim inherits, and the removal's
+//! client does not get it.
 
 use std::ffi::{OsStr, OsString};
 use std::os::fd::AsFd;
@@ -99,16 +100,23 @@ async fn supervise(name: &str, program: &OsStr, arguments: &[OsString]) -> ExitC
             return ExitCode::from(CANNOT_RUN);
         }
     };
-    let closed = input_closed();
-    tokio::select! {
-        status = client.wait() => match status {
+    let mut closed = input_closed();
+    // a closed pipe outranks the client's end, even one that came at the same time,
+    // so the container is removed whenever the CLI is gone
+    let ended = tokio::select! {
+        biased;
+        _ = &mut closed => None,
+        status = client.wait() => Some(status),
+    };
+    match ended {
+        Some(status) if closed.try_recv().is_err() => match status {
             Ok(status) => ExitCode::from(exit_code(&status)),
             Err(error) => {
                 println!("shim: the docker client could not be waited for: {error}");
                 ExitCode::from(CANNOT_RUN)
             }
         },
-        _ = closed => {
+        _ => {
             let removed = remove(name, program).await;
             let _ = client.kill().await;
             ExitCode::from(if removed { CLI_GONE } else { REMOVAL_FAILED })

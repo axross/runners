@@ -723,9 +723,10 @@ happened; a panic of the runtime core reaches the log, masked, as a failure.
   client in a process group of its own, with the client's standard error joined to
   its standard output, which `start` reads and masks. Its standard input is the
   read end of a liveness pipe whose write end only `start` holds, and `start`
-  never writes to it. When the client ends, the shim exits with its code. When the
-  pipe closes first, because `start` dropped the run or ended however it ended,
-  the shim runs `docker rm -f <container>` within 5 s, kills the client, and exits.
+  never writes to it. When the client ends while the pipe is open, the shim exits
+  with its code. When the pipe has closed, because `start` dropped the run or ended
+  however it ended, the shim runs `docker rm -f <container>` within 5 s, kills the
+  client, and exits, even when the client ended at the same time.
   So a shim can outlive `start` by up to 5 s. The shim shares `start`'s standard
   error, and its own warnings there name containers only. A shim that is itself
   killed leaves its container to the next `start`.
