@@ -178,6 +178,29 @@ To refresh an input:
    claiming wrapper reuse. The smoke test's offline distribution execution is
    not itself a wrapper or setup-action integration test.
 
+## Image labels
+
+The final stage declares three labels, which the CLI reads from the built image
+and embeds from this Dockerfile:
+
+| Label                                       | Value                                                        |
+| ------------------------------------------- | ------------------------------------------------------------ |
+| `com.github.axross.runners.contract`        | The image contract version, a positive integer, now `1`      |
+| `com.github.axross.runners.runner-version`  | The runner version the `FROM` line pins, now `2.337.0`       |
+| `com.github.axross.runners.runner-released` | That runner release's date as `YYYY-MM-DD`, now `2026-08-26` |
+
+`runners build` adds two more on its command line, because they describe the
+build rather than the definition:
+
+- `com.github.axross.runners.image=actions-runner`, which the PowerShell rebuild
+  script also passes and both prune by;
+- `com.github.axross.runners.built=<Unix seconds>`, the build time.
+
+So an image built by CI, by hand, or by the PowerShell rebuild task carries the
+three declared labels, passes the CLI's contract check, and shows an unknown
+build age. The [CLI document](../../docs/operations/cli.md#the-image-contract)
+says what the CLI does with each label, and when the contract version changes.
+
 ## The base pin
 
 The `FROM` line names the runner version and the digest of that version's
@@ -194,7 +217,12 @@ curl -sSI -H "Authorization: Bearer $token" \
 
 Dependabot's `docker` entry proposes the same change as a pull request. Merge it
 promptly; [Windows Runner Host](../../docs/operations/windows-runner-host.md#updating-the-runner)
-explains why.
+explains why. A runner bump is red until the
+`runner-version` and `runner-released` labels name the new release, its date from
+the `actions/runner` release page is added to the CLI's release table, and the
+CLI's build test definition names the same `FROM`;
+[Development Workflow](../../docs/operations/development-workflow.md#bumping-the-runner)
+lists the steps.
 
 ## Build
 
