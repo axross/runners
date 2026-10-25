@@ -267,9 +267,12 @@ async fn a_real_copy_stream_is_exported_into_a_bundle_and_the_container_removed(
     };
     backend.retained().adopt(&name, &record);
     let claim = backend.retained().claim(&name).unwrap();
-    let finalized = backend
-        .finalize_diagnostic(&claim, Deadlines::from(tokio::time::Instant::now()))
-        .await;
+    let finalized = runners_cli::runtime::diagnostic::finalize(
+        &backend,
+        &claim,
+        Deadlines::from(tokio::time::Instant::now()),
+    )
+    .await;
     drop(claim);
     let bundles: Vec<std::path::PathBuf> = std::fs::read_dir(&sink)
         .unwrap()

@@ -498,14 +498,10 @@ async fn a_diagnostic_container_is_finalised_before_the_slot_registers_again_and
             assert_eq!(index, calls.len() - 1, "the last run ends the loop");
             break;
         }
-        let Call::FinalizeDiagnostic(name, deadlines) = &calls[index + 1] else {
-            panic!("run {runs} was not finalised next: {calls:?}");
+        let Call::ExportDiagnostic(name, _) = &calls[index + 1] else {
+            panic!("run {runs} was not exported next: {calls:?}");
         };
         assert_eq!(name, &spec.name);
-        assert_eq!(
-            deadlines.removal.duration_since(deadlines.export),
-            Duration::from_secs(6)
-        );
         assert_eq!(
             calls[index + 2],
             Call::RemoveContainers(vec![spec.name.clone()]),

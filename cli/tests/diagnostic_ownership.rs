@@ -109,12 +109,13 @@ impl World {
         drive(&instance, self.plan(OLD), Duration::from_secs(20), script).await
     }
 
-    fn finalizations(&self) -> Vec<String> {
+    /// The containers whose export began, in order.
+    fn exports(&self) -> Vec<String> {
         self.backend
             .calls()
             .into_iter()
             .filter_map(|call| match call {
-                Call::FinalizeDiagnostic(name, _) => Some(name),
+                Call::ExportDiagnostic(name, _) => Some(name),
                 _ => None,
             })
             .collect()
@@ -178,14 +179,14 @@ async fn a_stop_during_a_job_end_export_waits_for_it_and_one_bundle_results() {
             tokio::time::sleep(Duration::from_millis(200)).await;
             // the instance waits in its stop for the export, which it does not take
             assert_eq!(control.state().await, "stopping");
-            assert_eq!(world.finalizations().len(), 1);
+            assert_eq!(world.exports().len(), 1);
             assert!(world.bundles().is_empty());
             gate.notify_one();
         })
         .await;
     let runs = world.runs();
     assert_eq!(runs.len(), 1);
-    assert_eq!(world.finalizations(), runs);
+    assert_eq!(world.exports(), runs);
     assert_eq!(world.bundles(), [(runs[0].clone(), record(OLD))]);
     assert!(world.backend.retained.names().is_empty());
     assert!(world.backend.state.borrow().containers.is_empty());
@@ -202,7 +203,7 @@ async fn a_restart_during_a_job_end_export_waits_for_it_and_one_bundle_results()
             began.notified().await;
             let mut answer = control.send(Request::Restart);
             assert!(still_waiting(&mut answer).await, "the restart did not wait");
-            assert_eq!(world.finalizations().len(), 1, "the restart took nothing");
+            assert_eq!(world.exports().len(), 1, "the restart took nothing");
             assert!(world.bundles().is_empty());
             gate.notify_one();
             world.backend.state.borrow_mut().export_gate = None;
@@ -210,7 +211,7 @@ async fn a_restart_during_a_job_end_export_waits_for_it_and_one_bundle_results()
             // the core runs again; its container ends with exit 1 and is finalised
             world
                 .until("the second run is finalised", |world| {
-                    world.finalizations().len() == 2
+                    world.exports().len() == 2
                 })
                 .await;
             control.stop().await;
@@ -218,7 +219,7 @@ async fn a_restart_during_a_job_end_export_waits_for_it_and_one_bundle_results()
         .await;
     let runs = world.runs();
     assert_eq!(runs.len(), 2);
-    assert_eq!(world.finalizations(), runs, "each container once");
+    assert_eq!(world.exports(), runs, "each container once");
     assert_eq!(world.bundles().len(), 2);
 }
 
@@ -245,16 +246,14 @@ async fn a_stop_during_a_startup_export_finalises_the_container_the_preparation_
             began.notified().await;
             assert_eq!(control.stop().await.outcome, Outcome::Ok);
             world
-                .until("the steps export again", |world| {
-                    world.finalizations().len() == 2
-                })
+                .until("the steps export again", |world| world.exports().len() == 2)
                 .await;
             world.backend.state.borrow_mut().export_gate = None;
             gate.notify_one();
         })
         .await;
     assert_eq!(
-        world.finalizations(),
+        world.exports(),
         [left, left],
         "the preparation, then the steps"
     );
@@ -288,7 +287,7 @@ async fn a_container_whose_job_end_export_panics_is_finalised_by_the_following_c
     let runs = world.runs();
     assert_eq!(runs.len(), 1);
     assert_eq!(
-        world.finalizations(),
+        world.exports(),
         [runs[0].clone(), runs[0].clone()],
         "the panicked job end, then the steps"
     );
@@ -319,7 +318,7 @@ async fn diagnostics_skips_a_container_being_finalised_and_no_second_bundle_resu
                 Some("d: 0 bundles written, 10 of 10 remaining")
             );
             assert_eq!(answer.field("container"), None);
-            assert_eq!(world.finalizations().len(), 1, "diagnostics took nothing");
+            assert_eq!(world.exports().len(), 1, "diagnostics took nothing");
             gate.notify_one();
             world
                 .until("the job end removes its container", |world| {
@@ -329,7 +328,7 @@ async fn diagnostics_skips_a_container_being_finalised_and_no_second_bundle_resu
             control.stop().await;
         })
         .await;
-    assert_eq!(world.finalizations().len(), 1);
+    assert_eq!(world.exports().len(), 1);
     assert_eq!(world.bundles().len(), 1);
 }
 
@@ -366,7 +365,7 @@ async fn a_resume_after_a_failed_removal_finalises_with_the_recorded_settings() 
             let restart = control.ask(Request::Restart).await;
             assert_ne!(restart.outcome, Outcome::Ok, "{restart:?}");
             assert_eq!(control.state().await, "stopped");
-            assert_eq!(world.finalizations().len(), 2);
+            assert_eq!(world.exports().len(), 2);
             assert_eq!(world.backend.retained.names().len(), 1);
 
             world.backend.state.borrow_mut().remove_error = None;
@@ -419,7 +418,7 @@ async fn a_container_the_stop_ends_yields_one_bundle_within_24_seconds() {
         })
         .await;
     let runs = world.runs();
-    assert_eq!(world.finalizations(), runs);
+    assert_eq!(world.exports(), runs);
     assert_eq!(world.bundles(), [(runs[0].clone(), record(OLD))]);
     let calls = world.backend.calls();
     let stop = calls
@@ -431,17 +430,16 @@ async fn a_container_the_stop_ends_yields_one_bundle_within_24_seconds() {
         .unwrap();
     assert_eq!(stop.grace, Duration::from_secs(10));
     assert!(stop.budget <= Duration::from_secs(12));
-    let deadlines = calls
+    let export = calls
         .iter()
         .find_map(|call| match call {
-            Call::FinalizeDiagnostic(_, deadlines) => Some(*deadlines),
+            Call::ExportDiagnostic(_, deadline) => Some(*deadline),
             _ => None,
         })
         .unwrap();
     // the steps' clock started between the request and its answer
-    assert!(deadlines.export >= asked + Duration::from_secs(18));
-    assert!(deadlines.export <= answered + Duration::from_secs(18));
-    assert_eq!(deadlines.removal - deadlines.export, Duration::from_secs(6));
+    assert!(export >= asked + Duration::from_secs(18));
+    assert!(export <= answered + Duration::from_secs(18));
     assert!(ended.kept.is_empty());
 }
 
@@ -477,7 +475,7 @@ async fn a_restart_finalises_the_running_container_with_the_settings_it_ran_with
             (runs[1].clone(), record(NEW))
         ]
     );
-    assert_eq!(world.finalizations(), runs, "no job end took them");
+    assert_eq!(world.exports(), runs, "no job end took them");
 }
 
 #[tokio::test(flavor = "current_thread")]

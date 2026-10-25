@@ -76,6 +76,63 @@ pub fn report(log: &dyn Log, record: &DiagnosticRecord, name: &str, finalized: &
     }
 }
 
+/// Finalises a claimed diagnostic container with its record: exports it, unless a
+/// bundle was already admitted for it, by `deadlines.export`, then removes it
+/// whatever the export did, by `deadlines.removal`. A forced stop, asked for
+/// through [`Retained::force`](super::retained::Retained::force), ends the export
+/// and keeps the container.
+pub async fn finalize<B: Backend>(
+    backend: &B,
+    claim: &Claim<'_>,
+    deadlines: Deadlines,
+) -> Finalized {
+    let mut forced = backend.retained().forced();
+    let mut finalized = Finalized {
+        export: ExportOutcome::AlreadyExported,
+        removed: false,
+        kept: false,
+        bundles: None,
+    };
+    if !claim.exported() {
+        if Instant::now() >= deadlines.export {
+            finalized.export = ExportOutcome::Skipped;
+        } else {
+            let exported = tokio::select! {
+                biased;
+                _ = forced.wait_for(|forced| *forced) => None,
+                exported = backend.export_diagnostic(
+                    claim.name(),
+                    claim.record(),
+                    deadlines.export,
+                ) => Some(exported),
+            };
+            let Some(exported) = exported else {
+                finalized.kept = true;
+                return finalized;
+            };
+            if exported.admitted {
+                claim.mark_exported();
+            }
+            finalized.export = exported.outcome;
+            finalized.bundles = exported.bundles;
+        }
+    }
+    if *forced.borrow() {
+        finalized.kept = true;
+        return finalized;
+    }
+    let budget = deadlines.removal.saturating_duration_since(Instant::now());
+    if backend
+        .remove_containers(&[claim.name().to_string()], budget)
+        .await
+        .is_ok()
+    {
+        claim.removed();
+        finalized.removed = true;
+    }
+    finalized
+}
+
 /// Finalises a container whose job ended at `ended`, unless another path holds it.
 pub async fn finalize_at_job_end<B: Backend>(
     backend: &B,
@@ -86,9 +143,7 @@ pub async fn finalize_at_job_end<B: Backend>(
     let Some(claim) = backend.retained().claim(name) else {
         return;
     };
-    let finalized = backend
-        .finalize_diagnostic(&claim, Deadlines::from(ended))
-        .await;
+    let finalized = finalize(backend, &claim, Deadlines::from(ended)).await;
     report(log, claim.record(), name, &finalized);
 }
 
@@ -168,7 +223,7 @@ pub async fn finalize_claimed<B: Backend>(
     let finalized = join_all(
         claims
             .iter()
-            .map(|claim| backend.finalize_diagnostic(claim, deadlines))
+            .map(|claim| finalize(backend, claim, deadlines))
             .collect(),
     )
     .await;

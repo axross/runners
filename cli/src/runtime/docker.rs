@@ -32,8 +32,8 @@ use crate::image::check::{
 use crate::validate::PlannedVolume;
 
 use super::backend::{
-    Backend, BackendError, ContainerSpec, CpuRequest, Deadlines, DiagnosticRecord, ExportOutcome,
-    Finalized, PoolContainers, StopRequest,
+    Backend, BackendError, ContainerSpec, CpuRequest, DiagnosticRecord, ExportOutcome, Exported,
+    PoolContainers, StopRequest,
 };
 use super::clock::Clock;
 use super::docker_args::{
@@ -43,7 +43,7 @@ use super::docker_args::{
     volume_create_arguments,
 };
 use super::log::Log;
-use super::retained::{Claim, Retained};
+use super::retained::Retained;
 use super::scrub::scrub_error_text;
 use super::secret::Secret;
 
@@ -460,23 +460,6 @@ impl<C: Clock> DockerBackend<C> {
     }
 }
 
-/// What one run of the exporter child did.
-struct Exported {
-    outcome: ExportOutcome,
-    /// The child created a bundle.
-    admitted: bool,
-    /// The pool's bundles in the sink, as the child counted them.
-    bundles: Option<u32>,
-}
-
-impl Exported {
-    const FAILED: Self = Self {
-        outcome: ExportOutcome::Failed,
-        admitted: false,
-        bundles: None,
-    };
-}
-
 impl<C: Clock> DockerBackend<C> {
     fn admission(&self, record: &DiagnosticRecord) -> Admission {
         self.admissions
@@ -572,30 +555,6 @@ impl<C: Clock> DockerBackend<C> {
             admitted: admitted.get(),
             bundles: bundles.get(),
         }
-    }
-
-    /// Exports the container into its record's sink by `deadline`, once this pool
-    /// and sink's admission lock is free; an export that cannot take it by then
-    /// fails.
-    async fn export(
-        &self,
-        name: &str,
-        record: &DiagnosticRecord,
-        deadline: tokio::time::Instant,
-    ) -> Exported {
-        let lock = self.admission(record);
-        let Ok(admission) = tokio::time::timeout_at(deadline, lock.lock()).await else {
-            return Exported::FAILED;
-        };
-        let request = ExportRequest {
-            pool: record.pool.clone(),
-            container: Some(name.to_string()),
-            directory: record.directory.clone(),
-            raw_records: record.raw_records,
-            checkout: self.config.checkout.clone(),
-            deadline: deadline.saturating_duration_since(tokio::time::Instant::now()),
-        };
-        self.run_exporter(&request, deadline, Some(admission)).await
     }
 }
 
@@ -885,52 +844,28 @@ impl<C: Clock> Backend for DockerBackend<C> {
         &self.retained
     }
 
-    async fn finalize_diagnostic(&self, claim: &Claim<'_>, deadlines: Deadlines) -> Finalized {
-        let mut forced = self.retained.forced();
-        let mut finalized = Finalized {
-            export: ExportOutcome::AlreadyExported,
-            removed: false,
-            kept: false,
-            bundles: None,
+    /// Exports the container into its record's sink by `deadline`, once this pool
+    /// and sink's admission lock is free; an export that cannot take it by then
+    /// fails.
+    async fn export_diagnostic(
+        &self,
+        name: &str,
+        record: &DiagnosticRecord,
+        deadline: tokio::time::Instant,
+    ) -> Exported {
+        let lock = self.admission(record);
+        let Ok(admission) = tokio::time::timeout_at(deadline, lock.lock()).await else {
+            return Exported::FAILED;
         };
-        if !claim.exported() {
-            if tokio::time::Instant::now() >= deadlines.export {
-                finalized.export = ExportOutcome::Skipped;
-            } else {
-                let exported = tokio::select! {
-                    biased;
-                    _ = forced.wait_for(|forced| *forced) => None,
-                    exported = self.export(claim.name(), claim.record(), deadlines.export) => {
-                        Some(exported)
-                    }
-                };
-                let Some(exported) = exported else {
-                    finalized.kept = true;
-                    return finalized;
-                };
-                if exported.admitted {
-                    claim.mark_exported();
-                }
-                finalized.export = exported.outcome;
-                finalized.bundles = exported.bundles;
-            }
-        }
-        if *forced.borrow() {
-            finalized.kept = true;
-            return finalized;
-        }
-        let budget = deadlines
-            .removal
-            .saturating_duration_since(tokio::time::Instant::now());
-        if self
-            .remove_containers(&[claim.name().to_string()], budget)
-            .await
-            .is_ok()
-        {
-            claim.removed();
-            finalized.removed = true;
-        }
-        finalized
+        let request = ExportRequest {
+            pool: record.pool.clone(),
+            container: Some(name.to_string()),
+            directory: record.directory.clone(),
+            raw_records: record.raw_records,
+            checkout: self.config.checkout.clone(),
+            deadline: deadline.saturating_duration_since(tokio::time::Instant::now()),
+        };
+        self.run_exporter(&request, deadline, Some(admission)).await
     }
 
     async fn count_bundles(

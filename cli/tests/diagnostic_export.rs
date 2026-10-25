@@ -22,6 +22,7 @@ use runners_cli::diagnostics::identity::IDENTITY_HEADER;
 use runners_cli::runtime::backend::{
     Backend, Deadlines, DiagnosticRecord, ExportOutcome, Finalized,
 };
+use runners_cli::runtime::diagnostic;
 use support::docker::{FAKE_DOCKER, Fake, Invocation};
 use support::{BINARY, TempDir};
 use tokio::time::Instant;
@@ -85,9 +86,7 @@ async fn finalize(fake: &Fake, record: &DiagnosticRecord, name: &str) -> Finaliz
         retained.adopt(name, record);
     }
     let claim = retained.claim(name).unwrap();
-    fake.backend
-        .finalize_diagnostic(&claim, Deadlines::from(Instant::now()))
-        .await
+    diagnostic::finalize(&fake.backend, &claim, Deadlines::from(Instant::now())).await
 }
 
 /// The pool's bundles in the sink, sorted.
@@ -439,8 +438,8 @@ async fn an_eleventh_bundle_is_refused_with_two_slots_exporting_at_once() {
     );
     let deadlines = Deadlines::from(Instant::now());
     let (one, two) = tokio::join!(
-        fake.backend.finalize_diagnostic(&first, deadlines),
-        fake.backend.finalize_diagnostic(&second, deadlines)
+        diagnostic::finalize(&fake.backend, &first, deadlines),
+        diagnostic::finalize(&fake.backend, &second, deadlines)
     );
     let mut outcomes = [one.export, two.export];
     outcomes.sort_by_key(|outcome| format!("{outcome:?}"));

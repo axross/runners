@@ -16,13 +16,13 @@ use crate::image::contract::CONTRACT_VERSION;
 use crate::validate::PlannedVolume;
 
 use super::backend::{
-    Backend, BackendError, ContainerSpec, CpuRequest, Deadlines, DiagnosticRecord, ExportOutcome,
-    Finalized, PoolContainers, StopRequest,
+    Backend, BackendError, ContainerSpec, CpuRequest, DiagnosticRecord, ExportOutcome, Exported,
+    PoolContainers, StopRequest,
 };
 use super::clock::Clock;
 use super::log::{Log, Masks};
 use super::registration::{JitRequest, Registrar, RegistrationError};
-use super::retained::{Claim, Retained};
+use super::retained::Retained;
 use super::secret::Secret;
 
 /// One call a [`FakeBackend`] received.
@@ -39,8 +39,8 @@ pub enum Call {
     RunContainer(ContainerSpec),
     StopContainers(StopRequest),
     KillContainers(Vec<String>),
-    /// A finalisation began, with the deadlines it was given.
-    FinalizeDiagnostic(String, Deadlines),
+    /// An export began, with the deadline it was given.
+    ExportDiagnostic(String, tokio::time::Instant),
     CountBundles(String),
 }
 
@@ -83,7 +83,7 @@ pub struct FakeState {
     /// The answers to `check_image`; when they run out, every check matches, with
     /// [`matching_labels`] as the image's labels.
     pub image_answers: VecDeque<ImageCheck>,
-    /// The outcomes of the exports `finalize_diagnostic` runs; when they run out,
+    /// The outcomes of the exports `export_diagnostic` runs; when they run out,
     /// every export is complete. A complete export or one with a gap admits a
     /// bundle.
     pub export_results: VecDeque<ExportOutcome>,
@@ -287,63 +287,40 @@ impl Backend for FakeBackend {
         &self.retained
     }
 
-    async fn finalize_diagnostic(&self, claim: &Claim<'_>, deadlines: Deadlines) -> Finalized {
-        let name = claim.name().to_string();
-        self.state
-            .borrow_mut()
-            .calls
-            .push(Call::FinalizeDiagnostic(name.clone(), deadlines));
-        let mut forced = self.retained.forced();
-        let mut finalized = Finalized {
-            export: ExportOutcome::AlreadyExported,
-            removed: false,
-            kept: false,
-            bundles: None,
-        };
-        if !claim.exported() {
-            let (hook, gate) = {
-                let mut state = self.state.borrow_mut();
-                (state.on_export.take(), state.export_gate.clone())
-            };
-            if let Some(mut hook) = hook {
-                hook();
-                self.state.borrow_mut().on_export = Some(hook);
-            }
-            if let Some(gate) = gate {
-                tokio::select! {
-                    biased;
-                    _ = forced.wait_for(|forced| *forced) => {
-                        finalized.kept = true;
-                        return finalized;
-                    }
-                    () = gate.notified() => {}
-                }
-            }
+    async fn export_diagnostic(
+        &self,
+        name: &str,
+        record: &DiagnosticRecord,
+        deadline: tokio::time::Instant,
+    ) -> Exported {
+        let (hook, gate) = {
             let mut state = self.state.borrow_mut();
-            let outcome = state
-                .export_results
-                .pop_front()
-                .unwrap_or(ExportOutcome::Complete);
-            if matches!(outcome, ExportOutcome::Complete | ExportOutcome::Gap) {
-                claim.mark_exported();
-                state.bundles.push((name.clone(), claim.record().clone()));
-            }
-            finalized.export = outcome;
-            finalized.bundles = Some(bundles_of(&state, &claim.record().pool));
+            state
+                .calls
+                .push(Call::ExportDiagnostic(name.to_string(), deadline));
+            (state.on_export.take(), state.export_gate.clone())
+        };
+        if let Some(mut hook) = hook {
+            hook();
+            self.state.borrow_mut().on_export = Some(hook);
         }
-        if *forced.borrow() {
-            finalized.kept = true;
-            return finalized;
+        if let Some(gate) = gate {
+            gate.notified().await;
         }
-        if self
-            .remove_containers(std::slice::from_ref(&name), Duration::ZERO)
-            .await
-            .is_ok()
-        {
-            claim.removed();
-            finalized.removed = true;
+        let mut state = self.state.borrow_mut();
+        let outcome = state
+            .export_results
+            .pop_front()
+            .unwrap_or(ExportOutcome::Complete);
+        let admitted = matches!(outcome, ExportOutcome::Complete | ExportOutcome::Gap);
+        if admitted {
+            state.bundles.push((name.to_string(), record.clone()));
         }
-        finalized
+        Exported {
+            outcome,
+            admitted,
+            bundles: Some(bundles_of(&state, &record.pool)),
+        }
     }
 
     async fn count_bundles(

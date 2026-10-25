@@ -435,7 +435,7 @@ async fn a_labelled_container_of_a_diagnostics_pool_is_exported_and_removed_at_s
         .filter(|call| {
             matches!(
                 call,
-                Call::StopContainers(_) | Call::FinalizeDiagnostic(..) | Call::RemoveContainers(_)
+                Call::StopContainers(_) | Call::ExportDiagnostic(..) | Call::RemoveContainers(_)
             )
         })
         .collect();
@@ -446,7 +446,7 @@ async fn a_labelled_container_of_a_diagnostics_pool_is_exported_and_removed_at_s
     assert_eq!(stop.names, std::slice::from_ref(&evidence));
     assert_eq!(stop.grace, Duration::from_secs(10));
     assert!(stop.budget <= Duration::from_secs(12), "{stop:?}");
-    assert!(matches!(diagnostic[1], Call::FinalizeDiagnostic(name, _) if name == &evidence));
+    assert!(matches!(diagnostic[1], Call::ExportDiagnostic(name, _) if name == &evidence));
     assert_eq!(
         diagnostic[2],
         &Call::RemoveContainers(vec![evidence.clone()])
@@ -485,7 +485,7 @@ async fn a_container_the_backend_retains_keeps_its_record_through_a_preparation(
     assert!(
         !calls.iter().any(|call| matches!(
             call,
-            Call::StopContainers(_) | Call::FinalizeDiagnostic(..) | Call::RemoveContainers(_)
+            Call::StopContainers(_) | Call::ExportDiagnostic(..) | Call::RemoveContainers(_)
         )),
         "{calls:?}"
     );

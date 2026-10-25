@@ -241,8 +241,10 @@ containers and remove containers; prepare volumes; choose a slot's CPUs; run a
 container under the run contract and report its exit code; name the containers it
 has started and not seen end; stop, end, or remove a set of containers within a
 budget; and, for a diagnostics-enabled pool, retain each diagnostic container it
-starts with the settings it ran with, finalise one under a clock, and count a pool's
-bundles in its sink, as [Diagnostics](#diagnostics) describes. The JIT
+starts with the settings it ran with, export one by a deadline, and count a pool's
+bundles in its sink, as [Diagnostics](#diagnostics) describes. The runtime's own
+finalisation, the same for every backend, decides whether to export and removes
+the container after it. The JIT
 configuration reaches the backend as a `Secret`, whose `Debug` form is redacted and
 which has no `Display`. The container backend passes it as an environment variable
 by name; a later backend that runs the containers in a virtual machine can pass it
@@ -1090,8 +1092,8 @@ and `cp` with a scripted archive or a stall, and stand in for the exporter child
   bundle refused with two exports at once, the startup finalisation, and in real
   time a stalled copy, a stalled copy and removal, an overrunning child, and a
   closed liveness pipe, each ending at its deadline with its clients;
-- `diagnostic_ownership.rs` drives the instance, the runtime core, and the fake
-  backend on the system clock: a stop and a `restart` during a job-end export, a
+- `diagnostic_ownership.rs` drives the instance, the runtime core, and the
+  finalisation every backend shares, over the fake backend on the system clock: a stop and a `restart` during a job-end export, a
   stop during a startup export, a panic during a job-end export, `diagnostics` skipping a held container, a resume after a failed
   removal, a container the stop's `docker stop` ends, a `restart` and a core failure
   after the configuration changed, a forced stop, and the `diagnostics` answers and
