@@ -127,8 +127,9 @@ async fn back_off<K: Clock>(
 /// Each attempt checks the image, then probes the CPUs, then registers, then runs
 /// the container. An image that cannot run jobs, a Docker that does not answer the
 /// check, a failed probe or registration, or a non-zero exit, waits out the
-/// backoff; an exit of 0 starts the replacement at once. The slot's state goes on `board`, and the token
-/// it reads and the JIT configuration it holds are masked in `log`.
+/// backoff; an exit of 0 starts the replacement at once. The slot's state goes on
+/// `board`, and the token it reads and the JIT configuration it holds are masked in
+/// `log`.
 pub async fn run_slot<B: Backend, K: Clock, R: Registrar>(
     slot: &SlotSpec,
     backend: &B,

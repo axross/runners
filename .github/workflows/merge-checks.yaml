@@ -109,8 +109,9 @@ jobs:
       # the GitHub API base address, the instance's roots and the image definition
       # `build` sends can move only in a debug build, for the tests. the plain test
       # run above is a debug build, so this step builds the same tests in the
-      # release profile and shows that none of them moves. RUNNERS_EXPECT_RELEASE makes each test fail if it was built
-      # in the wrong profile, so a mistake in this step cannot pass quietly.
+      # release profile and shows that none of them moves. RUNNERS_EXPECT_RELEASE
+      # makes each test fail if it was built in the wrong profile, so a mistake in
+      # this step cannot pass quietly.
       - name: Test That A Release Build Ignores The Debug-Only Overrides
         if: runner.os == 'Linux'
         env:

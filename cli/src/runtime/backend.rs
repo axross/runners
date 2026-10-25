@@ -3,8 +3,9 @@
 //! The runtime asks a backend to wait until it is available, read the configured
 //! image's labels, list and remove a pool's leftover containers, prepare volumes,
 //! choose a slot's CPUs, run a container under the run contract and report its
-//! exit, and stop or remove a set of containers within a budget. The container backend runs `docker`; a later
-//! backend can run the same containers inside a virtual machine.
+//! exit, and stop or remove a set of containers within a budget. The container
+//! backend runs `docker`; a later backend can run the same containers inside a
+//! virtual machine.
 
 use std::fmt;
 use std::future::Future;

@@ -177,7 +177,8 @@ async fn the_freshness_warnings_are_logged_at_each_run_of_the_core_and_not_at_jo
             state.exits.push_back(Ok(0));
         }
         rig.run(&core).await.unwrap();
-        // the run's check, then one per job launch: three
+        // the run's check, then one per job launch: the two scripted exits and the
+        // launch that finds them run out
         assert_eq!(rig.image_checks(), run * 4);
         assert_eq!(rig.freshness_warnings(), run * 2, "{:#?}", rig.log.lines());
     }
