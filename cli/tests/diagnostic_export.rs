@@ -105,16 +105,6 @@ fn bundles(sink: &Path) -> Vec<PathBuf> {
     found
 }
 
-/// The names of a bundle's files, sorted.
-fn files(bundle: &Path) -> Vec<String> {
-    let mut names: Vec<String> = fs::read_dir(bundle)
-        .unwrap()
-        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-        .collect();
-    names.sort();
-    names
-}
-
 fn calls_of<'a>(invocations: &'a [Invocation], command: &str) -> Vec<&'a Invocation> {
     invocations
         .iter()
@@ -179,7 +169,7 @@ async fn an_ended_container_yields_one_complete_bundle_and_is_removed() {
         "{suffix}"
     );
     assert_eq!(
-        files(bundle),
+        support::files(bundle),
         ["complete.txt", "identity.txt", "metrics.txt"]
     );
     assert_eq!(
@@ -197,7 +187,7 @@ async fn an_ended_container_yields_one_complete_bundle_and_is_removed() {
     #[cfg(unix)]
     {
         assert_eq!(mode(bundle), 0o700);
-        for file in files(bundle) {
+        for file in support::files(bundle) {
             assert_eq!(mode(&bundle.join(&file)), 0o600, "{file}");
         }
     }
@@ -237,7 +227,7 @@ async fn raw_records_are_written_only_when_the_record_turns_them_on() {
     );
     let first = bundles(&sink).remove(0);
     assert_eq!(
-        files(&first),
+        support::files(&first),
         ["complete.txt", "identity.txt", "metrics.txt", "raw-1.log"]
     );
     assert_eq!(
@@ -254,7 +244,7 @@ async fn raw_records_are_written_only_when_the_record_turns_them_on() {
         .into_iter()
         .find(|bundle| bundle != &first)
         .unwrap();
-    assert_eq!(files(&partial), ["identity.txt", "metrics.txt"]);
+    assert_eq!(support::files(&partial), ["identity.txt", "metrics.txt"]);
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -274,7 +264,7 @@ async fn a_gap_is_a_complete_bundle_without_the_final_observation() {
     );
     let bundle = &bundles(&sink)[0];
     assert_eq!(
-        files(bundle),
+        support::files(bundle),
         ["complete.txt", "identity.txt", "metrics.txt"]
     );
     assert_eq!(
@@ -327,7 +317,7 @@ async fn the_container_is_removed_whatever_the_export_does() {
                 let found = bundles(&sink);
                 assert_eq!(found.len(), 1, "{case}: the partial bundle stays");
                 assert!(
-                    !files(&found[0]).contains(&"complete.txt".to_string()),
+                    !support::files(&found[0]).contains(&"complete.txt".to_string()),
                     "{case}"
                 );
             }
@@ -364,7 +354,11 @@ async fn the_identity_readback_gives_the_powershell_outcomes() {
         } else {
             assert_eq!(finalized.export, ExportOutcome::Failed, "{mode}");
             assert!(finalized.removed, "{mode}");
-            assert!(files(bundle).is_empty(), "{mode}: {:?}", files(bundle));
+            assert!(
+                support::files(bundle).is_empty(),
+                "{mode}: {:?}",
+                support::files(bundle)
+            );
             assert!(
                 calls_of(&fake.invocations(), "cp").is_empty(),
                 "{mode}: nothing is copied without an identity"
@@ -506,7 +500,7 @@ async fn a_stalled_copy_ends_the_export_by_18_seconds_and_its_client_with_it() {
         "the copy client outlived its export"
     );
     let bundle = &bundles(&sink)[0];
-    assert!(!files(bundle).contains(&"complete.txt".to_string()));
+    assert!(!support::files(bundle).contains(&"complete.txt".to_string()));
 }
 
 /// A copy and a removal that never end: the finalisation ends by 24 s, and every
@@ -662,7 +656,7 @@ async fn at_startup_a_labelled_container_of_a_diagnostics_pool_is_stopped_export
     .unwrap();
     assert_eq!(prepared.len(), 1, "the pool starts");
     assert!(fake.containers().is_empty());
-    assert_eq!(files(&bundles(&sink)[0]).len(), 3);
+    assert_eq!(support::files(&bundles(&sink)[0]).len(), 3);
     let invocations = fake.invocations();
     let commands: Vec<&str> = invocations
         .iter()

@@ -69,15 +69,6 @@ fn bundles(sink: &Path) -> Vec<PathBuf> {
     found
 }
 
-fn files(bundle: &Path) -> Vec<String> {
-    let mut names: Vec<String> = fs::read_dir(bundle)
-        .unwrap()
-        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-        .collect();
-    names.sort();
-    names
-}
-
 /// Waits within `within` until `condition` holds.
 fn wait_until(what: &str, within: Duration, mut condition: impl FnMut() -> bool) {
     let started = Instant::now();
@@ -143,7 +134,7 @@ fn a_finished_diagnostic_job_leaves_a_complete_bundle_and_no_container() {
     });
     let bundle = &bundles(&sink)[0];
     assert_eq!(
-        files(bundle),
+        support::files(bundle),
         ["complete.txt", "identity.txt", "metrics.txt"]
     );
     assert_eq!(
@@ -218,7 +209,7 @@ fn the_token_and_jit_configuration_reach_no_bundle_terminal_log_or_answer() {
     seen.push(finished.stderr);
     seen.push(log_text(&host));
     for bundle in bundles(&sink) {
-        for file in files(&bundle) {
+        for file in support::files(&bundle) {
             seen.push(String::from_utf8_lossy(&fs::read(bundle.join(file)).unwrap()).into_owned());
         }
     }
@@ -358,7 +349,7 @@ mod signals {
         let found = bundles(&sink);
         assert_eq!(found.len(), 1);
         assert_eq!(
-            files(&found[0]),
+            support::files(&found[0]),
             ["complete.txt", "identity.txt", "metrics.txt"]
         );
         assert!(job_containers(&host).is_empty());
