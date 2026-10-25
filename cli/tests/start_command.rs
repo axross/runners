@@ -245,6 +245,26 @@ fn at_most_ten_log_files_are_kept() {
 }
 
 #[test]
+fn a_start_right_after_a_successful_stop_finds_the_lock_free() {
+    let host = Host::new();
+    let stub = Stub::start(vec![registered()]);
+    let started = running(&host, &stub);
+    assert_eq!(host.client(&["stop"]).status.code(), Some(0));
+    let invalid = host.root.write("invalid.json", b"{}");
+    let next = host
+        .command(&["start", "--profile", "axpc", "--config"])
+        .arg(&invalid)
+        .output()
+        .unwrap();
+    let (_, stderr) = texts(&next);
+    assert!(stderr.contains("Invalid host configuration"), "{stderr}");
+    assert_eq!(
+        started.finish(Duration::from_secs(5)).status.code(),
+        Some(0)
+    );
+}
+
+#[test]
 fn a_second_start_on_a_running_instance_exits_1_naming_its_state_and_runs_nothing() {
     let host = Host::new();
     let stub = Stub::start(vec![registered()]);

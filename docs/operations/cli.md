@@ -654,9 +654,10 @@ answer in time.
 - `restart` waits up to 35 s for the instance to run its container steps, read its
   file again, and answer. An invalid file leaves the instance stopped, and
   `restart` exits 1. It is refused while the instance is stopping or resuming.
-- `stop` asks the instance to stop, then asks for its status about every 200 ms
-  until no instance answers, for up to 35 s. It exits 0 when the instance has gone
-  and 1 when it is still there.
+- `stop` asks the instance to stop, then checks about every 200 ms whether the
+  instance lock is free, by taking it and letting it go at once, until 35 s after
+  its request. It exits 0 once the lock is free, so a `start` right after it finds
+  the lock free, and 1 when the instance still holds it.
 
 ### Stopping
 

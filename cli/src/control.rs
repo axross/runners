@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 
 use crate::command::{EXIT_FAILED, EXIT_OK, print_error};
 use crate::instance::channel::{ClientError, exchange};
+use crate::instance::lock::{InstanceLock, LockError};
 use crate::instance::protocol::{Outcome, Request, Response};
 use crate::instance::roots::Roots;
 
@@ -17,10 +18,10 @@ const STATUS_ANSWER_WITHIN: Duration = Duration::from_secs(5);
 /// configuration again and answer.
 const RESTART_ANSWER_WITHIN: Duration = Duration::from_secs(35);
 
-/// How long `stop` waits for the instance to end.
+/// How long `stop` waits for the instance to end, counted from its request.
 const STOP_WAIT: Duration = Duration::from_secs(35);
 
-/// How often `stop` asks whether the instance is still there.
+/// How often `stop` checks whether the instance's lock is free.
 const STOP_POLL: Duration = Duration::from_millis(200);
 
 /// A client command.
@@ -85,8 +86,10 @@ fn print_status(response: &Response, out: &mut dyn Write, err: &mut dyn Write) -
     EXIT_OK
 }
 
-/// Asks the instance to stop, then waits up to [`STOP_WAIT`] for its channel to
-/// close, which it does as it ends.
+/// Asks the instance to stop, then waits until [`STOP_WAIT`] after the request for
+/// its lock to be free, which the operating system makes it as the process ends. It
+/// tells by taking the lock and letting it go at once, so a `start` right after a
+/// successful `stop` finds the lock free.
 fn stop(roots: &Roots, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
     let started = Instant::now();
     match exchange(roots, &Request::Stop, STATUS_ANSWER_WITHIN) {
@@ -95,23 +98,27 @@ fn stop(roots: &Roots, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
         Err(error) => return no_answer(err, &error),
     }
     let _ = writeln!(out, "Stopping the instance.");
-    while started.elapsed() < STOP_WAIT {
-        let left = STOP_WAIT.saturating_sub(started.elapsed());
-        if let Err(ClientError::NoInstance) =
-            exchange(roots, &Request::Status, left.min(STATUS_ANSWER_WITHIN))
-        {
-            let _ = writeln!(out, "The instance has stopped.");
-            return EXIT_OK;
+    loop {
+        match InstanceLock::acquire(roots) {
+            Ok(_free) => {
+                let _ = writeln!(out, "The instance has stopped.");
+                return EXIT_OK;
+            }
+            Err(LockError::Held) => {}
+            Err(error) => return print_error(err, &error),
         }
-        std::thread::sleep(STOP_POLL.min(STOP_WAIT.saturating_sub(started.elapsed())));
+        let left = STOP_WAIT.saturating_sub(started.elapsed());
+        if left.is_zero() {
+            return print_error(
+                err,
+                &format!(
+                    "the instance has not ended within {} s",
+                    STOP_WAIT.as_secs()
+                ),
+            );
+        }
+        std::thread::sleep(STOP_POLL.min(left));
     }
-    print_error(
-        err,
-        &format!(
-            "the instance has not ended within {} s",
-            STOP_WAIT.as_secs()
-        ),
-    )
 }
 
 #[cfg(test)]
