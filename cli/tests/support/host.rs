@@ -182,9 +182,10 @@ impl Host {
             .collect()
     }
 
-    /// Every call the fake `docker` recorded, as its arguments, in order.
-    pub fn invocations(&self) -> Vec<Vec<String>> {
-        let mut stems: Vec<PathBuf> = fs::read_dir(self.docker())
+    /// Every call the fake `docker` recorded, in order: the file it wrote the
+    /// arguments to, and the arguments.
+    fn calls(&self) -> Vec<(PathBuf, Vec<String>)> {
+        let mut files: Vec<PathBuf> = fs::read_dir(self.docker())
             .unwrap()
             .map(|entry| entry.unwrap().path())
             .filter(|path| {
@@ -192,42 +193,40 @@ impl Host {
                     .is_some_and(|extension| extension == "argv")
             })
             .collect();
-        stems.sort();
-        stems
-            .iter()
+        files.sort();
+        files
+            .into_iter()
             .map(|path| {
-                fs::read_to_string(path)
+                let words = fs::read_to_string(&path)
                     .unwrap()
                     .split('\0')
                     .map(str::to_string)
-                    .collect()
+                    .collect();
+                (path, words)
             })
             .collect()
     }
 
+    /// Every call the fake `docker` recorded, as its arguments, in order.
+    pub fn invocations(&self) -> Vec<Vec<String>> {
+        self.calls().into_iter().map(|(_, words)| words).collect()
+    }
+
     /// The process ID of the job container's `docker run` client, once it runs.
     pub fn job_client_pid(&self) -> u32 {
-        let mut stems: Vec<PathBuf> = fs::read_dir(self.docker())
-            .unwrap()
-            .map(|entry| entry.unwrap().path())
-            .filter(|path| {
-                path.extension()
-                    .is_some_and(|extension| extension == "argv")
+        let (argv, _) = self
+            .calls()
+            .into_iter()
+            .find(|(_, words)| {
+                words.first().map(String::as_str) == Some("run")
+                    && !words.iter().any(|word| word == "runners.cpu-probe=1")
             })
-            .collect();
-        stems.sort();
-        for argv in stems {
-            let text = fs::read_to_string(&argv).unwrap();
-            let words: Vec<&str> = text.split('\0').collect();
-            if words.first() == Some(&"run") && !words.contains(&"runners.cpu-probe=1") {
-                return fs::read_to_string(argv.with_extension("pid"))
-                    .unwrap()
-                    .trim()
-                    .parse()
-                    .unwrap();
-            }
-        }
-        panic!("no job container was run");
+            .expect("no job container was run");
+        fs::read_to_string(argv.with_extension("pid"))
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap()
     }
 
     /// Every log file `start` wrote.

@@ -7,7 +7,7 @@ use std::io::Write;
 use super::secret::Secret;
 
 /// What a masked secret becomes in a line.
-pub const MASK: &str = "<masked>";
+const MASK: &str = "<masked>";
 
 /// A sink for the lines the runtime reports. Callers never put a secret in a line on
 /// purpose; a sink also replaces every secret it was told to mask, so a secret that
@@ -71,7 +71,7 @@ impl Masks {
         piece.len() - split.unwrap_or(cut)
     }
 
-    /// `line` with every secret replaced by [`MASK`], the longest first, so a
+    /// `line` with every secret replaced by `<masked>`, the longest first, so a
     /// secret that holds a shorter one is still replaced whole.
     #[must_use]
     pub fn apply(&self, line: &str) -> String {

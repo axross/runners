@@ -45,10 +45,7 @@ const REMOVAL_FAILED: u8 = 1;
 /// `arguments`.
 #[must_use]
 pub fn run(name: &str, program: &OsStr, arguments: &[OsString]) -> ExitCode {
-    let runtime = match tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    {
+    let runtime = match crate::start::single_threaded_runtime() {
         Ok(runtime) => runtime,
         Err(error) => {
             println!("shim: the runtime cannot start: {error}");

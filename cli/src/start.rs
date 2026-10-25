@@ -121,10 +121,7 @@ pub fn start(request: &StartRequest<'_>, err: &mut dyn Write) -> u8 {
             return EXIT_FAILED;
         }
     };
-    let runtime = match tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    {
+    let runtime = match single_threaded_runtime() {
         Ok(runtime) => runtime,
         Err(error) => {
             log.warn(&format!("The async runtime cannot start: {error}"));
@@ -144,6 +141,12 @@ pub fn start(request: &StartRequest<'_>, err: &mut dyn Write) -> u8 {
         log,
     };
     runtime.block_on(run_instance(parts, plan))
+}
+
+pub(crate) fn single_threaded_runtime() -> io::Result<tokio::runtime::Runtime> {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
 }
 
 /// Asks this user's instance, which holds the lock, to resume with the same path
