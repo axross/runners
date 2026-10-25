@@ -1024,10 +1024,16 @@ Without `--container` it only counts the pool's bundles.
 - **Identity and archive.** The child writes `identity.txt` from the inspect
   allowlist under [Backend](#backend), its output capped at 1 KiB and required to
   match a fixed shape, as PowerShell's `Get-DiagnosticIdentity` does. It reads the
-  `docker cp` archive through the same strict ustar subset as `Get-DiagnosticTar`:
-  regular files only, named `metrics.txt` or `./metrics.txt`, and `raw-<n>.log`
-  only when raw records are on; no prefix field, link, special file, absolute or
-  `..` path, bad checksum, or duplicate; at most 132 headers; `metrics.txt` at most
+  `docker cp` archive through the same strict ustar subset as
+  `Copy-DiagnosticTar`. It accepts the collector's directory entry, named `./`,
+  `.`, or `runner-diagnostics/` with size 0, and regular files named `metrics.txt`
+  or, only when raw records are on, `raw-<n>.log` with `<n>` of one to three
+  digits. Either file name may follow `runner-diagnostics/`, and either of those
+  may follow `./`, so `metrics.txt`, `./metrics.txt`,
+  `runner-diagnostics/metrics.txt`, and `./runner-diagnostics/metrics.txt` are all
+  accepted. It refuses a prefix field, a link or special file, any other name, an
+  absolute or `..` path among them, a bad checksum, and a duplicate once those
+  prefixes are dropped. It reads at most 132 headers, with `metrics.txt` at most
   8 MiB, raw files 32 MiB together, and 40 MiB of payload in all, less 4 KiB kept
   for the bundle's own files. It writes `metrics.txt`, each accepted raw file, and
   `complete.txt` last, in PowerShell's formats. A `metrics.txt` without
