@@ -241,13 +241,20 @@ async fn run_instance(parts: Parts<'_>, plan: crate::validate::Plan) -> u8 {
                 request_stop(&sender);
                 force();
                 let stopped = tokio::time::timeout(CLOSE_REMOVE_BUDGET, &mut run).await;
-                stopped.unwrap_or(Ended { containers_removed: false, nothing_to_run: false })
+                stopped.unwrap_or(Ended {
+                    containers_removed: false,
+                    nothing_to_run: false,
+                    image_refused: false,
+                })
             }
         }
     };
     server.close(ANSWERS_WITHIN).await;
     if ended.nothing_to_run {
         log.warn("The instance ended because no pool could start.");
+        EXIT_FAILED
+    } else if ended.image_refused {
+        log.warn("The instance ended because its image cannot run jobs.");
         EXIT_FAILED
     } else if ended.containers_removed {
         log.info("The instance has stopped.");

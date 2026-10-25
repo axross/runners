@@ -222,7 +222,10 @@ fn a_run_keeps_the_token_and_the_jit_config_out_of_every_output_it_writes() {
         lines[4].starts_with("slot: r slot 1: running container r-1-"),
         "{status}"
     );
-    assert_eq!(lines[5], "image-age: not available until Phase 3");
+    assert_eq!(lines[5], "image: actions-runner:local");
+    assert_eq!(lines[6], "image-contract: 1");
+    assert_eq!(lines[7], "image-built: 0 days ago");
+    assert!(lines[8].starts_with("runner: 2."), "{status}");
 
     // the secrets did reach the places they belong
     let authorization = stub.requests()[0]

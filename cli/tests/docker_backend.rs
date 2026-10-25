@@ -101,6 +101,23 @@ fn probe_calls(probe: &str) -> Vec<Vec<String>> {
     ]
 }
 
+/// The image check a job launch runs first, written out here independently of the
+/// code under test.
+fn inspect_call(image: &str) -> Vec<String> {
+    let format = [
+        "com.github.axross.runners.contract",
+        "com.github.axross.runners.built",
+        "com.github.axross.runners.runner-version",
+        "com.github.axross.runners.runner-released",
+    ]
+    .map(|label| format!("{{{{json (index .Config.Labels \"{label}\")}}}}"))
+    .join(",");
+    let mut call = words("image inspect --format");
+    call.push(format!("[{format}]"));
+    call.push(image.to_string());
+    call
+}
+
 fn job_call(
     name: &str,
     cpus: &str,
@@ -244,6 +261,7 @@ async fn the_example_configuration_runs_the_powershell_contract() {
         ),
     ];
     for (pool, slot, stamp, cpus, cpuset, memory, mounts) in slots {
+        expected.push(inspect_call("actions-runner:local"));
         expected.extend(probe_calls(&format!("{pool}-cpu-probe-{slot}")));
         let refs: Vec<(&str, &str)> = mounts
             .iter()

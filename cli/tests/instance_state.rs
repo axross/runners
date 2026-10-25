@@ -392,7 +392,7 @@ async fn a_core_that_ends_without_a_stop_is_a_failure_that_restarts_it() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn status_shows_what_the_core_reports_and_the_image_age_placeholder() {
+async fn status_shows_what_the_core_reports() {
     let rig = Rig::new();
     *rig.core.report.borrow_mut() = vec![
         ("pool", "r: running".to_string()),
@@ -418,7 +418,6 @@ async fn status_shows_what_the_core_reports_and_the_image_age_placeholder() {
             ("profile", "axpc"),
             ("pool", "r: running"),
             ("slot", "r slot 1: running container r-1-x"),
-            ("image-age", "not available until Phase 3"),
         ]
     );
 }

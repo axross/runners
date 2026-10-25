@@ -199,7 +199,19 @@ pub async fn prepare_pools<B: Backend>(
     log: &dyn Log,
     board: &Board,
 ) -> Result<Vec<PoolSpec>, NoPoolStartable> {
-    let mut startable = Vec::new();
+    let admitted = admit_pools(pools, log, board);
+    if !admitted.is_empty() {
+        backend.wait_until_available().await;
+    }
+    prepare_admitted(backend, admitted, log, board).await
+}
+
+/// The first half of [`prepare_pools`], which needs no Docker: the pools whose
+/// token file reads and whose diagnostics are off, each now waiting for Docker.
+/// The others are skipped.
+#[must_use]
+pub fn admit_pools(pools: Vec<PoolSpec>, log: &dyn Log, board: &Board) -> Vec<PoolSpec> {
+    let mut admitted = Vec::new();
     for pool in pools {
         match read_token(&pool.token_path) {
             Err(error) => skip(log, board, &pool, &format!("{}: {error}.", pool.path)),
@@ -214,16 +226,28 @@ pub async fn prepare_pools<B: Backend>(
                     );
                 } else {
                     board.set_pool(&pool.name, PoolState::WaitingForDocker);
-                    startable.push(pool);
+                    admitted.push(pool);
                 }
             }
         }
     }
-    if !startable.is_empty() {
-        backend.wait_until_available().await;
-    }
+    admitted
+}
+
+/// The second half of [`prepare_pools`], once Docker answers: each admitted pool's
+/// stale containers are removed and its volumes prepared.
+///
+/// # Errors
+///
+/// Fails when no pool is left.
+pub async fn prepare_admitted<B: Backend>(
+    backend: &B,
+    admitted: Vec<PoolSpec>,
+    log: &dyn Log,
+    board: &Board,
+) -> Result<Vec<PoolSpec>, NoPoolStartable> {
     let mut prepared = Vec::new();
-    for pool in startable {
+    for pool in admitted {
         board.set_pool(&pool.name, PoolState::Preparing);
         let outcome = match clear_stale_containers(backend, &pool, log).await {
             Ok(()) => backend

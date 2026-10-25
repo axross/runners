@@ -31,9 +31,6 @@ use crate::validate::Plan;
 use super::protocol::{Incoming, Request, Response};
 use super::restart::{RestartPolicy, Verdict, WINDOW};
 
-/// What `status` shows for the image's age, which the image contract brings later.
-const IMAGE_AGE: &str = "not available until Phase 3";
-
 /// The times of the stop sequence, each counted from the step's own start except
 /// the last.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,6 +66,9 @@ pub enum StopReason {
     InvalidConfiguration(String),
     /// The runtime core failed more often than the window allows.
     RestartLimit,
+    /// The configured image's contract is not this CLI's, or the image is missing;
+    /// the text says which and how to rebuild it.
+    Image(String),
 }
 
 impl fmt::Display for StopReason {
@@ -83,6 +83,7 @@ impl fmt::Display for StopReason {
                 super::restart::DELAYS.len() + 1,
                 WINDOW.as_secs() / 60
             ),
+            Self::Image(reason) => f.write_str(reason),
         }
     }
 }
@@ -120,6 +121,10 @@ pub struct CoreFailure {
     /// No pool could start. At the instance's first run of the core this ends the
     /// instance; at a later run it is a failure like any other.
     pub nothing_to_run: bool,
+    /// The configured image cannot run jobs, as `message` says. At the instance's
+    /// first run of the core this ends the instance; at a later run it stops it.
+    /// Either way it is not counted as a failure.
+    pub image_refused: bool,
 }
 
 /// The part of `start` that runs the pools.
@@ -135,8 +140,14 @@ pub trait Core {
         stop: watch::Receiver<bool>,
     ) -> impl Future<Output = Result<(), CoreFailure>>;
 
+    /// Checks the image `plan` names once, without waiting for Docker, as a resume
+    /// does before it answers. Returns why the image cannot run jobs, or `Ok` when
+    /// it can or Docker could not say: the next run checks again once Docker
+    /// answers.
+    fn check_image(&self, plan: &Plan) -> impl Future<Output = Result<(), String>>;
+
     /// What the core is doing now, as `status` fields: each pool's and each slot's
-    /// state. A core that is not running reports nothing.
+    /// state, and the image's. A core that is not running reports nothing.
     fn report(&self) -> Vec<(&'static str, String)>;
 }
 
@@ -164,6 +175,9 @@ pub struct Ended {
     pub containers_removed: bool,
     /// Whether the instance ended because no pool could start at its first run.
     pub nothing_to_run: bool,
+    /// Whether the instance ended because its image could not run jobs at its first
+    /// run.
+    pub image_refused: bool,
 }
 
 enum Next {
@@ -176,6 +190,17 @@ enum CycleEnd {
     StopRequested,
     LimitReached,
     NothingToRun,
+    /// The image cannot run jobs, as the message says, at the first run of the core.
+    ImageRefusedAtStart(String),
+    /// The same at a later run.
+    ImageRefused(String),
+}
+
+/// What reading and checking the configuration again at a resume found.
+enum Reloaded {
+    Run(Plan),
+    Invalid(Vec<String>),
+    ImageRefused(String),
 }
 
 /// Polls the core and turns a panic into an error carrying the panic's message, so
@@ -220,6 +245,7 @@ pub struct Instance<'a, B, K, C, S> {
     containers_removed: Cell<bool>,
     core_has_run: Cell<bool>,
     nothing_to_run: Cell<bool>,
+    image_refused: Cell<bool>,
     force: watch::Sender<bool>,
 }
 
@@ -247,6 +273,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
             containers_removed: Cell::new(true),
             core_has_run: Cell::new(false),
             nothing_to_run: Cell::new(false),
+            image_refused: Cell::new(false),
             force: watch::Sender::new(false),
         }
     }
@@ -281,6 +308,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
                     return Ended {
                         containers_removed: self.containers_removed.get(),
                         nothing_to_run: self.nothing_to_run.get(),
+                        image_refused: self.image_refused.get(),
                     };
                 }
             };
@@ -303,7 +331,17 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
         for (name, value) in self.core.report() {
             response = response.with(name, &value);
         }
-        response.with("image-age", IMAGE_AGE)
+        response
+    }
+
+    /// The stop reason for an image that cannot run jobs: `build` is refused while
+    /// the instance exists, so the instance is stopped first.
+    fn image_reason(&self, refusal: &str) -> StopReason {
+        let config = &self.settings.config_path;
+        StopReason::Image(format!(
+            "{refusal}; run `runners stop`, then `runners build --config {config}`, \
+             then `runners start --config {config}`"
+        ))
     }
 
     fn refuse_busy(&self) -> Response {
@@ -332,6 +370,21 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
                         CycleEnd::NothingToRun => {
                             self.nothing_to_run.set(true);
                             Next::Exit
+                        }
+                        CycleEnd::ImageRefusedAtStart(refusal) => {
+                            let config = &self.settings.config_path;
+                            self.log.warn(&format!(
+                                "The instance ends: {refusal}. Run `runners build --config {config}`, \
+                                 then `runners start --config {config}`."
+                            ));
+                            self.image_refused.set(true);
+                            Next::Exit
+                        }
+                        CycleEnd::ImageRefused(refusal) => {
+                            let reason = self.image_reason(&refusal);
+                            self.log.warn(&format!("The instance is stopped: {reason}."));
+                            self.set_state(State::Stopped(reason));
+                            Next::Idle
                         }
                     };
                 }
@@ -439,34 +492,47 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
     }
 
     /// Reads and validates the instance's own configuration again, clearing the
-    /// core's failure count, and answers `reply` with the result.
+    /// core's failure count, checks its image, and answers `reply` with the result.
     async fn resume(&self, requests: &mut Requests, reply: oneshot::Sender<Response>) -> Next {
         self.policy.borrow_mut().clear();
         self.set_state(State::Resuming);
         self.log.info("Resuming: reading the configuration again.");
-        let loaded = self.serve(requests, true, self.source.load()).await;
-        let (next, response) = match loaded {
+        let reload = async {
+            let plan = match self.source.load().await {
+                Ok(plan) => plan,
+                Err(problems) => return Reloaded::Invalid(problems),
+            };
+            match self.core.check_image(&plan).await {
+                Ok(()) => Reloaded::Run(plan),
+                Err(refusal) => Reloaded::ImageRefused(refusal),
+            }
+        };
+        let (next, response) = match self.serve(requests, true, reload).await {
             None => (Next::Exit, Response::refused("the instance is stopping")),
-            Some(Ok(plan)) => {
+            Some(Reloaded::Run(plan)) => {
                 self.set_state(State::Running);
                 (
                     Next::Run(plan),
                     Response::ok("running").with("state", "running"),
                 )
             }
-            Some(Err(problems)) => {
-                let reason =
-                    StopReason::InvalidConfiguration(scrub_error_text(&problems.join("; "), ""));
-                self.log
-                    .warn(&format!("The instance is stopped: {reason}."));
-                let response = Response::refused(&format!("the instance stays stopped: {reason}"))
-                    .with("state", "stopped");
-                self.set_state(State::Stopped(reason));
-                (Next::Idle, response)
-            }
+            Some(Reloaded::Invalid(problems)) => self.stay_stopped(
+                StopReason::InvalidConfiguration(scrub_error_text(&problems.join("; "), "")),
+            ),
+            Some(Reloaded::ImageRefused(refusal)) => self.stay_stopped(self.image_reason(&refusal)),
         };
         let _ = reply.send(response);
         next
+    }
+
+    /// Leaves the instance stopped for `reason`, with the answer a resume gets.
+    fn stay_stopped(&self, reason: StopReason) -> (Next, Response) {
+        self.log
+            .warn(&format!("The instance is stopped: {reason}."));
+        let response = Response::refused(&format!("the instance stays stopped: {reason}"))
+            .with("state", "stopped");
+        self.set_state(State::Stopped(reason));
+        (Next::Idle, response)
     }
 
     /// Runs `work` while answering requests. With `abortable`, a `stop` ends the wait
@@ -525,6 +591,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
                     message: "the runtime core ended without being asked to".to_string(),
                     containers: Vec::new(),
                     nothing_to_run: false,
+                    image_refused: false,
                 },
                 // the panic unwound through the workers, so their containers are
                 // still recorded by the backend and nowhere else.
@@ -532,9 +599,18 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
                     message,
                     containers: self.backend.running_containers(),
                     nothing_to_run: false,
+                    image_refused: false,
                 },
             };
             let message = scrub_error_text(&failure.message, "");
+            if failure.image_refused {
+                self.container_steps(failure.containers).await;
+                return if first_run {
+                    CycleEnd::ImageRefusedAtStart(message)
+                } else {
+                    CycleEnd::ImageRefused(message)
+                };
+            }
             if failure.nothing_to_run && first_run {
                 self.log.warn(&message);
                 self.container_steps(failure.containers).await;

@@ -1,11 +1,15 @@
-//! What each pool and slot is doing now, for `status`.
+//! What each pool and slot is doing now, and what the latest image check found,
+//! for `status`.
 //!
-//! Pool preparation and the slot loops write their state here as they go, and the
-//! instance reads it when a client asks. A state names pools, slots, containers and
-//! reasons, never a token or a JIT configuration.
+//! Pool preparation, the image checks and the slot loops write their state here as
+//! they go, and the instance reads it when a client asks. A state names pools,
+//! slots, containers, images and reasons, never a token or a JIT configuration.
 
 use std::cell::RefCell;
 use std::fmt;
+use std::time::SystemTime;
+
+use crate::image::check::{ImageCheck, status_fields};
 
 /// Where a pool is.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,11 +52,20 @@ impl fmt::Display for SlotState {
     }
 }
 
-/// The pools in the order they were first reported, each with its slots.
+/// The configured image, and what its latest check found, if one answered.
+#[derive(Debug)]
+struct ImageRecord {
+    name: String,
+    check: Option<ImageCheck>,
+}
+
+/// The pools in the order they were first reported, each with its slots, and the
+/// image they run.
 #[derive(Debug, Default)]
 pub struct Board {
     pools: RefCell<Vec<(String, PoolState)>>,
     slots: RefCell<Vec<(String, SlotState)>>,
+    image: RefCell<Option<ImageRecord>>,
 }
 
 fn upsert<T>(entries: &RefCell<Vec<(String, T)>>, key: String, value: T) {
@@ -74,10 +87,46 @@ impl Board {
         upsert(&self.slots, slot.to_string(), state);
     }
 
-    /// Forgets every pool and slot, as when the runtime core ends.
+    /// Forgets every pool and slot, as when the runtime core ends. The image check
+    /// stays, as the latest one Docker answered.
     pub fn clear(&self) {
         self.pools.borrow_mut().clear();
         self.slots.borrow_mut().clear();
+    }
+
+    /// Names the image the pools run. A check of another image is forgotten.
+    pub fn expect_image(&self, image: &str) {
+        let mut record = self.image.borrow_mut();
+        if record.as_ref().is_none_or(|held| held.name != image) {
+            *record = Some(ImageRecord {
+                name: image.to_string(),
+                check: None,
+            });
+        }
+    }
+
+    /// Records what a check of `image` found. An unavailable Docker said nothing
+    /// about the image, so it leaves the latest answer in place.
+    pub fn record_image(&self, image: &str, check: &ImageCheck) {
+        self.expect_image(image);
+        if matches!(check, ImageCheck::Unavailable(_)) {
+            return;
+        }
+        if let Some(record) = self.image.borrow_mut().as_mut() {
+            record.check = Some(check.clone());
+        }
+    }
+
+    /// The `status` lines of the image, as of its latest check, its ages counted
+    /// to `now`; none before an image is named.
+    #[must_use]
+    pub fn image_fields(&self, now: SystemTime) -> Vec<(&'static str, String)> {
+        self.image
+            .borrow()
+            .as_ref()
+            .map_or_else(Vec::new, |record| {
+                status_fields(&record.name, record.check.as_ref(), now)
+            })
     }
 
     /// One `pool` field per pool and then one `slot` field per slot, each

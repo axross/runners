@@ -25,12 +25,32 @@
 //! bounded, so a test that fails does not leave the helper running. A `longline` job
 //! container prints one line of [`LONG_LINE_BYTES`] bytes, the letters `a` to `z` in
 //! turn, then exits as an ordinary job does.
+//!
+//! Images:
+//!
+//! - without an `images` file, every image exists, with this CLI's contract, the
+//!   runner the Dockerfile declares, and a build time of now;
+//! - an `images` file holds the fake engine's images instead, one
+//!   `reference<TAB>id<TAB>label<TAB>label...` per line, each label `key=value`,
+//!   which `image inspect`, `image ls`, `image rm`, `build` and `tag` read and
+//!   change;
+//! - `build` writes its standard input to `inv-<n>.stdin` and tags a new image
+//!   with its `--label`s;
+//! - the files `info_hangs`, `inspect_hangs`, `build_hangs`, `build_fails`,
+//!   `tag_hangs` (holding `after` to tag before it hangs), `tag_fails`,
+//!   `image_rm_fails`, `prune_hangs` and `prune_fails` change what those calls
+//!   do.
 
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use runners_cli::image::contract::{
+    BUILT_LABEL, CONTRACT_LABEL, CONTRACT_VERSION, RUNNER_RELEASED_LABEL, RUNNER_VERSION_LABEL,
+};
+use runners_cli::image::definition::DOCKERFILE;
 
 const JIT_VARIABLE: &str = "ACTIONS_RUNNER_INPUT_JITCONFIG";
 const PROBE_LABEL: &str = "runners.cpu-probe=1";
@@ -55,6 +75,12 @@ fn run() -> Result<u8, String> {
     let words: Vec<&str> = arguments.iter().map(String::as_str).collect();
     match words.as_slice() {
         ["info", ..] => info(&dir),
+        ["image", "inspect", "--format", format, reference] => inspect(&dir, format, reference),
+        ["image", "ls", rest @ ..] => list_images(&dir, rest),
+        ["image", "rm", references @ ..] => remove_images(&dir, references),
+        ["image", "prune", ..] => prune(&dir),
+        ["build", rest @ ..] => build(&dir, rest),
+        ["tag", source, target] => tag(&dir, source, target),
         ["ps", rest @ ..] => ps(&dir, rest),
         ["rm", "-f", names @ ..] => remove(&dir, names),
         ["stop", "--time", _, names @ ..] => stop(&dir, names),
@@ -121,6 +147,10 @@ fn failing(dir: &Path, flag: &str) -> u8 {
 }
 
 fn info(dir: &Path) -> Result<u8, String> {
+    if exists(dir, "info_hangs") {
+        sleep_while(|| true);
+        return Ok(1);
+    }
     let remaining: u32 = text(dir, "info_failures")
         .and_then(|text| text.parse().ok())
         .unwrap_or(0);
@@ -317,4 +347,282 @@ fn sleep_while(mut condition: impl FnMut() -> bool) {
     while condition() && started.elapsed() < LONGEST_WAIT {
         std::thread::sleep(Duration::from_millis(20));
     }
+}
+
+/// One fake image: a reference, the ID it names, and its labels.
+#[derive(Clone)]
+struct Image {
+    reference: String,
+    id: String,
+    labels: Vec<(String, String)>,
+}
+
+/// The value the Dockerfile declares for `label`.
+fn declared(label: &str) -> String {
+    let text = String::from_utf8_lossy(DOCKERFILE);
+    let needle = format!("{label}=\"");
+    text.split_once(&needle)
+        .and_then(|(_, rest)| rest.split_once('"'))
+        .map(|(value, _)| value.to_string())
+        .unwrap_or_default()
+}
+
+fn now_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs())
+}
+
+/// The image every reference names when there is no `images` file.
+fn default_image(reference: &str) -> Image {
+    Image {
+        reference: reference.to_string(),
+        id: "sha256:default".to_string(),
+        labels: vec![
+            (CONTRACT_LABEL.to_string(), CONTRACT_VERSION.to_string()),
+            (BUILT_LABEL.to_string(), now_seconds().to_string()),
+            (
+                RUNNER_VERSION_LABEL.to_string(),
+                declared(RUNNER_VERSION_LABEL),
+            ),
+            (
+                RUNNER_RELEASED_LABEL.to_string(),
+                declared(RUNNER_RELEASED_LABEL),
+            ),
+        ],
+    }
+}
+
+/// The images, or `None` when there is no `images` file and every image exists.
+fn load_images(dir: &Path) -> Option<Vec<Image>> {
+    let text = fs::read_to_string(dir.join("images")).ok()?;
+    Some(
+        text.lines()
+            .filter_map(|line| {
+                let mut fields = line.split('\t');
+                let reference = fields.next().filter(|reference| !reference.is_empty())?;
+                let id = fields.next().unwrap_or_default();
+                Some(Image {
+                    reference: reference.to_string(),
+                    id: id.to_string(),
+                    labels: fields
+                        .filter_map(|label| label.split_once('='))
+                        .map(|(key, value)| (key.to_string(), value.to_string()))
+                        .collect(),
+                })
+            })
+            .collect(),
+    )
+}
+
+fn save_images(dir: &Path, images: &[Image]) -> Result<(), String> {
+    let lines: Vec<String> = images
+        .iter()
+        .map(|image| {
+            let mut fields = vec![image.reference.clone(), image.id.clone()];
+            fields.extend(
+                image
+                    .labels
+                    .iter()
+                    .map(|(key, value)| format!("{key}={value}")),
+            );
+            fields.join("\t")
+        })
+        .collect();
+    fs::write(dir.join("images"), lines.join("\n")).map_err(|error| error.to_string())
+}
+
+fn find_image(dir: &Path, reference: &str) -> Option<Image> {
+    match load_images(dir) {
+        None => Some(default_image(reference)),
+        Some(images) => images
+            .into_iter()
+            .find(|image| image.reference == reference),
+    }
+}
+
+fn json_string(text: &str) -> String {
+    format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
+/// Prints the image's labels as the CLI's format asks: each
+/// `{{json (index .Config.Labels "<key>")}}` becomes the label's value as JSON, or
+/// `""` when the image has no such label.
+fn inspect(dir: &Path, format: &str, reference: &str) -> Result<u8, String> {
+    if exists(dir, "inspect_hangs") {
+        sleep_while(|| true);
+        return Ok(1);
+    }
+    let Some(image) = find_image(dir, reference) else {
+        let _ = writeln!(std::io::stderr(), "Error: No such image: {reference}");
+        return Ok(1);
+    };
+    let mut printed = String::new();
+    let mut rest = format;
+    let opening = "{{json (index .Config.Labels \"";
+    while let Some((before, after)) = rest.split_once(opening) {
+        let (key, after) = after
+            .split_once("\")}}")
+            .ok_or_else(|| format!("unexpected format: {format}"))?;
+        let value = image
+            .labels
+            .iter()
+            .find(|(have, _)| have == key)
+            .map_or("", |(_, value)| value.as_str());
+        printed.push_str(before);
+        printed.push_str(&json_string(value));
+        rest = after;
+    }
+    printed.push_str(rest);
+    if printed.contains("{{") {
+        return Err(format!("unexpected format: {format}"));
+    }
+    let _ = writeln!(std::io::stdout(), "{printed}");
+    Ok(0)
+}
+
+/// `image ls --quiet <reference>`, or `image ls` with `reference=` and `label=`
+/// filters, printing each matching reference.
+fn list_images(dir: &Path, arguments: &[&str]) -> Result<u8, String> {
+    let mut out = std::io::stdout();
+    if let ["--quiet", reference] = arguments {
+        if let Some(image) = find_image(dir, reference) {
+            let _ = writeln!(out, "{}", image.id);
+        }
+        return Ok(0);
+    }
+    let filters: Vec<&str> = arguments
+        .windows(2)
+        .filter(|pair| pair.first() == Some(&"--filter"))
+        .filter_map(|pair| pair.get(1).copied())
+        .collect();
+    for image in load_images(dir).unwrap_or_default() {
+        let matches = filters.iter().all(|filter| match filter.split_once('=') {
+            Some(("reference", pattern)) => match pattern.strip_suffix('*') {
+                Some(prefix) => image.reference.starts_with(prefix),
+                None => image.reference == pattern,
+            },
+            Some(("label", label)) => image
+                .labels
+                .iter()
+                .any(|(key, value)| format!("{key}={value}") == label),
+            _ => false,
+        });
+        if matches {
+            let _ = writeln!(out, "{}", image.reference);
+        }
+    }
+    Ok(0)
+}
+
+fn remove_images(dir: &Path, references: &[&str]) -> Result<u8, String> {
+    if exists(dir, "image_rm_fails") {
+        return Ok(1);
+    }
+    let images = load_images(dir).unwrap_or_default();
+    if references
+        .iter()
+        .any(|reference| !images.iter().any(|image| image.reference == *reference))
+    {
+        let _ = writeln!(std::io::stderr(), "Error: No such image");
+        return Ok(1);
+    }
+    let kept: Vec<Image> = images
+        .into_iter()
+        .filter(|image| !references.contains(&image.reference.as_str()))
+        .collect();
+    save_images(dir, &kept)?;
+    Ok(0)
+}
+
+fn prune(dir: &Path) -> Result<u8, String> {
+    if exists(dir, "prune_hangs") {
+        sleep_while(|| true);
+        return Ok(1);
+    }
+    Ok(failing(dir, "prune_fails"))
+}
+
+/// Reads the context from standard input into `inv-<n>.stdin`, then tags a new
+/// image with the build's labels.
+fn build(dir: &Path, arguments: &[&str]) -> Result<u8, String> {
+    let mut context = Vec::new();
+    std::io::Read::read_to_end(&mut std::io::stdin(), &mut context)
+        .map_err(|error| error.to_string())?;
+    let stem = latest_invocation(dir)?;
+    fs::write(stem.with_extension("stdin"), &context).map_err(|error| error.to_string())?;
+    let _ = writeln!(std::io::stdout(), "fake build output");
+    if exists(dir, "build_hangs") {
+        sleep_while(|| true);
+        return Ok(1);
+    }
+    if exists(dir, "build_fails") {
+        return Ok(1);
+    }
+    let tag = value_after(arguments, "--tag").ok_or("a build without --tag")?;
+    let labels = arguments
+        .windows(2)
+        .filter(|pair| pair.first() == Some(&"--label"))
+        .filter_map(|pair| pair.get(1).and_then(|label| label.split_once('=')))
+        .map(|(key, value)| (key.to_string(), value.to_string()))
+        .collect();
+    let id = format!(
+        "sha256:built-{}",
+        stem.file_name().unwrap_or_default().to_string_lossy()
+    );
+    let mut images = load_images(dir).unwrap_or_default();
+    images.retain(|image| image.reference != tag);
+    images.push(Image {
+        reference: tag.to_string(),
+        id,
+        labels,
+    });
+    save_images(dir, &images)?;
+    Ok(0)
+}
+
+/// The stem of the newest `inv-<n>` this call recorded.
+fn latest_invocation(dir: &Path) -> Result<PathBuf, String> {
+    let pid = std::process::id().to_string();
+    (0..100_000)
+        .map(|number| dir.join(format!("inv-{number:06}")))
+        .take_while(|stem| stem.with_extension("argv").exists())
+        .filter(|stem| {
+            fs::read_to_string(stem.with_extension("pid"))
+                .ok()
+                .as_deref()
+                == Some(pid.as_str())
+        })
+        .last()
+        .ok_or_else(|| "this call was not recorded".to_string())
+}
+
+fn tag(dir: &Path, source: &str, target: &str) -> Result<u8, String> {
+    let hangs = text(dir, "tag_hangs");
+    if hangs.as_deref() == Some("") {
+        sleep_while(|| true);
+        return Ok(1);
+    }
+    if exists(dir, "tag_fails") {
+        return Ok(1);
+    }
+    let mut images = load_images(dir).unwrap_or_default();
+    let Some(found) = images
+        .iter()
+        .find(|image| image.reference == source)
+        .cloned()
+    else {
+        let _ = writeln!(std::io::stderr(), "Error: No such image: {source}");
+        return Ok(1);
+    };
+    images.retain(|image| image.reference != target);
+    images.push(Image {
+        reference: target.to_string(),
+        ..found
+    });
+    save_images(dir, &images)?;
+    if hangs.is_some() {
+        sleep_while(|| true);
+    }
+    Ok(0)
 }
