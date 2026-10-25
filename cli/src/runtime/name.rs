@@ -60,6 +60,18 @@ pub(crate) fn civil_from_days(days: u64) -> (u64, u64, u64) {
     (year, month, day)
 }
 
+/// Converts a proleptic Gregorian date from 1970 on to days since 1970-01-01
+/// (Howard Hinnant's `days_from_civil`), the inverse of `civil_from_days`.
+pub(crate) fn days_from_civil(year: u64, month: u64, day: u64) -> u64 {
+    let year = if month <= 2 { year - 1 } else { year };
+    let era = year / 400;
+    let year_of_era = year - era * 400;
+    let month_index = if month > 2 { month - 3 } else { month + 9 };
+    let day_of_year = (153 * month_index + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    (era * 146_097 + day_of_era).saturating_sub(719_468)
+}
+
 /// Returns the name of a pool's CPU probe container for a slot.
 #[must_use]
 pub fn cpu_probe_name(pool: &str, slot: u32) -> String {

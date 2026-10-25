@@ -1,6 +1,7 @@
 //! The `docker` argument lists of `build`, and the temporary tag it builds under.
 
 use crate::image::contract::{BUILT_LABEL, IMAGE_LABEL, IMAGE_LABEL_VALUE};
+use crate::runtime::docker_args::strings;
 use crate::runtime::name::stamp;
 
 /// What every temporary tag's tag part starts with.
@@ -8,13 +9,6 @@ const TEMPORARY_TAG_PREFIX: &str = "runners-build-";
 
 /// The digits of a temporary tag's stamp, `yyyyMMddHHmmssfff`.
 const STAMP_DIGITS: usize = 17;
-
-fn strings(arguments: &[&str]) -> Vec<String> {
-    arguments
-        .iter()
-        .map(|argument| (*argument).to_string())
-        .collect()
-}
 
 fn image_label() -> String {
     format!("{IMAGE_LABEL}={IMAGE_LABEL_VALUE}")

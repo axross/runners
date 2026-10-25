@@ -105,7 +105,7 @@ pub fn job_run_arguments(spec: &ContainerSpec) -> Vec<String> {
     arguments
 }
 
-fn strings(arguments: &[&str]) -> Vec<String> {
+pub(crate) fn strings(arguments: &[&str]) -> Vec<String> {
     arguments
         .iter()
         .map(|argument| (*argument).to_string())
