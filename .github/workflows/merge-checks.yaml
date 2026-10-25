@@ -4,7 +4,7 @@ name: Merge Checks
 # host configuration, and Rust gates, run through the same mise task the README
 # documents, plus a build of the runner image that is never pushed, a run of the
 # host configuration test under Windows PowerShell 5.1, and the CLI's format,
-# lint, and tests on Linux, Windows, and macOS, with a real-Docker test and a
+# lint, and tests on Linux, Windows, and macOS, with real-Docker tests and a
 # release-profile test on Linux, an other-user lock test on Linux and macOS, and a
 # control-pipe security test on Windows. the CLI's advisory check needs the
 # network and runs in rust-advisories.yaml, which is not a required check. it runs
@@ -56,8 +56,8 @@ jobs:
 
   # the CLI on each operating system a runner host can be: format, lint, and tests.
   # the parity test needs PowerShell 7 and the pinned mise tools, so it runs in the
-  # check job on Linux only. two more steps run on Linux only: the release-profile
-  # tests of the debug-only overrides and the real-Docker test. no cache action:
+  # check job on Linux only. three more steps run on Linux only: the release-profile
+  # tests of the debug-only overrides and the two real-Docker tests. no cache action:
   # a cache would be a trust boundary for a job that builds code, and the build is
   # small.
   rust:
@@ -106,16 +106,16 @@ jobs:
           cargo build --locked --bin instance-helper
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ./tests/ci/control-pipe-security.ps1 -Helper target/debug/instance-helper.exe
-      # the GitHub API base address and the instance's roots can move only in a
-      # debug build, for the tests. the plain test run above is a debug build, so
-      # this step builds the same tests in the release profile and shows that
-      # neither moves. RUNNERS_EXPECT_RELEASE makes each test fail if it was built
+      # the GitHub API base address, the instance's roots and the image definition
+      # `build` sends can move only in a debug build, for the tests. the plain test
+      # run above is a debug build, so this step builds the same tests in the
+      # release profile and shows that none of them moves. RUNNERS_EXPECT_RELEASE makes each test fail if it was built
       # in the wrong profile, so a mistake in this step cannot pass quietly.
       - name: Test That A Release Build Ignores The Debug-Only Overrides
         if: runner.os == 'Linux'
         env:
           RUNNERS_EXPECT_RELEASE: "1"
-        run: cargo test --locked --release --test base_address --test instance_roots
+        run: cargo test --locked --release --test base_address --test instance_roots --test build_definition
       # the real-Docker test needs the runner image's base stage, which is digest
       # pinned, and a daemon: ubuntu-latest has one, and the Windows and macOS
       # hosted runners have no Linux daemon. a missing daemon or image fails the
@@ -129,6 +129,14 @@ jobs:
         env:
           RUNNERS_REAL_DOCKER_IMAGE: runners-docker-test:ci
         run: cargo test --locked --test real_docker -- --ignored
+      # `runners build` against the same daemon, with the debug-only test
+      # definition in tests/build-definition: the runner image's digest-pinned base
+      # and its contract labels, so the step shows the builder takes build's
+      # context and labels without building the whole image. a missing daemon fails
+      # the test, and the image it builds is removed and never pushed.
+      - name: Run Real Docker Build Test
+        if: runner.os == 'Linux'
+        run: cargo test --locked --test real_docker_build -- --ignored
 
   image:
     name: Build Runner Image

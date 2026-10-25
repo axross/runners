@@ -36,10 +36,10 @@
 //!   change;
 //! - `build` writes its standard input to `inv-<n>.stdin` and tags a new image
 //!   with its `--label`s;
-//! - the files `info_hangs`, `inspect_hangs`, `build_hangs`, `build_fails`,
-//!   `tag_hangs` (holding `after` to tag before it hangs), `tag_fails`,
-//!   `image_rm_fails`, `prune_hangs` and `prune_fails` change what those calls
-//!   do.
+//! - the files `info_hangs`, `inspect_hangs`, `build_hangs` (holding `tagged` to
+//!   tag before it hangs), `build_fails`, `tag_hangs` (holding `after` to tag
+//!   before it hangs), `tag_fails`, `image_rm_fails`, `prune_hangs` and
+//!   `prune_fails` change what those calls do.
 
 use std::fs;
 use std::io::Write;
@@ -552,7 +552,8 @@ fn build(dir: &Path, arguments: &[&str]) -> Result<u8, String> {
     let stem = latest_invocation(dir)?;
     fs::write(stem.with_extension("stdin"), &context).map_err(|error| error.to_string())?;
     let _ = writeln!(std::io::stdout(), "fake build output");
-    if exists(dir, "build_hangs") {
+    let hangs = text(dir, "build_hangs");
+    if hangs.as_deref() == Some("") {
         sleep_while(|| true);
         return Ok(1);
     }
@@ -578,6 +579,10 @@ fn build(dir: &Path, arguments: &[&str]) -> Result<u8, String> {
         labels,
     });
     save_images(dir, &images)?;
+    if hangs.is_some() {
+        sleep_while(|| true);
+        return Ok(1);
+    }
     Ok(0)
 }
 

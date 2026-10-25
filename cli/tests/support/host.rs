@@ -147,6 +147,14 @@ impl Host {
         self.start_with(&self.config, stub)
     }
 
+    /// Starts `runners <args>` on this host, such as a `build`, without waiting
+    /// for it.
+    pub fn spawn(&self, args: &[&str]) -> Started {
+        let mut command = self.command(args);
+        command.stdout(Stdio::piped()).stderr(Stdio::piped());
+        Started::spawn(command)
+    }
+
     /// Asks `status` until its output holds `needle`, and returns that output.
     pub fn wait_for_status(&self, needle: &str, within: Duration) -> String {
         let started = Instant::now();

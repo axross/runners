@@ -2,11 +2,13 @@
 //!
 //! `validate` is a pure function from a configuration file's bytes and a host
 //! profile to either a plan or an ordered list of errors; the command layer reads
-//! the file, finds the checkout, prints, and sets the exit code. `start` runs the
-//! host's pools through the instance layer and the runtime, and `stop`, `restart`
-//! and `status` talk to it over the control channel.
+//! the file, finds the checkout, prints, and sets the exit code. `build` builds
+//! the runner image from the definition the binary embeds. `start` runs the host's
+//! pools through the instance layer and the runtime, and `stop`, `restart` and
+//! `status` talk to it over the control channel.
 
 pub mod affinity;
+pub mod build;
 pub mod checkout;
 pub mod command;
 pub mod control;

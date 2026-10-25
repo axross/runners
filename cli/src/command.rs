@@ -8,6 +8,7 @@ use std::process::ExitCode;
 
 use clap::{Arg, ArgMatches, Command, value_parser};
 
+use crate::build::{BuildRequest, build};
 use crate::checkout;
 use crate::control::{Client, run_client};
 use crate::profile::Profile;
@@ -29,8 +30,12 @@ const TEST_ROOT_VARIABLE: &str = "RUNNERS_TEST_ROOT";
 /// Moves the GitHub base address; only a debug build honours it.
 const TEST_GITHUB_API_VARIABLE: &str = "RUNNERS_TEST_GITHUB_API";
 
-/// Names the `docker` client `start` runs; only a debug build honours it.
+/// Names the `docker` client `start` and `build` run; only a debug build honours it.
 const TEST_DOCKER_VARIABLE: &str = "RUNNERS_TEST_DOCKER";
+
+/// Names a test definition `build` builds instead of the embedded one; only a debug
+/// build honours it.
+const TEST_BUILD_DEFINITION_VARIABLE: &str = "RUNNERS_TEST_BUILD_DEFINITION";
 
 fn config_arg(help: &'static str) -> Arg {
     Arg::new("config")
@@ -60,6 +65,14 @@ fn command() -> Command {
                 .arg(config_arg("The host configuration file"))
                 .arg(profile_arg(
                     "The host to check it for; defaults to axpc on Windows and axmc on macOS",
+                )),
+        )
+        .subcommand(
+            Command::new("build")
+                .about("Build the runner image the host configuration names, from the definition in this binary")
+                .arg(config_arg("The host configuration file"))
+                .arg(profile_arg(
+                    "The host to build it for; defaults to axpc on Windows and axmc on macOS",
                 )),
         )
         .subcommand(
@@ -117,6 +130,7 @@ pub fn run(
     let test_root = test_root.as_deref();
     match matches.subcommand() {
         Some(("validate", validate_matches)) => run_validate(validate_matches, out, err),
+        Some(("build", build_matches)) => run_build(build_matches, test_root, err),
         Some(("start", start_matches)) => run_start(start_matches, test_root, err),
         Some(("stop", _)) => ExitCode::from(run_client(Client::Stop, test_root, out, err)),
         Some(("restart", _)) => ExitCode::from(run_client(Client::Restart, test_root, out, err)),
@@ -182,6 +196,26 @@ fn run_start(matches: &ArgMatches, test_root: Option<&Path>, err: &mut dyn Write
         docker: docker.as_deref(),
     };
     ExitCode::from(start(&request, err))
+}
+
+fn run_build(matches: &ArgMatches, test_root: Option<&Path>, err: &mut dyn Write) -> ExitCode {
+    let Some(config) = matches.get_one::<PathBuf>("config") else {
+        return ExitCode::from(EXIT_USAGE);
+    };
+    let profile = match profile_of(matches, err) {
+        Ok(profile) => profile,
+        Err(code) => return code,
+    };
+    let docker = std::env::var_os(TEST_DOCKER_VARIABLE);
+    let definition = std::env::var_os(TEST_BUILD_DEFINITION_VARIABLE).map(PathBuf::from);
+    let request = BuildRequest {
+        config,
+        profile,
+        test_root,
+        docker: docker.as_deref(),
+        definition: definition.as_deref(),
+    };
+    ExitCode::from(build(&request, err))
 }
 
 pub(crate) fn print_error(err: &mut dyn Write, error: &dyn std::fmt::Display) -> u8 {

@@ -161,6 +161,30 @@ impl Captured {
     }
 }
 
+/// Builds a client command. The JIT variable is cleared, so only the one `run`
+/// that sets it carries a registration; the client is killed when its future is
+/// dropped, and starts in its own process group.
+pub(crate) fn client_command(
+    program: &OsStr,
+    environment: &[(OsString, OsString)],
+    arguments: &[String],
+) -> Command {
+    let mut command = Command::new(program);
+    command
+        .args(arguments)
+        .env_remove(JIT_VARIABLE)
+        .stdin(Stdio::null())
+        .kill_on_drop(true);
+    for (name, value) in environment {
+        command.env(name, value);
+    }
+    #[cfg(unix)]
+    command.process_group(0);
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NEW_PROCESS_GROUP);
+    command
+}
+
 pub struct DockerBackend<C> {
     config: DockerConfig,
     clock: C,
@@ -196,24 +220,8 @@ impl<C: Clock> DockerBackend<C> {
         }
     }
 
-    /// Builds a client command. The JIT variable is cleared, so only the one `run`
-    /// that sets it carries a registration; the client is killed when its future is
-    /// dropped, and starts in its own process group.
     fn command(&self, arguments: &[String]) -> Command {
-        let mut command = Command::new(&self.config.program);
-        command
-            .args(arguments)
-            .env_remove(JIT_VARIABLE)
-            .stdin(Stdio::null())
-            .kill_on_drop(true);
-        for (name, value) in &self.config.environment {
-            command.env(name, value);
-        }
-        #[cfg(unix)]
-        command.process_group(0);
-        #[cfg(windows)]
-        command.creation_flags(CREATE_NEW_PROCESS_GROUP);
-        command
+        client_command(&self.config.program, &self.config.environment, arguments)
     }
 
     /// The command that starts a job container: the client itself, or the shim that
