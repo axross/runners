@@ -5,6 +5,7 @@ use std::io::Write;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
+use crate::command::{EXIT_FAILED, EXIT_OK, print_error};
 use crate::instance::channel::{ClientError, exchange};
 use crate::instance::protocol::{Outcome, Request, Response};
 use crate::instance::roots::Roots;
@@ -21,9 +22,6 @@ const STOP_WAIT: Duration = Duration::from_secs(35);
 
 /// How often `stop` asks whether the instance is still there.
 const STOP_POLL: Duration = Duration::from_millis(200);
-
-const EXIT_OK: u8 = 0;
-const EXIT_FAILED: u8 = 1;
 
 /// A client command.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,7 +41,7 @@ pub fn run_client(
 ) -> u8 {
     let roots = match Roots::resolve(test_root) {
         Ok(roots) => roots,
-        Err(error) => return failed(err, &error),
+        Err(error) => return print_error(err, &error),
     };
     match client {
         Client::Status => match exchange(&roots, &Request::Status, STATUS_ANSWER_WITHIN) {
@@ -62,23 +60,18 @@ pub fn run_client(
     }
 }
 
-fn failed(err: &mut dyn Write, error: &dyn std::fmt::Display) -> u8 {
-    let _ = writeln!(err, "error: {error}");
-    EXIT_FAILED
-}
-
 fn no_answer(err: &mut dyn Write, error: &ClientError) -> u8 {
     match error {
         ClientError::NoInstance => {
             let _ = writeln!(err, "No instance is running.");
             EXIT_FAILED
         }
-        _ => failed(err, error),
+        _ => print_error(err, error),
     }
 }
 
 fn refused(err: &mut dyn Write, response: &Response) -> u8 {
-    failed(err, &format!("the instance refused: {}", response.message))
+    print_error(err, &format!("the instance refused: {}", response.message))
 }
 
 /// Prints each field as `name: value`.
@@ -112,7 +105,7 @@ fn stop(roots: &Roots, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
         }
         std::thread::sleep(STOP_POLL.min(STOP_WAIT.saturating_sub(started.elapsed())));
     }
-    failed(
+    print_error(
         err,
         &format!(
             "the instance has not ended within {} s",

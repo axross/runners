@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use tokio::sync::{mpsc, oneshot};
 
-use crate::command::{checkout_rule_note, load_plan};
+use crate::command::{EXIT_FAILED, EXIT_OK, checkout_rule_note, load_plan, print_error};
 use crate::instance::channel::{ChannelServer, ClientError, exchange};
 use crate::instance::lifecycle::{Ended, Instance, Settings};
 use crate::instance::lock::{InstanceLock, LockError};
@@ -38,9 +38,6 @@ const RESUME_ANSWER_WITHIN: Duration = Duration::from_secs(10);
 /// inside the 5 s the operating system allows a close handler.
 const CLOSE_REMOVE_BUDGET: Duration = Duration::from_secs(4);
 
-const EXIT_OK: u8 = 0;
-const EXIT_FAILED: u8 = 1;
-
 /// What `start` was given.
 pub struct StartRequest<'a> {
     pub config: &'a Path,
@@ -56,12 +53,12 @@ pub struct StartRequest<'a> {
 pub fn start(request: &StartRequest<'_>, err: &mut dyn Write) -> u8 {
     let roots = match Roots::resolve(request.test_root) {
         Ok(roots) => roots,
-        Err(error) => return fail(err, &error),
+        Err(error) => return print_error(err, &error),
     };
     let lock = match InstanceLock::acquire(&roots) {
         Ok(lock) => lock,
         Err(LockError::Held) => return resume(&roots, request, err),
-        Err(error) => return fail(err, &error),
+        Err(error) => return print_error(err, &error),
     };
     let loaded = load_plan(request.config, request.profile);
     let plan = match loaded.outcome {
@@ -75,7 +72,7 @@ pub fn start(request: &StartRequest<'_>, err: &mut dyn Write) -> u8 {
         }
     };
     if request.profile == Profile::Axmc {
-        return fail(
+        return print_error(
             err,
             &"the configuration is valid, but axmc runs its pools in a VM, and the VM backend comes in Phase 6",
         );
@@ -85,7 +82,7 @@ pub fn start(request: &StartRequest<'_>, err: &mut dyn Write) -> u8 {
     }) {
         Ok(paths) => paths,
         Err(error) => {
-            return fail(
+            return print_error(
                 err,
                 &format!("the configuration path cannot be resolved: {error}"),
             );
@@ -93,7 +90,7 @@ pub fn start(request: &StartRequest<'_>, err: &mut dyn Write) -> u8 {
     };
     let (log_path, file) = match open_log_file(roots.log_directory()) {
         Ok(opened) => opened,
-        Err(error) => return fail(err, &error),
+        Err(error) => return print_error(err, &error),
     };
     let log = Rc::new(StartLog::new(file));
     log.info(&format!("Logging to {}.", log_path.display()));
@@ -145,18 +142,13 @@ pub fn start(request: &StartRequest<'_>, err: &mut dyn Write) -> u8 {
     runtime.block_on(run_instance(parts, plan))
 }
 
-fn fail(err: &mut dyn Write, error: &dyn std::fmt::Display) -> u8 {
-    let _ = writeln!(err, "error: {error}");
-    EXIT_FAILED
-}
-
 /// Asks this user's instance, which holds the lock, to resume with the same path
 /// and profile.
 fn resume(roots: &Roots, request: &StartRequest<'_>, err: &mut dyn Write) -> u8 {
     let path = match fs::canonicalize(request.config) {
         Ok(path) => path,
         Err(error) => {
-            return fail(
+            return print_error(
                 err,
                 &format!("the configuration path cannot be resolved: {error}"),
             );
@@ -164,23 +156,23 @@ fn resume(roots: &Roots, request: &StartRequest<'_>, err: &mut dyn Write) -> u8 
     };
     let resume = match Request::resume(request.profile, &path) {
         Ok(resume) => resume,
-        Err(error) => return fail(err, &error),
+        Err(error) => return print_error(err, &error),
     };
     match exchange(roots, &resume, RESUME_ANSWER_WITHIN) {
         Ok(response) if response.outcome == Outcome::Ok => {
             let _ = writeln!(err, "The stopped instance resumed with {}.", path.display());
             EXIT_OK
         }
-        Ok(response) => fail(
+        Ok(response) => print_error(
             err,
             &format!("the instance did not resume: {}", response.message),
         ),
-        Err(ClientError::NoInstance) => fail(
+        Err(ClientError::NoInstance) => print_error(
             err,
             &"the instance lock is held, by another OS user or by an instance of this user \
               that is still starting or ending; the lock does not say which",
         ),
-        Err(error) => fail(err, &error),
+        Err(error) => print_error(err, &error),
     }
 }
 

@@ -19,8 +19,9 @@ use crate::validate::{Failure, Plan, validate};
 /// this is generous; it only stops a mistaken or hostile path from being read whole.
 pub const MAX_CONFIG_BYTES: u64 = 1024 * 1024;
 
-const EXIT_INVALID: u8 = 1;
-const EXIT_USAGE: u8 = 2;
+pub(crate) const EXIT_OK: u8 = 0;
+pub(crate) const EXIT_FAILED: u8 = 1;
+pub(crate) const EXIT_USAGE: u8 = 2;
 
 /// Moves the lock, channel and log roots; only a debug build honours it.
 const TEST_ROOT_VARIABLE: &str = "RUNNERS_TEST_ROOT";
@@ -178,9 +179,14 @@ fn run_start(matches: &ArgMatches, test_root: Option<&Path>, err: &mut dyn Write
     ExitCode::from(start(&request, err))
 }
 
+pub(crate) fn print_error(err: &mut dyn Write, error: &dyn std::fmt::Display) -> u8 {
+    let _ = writeln!(err, "error: {error}");
+    EXIT_FAILED
+}
+
 fn finish(written: io::Result<()>, code: u8) -> ExitCode {
     if written.is_err() {
-        return ExitCode::from(EXIT_INVALID);
+        return ExitCode::from(EXIT_FAILED);
     }
     ExitCode::from(code)
 }
@@ -195,7 +201,7 @@ fn run_validate(matches: &ArgMatches, out: &mut dyn Write, err: &mut dyn Write) 
     };
     match validate_file(config, profile, out, err) {
         Ok(code) => ExitCode::from(code),
-        Err(_) => ExitCode::from(EXIT_INVALID),
+        Err(_) => ExitCode::from(EXIT_FAILED),
     }
 }
 
@@ -300,11 +306,11 @@ fn validate_file(
             for line in plan_summary(&plan) {
                 writeln!(out, "{line}")?;
             }
-            Ok(0)
+            Ok(EXIT_OK)
         }
         Err(error) => {
             writeln!(err, "{}", error.message(config))?;
-            Ok(EXIT_INVALID)
+            Ok(EXIT_FAILED)
         }
     }
 }
