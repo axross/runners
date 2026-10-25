@@ -4,9 +4,9 @@
 //! it is tagged with that name, the commit point. A stop before the commit kills
 //! the build client at once and removes the temporary tag, so the configured name
 //! keeps its previous image. A stop during the retag gives the tag client a short
-//! grace and then reads the configured name's build-time label to tell whether the
-//! build committed. A stop after the commit finishes the tag removal and skips the
-//! prune.
+//! grace; when it does not succeed within it, the configured name's build-time
+//! label tells whether the build committed, as it does for a retag that stalls. A
+//! stop after the commit finishes the tag removal and skips the prune.
 
 use std::ffi::OsString;
 use std::future::Future;
@@ -18,7 +18,6 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::watch;
 use tokio::time::Instant;
 
-use crate::command::{EXIT_FAILED, EXIT_OK};
 use crate::image::check::{ImageLabels, checked_reference};
 use crate::runtime::docker::client_command;
 use crate::runtime::docker_args::{image_inspect_arguments, image_list_arguments, info_arguments};
@@ -80,9 +79,11 @@ enum Stoppable<T> {
 
 /// Where the retag left the configured name.
 enum Retag {
-    Committed { stopped: bool },
+    Committed,
     NotCommitted(String),
-    Unknown,
+    /// The labels could not be read after the retag was cut short, as the text
+    /// says.
+    Unknown(String),
 }
 
 /// One build of `image` from `context`.
@@ -103,9 +104,13 @@ fn unix_seconds(time: SystemTime) -> u64 {
 }
 
 impl Steps<'_> {
-    /// Runs the build and returns the exit code: 0 once the configured name holds
-    /// the new image, 1 otherwise.
-    pub async fn run(&self) -> u8 {
+    /// Runs the build until the configured name holds the new image.
+    ///
+    /// # Errors
+    ///
+    /// Fails, saying why and what the configured name holds, when the build did not
+    /// commit or whether it did is unknown.
+    pub async fn run(&self) -> Result<(), String> {
         let info = info_arguments();
         let answered = match self
             .stoppable(self.capture(&info, self.limits.docker_answer))
@@ -115,7 +120,7 @@ impl Steps<'_> {
             Stoppable::Done(answered) => answered,
         };
         if !answered.is_ok_and(|output| output.succeeded) {
-            return self.fail(&format!(
+            return Err(format!(
                 "Docker did not answer within {} s, so nothing was built",
                 self.limits.docker_answer.as_secs()
             ));
@@ -133,7 +138,7 @@ impl Steps<'_> {
             Stoppable::Done(Ok(())) => {}
             Stoppable::Done(Err(reason)) => {
                 self.remove_temporary(&temporary).await;
-                return self.fail(&format!(
+                return Err(format!(
                     "the build failed ({reason}), so {} keeps its previous image",
                     self.image
                 ));
@@ -143,28 +148,26 @@ impl Steps<'_> {
             return self.abort_before_commit(Some(&temporary)).await;
         }
         match self.retag(&temporary, built).await {
-            Retag::Committed { stopped } => self.after_commit(&temporary, stopped).await,
+            Retag::Committed => {
+                self.after_commit(&temporary).await;
+                Ok(())
+            }
             Retag::NotCommitted(reason) => {
                 self.remove_temporary(&temporary).await;
-                self.fail(&format!(
+                Err(format!(
                     "{reason}, so {} keeps its previous image",
                     self.image
                 ))
             }
-            Retag::Unknown => {
+            Retag::Unknown(cut_short) => {
                 self.remove_temporary(&temporary).await;
-                self.fail(&format!(
-                    "commit unknown: the build was stopped while {} was being tagged, and its \
-                     labels could not be read; `docker image inspect {}` tells which image it is",
-                    self.image, self.image
+                Err(format!(
+                    "commit unknown: {cut_short}, and its labels could not be read; \
+                     `docker image inspect {}` tells which image it is",
+                    self.image
                 ))
             }
         }
-    }
-
-    fn fail(&self, message: &str) -> u8 {
-        self.log.info(&format!("error: {message}"));
-        EXIT_FAILED
     }
 
     /// Completes when a stop is asked for, with its time; never, when the sender is
@@ -324,19 +327,20 @@ impl Steps<'_> {
     }
 
     /// A stop before the commit: the build client is already gone.
-    async fn abort_before_commit(&self, temporary: Option<&str>) -> u8 {
+    async fn abort_before_commit(&self, temporary: Option<&str>) -> Result<(), String> {
         if let Some(temporary) = temporary {
             self.remove_temporary(temporary).await;
         }
-        self.fail(&format!(
+        Err(format!(
             "the build was stopped before it finished, so {} keeps its previous image",
             self.image
         ))
     }
 
     /// Tags the build as the configured image, which commits it. A stop during the
-    /// tag gives the client [`BuildLimits::tag_grace`] from the stop, and the
-    /// configured name's build-time label then says whether it committed.
+    /// tag gives the client [`BuildLimits::tag_grace`] from the stop to succeed.
+    /// When it does not, or the tag stalls for the command budget, the configured
+    /// name's build-time label says whether it committed.
     async fn retag(&self, temporary: &str, built: u64) -> Retag {
         let mut command = client_command(&self.program, &[], &tag_arguments(temporary, self.image));
         command.stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -347,10 +351,10 @@ impl Steps<'_> {
             }
         };
         let mut waiting = Box::pin(child.wait_with_output());
-        let interrupted = tokio::select! {
+        let cut_short = tokio::select! {
             output = &mut waiting => {
                 return match output {
-                    Ok(output) if output.status.success() => Retag::Committed { stopped: false },
+                    Ok(output) if output.status.success() => Retag::Committed,
                     Ok(output) => Retag::NotCommitted(format!(
                         "tagging the build as {} failed: {}",
                         self.image,
@@ -359,10 +363,21 @@ impl Steps<'_> {
                     Err(error) => Retag::NotCommitted(format!("the docker client failed: {error}")),
                 };
             }
-            at = self.stopped() => at + self.limits.tag_grace,
-            () = tokio::time::sleep(self.limits.command_budget) => Instant::now(),
+            at = self.stopped() => {
+                let graced = tokio::time::timeout_at(at + self.limits.tag_grace, &mut waiting).await;
+                if let Ok(Ok(output)) = graced
+                    && output.status.success()
+                {
+                    return Retag::Committed;
+                }
+                format!("the build was stopped while {} was being tagged", self.image)
+            }
+            () = tokio::time::sleep(self.limits.command_budget) => format!(
+                "tagging the build as {} stalled for {} s",
+                self.image,
+                self.limits.command_budget.as_secs()
+            ),
         };
-        let _ = tokio::time::timeout_at(interrupted, &mut waiting).await;
         // dropping the wait kills a client still running
         drop(waiting);
         let inspected = self
@@ -376,27 +391,22 @@ impl Steps<'_> {
             .filter(|output| output.succeeded)
             .and_then(|output| ImageLabels::from_inspect(output.stdout.as_bytes()));
         match labels {
-            None => Retag::Unknown,
-            Some(labels) if labels.built == Some(built.to_string()) => {
-                Retag::Committed { stopped: true }
-            }
-            Some(_) => Retag::NotCommitted(format!(
-                "the build was stopped while {} was being tagged, before it was",
-                self.image
-            )),
+            None => Retag::Unknown(cut_short),
+            Some(labels) if labels.built == Some(built.to_string()) => Retag::Committed,
+            Some(_) => Retag::NotCommitted(format!("{cut_short}, and the tag did not take effect")),
         }
     }
 
     /// After the commit: the temporary tag goes, and the dangling images that
     /// carry the image label are pruned unless a stop was asked for.
-    async fn after_commit(&self, temporary: &str, stopped: bool) -> u8 {
+    async fn after_commit(&self, temporary: &str) {
         self.remove_temporary(temporary).await;
-        if stopped || self.stop.borrow().is_some() {
+        if self.stop.borrow().is_some() {
             self.log.info(&format!(
                 "{} is the new image; the stop skips the prune, which the next build runs.",
                 self.image
             ));
-            return EXIT_OK;
+            return;
         }
         match self.stoppable(self.checked(&prune_arguments())).await {
             Stoppable::Done(Ok(_)) => {}
@@ -408,6 +418,165 @@ impl Steps<'_> {
             ),
         }
         self.log.info(&format!("{} is the new image.", self.image));
-        EXIT_OK
+    }
+}
+
+#[cfg(test)]
+#[cfg(unix)]
+mod tests {
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::{Path, PathBuf};
+
+    use super::*;
+    use crate::image::contract::BUILT_LABEL;
+    use crate::runtime::fake::MemoryLog;
+
+    const IMAGE: &str = "runner:local";
+
+    fn limits(command_budget: Duration) -> BuildLimits {
+        BuildLimits {
+            command_budget,
+            ..BuildLimits::default()
+        }
+    }
+
+    /// A directory holding a `docker` script that appends each call's first two
+    /// words to `calls`. Its `tag` runs the shell command `tag`, and its inspect
+    /// reports `inspected` as the configured name's build time, or, when that is
+    /// `None`, the one the build was labelled with.
+    fn docker(name: &str, tag: &str, inspected: Option<&str>) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("runners-build-steps-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let at = dir.display();
+        let built = inspected.map_or_else(|| format!("$(cat '{at}/built')"), str::to_string);
+        let script = format!(
+            "#!/bin/sh\n\
+             printf '%s %s\\n' \"$1\" \"$2\" >> '{at}/calls'\n\
+             case \"$1\" in\n\
+             build) cat > /dev/null\n\
+               for argument; do case \"$argument\" in {BUILT_LABEL}=*) \
+             printf '%s' \"${{argument#*=}}\" > '{at}/built' ;; esac; done ;;\n\
+             tag) {tag} ;;\n\
+             image) if [ \"$2\" = inspect ]; then printf '[\"\",\"%s\",\"\",\"\"]\\n' \"{built}\"; fi ;;\n\
+             esac\n"
+        );
+        let path = dir.join("docker");
+        std::fs::write(&path, script).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        // a child another test forks while the script is still open for writing
+        // keeps it busy until that child execs, so the first run is retried
+        let started = std::time::Instant::now();
+        while std::process::Command::new(&path)
+            .arg("ready")
+            .status()
+            .is_err()
+        {
+            assert!(
+                started.elapsed() < Duration::from_secs(10),
+                "the script never ran"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        std::fs::remove_file(dir.join("calls")).unwrap();
+        dir
+    }
+
+    fn calls(dir: &Path) -> Vec<String> {
+        std::fs::read_to_string(dir.join("calls"))
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_string)
+            .collect()
+    }
+
+    async fn run(
+        dir: &Path,
+        log: &MemoryLog,
+        limits: BuildLimits,
+        stop: watch::Receiver<Option<Instant>>,
+    ) -> Result<(), String> {
+        let steps = Steps {
+            program: dir.join("docker").into_os_string(),
+            image: IMAGE,
+            context: Vec::new(),
+            log,
+            limits,
+            stop,
+        };
+        steps.run().await
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_retag_that_stalls_with_no_stop_and_tagged_commits_and_still_prunes() {
+        let dir = docker("stall-tagged", "exec sleep 30", None);
+        let log = MemoryLog::default();
+        let (_stop, receiver) = watch::channel(None);
+        run(&dir, &log, limits(Duration::from_secs(1)), receiver)
+            .await
+            .unwrap();
+        let calls = calls(&dir);
+        assert!(calls.contains(&"image inspect".to_string()), "{calls:?}");
+        assert_eq!(calls.last().map(String::as_str), Some("image prune"));
+        assert!(
+            log.lines()
+                .contains(&format!("INFO: {IMAGE} is the new image.")),
+            "{:?}",
+            log.lines()
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_retag_that_stalls_with_no_stop_and_did_not_tag_is_reported_as_a_stall() {
+        let dir = docker("stall-untagged", "exec sleep 30", Some("1"));
+        let log = MemoryLog::default();
+        let (_stop, receiver) = watch::channel(None);
+        let error = run(&dir, &log, limits(Duration::from_secs(1)), receiver)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error,
+            format!(
+                "tagging the build as {IMAGE} stalled for 1 s, and the tag did not take \
+                 effect, so {IMAGE} keeps its previous image"
+            )
+        );
+        assert!(!calls(&dir).contains(&"image prune".to_string()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_retag_that_succeeds_within_the_grace_of_a_stop_commits_without_an_inspect() {
+        // an inspect would find another build, so only the tag's own exit commits it
+        let dir = docker("graced", "sleep 1", Some("1"));
+        let log = MemoryLog::default();
+        let (stop, receiver) = watch::channel(None);
+        let stop_at_the_tag = async {
+            let started = Instant::now();
+            while !calls(&dir).iter().any(|call| call.starts_with("tag ")) {
+                assert!(started.elapsed() < Duration::from_secs(10), "no tag call");
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            stop.send_replace(Some(Instant::now()));
+        };
+        let (outcome, ()) = tokio::join!(
+            run(&dir, &log, limits(Duration::from_secs(60)), receiver),
+            stop_at_the_tag
+        );
+        outcome.unwrap();
+        let calls = calls(&dir);
+        assert!(!calls.contains(&"image inspect".to_string()), "{calls:?}");
+        assert!(!calls.contains(&"image prune".to_string()), "{calls:?}");
+        assert!(
+            log.lines().contains(&format!(
+                "INFO: {IMAGE} is the new image; the stop skips the prune, which the next \
+                 build runs."
+            )),
+            "{:?}",
+            log.lines()
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

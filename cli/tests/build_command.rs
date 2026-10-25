@@ -92,13 +92,16 @@ fn calls_of(host: &Host, first: &str) -> Vec<Vec<String>> {
         .collect()
 }
 
-/// Waits until the fake `docker` records a call whose first word is `first`.
-fn wait_for_call(host: &Host, first: &str, within: Duration) {
+/// Waits until the fake `docker` records a call that starts with `words`.
+fn wait_for(host: &Host, words: &[&str], within: Duration) {
     let started = Instant::now();
-    while calls_of(host, first).is_empty() {
+    let starts_with_words = |call: &Vec<String>| {
+        call.len() >= words.len() && call.iter().zip(words).all(|(have, want)| have == want)
+    };
+    while !host.invocations().iter().any(starts_with_words) {
         assert!(
             started.elapsed() < within,
-            "no {first} call; the calls: {:?}",
+            "no {words:?} call; the calls: {:?}",
             host.invocations()
         );
         std::thread::sleep(Duration::from_millis(20));
@@ -409,6 +412,39 @@ fn a_failed_build_leaves_the_name_untouched_and_exits_1() {
 }
 
 #[test]
+fn a_failed_retag_removes_the_temporary_tag_leaves_the_name_untouched_and_exits_1() {
+    let host = host();
+    host.script("tag_fails", "");
+    let output = build(&host);
+    let (_, stderr) = texts(&output);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(
+        stderr.contains("error: tagging the build as actions-runner:local failed"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("actions-runner:local keeps its previous image"),
+        "{stderr}"
+    );
+    let tag = calls_of(&host, "build")[0][8].clone();
+    assert!(
+        calls_of(&host, "image").contains(&vec!["image".to_string(), "rm".to_string(), tag]),
+        "the temporary tag was removed"
+    );
+    assert!(temporary_tags(&host).is_empty(), "{:?}", images(&host));
+    assert_eq!(
+        id_of(&host, "actions-runner:local").as_deref(),
+        Some("sha256:previous")
+    );
+    assert!(
+        calls_of(&host, "image")
+            .iter()
+            .all(|call| call[1] != "prune"),
+        "a build that did not commit prunes nothing"
+    );
+}
+
+#[test]
 fn docker_that_does_not_answer_within_30_s_ends_the_build_before_it_starts() {
     let host = host();
     host.script("info_hangs", "");
@@ -472,11 +508,12 @@ fn the_axmc_profile_validates_then_exits_1_naming_phase_6_and_a_usage_error_exit
 mod abort {
     use super::*;
 
-    /// Waits for the build to reach `first`, asks `stop`, and returns how the
-    /// build and `stop` ended and how long the build took after the stop.
-    fn stop_at(host: &Host, first: &str) -> (Output, support::host::Finished, Duration) {
+    /// Waits for the build to reach a call that starts with `words`, asks `stop`,
+    /// and returns how the build and `stop` ended and how long the build took after
+    /// the stop.
+    fn stop_at(host: &Host, words: &[&str]) -> (Output, support::host::Finished, Duration) {
         let started = spawn_build(host);
-        wait_for_call(host, first, BUILT_WITHIN);
+        wait_for(host, words, BUILT_WITHIN);
         let asked = Instant::now();
         let stop = host.client(&["stop"]);
         let finished = started.finish(Duration::from_secs(40));
@@ -487,7 +524,7 @@ mod abort {
     fn a_stop_before_the_retag_removes_the_temporary_tag_and_exits_1_within_30_s() {
         let host = host();
         host.script("build_hangs", "tagged");
-        let (stop, finished, took) = stop_at(&host, "build");
+        let (stop, finished, took) = stop_at(&host, &["build"]);
         assert_eq!(stop.status.code(), Some(0), "{}", texts(&stop).1);
         assert_eq!(finished.status.code(), Some(1), "{}", finished.stderr);
         assert!(took < Duration::from_secs(30), "{took:?}");
@@ -512,7 +549,7 @@ mod abort {
         let host = host();
         host.script("build_hangs", "tagged");
         let started = spawn_build(&host);
-        wait_for_call(&host, "build", BUILT_WITHIN);
+        wait_for(&host, &["build"], BUILT_WITHIN);
         support::host::send_signal(started.pid(), "INT");
         let finished = started.finish(Duration::from_secs(30));
         assert_eq!(finished.status.code(), Some(1), "{}", finished.stderr);
@@ -527,10 +564,13 @@ mod abort {
     fn a_stop_after_the_retag_exits_0_and_skips_the_prune() {
         let host = host();
         host.script("prune_hangs", "");
-        let (_, finished, took) = stop_at(&host, "image");
-        // the first image call is the leftover listing; wait for the prune itself
-        let _ = took;
+        let (_, finished, _) = stop_at(&host, &["image", "prune"]);
         assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
+        assert!(
+            finished.stderr.contains("The stop ended the prune"),
+            "{}",
+            finished.stderr
+        );
         assert!(
             id_of(&host, "actions-runner:local")
                 .unwrap()
@@ -543,7 +583,7 @@ mod abort {
     fn a_stop_during_a_stalled_retag_that_did_not_tag_leaves_the_name_and_exits_1() {
         let host = host();
         host.script("tag_hangs", "");
-        let (_, finished, took) = stop_at(&host, "tag");
+        let (_, finished, took) = stop_at(&host, &["tag"]);
         assert_eq!(finished.status.code(), Some(1), "{}", finished.stderr);
         assert!(
             took >= Duration::from_secs(4),
@@ -561,7 +601,7 @@ mod abort {
     fn a_stop_during_a_stalled_retag_that_tagged_decides_by_the_build_time_and_exits_0() {
         let host = host();
         host.script("tag_hangs", "after");
-        let (_, finished, _) = stop_at(&host, "tag");
+        let (_, finished, _) = stop_at(&host, &["tag"]);
         assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
         assert!(
             id_of(&host, "actions-runner:local")
@@ -582,7 +622,7 @@ mod abort {
         let host = host();
         host.script("tag_hangs", "");
         host.script("inspect_hangs", "");
-        let (_, finished, took) = stop_at(&host, "tag");
+        let (_, finished, took) = stop_at(&host, &["tag"]);
         assert_eq!(finished.status.code(), Some(1), "{}", finished.stderr);
         assert!(
             finished.stderr.contains("commit unknown"),
@@ -647,7 +687,7 @@ mod instance {
         let host = host();
         host.script("build_hangs", "");
         let started = spawn_build(&host);
-        wait_for_call(&host, "build", BUILT_WITHIN);
+        wait_for(&host, &["build"], BUILT_WITHIN);
 
         let status = host.client(&["status"]);
         let (out, err) = texts(&status);

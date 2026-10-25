@@ -882,8 +882,10 @@ these in order:
    the PowerShell rebuild script does. A failed tag removal is a warning naming the
    tag, which the next `build` removes, and a failed prune is a warning; both still
    exit 0.
-8. A failed build removes the temporary tag, leaves the configured name as it was,
-   and exits 1.
+8. A failed build or a failed retag removes the temporary tag, leaves the
+   configured name as it was, and exits 1. A retag that stalls for 120 s with no
+   stop asked is ended, and a `docker image inspect` of the configured name, as
+   below, decides whether it committed; one that committed still prunes.
 
 The context is a ustar archive of the embedded files at their paths in
 `images/actions-runner/`, sorted by path, with mode `0644`, owner 0, and time 0, so
@@ -897,8 +899,9 @@ CLI has no graceful way to end it.
 
 - **Before the retag.** The temporary tag is removed, by 26 s, and `build` exits 1.
   The configured name keeps its previous image. A failed removal names the tag.
-- **During the retag.** The `docker tag` client gets up to 5 s from the stop, and
-  then a `docker image inspect` of the configured name, within 4 s, decides. This
+- **During the retag.** The `docker tag` client gets up to 5 s from the stop. When
+  it succeeds within them, the build has committed, and `build` exits 0. Otherwise
+  a `docker image inspect` of the configured name, within 4 s, decides. This
   build's build-time label means the build committed, and `build` exits 0; another
   means it did not, and `build` exits 1. A failed or late inspect is "commit
   unknown", which names the image, and `build` exits 1.
@@ -1016,9 +1019,13 @@ a panicking core, and no startable pool.
 `fake-docker` keeping an image store: the one build's arguments, labels, temporary
 tag, and context bytes, equal to the definition's files and the same on a second
 run; the order of the calls; the leftover, tag-removal, and prune cases; a failed
-build; Docker not answering; the digest, axmc, usage, and validation refusals;
-`stop` and SIGINT at each step of an abort, a stalled retag and its inspect
-included; and the refusals while an instance exists and while a build runs.
+build and a failed retag; Docker not answering; the digest, axmc, usage, and
+validation refusals; `stop` and SIGINT at each step of an abort, a stalled retag
+and its inspect included; and the refusals while an instance exists and while a
+build runs. The unit tests in `cli/src/build/steps.rs` run the steps against a
+`docker` script on Unix, with a short command budget: a retag that stalls with no
+stop, which prunes when it committed and is reported as a stall when it did not,
+and one that succeeds within a stop's grace, which commits without an inspect.
 `image_check.rs` runs `start` against images that cannot run jobs.
 `real_docker_build.rs` runs `build` through a real Docker daemon on Linux, with the
 test definition in `cli/tests/build-definition/`, the runner image's digest-pinned

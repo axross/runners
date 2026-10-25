@@ -18,7 +18,7 @@ use std::time::Duration;
 use tokio::sync::{mpsc, watch};
 use tokio::time::Instant;
 
-use crate::command::{EXIT_FAILED, checkout_rule_note, load_plan, print_error};
+use crate::command::{EXIT_FAILED, EXIT_OK, checkout_rule_note, load_plan, print_error};
 use crate::image::archive::context_archive;
 use crate::image::definition::resolve_definition;
 use crate::instance::channel::{ChannelServer, exchange};
@@ -118,7 +118,10 @@ pub fn build(request: &BuildRequest<'_>, err: &mut dyn Write) -> u8 {
         program: resolve_program(request.docker),
         log: &log,
     };
-    runtime.block_on(build.run(context))
+    match runtime.block_on(build.run(context)) {
+        Ok(()) => EXIT_OK,
+        Err(error) => print_error(err, &error),
+    }
 }
 
 /// The lock is held: names the holder's state when this user's channel answers.
@@ -146,15 +149,11 @@ struct Build<'a> {
 }
 
 impl Build<'_> {
-    async fn run(&self, context: Vec<u8>) -> u8 {
+    /// Opens the channel and runs the build, returning why it failed, if it did.
+    async fn run(&self, context: Vec<u8>) -> Result<(), String> {
         let (sender, requests) = mpsc::unbounded_channel();
-        let server = match ChannelServer::open(self.lock, self.roots, sender.clone()) {
-            Ok(server) => server,
-            Err(error) => {
-                self.log.info(&format!("error: {error}"));
-                return EXIT_FAILED;
-            }
-        };
+        let server = ChannelServer::open(self.lock, self.roots, sender.clone())
+            .map_err(|error| error.to_string())?;
         let (stop, stop_receiver) = watch::channel(None);
         let steps = Steps {
             program: self.program.clone(),
@@ -164,41 +163,40 @@ impl Build<'_> {
             limits: BuildLimits::default(),
             stop: stop_receiver,
         };
-        let code = {
+        let outcome = {
             // the receiver ends with this block, before the channel closes
             let mut requests = requests;
             tokio::select! {
-                code = self.serve(steps.run(), &mut requests, &stop) => code,
+                outcome = self.serve(steps.run(), &mut requests, &stop) => outcome,
                 never = signals(&sender, None, self.log) => match never {},
             }
         };
         server.close(ANSWERS_WITHIN).await;
-        code
+        outcome
     }
 
     /// Runs the steps while answering requests, and ends them at the exit deadline
     /// once a stop is asked for.
     async fn serve(
         &self,
-        steps: impl std::future::Future<Output = u8>,
+        steps: impl std::future::Future<Output = Result<(), String>>,
         requests: &mut mpsc::UnboundedReceiver<Incoming>,
         stop: &watch::Sender<Option<Instant>>,
-    ) -> u8 {
+    ) -> Result<(), String> {
         let started = Instant::now();
         let mut steps = pin!(steps);
         let mut open = true;
         loop {
             let exit_by = stop.borrow().map(|at| at + EXIT_DEADLINE);
             tokio::select! {
-                code = &mut steps => return code,
+                outcome = &mut steps => return outcome,
                 () = tokio::time::sleep_until(exit_by.unwrap_or(started)), if exit_by.is_some() => {
-                    self.log.info(&format!(
-                        "error: the build did not end within {} s of the stop, so what still runs \
-                         is ended now; `docker image inspect {}` tells which image the name holds",
+                    return Err(format!(
+                        "the build did not end within {} s of the stop, so what still runs is \
+                         ended now; `docker image inspect {}` tells which image the name holds",
                         EXIT_DEADLINE.as_secs(),
                         self.image
                     ));
-                    return EXIT_FAILED;
                 }
                 incoming = requests.recv(), if open => match incoming {
                     None => open = false,
