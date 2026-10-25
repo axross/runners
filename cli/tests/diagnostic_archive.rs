@@ -420,8 +420,8 @@ async fn an_archive_without_metrics_is_a_missing_collector() {
     );
 }
 
-/// 132 headers are read, the end of the archive included, so 131 directory
-/// entries and the end are accepted and 132 entries before the end are not.
+/// 132 headers are read, the end of the archive included, so `metrics.txt`, 130
+/// directory entries and the end are accepted, and one more directory entry is not.
 #[tokio::test(flavor = "current_thread")]
 async fn more_than_132_headers_are_refused() {
     let skipped = header("./", 0, b'5');

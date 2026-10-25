@@ -111,17 +111,22 @@ impl Drop for Claim<'_> {
 }
 
 impl Retained {
-    /// Retains a container whose run starts now, until the returned guard drops.
+    /// Retains a container whose run starts now, until the returned guard drops. A
+    /// container already retained keeps its claim and its export.
     pub fn started(&self, name: &str, record: &DiagnosticRecord) -> JobRun<'_> {
-        self.entries.borrow_mut().insert(
-            name.to_string(),
-            Entry {
+        self.entries
+            .borrow_mut()
+            .entry(name.to_string())
+            .and_modify(|entry| {
+                entry.record = record.clone();
+                entry.active = true;
+            })
+            .or_insert_with(|| Entry {
                 record: record.clone(),
                 exported: false,
                 owned: false,
                 active: true,
-            },
-        );
+            });
         JobRun {
             retained: self,
             name: name.to_string(),
@@ -295,6 +300,22 @@ mod tests {
         claim.removed();
         drop(claim);
         assert!(retained.names().is_empty());
+    }
+
+    #[test]
+    fn a_start_of_a_retained_container_keeps_its_claim_and_its_export() {
+        let retained = Retained::default();
+        retained.adopt("d-1-x", &record());
+        let claim = retained.claim("d-1-x").unwrap();
+        claim.mark_exported();
+        let run = retained.started("d-1-x", &record());
+        assert!(
+            retained.claim("d-1-x").is_none(),
+            "the claim still holds it"
+        );
+        assert!(claim.exported());
+        drop((run, claim));
+        assert!(retained.claim("d-1-x").unwrap().exported());
     }
 
     #[test]

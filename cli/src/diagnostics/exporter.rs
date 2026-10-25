@@ -163,11 +163,12 @@ fn final_observed(metrics: &Path) -> Option<bool> {
         .take(MAX_METRICS_BYTES)
         .read_to_end(&mut bytes)
         .ok()?;
-    Some(
-        bytes
-            .split(|byte| *byte == b'\n')
-            .any(|line| line.strip_suffix(b"\r").unwrap_or(line) == FINAL_OBSERVED.as_bytes()),
-    )
+    Some(bytes.split(|byte| *byte == b'\n').any(|line| {
+        // ignoring case, as PowerShell's -notmatch does
+        line.strip_suffix(b"\r")
+            .unwrap_or(line)
+            .eq_ignore_ascii_case(FINAL_OBSERVED.as_bytes())
+    }))
 }
 
 /// Starts a client whose standard output is read and whose standard error is
@@ -246,6 +247,7 @@ mod tests {
             ("a=1\nfinal=observed\n", true),
             ("a=1\r\nfinal=observed\r\n", true),
             ("final=observed", true),
+            ("a=1\nFINAL=Observed\n", true),
             ("a=1\nfinal=observed later\n", false),
             ("xfinal=observed\n", false),
             ("", false),
