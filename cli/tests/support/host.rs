@@ -61,6 +61,22 @@ pub fn config_for(token: &str) -> String {
     )
 }
 
+/// A configuration with pool `r`, as [`config_for`] writes it, and a second pool,
+/// `d`, whose diagnostics go to `directory`. `d` is never started, so its token
+/// file, `d.token` beside `r`'s, need not exist.
+pub fn config_with_diagnostics(token: &str, directory: &str) -> String {
+    let directory = directory.replace('\\', r"\\");
+    let other = token.replace("r.token", "d.token");
+    config_for(token).replace(
+        r#""volumes":[]}]}"#,
+        &format!(
+            r#""volumes":[]}},{{"owner":"o","repository":"d","name":"d","slots":1,
+            "tokenPath":"{other}","volumes":[],"diagnostics":true,
+            "diagnosticDirectory":"{directory}"}}]}}"#
+        ),
+    )
+}
+
 impl Host {
     pub fn new() -> Self {
         let root = TempDir::new();
@@ -76,6 +92,11 @@ impl Host {
             .join(format!("docker{}", std::env::consts::EXE_SUFFIX));
         fs::copy(FAKE_DOCKER, docker).unwrap();
         Self { root, config }
+    }
+
+    /// The token path as the configuration names it, escaped for JSON.
+    pub fn json_token(&self) -> String {
+        token_path(self.root.path()).0
     }
 
     pub fn path(&self, relative: &str) -> PathBuf {

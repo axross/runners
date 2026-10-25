@@ -429,6 +429,9 @@ running instance refuses a resume too.
   new plan; an invalid one leaves the instance stopped, with the errors as its
   reason. The file is fixed when the instance is built, and no request names
   another, so nothing a client sends makes the instance read a different file.
+  `start` fixes it as the path it was given, made absolute but not resolved, so
+  each read finds the checkout above it as the first validation did; the
+  canonical path is kept only to compare with a resume's.
 
 The container steps stop every container the backend has started and not seen end,
 in one `docker stop` call with a grace of 15 s, ended at 20 s, and then force-remove
@@ -751,7 +754,8 @@ the close event, so this is checked on axpc in Phase 4b.
 
 `start_command.rs` runs `start` and its clients as real processes on a test root,
 with the `fake-docker` helper first on `PATH` as `docker` and the loopback GitHub
-stub: the exit codes, resume, `status`'s fields, a second `start` that runs
+stub: the exit codes, resume, `status`'s fields, a restart that judges the file
+at the path `start` was given as `validate` does, a second `start` that runs
 nothing, a stop within 30 s when `docker stop` ignores the grace period, the
 signals and a second SIGINT on Linux and macOS, at most 10 log files, and a run
 through a failed registration and a stop that keeps the token and the JIT

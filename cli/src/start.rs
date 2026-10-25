@@ -81,8 +81,10 @@ pub fn start(request: &StartRequest<'_>, err: &mut dyn Write) -> u8 {
             &"the configuration is valid, but axmc runs its pools in a VM, and the VM backend comes in Phase 6",
         );
     }
-    let config_path = match fs::canonicalize(request.config) {
-        Ok(path) => path,
+    let (canonical, config_path) = match fs::canonicalize(request.config).and_then(|canonical| {
+        std::path::absolute(request.config).map(|absolute| (canonical, absolute))
+    }) {
+        Ok(paths) => paths,
         Err(error) => {
             return fail(
                 err,
@@ -133,7 +135,7 @@ pub fn start(request: &StartRequest<'_>, err: &mut dyn Write) -> u8 {
         lock: &lock,
         roots: &roots,
         settings: Settings {
-            config_path: config_path.to_string_lossy().into_owned(),
+            config_path: canonical.to_string_lossy().into_owned(),
             profile: request.profile,
         },
         config_path,
@@ -187,7 +189,10 @@ fn resume(roots: &Roots, request: &StartRequest<'_>, err: &mut dyn Write) -> u8 
 struct Parts<'a> {
     lock: &'a InstanceLock,
     roots: &'a Roots,
+    /// Holds the canonical path, which a resume is compared with.
     settings: Settings,
+    /// The path as given, made absolute, which every read uses: the checkout rule
+    /// walks it lexically, as at the first validation.
     config_path: PathBuf,
     launcher: JobLauncher,
     registrar: &'a GitHubRegistrar,

@@ -319,6 +319,95 @@ fn start_resumes_a_stopped_instance_only_with_its_own_path_and_a_valid_configura
     );
 }
 
+/// What `validate` and `start` print when no checkout was found above the file.
+const NO_CHECKOUT_NOTE: &str = "no checkout of this project was found";
+
+/// The configuration path `start` is given, under a checkout in the host's root,
+/// and the `diagnosticDirectory` the test compares with that checkout. On Unix the
+/// path reaches the file through a link out of the checkout, so only a lexical walk
+/// finds the checkout; an axpc directory is a Windows path there, so it is never
+/// inside the checkout and only the note shows the walk.
+#[cfg(unix)]
+fn under_a_checkout(host: &Host) -> (std::path::PathBuf, String) {
+    fs::create_dir_all(host.path("elsewhere")).unwrap();
+    std::os::unix::fs::symlink("../elsewhere", host.path("checkout/config")).unwrap();
+    (
+        host.path("checkout/config/host.json"),
+        r"C:\diag".to_string(),
+    )
+}
+
+/// On Windows the directory lies inside the checkout, so the configuration is
+/// invalid whenever the checkout is found.
+#[cfg(windows)]
+fn under_a_checkout(host: &Host) -> (std::path::PathBuf, String) {
+    let directory = host.path("checkout").join("diag");
+    (
+        host.path("checkout/host.json"),
+        directory.to_str().unwrap().to_string(),
+    )
+}
+
+#[test]
+fn a_restart_judges_the_file_at_the_path_start_was_given_as_validate_does() {
+    let host = Host::new();
+    host.root
+        .write("checkout/.git/HEAD", b"ref: refs/heads/main\n");
+    host.root.write("checkout/cli/Cargo.toml", b"[package]\n");
+    let (config, directory) = under_a_checkout(&host);
+    fs::write(&config, fs::read(&host.config).unwrap()).unwrap();
+    host.script("run_mode", "hold");
+    let stub = Stub::start(vec![registered(), registered()]);
+    let started = host.start_with(&config, &stub);
+    host.wait_for_status("running container r-1-", RUNNING_WITHIN);
+
+    fs::write(
+        &config,
+        support::host::config_with_diagnostics(&host.json_token(), &directory),
+    )
+    .unwrap();
+    let validate = |path: &std::path::Path| {
+        host.command(&["validate", "--profile", "axpc", "--config"])
+            .arg(path)
+            .output()
+            .unwrap()
+    };
+    let fresh = validate(&config);
+    #[cfg(unix)]
+    {
+        assert_eq!(fresh.status.code(), Some(0), "{}", texts(&fresh).1);
+        assert!(!texts(&fresh).1.contains(NO_CHECKOUT_NOTE));
+        let resolved = validate(&fs::canonicalize(&config).unwrap());
+        assert!(
+            texts(&resolved).1.contains(NO_CHECKOUT_NOTE),
+            "the resolved path has no checkout above it"
+        );
+    }
+    #[cfg(windows)]
+    assert!(
+        texts(&fresh).1.contains("must be outside the checkout"),
+        "{}",
+        texts(&fresh).1
+    );
+
+    let restart = host.client(&["restart"]);
+    assert_eq!(
+        restart.status.code(),
+        fresh.status.code(),
+        "{}",
+        texts(&restart).1
+    );
+    host.client(&["stop"]);
+    let finished = started.finish(Duration::from_secs(40));
+    assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
+    let log = fs::read_to_string(&host.log_files()[0]).unwrap();
+    assert_eq!(
+        log.contains(NO_CHECKOUT_NOTE),
+        texts(&fresh).1.contains(NO_CHECKOUT_NOTE),
+        "{log}"
+    );
+}
+
 #[test]
 fn stop_ends_within_30_seconds_when_the_containers_ignore_the_grace_period() {
     let host = Host::new();
