@@ -108,24 +108,20 @@ pub fn start(request: &StartRequest<'_>, err: &mut dyn Write) -> u8 {
     let launcher = match contain() {
         Ok(launcher) => launcher,
         Err(error) => {
-            log.warn(&format!(
-                "The children of this process cannot be contained: {error}"
-            ));
-            return EXIT_FAILED;
+            return log_error(
+                &*log,
+                &format!("the children of this process cannot be contained: {error}"),
+            );
         }
     };
     let registrar = match GitHubRegistrar::new(request.github_api, HttpLimits::default()) {
         Ok(registrar) => registrar,
-        Err(error) => {
-            log.warn(&format!("The start failed: {error}"));
-            return EXIT_FAILED;
-        }
+        Err(error) => return log_error(&*log, &error),
     };
     let runtime = match single_threaded_runtime() {
         Ok(runtime) => runtime,
         Err(error) => {
-            log.warn(&format!("The async runtime cannot start: {error}"));
-            return EXIT_FAILED;
+            return log_error(&*log, &format!("the async runtime cannot start: {error}"));
         }
     };
     let parts = Parts {
@@ -141,6 +137,11 @@ pub fn start(request: &StartRequest<'_>, err: &mut dyn Write) -> u8 {
         log,
     };
     runtime.block_on(run_instance(parts, plan))
+}
+
+fn log_error(log: &dyn Log, error: &dyn std::fmt::Display) -> u8 {
+    log.info(&format!("error: {error}"));
+    EXIT_FAILED
 }
 
 pub(crate) fn single_threaded_runtime() -> io::Result<tokio::runtime::Runtime> {
@@ -202,10 +203,7 @@ async fn run_instance(parts: Parts<'_>, plan: crate::validate::Plan) -> u8 {
     let (sender, mut requests) = mpsc::unbounded_channel();
     let server = match ChannelServer::open(parts.lock, parts.roots, sender.clone()) {
         Ok(server) => server,
-        Err(error) => {
-            log.warn(&format!("The start failed: {error}"));
-            return EXIT_FAILED;
-        }
+        Err(error) => return log_error(log, &error),
     };
     log.info(&format!(
         "The instance is running; stop it with Ctrl+C or `runners stop`. Its channel is {}.",
