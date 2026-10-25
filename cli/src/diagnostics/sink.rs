@@ -111,13 +111,36 @@ fn check_directory(path: &Path) -> Result<(), SinkError> {
 pub fn checked_sink(directory: &str, checkout: Option<&Path>) -> Result<PathBuf, SinkError> {
     let path = std::path::absolute(directory)
         .map_err(|error| SinkError::Unreadable(PathBuf::from(directory), error.kind()))?;
-    if let Some(checkout) = checkout
-        && is_inside_checkout(&path.to_string_lossy(), checkout, PATH_RULES)
-    {
-        return Err(SinkError::InsideCheckout(path));
+    if let Some(checkout) = checkout {
+        // the checkout may be named through a link, which the sink never is
+        let resolved = fs::canonicalize(checkout).ok().map(without_verbatim_prefix);
+        let named = path.to_string_lossy();
+        if std::iter::once(checkout.to_path_buf())
+            .chain(resolved)
+            .any(|checkout| is_inside_checkout(&named, &checkout, PATH_RULES))
+        {
+            return Err(SinkError::InsideCheckout(path));
+        }
     }
     check_directory(&path)?;
     Ok(path)
+}
+
+/// The path without the verbatim prefix `fs::canonicalize` gives it on Windows,
+/// as a configuration names it.
+#[cfg(windows)]
+fn without_verbatim_prefix(path: PathBuf) -> PathBuf {
+    let plain = path.to_str().and_then(|text| {
+        text.strip_prefix(r"\\?\UNC\")
+            .map(|share| format!(r"\\{share}"))
+            .or_else(|| text.strip_prefix(r"\\?\").map(str::to_string))
+    });
+    plain.map_or(path, PathBuf::from)
+}
+
+#[cfg(not(windows))]
+fn without_verbatim_prefix(path: PathBuf) -> PathBuf {
+    path
 }
 
 /// Checks a bundle again before a file goes into it, as the PowerShell exporter
@@ -257,6 +280,38 @@ mod tests {
                 .is_err_and(|error| !matches!(error, SinkError::InsideCheckout(_)))
         );
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_sink_inside_a_checkout_named_through_a_link_is_refused() {
+        let dir = scratch("checkout-link");
+        let checkout = dir.join("checkout");
+        let sink = checkout.join("evidence");
+        fs::create_dir_all(&sink).unwrap();
+        let link = dir.join("link");
+        std::os::unix::fs::symlink(&dir, &link).unwrap();
+        let named = link.join("checkout");
+        assert_eq!(
+            checked_sink(sink.to_str().unwrap(), Some(&named)),
+            Err(SinkError::InsideCheckout(sink.clone()))
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_verbatim_path_compares_as_a_configuration_names_it() {
+        for (canonical, plain) in [
+            (r"\\?\C:\runners", r"C:\runners"),
+            (r"\\?\UNC\host\share\runners", r"\\host\share\runners"),
+            (r"C:\runners", r"C:\runners"),
+        ] {
+            assert_eq!(
+                without_verbatim_prefix(PathBuf::from(canonical)),
+                PathBuf::from(plain)
+            );
+        }
     }
 
     #[test]
