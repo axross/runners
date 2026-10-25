@@ -172,10 +172,11 @@ async fn on_macos_a_token_file_that_is_not_0600_skips_its_pool_and_the_rest_run(
     .unwrap();
     assert_eq!(names(&prepared), ["alpha", "bravo"]);
     let warnings = log.lines();
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
     assert!(
         warnings[0].starts_with("WARN: repositories[2] (o/charlie) is not started")
-            && warnings[1].contains("token file is not private")
-            && warnings[1].contains("has mode 0644"),
+            && warnings[0].contains("token file is not private")
+            && warnings[0].contains("has mode 0644"),
         "{warnings:?}"
     );
     assert!(warnings.iter().all(|line| !line.contains("ghp_")));
