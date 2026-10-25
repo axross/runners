@@ -17,7 +17,6 @@ use std::time::SystemTime;
 
 use crate::runtime::log::{Log, Masks};
 use crate::runtime::name::stamp;
-use crate::runtime::secret::Secret;
 
 /// The size at which a log file stops, its last line included.
 const MAX_FILE_BYTES: u64 = 10 * 1024 * 1024;
@@ -127,16 +126,8 @@ impl Log for StartLog {
         self.emit("WARNING: ", line);
     }
 
-    fn mask(&self, secret: &Secret) {
-        self.masks.add(secret);
-    }
-
-    fn unmask(&self, secret: &Secret) {
-        self.masks.remove(secret);
-    }
-
-    fn held_back(&self, piece: &[u8]) -> usize {
-        self.masks.held_back(piece)
+    fn masks(&self) -> &Masks {
+        &self.masks
     }
 }
 

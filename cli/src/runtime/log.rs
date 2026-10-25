@@ -16,15 +16,25 @@ pub trait Log {
     fn info(&self, line: &str);
     fn warn(&self, line: &str);
 
+    /// The secrets this sink hides; [`info`](Self::info) and [`warn`](Self::warn)
+    /// apply them to every line.
+    fn masks(&self) -> &Masks;
+
     /// Hides `secret` in every later line until [`unmask`](Self::unmask) is called
     /// for it. Masking a secret that is already masked changes nothing.
-    fn mask(&self, secret: &Secret);
+    fn mask(&self, secret: &Secret) {
+        self.masks().add(secret);
+    }
 
     /// Stops hiding `secret`.
-    fn unmask(&self, secret: &Secret);
+    fn unmask(&self, secret: &Secret) {
+        self.masks().remove(secret);
+    }
 
     /// See [`Masks::held_back`].
-    fn held_back(&self, piece: &[u8]) -> usize;
+    fn held_back(&self, piece: &[u8]) -> usize {
+        self.masks().held_back(piece)
+    }
 }
 
 /// The secrets a sink hides.
@@ -98,16 +108,8 @@ impl Log for StderrLog {
         let _ = writeln!(std::io::stderr(), "WARNING: {}", self.masks.apply(line));
     }
 
-    fn mask(&self, secret: &Secret) {
-        self.masks.add(secret);
-    }
-
-    fn unmask(&self, secret: &Secret) {
-        self.masks.remove(secret);
-    }
-
-    fn held_back(&self, piece: &[u8]) -> usize {
-        self.masks.held_back(piece)
+    fn masks(&self) -> &Masks {
+        &self.masks
     }
 }
 

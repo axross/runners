@@ -330,15 +330,7 @@ impl Log for MemoryLog {
         self.lines.borrow_mut().push(format!("WARN: {line}"));
     }
 
-    fn mask(&self, secret: &Secret) {
-        self.masks.add(secret);
-    }
-
-    fn unmask(&self, secret: &Secret) {
-        self.masks.remove(secret);
-    }
-
-    fn held_back(&self, piece: &[u8]) -> usize {
-        self.masks.held_back(piece)
+    fn masks(&self) -> &Masks {
+        &self.masks
     }
 }
