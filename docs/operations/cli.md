@@ -1091,7 +1091,8 @@ and `cp` with a scripted archive or a stall, and stand in for the exporter child
   export did, the identity cases, a retried removal with no second bundle, an 11th
   bundle refused with two exports at once, the startup finalisation, and in real
   time a stalled copy, a stalled copy and removal, an overrunning child, and a
-  closed liveness pipe, each ending at its deadline with its clients;
+  closed liveness pipe, each ending at its deadline, and all but the killed
+  overrunning child with their clients;
 - `diagnostic_ownership.rs` drives the instance, the runtime core, and the
   finalisation every backend shares, over the fake backend on the system clock: a stop and a `restart` during a job-end export, a
   stop during a startup export, a panic during a job-end export, `diagnostics` skipping a held container, a resume after a failed
@@ -1104,7 +1105,7 @@ and `cp` with a scripted archive or a stall, and stand in for the exporter child
   exporter whose instance is killed, a mixed stop within 30 s, and on Linux and
   macOS a first SIGINT during an export, a second SIGINT, and a hard kill;
 - `sink.rs`'s unit tests refuse a sink that is missing, under a link, inside the
-  checkout, or not private, and on Windows one that is or lies under a junction or
+  checkout, also when the checkout is named through a link, or not private, and on Windows one that is or lies under a junction or
   a directory symbolic link.
 
 Not verified: the Windows console-close handling below, a diagnostic job on Docker
