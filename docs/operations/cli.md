@@ -699,7 +699,8 @@ The file is opened after validation succeeds, so a refused `start` writes none.
 Every line goes to the terminal and to the file, which adds a time stamp. A write
 to a terminal that is gone is ignored, and the file goes on. The newest 10 log
 files by name are kept, the new one included, and only regular files named as a
-log file count. A file stops at 10 MiB: a line that would leave no room for the
+log file count. An old file that cannot be removed is a warning in the new log,
+and `start` goes on. A file stops at 10 MiB: a line that would leave no room for the
 last line is not written, and the last line says that the file reached 10 MiB. A
 failed write stops the file, with a warning on the terminal.
 

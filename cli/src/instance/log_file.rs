@@ -140,13 +140,22 @@ impl Log for StartLog {
     }
 }
 
+/// A new log file.
+pub struct OpenedLog {
+    pub path: PathBuf,
+    pub file: Capped<File>,
+    /// Why an old file beyond the newest 10 could not be removed, when one could not.
+    pub pruning_failed: Option<String>,
+}
+
 /// Opens a new log file in `directory`, created private when missing, and removes
-/// the oldest files beyond the newest 10. Returns the file's path and the file.
+/// the oldest files beyond the newest 10. A file that cannot be removed does not
+/// stop the open.
 ///
 /// # Errors
 ///
 /// See [`LogFileError`]; on macOS a directory or file that is not private is one.
-pub fn open_log_file(directory: &Path) -> Result<(PathBuf, Capped<File>), LogFileError> {
+pub fn open_log_file(directory: &Path) -> Result<OpenedLog, LogFileError> {
     prepare_directory(directory)?;
     let path = directory.join(format!(
         "{FILE_PREFIX}{}-{}{FILE_SUFFIX}",
@@ -154,8 +163,11 @@ pub fn open_log_file(directory: &Path) -> Result<(PathBuf, Capped<File>), LogFil
         std::process::id()
     ));
     let file = create_private(&path)?;
-    prune(directory)?;
-    Ok((path, Capped::new(file)))
+    Ok(OpenedLog {
+        path,
+        file: Capped::new(file),
+        pruning_failed: prune(directory).err(),
+    })
 }
 
 #[cfg(unix)]
@@ -205,9 +217,11 @@ fn create_private(path: &Path) -> Result<File, LogFileError> {
 }
 
 /// Removes the oldest log files, by name, beyond [`KEPT_FILES`]. Only regular
-/// files named as a log file count; anything else is left alone.
-fn prune(directory: &Path) -> Result<(), LogFileError> {
-    let entries = fs::read_dir(directory).map_err(|error| failed("listing", directory, &error))?;
+/// files named as a log file count; anything else is left alone. Returns the first
+/// failure, after trying every file.
+fn prune(directory: &Path) -> Result<(), String> {
+    let entries = fs::read_dir(directory)
+        .map_err(|error| format!("listing {}: {error}", directory.display()))?;
     let mut logs: Vec<PathBuf> = entries
         .filter_map(Result::ok)
         .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_file()))
@@ -221,10 +235,13 @@ fn prune(directory: &Path) -> Result<(), LogFileError> {
         .collect();
     logs.sort();
     let surplus = logs.len().saturating_sub(KEPT_FILES);
+    let mut first_failure = None;
     for old in logs.iter().take(surplus) {
-        fs::remove_file(old).map_err(|error| failed("removing", old, &error))?;
+        if let Err(error) = fs::remove_file(old) {
+            first_failure.get_or_insert_with(|| format!("removing {}: {error}", old.display()));
+        }
     }
-    Ok(())
+    first_failure.map_or(Ok(()), Err)
 }
 
 #[cfg(test)]
@@ -336,10 +353,36 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let parent = scratch("private");
         let directory = parent.join("logs");
-        let (path, _file) = open_log_file(&directory).unwrap();
+        let path = open_log_file(&directory).unwrap().path;
         let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode(&directory), 0o700);
         assert_eq!(mode(&path), 0o600);
         fs::remove_dir_all(&parent).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn an_old_file_that_cannot_be_removed_leaves_the_new_one_open() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let directory = scratch("held");
+        for index in 1..=KEPT_FILES {
+            fs::write(directory.join(log_name(index)), b"").unwrap();
+        }
+        // a file opened without delete sharing cannot be removed while it is open
+        let held = OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(directory.join(log_name(1)))
+            .unwrap();
+        let OpenedLog {
+            path,
+            file,
+            pruning_failed,
+        } = open_log_file(&directory).unwrap();
+        assert!(path.is_file());
+        let failure = pruning_failed.unwrap();
+        assert!(failure.contains(&log_name(1)), "{failure}");
+        drop((held, file));
+        fs::remove_dir_all(&directory).unwrap();
     }
 }

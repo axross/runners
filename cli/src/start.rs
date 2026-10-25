@@ -88,12 +88,15 @@ pub fn start(request: &StartRequest<'_>, err: &mut dyn Write) -> u8 {
             );
         }
     };
-    let (log_path, file) = match open_log_file(roots.log_directory()) {
+    let opened = match open_log_file(roots.log_directory()) {
         Ok(opened) => opened,
         Err(error) => return print_error(err, &error),
     };
-    let log = Rc::new(StartLog::new(file));
-    log.info(&format!("Logging to {}.", log_path.display()));
+    let log = Rc::new(StartLog::new(opened.file));
+    log.info(&format!("Logging to {}.", opened.path.display()));
+    if let Some(failure) = opened.pruning_failed {
+        log.warn(&format!("An old log file could not be removed: {failure}"));
+    }
     if loaded.checkout_rule_skipped {
         log.info(&checkout_rule_note(request.config));
     }
