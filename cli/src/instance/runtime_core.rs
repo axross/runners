@@ -22,7 +22,7 @@ use crate::runtime::registration::Registrar;
 use crate::runtime::worker::{run_slot, wait_for_stop};
 use crate::validate::Plan;
 
-use super::lifecycle::{Core, CoreFailure};
+use super::lifecycle::{Core, CoreFailure, Ending};
 
 /// The pools of the plan on one backend, with their state on a board of their own.
 pub struct RuntimeCore<'a, B, K, R> {
@@ -99,19 +99,11 @@ impl Drop for Cleared<'_> {
     }
 }
 
-/// How a failed run ends, besides its message.
-enum Ending {
-    Failed,
-    NothingToRun,
-    ImageRefused,
-}
-
 fn failure(message: String, ending: Ending) -> CoreFailure {
     CoreFailure {
         message,
         containers: Vec::new(),
-        nothing_to_run: matches!(ending, Ending::NothingToRun),
-        image_refused: matches!(ending, Ending::ImageRefused),
+        ending,
     }
 }
 
@@ -134,7 +126,7 @@ impl<B: Backend, K: Clock, R: Registrar> Core for RuntimeCore<'_, B, K, R> {
         self.running.set(true);
         let _cleared = Cleared(&self.board, &self.running);
         let pools =
-            pools_from_plan(plan).map_err(|error| failure(error.to_string(), Ending::Failed))?;
+            pools_from_plan(plan).map_err(|error| failure(error.to_string(), Ending::Ordinary))?;
         let image = plan.image_name.as_deref().unwrap_or_default();
         self.board.expect_image(image);
         let prepared = tokio::select! {

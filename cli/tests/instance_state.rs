@@ -12,7 +12,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use runners_cli::instance::fake::CoreStep;
-use runners_cli::instance::lifecycle::StopTimes;
+use runners_cli::instance::lifecycle::{Ending, StopTimes};
 use runners_cli::instance::protocol::{Outcome, Request};
 use runners_cli::profile::Profile;
 use runners_cli::runtime::backend::StopRequest;
@@ -497,5 +497,5 @@ async fn a_core_that_ignores_the_stop_is_dropped_at_the_exit_deadline() {
         })
         .await;
     assert!(ended.containers_removed, "the container steps had finished");
-    assert!(!ended.nothing_to_run);
+    assert_eq!(ended.ending, Ending::Ordinary);
 }

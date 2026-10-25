@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 use runners_cli::image::check::{ImageCheck, ImageLabels};
 use runners_cli::image::contract::CONTRACT_VERSION;
 use runners_cli::instance::fake::{CoreStep, FakeCore};
-use runners_cli::instance::lifecycle::Core;
+use runners_cli::instance::lifecycle::{Core, Ending};
 use runners_cli::instance::protocol::{Outcome, Request};
 use runners_cli::instance::runtime_core::RuntimeCore;
 use runners_cli::profile::Profile;
@@ -120,8 +120,7 @@ async fn a_mismatched_or_missing_image_fails_the_first_run_before_any_pool_is_pr
         rig.answer([check]);
         let core = rig.core();
         let failure = rig.run(&core).await.unwrap_err();
-        assert!(failure.image_refused);
-        assert!(!failure.nothing_to_run);
+        assert_eq!(failure.ending, Ending::ImageRefused);
         assert!(
             failure
                 .message
@@ -384,8 +383,7 @@ mod instance {
         let rig = Rig::new();
         rig.core.push(CoreStep::RefuseImage(refusal()));
         let (ended, ()) = rig.drive(|_control| async {}).await;
-        assert!(ended.image_refused);
-        assert!(!ended.nothing_to_run);
+        assert_eq!(ended.ending, Ending::ImageRefused);
         assert_eq!(rig.core.runs.get(), 1);
         assert!(rig.clock.sleeps().is_empty(), "it is not restarted");
         assert!(rig.log.lines().contains(&format!(
@@ -457,8 +455,9 @@ mod instance {
                 status
             })
             .await;
-        assert!(
-            !ended.image_refused,
+        assert_eq!(
+            ended.ending,
+            Ending::Ordinary,
             "a later run stops the instance, not ends it"
         );
         assert_eq!(status.field("reason"), Some(stop_build_start().as_str()));

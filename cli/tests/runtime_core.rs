@@ -9,7 +9,7 @@
 mod support;
 
 use runners_cli::image::contract::CONTRACT_VERSION;
-use runners_cli::instance::lifecycle::Core;
+use runners_cli::instance::lifecycle::{Core, Ending};
 use runners_cli::instance::runtime_core::RuntimeCore;
 use runners_cli::profile::Profile;
 use runners_cli::runtime::fake::{Call, FakeBackend, FakeClock, FakeRegistrar, MemoryLog};
@@ -47,7 +47,7 @@ async fn no_startable_pool_is_a_failure_that_says_there_is_nothing_to_run() {
     let core = RuntimeCore::new(&backend, &clock, &registrar, &log);
     let (_stop, receiver) = stop_channel();
     let failure = core.run(&plan(&scratch), receiver).await.unwrap_err();
-    assert!(failure.nothing_to_run);
+    assert_eq!(failure.ending, Ending::NothingToRun);
     assert!(failure.containers.is_empty());
     assert!(
         failure.message.contains("nothing to run"),

@@ -11,6 +11,7 @@ mod support;
 use std::time::Duration;
 
 use runners_cli::instance::fake::{CoreStep, FakeCore};
+use runners_cli::instance::lifecycle::Ending;
 use runners_cli::instance::protocol::{Outcome, Request};
 use runners_cli::profile::Profile;
 use runners_cli::runtime::fake::Call;
@@ -248,7 +249,7 @@ async fn no_startable_pool_at_the_first_run_ends_the_instance() {
     let rig = Rig::new();
     rig.core.push(CoreStep::NothingToRun);
     let (ended, ()) = rig.drive(|_control| async {}).await;
-    assert!(ended.nothing_to_run);
+    assert_eq!(ended.ending, Ending::NothingToRun);
     assert_eq!(rig.core.runs.get(), 1);
     assert!(rig.clock.sleeps().is_empty(), "it is not restarted");
 }
@@ -266,6 +267,6 @@ async fn no_startable_pool_at_a_later_run_is_a_failure_like_any_other() {
             control.stop().await;
         })
         .await;
-    assert!(!ended.nothing_to_run);
+    assert_eq!(ended.ending, Ending::Ordinary);
     assert_eq!(rig.clock.sleeps(), seconds(&[10, 30]));
 }

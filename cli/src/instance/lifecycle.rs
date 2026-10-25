@@ -110,6 +110,22 @@ impl State {
     }
 }
 
+/// What a failed run of the runtime core means for the instance, and so how the
+/// instance ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ending {
+    /// A failure like any other, which the restart policy counts. For the instance,
+    /// an end for any other reason, such as a stop.
+    Ordinary,
+    /// No pool could start. At the instance's first run of the core this ends the
+    /// instance; at a later run it is a failure like any other.
+    NothingToRun,
+    /// The configured image cannot run jobs. At the instance's first run of the
+    /// core this ends the instance; at a later run it stops it. Either way it is
+    /// not counted as a failure.
+    ImageRefused,
+}
+
 /// How the runtime core ended when no stop was asked for.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoreFailure {
@@ -118,13 +134,9 @@ pub struct CoreFailure {
     /// The containers the core had started and not seen end. The core is gone, so
     /// only it can say; the instance stops and removes them.
     pub containers: Vec<String>,
-    /// No pool could start. At the instance's first run of the core this ends the
-    /// instance; at a later run it is a failure like any other.
-    pub nothing_to_run: bool,
-    /// The configured image cannot run jobs, as `message` says. At the instance's
-    /// first run of the core this ends the instance; at a later run it stops it.
-    /// Either way it is not counted as a failure.
-    pub image_refused: bool,
+    /// What the failure means for the instance; for a refused image, `message` says
+    /// why.
+    pub ending: Ending,
 }
 
 /// The part of `start` that runs the pools.
@@ -173,11 +185,9 @@ pub struct Ended {
     /// Whether every removal of containers in the instance's life succeeded: at a
     /// stop, a restart, or a failure of the runtime core.
     pub containers_removed: bool,
-    /// Whether the instance ended because no pool could start at its first run.
-    pub nothing_to_run: bool,
-    /// Whether the instance ended because its image could not run jobs at its first
-    /// run.
-    pub image_refused: bool,
+    /// Why the instance ended: what its first run of the core found, or
+    /// [`Ending::Ordinary`] when it ended otherwise.
+    pub ending: Ending,
 }
 
 enum Next {
@@ -244,8 +254,7 @@ pub struct Instance<'a, B, K, C, S> {
     exit_requested: Cell<bool>,
     containers_removed: Cell<bool>,
     core_has_run: Cell<bool>,
-    nothing_to_run: Cell<bool>,
-    image_refused: Cell<bool>,
+    ending: Cell<Ending>,
     force: watch::Sender<bool>,
 }
 
@@ -272,8 +281,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
             exit_requested: Cell::new(false),
             containers_removed: Cell::new(true),
             core_has_run: Cell::new(false),
-            nothing_to_run: Cell::new(false),
-            image_refused: Cell::new(false),
+            ending: Cell::new(Ending::Ordinary),
             force: watch::Sender::new(false),
         }
     }
@@ -307,8 +315,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
                 Next::Exit => {
                     return Ended {
                         containers_removed: self.containers_removed.get(),
-                        nothing_to_run: self.nothing_to_run.get(),
-                        image_refused: self.image_refused.get(),
+                        ending: self.ending.get(),
                     };
                 }
             };
@@ -368,7 +375,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
                         }
                         CycleEnd::StopRequested => Next::Exit,
                         CycleEnd::NothingToRun => {
-                            self.nothing_to_run.set(true);
+                            self.ending.set(Ending::NothingToRun);
                             Next::Exit
                         }
                         CycleEnd::ImageRefusedAtStart(refusal) => {
@@ -377,7 +384,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
                                 "The instance ends: {refusal}. Run `runners build --config {config}`, \
                                  then `runners start --config {config}`."
                             ));
-                            self.image_refused.set(true);
+                            self.ending.set(Ending::ImageRefused);
                             Next::Exit
                         }
                         CycleEnd::ImageRefused(refusal) => {
@@ -590,31 +597,32 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
                 Ok(Ok(())) => CoreFailure {
                     message: "the runtime core ended without being asked to".to_string(),
                     containers: Vec::new(),
-                    nothing_to_run: false,
-                    image_refused: false,
+                    ending: Ending::Ordinary,
                 },
                 // the panic unwound through the workers, so their containers are
                 // still recorded by the backend and nowhere else.
                 Err(message) => CoreFailure {
                     message,
                     containers: self.backend.running_containers(),
-                    nothing_to_run: false,
-                    image_refused: false,
+                    ending: Ending::Ordinary,
                 },
             };
             let message = scrub_error_text(&failure.message, "");
-            if failure.image_refused {
-                self.container_steps(failure.containers).await;
-                return if first_run {
-                    CycleEnd::ImageRefusedAtStart(message)
-                } else {
-                    CycleEnd::ImageRefused(message)
-                };
-            }
-            if failure.nothing_to_run && first_run {
-                self.log.warn(&message);
-                self.container_steps(failure.containers).await;
-                return CycleEnd::NothingToRun;
+            match failure.ending {
+                Ending::ImageRefused => {
+                    self.container_steps(failure.containers).await;
+                    return if first_run {
+                        CycleEnd::ImageRefusedAtStart(message)
+                    } else {
+                        CycleEnd::ImageRefused(message)
+                    };
+                }
+                Ending::NothingToRun if first_run => {
+                    self.log.warn(&message);
+                    self.container_steps(failure.containers).await;
+                    return CycleEnd::NothingToRun;
+                }
+                Ending::NothingToRun | Ending::Ordinary => {}
             }
             self.log
                 .warn(&format!("The runtime core failed: {message}"));

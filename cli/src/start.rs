@@ -20,7 +20,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::command::{EXIT_FAILED, EXIT_OK, checkout_rule_note, load_plan, print_error};
 use crate::instance::channel::{ChannelServer, ClientError, exchange};
-use crate::instance::lifecycle::{Ended, Instance, Settings};
+use crate::instance::lifecycle::{Ended, Ending, Instance, Settings};
 use crate::instance::lock::{InstanceLock, LockError};
 use crate::instance::log_file::{StartLog, open_log_file};
 use crate::instance::protocol::{Incoming, Outcome, Request};
@@ -244,28 +244,32 @@ async fn run_instance(parts: Parts<'_>, plan: crate::validate::Plan) -> u8 {
                 let stopped = tokio::time::timeout(CLOSE_REMOVE_BUDGET, &mut run).await;
                 stopped.unwrap_or(Ended {
                     containers_removed: false,
-                    nothing_to_run: false,
-                    image_refused: false,
+                    ending: Ending::Ordinary,
                 })
             }
         }
     };
     server.close(ANSWERS_WITHIN).await;
-    if ended.nothing_to_run {
-        log.warn("The instance ended because no pool could start.");
-        EXIT_FAILED
-    } else if ended.image_refused {
-        log.warn("The instance ended because its image cannot run jobs.");
-        EXIT_FAILED
-    } else if ended.containers_removed {
-        log.info("The instance has stopped.");
-        EXIT_OK
-    } else {
-        log.warn(
-            "The instance has stopped, but a container could not be removed; \
-             the next start removes it.",
-        );
-        EXIT_FAILED
+    match ended.ending {
+        Ending::NothingToRun => {
+            log.warn("The instance ended because no pool could start.");
+            EXIT_FAILED
+        }
+        Ending::ImageRefused => {
+            log.warn("The instance ended because its image cannot run jobs.");
+            EXIT_FAILED
+        }
+        Ending::Ordinary if ended.containers_removed => {
+            log.info("The instance has stopped.");
+            EXIT_OK
+        }
+        Ending::Ordinary => {
+            log.warn(
+                "The instance has stopped, but a container could not be removed; \
+                 the next start removes it.",
+            );
+            EXIT_FAILED
+        }
     }
 }
 

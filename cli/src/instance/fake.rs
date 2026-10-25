@@ -15,7 +15,7 @@ use crate::runtime::pool::NoPoolStartable;
 use crate::runtime::worker::wait_for_stop;
 use crate::validate::Plan;
 
-use super::lifecycle::{Core, CoreFailure, Source};
+use super::lifecycle::{Core, CoreFailure, Ending, Source};
 
 /// What one run of a [`FakeCore`] does.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -93,8 +93,7 @@ impl Core for FakeCore {
                 Err(CoreFailure {
                     message,
                     containers,
-                    nothing_to_run: false,
-                    image_refused: false,
+                    ending: Ending::Ordinary,
                 })
             }
             Some(CoreStep::EndWithoutStop) => Ok(()),
@@ -103,14 +102,12 @@ impl Core for FakeCore {
             Some(CoreStep::NothingToRun) => Err(CoreFailure {
                 message: NoPoolStartable.to_string(),
                 containers: Vec::new(),
-                nothing_to_run: true,
-                image_refused: false,
+                ending: Ending::NothingToRun,
             }),
             Some(CoreStep::RefuseImage(message)) => Err(CoreFailure {
                 message,
                 containers: Vec::new(),
-                nothing_to_run: false,
-                image_refused: true,
+                ending: Ending::ImageRefused,
             }),
             Some(CoreStep::IgnoreStop) => std::future::pending().await,
             Some(CoreStep::RunUntilStop) | None => {
