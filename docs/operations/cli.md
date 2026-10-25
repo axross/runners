@@ -784,7 +784,9 @@ the close event, so this is checked on axpc in Phase 4b.
 with the `fake-docker` helper named by `RUNNERS_TEST_DOCKER` and the loopback
 GitHub stub: the exit codes, resume, `status`'s fields, a restart that judges the file
 at the path `start` was given as `validate` does, a `stop` that gets its answer
-from an instance with no container, a second `start` that runs nothing, a stop within 30 s when `docker stop` ignores the grace period, the
+from an instance with no container, a `stop` that gives up after 35 s while the
+lock stays held, a second `start` that runs nothing, a stop within 30 s when
+`docker stop` ignores the grace period, the
 signals and a second SIGINT on Linux and macOS, at most 10 log files, and a run
 through a failed registration and a stop that keeps the token and the JIT
 configuration out of the terminal, the log file, and every client's output. Its

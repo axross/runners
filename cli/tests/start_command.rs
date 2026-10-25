@@ -125,33 +125,70 @@ fn with_no_instance_stop_restart_and_status_say_so_and_exit_1() {
     }
 }
 
+/// An `instance-helper` holding the host's lock and serving its channel, in `mode`
+/// `serve` or `mute`. It ends when dropped, which closes its standard input.
+struct Helper(std::process::Child);
+
+impl Helper {
+    fn serving(host: &Host, mode: &str) -> Self {
+        let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_instance-helper"))
+            .args([mode, "--root"])
+            .arg(host.state())
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut line = String::new();
+        std::io::BufRead::read_line(
+            &mut std::io::BufReader::new(child.stdout.as_mut().unwrap()),
+            &mut line,
+        )
+        .unwrap();
+        let helper = Self(child);
+        assert!(!line.starts_with("refused"), "{line}");
+        helper
+    }
+}
+
+impl Drop for Helper {
+    fn drop(&mut self) {
+        drop(self.0.stdin.take());
+        let _ = self.0.wait();
+    }
+}
+
 #[test]
 fn status_gives_up_after_5_seconds_when_the_instance_does_not_answer() {
     let host = Host::new();
-    let mut helper = std::process::Command::new(env!("CARGO_BIN_EXE_instance-helper"))
-        .args(["mute", "--root"])
-        .arg(host.state())
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .spawn()
-        .unwrap();
-    let mut line = String::new();
-    std::io::BufRead::read_line(
-        &mut std::io::BufReader::new(helper.stdout.as_mut().unwrap()),
-        &mut line,
-    )
-    .unwrap();
-    assert!(!line.starts_with("refused"), "{line}");
+    let helper = Helper::serving(&host, "mute");
     let started = Instant::now();
     let output = host.client(&["status"]);
     let waited = started.elapsed();
-    drop(helper.stdin.take());
-    helper.wait().unwrap();
+    drop(helper);
     let (_, stderr) = texts(&output);
     assert_eq!(output.status.code(), Some(1), "{stderr}");
     assert!(stderr.contains("did not answer in time"), "{stderr}");
     assert!(waited >= Duration::from_secs(5), "{waited:?}");
     assert!(waited < Duration::from_secs(10), "{waited:?}");
+}
+
+#[test]
+fn stop_gives_up_after_35_seconds_when_the_instance_does_not_end() {
+    let host = Host::new();
+    let helper = Helper::serving(&host, "serve");
+    let started = Instant::now();
+    let output = host.client(&["stop"]);
+    let waited = started.elapsed();
+    drop(helper);
+    let (stdout, stderr) = texts(&output);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(stdout.contains("Stopping the instance."), "{stdout}");
+    assert!(
+        stderr.contains("the instance has not ended within 35 s"),
+        "{stderr}"
+    );
+    assert!(waited >= Duration::from_secs(35), "{waited:?}");
+    assert!(waited < Duration::from_secs(45), "{waited:?}");
 }
 
 #[test]
