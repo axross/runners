@@ -1030,8 +1030,9 @@ and one that succeeds within a stop's grace, which commits without an inspect.
 `image_check.rs` runs `start` against images that cannot run jobs.
 `real_docker_build.rs` runs `build` through a real Docker daemon on Linux, with the
 test definition in `cli/tests/build-definition/`, the runner image's digest-pinned
-base and its declared labels, and fails unless the result carries all five labels
-and no temporary tag remains; it is `#[ignore]`d for a local `cargo test`. Not
+base and its declared labels, and fails unless the result carries all five labels,
+no temporary tag remains, and the container backend's image check finds the image
+matching and an absent tag missing; it is `#[ignore]`d for a local `cargo test`. Not
 verified: Ctrl+C, Ctrl+Break, and the console close on Windows, a `build` of the
 full image by the CLI, which axpc shows in Phase 4b, and macOS and Windows behaviour
 beyond what the hosted runners show.

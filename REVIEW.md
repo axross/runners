@@ -220,12 +220,14 @@ Apply the lens for each kind of file in the diff.
   the launcher, and the labels the CLI reads, or to what the runner image must
   provide for it, such as a path, user, group, or tool the launcher or a job
   relies on, raises the contract version in `images/actions-runner/Dockerfile`
-  and in `cli/tests/build-definition/Dockerfile`. A change that alters either
-  without raising the version is a finding, even when `APPROVED_CONTRACTS` in
-  `cli/src/image/contract.rs` cannot see it. A runner bump changes the
-  `runner-version` and `runner-released` labels and the test definition's base,
-  and adds the release's date from the actions/runner release page to
-  `RUNNER_RELEASES` in the same file; see
+  and in `cli/tests/build-definition/Dockerfile`, and adds the new version's row
+  to `APPROVED_CONTRACTS` in `cli/src/image/contract.rs`. A change that alters
+  either without raising the version is a finding, even when `APPROVED_CONTRACTS`
+  cannot see it. A runner bump sets the `FROM` line and the `runner-version` and
+  `runner-released` labels of both Dockerfiles, and adds the release's date from
+  the actions/runner release page to `RUNNER_RELEASES` in the same file. The
+  tests that depend on the declared values read them from the Dockerfiles or the
+  CLI's contract version, so neither change edits any other test; see
   [CLI](docs/operations/cli.md#the-image-contract).
 - **Documentation.** A claim about runner behavior is either verified or
   described as planned. A document that describes a file, image, or script

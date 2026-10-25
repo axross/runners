@@ -241,8 +241,9 @@ tests of the debug-only overrides, the test definition `build` reads among them;
 build of the runner image's base stage on that runner (never pushed); a test that
 runs a container through the hosted runner's Docker daemon against that image; and
 a test that runs `runners build` through the same daemon against the debug-only
-test definition in `cli/tests/build-definition/`, checks the image's five labels
-and that no temporary tag remains, and removes the image. On Linux and macOS a
+test definition in `cli/tests/build-definition/`, checks the image's five labels,
+that no temporary tag remains, and that the CLI's image check finds the image
+matching and an absent tag missing, and removes the image. On Linux and macOS a
 further step holds the CLI's single-instance lock with a debug-only test helper and runs a copy of the
 helper as `nobody` through the hosted runner's passwordless `sudo`, failing unless
 that other user is refused the lock. On Windows a further step has the helper open
@@ -360,6 +361,9 @@ the contract tests in `cli/src/image/contract.rs` ask for by name:
 3. Set the `FROM` line and the two labels of
    [`cli/tests/build-definition/Dockerfile`](../../cli/tests/build-definition/Dockerfile)
    to the same base and values.
+
+Nothing else needs an edit: the tests that depend on the declared runner version
+and date read them from the two Dockerfiles.
 
 A runner bump changes no part of the run contract, so the contract version stays.
 When the new runner changes something the run contract relies on, such as a path or

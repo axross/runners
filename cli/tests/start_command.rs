@@ -12,6 +12,7 @@ mod support;
 use std::fs;
 use std::time::{Duration, Instant};
 
+use runners_cli::image::contract::CONTRACT_VERSION;
 use support::host::{Host, JIT, Started, TOKEN, registered, texts};
 use support::stub::{Reply, Stub};
 use support::{TempDir, repository_root};
@@ -223,7 +224,7 @@ fn a_run_keeps_the_token_and_the_jit_config_out_of_every_output_it_writes() {
         "{status}"
     );
     assert_eq!(lines[5], "image: actions-runner:local");
-    assert_eq!(lines[6], "image-contract: 1");
+    assert_eq!(lines[6], format!("image-contract: {CONTRACT_VERSION}"));
     assert_eq!(lines[7], "image-built: 0 days ago");
     assert!(lines[8].starts_with("runner: 2."), "{status}");
 

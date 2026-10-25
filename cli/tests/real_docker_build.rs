@@ -5,7 +5,8 @@
 //! builds the debug-only test definition, `tests/build-definition`, which is the
 //! runner image's base and contract labels and nothing else, so the step shows
 //! what a real builder does with `build`'s context and labels without building the
-//! whole image. The test fails when Docker is missing: a step that cannot run the
+//! whole image. It then checks the built image through the container backend, as
+//! `start` does. The test fails when Docker is missing: a step that cannot run the
 //! test must not look as if it passed.
 #![cfg(target_os = "linux")]
 #![allow(
@@ -18,11 +19,42 @@
 mod support;
 
 use std::collections::BTreeMap;
+use std::path::Path;
 use std::process::{Command, Stdio};
+use std::rc::Rc;
 
+use runners_cli::image::check::{ImageCheck, ImageLabels};
+use runners_cli::image::contract::CONTRACT_VERSION;
+use runners_cli::runtime::backend::Backend;
+use runners_cli::runtime::clock::SystemClock;
+use runners_cli::runtime::docker::{DockerBackend, DockerConfig};
+use runners_cli::runtime::log::{Log, StderrLog};
 use support::{BINARY, TempDir};
 
 const REPOSITORY: &str = "runners-build-test";
+
+/// What every label key starts with.
+const LABEL_PREFIX: &str = "com.github.axross.runners.";
+
+/// The labels the definition's Dockerfile declares, keyed without
+/// [`LABEL_PREFIX`].
+fn declared_labels(definition: &Path) -> BTreeMap<String, String> {
+    let text = std::fs::read_to_string(definition.join("Dockerfile")).unwrap();
+    let declaration = text
+        .lines()
+        .find_map(|line| line.strip_prefix("LABEL "))
+        .expect("the test definition declares no labels");
+    declaration
+        .split_whitespace()
+        .filter_map(|pair| pair.split_once('='))
+        .map(|(key, value)| {
+            (
+                key.strip_prefix(LABEL_PREFIX).unwrap_or(key).to_string(),
+                value.trim_matches('"').to_string(),
+            )
+        })
+        .collect()
+}
 
 /// Removes every image of the test's repository, whatever way the test ends.
 struct Cleanup;
@@ -70,7 +102,7 @@ impl Drop for Cleanup {
 
 #[test]
 #[ignore = "needs a Docker daemon; CI runs it on Linux"]
-fn build_tags_the_name_with_all_five_labels_and_leaves_no_temporary_tag() {
+fn build_tags_the_name_with_all_five_labels_leaves_no_temporary_tag_and_the_check_matches() {
     let info = Command::new("docker")
         .arg("info")
         .output()
@@ -124,7 +156,7 @@ fn build_tags_the_name_with_all_five_labels_and_leaves_no_temporary_tag() {
     ];
     let format: String = keys
         .iter()
-        .map(|key| format!("{{{{index .Config.Labels \"com.github.axross.runners.{key}\"}}}}\n"))
+        .map(|key| format!("{{{{index .Config.Labels \"{LABEL_PREFIX}{key}\"}}}}\n"))
         .collect();
     let inspect = Command::new("docker")
         .args(["image", "inspect", "--format", &format, &image])
@@ -134,9 +166,14 @@ fn build_tags_the_name_with_all_five_labels_and_leaves_no_temporary_tag() {
     let inspected = String::from_utf8_lossy(&inspect.stdout);
     let labels: BTreeMap<&str, &str> = keys.into_iter().zip(inspected.lines()).collect();
     let label = |key: &str| labels.get(key).copied();
-    assert_eq!(label("contract"), Some("1"), "{labels:?}");
-    assert_eq!(label("runner-version"), Some("2.337.0"), "{labels:?}");
-    assert_eq!(label("runner-released"), Some("2026-08-26"), "{labels:?}");
+    let declared = declared_labels(&definition);
+    for key in ["contract", "runner-version", "runner-released"] {
+        assert_eq!(
+            label(key),
+            declared.get(key).map(String::as_str),
+            "{key}: {labels:?}"
+        );
+    }
     assert_eq!(label("image"), Some("actions-runner"), "{labels:?}");
     let built: u64 = label("built")
         .unwrap()
@@ -144,5 +181,32 @@ fn build_tags_the_name_with_all_five_labels_and_leaves_no_temporary_tag() {
         .expect("the built label is not a time");
     assert!(built >= started, "built {built}, started {started}");
 
-    assert_eq!(Cleanup::images(), [image], "a temporary tag remains");
+    assert_eq!(
+        Cleanup::images(),
+        std::slice::from_ref(&image),
+        "a temporary tag remains"
+    );
+
+    let backend = DockerBackend::new(
+        DockerConfig::default(),
+        SystemClock,
+        Rc::new(StderrLog::default()) as Rc<dyn Log>,
+    );
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    assert_eq!(
+        runtime.block_on(backend.check_image(&image)),
+        ImageCheck::Matching(ImageLabels {
+            contract: Some(CONTRACT_VERSION.to_string()),
+            built: Some(built.to_string()),
+            runner_version: declared.get("runner-version").cloned(),
+            runner_released: declared.get("runner-released").cloned(),
+        })
+    );
+    assert_eq!(
+        runtime.block_on(backend.check_image(&format!("{REPOSITORY}:absent"))),
+        ImageCheck::Missing
+    );
 }

@@ -183,11 +183,11 @@ To refresh an input:
 The final stage declares three labels, which the CLI reads from the built image
 and embeds from this Dockerfile:
 
-| Label                                       | Value                                                        |
-| ------------------------------------------- | ------------------------------------------------------------ |
-| `com.github.axross.runners.contract`        | The image contract version, a positive integer, now `1`      |
-| `com.github.axross.runners.runner-version`  | The runner version the `FROM` line pins, now `2.337.0`       |
-| `com.github.axross.runners.runner-released` | That runner release's date as `YYYY-MM-DD`, now `2026-08-26` |
+| Label                                       | Value                                          |
+| ------------------------------------------- | ---------------------------------------------- |
+| `com.github.axross.runners.contract`        | The image contract version, a positive integer |
+| `com.github.axross.runners.runner-version`  | The runner version the `FROM` line pins        |
+| `com.github.axross.runners.runner-released` | That runner release's date as `YYYY-MM-DD`     |
 
 `runners build` adds two more on its command line, because they describe the
 build rather than the definition:

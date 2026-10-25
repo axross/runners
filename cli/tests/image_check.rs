@@ -363,38 +363,41 @@ mod job_launch {
 mod instance {
     use super::*;
 
-    const REFUSAL: &str =
-        "the image actions-runner:local has image contract 0, but this CLI needs image contract 1";
+    fn refusal() -> String {
+        format!(
+            "the image actions-runner:local has image contract 0, but this CLI needs image \
+             contract {CONTRACT_VERSION}"
+        )
+    }
 
     fn stop_build_start() -> String {
         format!(
-            "{REFUSAL}; run `runners stop`, then `runners build --config {CONFIG_PATH}`, \
-             then `runners start --config {CONFIG_PATH}`"
+            "{}; run `runners stop`, then `runners build --config {CONFIG_PATH}`, \
+             then `runners start --config {CONFIG_PATH}`",
+            refusal()
         )
     }
 
     #[tokio::test(flavor = "current_thread")]
     async fn a_refused_image_at_the_first_run_ends_the_instance_naming_build_then_start() {
         let rig = Rig::new();
-        rig.core.push(CoreStep::RefuseImage(REFUSAL.to_string()));
+        rig.core.push(CoreStep::RefuseImage(refusal()));
         let (ended, ()) = rig.drive(|_control| async {}).await;
         assert!(ended.image_refused);
         assert!(!ended.nothing_to_run);
         assert_eq!(rig.core.runs.get(), 1);
         assert!(rig.clock.sleeps().is_empty(), "it is not restarted");
         assert!(rig.log.lines().contains(&format!(
-            "WARN: The instance ends: {REFUSAL}. Run `runners build --config {CONFIG_PATH}`, \
-             then `runners start --config {CONFIG_PATH}`."
+            "WARN: The instance ends: {}. Run `runners build --config {CONFIG_PATH}`, \
+             then `runners start --config {CONFIG_PATH}`.",
+            refusal()
         )));
     }
 
     #[tokio::test(flavor = "current_thread")]
     async fn a_refused_image_at_a_restart_leaves_the_instance_stopped_with_stop_build_start() {
         let rig = Rig::new();
-        rig.core
-            .image_checks
-            .borrow_mut()
-            .push_back(Err(REFUSAL.to_string()));
+        rig.core.image_checks.borrow_mut().push_back(Err(refusal()));
         let (_, (restart, status)) = rig
             .drive(|control| async move {
                 let restart = control.ask(Request::Restart).await;
@@ -419,10 +422,7 @@ mod instance {
         for _ in 0..4 {
             rig.core.push(FakeCore::failure("worker task panicked"));
         }
-        rig.core
-            .image_checks
-            .borrow_mut()
-            .push_back(Err(REFUSAL.to_string()));
+        rig.core.image_checks.borrow_mut().push_back(Err(refusal()));
         let (_, (resume, status)) = rig
             .drive(|control| async move {
                 control.wait_for_state("stopped").await;
@@ -447,7 +447,7 @@ mod instance {
             rig.core.push(FakeCore::failure("worker task panicked"));
         }
         // a fourth failure would reach the restart limit
-        rig.core.push(CoreStep::RefuseImage(REFUSAL.to_string()));
+        rig.core.push(CoreStep::RefuseImage(refusal()));
         let (ended, status) = rig
             .drive(|control| async move {
                 control.wait_for_state("stopped").await;
@@ -477,7 +477,7 @@ mod instance {
         // the resume's check could not reach Docker, so it passes; the next run of
         // the core checks once Docker answers, and finds the mismatch
         rig.core.push(CoreStep::RunUntilStop);
-        rig.core.push(CoreStep::RefuseImage(REFUSAL.to_string()));
+        rig.core.push(CoreStep::RefuseImage(refusal()));
         let (_, (restart, status)) = rig
             .drive(|control| async move {
                 let restart = control.ask(Request::Restart).await;
@@ -502,8 +502,10 @@ mod backend {
         let fake = Fake::new();
         fake.script(
             "images",
-            "runner:other\tsha256:a\tcom.github.axross.runners.contract=1\n\
-             localhost:5000/team/runner:v2\tsha256:b\tcom.github.axross.runners.contract=1",
+            &format!(
+                "runner:other\tsha256:a\tcom.github.axross.runners.contract={CONTRACT_VERSION}\n\
+                 localhost:5000/team/runner:v2\tsha256:b\tcom.github.axross.runners.contract={CONTRACT_VERSION}"
+            ),
         );
         assert_eq!(
             fake.backend.check_image("runner").await,
@@ -538,15 +540,18 @@ mod backend {
         let fake = Fake::new();
         fake.script(
             "images",
-            "good:1\tsha256:a\tcom.github.axross.runners.contract=1\tcom.github.axross.runners.built=1709000000\t\
-             com.github.axross.runners.runner-version=2.337.0\tcom.github.axross.runners.runner-released=2026-08-26\n\
-             old:1\tsha256:b\tcom.github.axross.runners.contract=0\n\
-             bare:1\tsha256:c",
+            &format!(
+                "good:1\tsha256:a\tcom.github.axross.runners.contract={CONTRACT_VERSION}\t\
+                 com.github.axross.runners.built=1709000000\t\
+                 com.github.axross.runners.runner-version=2.337.0\tcom.github.axross.runners.runner-released=2026-08-26\n\
+                 old:1\tsha256:b\tcom.github.axross.runners.contract=0\n\
+                 bare:1\tsha256:c"
+            ),
         );
         assert_eq!(
             fake.backend.check_image("good:1").await,
             ImageCheck::Matching(ImageLabels {
-                contract: Some("1".to_string()),
+                contract: Some(CONTRACT_VERSION.to_string()),
                 built: Some("1709000000".to_string()),
                 runner_version: Some("2.337.0".to_string()),
                 runner_released: Some("2026-08-26".to_string()),
@@ -664,8 +669,10 @@ mod process {
         host.script("run_mode", "hold");
         host.script(
             "images",
-            "actions-runner:local\tsha256:a\tcom.github.axross.runners.contract=1\t\
-             com.github.axross.runners.runner-version=2.337.0\tcom.github.axross.runners.runner-released=2020-01-01",
+            &format!(
+                "actions-runner:local\tsha256:a\tcom.github.axross.runners.contract={CONTRACT_VERSION}\t\
+                 com.github.axross.runners.runner-version=2.337.0\tcom.github.axross.runners.runner-released=2020-01-01"
+            ),
         );
         let stub = Stub::start(vec![registered()]);
         let started = host.start(&stub);
