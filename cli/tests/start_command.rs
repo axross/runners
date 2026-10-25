@@ -24,8 +24,26 @@ const RUNNING_WITHIN: Duration = Duration::from_secs(20);
 fn running(host: &Host, stub: &Stub) -> Started {
     host.script("run_mode", "hold");
     let started = host.start(stub);
-    host.wait_for_status("running container r-1-", RUNNING_WITHIN);
+    wait_for_job(host);
     started
+}
+
+/// Waits, within [`RUNNING_WITHIN`], until the slot runs its container and the
+/// fake engine holds it, and returns the status that showed it. The slot reports
+/// the container before its client starts, so the status alone would race the
+/// fake's record.
+fn wait_for_job(host: &Host) -> String {
+    let started = Instant::now();
+    let status = host.wait_for_status("running container r-1-", RUNNING_WITHIN);
+    while job_containers(host).is_empty() {
+        assert!(
+            started.elapsed() < RUNNING_WITHIN,
+            "the fake docker never recorded the job container; its calls: {:?}",
+            host.invocations()
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    status
 }
 
 fn job_containers(host: &Host) -> Vec<String> {
@@ -149,7 +167,7 @@ fn a_run_keeps_the_token_and_the_jit_config_out_of_every_output_it_writes() {
         registered(),
     ]);
     let started = host.start(&stub);
-    let status = host.wait_for_status("running container r-1-", RUNNING_WITHIN);
+    let status = wait_for_job(&host);
     let stop = host.client(&["stop"]);
     let finished = started.finish(Duration::from_secs(40));
 
@@ -346,7 +364,7 @@ fn start_resumes_a_stopped_instance_only_with_its_own_path_and_a_valid_configura
     fs::write(&host.config, &valid).unwrap();
     let resumed = resume(&host.config);
     assert_eq!(resumed.status.code(), Some(0), "{}", texts(&resumed).1);
-    host.wait_for_status("running container r-1-", RUNNING_WITHIN);
+    wait_for_job(&host);
 
     assert_eq!(host.client(&["stop"]).status.code(), Some(0));
     assert_eq!(
@@ -395,7 +413,7 @@ fn a_restart_judges_the_file_at_the_path_start_was_given_as_validate_does() {
     host.script("run_mode", "hold");
     let stub = Stub::start(vec![registered(), registered()]);
     let started = host.start_with(&config, &stub);
-    host.wait_for_status("running container r-1-", RUNNING_WITHIN);
+    wait_for_job(&host);
 
     fs::write(
         &config,
