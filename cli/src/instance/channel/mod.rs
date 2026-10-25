@@ -22,6 +22,7 @@ mod unix;
 mod windows;
 
 use std::fmt;
+use std::time::Duration;
 
 use tokio::sync::mpsc;
 
@@ -108,6 +109,14 @@ impl ChannelServer {
         Ok(Self {
             inner: Inner::open(roots, requests)?,
         })
+    }
+
+    /// Stops accepting, then waits up to `within` for every connection already
+    /// accepted to end, so an answer the instance gave reaches its client before the
+    /// process exits. Drop the request receiver first: a request still waiting then
+    /// gets its "ending" answer at once, rather than holding its connection open.
+    pub async fn close(self, within: Duration) {
+        self.inner.close(within).await;
     }
 
     /// Where clients reach the channel: the socket's path, or the pipe's name.

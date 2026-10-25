@@ -534,6 +534,12 @@ it.
   The client checks the directory before it connects, so it does not talk to a
   socket another user placed.
 
+On both systems an ending instance first drops its request queue, so a request
+still waiting is answered that the instance is ending, then stops accepting and
+waits up to 0.5 s for every connection it accepted to end, so an answer it has
+given, such as `stop`'s, is written before the process exits. A connection still
+sending its request does not hold the exit longer than that.
+
 The protocol is UTF-8 lines. A request is one line of at most 16 KiB: `status`,
 `stop`, `restart`, or `resume <profile> <path>`, where the path is the rest of the
 line and may hold spaces. A path with a line break, or one that is not UTF-8, is
@@ -675,7 +681,9 @@ default action; the others still stop the instance.
 3. At 28 s whatever still runs is dropped. A `docker` client is killed; on Unix a
    job container's shim sees its liveness pipe close, removes its container within
    5 s, and ends.
-4. `start` exits, which releases the lock.
+4. `start` gives the answers it has already sent, such as the one to `stop`, up to
+   0.5 s to reach their clients, closes the channel, and exits, which releases the
+   lock.
 
 A second SIGINT, Ctrl+C, or Ctrl+Break skips the grace period: a `docker stop` under
 way is abandoned and the containers are removed at once. Raising Ctrl+C in a
@@ -745,13 +753,13 @@ that containment and the log leave.
 
 ### Console Close on Windows
 
-When the console closes, the user logs off, or the machine shuts down, `start`
-stops the instance with forced removal: the slots stop registering, so no container
-starts unseen, and one `docker rm -f` removes every container it started. Whatever
-has not finished after 4 s is dropped, and `start` exits. The 4 s fits inside the
-5 s the operating system gives a console-close handler before it ends the process,
-and Microsoft documents that logoff and shutdown events reach services only, never
-an interactive process
+When the console closes, the user logs off, or the machine shuts down, `start` stops
+the instance with forced removal: the slots stop registering, so no container starts
+unseen, and one `docker rm -f` removes every container it started. Whatever has not
+finished after 4 s is dropped, the answers already sent get up to 0.5 s, and `start`
+exits. The 4.5 s fits inside the 5 s the operating system gives a console-close
+handler before it ends the process, and Microsoft documents that logoff and shutdown
+events reach services only, never an interactive process
 ([HandlerRoutine](https://learn.microsoft.com/en-us/windows/console/handlerroutine)).
 The handlers are registered anyway, and for those two events the Job Object and the
 next `start` are the backstop.
@@ -770,8 +778,8 @@ the close event, so this is checked on axpc in Phase 4b.
 `start_command.rs` runs `start` and its clients as real processes on a test root,
 with the `fake-docker` helper first on `PATH` as `docker` and the loopback GitHub
 stub: the exit codes, resume, `status`'s fields, a restart that judges the file
-at the path `start` was given as `validate` does, a second `start` that runs
-nothing, a stop within 30 s when `docker stop` ignores the grace period, the
+at the path `start` was given as `validate` does, a `stop` that gets its answer
+from an instance with no container, a second `start` that runs nothing, a stop within 30 s when `docker stop` ignores the grace period, the
 signals and a second SIGINT on Linux and macOS, at most 10 log files, and a run
 through a failed registration and a stop that keeps the token and the JIT
 configuration out of the terminal, the log file, and every client's output. Its

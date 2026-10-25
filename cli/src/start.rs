@@ -36,8 +36,13 @@ use crate::summary::plan_summary;
 const RESUME_ANSWER_WITHIN: Duration = Duration::from_secs(10);
 
 /// What a console close, a logoff or a shutdown leaves the instance's forced stop,
-/// inside the 5 s the operating system allows a close handler.
+/// inside the 5 s the operating system allows a close handler, with
+/// [`ANSWERS_WITHIN`] after it.
 const CLOSE_REMOVE_BUDGET: Duration = Duration::from_secs(4);
+
+/// How long the ending instance gives the answers it has already sent, such as the
+/// one to `stop`, to reach their clients before the channel closes.
+const ANSWERS_WITHIN: Duration = Duration::from_millis(500);
 
 /// What `start` was given.
 pub struct StartRequest<'a> {
@@ -200,7 +205,7 @@ struct Parts<'a> {
 
 async fn run_instance(parts: Parts<'_>, plan: crate::validate::Plan) -> u8 {
     let log: &dyn Log = &*parts.log;
-    let (sender, mut requests) = mpsc::unbounded_channel();
+    let (sender, requests) = mpsc::unbounded_channel();
     let server = match ChannelServer::open(parts.lock, parts.roots, sender.clone()) {
         Ok(server) => server,
         Err(error) => return log_error(log, &error),
@@ -218,18 +223,22 @@ async fn run_instance(parts: Parts<'_>, plan: crate::validate::Plan) -> u8 {
     let source = FileSource::new(parts.config_path, parts.settings.profile, log);
     let instance = Instance::new(parts.settings, &backend, &SystemClock, &core, &source, log);
     let force = || instance.force_removal();
-    let mut run = std::pin::pin!(instance.run(plan, &mut requests));
-    let ended = tokio::select! {
-        ended = &mut run => Some(ended),
-        () = signals(&sender, &force, log) => None,
-        () = console_closed(log) => {
-            request_stop(&sender);
-            force();
-            let stopped = tokio::time::timeout(CLOSE_REMOVE_BUDGET, &mut run).await;
-            Some(stopped.unwrap_or(Ended { containers_removed: false, nothing_to_run: false }))
+    let ended = {
+        // the receiver ends with this block, before the channel closes
+        let mut requests = requests;
+        let mut run = std::pin::pin!(instance.run(plan, &mut requests));
+        tokio::select! {
+            ended = &mut run => Some(ended),
+            () = signals(&sender, &force, log) => None,
+            () = console_closed(log) => {
+                request_stop(&sender);
+                force();
+                let stopped = tokio::time::timeout(CLOSE_REMOVE_BUDGET, &mut run).await;
+                Some(stopped.unwrap_or(Ended { containers_removed: false, nothing_to_run: false }))
+            }
         }
     };
-    drop(server);
+    server.close(ANSWERS_WITHIN).await;
     let Some(ended) = ended else {
         return EXIT_FAILED;
     };

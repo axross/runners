@@ -244,6 +244,22 @@ fn at_most_ten_log_files_are_kept() {
     );
 }
 
+/// An instance with no container ends as soon as it is asked to stop, so its answer
+/// must reach `stop` before the process exits.
+#[test]
+fn stop_on_an_instance_with_no_container_gets_its_answer_and_exits_0() {
+    let host = Host::new();
+    let stub = Stub::start(vec![Reply::status("500 Internal Server Error", "no")]);
+    let started = host.start(&stub);
+    host.wait_for_status("backing off", RUNNING_WITHIN);
+    let stop = host.client(&["stop"]);
+    let (stop_out, stop_err) = texts(&stop);
+    assert_eq!(stop.status.code(), Some(0), "{stop_err}");
+    assert!(stop_out.contains("The instance has stopped."), "{stop_out}");
+    let finished = started.finish(Duration::from_secs(5));
+    assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
+}
+
 #[test]
 fn a_start_right_after_a_successful_stop_finds_the_lock_free() {
     let host = Host::new();
@@ -417,7 +433,8 @@ fn a_restart_judges_the_file_at_the_path_start_was_given_as_validate_does() {
         "{}",
         texts(&restart).1
     );
-    host.client(&["stop"]);
+    let stop = host.client(&["stop"]);
+    assert_eq!(stop.status.code(), Some(0), "{}", texts(&stop).1);
     let finished = started.finish(Duration::from_secs(40));
     assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
     let log = fs::read_to_string(&host.log_files()[0]).unwrap();

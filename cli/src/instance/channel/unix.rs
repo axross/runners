@@ -31,6 +31,8 @@ const ACCEPT_BACKOFF: Duration = Duration::from_millis(100);
 pub struct Server {
     socket: PathBuf,
     accepting: JoinHandle<()>,
+    /// One permit per connection being served, so holding them all means none is.
+    connections: Arc<Semaphore>,
 }
 
 impl Drop for Server {
@@ -111,13 +113,33 @@ impl Server {
             }
         })?;
         restrict(&socket, uid)?;
-        let accepting = tokio::spawn(accept(listener, requests, peer_uid));
-        Ok(Self { socket, accepting })
+        let connections = Arc::new(Semaphore::new(MAX_CONNECTIONS));
+        let accepting = tokio::spawn(accept(
+            listener,
+            requests,
+            peer_uid,
+            Arc::clone(&connections),
+        ));
+        Ok(Self {
+            socket,
+            accepting,
+            connections,
+        })
+    }
+
+    pub async fn close(self, within: Duration) {
+        self.accepting.abort();
+        let every = u32::try_from(MAX_CONNECTIONS).unwrap_or(u32::MAX);
+        let _ = tokio::time::timeout(within, self.connections.acquire_many(every)).await;
     }
 }
 
-async fn accept(listener: UnixListener, requests: mpsc::UnboundedSender<Incoming>, peer_uid: u32) {
-    let permits = Arc::new(Semaphore::new(MAX_CONNECTIONS));
+async fn accept(
+    listener: UnixListener,
+    requests: mpsc::UnboundedSender<Incoming>,
+    peer_uid: u32,
+    permits: Arc<Semaphore>,
+) {
     loop {
         let Ok(permit) = Arc::clone(&permits).acquire_owned().await else {
             return;

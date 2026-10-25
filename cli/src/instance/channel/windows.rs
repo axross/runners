@@ -24,6 +24,8 @@ type Stream = DuplexPipeStream<pipe_mode::Bytes>;
 const WAKE_TIMEOUT: Duration = Duration::from_millis(500);
 /// How often closing the server tries to connect to its own pipe.
 const WAKE_ATTEMPTS: usize = 2;
+/// How often [`Server::close`] checks whether every connection has ended.
+const CLOSE_POLL: Duration = Duration::from_millis(10);
 
 /// The listening pipe.
 ///
@@ -33,14 +35,17 @@ const WAKE_ATTEMPTS: usize = 2;
 /// connects, the thread stays blocked in `accept` and keeps the pipe open until the
 /// next client arrives or the process ends.
 ///
-/// Serving threads are never joined. A client that has connected and sends nothing
-/// holds its thread, and that thread's clone of the request sender, until it
-/// disconnects, so the request channel need not close when the server is dropped.
+/// Serving threads are never joined; [`close`](Self::close) waits a bounded time
+/// for them to end. A client that has connected and sends nothing holds its thread,
+/// and that thread's clone of the request sender, until it disconnects, so the
+/// request channel need not close when the server is dropped.
 #[derive(Debug)]
 pub struct Server {
     closing: Arc<AtomicBool>,
     name: String,
     accepting: Option<JoinHandle<()>>,
+    /// The connections being served.
+    active: Arc<AtomicUsize>,
 }
 
 impl Drop for Server {
@@ -94,13 +99,23 @@ impl Server {
                 }
             })?;
         let closing = Arc::new(AtomicBool::new(false));
-        let flag = Arc::clone(&closing);
-        let accepting = thread::spawn(move || accept(&listener, &requests, &flag));
+        let active = Arc::new(AtomicUsize::new(0));
+        let (flag, count) = (Arc::clone(&closing), Arc::clone(&active));
+        let accepting = thread::spawn(move || accept(&listener, &requests, &flag, &count));
         Ok(Self {
             closing,
             name,
             accepting: Some(accepting),
+            active,
         })
+    }
+
+    pub async fn close(self, within: Duration) {
+        self.closing.store(true, Ordering::SeqCst);
+        let deadline = tokio::time::Instant::now() + within;
+        while self.active.load(Ordering::SeqCst) > 0 && tokio::time::Instant::now() < deadline {
+            tokio::time::sleep(CLOSE_POLL).await;
+        }
     }
 }
 
@@ -108,8 +123,8 @@ fn accept(
     listener: &PipeListener<pipe_mode::Bytes, pipe_mode::Bytes>,
     requests: &mpsc::UnboundedSender<Incoming>,
     closing: &AtomicBool,
+    active: &Arc<AtomicUsize>,
 ) {
-    let active = Arc::new(AtomicUsize::new(0));
     while !closing.load(Ordering::SeqCst) {
         let Ok(stream) = listener.accept() else {
             thread::sleep(Duration::from_millis(100));
@@ -123,7 +138,7 @@ fn accept(
             continue;
         }
         let requests = requests.clone();
-        let active = Arc::clone(&active);
+        let active = Arc::clone(active);
         thread::spawn(move || {
             serve(&stream, &requests);
             active.fetch_sub(1, Ordering::SeqCst);
