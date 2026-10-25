@@ -4,8 +4,8 @@
 //! The instance is running or stopped, with stopping and resuming between them.
 //! One task owns the state and serves the requests of the control channel, so a
 //! request that arrives during a transition is answered at once: `status` tells the
-//! truth, `stop` is taken, and `restart` and `resume` are refused until the
-//! transition ends. The pools themselves run in a [`Core`], which this module
+//! truth, `stop` is taken, and `restart`, `diagnostics` and `resume` are refused
+//! until the transition ends. The pools themselves run in a [`Core`], which this module
 //! supervises: an error or a panic of the core while no stop was asked for is a
 //! failure, and the core is restarted. What starts and stops a process is the
 //! caller's.

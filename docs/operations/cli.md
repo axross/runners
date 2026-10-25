@@ -455,7 +455,7 @@ starts running. `build` holds the lock as an instance of its own, in the state
 `building`, or `stopping` once it is asked to stop; [Build](#build) describes it.
 One task owns the state and answers every request, so a request
 that arrives during a transition is answered at once: `status` reports the state,
-`stop` is taken, and `restart` and `resume` are refused, naming the state. A
+`stop` is taken, and `restart`, `diagnostics`, and `resume` are refused, naming the state. A
 running instance refuses a resume too.
 
 - `stop` ends the instance from every state. From running it first runs the
@@ -766,7 +766,7 @@ when the image is missing or its labels are missing or malformed.
 ## Running a Host
 
 `start` runs the host's pools in the foreground through the instance layer and the
-runtime layer, and `stop`, `restart`, and `status` talk to it from another terminal
+runtime layer, and `stop`, `restart`, `status`, and `diagnostics` talk to it from another terminal
 over the control channel. `build` builds the runner image, and the same clients
 talk to it. On axpc the PowerShell supervisor and rebuild task keep running the
 host until Phase 4b, and neither `start` nor `build` may run beside them; see
@@ -1136,7 +1136,7 @@ these in order:
    cannot be tagged. It prints the name it builds.
 3. It contains its children as `start` does on Windows, and opens the control
    channel. While it builds, `status` answers `state: building`, `image: <name>`,
-   and `elapsed: <s> s`; a `start`, a resume, and `restart` are refused, naming
+   and `elapsed: <s> s`; a `start`, a resume, `restart`, and `diagnostics` are refused, naming
    the build; `stop` aborts it.
 4. Docker must answer `docker info` within 30 s, or `build` exits 1 before any
    build. A `docker info` that fails ends it at once, and the message gives the
