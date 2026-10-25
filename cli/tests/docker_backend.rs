@@ -12,7 +12,9 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use runners_cli::profile::Profile;
-use runners_cli::runtime::backend::{Backend, ContainerSpec, CpuRequest, Mount, StopRequest};
+use runners_cli::runtime::backend::{
+    Backend, ContainerSpec, CpuRequest, DiagnosticRecord, Mount, StopRequest,
+};
 use runners_cli::runtime::board::Board;
 use runners_cli::runtime::docker::DockerLimits;
 use runners_cli::runtime::fake::FakeRegistrar;
@@ -71,6 +73,7 @@ fn spec(name: &str) -> ContainerSpec {
         mounts: Vec::new(),
         image: "img:tag".to_string(),
         run_command: "/home/runner/run.sh".to_string(),
+        diagnostic: None,
     }
 }
 
@@ -387,6 +390,54 @@ async fn a_held_container_client_runs_in_its_own_process_group() {
     assert!(fake.backend.running_containers().is_empty());
 }
 
+/// The diagnostic variant of the run contract, written out here independently of
+/// the code under test from the PowerShell supervisor's `docker-commands.ps1`.
+fn diagnostic_job_call(name: &str, raw_records: bool) -> Vec<String> {
+    let mut call = words(&format!(
+        "run --pull never --name {name} --label runners.diagnostic-lifecycle=1 --cpus 1 --cpuset-cpus 0 --memory 1g --memory-swap 1g -e ACTIONS_RUNNER_INPUT_JITCONFIG img:tag bash -c"
+    ));
+    let mode = if raw_records { " raw-run" } else { "" };
+    // the guard is the ordinary launcher without its last line
+    let guard = LAUNCHER.strip_suffix("\nexec \"$@\"").unwrap();
+    call.push(format!(
+        "{guard}\nif [ -x /usr/local/bin/runner-diagnostics ]; then exec /usr/local/bin/runner-diagnostics{mode}; else printf \"Diagnostic gap: collector missing.\\n\" >&2; exec /home/runner/run.sh; fi"
+    ));
+    call.extend(words("-- 0 /home/runner/run.sh"));
+    call
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_diagnostic_container_runs_the_powershell_variant_and_stays_retained_after_it_ends() {
+    for raw_records in [false, true] {
+        let fake = Fake::new();
+        let name = "d-1-20240305060708009";
+        let mut spec = spec(name);
+        spec.diagnostic = Some(DiagnosticRecord {
+            pool: "d".to_string(),
+            directory: "/evidence".to_string(),
+            raw_records,
+        });
+        let exit = fake
+            .backend
+            .run_container(&spec, &Secret::new("jit".to_string()))
+            .await
+            .unwrap();
+        assert_eq!(exit, 0);
+        let runs: Vec<Vec<String>> = fake
+            .invocations()
+            .into_iter()
+            .map(|call| call.arguments)
+            .filter(|arguments| arguments[0] == "run")
+            .collect();
+        assert_eq!(runs, [diagnostic_job_call(name, raw_records)]);
+        // without --rm the ended container stays, and the backend still holds it
+        assert_eq!(fake.containers(), [name]);
+        assert_eq!(fake.backend.retained().names(), [name]);
+        assert_eq!(fake.backend.retained().record(name), spec.diagnostic);
+        assert!(fake.backend.running_containers().is_empty());
+    }
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn container_output_is_forwarded_and_a_stop_is_one_call_with_the_grace() {
     let fake = Fake::new();
@@ -673,6 +724,14 @@ async fn stale_cleanup_through_docker_removes_only_own_unlabelled_containers() {
         ]
     );
     assert_eq!(removals(&fake), [words(&format!("rm -f {own}"))]);
+    // the labelled container got one bounded stop and stays
+    let stops: Vec<Vec<String>> = fake
+        .invocations()
+        .into_iter()
+        .filter(|call| call.arguments.first().map(String::as_str) == Some("stop"))
+        .map(|call| call.arguments)
+        .collect();
+    assert_eq!(stops, [words(&format!("stop --time 10 {evidence}"))]);
 
     // with the labelled container gone, the pool starts.
     fake.script("containers", &format!("{own}\t\n"));

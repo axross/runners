@@ -6,11 +6,12 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use clap::{Arg, ArgMatches, Command, value_parser};
+use clap::{Arg, ArgAction, ArgMatches, Command, value_parser};
 
 use crate::build::{BuildRequest, build};
 use crate::checkout;
 use crate::control::{Client, run_client};
+use crate::diagnostics::{EXPORT_COMMAND, ExportRequest};
 use crate::profile::Profile;
 use crate::start::{StartRequest, start};
 use crate::summary::plan_summary;
@@ -90,12 +91,50 @@ fn command() -> Command {
         )
         .subcommand(
             Command::new("status").about("Print what the instance and its pools are doing"),
+        )
+        .subcommand(Command::new("diagnostics").about(
+            "Export, then remove, the diagnostic containers the instance still holds",
+        ))
+        .subcommand(
+            Command::new(EXPORT_COMMAND)
+                .hide(true)
+                .arg(Arg::new("pool").long("pool").required(true))
+                .arg(Arg::new("directory").long("directory").required(true))
+                .arg(Arg::new("container").long("container"))
+                .arg(
+                    Arg::new("raw-records")
+                        .long("raw-records")
+                        .action(ArgAction::SetTrue),
+                )
+                .arg(
+                    Arg::new("checkout")
+                        .long("checkout")
+                        .value_parser(value_parser!(PathBuf)),
+                )
+                .arg(
+                    Arg::new("deadline-ms")
+                        .long("deadline-ms")
+                        .required(true)
+                        .value_parser(value_parser!(u64)),
+                )
+                .arg(
+                    Arg::new("client")
+                        .required(true)
+                        .num_args(1)
+                        .last(true)
+                        .value_parser(value_parser!(OsString)),
+                ),
         );
     #[cfg(unix)]
     let command = command.subcommand(
         Command::new(crate::shim::SHIM_COMMAND)
             .hide(true)
             .arg(Arg::new("name").long("name").required(true))
+            .arg(
+                Arg::new("diagnostic")
+                    .long(crate::shim::DIAGNOSTIC_FLAG.trim_start_matches('-'))
+                    .action(ArgAction::SetTrue),
+            )
             .arg(
                 Arg::new("client")
                     .required(true)
@@ -135,6 +174,10 @@ pub fn run(
         Some(("stop", _)) => ExitCode::from(run_client(Client::Stop, test_root, out, err)),
         Some(("restart", _)) => ExitCode::from(run_client(Client::Restart, test_root, out, err)),
         Some(("status", _)) => ExitCode::from(run_client(Client::Status, test_root, out, err)),
+        Some(("diagnostics", _)) => {
+            ExitCode::from(run_client(Client::Diagnostics, test_root, out, err))
+        }
+        Some((EXPORT_COMMAND, export_matches)) => run_export(export_matches),
         #[cfg(unix)]
         Some((crate::shim::SHIM_COMMAND, shim_matches)) => run_shim(shim_matches),
         _ => ExitCode::from(EXIT_USAGE),
@@ -153,7 +196,28 @@ fn run_shim(matches: &ArgMatches) -> ExitCode {
         return ExitCode::from(EXIT_USAGE);
     };
     let arguments: Vec<OsString> = client.cloned().collect();
-    crate::shim::run(name, program, &arguments)
+    crate::shim::run(name, matches.get_flag("diagnostic"), program, &arguments)
+}
+
+fn run_export(matches: &ArgMatches) -> ExitCode {
+    let (Some(pool), Some(directory), Some(deadline), Some(docker)) = (
+        matches.get_one::<String>("pool"),
+        matches.get_one::<String>("directory"),
+        matches.get_one::<u64>("deadline-ms"),
+        matches.get_one::<OsString>("client"),
+    ) else {
+        return ExitCode::from(EXIT_USAGE);
+    };
+    let request = ExportRequest {
+        pool: pool.clone(),
+        container: matches.get_one::<String>("container").cloned(),
+        directory: directory.clone(),
+        raw_records: matches.get_flag("raw-records"),
+        checkout: matches.get_one::<PathBuf>("checkout").cloned(),
+        deadline: std::time::Duration::from_millis(*deadline),
+    };
+    crate::start::hide_panic_messages();
+    crate::diagnostics::exporter::run(&request, docker)
 }
 
 /// The profile named on the command line, or the one this OS implies.

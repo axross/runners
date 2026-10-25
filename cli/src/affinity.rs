@@ -309,6 +309,7 @@ mod tests {
             memory_gb: 8,
             volumes: Vec::new(),
             diagnostics: false,
+            diagnostic_directory: None,
             diagnostic_raw_records: false,
             os: None,
             disk_gb: None,

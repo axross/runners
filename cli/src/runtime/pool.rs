@@ -3,18 +3,23 @@
 //! Preparation follows the PowerShell supervisor: a pool with a missing or blank
 //! token file is skipped, Docker is waited for, and then each pool's stale
 //! containers are removed and its volumes prepared. A pool that cannot be prepared
-//! is skipped with a warning naming it, so it does not take the others down.
+//! is skipped with a warning naming it, so it does not take the others down. A
+//! diagnostics-enabled pool's labelled containers that an earlier process left are
+//! finalised first; with diagnostics off they are stopped and refuse the pool.
 
 use std::fmt;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use tokio::time::Instant;
+
 use crate::affinity::{affinity_count, affinity_offset, slot_offset};
 use crate::profile::Profile;
 use crate::validate::{Entry, Plan, PlannedVolume, format_cpu_count};
 
-use super::backend::{Backend, Mount};
+use super::backend::{Backend, DiagnosticRecord, Mount, StopRequest};
 use super::board::{Board, PoolState};
+use super::diagnostic::{STOP_GRACE, STOP_WITHIN, finalize_claimed, gap_text};
 use super::log::Log;
 use super::name::{cpu_probe_name, is_own_container_name};
 use super::token::read_token;
@@ -42,7 +47,8 @@ pub struct PoolSpec {
     pub cpu_offset: u64,
     pub memory_gb: u32,
     pub volumes: Vec<PlannedVolume>,
-    pub diagnostics: bool,
+    /// Where the pool's evidence goes, when its diagnostics are on.
+    pub diagnostic: Option<DiagnosticRecord>,
     pub image: String,
     slot_offsets: Vec<u64>,
 }
@@ -62,6 +68,7 @@ pub struct SlotSpec {
     pub memory_gb: u32,
     pub mounts: Vec<Mount>,
     pub image: String,
+    pub diagnostic: Option<DiagnosticRecord>,
 }
 
 /// Why a plan cannot become pools.
@@ -95,6 +102,25 @@ pub fn pools_from_plan(plan: &Plan) -> Result<Vec<PoolSpec>, PlanError> {
         .collect())
 }
 
+/// The settings of a diagnostics-enabled entry's evidence.
+fn diagnostic_record(entry: &Entry) -> Option<DiagnosticRecord> {
+    let directory = entry
+        .diagnostic_directory
+        .as_ref()
+        .filter(|_| entry.diagnostics)?;
+    Some(DiagnosticRecord {
+        pool: entry.name.clone(),
+        directory: directory.clone(),
+        raw_records: entry.diagnostic_raw_records,
+    })
+}
+
+/// The evidence settings of every diagnostics-enabled pool of `plan`, in order.
+#[must_use]
+pub fn diagnostic_records(plan: &Plan) -> Vec<DiagnosticRecord> {
+    plan.entries.iter().filter_map(diagnostic_record).collect()
+}
+
 fn pool_from_entry(plan: &Plan, index: usize, entry: &Entry, image: &str) -> PoolSpec {
     PoolSpec {
         path: entry.path.clone(),
@@ -109,7 +135,7 @@ fn pool_from_entry(plan: &Plan, index: usize, entry: &Entry, image: &str) -> Poo
         cpu_offset: affinity_offset(&plan.entries, index),
         memory_gb: entry.memory_gb,
         volumes: entry.volumes.clone(),
-        diagnostics: entry.diagnostics,
+        diagnostic: diagnostic_record(entry),
         image: image.to_string(),
         slot_offsets: (1..=entry.slots)
             .map(|slot| slot_offset(&plan.entries, index, slot))
@@ -142,6 +168,7 @@ impl PoolSpec {
                 memory_gb: self.memory_gb,
                 mounts: self.volumes.iter().map(Mount::from).collect(),
                 image: self.image.clone(),
+                diagnostic: self.diagnostic.clone(),
             })
             .collect()
     }
@@ -182,10 +209,9 @@ fn skip(log: &dyn Log, board: &Board, pool: &PoolSpec, reason: &str) {
 }
 
 /// The first step of preparing the pools, which needs no Docker: the pools whose
-/// token file reads and whose diagnostics are off, in order, each now waiting for
-/// Docker. The others are skipped with a warning that names the pool and the
-/// reason. Each pool's state goes on `board`, and every token read is masked in
-/// `log`.
+/// token file reads, in order, each now waiting for Docker. The others are skipped
+/// with a warning that names the pool and the reason. Each pool's state goes on
+/// `board`, and every token read is masked in `log`.
 #[must_use]
 pub fn admit_pools(pools: Vec<PoolSpec>, log: &dyn Log, board: &Board) -> Vec<PoolSpec> {
     let mut admitted = Vec::new();
@@ -194,17 +220,8 @@ pub fn admit_pools(pools: Vec<PoolSpec>, log: &dyn Log, board: &Board) -> Vec<Po
             Err(error) => skip(log, board, &pool, &format!("{}: {error}.", pool.path)),
             Ok(token) => {
                 log.mask(&token);
-                if pool.diagnostics {
-                    skip(
-                        log,
-                        board,
-                        &pool,
-                        "diagnostics are not supported by this runtime yet, so the pool is skipped.",
-                    );
-                } else {
-                    board.set_pool(&pool.name, PoolState::WaitingForDocker);
-                    admitted.push(pool);
-                }
+                board.set_pool(&pool.name, PoolState::WaitingForDocker);
+                admitted.push(pool);
             }
         }
     }
@@ -250,8 +267,10 @@ pub async fn prepare_admitted<B: Backend>(
 }
 
 /// Removes the pool's own leftover containers: those named like its slots' and not
-/// labelled as diagnostics evidence. A labelled one is never removed; with
-/// diagnostics off, one that remains refuses the pool.
+/// labelled as diagnostics evidence. A labelled one the backend already retains
+/// keeps its record and is left alone. Any other labelled one is never removed
+/// without its export: with diagnostics on it is retained with the pool's settings
+/// and finalised; with diagnostics off it gets a bounded stop and refuses the pool.
 async fn clear_stale_containers<B: Backend>(
     backend: &B,
     pool: &PoolSpec,
@@ -261,18 +280,16 @@ async fn clear_stale_containers<B: Backend>(
         .list_pool_containers(&pool.name)
         .await
         .map_err(|error| error.to_string())?;
-    let mut retained = false;
+    let mut left = Vec::new();
     for name in listing
         .names
         .iter()
         .filter(|name| is_own_container_name(&pool.name, name))
     {
         if listing.diagnostic.contains(name) {
-            log.warn(&format!(
-                "Diagnostic evidence retained after disabling; deletion refused for '{name}'. \
-                 Explicit private recovery and cleanup are required before this entry can start."
-            ));
-            retained = true;
+            if !backend.retained().contains(name) {
+                left.push(name.clone());
+            }
             continue;
         }
         log.warn(&format!(
@@ -287,11 +304,87 @@ async fn clear_stale_containers<B: Backend>(
             ));
         }
     }
-    if retained {
-        return Err(
-            "Marked diagnostic containers remain after disabling; entry startup refused."
-                .to_string(),
-        );
+    match &pool.diagnostic {
+        Some(record) => {
+            finalize_left(backend, log, record, &left).await;
+            backend.retained().set_unmanaged(&pool.name, Vec::new());
+            Ok(())
+        }
+        None => refuse_left(backend, log, pool, left).await,
     }
-    Ok(())
+}
+
+/// Retains the labelled containers an earlier process left with the pool's current
+/// settings, and finalises them on one clock, reporting each one.
+async fn finalize_left<B: Backend>(
+    backend: &B,
+    log: &dyn Log,
+    record: &DiagnosticRecord,
+    left: &[String],
+) {
+    if left.is_empty() {
+        return;
+    }
+    let retained = backend.retained();
+    for name in left {
+        retained.adopt(name, record);
+    }
+    let claims = left
+        .iter()
+        .filter_map(|name| retained.claim(name))
+        .collect();
+    for acted in finalize_claimed(backend, log, claims, Instant::now()).await {
+        let removed = if acted.finalized.removed {
+            "removed"
+        } else {
+            "not removed"
+        };
+        // the gap itself is already warned by the finalisation
+        let export = if gap_text(acted.finalized.export).is_none() {
+            "exported"
+        } else {
+            "export gap"
+        };
+        log.info(&format!(
+            "Diagnostic container {} that an earlier run left: {export}, {removed}.",
+            acted.name
+        ));
+    }
+}
+
+/// Gives the labelled containers of a pool with diagnostics off a bounded stop and
+/// refuses the pool, leaving them to the manual recovery.
+async fn refuse_left<B: Backend>(
+    backend: &B,
+    log: &dyn Log,
+    pool: &PoolSpec,
+    left: Vec<String>,
+) -> Result<(), String> {
+    backend.retained().set_unmanaged(&pool.name, left.clone());
+    if left.is_empty() {
+        return Ok(());
+    }
+    let stop = StopRequest {
+        names: left.clone(),
+        grace: STOP_GRACE,
+        budget: STOP_WITHIN,
+    };
+    if let Err(error) = backend.stop_containers(&stop).await {
+        log.warn(&format!(
+            "Stopping the labelled containers of {} failed: {error}",
+            pool.describe()
+        ));
+    }
+    for name in &left {
+        log.warn(&format!(
+            "Diagnostic evidence retained after disabling; deletion refused for '{name}'. \
+             Explicit private recovery and cleanup are required before this entry can start."
+        ));
+    }
+    Err(
+        "Marked diagnostic containers remain after disabling; entry startup refused. \
+         Recover them by hand as \"Recover before disabling diagnostics\" in the Windows \
+         Runner Host document describes."
+            .to_string(),
+    )
 }

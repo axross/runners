@@ -647,6 +647,27 @@ mod abort {
 mod instance {
     use super::*;
 
+    /// Waits until the fake engine holds the slot's job container, after which the
+    /// instance calls `docker` no more until it is stopped. The slot reports the
+    /// container before its client starts, so the status alone would race that
+    /// client's call.
+    fn wait_for_job(host: &Host) {
+        let started = Instant::now();
+        host.wait_for_status("running container r-1-", BUILT_WITHIN);
+        while !host
+            .containers()
+            .iter()
+            .any(|name| name.starts_with("r-1-"))
+        {
+            assert!(
+                started.elapsed() < BUILT_WITHIN,
+                "the fake docker never recorded the job container; its calls: {:?}",
+                host.invocations()
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
     #[test]
     fn build_is_refused_while_an_instance_runs_or_is_stopped_before_any_docker_call() {
         let host = host();
@@ -654,9 +675,9 @@ mod instance {
         host.script("run_mode", "hold");
         let stub = Stub::start(vec![registered(), registered()]);
         let started = host.start(&stub);
-        host.wait_for_status("running container r-1-", BUILT_WITHIN);
+        wait_for_job(&host);
 
-        let before = host.invocations().len();
+        let before = host.invocations();
         let refused = build(&host);
         let (_, stderr) = texts(&refused);
         assert_eq!(refused.status.code(), Some(1), "{stderr}");
@@ -664,14 +685,14 @@ mod instance {
             stderr.contains("an instance exists and is running"),
             "{stderr}"
         );
-        assert_eq!(host.invocations().len(), before);
+        assert_eq!(host.invocations(), before, "the refused build ran nothing");
 
         let valid = fs::read(&host.config).unwrap();
         fs::write(&host.config, b"{}").unwrap();
         assert_eq!(host.client(&["restart"]).status.code(), Some(1));
         host.wait_for_status("state: stopped", Duration::from_secs(5));
         fs::write(&host.config, &valid).unwrap();
-        let before = host.invocations().len();
+        let before = host.invocations();
         let refused = build(&host);
         let (_, stderr) = texts(&refused);
         assert_eq!(refused.status.code(), Some(1), "{stderr}");
@@ -679,7 +700,7 @@ mod instance {
             stderr.contains("an instance exists and is stopped"),
             "{stderr}"
         );
-        assert_eq!(host.invocations().len(), before);
+        assert_eq!(host.invocations(), before, "the refused build ran nothing");
 
         assert_eq!(host.client(&["stop"]).status.code(), Some(0));
         assert_eq!(
@@ -689,7 +710,7 @@ mod instance {
     }
 
     #[test]
-    fn while_a_build_runs_start_and_restart_are_refused_and_status_shows_it() {
+    fn while_a_build_runs_start_restart_and_diagnostics_are_refused_and_status_shows_it() {
         let host = host();
         host.script("build_hangs", "");
         let started = spawn_build(&host);
@@ -721,6 +742,11 @@ mod instance {
         let restart = host.client(&["restart"]);
         let (_, stderr) = texts(&restart);
         assert_eq!(restart.status.code(), Some(1), "{stderr}");
+        assert!(stderr.contains("the instance is building"), "{stderr}");
+
+        let diagnostics = host.client(&["diagnostics"]);
+        let (_, stderr) = texts(&diagnostics);
+        assert_eq!(diagnostics.status.code(), Some(1), "{stderr}");
         assert!(stderr.contains("the instance is building"), "{stderr}");
 
         let second = build(&host);

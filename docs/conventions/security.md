@@ -392,6 +392,15 @@ owns how the log is written and masked and how its children are contained.
 - No token or JIT configuration reaches a log line, the terminal, a debug form, an
   error message, a command line, or a control-channel response.
 - Every job container's `docker` client ends when `start` ends, however it ends.
+- On Unix a diagnostic container's shim ends its container with `docker kill` and
+  keeps it, rather than removing it, so its evidence survives for the next
+  finalisation. A forced stop and the Windows console close do the same on purpose.
+- Each export runs in an exporter child that ends at its deadline or when its
+  liveness pipe from `start` closes, and kills its own `docker` clients first. Its
+  clients run in process groups of their own with the JIT variable cleared, and on
+  Windows the child is also in `start`'s Job Object. `start` closes the pipe at the
+  export deadline and kills the child 1 s later if it has not ended, so the child
+  outlives neither its deadline nor `start`.
 - The log directory and its files are per user and private to that user.
 
 Residual risks, accepted on a single-user host:
@@ -405,6 +414,45 @@ Residual risks, accepted on a single-user host:
   user profile's.
 - A JIT configuration that a runtime-core panic's message carried would reach the
   log unmasked, because its mask ends as the panic unwinds.
+- A kept diagnostic container, ended but not removed, still holds its JIT
+  configuration in its environment until it is finalised, where anyone who may run
+  `docker inspect` on the host can read it. The ephemeral runner it configured has
+  already ended with its job. On Windows a hard kill of `start` leaves
+  a diagnostic job running, as it does an ordinary one, until the next `start`.
+- An exporter child that `start` has to kill, because it did not end within 1 s of
+  its pipe closing, cannot kill its `docker` clients. On Unix they run until each
+  ends by itself; on Windows the Job Object ends them when `start` ends. They carry
+  no JIT configuration.
+
+## Diagnostic Evidence Stays Private
+
+A diagnostic container's bundle holds what the collector observed during a job, and
+the job ran code from the repository. [CLI](../operations/cli.md#diagnostics) owns
+how a bundle is written.
+
+- The sink is a directory the operator created, outside the checkout and private
+  to the user who runs the CLI, so the evidence reaches no other user and none of
+  the repository's files. The CLI refuses a sink that fails its checks and never
+  creates, repairs, or relaxes one; the checks and the modes a bundle is written
+  with are under Sink checks in [CLI](../operations/cli.md#diagnostics).
+- On Windows the CLI does not check the sink's owner or access rules, because no
+  safe call reads them; a bundle inherits the sink's rules. The PowerShell exporter
+  checks them, so the operator's ACL step in
+  [Windows Runner Host](../operations/windows-runner-host.md#collecting-private-diagnostics)
+  is the only protection left once Phase 4c deletes the PowerShell scripts. A sink
+  whose rules admit another user would expose the evidence to that user. This is
+  accepted on a single-user host, with the ACL step kept in the procedure.
+- The sink is never mounted into a job. The container's evidence leaves it only
+  through the identity allowlist, which never reads the environment, and an archive
+  reader that accepts only the collector's regular files, by name, within fixed
+  sizes, so a job cannot write a link, a path outside its bundle, or more than
+  40 MiB.
+- A bundle is untrusted evidence. The CLI never prints or logs its contents, and a
+  warning names only the pool, the container, and the gap.
+- A labelled container is removed only by a finalisation or by the manual
+  recovery, so a later `start` with the pool's diagnostics off does not destroy its
+  evidence. [CLI](../operations/cli.md#diagnostics) owns when a finalisation
+  exports, and the cases where it removes a container without an export.
 
 ## `build` Builds Only What the Binary Embeds
 

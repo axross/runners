@@ -14,9 +14,11 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use runners_cli::instance::fake::{FakeCore, FakeSource};
-use runners_cli::instance::lifecycle::{Ended, Instance, Settings, StopTimes};
+use runners_cli::instance::lifecycle::{Core, Ended, Instance, Settings, Source, StopTimes};
 use runners_cli::instance::protocol::{Incoming, Request, Response};
 use runners_cli::profile::Profile;
+use runners_cli::runtime::backend::Backend;
+use runners_cli::runtime::clock::Clock;
 use runners_cli::runtime::fake::{FakeBackend, FakeClock, MemoryLog};
 use runners_cli::validate::{Plan, validate};
 use tokio::sync::{mpsc, oneshot};
@@ -77,8 +79,6 @@ impl Rig {
         F: FnOnce(Control) -> Fut,
         Fut: Future<Output = T>,
     {
-        let (sender, mut receiver) = mpsc::unbounded_channel();
-        let (force, mut forced) = mpsc::unbounded_channel();
         let instance = Instance::new(
             Self::settings(),
             &self.backend,
@@ -88,24 +88,51 @@ impl Rig {
             &self.log,
         )
         .with_stop_times(self.times.get());
-        let run = instance.run(self.plan.clone(), &mut receiver);
-        // what a second Ctrl+C does, on a request from the script
-        let forcing = async {
-            while forced.recv().await.is_some() {
-                instance.force_removal();
-            }
-            std::future::pending::<()>().await;
-        };
-        let both = async {
-            tokio::select! {
-                outcome = async { tokio::join!(run, script(Control { sender, force })) } => outcome,
-                () = forcing => unreachable!(),
-            }
-        };
-        tokio::time::timeout(Duration::from_secs(10), both)
-            .await
-            .expect("the instance and the script did not both finish")
+        drive(
+            &instance,
+            self.plan.clone(),
+            Duration::from_secs(10),
+            script,
+        )
+        .await
     }
+}
+
+/// Runs `instance` from `plan` and the script together, failing a run that takes
+/// longer than `within`. The script ends the instance, as a client's `stop` does.
+pub async fn drive<B, K, C, S, F, Fut, T>(
+    instance: &Instance<'_, B, K, C, S>,
+    plan: Plan,
+    within: Duration,
+    script: F,
+) -> (Ended, T)
+where
+    B: Backend,
+    K: Clock,
+    C: Core,
+    S: Source,
+    F: FnOnce(Control) -> Fut,
+    Fut: Future<Output = T>,
+{
+    let (sender, mut receiver) = mpsc::unbounded_channel();
+    let (force, mut forced) = mpsc::unbounded_channel();
+    let run = instance.run(plan, &mut receiver);
+    // what a second Ctrl+C does, on a request from the script
+    let forcing = async {
+        while forced.recv().await.is_some() {
+            instance.force_removal();
+        }
+        std::future::pending::<()>().await;
+    };
+    let both = async {
+        tokio::select! {
+            outcome = async { tokio::join!(run, script(Control { sender, force })) } => outcome,
+            () = forcing => unreachable!(),
+        }
+    };
+    tokio::time::timeout(within, both)
+        .await
+        .expect("the instance and the script did not both finish")
 }
 
 pub struct Control {

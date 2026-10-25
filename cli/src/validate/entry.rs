@@ -111,7 +111,8 @@ pub fn read_entry(value: &Value, path: &str, cx: &mut Context) -> Option<Entry> 
         Profile::Axmc => read_disk(&node.disk_gb, path, &mut cx.errors).map(Some),
     };
     let (diagnostics, raw_records) = read_diagnostic_flags(&node, path, &mut cx.errors);
-    read_diagnostic_directory(&node.diagnostic_directory, path, diagnostics, cx);
+    let diagnostic_directory =
+        read_diagnostic_directory(&node.diagnostic_directory, path, diagnostics, cx);
     if raw_records && !diagnostics {
         cx.errors
             .add(format!("{path}.diagnosticRawRecords: requires diagnostics"));
@@ -148,6 +149,7 @@ pub fn read_entry(value: &Value, path: &str, cx: &mut Context) -> Option<Entry> 
             })
             .collect(),
         diagnostics,
+        diagnostic_directory,
         diagnostic_raw_records: raw_records,
         os,
         disk_gb,
@@ -246,13 +248,19 @@ fn read_diagnostic_flags(node: &EntryFields, path: &str, errors: &mut Errors) ->
     (flags[0], flags[1])
 }
 
-fn read_diagnostic_directory(directory: &Field, path: &str, diagnostics: bool, cx: &mut Context) {
+/// Returns the directory of a diagnostics-enabled entry, when it is valid.
+fn read_diagnostic_directory(
+    directory: &Field,
+    path: &str,
+    diagnostics: bool,
+    cx: &mut Context,
+) -> Option<String> {
     let field = format!("{path}.diagnosticDirectory");
     if !diagnostics {
         if directory.get().is_some() {
             cx.errors.add(format!("{field}: requires diagnostics"));
         }
-        return;
+        return None;
     }
     let (accepts, expectation): (fn(&str) -> bool, &str) = match cx.profile {
         Profile::Axpc => (
@@ -264,10 +272,7 @@ fn read_diagnostic_directory(directory: &Field, path: &str, diagnostics: bool, c
             "an absolute local POSIX directory outside the checkout",
         ),
     };
-    let Some(directory) = fields::string(directory, &field, &mut cx.errors, accepts, expectation)
-    else {
-        return;
-    };
+    let directory = fields::string(directory, &field, &mut cx.errors, accepts, expectation)?;
     if cx.profile == Profile::Axpc && paths::has_windows_dot_component(directory) {
         cx.errors
             .add(format!("{field}: must not contain dot path components"));
@@ -281,4 +286,5 @@ fn read_diagnostic_directory(directory: &Field, path: &str, diagnostics: bool, c
         }
         None => cx.checkout_rule_skipped = true,
     }
+    Some(directory.to_string())
 }

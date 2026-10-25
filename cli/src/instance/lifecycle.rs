@@ -4,8 +4,8 @@
 //! The instance is running or stopped, with stopping and resuming between them.
 //! One task owns the state and serves the requests of the control channel, so a
 //! request that arrives during a transition is answered at once: `status` tells the
-//! truth, `stop` is taken, and `restart` and `resume` are refused until the
-//! transition ends. The pools themselves run in a [`Core`], which this module
+//! truth, `stop` is taken, and `restart`, `diagnostics` and `resume` are refused
+//! until the transition ends. The pools themselves run in a [`Core`], which this module
 //! supervises: an error or a panic of the core while no stop was asked for is a
 //! failure, and the core is restarted. What starts and stops a process is the
 //! caller's.
@@ -21,9 +21,11 @@ use std::time::Duration;
 use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::profile::Profile;
-use crate::runtime::backend::{Backend, StopRequest};
+use crate::runtime::backend::{Backend, DiagnosticRecord, StopRequest};
 use crate::runtime::clock::Clock;
+use crate::runtime::diagnostic::{self, Flushed};
 use crate::runtime::log::Log;
+use crate::runtime::pool::diagnostic_records;
 use crate::runtime::scrub::scrub_error_text;
 use crate::runtime::worker::sleep_or_stop;
 use crate::validate::Plan;
@@ -180,14 +182,17 @@ pub struct Settings {
 }
 
 /// How the instance ended.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ended {
-    /// Whether every removal of containers in the instance's life succeeded: at a
-    /// stop, a restart, or a failure of the runtime core.
+    /// Whether every removal of ordinary containers in the instance's life
+    /// succeeded: at a stop, a restart, or a failure of the runtime core.
     pub containers_removed: bool,
     /// Why the instance ended: what its first run of the core found, or
     /// [`Ending::Ordinary`] when it ended otherwise.
     pub ending: Ending,
+    /// The diagnostic containers the backend still retains, which the next start
+    /// finalises: ended and kept by a forced stop, or not yet removed.
+    pub kept: Vec<String>,
 }
 
 enum Next {
@@ -241,6 +246,44 @@ fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
 
 type Requests = mpsc::UnboundedReceiver<Incoming>;
 
+/// A `diagnostics` request under way, and where its answer goes.
+type Flush<'f> = Option<(
+    Pin<Box<dyn Future<Output = Response> + 'f>>,
+    oneshot::Sender<Response>,
+)>;
+
+/// Waits for the `diagnostics` request under way, which must be there.
+async fn flushed(flush: &mut Flush<'_>) -> Response {
+    match flush {
+        Some((future, _)) => future.as_mut().await,
+        None => std::future::pending().await,
+    }
+}
+
+/// The answer to `diagnostics`: a `pool` field per pool, a `container` field per
+/// container line, and a `result` of `removed`, `incomplete` or `nothing`.
+fn flushed_response(flushed: &Flushed) -> Response {
+    let response = Response::ok("");
+    if flushed.nothing {
+        return response.with("result", "nothing");
+    }
+    let mut response = response;
+    for pool in &flushed.pools {
+        response = response.with("pool", &pool.line());
+    }
+    for line in &flushed.containers {
+        response = response.with("container", line);
+    }
+    response.with(
+        "result",
+        if flushed.complete {
+            "removed"
+        } else {
+            "incomplete"
+        },
+    )
+}
+
 pub struct Instance<'a, B, K, C, S> {
     settings: Settings,
     backend: &'a B,
@@ -256,6 +299,8 @@ pub struct Instance<'a, B, K, C, S> {
     core_has_run: Cell<bool>,
     ending: Cell<Ending>,
     force: watch::Sender<bool>,
+    /// The diagnostics-enabled pools of the plan the core runs, or ran last.
+    enabled: RefCell<Vec<DiagnosticRecord>>,
 }
 
 impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
@@ -283,6 +328,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
             core_has_run: Cell::new(false),
             ending: Cell::new(Ending::Ordinary),
             force: watch::Sender::new(false),
+            enabled: RefCell::new(Vec::new()),
         }
     }
 
@@ -297,10 +343,12 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
     }
 
     /// Skips the grace period: a `docker stop` under way, or one still to come, is
-    /// abandoned and what remains is force-removed at once. A second Ctrl+C or
-    /// SIGINT asks for it.
+    /// abandoned and what remains is force-removed at once, while every diagnostic
+    /// container is ended and kept without its export. A second Ctrl+C or SIGINT
+    /// asks for it.
     pub fn force_removal(&self) {
         self.force.send_replace(true);
+        self.backend.retained().force();
     }
 
     /// Runs the instance with its first plan until a stop is asked for. It answers
@@ -316,6 +364,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
                     return Ended {
                         containers_removed: self.containers_removed.get(),
                         ending: self.ending.get(),
+                        kept: self.backend.retained().names(),
                     };
                 }
             };
@@ -356,15 +405,41 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
         Response::refused(&format!("the instance is {name}")).with("state", name)
     }
 
+    /// Finalises the diagnostic containers nobody holds whose job has ended, and
+    /// gives the answer to `diagnostics`.
+    async fn flush_diagnostics(&self) -> Response {
+        let enabled = self.enabled.borrow().clone();
+        flushed_response(&diagnostic::flush(self.backend, self.log, &enabled).await)
+    }
+
     async fn running(&self, plan: &Plan, requests: &mut Requests) -> Next {
         self.set_state(State::Running);
+        *self.enabled.borrow_mut() = diagnostic_records(plan);
+        self.backend
+            .retained()
+            .retain_unmanaged(|pool| plan.entries.iter().any(|entry| entry.name == pool));
         let (stop, stop_receiver) = watch::channel(false);
         let mut cycle = Box::pin(self.core_cycle(plan, stop_receiver));
+        let mut flush: Flush<'_> = None;
         let mut open = true;
         loop {
             tokio::select! {
+                response = flushed(&mut flush), if flush.is_some() => {
+                    if let Some((_, reply)) = flush.take() {
+                        let _ = reply.send(response);
+                    }
+                }
                 end = &mut cycle => {
-                    return match end {
+                    // a `diagnostics` under way finishes first, while the requests
+                    // are answered; a stop among them ends the instance after it
+                    if let Some((future, reply)) = flush.take() {
+                        let response = self
+                            .serve(requests, false, future)
+                            .await
+                            .unwrap_or_else(Response::ending);
+                        let _ = reply.send(response);
+                    }
+                    let next = match end {
                         CycleEnd::LimitReached => {
                             self.log.warn(
                                 "The runtime core failed too often, so the instance is stopped. \
@@ -394,6 +469,11 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
                             Next::Idle
                         }
                     };
+                    if self.exit_requested.get() && matches!(next, Next::Idle) {
+                        self.set_state(State::Stopping);
+                        return Next::Exit;
+                    }
+                    return next;
                 }
                 incoming = requests.recv(), if open => {
                     let Some(incoming) = incoming else {
@@ -407,13 +487,21 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
                         Request::Resume(_) => {
                             let _ = incoming.reply.send(self.refuse_busy());
                         }
+                        Request::Diagnostics if flush.is_some() => {
+                            let _ = incoming.reply.send(Response::refused(
+                                "a diagnostics request is already under way",
+                            ));
+                        }
+                        Request::Diagnostics => {
+                            flush = Some((Box::pin(self.flush_diagnostics()), incoming.reply));
+                        }
                         Request::Stop => {
                             let _ = incoming.reply.send(Response::ok("stopping"));
-                            self.wind_down(&stop, cycle, requests).await;
+                            self.wind_down(&stop, cycle, flush, requests).await;
                             return Next::Exit;
                         }
                         Request::Restart => {
-                            self.wind_down(&stop, cycle, requests).await;
+                            self.wind_down(&stop, cycle, flush, requests).await;
                             if self.exit_requested.get() {
                                 let _ = incoming.reply.send(self.refuse_busy());
                                 return Next::Exit;
@@ -426,14 +514,16 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
         }
     }
 
-    /// Asks the core to stop and runs the container steps while it winds down, all
-    /// within the exit deadline; whatever still runs then is dropped with `cycle`,
-    /// which kills its clients. The containers are read before the core's workers
-    /// go, because dropping a worker forgets its container.
+    /// Asks the core to stop and runs the container steps while it winds down, and
+    /// lets a `diagnostics` under way finish, all within the exit deadline; whatever
+    /// still runs then is dropped with `cycle`, which kills its clients. The
+    /// containers are read before the core's workers go, because dropping a worker
+    /// forgets its container.
     async fn wind_down<F: Future<Output = CycleEnd>>(
         &self,
         stop: &watch::Sender<bool>,
         cycle: Pin<Box<F>>,
+        flush: Flush<'_>,
         requests: &mut Requests,
     ) {
         let containers = self.backend.running_containers();
@@ -445,8 +535,13 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
                 self.container_steps(containers).await;
                 steps_done.set(true);
             };
+            let flushing = async {
+                if let Some((future, reply)) = flush {
+                    let _ = reply.send(future.await);
+                }
+            };
             let both = async {
-                tokio::join!(steps, cycle);
+                tokio::join!(steps, cycle, flushing);
             };
             if tokio::time::timeout(self.times.exit_deadline, both)
                 .await
@@ -479,6 +574,17 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
                     return Next::Exit;
                 }
                 Request::Restart => return self.resume(requests, incoming.reply).await,
+                Request::Diagnostics => {
+                    let response = self
+                        .serve(requests, false, self.flush_diagnostics())
+                        .await
+                        .unwrap_or_else(Response::ending);
+                    let _ = incoming.reply.send(response);
+                    if self.exit_requested.get() {
+                        self.set_state(State::Stopping);
+                        return Next::Exit;
+                    }
+                }
                 Request::Resume(resume) => {
                     if resume.profile != self.settings.profile
                         || resume.path != self.settings.config_path
@@ -577,7 +683,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
                 self.exit_requested.set(true);
                 Response::ok("stopping")
             }
-            Request::Restart | Request::Resume(_) => self.refuse_busy(),
+            Request::Restart | Request::Diagnostics | Request::Resume(_) => self.refuse_busy(),
         };
         let _ = incoming.reply.send(response);
     }
@@ -643,10 +749,20 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
         }
     }
 
+    /// Runs the ordinary containers' steps and the diagnostic containers' alongside,
+    /// the latter on a clock that starts now.
+    async fn container_steps(&self, containers: Vec<String>) {
+        let start = tokio::time::Instant::now();
+        tokio::join!(
+            self.ordinary_steps(containers),
+            diagnostic::container_steps(self.backend, self.log, start, self.times.remove_budget)
+        );
+    }
+
     /// Stops the containers in one call, and removes whatever remains in another. A
     /// forced removal abandons the stop, or skips it. A failed removal is
     /// remembered until the instance ends.
-    async fn container_steps(&self, containers: Vec<String>) {
+    async fn ordinary_steps(&self, containers: Vec<String>) {
         if containers.is_empty() {
             return;
         }

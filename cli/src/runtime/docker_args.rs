@@ -53,6 +53,18 @@ fn launcher() -> String {
     format!("{}\nexec \"$@\"", guard_script())
 }
 
+/// The diagnostic variant's launcher: the guard, then the collector, in raw mode
+/// when asked, or the runner itself with a gap when the collector is missing.
+#[must_use]
+pub fn diagnostic_launcher(raw_records: bool) -> String {
+    let mode = if raw_records { " raw-run" } else { "" };
+    format!(
+        "{}\nif [ -x /usr/local/bin/runner-diagnostics ]; then exec /usr/local/bin/runner-diagnostics{mode}; \
+         else printf \"Diagnostic gap: collector missing.\\n\" >&2; exec /home/runner/run.sh; fi",
+        guard_script()
+    )
+}
+
 fn mount_arguments(mounts: &[Mount]) -> Vec<String> {
     mounts
         .iter()
@@ -68,19 +80,27 @@ fn mount_arguments(mounts: &[Mount]) -> Vec<String> {
         .collect()
 }
 
-/// The arguments of the one `docker run` that starts a job container. The limits
-/// and the name come before the image, because Docker reads what follows the image
-/// as the container's own command.
+/// The arguments of the one `docker run` that starts a job container: the
+/// diagnostic variant for a diagnostics-enabled pool's, without `--rm`, with the
+/// diagnostics label and with the diagnostic launcher. The limits and the name come
+/// before the image, because Docker reads what follows the image as the
+/// container's own command.
 #[must_use]
 pub fn job_run_arguments(spec: &ContainerSpec) -> Vec<String> {
+    let (removal, label, launcher): (&[&str], &[&str], String) = match &spec.diagnostic {
+        Some(record) => (
+            &[],
+            &["--label", DIAGNOSTIC_LABEL],
+            diagnostic_launcher(record.raw_records),
+        ),
+        None => (&["--rm"], &[], launcher()),
+    };
     let memory = format!("{}g", spec.memory_gb);
-    let mut arguments = strings(&[
-        "run",
-        "--rm",
-        "--pull",
-        "never",
-        "--name",
-        &spec.name,
+    let mut arguments = strings(&["run"]);
+    arguments.extend(strings(removal));
+    arguments.extend(strings(&["--pull", "never", "--name", &spec.name]));
+    arguments.extend(strings(label));
+    arguments.extend(strings(&[
         "--cpus",
         &spec.cpus,
         "--cpuset-cpus",
@@ -89,7 +109,7 @@ pub fn job_run_arguments(spec: &ContainerSpec) -> Vec<String> {
         &memory,
         "--memory-swap",
         &memory,
-    ]);
+    ]));
     arguments.extend(mount_arguments(&spec.mounts));
     arguments.extend(strings(&[
         "-e",
@@ -97,11 +117,40 @@ pub fn job_run_arguments(spec: &ContainerSpec) -> Vec<String> {
         &spec.image,
         "bash",
         "-c",
-        &launcher(),
+        &launcher,
         "--",
         &spec.cpuset,
         &spec.run_command,
     ]));
+    arguments
+}
+
+/// Where the collector writes its records inside a diagnostic container, as the
+/// source of the copy.
+pub const DIAGNOSTIC_SOURCE: &str = "/tmp/runner-diagnostics/.";
+
+/// The fixed allowlist of fields `identity.txt` holds, and nothing else of the
+/// container's configuration.
+pub const IDENTITY_FORMAT: &str = "{{.Image}}|{{.HostConfig.NanoCpus}}|{{.HostConfig.Memory}}|{{.HostConfig.MemorySwap}}|{{.HostConfig.CpuQuota}}|{{.HostConfig.CpuPeriod}}|{{.HostConfig.CpusetCpus}}|{{.State.OOMKilled}}|{{.State.ExitCode}}";
+
+/// Reads a container's identity through [`IDENTITY_FORMAT`].
+#[must_use]
+pub fn identity_arguments(name: &str) -> Vec<String> {
+    strings(&["inspect", "--format", IDENTITY_FORMAT, name])
+}
+
+/// Copies the collector's directory out of a container, as an archive on standard
+/// output.
+#[must_use]
+pub fn copy_arguments(name: &str) -> Vec<String> {
+    strings(&["cp", &format!("{name}:{DIAGNOSTIC_SOURCE}"), "-"])
+}
+
+/// Ends containers at once, without removing them.
+#[must_use]
+pub fn kill_arguments(names: &[String]) -> Vec<String> {
+    let mut arguments = strings(&["kill"]);
+    arguments.extend(names.iter().cloned());
     arguments
 }
 
@@ -237,6 +286,7 @@ mod tests {
             mounts,
             image: "actions-runner:local".to_string(),
             run_command: RUN_COMMAND.to_string(),
+            diagnostic: None,
         }
     }
 
@@ -314,6 +364,59 @@ mod tests {
         let start = source.find(marker).unwrap() + marker.len();
         let end = start + source[start..].find('\'').unwrap();
         assert_eq!(PROBE_READER, &source[start..end]);
+    }
+
+    #[test]
+    fn a_diagnostics_enabled_pools_container_runs_the_diagnostic_variant() {
+        use crate::runtime::backend::DiagnosticRecord;
+        for raw_records in [false, true] {
+            let mut diagnostic = spec(Vec::new());
+            diagnostic.diagnostic = Some(DiagnosticRecord {
+                pool: "example-repo-one".to_string(),
+                directory: "C:\\diag".to_string(),
+                raw_records,
+            });
+            let arguments = job_run_arguments(&diagnostic);
+            assert!(!arguments.iter().any(|argument| argument == "--rm"));
+            assert!(
+                arguments
+                    .iter()
+                    .any(|argument| argument == DIAGNOSTIC_LABEL)
+            );
+            assert_eq!(
+                arguments
+                    .iter()
+                    .any(|argument| argument.contains("runner-diagnostics raw-run;")),
+                raw_records
+            );
+        }
+    }
+
+    /// `diagnostic-export.ps1`, where the PowerShell exporter reads the identity
+    /// and copies the collector's directory.
+    fn powershell_export_source() -> String {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../hosts/windows-docker-desktop/diagnostic-export.ps1");
+        std::fs::read_to_string(path).unwrap().replace("\r\n", "\n")
+    }
+
+    #[test]
+    fn the_identity_and_the_copy_are_the_powershell_exporters() {
+        let source = powershell_export_source();
+        assert!(
+            source.contains(&format!("$format = '{IDENTITY_FORMAT}'")),
+            "the identity allowlist differs from diagnostic-export.ps1"
+        );
+        assert!(source.contains("@('inspect', '--format', $format, $Name)"));
+        assert!(source.contains(&format!("@('cp', \"${{Name}}:{DIAGNOSTIC_SOURCE}\", '-')")));
+        assert_eq!(
+            identity_arguments("d-1-x"),
+            ["inspect", "--format", IDENTITY_FORMAT, "d-1-x"]
+        );
+        assert_eq!(
+            copy_arguments("d-1-x"),
+            ["cp", "d-1-x:/tmp/runner-diagnostics/.", "-"]
+        );
     }
 
     #[test]

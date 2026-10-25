@@ -1,4 +1,5 @@
-//! Pool preparation: token files, diagnostics pools, stale cleanup and volumes.
+//! Pool preparation: token files, diagnostic containers left over, stale cleanup
+//! and volumes.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -9,7 +10,9 @@
 mod support;
 
 use runners_cli::profile::Profile;
-use runners_cli::runtime::backend::{Backend, BackendError};
+use std::time::Duration;
+
+use runners_cli::runtime::backend::{Backend, BackendError, DiagnosticRecord, StopRequest};
 use runners_cli::runtime::board::Board;
 use runners_cli::runtime::fake::{Call, FakeBackend, FakeContainer, MemoryLog};
 use runners_cli::runtime::log::Log;
@@ -64,7 +67,7 @@ fn names(prepared: &[PoolSpec]) -> Vec<&str> {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn a_missing_or_blank_token_and_a_diagnostics_pool_are_skipped_and_the_rest_run() {
+async fn a_missing_or_blank_token_is_skipped_and_the_rest_run_a_diagnostics_pool_included() {
     let scratch = TempDir::new();
     let all = pools(
         &scratch,
@@ -80,16 +83,12 @@ async fn a_missing_or_blank_token_and_a_diagnostics_pool_are_skipped_and_the_res
     let prepared = prepare_pools(&backend, all.clone(), &log, &board)
         .await
         .unwrap();
-    assert_eq!(names(&prepared), ["alpha"]);
+    assert_eq!(names(&prepared), ["alpha", "bravo"]);
+    assert!(prepared[1].diagnostic.is_some() && prepared[0].diagnostic.is_none());
     let fields = board.fields();
     assert_eq!(fields.len(), 3, "{fields:?}");
     assert_eq!(fields[0], ("pool", "alpha: running".to_string()));
-    assert!(
-        fields[1]
-            .1
-            .starts_with("bravo: skipped: diagnostics are not supported"),
-        "{fields:?}"
-    );
+    assert_eq!(fields[1], ("pool", "bravo: running".to_string()));
     assert!(
         fields[2]
             .1
@@ -97,16 +96,10 @@ async fn a_missing_or_blank_token_and_a_diagnostics_pool_are_skipped_and_the_res
         "{fields:?}"
     );
     let warnings = log.lines();
-    assert_eq!(warnings.len(), 2, "{warnings:?}");
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
     assert!(
-        warnings[0]
-            .starts_with("WARN: repositories[1] (o/bravo) is not started and gets no slots: ")
-            && warnings[0].contains("diagnostics are not supported by this runtime yet"),
-        "{warnings:?}"
-    );
-    assert!(
-        warnings[1].starts_with("WARN: repositories[2] (o/charlie) is not started and gets no slots: repositories[2]: token file at ")
-            && warnings[1].ends_with(" is empty."),
+        warnings[0].starts_with("WARN: repositories[2] (o/charlie) is not started and gets no slots: repositories[2]: token file at ")
+            && warnings[0].ends_with(" is empty."),
         "{warnings:?}"
     );
     // every token read is masked from then on, whatever line it reaches.
@@ -132,7 +125,7 @@ async fn a_missing_or_blank_token_and_a_diagnostics_pool_are_skipped_and_the_res
     // no warning holds a token.
     assert!(log.lines().iter().all(|line| !line.contains("ghp_")));
 
-    // the skipped pools were never touched, and Docker was waited for once.
+    // the skipped pool was never touched, and Docker was waited for once.
     let calls = backend.calls();
     assert_eq!(
         calls,
@@ -142,6 +135,11 @@ async fn a_missing_or_blank_token_and_a_diagnostics_pool_are_skipped_and_the_res
             Call::PrepareVolumes {
                 image: "actions-runner:local".to_string(),
                 volumes: vec!["alpha-npm".to_string()],
+            },
+            Call::ListPoolContainers("bravo".to_string()),
+            Call::PrepareVolumes {
+                image: "actions-runner:local".to_string(),
+                volumes: vec!["bravo-npm".to_string()],
             },
         ]
     );
@@ -172,12 +170,13 @@ async fn on_macos_a_token_file_that_is_not_0600_skips_its_pool_and_the_rest_run(
     )
     .await
     .unwrap();
-    assert_eq!(names(&prepared), ["alpha"]);
+    assert_eq!(names(&prepared), ["alpha", "bravo"]);
     let warnings = log.lines();
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
     assert!(
-        warnings[1].starts_with("WARN: repositories[2] (o/charlie) is not started")
-            && warnings[1].contains("token file is not private")
-            && warnings[1].contains("has mode 0644"),
+        warnings[0].starts_with("WARN: repositories[2] (o/charlie) is not started")
+            && warnings[0].contains("token file is not private")
+            && warnings[0].contains("has mode 0644"),
         "{warnings:?}"
     );
     assert!(warnings.iter().all(|line| !line.contains("ghp_")));
@@ -312,6 +311,20 @@ async fn a_labelled_container_is_never_removed_and_refuses_the_pool() {
     assert!(lines.contains(
         "repositories[0] (o/alpha) is not started and gets no slots: Marked diagnostic containers remain after disabling; entry startup refused."
     ));
+    // the evidence got one bounded stop, as the PowerShell supervisor gives it
+    assert!(state.calls.contains(&Call::StopContainers(StopRequest {
+        names: vec![evidence.clone()],
+        grace: Duration::from_secs(10),
+        budget: Duration::from_secs(12),
+    })));
+    assert!(
+        lines.contains("Recover before disabling diagnostics"),
+        "the refusal names the manual recovery: {lines}"
+    );
+    assert_eq!(
+        backend.retained.unmanaged(),
+        [("alpha".to_string(), evidence.clone())]
+    );
     // alpha's volumes were not prepared.
     assert!(
         !state.calls.iter().any(
@@ -390,4 +403,92 @@ fn a_plan_for_the_other_profile_is_not_a_container_plan() {
         {"owner":"o","repository":"r","name":"r","slots":1,"tokenPath":"/t","os":"linux","diskGb":10}]}"#;
     let plan = validate(config, Profile::Axmc, None).outcome.unwrap();
     assert!(pools_from_plan(&plan).is_err());
+}
+
+fn bravo_record() -> DiagnosticRecord {
+    DiagnosticRecord {
+        pool: "bravo".to_string(),
+        directory: r"C:\evidence".to_string(),
+        raw_records: false,
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_labelled_container_of_a_diagnostics_pool_is_exported_and_removed_at_startup() {
+    let scratch = TempDir::new();
+    let backend = FakeBackend::default();
+    let evidence = format!("bravo-1-{STAMP}");
+    backend.state.borrow_mut().containers = vec![container(&evidence, true)];
+    let log = MemoryLog::default();
+    let prepared = prepare_pools(
+        &backend,
+        pools(&scratch, &[("bravo", "ghp_pooltoken")]),
+        &log,
+        &Board::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(names(&prepared), ["bravo"]);
+    let state = backend.state.borrow();
+    let diagnostic: Vec<&Call> = state
+        .calls
+        .iter()
+        .filter(|call| {
+            matches!(
+                call,
+                Call::StopContainers(_) | Call::ExportDiagnostic(..) | Call::RemoveContainers(_)
+            )
+        })
+        .collect();
+    assert_eq!(diagnostic.len(), 3, "{diagnostic:?}");
+    let Call::StopContainers(stop) = diagnostic[0] else {
+        panic!("{diagnostic:?}");
+    };
+    assert_eq!(stop.names, std::slice::from_ref(&evidence));
+    assert_eq!(stop.grace, Duration::from_secs(10));
+    assert!(stop.budget <= Duration::from_secs(12), "{stop:?}");
+    assert!(matches!(diagnostic[1], Call::ExportDiagnostic(name, _) if name == &evidence));
+    assert_eq!(
+        diagnostic[2],
+        &Call::RemoveContainers(vec![evidence.clone()])
+    );
+    // the pool's current settings became the container's record
+    assert_eq!(state.bundles, [(evidence.clone(), bravo_record())]);
+    assert!(state.containers.is_empty());
+    assert!(!backend.retained.contains(&evidence));
+    assert!(log.lines().contains(&format!(
+        "INFO: Diagnostic container {evidence} that an earlier run left: exported, removed."
+    )));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_container_the_backend_retains_keeps_its_record_through_a_preparation() {
+    let scratch = TempDir::new();
+    let backend = FakeBackend::default();
+    let evidence = format!("bravo-1-{STAMP}");
+    backend.state.borrow_mut().containers = vec![container(&evidence, true)];
+    let earlier = DiagnosticRecord {
+        directory: r"D:\earlier".to_string(),
+        raw_records: true,
+        ..bravo_record()
+    };
+    backend.retained.adopt(&evidence, &earlier);
+    let prepared = prepare_pools(
+        &backend,
+        pools(&scratch, &[("bravo", "ghp_pooltoken")]),
+        &MemoryLog::default(),
+        &Board::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(names(&prepared), ["bravo"]);
+    let calls = backend.calls();
+    assert!(
+        !calls.iter().any(|call| matches!(
+            call,
+            Call::StopContainers(_) | Call::ExportDiagnostic(..) | Call::RemoveContainers(_)
+        )),
+        "{calls:?}"
+    );
+    assert_eq!(backend.retained.record(&evidence), Some(earlier));
 }

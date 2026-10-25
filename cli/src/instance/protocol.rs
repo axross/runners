@@ -1,10 +1,10 @@
 //! The text protocol of the control channel.
 //!
-//! A request is one UTF-8 line: `status`, `stop`, `restart`, or `resume <profile>
-//! <path>`, where the path is the rest of the line. A response is one or more lines
-//! that end with a line `end`: the first is `ok` or `refused`, with an optional
-//! message, and each further line is a field name, a space and its value. A
-//! response carries states, reasons, and names, never a token or a JIT
+//! A request is one UTF-8 line: `status`, `stop`, `restart`, `diagnostics`, or
+//! `resume <profile> <path>`, where the path is the rest of the line. A response is
+//! one or more lines that end with a line `end`: the first is `ok` or `refused`,
+//! with an optional message, and each further line is a field name, a space and its
+//! value. A response carries states, reasons, and names, never a token or a JIT
 //! configuration, and no request carries a path for the instance to read: a resume
 //! names the path only so the instance can compare it with its own.
 
@@ -33,6 +33,8 @@ pub enum Request {
     Status,
     Stop,
     Restart,
+    /// Finalise the diagnostic containers the instance retains.
+    Diagnostics,
     Resume(ResumeRequest),
 }
 
@@ -46,7 +48,7 @@ pub struct ResumeRequest {
 /// Why a request line cannot be sent or understood.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RequestError {
-    /// The line is not one of the four requests.
+    /// The line is not one of the five requests.
     Unknown,
     /// The line is not UTF-8 text.
     NotText,
@@ -59,7 +61,7 @@ pub enum RequestError {
 impl fmt::Display for RequestError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Self::Unknown => "the request is not status, stop, restart, or resume",
+            Self::Unknown => "the request is not status, stop, restart, diagnostics, or resume",
             Self::NotText => "the request is not UTF-8 text",
             Self::TooLong => "the request is too long",
             Self::UnsendablePath => {
@@ -96,6 +98,7 @@ impl Request {
             Self::Status => "status\n".to_string(),
             Self::Stop => "stop\n".to_string(),
             Self::Restart => "restart\n".to_string(),
+            Self::Diagnostics => "diagnostics\n".to_string(),
             Self::Resume(resume) => format!("resume {} {}\n", resume.profile.name(), resume.path),
         }
     }
@@ -115,6 +118,7 @@ impl Request {
             "status" => return Ok(Self::Status),
             "stop" => return Ok(Self::Stop),
             "restart" => return Ok(Self::Restart),
+            "diagnostics" => return Ok(Self::Diagnostics),
             _ => {}
         }
         let rest = text.strip_prefix("resume ").ok_or(RequestError::Unknown)?;
@@ -343,7 +347,13 @@ mod tests {
     fn each_request_round_trips_through_its_line() {
         let resume =
             Request::resume(Profile::Axpc, Path::new("/etc/runners/host config.json")).unwrap();
-        for request in [Request::Status, Request::Stop, Request::Restart, resume] {
+        for request in [
+            Request::Status,
+            Request::Stop,
+            Request::Restart,
+            Request::Diagnostics,
+            resume,
+        ] {
             assert_eq!(Request::parse(request.encode().as_bytes()), Ok(request));
         }
     }

@@ -62,8 +62,8 @@ pub fn config_for(token: &str) -> String {
 }
 
 /// A configuration with pool `r`, as [`config_for`] writes it, and a second pool,
-/// `d`, whose diagnostics go to `directory`. `d` is never started, so its token
-/// file, `d.token` beside `r`'s, need not exist.
+/// `d`, whose diagnostics go to `directory`. Its token file is `d.token` beside
+/// `r`'s; without it, `d` is never started.
 pub fn config_with_diagnostics(token: &str, directory: &str) -> String {
     let directory = directory.replace('\\', r"\\");
     let other = token.replace("r.token", "d.token");
@@ -145,6 +145,23 @@ impl Host {
 
     pub fn start(&self, stub: &Stub) -> Started {
         self.start_with(&self.config, stub)
+    }
+
+    /// Starts `runners start` against `stub` as the leader of a process group of
+    /// its own, as a shell starts a foreground job, so a signal to that group is
+    /// what a terminal's Ctrl+C sends.
+    #[cfg(unix)]
+    pub fn start_as_group_leader(&self, stub: &Stub) -> Started {
+        use std::os::unix::process::CommandExt;
+        let mut command = self.command(&["start", "--profile", "axpc"]);
+        command
+            .arg("--config")
+            .arg(&self.config)
+            .env("RUNNERS_TEST_GITHUB_API", &stub.address)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .process_group(0);
+        Started::spawn(command)
     }
 
     /// Starts `runners <args>` on this host, such as a `build`, without waiting
@@ -375,6 +392,18 @@ pub fn send_signal(pid: u32, signal: &str) {
         .status()
         .unwrap();
     assert!(status.success(), "kill -{signal} {pid} failed");
+}
+
+/// Sends `signal` to every process in the group `group`, as a terminal does.
+#[cfg(unix)]
+pub fn send_group_signal(group: u32, signal: &str) {
+    let status = Command::new("kill")
+        .arg(format!("-{signal}"))
+        .arg("--")
+        .arg(format!("-{group}"))
+        .status()
+        .unwrap();
+    assert!(status.success(), "kill -{signal} -- -{group} failed");
 }
 
 /// The text of `output`'s standard output and standard error.
