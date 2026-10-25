@@ -98,11 +98,11 @@ mod tests {
         base_reference, final_stage_labels, local_copy_sources, reference_tag,
     };
     use super::*;
-    use crate::runtime::backend::{ContainerSpec, Mount};
+    use crate::runtime::backend::{ContainerSpec, DiagnosticRecord, Mount};
     use crate::runtime::docker_args::{
-        RUN_COMMAND, diagnostic_run_arguments, image_inspect_arguments, image_list_arguments,
-        job_run_arguments, pool_diagnostic_list_arguments, pool_list_arguments,
-        probe_run_arguments, volume_chown_arguments,
+        RUN_COMMAND, image_inspect_arguments, image_list_arguments, job_run_arguments,
+        pool_diagnostic_list_arguments, pool_list_arguments, probe_run_arguments,
+        volume_chown_arguments,
     };
     use crate::validate::PlannedVolume;
 
@@ -305,14 +305,22 @@ mod tests {
     /// CLI reads, one list per line with its arguments NUL separated.
     fn run_contract_text() -> String {
         let spec = sample_spec();
+        let diagnostic = |raw_records| ContainerSpec {
+            diagnostic: Some(DiagnosticRecord {
+                pool: "pool".to_string(),
+                directory: "C:\\diag".to_string(),
+                raw_records,
+            }),
+            ..sample_spec()
+        };
         let volumes = [PlannedVolume {
             name: "pool-npm".to_string(),
             mount_path: "/home/runner/.npm".to_string(),
         }];
         let lists = [
             job_run_arguments(&spec),
-            diagnostic_run_arguments(&spec, false),
-            diagnostic_run_arguments(&spec, true),
+            job_run_arguments(&diagnostic(false)),
+            job_run_arguments(&diagnostic(true)),
             probe_run_arguments("pool-cpu-probe-1", &spec.image),
             volume_chown_arguments(&spec.image, &volumes),
             pool_list_arguments("pool"),

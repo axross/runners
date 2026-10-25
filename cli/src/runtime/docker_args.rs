@@ -81,22 +81,26 @@ fn mount_arguments(mounts: &[Mount]) -> Vec<String> {
 }
 
 /// The arguments of the one `docker run` that starts a job container: the
-/// diagnostic variant for a diagnostics-enabled pool's. The limits and the name
-/// come before the image, because Docker reads what follows the image as the
+/// diagnostic variant for a diagnostics-enabled pool's, without `--rm`, with the
+/// diagnostics label and with the diagnostic launcher. The limits and the name come
+/// before the image, because Docker reads what follows the image as the
 /// container's own command.
 #[must_use]
 pub fn job_run_arguments(spec: &ContainerSpec) -> Vec<String> {
-    if let Some(record) = &spec.diagnostic {
-        return diagnostic_run_arguments(spec, record.raw_records);
-    }
+    let (removal, label, launcher): (&[&str], &[&str], String) = match &spec.diagnostic {
+        Some(record) => (
+            &[],
+            &["--label", DIAGNOSTIC_LABEL],
+            diagnostic_launcher(record.raw_records),
+        ),
+        None => (&["--rm"], &[], launcher()),
+    };
     let memory = format!("{}g", spec.memory_gb);
-    let mut arguments = strings(&[
-        "run",
-        "--rm",
-        "--pull",
-        "never",
-        "--name",
-        &spec.name,
+    let mut arguments = strings(&["run"]);
+    arguments.extend(strings(removal));
+    arguments.extend(strings(&["--pull", "never", "--name", &spec.name]));
+    arguments.extend(strings(label));
+    arguments.extend(strings(&[
         "--cpus",
         &spec.cpus,
         "--cpuset-cpus",
@@ -105,44 +109,7 @@ pub fn job_run_arguments(spec: &ContainerSpec) -> Vec<String> {
         &memory,
         "--memory-swap",
         &memory,
-    ]);
-    arguments.extend(mount_arguments(&spec.mounts));
-    arguments.extend(strings(&[
-        "-e",
-        JIT_VARIABLE,
-        &spec.image,
-        "bash",
-        "-c",
-        &launcher(),
-        "--",
-        &spec.cpuset,
-        &spec.run_command,
     ]));
-    arguments
-}
-
-/// The diagnostic variant of a job container's `docker run`: no `--rm`, the
-/// diagnostics label, and the diagnostic launcher.
-#[must_use]
-pub fn diagnostic_run_arguments(spec: &ContainerSpec, raw_records: bool) -> Vec<String> {
-    let memory = format!("{}g", spec.memory_gb);
-    let mut arguments = strings(&[
-        "run",
-        "--pull",
-        "never",
-        "--name",
-        &spec.name,
-        "--label",
-        DIAGNOSTIC_LABEL,
-        "--cpus",
-        &spec.cpus,
-        "--cpuset-cpus",
-        &spec.cpuset,
-        "--memory",
-        &memory,
-        "--memory-swap",
-        &memory,
-    ]);
     arguments.extend(mount_arguments(&spec.mounts));
     arguments.extend(strings(&[
         "-e",
@@ -150,7 +117,7 @@ pub fn diagnostic_run_arguments(spec: &ContainerSpec, raw_records: bool) -> Vec<
         &spec.image,
         "bash",
         "-c",
-        &diagnostic_launcher(raw_records),
+        &launcher,
         "--",
         &spec.cpuset,
         &spec.run_command,
@@ -409,10 +376,6 @@ mod tests {
                 directory: "C:\\diag".to_string(),
                 raw_records,
             });
-            assert_eq!(
-                job_run_arguments(&diagnostic),
-                diagnostic_run_arguments(&diagnostic, raw_records)
-            );
             let arguments = job_run_arguments(&diagnostic);
             assert!(!arguments.iter().any(|argument| argument == "--rm"));
             assert!(
