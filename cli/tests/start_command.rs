@@ -13,7 +13,7 @@ use std::fs;
 use std::time::{Duration, Instant};
 
 use runners_cli::image::contract::{CONTRACT_VERSION, RUNNER_VERSION_LABEL};
-use runners_cli::image::definition::DOCKERFILE;
+use runners_cli::image::definition::declared_label;
 use support::host::{Host, JIT, Started, TOKEN, registered, texts};
 use support::stub::{Reply, Stub};
 use support::{TempDir, repository_root};
@@ -51,11 +51,9 @@ fn wait_for_job(host: &Host) -> String {
 /// The runner version the embedded Dockerfile declares, which the fake engine's
 /// images carry.
 fn declared_runner_version() -> String {
-    let text = String::from_utf8_lossy(DOCKERFILE);
-    text.split_once(&format!("{RUNNER_VERSION_LABEL}=\""))
-        .and_then(|(_, rest)| rest.split_once('"'))
-        .map(|(version, _)| version.to_string())
+    declared_label(RUNNER_VERSION_LABEL)
         .expect("the Dockerfile declares no runner version")
+        .to_string()
 }
 
 fn job_containers(host: &Host) -> Vec<String> {

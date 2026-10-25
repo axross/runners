@@ -7,6 +7,16 @@ use std::path::Path;
 /// The runner image's Dockerfile.
 pub const DOCKERFILE: &[u8] = include_bytes!("../../../images/actions-runner/Dockerfile");
 
+/// The value in the first `<label>="<value>"` of [`DOCKERFILE`], in any stage.
+#[must_use]
+pub fn declared_label(label: &str) -> Option<&'static str> {
+    std::str::from_utf8(DOCKERFILE)
+        .ok()?
+        .split_once(&format!("{label}=\""))
+        .and_then(|(_, rest)| rest.split_once('"'))
+        .map(|(value, _)| value)
+}
+
 /// Every file of the image definition, at its path in `images/actions-runner/`,
 /// sorted by that path, which is the order the build context writes them in. A unit
 /// test fails when this is not exactly the Dockerfile and every file it copies.

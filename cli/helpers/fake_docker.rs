@@ -51,7 +51,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use runners_cli::image::contract::{
     BUILT_LABEL, CONTRACT_LABEL, CONTRACT_VERSION, RUNNER_RELEASED_LABEL, RUNNER_VERSION_LABEL,
 };
-use runners_cli::image::definition::DOCKERFILE;
+use runners_cli::image::definition::declared_label;
 
 const JIT_VARIABLE: &str = "ACTIONS_RUNNER_INPUT_JITCONFIG";
 const PROBE_LABEL: &str = "runners.cpu-probe=1";
@@ -362,16 +362,6 @@ struct Image {
     labels: Vec<(String, String)>,
 }
 
-/// The value the Dockerfile declares for `label`.
-fn declared(label: &str) -> String {
-    let text = String::from_utf8_lossy(DOCKERFILE);
-    let needle = format!("{label}=\"");
-    text.split_once(&needle)
-        .and_then(|(_, rest)| rest.split_once('"'))
-        .map(|(value, _)| value.to_string())
-        .unwrap_or_default()
-}
-
 fn now_seconds() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -388,11 +378,15 @@ fn default_image(reference: &str) -> Image {
             (BUILT_LABEL.to_string(), now_seconds().to_string()),
             (
                 RUNNER_VERSION_LABEL.to_string(),
-                declared(RUNNER_VERSION_LABEL),
+                declared_label(RUNNER_VERSION_LABEL)
+                    .unwrap_or_default()
+                    .to_string(),
             ),
             (
                 RUNNER_RELEASED_LABEL.to_string(),
-                declared(RUNNER_RELEASED_LABEL),
+                declared_label(RUNNER_RELEASED_LABEL)
+                    .unwrap_or_default()
+                    .to_string(),
             ),
         ],
     }
