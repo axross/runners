@@ -8,6 +8,7 @@
 
 mod support;
 
+use runners_cli::image::contract::CONTRACT_VERSION;
 use runners_cli::instance::lifecycle::Core;
 use runners_cli::instance::runtime_core::RuntimeCore;
 use runners_cli::profile::Profile;
@@ -17,6 +18,11 @@ use runners_cli::validate::{Plan, validate};
 use support::TempDir;
 
 const START: u64 = 1_709_618_828_009;
+
+/// The names of the fields `report` gives.
+fn reported_names(core: &impl Core) -> Vec<&'static str> {
+    core.report().into_iter().map(|(name, _)| name).collect()
+}
 
 /// One pool, `r`, whose token file is `token` in `scratch`.
 fn plan(scratch: &TempDir) -> Plan {
@@ -48,14 +54,19 @@ async fn no_startable_pool_is_a_failure_that_says_there_is_nothing_to_run() {
         "{}",
         failure.message
     );
+    assert_eq!(
+        reported_names(&core),
+        ["image", "image-contract", "image-built", "runner"],
+        "the pools are cleared when the run ends, and the image stays"
+    );
     assert!(
-        core.report().is_empty(),
-        "the board is cleared when the run ends"
+        core.report()
+            .contains(&("image-contract", "not checked".to_string()))
     );
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn the_core_runs_each_slot_until_the_stop_and_reports_nothing_after_it() {
+async fn the_core_runs_each_slot_until_the_stop_and_reports_only_the_image_after_it() {
     let scratch = TempDir::new();
     scratch.write_token("token", b"ghp_coretoken\n");
     let (backend, clock, registrar, log) = (
@@ -75,5 +86,15 @@ async fn the_core_runs_each_slot_until_the_stop_and_reports_nothing_after_it() {
             .any(|call| matches!(call, Call::RunContainer(spec) if spec.name.starts_with("r-1-")))
     );
     assert_eq!(registrar.seen.borrow()[0].token, "ghp_coretoken");
-    assert!(core.report().is_empty());
+    let names = reported_names(&core);
+    assert!(
+        !names.contains(&"pool") && !names.contains(&"slot"),
+        "{names:?}"
+    );
+    assert!(
+        core.report()
+            .contains(&("image-contract", CONTRACT_VERSION.to_string())),
+        "{:?}",
+        core.report()
+    );
 }

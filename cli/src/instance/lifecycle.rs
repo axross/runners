@@ -147,7 +147,7 @@ pub trait Core {
     fn check_image(&self, plan: &Plan) -> impl Future<Output = Result<(), String>>;
 
     /// What the core is doing now, as `status` fields: each pool's and each slot's
-    /// state, and the image's. A core that is not running reports nothing.
+    /// state while it runs, and the image's as of its latest check on every call.
     fn report(&self) -> Vec<(&'static str, String)>;
 }
 

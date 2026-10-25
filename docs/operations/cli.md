@@ -722,13 +722,14 @@ the warnings nor an unknown age block a start.
 
 - `image: <name>`;
 - `image-contract: <n>`, `mismatch (image <m>, CLI <n>)`, `missing`, or
-  `not checked`, before the first check or while Docker does not answer it;
+  `not checked`, which shows only before the first check Docker answers; a later
+  check Docker does not answer leaves the latest answer in place;
 - `image-built: <d> days ago`, or `unknown`;
 - `runner: <version>, released <d> days ago`, or `unknown`;
 - one `warning: <text>` line per freshness warning.
 
-`image-built` and `runner` read `unknown` before the first check, and when the image
-is missing or its labels are missing or malformed.
+`image-built` and `runner` read `unknown` before the first check Docker answers, and
+when the image is missing or its labels are missing or malformed.
 
 ## Running a Host
 
@@ -806,9 +807,9 @@ answer in time.
   `waiting for Docker`, `preparing`, `running`, or `skipped: <reason>`; one `slot`
   line per slot, which is `registering` (the CPU probe included), `backing off`,
   or `running container <name>`; and the image lines under
-  [The Image Contract](#the-image-contract). Pools, slots and the image lines are
-  listed while the runtime core runs. A `build` answers `state`, `image`, and
-  `elapsed: <s> s`.
+  [The Image Contract](#the-image-contract). Pools and slots are listed while the
+  runtime core runs; the image lines are listed on every call, as of the latest
+  check. A `build` answers `state`, `image`, and `elapsed: <s> s`.
 - `restart` waits up to 35 s for the instance to run its container steps, read its
   file again, check the image, and answer. An invalid file or an image that cannot
   run jobs leaves the instance stopped, and `restart` exits 1. It is refused while

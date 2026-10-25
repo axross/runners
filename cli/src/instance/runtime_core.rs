@@ -174,10 +174,11 @@ impl<B: Backend, K: Clock, R: Registrar> Core for RuntimeCore<'_, B, K, R> {
     }
 
     fn report(&self) -> Vec<(&'static str, String)> {
-        if !self.running.get() {
-            return Vec::new();
-        }
-        let mut fields = self.board.fields();
+        let mut fields = if self.running.get() {
+            self.board.fields()
+        } else {
+            Vec::new()
+        };
         fields.extend(self.board.image_fields(self.clock.now()));
         fields
     }

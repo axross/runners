@@ -690,6 +690,20 @@ mod process {
             lines[at + 5].starts_with("warning: runner 2.337.0 was released "),
             "{status}"
         );
+
+        fs::write(&host.config, b"{}").unwrap();
+        assert_eq!(host.client(&["restart"]).status.code(), Some(1));
+        let stopped = host.wait_for_status("state: stopped", Duration::from_secs(5));
+        assert!(
+            !stopped.contains("pool: ") && !stopped.contains("slot: "),
+            "{stopped}"
+        );
+        assert!(
+            stopped.contains(&format!(
+                "image: actions-runner:local\nimage-contract: {CONTRACT_VERSION}\n"
+            )),
+            "a stopped instance still shows its image: {stopped}"
+        );
         assert_eq!(host.client(&["stop"]).status.code(), Some(0));
         let finished = started.finish(Duration::from_secs(40));
         assert_eq!(finished.status.code(), Some(0));
