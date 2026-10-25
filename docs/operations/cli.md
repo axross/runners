@@ -223,7 +223,7 @@ PowerShell supervisor, and where it differs the difference is listed here.
 | `runtime::pool`                                     | Pools from a plan, and their preparation                                               |
 | `runtime::worker`                                   | The slot loop and its backoff                                                          |
 | `runtime::board`                                    | Each pool's and each slot's state, which `status` reports                              |
-| `runtime::fake`                                     | In-memory stand-ins for the seams, used by tests                                       |
+| `runtime::fake`                                     | In-memory stand-ins for the seams, used by tests; a debug or test build only           |
 
 ### Backend
 
@@ -396,18 +396,18 @@ directories, the runtime core itself, and the log file. `start` and its clients
 use it, and the tests also drive it through its seams, the runtime layer's fake
 backend and clock, and a helper process.
 
-| Module                                    | Holds                                                                                |
-| ----------------------------------------- | ------------------------------------------------------------------------------------ |
-| `instance::lifecycle`                     | The instance's state, the answer to each request, and the runtime core's restarts    |
-| `instance::restart`                       | When a failed runtime core starts again, and when the instance gives up              |
-| `instance::source`                        | The instance's own configuration file, read again at a restart or a resume           |
-| `instance::lock`, `instance::roots`       | The single-instance lock, and where the lock and the channel live                    |
-| `instance::channel`, `instance::protocol` | The control channel's server and client, and its text protocol                       |
-| `instance::windows`                       | The current user's security identifier and the descriptor that admits only that user |
-| `private`                                 | The Unix checks for a private directory and a private file, and the current user ID  |
-| `instance::runtime_core`                  | The runtime core `start` runs: pool preparation and every slot's loop                |
-| `instance::log_file`                      | The log `start` writes through, its file, the file's cap, and the files kept         |
-| `instance::fake`                          | A scripted runtime core and configuration source, used by tests                      |
+| Module                                    | Holds                                                                                       |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `instance::lifecycle`                     | The instance's state, the answer to each request, and the runtime core's restarts           |
+| `instance::restart`                       | When a failed runtime core starts again, and when the instance gives up                     |
+| `instance::source`                        | The instance's own configuration file, read again at a restart or a resume                  |
+| `instance::lock`, `instance::roots`       | The single-instance lock, and where the lock and the channel live                           |
+| `instance::channel`, `instance::protocol` | The control channel's server and client, and its text protocol                              |
+| `instance::windows`                       | The current user's security identifier and the descriptor that admits only that user        |
+| `private`                                 | The Unix checks for a private directory and a private file, and the current user ID         |
+| `instance::runtime_core`                  | The runtime core `start` runs: pool preparation and every slot's loop                       |
+| `instance::log_file`                      | The log `start` writes through, its file, the file's cap, and the files kept                |
+| `instance::fake`                          | A scripted runtime core and configuration source, used by tests; a debug or test build only |
 
 ### Instance State
 

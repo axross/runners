@@ -10,6 +10,7 @@ pub mod board;
 pub mod clock;
 pub mod docker;
 pub mod docker_args;
+#[cfg(any(debug_assertions, test))]
 #[doc(hidden)]
 pub mod fake;
 pub mod log;

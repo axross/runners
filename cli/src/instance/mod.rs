@@ -4,6 +4,7 @@
 //! its seams.
 
 pub mod channel;
+#[cfg(any(debug_assertions, test))]
 #[doc(hidden)]
 pub mod fake;
 pub mod lifecycle;
