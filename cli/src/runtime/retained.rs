@@ -245,6 +245,12 @@ impl Retained {
         }
     }
 
+    /// Forgets the labelled containers recorded for each pool `keep` refuses, as a
+    /// plan without that pool is applied.
+    pub fn retain_unmanaged(&self, keep: impl Fn(&str) -> bool) {
+        self.unmanaged.borrow_mut().retain(|pool, _| keep(pool));
+    }
+
     /// The labelled containers left to the manual recovery, as pool and name.
     #[must_use]
     pub fn unmanaged(&self) -> Vec<(String, String)> {

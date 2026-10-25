@@ -415,6 +415,9 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
     async fn running(&self, plan: &Plan, requests: &mut Requests) -> Next {
         self.set_state(State::Running);
         *self.enabled.borrow_mut() = diagnostic_records(plan);
+        self.backend
+            .retained()
+            .retain_unmanaged(|pool| plan.entries.iter().any(|entry| entry.name == pool));
         let (stop, stop_receiver) = watch::channel(false);
         let mut cycle = Box::pin(self.core_cycle(plan, stop_receiver));
         let mut flush: Flush<'_> = None;

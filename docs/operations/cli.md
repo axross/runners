@@ -974,8 +974,8 @@ the pool that an earlier process left and the backend does not retain:
   12 s, as PowerShell does, warns for each, and refuses the pool. The reason names
   the manual recovery in
   [Windows Runner Host](./windows-runner-host.md#recover-before-disabling-diagnostics).
-  The CLI keeps their names until the next preparation of that pool, so
-  `diagnostics` can report them.
+  The CLI keeps their names until the next preparation of that pool, or until a
+  configuration without that pool is applied, so `diagnostics` can report them.
 
 **Forced stop and kept containers.** A second Ctrl+C or SIGINT, and the Windows
 console close, skip the export. Each diagnostic container is ended with
@@ -1066,7 +1066,8 @@ names it on a line of its own and leaves it to the manual recovery. It prints:
   `pool <name>: <k> bundles written, <r> of 10 remaining`. The remaining count comes
   from the export children that ran, or for a pool with nothing to export from a
   count-only run of the child under the same 24 s clock; a count that fails is
-  `unknown`;
+  `unknown`, and so is the count of a pool whose only container was left to the
+  manual recovery, which has no sink to count;
 - then one line per container whose export had a gap, whose removal failed, or
   which was left to the manual recovery, such as
   `container <name>: removal failed; it stays retained`.

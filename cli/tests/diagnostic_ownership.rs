@@ -41,6 +41,26 @@ fn plan(scratch: &TempDir, directory: &str) -> Plan {
     plan
 }
 
+/// [`plan`], with a second pool, `other`, whose diagnostics are off.
+fn plan_with_other(scratch: &TempDir, directory: &str) -> Plan {
+    let config = r#"{"imageName":"actions-runner:local","repositories":[{"owner":"o",
+        "repository":"d","name":"d","slots":1,"tokenPath":"C:\\d.token","volumes":[],
+        "diagnostics":true,"diagnosticDirectory":"C:\\evidence"},{"owner":"o",
+        "repository":"other","name":"other","slots":1,"tokenPath":"C:\\other.token",
+        "volumes":[]}]}"#;
+    let mut plan = validate(config.as_bytes(), Profile::Axpc, None)
+        .outcome
+        .unwrap();
+    for entry in &mut plan.entries {
+        entry.token_path = scratch.path().join("token").to_str().unwrap().to_string();
+    }
+    plan.entries[0].diagnostic_directory = Some(directory.to_string());
+    plan
+}
+
+/// A labelled container an earlier process left for pool `other`.
+const LEFT_IN_OTHER: &str = "other-1-20240305060708009";
+
 fn record(directory: &str) -> DiagnosticRecord {
     DiagnosticRecord {
         pool: "d".to_string(),
@@ -93,6 +113,31 @@ impl World {
         F: FnOnce(Control) -> Fut,
         Fut: std::future::Future<Output = T>,
     {
+        self.run_from(self.plan(OLD), script).await
+    }
+
+    /// Leaves [`LEFT_IN_OTHER`] in the engine and runs from [`plan_with_other`], so
+    /// the preparation leaves that container to the manual recovery.
+    async fn run_with_other<F, Fut, T>(&self, script: F) -> (Ended, T)
+    where
+        F: FnOnce(Control) -> Fut,
+        Fut: std::future::Future<Output = T>,
+    {
+        self.backend.state.borrow_mut().containers.push(
+            runners_cli::runtime::fake::FakeContainer {
+                name: LEFT_IN_OTHER.to_string(),
+                diagnostic: true,
+            },
+        );
+        self.run_from(plan_with_other(&self.scratch, OLD), script)
+            .await
+    }
+
+    async fn run_from<F, Fut, T>(&self, plan: Plan, script: F) -> (Ended, T)
+    where
+        F: FnOnce(Control) -> Fut,
+        Fut: std::future::Future<Output = T>,
+    {
         let core = RuntimeCore::new(&self.backend, &SystemClock, &self.registrar, &self.log);
         let settings = Settings {
             config_path: CONFIG_PATH.to_string(),
@@ -106,7 +151,7 @@ impl World {
             &self.source,
             &self.log,
         );
-        drive(&instance, self.plan(OLD), Duration::from_secs(20), script).await
+        drive(&instance, plan, Duration::from_secs(20), script).await
     }
 
     /// The containers whose export began, in order.
@@ -622,17 +667,13 @@ async fn diagnostics_reports_a_container_left_to_the_manual_recovery_and_an_unkn
     let world = World::new();
     world
         .backend
-        .retained
-        .set_unmanaged("other", vec!["other-1-20240305060708009".to_string()]);
-    world
-        .backend
         .state
         .borrow_mut()
         .bundle_counts
         .push_back(None);
     let world = &world;
     world
-        .run(|control| async move {
+        .run_with_other(|control| async move {
             world
                 .until("the job end removes its container", |world| {
                     world.bundles().len() == 1 && world.backend.retained.names().is_empty()
@@ -640,17 +681,63 @@ async fn diagnostics_reports_a_container_left_to_the_manual_recovery_and_an_unkn
                 .await;
             let answer = control.ask(Request::Diagnostics).await;
             assert_eq!(answer.field("result"), Some("incomplete"), "{answer:?}");
+            // the pool left to the manual recovery has no sink to count
             assert_eq!(
                 fields(&answer, "pool"),
-                ["d: 0 bundles written, unknown of 10 remaining"]
+                [
+                    "d: 0 bundles written, unknown of 10 remaining",
+                    "other: 0 bundles written, unknown of 10 remaining"
+                ]
             );
             assert_eq!(
                 fields(&answer, "container"),
-                ["other-1-20240305060708009: left to the manual recovery, because pool other has diagnostics off"]
+                [format!(
+                    "{LEFT_IN_OTHER}: left to the manual recovery, because pool other has diagnostics off"
+                )]
             );
             control.stop().await;
         })
         .await;
+}
+
+/// A `restart` whose configuration no longer has the pool forgets the container
+/// that pool's preparation left to the manual recovery.
+#[tokio::test(flavor = "current_thread")]
+async fn a_container_left_to_the_manual_recovery_is_forgotten_with_its_pool() {
+    let world = World::new();
+    let world = &world;
+    world
+        .run_with_other(|control| async move {
+            world
+                .until("the preparation leaves the container", |world| {
+                    !world.backend.retained.unmanaged().is_empty()
+                })
+                .await;
+            let before = control.ask(Request::Diagnostics).await;
+            assert_eq!(
+                fields(&before, "container"),
+                [format!(
+                    "{LEFT_IN_OTHER}: left to the manual recovery, because pool other has diagnostics off"
+                )]
+            );
+            world
+                .source
+                .results
+                .borrow_mut()
+                .push_back(Ok(world.plan(OLD)));
+            assert_eq!(control.ask(Request::Restart).await.outcome, Outcome::Ok);
+            let after = control.ask(Request::Diagnostics).await;
+            assert!(fields(&after, "container").is_empty(), "{after:?}");
+            assert!(
+                !fields(&after, "pool")
+                    .iter()
+                    .any(|line| line.starts_with("other:")),
+                "{after:?}"
+            );
+            control.stop().await;
+        })
+        .await;
+    assert!(world.backend.retained.unmanaged().is_empty());
 }
 
 #[tokio::test(flavor = "current_thread")]

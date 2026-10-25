@@ -345,7 +345,8 @@ pub struct Flushed {
 
 /// Finalises every retained container nobody holds whose job has ended, on one
 /// 24 s clock with each container's record, and counts the bundles of every pool
-/// with such a container or with diagnostics on in `enabled`.
+/// with such a container or with diagnostics on in `enabled`. A pool with only a
+/// container left to the manual recovery gets a line without a count.
 pub async fn flush<B: Backend>(
     backend: &B,
     log: &dyn Log,
@@ -376,20 +377,22 @@ pub async fn flush<B: Backend>(
             "{name}: left to the manual recovery, because pool {pool} has diagnostics off"
         ));
     }
-    let mut pools: Vec<(DiagnosticRecord, u32, Option<u32>)> = Vec::new();
-    for record in acted
+    // a pool left to the manual recovery has no record, so no sink to count
+    let mut pools: Vec<(String, Option<&DiagnosticRecord>, u32, Option<u32>)> = Vec::new();
+    let known = acted
         .iter()
-        .map(|acted| &acted.record)
-        .chain(enabled.iter())
-    {
-        if !pools.iter().any(|(have, _, _)| have.pool == record.pool) {
-            pools.push((record.clone(), 0, None));
+        .map(|acted| (&acted.record.pool, Some(&acted.record)))
+        .chain(enabled.iter().map(|record| (&record.pool, Some(record))))
+        .chain(unmanaged.iter().map(|(pool, _)| (pool, None)));
+    for (pool, record) in known {
+        if !pools.iter().any(|(have, ..)| have == pool) {
+            pools.push((pool.clone(), record, 0, None));
         }
     }
     for acted in &acted {
-        if let Some((_, written, bundles)) = pools
+        if let Some((_, _, written, bundles)) = pools
             .iter_mut()
-            .find(|(record, _, _)| record.pool == acted.record.pool)
+            .find(|(pool, ..)| *pool == acted.record.pool)
         {
             if matches!(
                 acted.finalized.export,
@@ -406,10 +409,11 @@ pub async fn flush<B: Backend>(
     let counts = join_all(
         pools
             .iter()
-            .map(|(record, _, bundles)| async move {
-                match bundles {
-                    Some(bundles) => Some(*bundles),
-                    None => backend.count_bundles(record, deadline).await,
+            .map(|(_, record, _, bundles)| async move {
+                match (bundles, record) {
+                    (Some(bundles), _) => Some(*bundles),
+                    (None, Some(record)) => backend.count_bundles(record, deadline).await,
+                    (None, None) => None,
                 }
             })
             .collect(),
@@ -419,8 +423,8 @@ pub async fn flush<B: Backend>(
         pools: pools
             .iter()
             .zip(counts)
-            .map(|((record, written, _), bundles)| PoolCount {
-                pool: record.pool.clone(),
+            .map(|((pool, _, written, _), bundles)| PoolCount {
+                pool: pool.clone(),
                 written: *written,
                 bundles,
             })
