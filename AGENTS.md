@@ -11,8 +11,9 @@ runner setup of a private application repository, in steps. It holds its agent
 foundation (the entry files, agent configuration, documentation, and lint
 toolchain), the `images/actions-runner/` runner image, the
 `hosts/windows-docker-desktop/` runner host scripts, and the CLI under `cli/`,
-a Rust command line tool that so far only validates a host configuration; the
-agent-host configuration is still planned.
+a Rust command line tool that validates a host configuration and runs a host's
+pools with `start`, `stop`, `restart`, and `status`, though no real host uses it
+yet; the agent-host configuration is still planned.
 [README.md](./README.md) owns project commands; [docs/index.md](./docs/index.md)
 indexes conventions, operations, and the glossary. mise pins the toolchain, and
 Prettier, markdownlint, shellcheck, hadolint, actionlint, PSScriptAnalyzer,
@@ -213,5 +214,5 @@ adds the document that owns its procedure and the row that routes to it.
 | Where a document goes and how it is indexed                                                                                                                                  | [docs/index.md](./docs/index.md) and [Living Project Documentation](./.claude/skills/living-project-documentation/SKILL.md)                            |
 | Which document a change to a runner surface invalidates, and the documentation checks                                                                                        | [Documentation](./docs/conventions/documentation.md)                                                                                                   |
 | Runner image (`images/actions-runner/`), the Windows host scripts (`hosts/windows-docker-desktop/`), the host configuration, scheduled tasks, tokens, updating, and recovery | [Windows Runner Host](./docs/operations/windows-runner-host.md), with the per-repository isolation rules in [Security](./docs/conventions/security.md) |
-| The CLI (`cli/`), its profiles (`axpc`, `axmc`), the shared fixtures (`tests/host-configuration/`), the parity test, and its Rust toolchain and gates                        | [CLI](./docs/operations/cli.md), with [Security](./docs/conventions/security.md) for labels, paths, and the dependency surface                         |
+| The CLI (`cli/`), its commands, its profiles (`axpc`, `axmc`), the shared fixtures (`tests/host-configuration/`), the parity test, and its Rust toolchain and gates          | [CLI](./docs/operations/cli.md), with [Security](./docs/conventions/security.md) for labels, paths, and the dependency surface                         |
 | Planned agent-host configuration (`agent-hosts/{claude-code,amp}/`)                                                                                                          | The operations document that change adds; until then [Security](./docs/conventions/security.md) and [REVIEW.md](./REVIEW.md)                           |

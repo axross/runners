@@ -2,31 +2,36 @@
 
 use std::path::PathBuf;
 
-use crate::command::{LoadError, load_plan};
+use crate::command::{LoadError, checkout_rule_note, load_plan};
 use crate::profile::Profile;
+use crate::runtime::log::Log;
 use crate::validate::Plan;
 
 use super::lifecycle::Source;
 
 /// Reads and validates one file, fixed when it is built. The instance builds it from
 /// the path it started with, so a request can never make it read another.
-#[derive(Debug, Clone)]
-pub struct FileSource {
+pub struct FileSource<'a> {
     path: PathBuf,
     profile: Profile,
+    log: &'a dyn Log,
 }
 
-impl FileSource {
+impl<'a> FileSource<'a> {
+    /// A source for `path`; the note that the checkout rule was skipped goes to
+    /// `log` at each read.
     #[must_use]
-    pub fn new(path: PathBuf, profile: Profile) -> Self {
-        Self { path, profile }
+    pub fn new(path: PathBuf, profile: Profile, log: &'a dyn Log) -> Self {
+        Self { path, profile, log }
     }
 }
 
-impl Source for FileSource {
+impl Source for FileSource<'_> {
     async fn load(&self) -> Result<Plan, Vec<String>> {
-        load_plan(&self.path, self.profile)
-            .outcome
-            .map_err(LoadError::into_problems)
+        let loaded = load_plan(&self.path, self.profile);
+        if loaded.checkout_rule_skipped {
+            self.log.info(&checkout_rule_note(&self.path));
+        }
+        loaded.outcome.map_err(LoadError::into_problems)
     }
 }

@@ -10,6 +10,7 @@
 //! instance-helper serve --root DIR            take the lock, open the channel, print
 //!                                             its address, answer `ok` to every
 //!                                             request until end of input
+//! instance-helper mute --root DIR             as serve, but answer nothing
 //! instance-helper idle                        wait for end of input
 //! ```
 //!
@@ -74,8 +75,10 @@ fn input_closed() -> tokio::sync::oneshot::Receiver<()> {
     receiver
 }
 
+/// Serves the channel until end of input. A `mute` server keeps each request
+/// unanswered, as an instance that has stopped answering does.
 #[cfg(debug_assertions)]
-fn serve(lock: &InstanceLock, roots: &Roots) -> ExitCode {
+fn serve(lock: &InstanceLock, roots: &Roots, mute: bool) -> ExitCode {
     let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -97,10 +100,12 @@ fn serve(lock: &InstanceLock, roots: &Roots) -> ExitCode {
         };
         println!("{}", server.address());
         let mut closed = input_closed();
+        let mut unanswered = Vec::new();
         loop {
             tokio::select! {
                 _ = &mut closed => break,
                 incoming = requests.recv() => match incoming {
+                    Some(incoming) if mute => unanswered.push(incoming),
                     Some(incoming) => {
                         let _ = incoming.reply.send(Response::ok("helper"));
                     }
@@ -108,6 +113,7 @@ fn serve(lock: &InstanceLock, roots: &Roots) -> ExitCode {
                 },
             }
         }
+        drop(unanswered);
         drop(server);
         ExitCode::SUCCESS
     })
@@ -124,7 +130,7 @@ fn main() -> ExitCode {
             let _ = std::io::copy(&mut std::io::stdin(), &mut std::io::sink());
             ExitCode::SUCCESS
         }
-        "try" | "hold" | "serve" => {
+        "try" | "hold" | "serve" | "mute" => {
             let Some(roots) = root_from(&args) else {
                 eprintln!("--root DIR is required");
                 return ExitCode::from(exit::USAGE);
@@ -136,8 +142,8 @@ fn main() -> ExitCode {
                     return ExitCode::from(lock_exit(&error));
                 }
             };
-            if mode == "serve" {
-                return serve(&lock, &roots);
+            if mode == "serve" || mode == "mute" {
+                return serve(&lock, &roots, mode == "mute");
             }
             if mode == "try" {
                 println!("acquired");

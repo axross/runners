@@ -6,10 +6,15 @@
 //! container's lines are forwarded in bounded pieces, and any other client's is read
 //! within its time budget and cut to the length of a registration error when it
 //! becomes error text.
+//!
+//! On Unix `start` runs each job container's client through the shim, so a
+//! container is removed even when the CLI is killed; see [`JobLauncher`].
 
 use std::cell::RefCell;
 use std::collections::BTreeSet;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
+#[cfg(unix)]
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -73,6 +78,42 @@ impl Default for DockerLimits {
     }
 }
 
+/// How a job container's `docker run` client is started.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum JobLauncher {
+    /// As a child of this process, killed when the run is dropped.
+    #[default]
+    Direct,
+    /// By the shim: this program run again as `<program> shim`, which starts the
+    /// client and holds the read end of a liveness pipe from this process. When the
+    /// pipe closes, because the run was dropped or this process ended however it
+    /// ended, the shim force-removes the container, kills the client and exits.
+    #[cfg(unix)]
+    Shim(PathBuf),
+}
+
+/// The client a release build always runs, found by the operating system's search.
+pub const DOCKER_PROGRAM: &str = "docker";
+
+/// Resolves the client `start` runs.
+///
+/// A release build always returns [`DOCKER_PROGRAM`] and ignores `requested`, so a
+/// release binary cannot be made to run another program as its client. A debug
+/// build runs `requested` when given one, for the tests: on Windows a bare name is
+/// searched for in this program's directory and the system directories before
+/// `PATH`, so a fake `docker` placed first on `PATH` loses to a real one installed
+/// in `System32`.
+#[must_use]
+pub fn resolve_program(requested: Option<&OsStr>) -> OsString {
+    #[cfg(debug_assertions)]
+    if let Some(requested) = requested {
+        return requested.to_os_string();
+    }
+    #[cfg(not(debug_assertions))]
+    let _ = requested;
+    OsString::from(DOCKER_PROGRAM)
+}
+
 /// How to reach the `docker` client.
 #[derive(Debug, Clone)]
 pub struct DockerConfig {
@@ -81,14 +122,16 @@ pub struct DockerConfig {
     /// Variables to add to every client's environment.
     pub environment: Vec<(OsString, OsString)>,
     pub limits: DockerLimits,
+    pub launcher: JobLauncher,
 }
 
 impl Default for DockerConfig {
     fn default() -> Self {
         Self {
-            program: OsString::from("docker"),
+            program: OsString::from(DOCKER_PROGRAM),
             environment: Vec::new(),
             limits: DockerLimits::default(),
+            launcher: JobLauncher::Direct,
         }
     }
 }
@@ -119,9 +162,11 @@ pub struct DockerBackend<C> {
     running: RefCell<BTreeSet<String>>,
 }
 
-/// Removes a container from the running set when its run ends, however it ends,
-/// including when the future that waits for it is dropped, which kills the `docker`
-/// client and leaves the container running in the daemon.
+/// Removes a container from the running set when its run ends, including when the
+/// future that waits for it is dropped, which kills the `docker` client and leaves
+/// the container running in the daemon. A panic that unwinds through the run
+/// leaves the name in the set, so whoever supervises the panicking code can still
+/// read the container and remove it; a successful removal forgets it.
 struct RunningGuard<'a> {
     set: &'a RefCell<BTreeSet<String>>,
     name: String,
@@ -129,7 +174,9 @@ struct RunningGuard<'a> {
 
 impl Drop for RunningGuard<'_> {
     fn drop(&mut self) {
-        self.set.borrow_mut().remove(&self.name);
+        if !std::thread::panicking() {
+            self.set.borrow_mut().remove(&self.name);
+        }
     }
 }
 
@@ -161,6 +208,40 @@ impl<C: Clock> DockerBackend<C> {
         #[cfg(windows)]
         command.creation_flags(CREATE_NEW_PROCESS_GROUP);
         command
+    }
+
+    /// The command that starts a job container: the client itself, or the shim that
+    /// starts it. The shim's standard input is the liveness pipe, it is not killed
+    /// when the run is dropped, because closing that pipe makes it clean up, and it
+    /// writes the client's standard error into its standard output.
+    fn job_command(&self, spec: &ContainerSpec) -> Command {
+        let arguments = job_run_arguments(spec);
+        match &self.config.launcher {
+            JobLauncher::Direct => {
+                let mut command = self.command(&arguments);
+                command.stderr(Stdio::piped());
+                command
+            }
+            #[cfg(unix)]
+            JobLauncher::Shim(shim) => {
+                let mut command = Command::new(shim);
+                command
+                    .arg(crate::shim::SHIM_COMMAND)
+                    .arg("--name")
+                    .arg(&spec.name)
+                    .arg("--")
+                    .arg(&self.config.program)
+                    .args(&arguments)
+                    .stdin(Stdio::piped())
+                    .stderr(Stdio::inherit())
+                    .kill_on_drop(false)
+                    .process_group(0);
+                for (name, value) in &self.config.environment {
+                    command.env(name, value);
+                }
+                command
+            }
+        }
     }
 
     /// Runs a client to its end within `budget` and returns what it printed.
@@ -341,26 +422,32 @@ async fn end_client(child: &mut Child, limit: Duration) {
     let _ = tokio::time::timeout(limit, child.kill()).await;
 }
 
-/// Forwards each line a container prints to the log, in pieces of at most
-/// [`MAX_LINE_BYTES`], until its stream ends.
+/// Forwards each line a container prints to the log until its stream ends. A line
+/// longer than [`MAX_LINE_BYTES`] goes in pieces, each cut where it splits no masked
+/// secret: the bytes after the cut wait for the next piece.
 async fn forward_lines<R: AsyncRead + Unpin>(stream: Option<R>, log: &dyn Log) {
     let Some(stream) = stream else {
         return;
     };
     let mut reader = BufReader::new(stream);
-    let mut line = Vec::new();
+    let mut piece = Vec::new();
     loop {
-        line.clear();
-        match (&mut reader)
+        let read = (&mut reader)
             .take(MAX_LINE_BYTES)
-            .read_until(b'\n', &mut line)
+            .read_until(b'\n', &mut piece)
             .await
-        {
-            Ok(0) | Err(_) => return,
-            Ok(_) => {}
+            .unwrap_or(0);
+        let line_ended = read == 0 || piece.ends_with(b"\n");
+        let held = if line_ended { 0 } else { log.held_back(&piece) };
+        let next = piece.split_off(piece.len() - held);
+        if !piece.is_empty() {
+            let text = String::from_utf8_lossy(&piece);
+            log.info(text.trim_end_matches(['\n', '\r']));
         }
-        let text = String::from_utf8_lossy(&line);
-        log.info(text.trim_end_matches(['\n', '\r']));
+        if read == 0 {
+            return;
+        }
+        piece = next;
     }
 }
 
@@ -421,6 +508,10 @@ impl<C: Clock> Backend for DockerBackend<C> {
         }
         let captured = self.capture(&remove_arguments(names), budget).await?;
         if captured.succeeded() {
+            let mut running = self.running.borrow_mut();
+            for name in names {
+                running.remove(name);
+            }
             return Ok(());
         }
         Err(BackendError::new(format!(
@@ -461,14 +552,15 @@ impl<C: Clock> Backend for DockerBackend<C> {
     }
 
     async fn run_container(&self, spec: &ContainerSpec, jit: &Secret) -> Result<i32, BackendError> {
-        let mut command = self.command(&job_run_arguments(spec));
+        let mut command = self.job_command(spec);
         command
             .env(JIT_VARIABLE, jit.expose())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+            .stdout(Stdio::piped());
         let mut child = command.spawn().map_err(|error| {
             BackendError::new(format!("the docker client could not start: {error}"))
         })?;
+        // the shim's liveness pipe, closed when this run ends or is dropped
+        let _liveness = child.stdin.take();
         self.running.borrow_mut().insert(spec.name.clone());
         let _running = RunningGuard {
             set: &self.running,
@@ -507,5 +599,28 @@ impl<C: Clock> Backend for DockerBackend<C> {
             "Failed to stop containers: {}",
             captured.output_text()
         )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::fake::MemoryLog;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_secret_across_two_pieces_of_a_long_line_is_masked() {
+        let log = MemoryLog::default();
+        log.mask(&Secret::new("jit-0123456789".to_string()));
+        let before = usize::try_from(MAX_LINE_BYTES).unwrap() - 4;
+        let mut output = "a".repeat(before);
+        output.push_str("jit-0123456789 and on\nnext\n");
+        forward_lines(Some(output.as_bytes()), &log).await;
+        let lines = log.lines();
+        assert_eq!(lines.len(), 3, "the long line goes in two pieces");
+        let texts: String = lines
+            .iter()
+            .map(|line| line.strip_prefix("INFO: ").unwrap())
+            .collect();
+        assert_eq!(texts, format!("{}<masked> and onnext", "a".repeat(before)));
     }
 }

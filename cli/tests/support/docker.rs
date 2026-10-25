@@ -41,6 +41,7 @@ impl Fake {
                 dir.path().as_os_str().to_owned(),
             )],
             limits,
+            ..DockerConfig::default()
         };
         let backend = DockerBackend::new(config, clock.clone(), log.clone());
         Self {

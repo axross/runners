@@ -208,7 +208,12 @@ Apply the lens for each kind of file in the diff.
   PowerShell validator's order rather than returning the first. A new crate has an
   entry in [CLI](docs/operations/cli.md) and passes `cli/deny.toml`. A new
   procedural-macro crate, such as one a derive feature brings, is flagged for the
-  maintainer's review. A change to a rule on the shared fixtures changes both
+  maintainer's review, and so is a new duplicate-version skip. No token or JIT
+  configuration reaches a `Debug` form, a log line, an error message, a command
+  line, or a control-channel response; a new log line or response that could carry
+  one unmasked is a finding (see
+  [Security](docs/conventions/security.md#tokens-stay-out-of-the-log-and-job-clients-end-with-start)).
+  A change to a rule on the shared fixtures changes both
   validators or declares a divergence. Give `file:line` evidence as in the other
   lenses.
 - **Documentation.** A claim about runner behavior is either verified or

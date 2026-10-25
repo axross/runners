@@ -1,13 +1,16 @@
 //! What runs the pools: the container backend, registration, and the slot loop.
 //!
-//! Everything here is independent of the operating system the CLI runs on, and
-//! nothing here is reachable from a command yet; tests drive it through a backend
-//! seam, a fake `docker` and a loopback GitHub stub.
+//! Everything here is independent of the operating system the CLI runs on, apart
+//! from how the container backend contains its job clients. `start` runs it through
+//! the instance layer; tests also drive it through a backend seam, a fake `docker`
+//! and a loopback GitHub stub.
 
 pub mod backend;
+pub mod board;
 pub mod clock;
 pub mod docker;
 pub mod docker_args;
+#[cfg(any(debug_assertions, test))]
 #[doc(hidden)]
 pub mod fake;
 pub mod log;

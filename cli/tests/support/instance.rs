@@ -8,12 +8,13 @@
     clippy::indexing_slicing
 )]
 
+use std::cell::Cell;
 use std::future::Future;
 use std::rc::Rc;
 use std::time::Duration;
 
 use runners_cli::instance::fake::{FakeCore, FakeSource};
-use runners_cli::instance::lifecycle::{Ended, Instance, Settings};
+use runners_cli::instance::lifecycle::{Ended, Instance, Settings, StopTimes};
 use runners_cli::instance::protocol::{Incoming, Request, Response};
 use runners_cli::profile::Profile;
 use runners_cli::runtime::fake::{FakeBackend, FakeClock, MemoryLog};
@@ -40,6 +41,8 @@ pub struct Rig {
     pub core: FakeCore,
     pub source: FakeSource,
     pub log: MemoryLog,
+    /// The stop times the instance runs with.
+    pub times: Cell<StopTimes>,
     plan: Plan,
 }
 
@@ -55,6 +58,7 @@ impl Rig {
             core,
             source: FakeSource::new(plan.clone()),
             log: MemoryLog::default(),
+            times: Cell::new(StopTimes::default()),
             plan,
         }
     }
@@ -74,6 +78,7 @@ impl Rig {
         Fut: Future<Output = T>,
     {
         let (sender, mut receiver) = mpsc::unbounded_channel();
+        let (force, mut forced) = mpsc::unbounded_channel();
         let instance = Instance::new(
             Self::settings(),
             &self.backend,
@@ -81,9 +86,22 @@ impl Rig {
             &self.core,
             &self.source,
             &self.log,
-        );
+        )
+        .with_stop_times(self.times.get());
         let run = instance.run(self.plan.clone(), &mut receiver);
-        let both = async { tokio::join!(run, script(Control { sender })) };
+        // what a second Ctrl+C does, on a request from the script
+        let forcing = async {
+            while forced.recv().await.is_some() {
+                instance.force_removal();
+            }
+            std::future::pending::<()>().await;
+        };
+        let both = async {
+            tokio::select! {
+                outcome = async { tokio::join!(run, script(Control { sender, force })) } => outcome,
+                () = forcing => unreachable!(),
+            }
+        };
         tokio::time::timeout(Duration::from_secs(10), both)
             .await
             .expect("the instance and the script did not both finish")
@@ -92,6 +110,7 @@ impl Rig {
 
 pub struct Control {
     sender: mpsc::UnboundedSender<Incoming>,
+    force: mpsc::UnboundedSender<()>,
 }
 
 impl Control {
@@ -127,6 +146,11 @@ impl Control {
 
     pub async fn stop(&self) -> Response {
         self.ask(Request::Stop).await
+    }
+
+    /// Asks for forced removal, as a second Ctrl+C does.
+    pub fn force_removal(&self) {
+        self.force.send(()).unwrap();
     }
 }
 

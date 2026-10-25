@@ -1,10 +1,12 @@
-//! The GitHub base address cannot be moved in a release build.
+//! The GitHub base address and the `docker` client cannot be moved in a release
+//! build.
 //!
-//! A debug build accepts `http://127.0.0.1:<port>` for the loopback tests; a release
-//! build ignores any request, so a release binary cannot send a token anywhere but
-//! GitHub. CI runs this file twice: in the debug profile with the rest of the
-//! tests, and in the release profile with `RUNNERS_EXPECT_RELEASE=1`, which makes
-//! the file fail if it was built in the wrong profile.
+//! A debug build accepts `http://127.0.0.1:<port>` for the loopback tests, and any
+//! client the tests name; a release build ignores either request, so a release
+//! binary cannot send a token anywhere but GitHub or run another program as its
+//! `docker` client. CI runs this file twice: in the debug profile with the rest of
+//! the tests, and in the release profile with `RUNNERS_EXPECT_RELEASE=1`, which
+//! makes the file fail if it was built in the wrong profile.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -12,6 +14,9 @@
     clippy::indexing_slicing
 )]
 
+use std::ffi::OsStr;
+
+use runners_cli::runtime::docker::{DOCKER_PROGRAM, resolve_program};
 use runners_cli::runtime::registration::{
     GITHUB_API, GitHubRegistrar, HttpLimits, resolve_base_url,
 };
@@ -65,4 +70,16 @@ fn the_registrar_built_with_an_override_targets_github_in_a_release_build() {
     } else {
         assert_eq!(registrar.base_url(), GITHUB_API);
     }
+}
+
+#[test]
+fn the_docker_override_names_the_client_in_a_debug_build_only() {
+    let fake = OsStr::new("/tmp/fake-docker");
+    let resolved = resolve_program(Some(fake));
+    if cfg!(debug_assertions) {
+        assert_eq!(resolved, fake);
+    } else {
+        assert_eq!(resolved, DOCKER_PROGRAM);
+    }
+    assert_eq!(resolve_program(None), DOCKER_PROGRAM);
 }

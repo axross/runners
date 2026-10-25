@@ -14,6 +14,7 @@ use crate::profile::Profile;
 use crate::validate::{Entry, Plan, PlannedVolume, format_cpu_count};
 
 use super::backend::{Backend, Mount};
+use super::board::{Board, PoolState};
 use super::log::Log;
 use super::name::{cpu_probe_name, is_own_container_name};
 use super::token::read_token;
@@ -172,11 +173,12 @@ impl fmt::Display for NoPoolStartable {
 
 impl std::error::Error for NoPoolStartable {}
 
-fn warn_skipped(log: &dyn Log, pool: &PoolSpec, reason: &str) {
+fn skip(log: &dyn Log, board: &Board, pool: &PoolSpec, reason: &str) {
     log.warn(&format!(
         "{} is not started and gets no slots: {reason}",
         pool.describe()
     ));
+    board.set_pool(&pool.name, PoolState::Skipped(reason.to_string()));
 }
 
 /// Prepares the pools and returns those that can run, in order.
@@ -185,7 +187,8 @@ fn warn_skipped(log: &dyn Log, pool: &PoolSpec, reason: &str) {
 /// file is missing or blank, when its diagnostics are on (they come in a later
 /// phase), when its stale containers cannot be listed or a labelled one remains,
 /// or when its volumes cannot be prepared. Docker is waited for once, before the
-/// first pool that needs it.
+/// first pool that needs it. Each pool's state goes on `board` as it changes, and
+/// every token read is masked in `log`.
 ///
 /// # Errors
 ///
@@ -194,19 +197,26 @@ pub async fn prepare_pools<B: Backend>(
     backend: &B,
     pools: Vec<PoolSpec>,
     log: &dyn Log,
+    board: &Board,
 ) -> Result<Vec<PoolSpec>, NoPoolStartable> {
     let mut startable = Vec::new();
     for pool in pools {
-        if let Err(error) = read_token(&pool.token_path) {
-            warn_skipped(log, &pool, &format!("{}: {error}.", pool.path));
-        } else if pool.diagnostics {
-            warn_skipped(
-                log,
-                &pool,
-                "diagnostics are not supported by this runtime yet, so the pool is skipped.",
-            );
-        } else {
-            startable.push(pool);
+        match read_token(&pool.token_path) {
+            Err(error) => skip(log, board, &pool, &format!("{}: {error}.", pool.path)),
+            Ok(token) => {
+                log.mask(&token);
+                if pool.diagnostics {
+                    skip(
+                        log,
+                        board,
+                        &pool,
+                        "diagnostics are not supported by this runtime yet, so the pool is skipped.",
+                    );
+                } else {
+                    board.set_pool(&pool.name, PoolState::WaitingForDocker);
+                    startable.push(pool);
+                }
+            }
         }
     }
     if !startable.is_empty() {
@@ -214,6 +224,7 @@ pub async fn prepare_pools<B: Backend>(
     }
     let mut prepared = Vec::new();
     for pool in startable {
+        board.set_pool(&pool.name, PoolState::Preparing);
         let outcome = match clear_stale_containers(backend, &pool, log).await {
             Ok(()) => backend
                 .prepare_volumes(&pool.image, &pool.volumes)
@@ -222,8 +233,11 @@ pub async fn prepare_pools<B: Backend>(
             Err(reason) => Err(reason),
         };
         match outcome {
-            Ok(()) => prepared.push(pool),
-            Err(reason) => warn_skipped(log, &pool, &reason),
+            Ok(()) => {
+                board.set_pool(&pool.name, PoolState::Running);
+                prepared.push(pool);
+            }
+            Err(reason) => skip(log, board, &pool, &reason),
         }
     }
     if prepared.is_empty() {

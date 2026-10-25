@@ -112,7 +112,11 @@ async fn a_container_and_the_cpu_probe_run_through_the_backend_and_leave_nothing
         pool: pool.clone(),
         volume: volume.clone(),
     };
-    let backend = DockerBackend::new(DockerConfig::default(), SystemClock, Rc::new(StderrLog));
+    let backend = DockerBackend::new(
+        DockerConfig::default(),
+        SystemClock,
+        Rc::new(StderrLog::default()),
+    );
 
     backend.wait_until_available().await;
     let listing = backend.list_pool_containers(&pool).await.unwrap();

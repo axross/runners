@@ -73,10 +73,13 @@ each against the lock's checksum. `cargo-deny` is a mise tool, pinned in
 [`cli/deny.toml`](../../cli/deny.toml) allows crates.io only, a reviewed licence
 allowlist, and one version of each crate. `serde_derive` and the crates it uses
 (`syn`, `quote`, `proc-macro2`) run code at build time, as do `tokio-macros`,
-`displaydoc`, `yoke-derive`, `zerofrom-derive`, `zerovec-derive`, and `doctest-file`,
-which the async runtime, the HTTPS client's URL parser, and the Windows pipe crate bring. They are locked by
-`Cargo.lock` checksums and covered by `cargo-deny` like the other crates, and a
-new procedural-macro crate needs the maintainer's review. The HTTPS client's TLS
+`displaydoc`, `yoke-derive`, `zerofrom-derive`, `zerovec-derive`, `doctest-file`,
+`thiserror-impl`, `windows-implement`, and `windows-interface`, which the async
+runtime, the HTTPS client's URL parser, the Windows pipe crate, and the Windows Job
+Object crate bring. They are locked by `Cargo.lock` checksums and covered by
+`cargo-deny` like the other crates, and a new procedural-macro crate needs the
+maintainer's review, as does a second version of a crate beyond the two that
+`deny.toml` lists. The HTTPS client's TLS
 stack also needs the `ISC` and `BSD-3-Clause` licences on the allowlist, and the
 Windows pipe crate needs `0BSD`; the maintainer approved all three, and [CLI](../operations/cli.md#dependencies) records why
 each crate is there. `rustup` itself is
@@ -334,8 +337,10 @@ later host:
   sensitive, and error text has the token replaced before it is logged. Only a
   debug build can move the base address, and only to `http://127.0.0.1:<port>`, for
   the loopback tests; a release build always uses GitHub, which a CI step checks in
-  the release profile. The JIT variable is removed from the environment of every
-  `docker` client but the one that starts the container.
+  the release profile. Likewise only a debug build can name the `docker` client
+  `start` runs, and a release build always runs `docker`. The JIT variable is
+  removed from the environment of every `docker` client but the one that starts
+  the container.
 - Volume and container names start with the entry's `name`, which the operator
   sets. An entry's volumes are mounted only into its own containers. Two entries
   whose names are equal, or where one is the other followed by a hyphen, are
@@ -372,10 +377,34 @@ built: its names, modes, and checks.
 - No request carries a configuration path for the instance to read, and no
   response carries a token or a JIT configuration. A resume names a path only so
   the instance can compare it with the one it started with.
-- Only a debug build can move the lock, the channel, or their roots, for the tests;
-  a release build always uses the host's fixed locations, and a CI step checks in
-  the release profile that it ignores the request. The `instance-helper`
-  binary that the tests and CI run does nothing in a release build.
+- Only a debug build can move the lock, the channel, the log directory, or their
+  roots, for the tests; a release build always uses the host's fixed locations,
+  and a CI step checks in the release profile that it ignores the request. The
+  `instance-helper` binary that the tests and CI run does nothing in a release
+  build.
+
+## Tokens Stay Out of the Log, and Job Clients End With `start`
+
+`start` holds every pool's token and each slot's JIT configuration for as long as it
+runs, and it writes a log that lives after it. [CLI](../operations/cli.md#running-a-host)
+owns how the log is written and masked and how its children are contained.
+
+- No token or JIT configuration reaches a log line, the terminal, a debug form, an
+  error message, a command line, or a control-channel response.
+- Every job container's `docker` client ends when `start` ends, however it ends.
+- The log directory and its files are per user and private to that user.
+
+Residual risks, accepted on a single-user host:
+
+- On Unix a shim outlives `start` by up to 5 s, and a shim that is itself killed
+  leaves its container running until the next `start` removes it. On Windows a
+  container outlives its killed client, with the same backstop.
+- On Windows, logoff and shutdown events never reach an interactive process, so
+  containers left by them wait for the next `start`.
+- On Windows the log directory's access control is not checked; it relies on the
+  user profile's.
+- A JIT configuration that a runtime-core panic's message carried would reach the
+  log unmasked, because its mask ends as the panic unwinds.
 
 ## CPU Placement Is Not Resource Reservation
 

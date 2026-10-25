@@ -252,16 +252,16 @@ async fn no_request_makes_the_instance_read_a_configuration_path_other_than_its_
     let own = std::fs::canonicalize(root.write("own/host.json", CONFIG.as_bytes())).unwrap();
     let other = std::fs::canonicalize(root.write("other/host.json", CONFIG.as_bytes())).unwrap();
     let own_text = own.to_str().unwrap().to_string();
-    let source = FileSource::new(own.clone(), Profile::Axpc);
-    let plan = source.load().await.unwrap();
-    let (channel, mut requests) = open(&root);
-    let roots = channel.roots.clone();
     let (backend, clock, core, log) = (
         FakeBackend::default(),
         FakeClock::at(START),
         FakeCore::default(),
         MemoryLog::default(),
     );
+    let source = FileSource::new(own.clone(), Profile::Axpc, &log);
+    let plan = source.load().await.unwrap();
+    let (channel, mut requests) = open(&root);
+    let roots = channel.roots.clone();
     let settings = Settings {
         config_path: own_text.clone(),
         profile: Profile::Axpc,

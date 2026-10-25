@@ -11,8 +11,10 @@ mod support;
 use std::time::Duration;
 
 use runners_cli::runtime::backend::{BackendError, ContainerSpec, Mount};
+use runners_cli::runtime::board::Board;
 use runners_cli::runtime::clock::SystemClock;
 use runners_cli::runtime::fake::{Call, FakeBackend, FakeClock, FakeRegistrar, MemoryLog};
+use runners_cli::runtime::log::Log;
 use runners_cli::runtime::registration::RegistrationError;
 use runners_cli::runtime::worker::{run_slot, stop_channel};
 use support::{TempDir, slot_spec, write_token_file};
@@ -26,6 +28,7 @@ struct Rig {
     registrar: FakeRegistrar,
     clock: FakeClock,
     log: MemoryLog,
+    board: Board,
 }
 
 impl Rig {
@@ -38,6 +41,7 @@ impl Rig {
             registrar: FakeRegistrar::default(),
             clock: FakeClock::at(START),
             log: MemoryLog::default(),
+            board: Board::default(),
         }
     }
 
@@ -52,6 +56,7 @@ impl Rig {
             &self.clock,
             &self.registrar,
             &self.log,
+            &self.board,
             receiver,
         )
         .await;
@@ -191,6 +196,7 @@ async fn a_missing_or_blank_token_file_is_a_backoff_not_a_registration() {
             &rig.clock,
             &rig.registrar,
             &rig.log,
+            &rig.board,
             receiver,
         )
         .await;
@@ -309,6 +315,7 @@ async fn a_stop_that_is_already_asked_for_does_nothing() {
         &rig.clock,
         &rig.registrar,
         &rig.log,
+        &rig.board,
         receiver,
     )
     .await;
@@ -329,10 +336,15 @@ async fn a_stop_asked_for_as_registration_completes_starts_no_container() {
             &rig.clock,
             &rig.registrar,
             &rig.log,
+            &rig.board,
             receiver,
         )
         .await;
         assert_eq!(rig.registrar.seen.borrow().len(), 1);
+        assert_eq!(
+            rig.board.fields(),
+            [("slot", "example-repo-one slot 2: registering".to_string())]
+        );
         assert!(
             !rig.backend
                 .calls()
@@ -359,6 +371,7 @@ async fn a_stop_ends_a_backoff_wait_at_once() {
         &SystemClock,
         &rig.registrar,
         &rig.log,
+        &rig.board,
         receiver,
     );
     let asker = async {
@@ -370,4 +383,66 @@ async fn a_stop_ends_a_backoff_wait_at_once() {
         started.elapsed() < Duration::from_secs(4),
         "the 5 s wait was not cut short"
     );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn the_board_shows_a_slot_backing_off_and_then_running_its_named_container() {
+    let rig = Rig::new();
+    rig.backend
+        .state
+        .borrow_mut()
+        .cpusets
+        .push_back(Err(BackendError::new("probe failed")));
+    let (stop, receiver) = stop_channel();
+    rig.clock.stop_after(1, stop);
+    let slot = slot_spec(rig.scratch.path().join("token"));
+    run_slot(
+        &slot,
+        &rig.backend,
+        &rig.clock,
+        &rig.registrar,
+        &rig.log,
+        &rig.board,
+        receiver,
+    )
+    .await;
+    assert_eq!(
+        rig.board.fields(),
+        [("slot", "example-repo-one slot 2: backing off".to_string())]
+    );
+    rig.run().await;
+    assert_eq!(
+        rig.board.fields(),
+        [(
+            "slot",
+            "example-repo-one slot 2: running container example-repo-one-2-20240305060713009"
+                .to_string()
+        )]
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn the_token_and_the_jit_config_in_flight_are_masked_in_the_log() {
+    let rig = Rig::new();
+    rig.registrar
+        .results
+        .borrow_mut()
+        .push_back(Ok("the-jit-config".to_string()));
+    rig.backend
+        .state
+        .borrow_mut()
+        .exits
+        .push_back(Err(BackendError::new("the client printed the-jit-config")));
+    rig.run().await;
+    let text = rig.log.lines().join("\n");
+    assert!(
+        text.contains("container could not run (the client printed <masked>)"),
+        "{text}"
+    );
+    assert!(
+        !text.contains(TOKEN) && !text.contains("the-jit-config"),
+        "{text}"
+    );
+    rig.log.info(&format!("late: {TOKEN}"));
+    assert_eq!(rig.log.lines().last().unwrap(), "INFO: late: <masked>");
 }

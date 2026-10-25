@@ -14,6 +14,7 @@ mod support;
 use std::time::{Duration, Instant};
 
 use runners_cli::json::{self, Value};
+use runners_cli::runtime::board::Board;
 use runners_cli::runtime::fake::{Call, FakeBackend, FakeClock, MemoryLog};
 use runners_cli::runtime::registration::{GitHubRegistrar, HttpLimits, JitRequest, Registrar};
 use runners_cli::runtime::secret::Secret;
@@ -295,7 +296,16 @@ async fn each_registration_failure_goes_into_the_slots_backoff_and_a_later_succe
     let (stop, receiver) = stop_channel();
     backend.state.borrow_mut().stop_when_exits_run_out = Some(stop);
 
-    run_slot(&slot, &backend, &clock, &registrar, &log, receiver).await;
+    run_slot(
+        &slot,
+        &backend,
+        &clock,
+        &registrar,
+        &log,
+        &Board::default(),
+        receiver,
+    )
+    .await;
 
     assert_eq!(
         clock.sleeps(),

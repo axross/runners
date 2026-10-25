@@ -9,10 +9,16 @@
 //! - `containers` holds the fake engine's containers, one `name<TAB>label,label` per
 //!   line, which `ps`, `rm`, `stop` and `run` read and change;
 //! - the files `info_failures` (a count, decremented per call), `ps_fails`,
-//!   `ps_label_fails`, `rm_fails`, `stop_fails`, `volume_fails`, `probe_mode`
-//!   (`fail`, `hang`, `flood`, `garbage`), `probe_cpus`, `run_mode` (`hold`,
-//!   `longline`) and `run_exit` change what the call does; a `stop_fails` that
-//!   holds `longline` also prints a long line to standard error.
+//!   `ps_label_fails`, `rm_fails`, `stop_fails`, `stop_hangs`, `volume_fails`,
+//!   `probe_mode` (`fail`, `hang`, `flood`, `garbage`), `probe_cpus`, `run_mode`
+//!   (`hold`, `longline`), `run_prints_jit` and `run_exit` change what the call
+//!   does; a `stop_fails` that holds `longline` also prints a long line to
+//!   standard error.
+//!
+//! A `stop_hangs` stop ignores the grace period: it waits without stopping
+//! anything, as a container that ignores its stop signal makes `docker stop` wait.
+//! A `run_prints_jit` job container prints its JIT configuration to standard
+//! output and standard error, as a careless runner could.
 //!
 //! A `hold` job container stays until its entry leaves `containers`, then exits
 //! 137, so `rm -f` and `stop` end it as they would end a real one. Every wait is
@@ -202,6 +208,10 @@ fn remove(dir: &Path, names: &[&str]) -> Result<u8, String> {
 }
 
 fn stop(dir: &Path, names: &[&str]) -> Result<u8, String> {
+    if exists(dir, "stop_hangs") {
+        sleep_while(|| true);
+        return Ok(1);
+    }
     if exists(dir, "stop_fails") {
         if text(dir, "stop_fails").as_deref() == Some("longline") {
             print_long_line(&mut std::io::stderr());
@@ -269,6 +279,11 @@ fn job(dir: &Path, name: &str) -> Result<u8, String> {
     save(dir, &containers)?;
     let _ = writeln!(std::io::stdout(), "fake runner started");
     let _ = writeln!(std::io::stderr(), "fake runner warning");
+    if exists(dir, "run_prints_jit") {
+        let jit = std::env::var(JIT_VARIABLE).unwrap_or_default();
+        let _ = writeln!(std::io::stdout(), "jit on stdout: {jit}");
+        let _ = writeln!(std::io::stderr(), "jit on stderr: {jit}");
+    }
     if text(dir, "run_mode").as_deref() == Some("longline") {
         print_long_line(&mut std::io::stdout());
     }

@@ -1,14 +1,14 @@
-//! Where the lock and the control channel live.
+//! Where the lock, the control channel and the logs live.
 //!
 //! The roots are fixed for a host: on macOS a lock file in the shared directory and
-//! a socket directory under the user's library, on Windows two named pipes. Only a
+//! a socket directory and a log directory under the user's library, on Windows two
+//! named pipes and a log directory under the user's local application data. Only a
 //! debug build can move them, for the tests, so a release binary cannot be pointed
-//! at a lock or a channel an attacker prepared.
+//! at a lock, a channel or a log directory an attacker prepared.
 
 use std::fmt;
 #[cfg(debug_assertions)]
 use std::path::Path;
-#[cfg(unix)]
 use std::path::PathBuf;
 
 /// Why a host has no roots.
@@ -18,13 +18,18 @@ pub enum RootsError {
     UnsupportedHost,
     /// The user has no home directory to hold the socket directory.
     NoHomeDirectory,
+    /// `LOCALAPPDATA` is not set, so the log directory has no place.
+    NoLocalAppData,
 }
 
 impl fmt::Display for RootsError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Self::UnsupportedHost => "this operating system is not a supported host",
+            Self::UnsupportedHost => {
+                "this operating system is not a supported host: only Windows and macOS are"
+            }
             Self::NoHomeDirectory => "the current user has no home directory",
+            Self::NoLocalAppData => "LOCALAPPDATA is not set, so the logs have no directory",
         })
     }
 }
@@ -40,6 +45,7 @@ pub struct Roots {
     channel_directory: PathBuf,
     #[cfg(windows)]
     pipe_suffix: String,
+    log_directory: PathBuf,
 }
 
 impl Roots {
@@ -58,6 +64,7 @@ impl Roots {
         Ok(Self {
             lock_file: PathBuf::from("/Users/Shared/.runners-instance.lock"),
             channel_directory: home.join("Library/Application Support/runners"),
+            log_directory: home.join("Library/Logs/runners"),
         })
     }
 
@@ -67,10 +74,13 @@ impl Roots {
     }
 
     #[cfg(windows)]
-    #[allow(clippy::unnecessary_wraps)]
     fn host() -> Result<Self, RootsError> {
+        let local = std::env::var_os("LOCALAPPDATA")
+            .filter(|value| !value.is_empty())
+            .ok_or(RootsError::NoLocalAppData)?;
         Ok(Self {
             pipe_suffix: String::new(),
+            log_directory: PathBuf::from(local).join("runners").join("logs"),
         })
     }
 
@@ -82,6 +92,7 @@ impl Roots {
         Self {
             lock_file: root.join(".runners-instance.lock"),
             channel_directory: root.join("channel"),
+            log_directory: root.join("logs"),
         }
     }
 
@@ -95,6 +106,7 @@ impl Roots {
         root.hash(&mut hasher);
         Self {
             pipe_suffix: format!("-test-{:016x}", hasher.finish()),
+            log_directory: root.join("logs"),
         }
     }
 
@@ -113,6 +125,12 @@ impl Roots {
         #[cfg(not(debug_assertions))]
         let _ = test_root;
         Self::of_this_host()
+    }
+
+    /// The directory `start` writes its log files in; it must be private.
+    #[must_use]
+    pub fn log_directory(&self) -> &std::path::Path {
+        &self.log_directory
     }
 }
 

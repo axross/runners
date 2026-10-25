@@ -12,6 +12,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use runners_cli::instance::fake::CoreStep;
+use runners_cli::instance::lifecycle::StopTimes;
 use runners_cli::instance::protocol::{Outcome, Request};
 use runners_cli::profile::Profile;
 use runners_cli::runtime::backend::StopRequest;
@@ -388,4 +389,114 @@ async fn a_core_that_ends_without_a_stop_is_a_failure_that_restarts_it() {
             .iter()
             .any(|line| line.contains("ended without being asked to"))
     );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn status_shows_what_the_core_reports_and_the_image_age_placeholder() {
+    let rig = Rig::new();
+    *rig.core.report.borrow_mut() = vec![
+        ("pool", "r: running".to_string()),
+        ("slot", "r slot 1: running container r-1-x".to_string()),
+    ];
+    let (_, status) = rig
+        .drive(|control| async move {
+            let status = control.ask(Request::Status).await;
+            control.stop().await;
+            status
+        })
+        .await;
+    let fields: Vec<(&str, &str)> = status
+        .fields()
+        .iter()
+        .map(|(name, value)| (name.as_str(), value.as_str()))
+        .collect();
+    assert_eq!(
+        fields,
+        [
+            ("state", "running"),
+            ("config", CONFIG_PATH),
+            ("profile", "axpc"),
+            ("pool", "r: running"),
+            ("slot", "r slot 1: running container r-1-x"),
+            ("image-age", "not available until Phase 3"),
+        ]
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_forced_removal_abandons_a_stop_that_ignores_the_grace_period() {
+    let rig = Rig::new();
+    {
+        let mut state = rig.backend.state.borrow_mut();
+        state.running = vec![JOB.to_string()];
+        state.stop_hangs = true;
+    }
+    let (ended, ()) = rig
+        .drive(|control| async move {
+            let stop = control.send(Request::Stop);
+            control.wait_for_state("stopping").await;
+            control.force_removal();
+            stop.await.unwrap();
+        })
+        .await;
+    assert!(ended.containers_removed);
+    let calls = rig.backend.calls();
+    assert!(
+        matches!(calls.first(), Some(Call::StopContainers(_))),
+        "{calls:?}"
+    );
+    assert_eq!(
+        calls.get(1),
+        Some(&Call::RemoveContainers(vec![JOB.to_string()]))
+    );
+    assert!(
+        rig.log
+            .lines()
+            .iter()
+            .any(|line| line.contains("grace period is skipped"))
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_stop_still_running_at_the_exit_deadline_is_ended_and_reported_as_not_removed() {
+    let rig = Rig::new();
+    {
+        let mut state = rig.backend.state.borrow_mut();
+        state.running = vec![JOB.to_string()];
+        state.stop_hangs = true;
+    }
+    rig.times.set(StopTimes {
+        exit_deadline: Duration::from_millis(200),
+        ..StopTimes::default()
+    });
+    let (ended, reply) = rig
+        .drive(|control| async move { control.stop().await })
+        .await;
+    assert_eq!(reply.outcome, Outcome::Ok);
+    assert!(!ended.containers_removed, "the removal never ran");
+    assert_eq!(rig.backend.calls().len(), 1, "only the stop was asked for");
+    assert!(
+        rig.log
+            .lines()
+            .iter()
+            .any(|line| line.contains("did not finish within"))
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_core_that_ignores_the_stop_is_dropped_at_the_exit_deadline() {
+    let rig = Rig::new();
+    rig.core.push(CoreStep::IgnoreStop);
+    rig.times.set(StopTimes {
+        exit_deadline: Duration::from_millis(200),
+        ..StopTimes::default()
+    });
+    let (ended, ()) = rig
+        .drive(|control| async move {
+            control.wait_for_state("running").await;
+            control.stop().await;
+        })
+        .await;
+    assert!(ended.containers_removed, "the container steps had finished");
+    assert!(!ended.nothing_to_run);
 }

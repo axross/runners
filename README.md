@@ -12,18 +12,19 @@ the first runner material: one runner image and the host scripts that run it for
 several repositories from a Windows machine with Docker Desktop.
 [Windows Runner Host](./docs/operations/windows-runner-host.md) owns the operator
 procedure and states what has and has not been verified on a real host. A Rust
-command line tool, the CLI, has started to replace those scripts; so far it only
-checks a host configuration, and nothing that runs jobs uses it yet. The
+command line tool, the CLI, has started to replace those scripts: it checks a host
+configuration, and its `start`, `stop`, `restart`, and `status` commands run a
+host's pools, but no real host uses them yet. The
 agent-host configuration is not here yet. Layout:
 
-| Path                            | Holds                                                                                   | State   |
-| ------------------------------- | --------------------------------------------------------------------------------------- | ------- |
-| `images/actions-runner/`        | The runner image: GitHub's runner image plus build dependencies, pinned by digest       | Present |
-| `hosts/windows-docker-desktop/` | The supervisor, image rebuild, and scheduled-task scripts, and an example configuration | Present |
-| `cli/`                          | The CLI: `validate` checks a host configuration                                         | Present |
-| `hosts/macos/`                  | An example configuration for the macOS host profile, `axmc`                             | Present |
-| `agent-hosts/claude-code/`      | WSL 2 service units and templates for Claude Code Remote Control                        | Planned |
-| `agent-hosts/amp/`              | WSL 2 service units and templates for Amp runners                                       | Planned |
+| Path                            | Holds                                                                                                    | State   |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------- | ------- |
+| `images/actions-runner/`        | The runner image: GitHub's runner image plus build dependencies, pinned by digest                        | Present |
+| `hosts/windows-docker-desktop/` | The supervisor, image rebuild, and scheduled-task scripts, and an example configuration                  | Present |
+| `cli/`                          | The CLI: `validate` checks a host configuration, and `start`, `stop`, `restart`, and `status` run a host | Present |
+| `hosts/macos/`                  | An example configuration for the macOS host profile, `axmc`                                              | Present |
+| `agent-hosts/claude-code/`      | WSL 2 service units and templates for Claude Code Remote Control                                         | Planned |
+| `agent-hosts/amp/`              | WSL 2 service units and templates for Amp runners                                                        | Planned |
 
 This repository is public. Its GitHub Actions CI and review jobs run on
 GitHub-hosted runners, never on a self-hosted one; see [Security](./docs/conventions/security.md).

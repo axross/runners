@@ -2,25 +2,30 @@
 
 The Rust command line tool under [`cli/`](../../cli): what `validate` accepts and
 prints, how it stays equal to the PowerShell validator, the shared fixtures both
-read, the runtime layer that will run a host's pools (the container backend, JIT
-registration, CPU placement, and the slot loop), the instance layer that will keep
+read, the runtime layer that runs a host's pools (the container backend, JIT
+registration, CPU placement, and the slot loop), the instance layer that keeps
 `start` to one instance per machine (the instance state, the single-instance lock,
-and the control channel), the toolchain and the gates that cover it, and what to touch when its provisional name changes. The binary is
-`runners`. It has one command so far, `validate`; nothing that runs jobs uses it
-yet, and the PowerShell supervisor under
+and the control channel), running a host with `start`, `stop`, `restart`, and
+`status`, the toolchain and the gates that cover it, and what to touch when its
+provisional name changes. The binary is `runners`. The PowerShell supervisor under
 [`hosts/windows-docker-desktop/`](../../hosts/windows-docker-desktop) still runs the
-axpc host. The code that will run the pools and the instance is already in the
-library, reachable from tests only; see The Runtime Layer and The Instance Layer.
+axpc host until Phase 4b, and the CLI must not be started beside it; see
+[Windows Runner Host](./windows-runner-host.md).
 
 ## Running It
 
 ```bash
 runners validate --config <path> [--profile axpc|axmc]
+runners start --config <path> [--profile axpc|axmc]
+runners stop
+runners restart
+runners status
 ```
 
 `validate` reads the configuration file and the marker files above it, and writes
 nothing. It does not check that a token file exists or who can read it; `start`
-will, in a later phase.
+does. Running a Host describes `start` and the three clients, and their exit
+codes. This section is about `validate`.
 
 | Exit | Meaning                                                                                                                                                                                              |
 | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -202,11 +207,10 @@ size test named under Running It, with PowerShell's side probed by hand.
 
 ## The Runtime Layer
 
-The library holds the code that will run a host's pools: the container backend,
-JIT registration, and the loop of one slot. No command reaches it yet, because
-`start` arrives in a later pull request of the same phase, so the tests drive it
-through its seams. It reproduces the PowerShell supervisor, and where it differs
-the difference is listed here.
+The library holds the code that runs a host's pools: the container backend, JIT
+registration, and the loop of one slot. `start` reaches it through the instance
+layer, and the tests also drive it through its seams. It reproduces the
+PowerShell supervisor, and where it differs the difference is listed here.
 
 | Module                                              | Holds                                                                                  |
 | --------------------------------------------------- | -------------------------------------------------------------------------------------- |
@@ -218,7 +222,8 @@ the difference is listed here.
 | `runtime::name`                                     | Runner and container names, and the test for a pool's own                              |
 | `runtime::pool`                                     | Pools from a plan, and their preparation                                               |
 | `runtime::worker`                                   | The slot loop and its backoff                                                          |
-| `runtime::fake`                                     | In-memory stand-ins for the seams, used by tests                                       |
+| `runtime::board`                                    | Each pool's and each slot's state, which `status` reports                              |
+| `runtime::fake`                                     | In-memory stand-ins for the seams, used by tests; a debug or test build only           |
 
 ### Backend
 
@@ -272,8 +277,9 @@ supervisor did not do. A listing, a volume command, and an info call are bounded
 within 120 s. The CPU probe and the removal of a leftover probe have the budgets
 under CPU Placement. A `docker info` that fails, hangs, or cannot start (the
 program is missing) means Docker is not available yet. Output from a job container
-is forwarded to the log line by line, in pieces of at most 64 KiB; masking a
-secret in forwarded output belongs to the logging that comes with `start`.
+is forwarded to the log line by line, and the log masks every secret in it. A line
+longer than 64 KiB goes in pieces, each cut where it splits no masked secret, the
+bytes after the cut waiting for the next piece; see [The Log](#the-log).
 The output of any other client is read within its budget, and when it becomes error
 text it is joined onto one line and cut to 500 characters followed by `...`, as a
 registration error is.
@@ -383,23 +389,25 @@ macOS runtime behaviour beyond what the hosted runners show.
 
 ## The Instance Layer
 
-The library also holds what will make `start` one instance per machine: the
+The library also holds what makes `start` one instance per machine: the
 instance's state and the restarts of its runtime core, the single-instance lock,
-the control channel that other terminals use, and the checks for private files and
-directories. No command reaches it yet, because `start`, `stop`, `restart`, and
-`status` arrive in a later pull request of the same phase, so the tests drive it
-through its seams, the runtime layer's fake backend and clock, and a helper process.
+the control channel that other terminals use, the checks for private files and
+directories, the runtime core itself, and the log file. `start` and its clients
+use it, and the tests also drive it through its seams, the runtime layer's fake
+backend and clock, and a helper process.
 
-| Module                                    | Holds                                                                                |
-| ----------------------------------------- | ------------------------------------------------------------------------------------ |
-| `instance::lifecycle`                     | The instance's state, the answer to each request, and the runtime core's restarts    |
-| `instance::restart`                       | When a failed runtime core starts again, and when the instance gives up              |
-| `instance::source`                        | The instance's own configuration file, read again at a restart or a resume           |
-| `instance::lock`, `instance::roots`       | The single-instance lock, and where the lock and the channel live                    |
-| `instance::channel`, `instance::protocol` | The control channel's server and client, and its text protocol                       |
-| `instance::windows`                       | The current user's security identifier and the descriptor that admits only that user |
-| `private`                                 | The Unix checks for a private directory and a private file, and the current user ID  |
-| `instance::fake`                          | A scripted runtime core and configuration source, used by tests                      |
+| Module                                    | Holds                                                                                       |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `instance::lifecycle`                     | The instance's state, the answer to each request, and the runtime core's restarts           |
+| `instance::restart`                       | When a failed runtime core starts again, and when the instance gives up                     |
+| `instance::source`                        | The instance's own configuration file, read again at a restart or a resume                  |
+| `instance::lock`, `instance::roots`       | The single-instance lock, and where the lock and the channel live                           |
+| `instance::channel`, `instance::protocol` | The control channel's server and client, and its text protocol                              |
+| `instance::windows`                       | The current user's security identifier and the descriptor that admits only that user        |
+| `private`                                 | The Unix checks for a private directory and a private file, and the current user ID         |
+| `instance::runtime_core`                  | The runtime core `start` runs: pool preparation and every slot's loop                       |
+| `instance::log_file`                      | The log `start` writes through, its file, the file's cap, and the files kept                |
+| `instance::fake`                          | A scripted runtime core and configuration source, used by tests; a debug or test build only |
 
 ### Instance State
 
@@ -422,17 +430,31 @@ running instance refuses a resume too.
   new plan; an invalid one leaves the instance stopped, with the errors as its
   reason. The file is fixed when the instance is built, and no request names
   another, so nothing a client sends makes the instance read a different file.
+  `start` fixes it as the path it was given, made absolute but not resolved, so
+  each read finds the checkout above it as the first validation did; the
+  canonical path is kept only to compare with a resume's.
 
 The container steps stop every container the backend has started and not seen end,
 in one `docker stop` call with a grace of 15 s, ended at 20 s, and then force-remove
-them in one call ended 6 s later, so they take 26 s at the most. The instance reads
-the containers before it tells the core to stop, because dropping a worker forgets
-its container. How the instance ended records whether every removal in its life
-succeeded, at a stop, a restart, or a failure of the core, so a failed removal is
-still reported when a later stop has nothing to remove.
+them in one call ended 6 s later, so they take 26 s at the most. A forced removal,
+which a second Ctrl+C or SIGINT asks for, abandons the stop or skips it and removes
+at once. At a stop, the container steps and the core's wind-down share an exit
+deadline of 28 s from the request; whatever still runs then is dropped, and when the
+removal had not finished, how the instance ended records a failed removal. The
+instance reads the containers before it tells the core to stop, because dropping a
+worker forgets its container. How the instance ended records whether every removal
+in its life succeeded, at a stop, a restart, or a failure of the core, so a failed
+removal is still reported when a later stop has nothing to remove.
 
 The runtime core is the part that runs the pools. It fails when it ends, with an
-error or without one, while no stop was asked for. A slot's registration or
+error, a panic, or neither, while no stop was asked for. The instance polls it
+inside `catch_unwind`, so a panic becomes a failure carrying the panic's message.
+Unwinding drops the core's workers, so the container backend keeps the name of
+each container whose run a panic unwound through, and forgets it when a removal
+succeeds; the instance stops and removes those containers before the restart. When
+no pool can start at the instance's first run of the core, the instance ends and
+`start` exits 1; at a later run, after a restart or a resume, that is a failure
+like any other. A slot's registration or
 container failure stays in that slot's backoff and is not a core failure. After a
 failure the instance runs the container steps for the containers the core reports,
 then starts the core again after 10 s for the first failure in a sliding 10-minute
@@ -512,6 +534,12 @@ it.
   The client checks the directory before it connects, so it does not talk to a
   socket another user placed.
 
+On both systems an ending instance first drops its request queue, so a request
+still waiting is answered that the instance is ending, then stops accepting and
+waits up to 0.5 s for every connection it accepted to end, so an answer it has
+given, such as `stop`'s, is written before the process exits. A connection still
+sending its request does not hold the exit longer than that.
+
 The protocol is UTF-8 lines. A request is one line of at most 16 KiB: `status`,
 `stop`, `restart`, or `resume <profile> <path>`, where the path is the rest of the
 line and may hold spaces. A path with a line break, or one that is not UTF-8, is
@@ -530,15 +558,16 @@ answer in time". The client reads at most 64 KiB.
 
 ### Roots and Private Files
 
-The lock file, the socket directory and the pipe names are fixed for a host. Only a
-debug build can move them, to a test root, which suffixes the Windows pipe names
-with a hash of the root; a release build ignores the request, as it ignores a GitHub
-base address. `tests/instance_roots.rs` shows both halves and each host's fixed
-roots, and CI runs it again in the release profile. `std` has no call for the
-process's own user ID and `unsafe` is forbidden, so the CLI reads its user ID as the
-owner of a file it creates in the temporary directory. The file's name has a random
-part, and the CLI only ever creates it new: a name that already exists is skipped,
-never opened, and after eight taken names reading the user ID fails.
+The lock file, the socket directory, the log directory and the pipe names are fixed
+for a host. Only a debug build can move them, to a test root, which suffixes the
+Windows pipe names with a hash of the root; a release build ignores the request, as
+it ignores a GitHub base address. `tests/instance_roots.rs` shows both halves and
+each host's fixed roots, and CI runs it again in the release profile. `std` has no
+call for the process's own user ID and `unsafe` is forbidden, so the CLI reads its
+user ID as the owner of a file it creates in the temporary directory. The file's
+name has a random part, and the CLI only ever creates it new: a name that already
+exists is skipped, never opened, and after eight taken names reading the user ID
+fails.
 
 On macOS a token file must also be a regular file owned by the current user with
 mode `0600`, checked on the file that is opened, or reading it fails and the pool is
@@ -562,6 +591,214 @@ access. Neither crate the CLI uses reads a live pipe's descriptor without `unsaf
 so that check is in PowerShell. Not verified: the Windows lock against a second OS
 user, and the rejection of remote clients, which a hosted runner cannot show; and
 macOS and Windows behaviour beyond what the hosted runners show.
+
+## Running a Host
+
+`start` runs the host's pools in the foreground through the instance layer and the
+runtime layer, and `stop`, `restart`, and `status` talk to it from another terminal
+over the control channel. On axpc the PowerShell supervisor keeps running the host
+until Phase 4b, and `start` must not run beside it; see
+[Windows Runner Host](./windows-runner-host.md).
+
+| Module                   | Holds                                                                                                |
+| ------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `start`                  | `start`: the lock, validation, the log file, containment, the channel, the instance, and its signals |
+| `control`                | The clients `stop`, `restart`, and `status`                                                          |
+| `shim`                   | The Unix shim between `start` and one job container's `docker run` client                            |
+| `instance::runtime_core` | The runtime core, listed under The Instance Layer                                                    |
+| `instance::log_file`     | The log, listed under The Instance Layer                                                             |
+
+### Start
+
+A fresh `start` does these in order:
+
+1. It takes the instance lock. When the lock is held it asks this user's instance
+   to resume instead, as below.
+2. It validates the configuration as `validate` does. An invalid one prints every
+   error and exits 1, and nothing is written. With `--profile axmc` a valid
+   configuration still exits 1, because the VM backend comes in Phase 6.
+3. It opens its log file and logs the plan summary.
+4. It contains its children, builds the HTTPS client, and opens the control
+   channel. A failure of any of them, including a TLS setup failure, exits 1.
+5. It runs the instance. The runtime core prepares the pools as
+   [Names and the Slot Loop](#names-and-the-slot-loop) describes, waiting for
+   Docker every 5 s, and then runs every slot's loop until a stop. When no pool can
+   start, `start` exits 1.
+
+On Linux a release build exits 1 at the first step, because Linux is not a
+supported host, and `tests/instance_roots.rs` shows it in the release profile. A
+debug build runs on a test root, for the tests. On macOS, `start --profile axpc`
+runs the container backend with Unix containment, which serves the tests, not an
+operated host. `RUNNERS_TEST_ROOT` moves the lock, the channel, and the log
+directory, `RUNNERS_TEST_GITHUB_API` moves the GitHub base address, and
+`RUNNERS_TEST_DOCKER` names the `docker` client that `start` runs, the Unix shim's
+removal included; only a debug build honours any of them, and
+`tests/base_address.rs` shows in the release profile that the client stays
+`docker`. The tests name the fake client rather than put it first on `PATH`,
+because Windows searches the program's directory and the system directories before
+`PATH`, so a real `docker.exe` in `System32` would win.
+
+A `start` that finds the lock held changes nothing. It canonicalises its
+configuration path, sends `resume <profile> <path>`, and waits up to 10 s:
+
+- A stopped instance started with the same path and profile reads its own file
+  again. A valid file runs it and `start` exits 0; an invalid one leaves it stopped
+  with the new reason and `start` exits 1.
+- A running, stopping, or resuming instance refuses, naming its state, and so does
+  a stopped one started with another path or profile. `start` exits 1.
+- When nothing answers on this user's channel, `start` exits 1, saying that the
+  lock is held by another OS user or by an instance of this user that is still
+  starting or ending. The lock does not say which, and `start` never connects to
+  another user's channel.
+
+### The Clients
+
+Each client gives up connecting after 2 s. With no instance it says so and exits
+1, and an answer that does not arrive in time exits 1, saying the instance did not
+answer in time.
+
+- `status` waits up to 5 s and prints one `name: value` line per field: `state`;
+  `reason`, when stopped; `config`; `profile`; one `pool` line per pool, which is
+  `waiting for Docker`, `preparing`, `running`, or `skipped: <reason>`; one `slot`
+  line per slot, which is `registering` (the CPU probe included), `backing off`,
+  or `running container <name>`; and `image-age: not available until Phase 3`.
+  Pools and slots are listed while the runtime core runs.
+- `restart` waits up to 35 s for the instance to run its container steps, read its
+  file again, and answer. An invalid file leaves the instance stopped, and
+  `restart` exits 1. It is refused while the instance is stopping or resuming.
+- `stop` asks the instance to stop, then checks about every 200 ms whether the
+  instance lock is free, by taking it and letting it go at once, until 35 s after
+  its request. It exits 0 once the lock is free, so a `start` right after it finds
+  the lock free, and 1 when the instance still holds it.
+
+### Stopping
+
+`stop`, SIGINT, SIGTERM, and SIGHUP on Unix, and Ctrl+C and Ctrl+Break on Windows
+end the instance from any state with the stop sequence, which takes 30 s at the
+most from the request. SIGHUP is how macOS reports a closed terminal. A signal
+`start` cannot listen for is a warning at startup, and that signal keeps its
+default action; the others still stop the instance.
+
+1. The slots stop registering at once.
+2. The container steps under [Instance State](#instance-state) run: one
+   `docker stop --time 15`, ended at 20 s, and then one `docker rm -f`, ended 6 s
+   later.
+3. At 28 s whatever still runs is dropped. A `docker` client is killed; on Unix a
+   job container's shim sees its liveness pipe close, removes its container within
+   5 s, and ends.
+4. `start` gives the answers it has already sent, such as the one to `stop`, up to
+   0.5 s to reach their clients, closes the channel, and exits, which releases the
+   lock.
+
+A second SIGINT, Ctrl+C, or Ctrl+Break skips the grace period: a `docker stop` under
+way is abandoned and the containers are removed at once. Raising Ctrl+C in a
+Windows test needs `unsafe`, so the Windows handling is checked by review and on
+axpc in Phase 4b. That includes Ctrl+Break: a client's own process group keeps
+Ctrl+C from it, but whether it also keeps Ctrl+Break from it is unverified.
+
+| Exit | Meaning                                                                                                                                                                                          |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 0    | `start` stopped and every removal of containers in its life succeeded, or a client's request succeeded                                                                                           |
+| 1    | An invalid configuration, a refused or failed `start`, a failed resume, no pool that can start, a client with no instance, a refused request or no answer in time, or a failed removal at a stop |
+| 2    | A usage error                                                                                                                                                                                    |
+
+### The Log
+
+Each `start` writes one file, `runners-<yyyyMMddHHmmssfff>-<pid>.log` in UTC, in a
+private per-user directory:
+
+- **Windows.** `%LOCALAPPDATA%\runners\logs\`, created when missing. Its access
+  control list is not checked, because no safe call reads it.
+- **macOS.** `~/Library/Logs/runners/`, created `0700` when missing and refused
+  when it is not a directory owned by the user with that mode. A file is created
+  new, set to `0600` whatever the umask, and checked.
+
+The file is opened after validation succeeds, so a refused `start` writes none.
+Every line goes to the terminal and to the file, which adds a time stamp. A write
+to a terminal that is gone is ignored, and the file goes on. The newest 10 log
+files by name are kept, the new one included, and only regular files named as a
+log file count. An old file that cannot be removed is a warning in the new log,
+and `start` goes on. A file stops at 10 MiB: a line that would leave no room for the
+last line is not written, and the last line says that the file reached 10 MiB. A
+failed write stops the file, with a warning on the terminal.
+
+Every token read, from its first read in pool preparation on, and every JIT
+configuration, from its registration until its container's outcome is reported,
+is replaced by `<masked>` in every line, including the job container's output the
+backend forwards, a secret that runs across two pieces of a long line included.
+The default panic hook would write a panic's message to the terminal unmasked, so
+`start` replaces it with one that names only where the panic happened. A panic of
+the runtime core reaches the log as a failure that carries its message, with every
+token read so far masked. A JIT configuration in that message is not: its mask
+ends as the panic unwinds the slot that held it, before the instance logs the
+failure.
+
+### Containment
+
+- **Windows.** At startup `start` puts itself in a Job Object with kill-on-close,
+  through `win32job`, and never closes its handle. The operating system closes it
+  when the process ends, however it ends and after its exit code is set, and every
+  child in the job dies then. Docker Desktop keeps a container running after its
+  client is killed, so the next `start`'s stale cleanup removes it.
+- **Unix.** Each job container's `docker run` client is started by the shim, the
+  CLI run again as the hidden
+  `runners shim --name <container> -- <docker> <arguments>`. The shim starts the
+  client in a process group of its own, with the client's standard error joined to
+  its standard output, which `start` reads and masks. Its standard input is the
+  read end of a liveness pipe whose write end only `start` holds, and `start`
+  never writes to it. When the client ends while the pipe is open, the shim exits
+  with its code. When the pipe has closed, because `start` dropped the run or ended
+  however it ended, the shim runs `docker rm -f <container>` within 5 s, kills the
+  client, and exits, even when the client ended at the same time. The shim shares
+  `start`'s standard error, and its own warnings there name containers only.
+
+Security lists the
+[residual risks](../conventions/security.md#tokens-stay-out-of-the-log-and-job-clients-end-with-start)
+that containment and the log leave.
+
+### Console Close on Windows
+
+When the console closes, the user logs off, or the machine shuts down, `start` stops
+the instance with forced removal: the slots stop registering, so no container starts
+unseen, and one `docker rm -f` removes every container it started. Whatever has not
+finished after 4 s is dropped, the answers already sent get up to 0.5 s, and `start`
+exits. The 4.5 s fits inside the 5 s the operating system gives a console-close
+handler before it ends the process, and Microsoft documents that logoff and shutdown
+events reach services only, never an interactive process
+([HandlerRoutine](https://learn.microsoft.com/en-us/windows/console/handlerroutine)).
+The handlers are registered anyway, and for those two events the Job Object and the
+next `start` are the backstop.
+
+That the handler waits for the cleanup is known from the async runtime, not from a
+test. Returning from the handler of these three events ends the process at once.
+From version 1.44.0
+([tokio#7122](https://github.com/tokio-rs/tokio/pull/7122)), tokio's Windows
+handler does not return for them while a listener is registered: it notifies the
+listener and parks the handler thread, so the process lives until `start` finishes
+the removal and exits by itself. `cli/Cargo.toml` requires 1.54.1. No test can raise
+the close event, so this is checked on axpc in Phase 4b.
+
+### What the Command Tests Cover
+
+`start_command.rs` runs `start` and its clients as real processes on a test root,
+with the `fake-docker` helper named by `RUNNERS_TEST_DOCKER` and the loopback
+GitHub stub: the exit codes, resume, `status`'s fields, a restart that judges the file
+at the path `start` was given as `validate` does, a `stop` that gets its answer
+from an instance with no container, a `stop` that gives up after 35 s while the
+lock stays held, a second `start` that runs nothing, a stop within 30 s when
+`docker stop` ignores the grace period, the
+signals and a second SIGINT on Linux and macOS, at most 10 log files, and a run
+through a failed registration and a stop that keeps the token and the JIT
+configuration out of the terminal, the log file, and every client's output. Its
+process-tree tests observe a child's exit directly: on Unix, killing `start` closes
+standard error only when every shim has ended, after which no job container is
+left; on Windows, a handle to the job container's client is signalled when
+`start` is killed. `runtime_core.rs`, and the board and masking cases in
+`pool_preparation.rs` and `slot_worker.rs`, use the fake seams, and
+`instance_state.rs` and `core_restart.rs` cover forced removal, the exit deadline,
+a panicking core, and no startable pool. Not verified: Ctrl+C, Ctrl+Break, and the
+console close on Windows, and macOS and Windows behaviour beyond what the hosted
+runners show.
 
 ## Fixtures and Tests
 
@@ -654,41 +891,44 @@ allows crates.io only, one version of each crate, and the licences below. The CL
 is unpublished, so it carries no licence field of its own; `deny.toml` ignores
 private crates for that reason.
 
-| Crate                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Why                                                                                                                                                                                                                                                           | Licence                                                                                     |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `clap`, with `clap_builder`, `clap_lex`, and `anstyle`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Argument parsing, with default features off                                                                                                                                                                                                                   | MIT OR Apache-2.0                                                                           |
-| `regex`, with `regex-automata` and `regex-syntax`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | The whole-value patterns for names, labels, and image names                                                                                                                                                                                                   | MIT OR Apache-2.0                                                                           |
-| `aho-corasick` and `memchr`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Optional dependencies of `regex`                                                                                                                                                                                                                              | Unlicense OR MIT                                                                            |
-| `serde`, with `serde_core`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Reading the parsed JSON tree and the shared expectations into derived types, with default features off                                                                                                                                                        | MIT OR Apache-2.0                                                                           |
-| `serde_derive`, `syn`, `quote`, and `proc-macro2`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | The `Deserialize` derive; these run at build time                                                                                                                                                                                                             | MIT OR Apache-2.0                                                                           |
-| `unicode-ident`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | A dependency of `syn` and `proc-macro2`                                                                                                                                                                                                                       | (MIT OR Apache-2.0) AND Unicode-3.0                                                         |
-| `tokio`, `tokio-macros`, `mio`, `bytes`, and `slab`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | The async runtime for the slot loop and the container backend, on one thread, with only the `rt`, `time`, `sync`, `io-util`, `process`, `macros`, and `net` features; `tokio-macros` supplies `select!` and `join!`, and `net` serves the Unix control socket | MIT                                                                                         |
-| `socket2`, `signal-hook-registry`, `errno`, `smallvec`, `once_cell`, `cfg-if`, `log`, `itoa`, and `bitflags`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Operating-system and small-utility dependencies of `tokio`, `reqwest`, and their dependencies                                                                                                                                                                 | MIT OR Apache-2.0                                                                           |
-| `libc`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | The `O_NOFOLLOW` and `O_NONBLOCK` values for the Unix lock's open, declared directly on Unix with default features off; `tokio` and its dependencies use it too                                                                                               | MIT OR Apache-2.0                                                                           |
-| `pin-project-lite` and `atomic-waker`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Futures plumbing under `tokio` and `hyper`                                                                                                                                                                                                                    | Apache-2.0 OR MIT                                                                           |
-| `futures-core`, `futures-task`, `futures-channel`, and `futures-util`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Future and channel traits `hyper` and `reqwest` use                                                                                                                                                                                                           | MIT OR Apache-2.0                                                                           |
-| `reqwest`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | The one HTTPS request to GitHub's JIT endpoint, with default features off and only `rustls-no-provider`, so no JSON, cookie, proxy-crate, or compression feature is built                                                                                     | MIT OR Apache-2.0                                                                           |
-| `hyper`, `hyper-util`, `http-body`, `http-body-util`, `tower`, `tower-http`, `tower-layer`, `tower-service`, `tracing`, `tracing-core`, `want`, and `try-lock`                                                                                                                                                                                                                                                                                                                                                                                                                                                 | The HTTP client stack under `reqwest`                                                                                                                                                                                                                         | MIT                                                                                         |
-| `http`, `httparse`, `base64`, and `ipnet`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | HTTP types, header parsing, header encoding, and proxy address matching under `reqwest`                                                                                                                                                                       | MIT OR Apache-2.0                                                                           |
-| `sync_wrapper`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | A dependency of `reqwest`                                                                                                                                                                                                                                     | Apache-2.0                                                                                  |
-| `url`, `form_urlencoded`, `percent-encoding`, `idna`, and `idna_adapter`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Parsing the request URL, under `reqwest`                                                                                                                                                                                                                      | MIT OR Apache-2.0                                                                           |
-| `utf8_iter`, `stable_deref_trait`, and `zeroize`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Dependencies of `idna` and the TLS stack                                                                                                                                                                                                                      | Apache-2.0 OR MIT for `utf8_iter` and `zeroize`, MIT OR Apache-2.0 for `stable_deref_trait` |
-| `icu_collections`, `icu_locale_core`, `icu_normalizer`, `icu_normalizer_data`, `icu_properties`, `icu_properties_data`, `icu_provider`, `litemap`, `potential_utf`, `tinystr`, `writeable`, `yoke`, `zerofrom`, `zerotrie`, and `zerovec`                                                                                                                                                                                                                                                                                                                                                                      | Unicode normalisation data for `idna`                                                                                                                                                                                                                         | Unicode-3.0                                                                                 |
-| `displaydoc`, `yoke-derive`, `zerofrom-derive`, `zerovec-derive`, and `synstructure`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Derives and their helper for the Unicode crates above; these run at build time                                                                                                                                                                                | MIT OR Apache-2.0 for `displaydoc`, MIT for `synstructure`, Unicode-3.0 for the rest        |
-| `rustls`, `hyper-rustls`, and `rustls-native-certs`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | TLS for `reqwest`, with only the `ring`, `std`, and `tls12` features                                                                                                                                                                                          | Apache-2.0 OR ISC OR MIT                                                                    |
-| `tokio-rustls`, `rustls-pki-types`, and `rustls-platform-verifier`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | TLS glue, certificate types, and the platform's certificate verifier                                                                                                                                                                                          | MIT OR Apache-2.0                                                                           |
-| `rustls-webpki` and `untrusted`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Certificate validation for `rustls`                                                                                                                                                                                                                           | ISC                                                                                         |
-| `ring`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | The cryptography provider, installed explicitly                                                                                                                                                                                                               | Apache-2.0 AND ISC                                                                          |
-| `cc`, `shlex`, `find-msvc-tools`, and `getrandom`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Build-time C compiler discovery for `ring`, and its random-number source                                                                                                                                                                                      | MIT OR Apache-2.0                                                                           |
-| `subtle`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Constant-time comparison for `rustls`                                                                                                                                                                                                                         | BSD-3-Clause                                                                                |
-| `openssl-probe`, `security-framework`, `security-framework-sys`, `core-foundation`, `core-foundation-sys`, `windows-sys`, and `windows-link`                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | The platform certificate stores: the system store on Linux, the keychain on macOS, and the Windows APIs                                                                                                                                                       | MIT OR Apache-2.0                                                                           |
-| `schannel`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | The Windows certificate APIs; Cargo records it but the three CI targets do not build it                                                                                                                                                                       | MIT                                                                                         |
-| `bumpalo`, `combine`, `jni`, `jni-macros`, `jni-sys`, `jni-sys-macros`, `js-sys`, `rustc_version`, `rustls-platform-verifier-android`, `rustversion`, `same-file`, `semver`, `simd_cesu8`, `simdutf8`, `thiserror`, `thiserror-impl`, `walkdir`, `wasm-bindgen`, `wasm-bindgen-futures`, `wasm-bindgen-macro`, `wasm-bindgen-macro-support`, `wasm-bindgen-shared`, `web-sys`, `winapi-util`, `windows-targets`, `windows_aarch64_gnullvm`, `windows_aarch64_msvc`, `windows_i686_gnu`, `windows_i686_gnullvm`, `windows_i686_msvc`, `windows_x86_64_gnu`, `windows_x86_64_gnullvm`, and `windows_x86_64_msvc` | Platform verifier and `getrandom` code for Android, WebAssembly, and other Windows targets, which the lockfile records and none of the three CI targets builds                                                                                                | MIT OR Apache-2.0 (`same-file`, `walkdir`, and `winapi-util` are Unlicense OR MIT)          |
-| `wasi`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | A WebAssembly dependency of `getrandom`, not built on the CI targets                                                                                                                                                                                          | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT                                         |
-| `webpki-root-certs`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Bundled roots the platform verifier uses on WebAssembly, not built on the CI targets                                                                                                                                                                          | CDLA-Permissive-2.0                                                                         |
-| `interprocess`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | The Windows named pipes behind the single-instance lock and the control channel, with default features off; it builds on Windows only                                                                                                                         | 0BSD OR Apache-2.0                                                                          |
-| `recvmsg`, `doctest-file`, and `widestring`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Dependencies of `interprocess`: a receive helper, a procedural macro that includes example files in documentation, and wide-string types for Windows paths                                                                                                    | 0BSD for `recvmsg` and `doctest-file`, MIT OR Apache-2.0 for `widestring`                   |
-| `winsafe`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | The current user's security identifier, with only the `advapi` feature; it builds on Windows only                                                                                                                                                             | MIT                                                                                         |
+| Crate                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Why                                                                                                                                                                                                                                                                                                                            | Licence                                                                                     |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| `clap`, with `clap_builder`, `clap_lex`, and `anstyle`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Argument parsing, with default features off                                                                                                                                                                                                                                                                                    | MIT OR Apache-2.0                                                                           |
+| `regex`, with `regex-automata` and `regex-syntax`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | The whole-value patterns for names, labels, and image names                                                                                                                                                                                                                                                                    | MIT OR Apache-2.0                                                                           |
+| `aho-corasick` and `memchr`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Optional dependencies of `regex`                                                                                                                                                                                                                                                                                               | Unlicense OR MIT                                                                            |
+| `serde`, with `serde_core`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Reading the parsed JSON tree and the shared expectations into derived types, with default features off                                                                                                                                                                                                                         | MIT OR Apache-2.0                                                                           |
+| `serde_derive`, `syn` 3, `quote`, and `proc-macro2`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | The `Deserialize` derive; these run at build time                                                                                                                                                                                                                                                                              | MIT OR Apache-2.0                                                                           |
+| `unicode-ident`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | A dependency of `syn` and `proc-macro2`                                                                                                                                                                                                                                                                                        | (MIT OR Apache-2.0) AND Unicode-3.0                                                         |
+| `tokio`, `tokio-macros`, `mio`, `bytes`, and `slab`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | The async runtime for the slot loop and the container backend, on one thread, with only the `rt`, `time`, `sync`, `io-util`, `process`, `macros`, `net`, and `signal` features; `tokio-macros` supplies `select!` and `join!`, `net` serves the Unix control socket, and `signal` delivers the stop signals and console events | MIT                                                                                         |
+| `socket2`, `signal-hook-registry`, `errno`, `smallvec`, `once_cell`, `cfg-if`, `log`, `itoa`, and `bitflags`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Operating-system and small-utility dependencies of `tokio`, `reqwest`, and their dependencies                                                                                                                                                                                                                                  | MIT OR Apache-2.0                                                                           |
+| `libc`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | The `O_NOFOLLOW` and `O_NONBLOCK` values for the Unix lock's open, declared directly on Unix with default features off; `tokio` and its dependencies use it too                                                                                                                                                                | MIT OR Apache-2.0                                                                           |
+| `pin-project-lite` and `atomic-waker`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Futures plumbing under `tokio` and `hyper`                                                                                                                                                                                                                                                                                     | Apache-2.0 OR MIT                                                                           |
+| `futures-core`, `futures-task`, `futures-channel`, and `futures-util`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Future and channel traits `hyper` and `reqwest` use                                                                                                                                                                                                                                                                            | MIT OR Apache-2.0                                                                           |
+| `reqwest`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | The one HTTPS request to GitHub's JIT endpoint, with default features off and only `rustls-no-provider`, so no JSON, cookie, proxy-crate, or compression feature is built                                                                                                                                                      | MIT OR Apache-2.0                                                                           |
+| `hyper`, `hyper-util`, `http-body`, `http-body-util`, `tower`, `tower-http`, `tower-layer`, `tower-service`, `tracing`, `tracing-core`, `want`, and `try-lock`                                                                                                                                                                                                                                                                                                                                                                                                                                                     | The HTTP client stack under `reqwest`                                                                                                                                                                                                                                                                                          | MIT                                                                                         |
+| `http`, `httparse`, `base64`, and `ipnet`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | HTTP types, header parsing, header encoding, and proxy address matching under `reqwest`                                                                                                                                                                                                                                        | MIT OR Apache-2.0                                                                           |
+| `sync_wrapper`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | A dependency of `reqwest`                                                                                                                                                                                                                                                                                                      | Apache-2.0                                                                                  |
+| `url`, `form_urlencoded`, `percent-encoding`, `idna`, and `idna_adapter`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Parsing the request URL, under `reqwest`                                                                                                                                                                                                                                                                                       | MIT OR Apache-2.0                                                                           |
+| `utf8_iter`, `stable_deref_trait`, and `zeroize`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Dependencies of `idna` and the TLS stack                                                                                                                                                                                                                                                                                       | Apache-2.0 OR MIT for `utf8_iter` and `zeroize`, MIT OR Apache-2.0 for `stable_deref_trait` |
+| `icu_collections`, `icu_locale_core`, `icu_normalizer`, `icu_normalizer_data`, `icu_properties`, `icu_properties_data`, `icu_provider`, `litemap`, `potential_utf`, `tinystr`, `writeable`, `yoke`, `zerofrom`, `zerotrie`, and `zerovec`                                                                                                                                                                                                                                                                                                                                                                          | Unicode normalisation data for `idna`                                                                                                                                                                                                                                                                                          | Unicode-3.0                                                                                 |
+| `displaydoc`, `yoke-derive`, `zerofrom-derive`, `zerovec-derive`, and `synstructure`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Derives and their helper for the Unicode crates above; these run at build time                                                                                                                                                                                                                                                 | MIT OR Apache-2.0 for `displaydoc`, MIT for `synstructure`, Unicode-3.0 for the rest        |
+| `rustls`, `hyper-rustls`, and `rustls-native-certs`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | TLS for `reqwest`, with only the `ring`, `std`, and `tls12` features                                                                                                                                                                                                                                                           | Apache-2.0 OR ISC OR MIT                                                                    |
+| `tokio-rustls`, `rustls-pki-types`, and `rustls-platform-verifier`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | TLS glue, certificate types, and the platform's certificate verifier                                                                                                                                                                                                                                                           | MIT OR Apache-2.0                                                                           |
+| `rustls-webpki` and `untrusted`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Certificate validation for `rustls`                                                                                                                                                                                                                                                                                            | ISC                                                                                         |
+| `ring`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | The cryptography provider, installed explicitly                                                                                                                                                                                                                                                                                | Apache-2.0 AND ISC                                                                          |
+| `cc`, `shlex`, `find-msvc-tools`, and `getrandom`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Build-time C compiler discovery for `ring`, and its random-number source                                                                                                                                                                                                                                                       | MIT OR Apache-2.0                                                                           |
+| `subtle`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Constant-time comparison for `rustls`                                                                                                                                                                                                                                                                                          | BSD-3-Clause                                                                                |
+| `openssl-probe`, `security-framework`, `security-framework-sys`, `core-foundation`, `core-foundation-sys`, `windows-sys`, and `windows-link` 0.2                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | The platform certificate stores: the system store on Linux, the keychain on macOS, and the Windows APIs                                                                                                                                                                                                                        | MIT OR Apache-2.0                                                                           |
+| `schannel`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | The Windows certificate APIs; Cargo records it but the three CI targets do not build it                                                                                                                                                                                                                                        | MIT                                                                                         |
+| `bumpalo`, `combine`, `jni`, `jni-macros`, `jni-sys`, `jni-sys-macros`, `js-sys`, `rustc_version`, `rustls-platform-verifier-android`, `rustversion`, `same-file`, `semver`, `simd_cesu8`, `simdutf8`, `thiserror` 2, `thiserror-impl` 2, `walkdir`, `wasm-bindgen`, `wasm-bindgen-futures`, `wasm-bindgen-macro`, `wasm-bindgen-macro-support`, `wasm-bindgen-shared`, `web-sys`, `winapi-util`, `windows-targets`, `windows_aarch64_gnullvm`, `windows_aarch64_msvc`, `windows_i686_gnu`, `windows_i686_gnullvm`, `windows_i686_msvc`, `windows_x86_64_gnu`, `windows_x86_64_gnullvm`, and `windows_x86_64_msvc` | Platform verifier and `getrandom` code for Android, WebAssembly, and other Windows targets, which the lockfile records and none of the three CI targets builds                                                                                                                                                                 | MIT OR Apache-2.0 (`same-file`, `walkdir`, and `winapi-util` are Unlicense OR MIT)          |
+| `wasi`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | A WebAssembly dependency of `getrandom`, not built on the CI targets                                                                                                                                                                                                                                                           | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT                                         |
+| `webpki-root-certs`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Bundled roots the platform verifier uses on WebAssembly, not built on the CI targets                                                                                                                                                                                                                                           | CDLA-Permissive-2.0                                                                         |
+| `interprocess`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | The Windows named pipes behind the single-instance lock and the control channel, with default features off; it builds on Windows only                                                                                                                                                                                          | 0BSD OR Apache-2.0                                                                          |
+| `recvmsg`, `doctest-file`, and `widestring`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Dependencies of `interprocess`: a receive helper, a procedural macro that includes example files in documentation, and wide-string types for Windows paths                                                                                                                                                                     | 0BSD for `recvmsg` and `doctest-file`, MIT OR Apache-2.0 for `widestring`                   |
+| `winsafe`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | The current user's security identifier, with only the `advapi` feature; it builds on Windows only                                                                                                                                                                                                                              | MIT                                                                                         |
+| `win32job`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | The Job Object that ends each job container's `docker run` client with `start`; it builds on Windows only (see [Containment](#containment))                                                                                                                                                                                    | MIT OR Apache-2.0                                                                           |
+| `windows`, `windows-core`, `windows-collections`, `windows-future`, `windows-numerics`, `windows-threading`, `windows-result`, `windows-strings`, and `windows-link` 0.1                                                                                                                                                                                                                                                                                                                                                                                                                                           | The Windows API bindings `win32job` uses; they build on Windows only                                                                                                                                                                                                                                                           | MIT OR Apache-2.0                                                                           |
+| `windows-implement`, `windows-interface`, `thiserror` 1, `thiserror-impl` 1, and `syn` 2                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | The derives of the `windows` crates and `win32job`, with the older `syn` they use; these run at build time, on Windows only                                                                                                                                                                                                    | MIT OR Apache-2.0                                                                           |
 
 `aho-corasick` and `memchr` are in the lockfile because `regex` lists them as
 optional, but the CLI's feature set (`std` and `unicode-perl`, no `perf`) does not
@@ -725,14 +965,20 @@ because `interprocess` needs it for the Windows pipes: `recvmsg` and `doctest-fi
 Adding another licence requires the maintainer's review of it.
 
 `cargo deny` checks the three CI targets only (`deny.toml` sets `graph.targets`). The
-lockfile also records crates that none of them builds, including an older `syn` and
-`windows-sys` beside the versions they build. One of the unbuilt crates,
+lockfile also records crates that none of them builds, including an older
+`windows-sys` and a newer `thiserror` beside the versions they build. Two older
+versions are built beside the current one, on Windows only, and `deny.toml` lists each
+as a skip with its reason: `syn` 2, which the `win32job` derives use while every other
+derive uses `syn` 3, and `windows-link` 0.1, which the `windows` 0.61 crates use while
+`windows-sys` uses 0.2. The Phase 2 plan approved both; another duplicate needs the
+maintainer's review. One of the unbuilt crates,
 `webpki-root-certs`, is `CDLA-Permissive-2.0`, which is not allowed. If a change makes
 a CI target build it, `deny:rust` fails and the change needs the maintainer's review of
 the licence.
 
 `serde_derive`, `syn`, `quote`, `proc-macro2`, `displaydoc`, `yoke-derive`,
-`zerofrom-derive`, `zerovec-derive`, `tokio-macros`, and `doctest-file` run at build time, with
+`zerofrom-derive`, `zerovec-derive`, `tokio-macros`, `doctest-file`, `thiserror-impl`,
+`windows-implement`, and `windows-interface` run at build time, with
 `synstructure` as the helper of the `yoke` and `zerofrom` derives. A new
 procedural-macro crate needs the maintainer's review; see
 [Security](../conventions/security.md).
