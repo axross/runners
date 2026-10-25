@@ -1038,16 +1038,19 @@ Without `--container` it only counts the pool's bundles.
   system call runs on a thread of its own, so a hung sink cannot keep the child from
   ending. At the export deadline the instance closes the liveness pipe, and kills
   the child 1 s later only if it has not ended. On Windows the child also inherits
-  `start`'s Job Object. So neither the child nor its clients outlive their deadline
-  or their instance.
+  `start`'s Job Object. So the child outlives neither its deadline nor its
+  instance, and its clients end with it whenever it ends on its own. A child killed
+  1 s after its pipe closed cannot kill its clients: on Unix they run until each
+  ends by itself, and on Windows until `start` ends and its Job Object closes.
 - **Exit codes.** 0 is a complete bundle, or a count; 3 a complete bundle with a
   gap; 4 a full sink; and 1 anything else, a refused sink, a failed copy, an archive
   outside the subset, a deadline, or a closed pipe. PowerShell's 5, "not admitted to
   containment", is not used: the Job Object on Windows and the liveness pipe on Unix
   are in place before the child starts.
-- **Bounded output.** The child prints only those two lines, and writes nothing to
-  standard error. The CLI never prints or logs the evidence: a warning names only
-  the pool, the container, and the gap.
+- **Bounded output.** The child prints only those two lines. On standard error it
+  writes at most the one line a panic gives, which names only the code location.
+  The CLI never prints or logs the evidence: a warning names only the pool, the
+  container, and the gap.
 
 **`diagnostics`.** The client asks the instance to finalise every diagnostic
 container it retains whose job has ended and nobody holds: one whose removal failed,

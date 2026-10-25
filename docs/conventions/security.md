@@ -399,8 +399,8 @@ owns how the log is written and masked and how its children are contained.
   liveness pipe from `start` closes, and kills its own `docker` clients first. Its
   clients run in process groups of their own with the JIT variable cleared, and on
   Windows the child is also in `start`'s Job Object. `start` closes the pipe at the
-  export deadline and kills the child 1 s later if it has not ended, so neither the
-  child nor its clients outlive their deadline or `start`.
+  export deadline and kills the child 1 s later if it has not ended, so the child
+  outlives neither its deadline nor `start`.
 - The log directory and its files are per user and private to that user.
 
 Residual risks, accepted on a single-user host:
@@ -419,6 +419,10 @@ Residual risks, accepted on a single-user host:
   `docker inspect` on the host can read it. The ephemeral runner it configured has
   already ended with its job. On Windows a hard kill of `start` leaves
   a diagnostic job running, as it does an ordinary one, until the next `start`.
+- An exporter child that `start` has to kill, because it did not end within 1 s of
+  its pipe closing, cannot kill its `docker` clients. On Unix they run until each
+  ends by itself; on Windows the Job Object ends them when `start` ends. They carry
+  no JIT configuration.
 
 ## Diagnostic Evidence Stays Private
 

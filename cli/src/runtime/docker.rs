@@ -488,9 +488,9 @@ impl<C: Clock> DockerBackend<C> {
 
     /// Starts the exporter child for `request`. Its standard input is the liveness
     /// pipe, its standard output is read, and its standard error, where it writes
-    /// nothing, is this process's, so it stays open while the child lives. Closing
-    /// the pipe, not a kill, ends it when its run is dropped, so it can kill its own
-    /// clients first.
+    /// only a panic's location, is this process's, so it stays open while the child
+    /// lives. Closing the pipe, not a kill, ends it when its run is dropped, so it
+    /// can kill its own clients first.
     fn exporter(&self, request: &ExportRequest) -> Option<Child> {
         let program = self.config.exporter.as_ref()?;
         let mut command = Command::new(program);
