@@ -277,7 +277,8 @@ mod tests {
     }
 
     /// The PowerShell diagnostic variant's arguments: no `--rm`, the diagnostics
-    /// label, and the diagnostic launcher. 3b's runtime gives these under contract 1.
+    /// label, and the diagnostic launcher. This runtime does not build them yet;
+    /// they are here so the run contract's fingerprint covers them.
     fn diagnostic_run_arguments(spec: &ContainerSpec, raw: bool) -> Vec<String> {
         let memory = format!("{}g", spec.memory_gb);
         let mut arguments: Vec<String> = [
