@@ -401,11 +401,11 @@ containers are cleaned up and its volumes prepared; a pool that fails either is
 skipped. When no pool is left there is nothing to run. Stale cleanup removes only
 containers that match the pool's own pattern and do not carry the
 `runners.diagnostic-lifecycle=1` label; a failed removal is a warning only, and a
-failed listing skips the pool. A labelled container is never removed without its
-export. The backend's own retained containers keep their records and are left
-alone. Any other labelled container is finalised with the pool's current settings
-when the pool's diagnostics are on; when they are off it gets a bounded stop and
-the pool is refused, as [Diagnostics](#diagnostics) describes.
+failed listing skips the pool. The backend's own retained containers keep their
+records and are left alone. Any other labelled container is finalised with the
+pool's current settings when the pool's diagnostics are on; when they are off it
+gets a bounded stop and the pool is refused, as [Diagnostics](#diagnostics)
+describes.
 
 ### What the Tests Cover
 
@@ -909,9 +909,11 @@ with the pool, the `diagnosticDirectory`, and the `diagnosticRawRecords` it ran 
 until a removal of it succeeds. A panic that unwinds the core's workers keeps the
 record, as the backend keeps container names. Every finalisation of the container
 uses that record, never the settings of a plan read later, so a resume or a
-`restart` that changed the sink still exports into the old one. The record also
-notes once a bundle was admitted for the container, so a finalisation after a failed
-removal only removes it again and writes no second bundle.
+`restart` that changed the sink still exports into the old one. A container an
+earlier process left has no record; Startup below adopts it with the pool's
+current settings. The record also notes once a bundle was admitted for the
+container, so a finalisation after a failed removal only removes it again and
+writes no second bundle.
 
 **One owner.** At most one path finalises a container at a time:
 

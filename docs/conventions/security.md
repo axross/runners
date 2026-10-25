@@ -449,9 +449,10 @@ how a bundle is written.
   40 MiB.
 - A bundle is untrusted evidence. The CLI never prints or logs its contents, and a
   warning names only the pool, the container, and the gap.
-- A labelled container is removed only by a finalisation, which tries its export
-  first, or by the manual recovery, so a later `start` with the pool's diagnostics
-  off does not destroy its evidence.
+- A labelled container is removed only by a finalisation or by the manual
+  recovery, so a later `start` with the pool's diagnostics off does not destroy its
+  evidence. [CLI](../operations/cli.md#diagnostics) owns when a finalisation
+  exports, and the cases where it removes a container without an export.
 
 ## `build` Builds Only What the Binary Embeds
 
