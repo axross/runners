@@ -1529,4 +1529,7 @@ The `runners` names still in the repository are the repository's name, not the
 binary's: the image labels `com.github.axross.runners.*`, the container labels
 `runners.diagnostic-lifecycle` and `runners.cpu-probe`, the `.cache/runners`
 directory, the CI image tag `runners-docker-test:ci`, the login-profile markers in
-`.agents/setup`, and the Amp continuation marker.
+`.agents/setup`, the `repository=runners` telemetry attribute in
+`.claude/settings.json`, and the Amp continuation marker. The PowerShell host
+under `hosts/` keeps its own `runners` names, such as its diagnostics mutex,
+until Phase 4c retires it.

@@ -52,7 +52,7 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   `status`, and `diagnostics` (the log, containment, the stop sequence, and the
   diagnostic containers and their export), the toolchain and Rust
   gates, the allowed
-  dependencies, and what a rename touches.
+  dependencies, and why the CLI's name is fixed.
 - [operations/agent-skills.md](./operations/agent-skills.md) - installing and
   refreshing the skills from `axross/skills`, the drift checks, and the register
   of deviations and gaps.
