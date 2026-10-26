@@ -28,7 +28,7 @@
     PowerShell 5.1 on a byte-order mark is not probed.
 #>
 param(
-    [string]$Binary = (Join-Path $PSScriptRoot '../../cli/target/debug/runners')
+    [string]$Binary = (Join-Path $PSScriptRoot '../../cli/target/debug/marshal')
 )
 
 $ErrorActionPreference = 'Stop'

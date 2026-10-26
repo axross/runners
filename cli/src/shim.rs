@@ -1,6 +1,6 @@
 //! The shim between the CLI and one job container's `docker run` client, on Unix.
 //!
-//! `start` runs the CLI again as `runners shim --name <container> -- <docker>
+//! `start` runs the CLI again as `marshal shim --name <container> -- <docker>
 //! <arguments>`. The shim starts the client, in a process group of its own, with the
 //! client's standard error joined to its standard output, which the CLI reads. Its
 //! own standard input is the read end of a liveness pipe whose write end only the

@@ -5,12 +5,12 @@
 //! process inherits it.
 //!
 //! On Windows the lock is the first instance of the named pipe
-//! `\\.\pipe\runners-instance`, which only the creating user may connect to. The
+//! `\\.\pipe\marshal-instance`, which only the creating user may connect to. The
 //! pipe is kept open for the life of the process and never carries a message. A
 //! second creation of the name, by any user, fails, and that failure is "held".
 //!
 //! On Unix it is an exclusive advisory lock on a file that every user may open: on
-//! macOS `/Users/Shared/.runners-instance.lock`. The creator sets its mode to `0644`
+//! macOS `/Users/Shared/.marshal-instance.lock`. The creator sets its mode to `0644`
 //! whatever the umask. A user who may not write it opens it read-only, and the lock
 //! then refuses that user rather than the open. The open follows no link at the
 //! path and never waits, so a link, a FIFO or anything else that is not a regular
@@ -189,7 +189,7 @@ mod unix {
 
         fn scratch(name: &str) -> std::path::PathBuf {
             let dir =
-                std::env::temp_dir().join(format!("runners-lock-{}-{name}", std::process::id()));
+                std::env::temp_dir().join(format!("marshal-lock-{}-{name}", std::process::id()));
             let _ = fs::remove_dir_all(&dir);
             fs::create_dir_all(&dir).unwrap();
             dir

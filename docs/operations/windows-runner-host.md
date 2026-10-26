@@ -35,26 +35,26 @@ reports is described from Docker's documentation.
 
 The CLI's `start` command can run the same pools, but on axpc this procedure keeps
 using the PowerShell supervisor until Phase 4b moves the host to the CLI. Do not run
-`runners start` beside the supervisor: its stale cleanup removes the supervisor's job
+`marshal start` beside the supervisor: its stale cleanup removes the supervisor's job
 containers. See [CLI](./cli.md#running-a-host). The CLI is unverified on axpc until
 Phase 4b, including Ctrl+C, the console close, its Job Object against Docker Desktop,
 and a real registration, and because the `actions-runner-supervisor` task starts the
 supervisor again at sign-in and is set to restart it if it fails, stopping the
-supervisor by hand is not enough before running `runners start`.
+supervisor by hand is not enough before running `marshal start`.
 
 The CLI's `build` command can build the runner image, but on axpc the
 `actions-runner-weekly-rebuild` task keeps building it with `rebuild-image.ps1`
-until Phase 4b. Do not run `runners build` beside the task or the supervisor: both
+until Phase 4b. Do not run `marshal build` beside the task or the supervisor: both
 replace the same image name, and `build` holds only the CLI's instance lock, which
 the PowerShell scripts do not take. An image the task builds carries the contract
 labels its Dockerfile declares, so the CLI accepts it, but it has no build-time
-label, so the CLI shows its build age as unknown with a warning. `runners build` is
+label, so the CLI shows its build age as unknown with a warning. `marshal build` is
 unverified on axpc until Phase 4b, including a full build of the image on Docker
 Desktop; CI runs it only against a small test definition on Linux. See
 [CLI](./cli.md#build).
 
 The CLI's `start` also runs diagnostics-enabled pools and exports their containers'
-evidence, and `runners diagnostics` finalises the diagnostic containers an instance
+evidence, and `marshal diagnostics` finalises the diagnostic containers an instance
 still retains; on axpc the supervisor keeps doing this until Phase 4b, and the CLI's
 diagnostics are unverified there until then, including the console close. Keep
 the ACL step under [Collecting private diagnostics](#collecting-private-diagnostics)
@@ -62,7 +62,7 @@ for a sink the CLI exports to;
 [Security](../conventions/security.md#diagnostic-evidence-stays-private) records
 why the CLI relies on it. The CLI does not take the PowerShell exporter's named
 mutex: its own instance lock is what keeps two of its exports apart, so the CLI instance
-MUST be stopped with `runners stop` before a manual export under
+MUST be stopped with `marshal stop` before a manual export under
 [Recover before disabling diagnostics](#recover-before-disabling-diagnostics). See
 [CLI](./cli.md#diagnostics).
 
@@ -655,8 +655,8 @@ sink/raw settings or silently enable collection.
 After separate host authorization, recover one marked container at a time:
 
 1. Keep the supervisor task disabled, and stop any CLI instance with
-   `runners stop`, because the CLI does not take the named mutex this export uses;
-   do not run `runners start` until step 4 is done. Match the candidate's name to the entry's
+   `marshal stop`, because the CLI does not take the named mutex this export uses;
+   do not run `marshal start` until step 4 is done. Match the candidate's name to the entry's
    `<name>-<index>-<timestamp>` pattern and confirm its immutable label with
    `docker ps -a --filter "name=<name>-" --filter "label=runners.diagnostic-lifecycle=1" --format "{{.Names}}"`.
    Never dump configuration or registration values.

@@ -466,7 +466,7 @@ mod tests {
     /// `None`, the one the build was labelled with.
     fn docker(name: &str, tag: &str, inspected: Option<&str>) -> PathBuf {
         let dir =
-            std::env::temp_dir().join(format!("runners-build-steps-{name}-{}", std::process::id()));
+            std::env::temp_dir().join(format!("marshal-build-steps-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let at = dir.display();

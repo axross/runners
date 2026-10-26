@@ -3,21 +3,22 @@ resolver = "3"
 members = ["."]
 
 [package]
-name = "runners-cli"
+name = "marshal-cli"
 version = "0.1.0"
 edition = "2024"
 description = "Management CLI for the self-hosted runner hosts in this repository"
 publish = false
-default-run = "runners"
+default-run = "marshal"
 
 [lib]
-name = "runners_cli"
+name = "marshal_cli"
 path = "src/lib.rs"
 
-# The binary name is the CLI's provisional name; the CLI operations document keeps
-# the checklist of everything that changes with it.
+# The binary name is fixed: the instance lock, control channel, and log names derive
+# from it, so renaming it breaks every installed host. See "Renaming the CLI" in the
+# CLI operations document.
 [[bin]]
-name = "runners"
+name = "marshal"
 path = "src/main.rs"
 
 # A stand-in for the `docker` client, built so the tests can run the container backend

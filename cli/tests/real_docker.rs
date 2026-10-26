@@ -3,7 +3,7 @@
 //! The tests are `#[ignore]`d so a plain `cargo test` never needs a daemon. CI runs
 //! them in their own step, `cargo test --locked --test real_docker -- --ignored`,
 //! after building the runner image's base stage and naming it in
-//! `RUNNERS_REAL_DOCKER_IMAGE`. Each test fails when Docker or that image is
+//! `MARSHAL_REAL_DOCKER_IMAGE`. Each test fails when Docker or that image is
 //! missing: a step that cannot run a test must not look as if it passed.
 #![cfg(target_os = "linux")]
 #![allow(
@@ -16,16 +16,16 @@
 use std::process::Command;
 use std::rc::Rc;
 
-use runners_cli::diagnostics::exporter::COMPLETE_TEXT;
-use runners_cli::diagnostics::identity::IDENTITY_HEADER;
-use runners_cli::runtime::backend::{
+use marshal_cli::diagnostics::exporter::COMPLETE_TEXT;
+use marshal_cli::diagnostics::identity::IDENTITY_HEADER;
+use marshal_cli::runtime::backend::{
     Backend, ContainerSpec, CpuRequest, Deadlines, DiagnosticRecord, ExportOutcome, Mount,
 };
-use runners_cli::runtime::clock::SystemClock;
-use runners_cli::runtime::docker::{DockerBackend, DockerConfig};
-use runners_cli::runtime::log::StderrLog;
-use runners_cli::runtime::secret::Secret;
-use runners_cli::validate::PlannedVolume;
+use marshal_cli::runtime::clock::SystemClock;
+use marshal_cli::runtime::docker::{DockerBackend, DockerConfig};
+use marshal_cli::runtime::log::StderrLog;
+use marshal_cli::runtime::secret::Secret;
+use marshal_cli::validate::PlannedVolume;
 
 /// Removes everything the test may have created, whatever way it ends.
 struct Cleanup {
@@ -87,10 +87,10 @@ fn cpu_list_is_well_formed(list: &str) -> bool {
         })
 }
 
-/// The image `RUNNERS_REAL_DOCKER_IMAGE` names, once Docker answers and holds it.
+/// The image `MARSHAL_REAL_DOCKER_IMAGE` names, once Docker answers and holds it.
 fn required_image() -> String {
-    let image = std::env::var("RUNNERS_REAL_DOCKER_IMAGE")
-        .expect("RUNNERS_REAL_DOCKER_IMAGE must name a local image, such as the runner base stage");
+    let image = std::env::var("MARSHAL_REAL_DOCKER_IMAGE")
+        .expect("MARSHAL_REAL_DOCKER_IMAGE must name a local image, such as the runner base stage");
     let info = Command::new("docker")
         .arg("info")
         .output()
@@ -112,11 +112,11 @@ fn required_image() -> String {
 }
 
 #[tokio::test(flavor = "current_thread")]
-#[ignore = "needs a Docker daemon and RUNNERS_REAL_DOCKER_IMAGE; CI runs it in its own step"]
+#[ignore = "needs a Docker daemon and MARSHAL_REAL_DOCKER_IMAGE; CI runs it in its own step"]
 async fn a_container_and_the_cpu_probe_run_through_the_backend_and_leave_nothing_behind() {
     let image = required_image();
 
-    let pool = format!("runners-it-{}", std::process::id());
+    let pool = format!("marshal-it-{}", std::process::id());
     let volume = format!("{pool}-cache");
     let cleanup = Cleanup {
         pool: pool.clone(),
@@ -211,12 +211,12 @@ async fn a_container_and_the_cpu_probe_run_through_the_backend_and_leave_nothing
 /// exported by the CLI's exporter child from a real `docker cp` stream into a
 /// private sink, then removed.
 #[tokio::test(flavor = "current_thread")]
-#[ignore = "needs a Docker daemon and RUNNERS_REAL_DOCKER_IMAGE; CI runs it in its own step"]
+#[ignore = "needs a Docker daemon and MARSHAL_REAL_DOCKER_IMAGE; CI runs it in its own step"]
 async fn a_real_copy_stream_is_exported_into_a_bundle_and_the_container_removed() {
     use std::os::unix::fs::PermissionsExt;
 
     let image = required_image();
-    let pool = format!("runners-it-export-{}", std::process::id());
+    let pool = format!("marshal-it-export-{}", std::process::id());
     let cleanup = Cleanup {
         pool: pool.clone(),
         volume: format!("{pool}-unused"),
@@ -254,7 +254,7 @@ async fn a_real_copy_stream_is_exported_into_a_bundle_and_the_container_removed(
     let sink = std::fs::canonicalize(sink).unwrap();
     let backend = DockerBackend::new(
         DockerConfig {
-            exporter: Some(env!("CARGO_BIN_EXE_runners").into()),
+            exporter: Some(env!("CARGO_BIN_EXE_marshal").into()),
             ..DockerConfig::default()
         },
         SystemClock,
@@ -267,7 +267,7 @@ async fn a_real_copy_stream_is_exported_into_a_bundle_and_the_container_removed(
     };
     backend.retained().adopt(&name, &record);
     let claim = backend.retained().claim(&name).unwrap();
-    let finalized = runners_cli::runtime::diagnostic::finalize(
+    let finalized = marshal_cli::runtime::diagnostic::finalize(
         &backend,
         &claim,
         Deadlines::from(tokio::time::Instant::now()),

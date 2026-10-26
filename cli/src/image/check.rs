@@ -222,13 +222,13 @@ pub fn freshness_warnings(check: &ImageCheck, now: SystemTime) -> Vec<String> {
     let mut warnings = Vec::new();
     match built_seconds(labels).map(|built| age_days(now, built)) {
         None => warnings.push(
-            "the image was not built by `runners build`, so its build age is unknown".to_string(),
+            "the image was not built by `marshal build`, so its build age is unknown".to_string(),
         ),
         Some(days) if days >= SECOND_WARNING_DAYS => warnings.push(format!(
-            "the image's operating-system packages are {days} days old; rebuild it with `runners build`"
+            "the image's operating-system packages are {days} days old; rebuild it with `marshal build`"
         )),
         Some(days) if days >= FIRST_WARNING_DAYS => warnings.push(format!(
-            "the image is {days} days old and should be rebuilt with `runners build`"
+            "the image is {days} days old and should be rebuilt with `marshal build`"
         )),
         Some(_) => {}
     }
@@ -473,7 +473,7 @@ mod tests {
         assert_eq!(
             warnings,
             [
-                "the image is 8 days old and should be rebuilt with `runners build`",
+                "the image is 8 days old and should be rebuilt with `marshal build`",
                 "runner 2.337.0 was released 8 days ago, and a newer runner may exist",
             ]
         );
@@ -495,7 +495,7 @@ mod tests {
                 ("runner", "2.337.0, released 1 days ago".to_string()),
                 (
                     "warning",
-                    "the image was not built by `runners build`, so its build age is unknown"
+                    "the image was not built by `marshal build`, so its build age is unknown"
                         .to_string()
                 ),
             ]

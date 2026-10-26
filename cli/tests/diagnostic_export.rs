@@ -16,13 +16,13 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::time::Duration;
 
-use runners_cli::diagnostics::ExportRequest;
-use runners_cli::diagnostics::exporter::COMPLETE_TEXT;
-use runners_cli::diagnostics::identity::IDENTITY_HEADER;
-use runners_cli::runtime::backend::{
+use marshal_cli::diagnostics::ExportRequest;
+use marshal_cli::diagnostics::exporter::COMPLETE_TEXT;
+use marshal_cli::diagnostics::identity::IDENTITY_HEADER;
+use marshal_cli::runtime::backend::{
     Backend, Deadlines, DiagnosticRecord, ExportOutcome, Finalized,
 };
-use runners_cli::runtime::diagnostic;
+use marshal_cli::runtime::diagnostic;
 use support::docker::{FAKE_DOCKER, Fake, Invocation};
 use support::{BINARY, TempDir};
 use tokio::time::Instant;
@@ -620,18 +620,18 @@ fn an_exporter_whose_pipe_closes_ends_with_its_clients() {
 }
 
 /// Pool `d`, with diagnostics on into `sink`, and its token in `scratch`.
-fn diagnostic_pool(scratch: &TempDir, sink: &Path) -> runners_cli::runtime::pool::PoolSpec {
+fn diagnostic_pool(scratch: &TempDir, sink: &Path) -> marshal_cli::runtime::pool::PoolSpec {
     let config = r#"{"imageName":"actions-runner:local","repositories":[{"owner":"o",
         "repository":"d","name":"d","slots":1,"tokenPath":"C:\\d.token","volumes":[],
         "diagnostics":true,"diagnosticDirectory":"C:\\evidence"}]}"#;
-    let plan = runners_cli::validate::validate(
+    let plan = marshal_cli::validate::validate(
         config.as_bytes(),
-        runners_cli::profile::Profile::Axpc,
+        marshal_cli::profile::Profile::Axpc,
         None,
     )
     .outcome
     .unwrap();
-    let mut pool = runners_cli::runtime::pool::pools_from_plan(&plan)
+    let mut pool = marshal_cli::runtime::pool::pools_from_plan(&plan)
         .unwrap()
         .remove(0);
     pool.token_path = scratch.write_token("d.token", b"ghp_diagnostictoken\n");
@@ -650,7 +650,7 @@ async fn at_startup_a_labelled_container_of_a_diagnostics_pool_is_stopped_export
         &fake.backend,
         vec![pool],
         &*fake.log,
-        &runners_cli::runtime::board::Board::default(),
+        &marshal_cli::runtime::board::Board::default(),
     )
     .await
     .unwrap();

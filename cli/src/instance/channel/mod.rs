@@ -4,7 +4,7 @@
 //! It is per user and carries the text protocol in [`protocol`](super::protocol).
 //! Only the instance's own user can reach it:
 //!
-//! - On Windows it is the named pipe `\\.\pipe\runners-control-<user SID>`, created
+//! - On Windows it is the named pipe `\\.\pipe\marshal-control-<user SID>`, created
 //!   as the first instance with the descriptor `D:P(A;;GA;;;<user SID>)` and with
 //!   remote clients rejected. The pipe crate's blocking calls run on threads of
 //!   their own, which hand each request to the runtime.

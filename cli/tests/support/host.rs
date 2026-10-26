@@ -1,4 +1,4 @@
-//! A scratch host for running `runners start` and its clients as real processes:
+//! A scratch host for running `marshal start` and its clients as real processes:
 //! a test root for the lock, channel and logs, a configuration with one pool, its
 //! token file, and the fake `docker` named as the client `start` runs.
 #![allow(
@@ -113,14 +113,14 @@ impl Host {
         fs::write(self.docker().join(file), content).unwrap();
     }
 
-    /// The command for `runners <args>` on this host.
+    /// The command for `marshal <args>` on this host.
     pub fn command(&self, args: &[&str]) -> Command {
         let mut command = Command::new(BINARY);
         command
             .args(args)
             .current_dir(self.root.path())
-            .env("RUNNERS_TEST_ROOT", self.state())
-            .env("RUNNERS_TEST_DOCKER", FAKE_DOCKER)
+            .env("MARSHAL_TEST_ROOT", self.state())
+            .env("MARSHAL_TEST_DOCKER", FAKE_DOCKER)
             .env("FAKE_DOCKER_DIR", self.docker())
             .stdin(Stdio::null());
         command
@@ -131,13 +131,13 @@ impl Host {
         self.command(args).output().unwrap()
     }
 
-    /// Starts `runners start` for `config` against `stub`.
+    /// Starts `marshal start` for `config` against `stub`.
     pub fn start_with(&self, config: &Path, stub: &Stub) -> Started {
         let mut command = self.command(&["start", "--profile", "axpc"]);
         command
             .arg("--config")
             .arg(config)
-            .env("RUNNERS_TEST_GITHUB_API", &stub.address)
+            .env("MARSHAL_TEST_GITHUB_API", &stub.address)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         Started::spawn(command)
@@ -147,7 +147,7 @@ impl Host {
         self.start_with(&self.config, stub)
     }
 
-    /// Starts `runners start` against `stub` as the leader of a process group of
+    /// Starts `marshal start` against `stub` as the leader of a process group of
     /// its own, as a shell starts a foreground job, so a signal to that group is
     /// what a terminal's Ctrl+C sends.
     #[cfg(unix)]
@@ -157,14 +157,14 @@ impl Host {
         command
             .arg("--config")
             .arg(&self.config)
-            .env("RUNNERS_TEST_GITHUB_API", &stub.address)
+            .env("MARSHAL_TEST_GITHUB_API", &stub.address)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .process_group(0);
         Started::spawn(command)
     }
 
-    /// Starts `runners <args>` on this host, such as a `build`, without waiting
+    /// Starts `marshal <args>` on this host, such as a `build`, without waiting
     /// for it.
     pub fn spawn(&self, args: &[&str]) -> Started {
         let mut command = self.command(args);

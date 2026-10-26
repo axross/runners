@@ -109,13 +109,13 @@ jobs:
       # the GitHub API base address, the instance's roots and the image definition
       # `build` sends can move only in a debug build, for the tests. the plain test
       # run above is a debug build, so this step builds the same tests in the
-      # release profile and shows that none of them moves. RUNNERS_EXPECT_RELEASE
+      # release profile and shows that none of them moves. MARSHAL_EXPECT_RELEASE
       # makes each test fail if it was built in the wrong profile, so a mistake in
       # this step cannot pass quietly.
       - name: Test That A Release Build Ignores The Debug-Only Overrides
         if: runner.os == 'Linux'
         env:
-          RUNNERS_EXPECT_RELEASE: "1"
+          MARSHAL_EXPECT_RELEASE: "1"
         run: cargo test --locked --release --test base_address --test instance_roots --test build_definition
       # the real-Docker tests need the runner image's base stage, which is digest
       # pinned, and a daemon: ubuntu-latest has one, and the Windows and macOS
@@ -131,9 +131,9 @@ jobs:
       - name: Run Real Docker Test
         if: runner.os == 'Linux'
         env:
-          RUNNERS_REAL_DOCKER_IMAGE: runners-docker-test:ci
+          MARSHAL_REAL_DOCKER_IMAGE: runners-docker-test:ci
         run: cargo test --locked --test real_docker -- --ignored
-      # `runners build` against the same daemon, with the debug-only test
+      # `marshal build` against the same daemon, with the debug-only test
       # definition in tests/build-definition: the runner image's digest-pinned base
       # and its contract labels, so the step shows the builder takes build's
       # context and labels without building the whole image. a missing daemon fails

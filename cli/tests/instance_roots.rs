@@ -6,7 +6,7 @@
 //! no host roots, so there an ignored request reads as an unsupported host, and a
 //! release build's `start` refuses to run. CI runs this file twice:
 //! in the debug profile with the rest of the tests, and in the release profile with
-//! `RUNNERS_EXPECT_RELEASE=1`, which makes the file fail if it was built in the
+//! `MARSHAL_EXPECT_RELEASE=1`, which makes the file fail if it was built in the
 //! wrong profile.
 #![allow(
     clippy::unwrap_used,
@@ -17,18 +17,18 @@
 
 use std::path::PathBuf;
 
-use runners_cli::instance::roots::Roots;
+use marshal_cli::instance::roots::Roots;
 #[cfg(target_os = "linux")]
-use runners_cli::instance::roots::RootsError;
+use marshal_cli::instance::roots::RootsError;
 
 fn test_root() -> PathBuf {
-    std::env::temp_dir().join("runners-instance-roots-test")
+    std::env::temp_dir().join("marshal-instance-roots-test")
 }
 
 #[test]
 fn the_profile_is_the_one_ci_asked_for() {
     let debug_profile = cfg!(debug_assertions);
-    match std::env::var("RUNNERS_EXPECT_RELEASE").as_deref() {
+    match std::env::var("MARSHAL_EXPECT_RELEASE").as_deref() {
         Ok("1") => assert!(!debug_profile, "this test was built in the debug profile"),
         Ok("0") => assert!(debug_profile, "this test was built in the release profile"),
         _ => {}
@@ -48,16 +48,16 @@ fn the_macos_roots_are_the_shared_lock_file_and_a_directory_in_the_library() {
     let roots = Roots::resolve(None).unwrap();
     let channel_directory = std::env::home_dir()
         .unwrap()
-        .join("Library/Application Support/runners");
+        .join("Library/Application Support/marshal");
     assert_eq!(
         roots.lock_file(),
-        std::path::Path::new("/Users/Shared/.runners-instance.lock")
+        std::path::Path::new("/Users/Shared/.marshal-instance.lock")
     );
     assert_eq!(roots.channel_directory(), channel_directory);
     assert_eq!(roots.socket_path(), channel_directory.join("control.sock"));
     assert_eq!(
         roots.log_directory(),
-        std::env::home_dir().unwrap().join("Library/Logs/runners")
+        std::env::home_dir().unwrap().join("Library/Logs/marshal")
     );
     assert_eq!(Roots::of_this_host(), Ok(roots));
 }
@@ -66,15 +66,15 @@ fn the_macos_roots_are_the_shared_lock_file_and_a_directory_in_the_library() {
 #[test]
 fn the_windows_roots_are_the_pipe_names_without_a_suffix() {
     let roots = Roots::resolve(None).unwrap();
-    assert_eq!(roots.lock_pipe_name(), r"\\.\pipe\runners-instance");
+    assert_eq!(roots.lock_pipe_name(), r"\\.\pipe\marshal-instance");
     assert_eq!(
         roots.control_pipe_name("S-1-5-21-1"),
-        r"\\.\pipe\runners-control-S-1-5-21-1"
+        r"\\.\pipe\marshal-control-S-1-5-21-1"
     );
     assert_eq!(
         roots.log_directory(),
         std::path::Path::new(&std::env::var_os("LOCALAPPDATA").unwrap())
-            .join("runners")
+            .join("marshal")
             .join("logs")
     );
     assert_eq!(Roots::of_this_host(), Ok(roots));
@@ -109,10 +109,10 @@ fn a_release_build_on_linux_does_not_start_even_with_a_test_root() {
         "name":"r","slots":1,"tokenPath":"C:\\r.token","volumes":[]}]}"#,
     )
     .unwrap();
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_runners"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_marshal"))
         .args(["start", "--profile", "axpc", "--config"])
         .arg(&config)
-        .env("RUNNERS_TEST_ROOT", &root)
+        .env("MARSHAL_TEST_ROOT", &root)
         .output()
         .unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);

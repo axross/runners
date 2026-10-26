@@ -10,7 +10,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$root = Join-Path ([System.IO.Path]::GetTempPath()) "runners-pipe-security-$PID"
+$root = Join-Path ([System.IO.Path]::GetTempPath()) "marshal-pipe-security-$PID"
 New-Item -ItemType Directory -Path $root | Out-Null
 
 $start = [System.Diagnostics.ProcessStartInfo]::new((Resolve-Path -LiteralPath $Helper).Path)
@@ -29,7 +29,7 @@ try {
         throw "The helper did not open the control pipe; it printed: $name"
     }
     $user = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
-    if (-not $name.StartsWith("${prefix}runners-control-$($user.Value)")) {
+    if (-not $name.StartsWith("${prefix}marshal-control-$($user.Value)")) {
         throw "The control pipe $name is not named for the current user $($user.Value)."
     }
     Write-Output "Control pipe: $name"

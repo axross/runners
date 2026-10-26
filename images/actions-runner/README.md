@@ -189,7 +189,7 @@ and embeds from this Dockerfile:
 | `com.github.axross.runners.runner-version`  | The runner version the `FROM` line pins        |
 | `com.github.axross.runners.runner-released` | That runner release's date as `YYYY-MM-DD`     |
 
-`runners build` adds two more on its command line, because they describe the
+`marshal build` adds two more on its command line, because they describe the
 build rather than the definition:
 
 - `com.github.axross.runners.image=actions-runner`, which the PowerShell rebuild

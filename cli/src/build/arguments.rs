@@ -5,7 +5,7 @@ use crate::runtime::docker_args::strings;
 use crate::runtime::name::{DIGITS_IN_STAMP, stamp};
 
 /// What every temporary tag's tag part starts with.
-const TEMPORARY_TAG_PREFIX: &str = "runners-build-";
+const TEMPORARY_TAG_PREFIX: &str = "marshal-build-";
 
 fn image_label() -> String {
     format!("{IMAGE_LABEL}={IMAGE_LABEL_VALUE}")
@@ -25,7 +25,7 @@ pub fn repository_of(image: &str) -> &str {
         .unwrap_or(image)
 }
 
-/// The tag a build made at `time` builds under: `<repository>:runners-build-<stamp>`,
+/// The tag a build made at `time` builds under: `<repository>:marshal-build-<stamp>`,
 /// the stamp in UTC.
 #[must_use]
 pub fn temporary_tag(image: &str, time: std::time::SystemTime) -> String {
@@ -130,11 +130,11 @@ mod tests {
         let time = UNIX_EPOCH + Duration::from_millis(1_709_618_828_009);
         assert_eq!(
             temporary_tag("localhost:5000/runner:local", time),
-            "localhost:5000/runner:runners-build-20240305060708009"
+            "localhost:5000/runner:marshal-build-20240305060708009"
         );
         assert_eq!(
             temporary_tag("runner", time),
-            "runner:runners-build-20240305060708009"
+            "runner:marshal-build-20240305060708009"
         );
     }
 
@@ -143,14 +143,14 @@ mod tests {
         let image = "localhost:5000/runner:local";
         assert!(is_temporary_tag(
             image,
-            "localhost:5000/runner:runners-build-20240305060708009"
+            "localhost:5000/runner:marshal-build-20240305060708009"
         ));
         for other in [
-            "localhost:5000/runner:runners-build-2024030506070800",
-            "localhost:5000/runner:runners-build-20240305060708009x",
+            "localhost:5000/runner:marshal-build-2024030506070800",
+            "localhost:5000/runner:marshal-build-20240305060708009x",
             "localhost:5000/runner:local",
-            "localhost:5000/runner-other:runners-build-20240305060708009",
-            "other/localhost:5000/runner:runners-build-20240305060708009",
+            "localhost:5000/runner-other:marshal-build-20240305060708009",
+            "other/localhost:5000/runner:marshal-build-20240305060708009",
         ] {
             assert!(!is_temporary_tag(image, other), "{other}");
         }
@@ -159,7 +159,7 @@ mod tests {
     #[test]
     fn the_build_passes_both_labels_the_tag_and_the_context_on_standard_input() {
         assert_eq!(
-            build_arguments("r:runners-build-1", 42),
+            build_arguments("r:marshal-build-1", 42),
             [
                 "build",
                 "--pull",
@@ -169,7 +169,7 @@ mod tests {
                 "--label",
                 "com.github.axross.runners.built=42",
                 "--tag",
-                "r:runners-build-1",
+                "r:marshal-build-1",
                 "-"
             ]
         );

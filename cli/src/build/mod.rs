@@ -132,7 +132,7 @@ fn refuse_held(roots: &Roots, err: &mut dyn Write) -> u8 {
             print_error(
                 err,
                 &format!(
-                    "an instance exists and is {state}, so nothing was built; `runners stop` ends it"
+                    "an instance exists and is {state}, so nothing was built; `marshal stop` ends it"
                 ),
             )
         }

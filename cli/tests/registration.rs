@@ -13,12 +13,12 @@ mod support;
 
 use std::time::{Duration, Instant};
 
-use runners_cli::json::{self, Value};
-use runners_cli::runtime::board::Board;
-use runners_cli::runtime::fake::{Call, FakeBackend, FakeClock, MemoryLog};
-use runners_cli::runtime::registration::{GitHubRegistrar, HttpLimits, JitRequest, Registrar};
-use runners_cli::runtime::secret::Secret;
-use runners_cli::runtime::worker::{run_slot, stop_channel};
+use marshal_cli::json::{self, Value};
+use marshal_cli::runtime::board::Board;
+use marshal_cli::runtime::fake::{Call, FakeBackend, FakeClock, MemoryLog};
+use marshal_cli::runtime::registration::{GitHubRegistrar, HttpLimits, JitRequest, Registrar};
+use marshal_cli::runtime::secret::Secret;
+use marshal_cli::runtime::worker::{run_slot, stop_channel};
 use support::stub::{Reply, Stub};
 use support::{TempDir, slot_spec};
 
@@ -35,7 +35,7 @@ async fn register(
     stub: &Stub,
     limits: HttpLimits,
     token: &str,
-) -> Result<Secret, runners_cli::runtime::registration::RegistrationError> {
+) -> Result<Secret, marshal_cli::runtime::registration::RegistrationError> {
     let registrar = GitHubRegistrar::new(Some(&stub.address), limits).unwrap();
     let labels = vec!["self-hosted".to_string(), "axpc".to_string()];
     let token = Secret::new(token.to_string());
@@ -78,7 +78,7 @@ async fn registration_sends_the_powershell_request_and_reads_the_response() {
     assert_eq!(request.header("content-type"), Some("application/json"));
     assert_eq!(
         request.header("user-agent"),
-        Some(&*format!("runners/{}", env!("CARGO_PKG_VERSION")))
+        Some(&*format!("marshal/{}", env!("CARGO_PKG_VERSION")))
     );
     let Value::Object(body) = json::parse(&request.body).unwrap() else {
         panic!("the body is not an object");

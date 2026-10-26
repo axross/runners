@@ -12,17 +12,17 @@ mod support;
 
 use std::time::Duration;
 
-use runners_cli::instance::channel::{
+use marshal_cli::instance::channel::{
     ChannelServer, ClientError, MAX_CONNECTIONS_FOR_TESTS, exchange,
 };
-use runners_cli::instance::fake::FakeCore;
-use runners_cli::instance::lifecycle::{Instance, Settings, Source};
-use runners_cli::instance::lock::InstanceLock;
-use runners_cli::instance::protocol::{Incoming, Outcome, Request, Response};
-use runners_cli::instance::roots::Roots;
-use runners_cli::instance::source::FileSource;
-use runners_cli::profile::Profile;
-use runners_cli::runtime::fake::{FakeBackend, FakeClock, MemoryLog};
+use marshal_cli::instance::fake::FakeCore;
+use marshal_cli::instance::lifecycle::{Instance, Settings, Source};
+use marshal_cli::instance::lock::InstanceLock;
+use marshal_cli::instance::protocol::{Incoming, Outcome, Request, Response};
+use marshal_cli::instance::roots::Roots;
+use marshal_cli::instance::source::FileSource;
+use marshal_cli::profile::Profile;
+use marshal_cli::runtime::fake::{FakeBackend, FakeClock, MemoryLog};
 use support::TempDir;
 use support::instance::{CONFIG, START};
 use tokio::sync::mpsc;
@@ -399,9 +399,9 @@ mod socket {
     use std::path::Path;
     use std::process::{Command, Stdio};
 
-    use runners_cli::instance::channel::ChannelError;
-    use runners_cli::instance::protocol::MAX_REQUEST_BYTES;
-    use runners_cli::private::{PrivateError, current_uid};
+    use marshal_cli::instance::channel::ChannelError;
+    use marshal_cli::instance::protocol::MAX_REQUEST_BYTES;
+    use marshal_cli::private::{PrivateError, current_uid};
 
     use super::*;
 

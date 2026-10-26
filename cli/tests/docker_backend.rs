@@ -11,18 +11,18 @@ mod support;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use runners_cli::profile::Profile;
-use runners_cli::runtime::backend::{
+use marshal_cli::profile::Profile;
+use marshal_cli::runtime::backend::{
     Backend, ContainerSpec, CpuRequest, DiagnosticRecord, Mount, StopRequest,
 };
-use runners_cli::runtime::board::Board;
-use runners_cli::runtime::docker::DockerLimits;
-use runners_cli::runtime::fake::FakeRegistrar;
-use runners_cli::runtime::log::Log;
-use runners_cli::runtime::pool::pools_from_plan;
-use runners_cli::runtime::secret::Secret;
-use runners_cli::runtime::worker::{run_slot, stop_channel};
-use runners_cli::validate::{PlannedVolume, validate};
+use marshal_cli::runtime::board::Board;
+use marshal_cli::runtime::docker::DockerLimits;
+use marshal_cli::runtime::fake::FakeRegistrar;
+use marshal_cli::runtime::log::Log;
+use marshal_cli::runtime::pool::pools_from_plan;
+use marshal_cli::runtime::secret::Secret;
+use marshal_cli::runtime::worker::{run_slot, stop_channel};
+use marshal_cli::validate::{PlannedVolume, validate};
 use support::docker::Fake;
 use support::{TempDir, prepare_pools, repository_root};
 
@@ -51,7 +51,7 @@ fn words(text: &str) -> Vec<String> {
     text.split_whitespace().map(str::to_string).collect()
 }
 
-fn example_pools(scratch: &TempDir) -> Vec<runners_cli::runtime::pool::PoolSpec> {
+fn example_pools(scratch: &TempDir) -> Vec<marshal_cli::runtime::pool::PoolSpec> {
     let path = repository_root().join("hosts/windows-docker-desktop/runner-host.example.json");
     let bytes = std::fs::read(path).unwrap();
     let plan = validate(&bytes, Profile::Axpc, None).outcome.unwrap();
@@ -656,11 +656,11 @@ async fn waiting_for_docker_polls_every_five_seconds_with_a_warning() {
 async fn a_missing_docker_client_counts_as_not_available_and_a_run_fails_cleanly() {
     let fake = Fake::new();
     let missing = {
-        let config = runners_cli::runtime::docker::DockerConfig {
+        let config = marshal_cli::runtime::docker::DockerConfig {
             program: "this-docker-client-does-not-exist".into(),
             ..Default::default()
         };
-        runners_cli::runtime::docker::DockerBackend::new(
+        marshal_cli::runtime::docker::DockerBackend::new(
             config,
             fake.clock.clone(),
             fake.log.clone() as Rc<dyn Log>,
@@ -746,7 +746,7 @@ async fn stale_cleanup_through_docker_removes_only_own_unlabelled_containers() {
 fn pool_with_stale_containers(
     scratch: &TempDir,
     fake: &Fake,
-) -> runners_cli::runtime::pool::PoolSpec {
+) -> marshal_cli::runtime::pool::PoolSpec {
     let mut pool = example_pools(scratch).remove(0);
     pool.volumes.clear();
     fake.script(

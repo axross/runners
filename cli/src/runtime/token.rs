@@ -120,7 +120,7 @@ mod tests {
     use super::*;
 
     fn temp(name: &str, bytes: &[u8]) -> (std::path::PathBuf, std::path::PathBuf) {
-        let dir = std::env::temp_dir().join(format!("runners-token-{}-{name}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("marshal-token-{}-{name}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("token");
         std::fs::write(&file, bytes).unwrap();

@@ -14,19 +14,19 @@ mod support;
 use std::fs;
 use std::time::{Duration, Instant};
 
-use runners_cli::image::check::{ImageCheck, ImageLabels};
-use runners_cli::image::contract::CONTRACT_VERSION;
-use runners_cli::instance::fake::{CoreStep, FakeCore};
-use runners_cli::instance::lifecycle::{Core, Ending};
-use runners_cli::instance::protocol::{Outcome, Request};
-use runners_cli::instance::runtime_core::RuntimeCore;
-use runners_cli::profile::Profile;
-use runners_cli::runtime::backend::Backend;
-use runners_cli::runtime::board::Board;
-use runners_cli::runtime::docker::DockerLimits;
-use runners_cli::runtime::fake::{Call, FakeBackend, FakeClock, FakeRegistrar, MemoryLog};
-use runners_cli::runtime::worker::{run_slot, stop_channel};
-use runners_cli::validate::{Plan, validate};
+use marshal_cli::image::check::{ImageCheck, ImageLabels};
+use marshal_cli::image::contract::CONTRACT_VERSION;
+use marshal_cli::instance::fake::{CoreStep, FakeCore};
+use marshal_cli::instance::lifecycle::{Core, Ending};
+use marshal_cli::instance::protocol::{Outcome, Request};
+use marshal_cli::instance::runtime_core::RuntimeCore;
+use marshal_cli::profile::Profile;
+use marshal_cli::runtime::backend::Backend;
+use marshal_cli::runtime::board::Board;
+use marshal_cli::runtime::docker::DockerLimits;
+use marshal_cli::runtime::fake::{Call, FakeBackend, FakeClock, FakeRegistrar, MemoryLog};
+use marshal_cli::runtime::worker::{run_slot, stop_channel};
+use marshal_cli::validate::{Plan, validate};
 use support::docker::Fake;
 use support::host::{Host, registered, texts};
 use support::instance::{CONFIG_PATH, Rig};
@@ -94,7 +94,7 @@ impl CoreRig {
     async fn run(
         &self,
         core: &RuntimeCore<'_, FakeBackend, FakeClock, FakeRegistrar>,
-    ) -> Result<(), runners_cli::instance::lifecycle::CoreFailure> {
+    ) -> Result<(), marshal_cli::instance::lifecycle::CoreFailure> {
         let (stop, receiver) = stop_channel();
         self.backend.state.borrow_mut().stop_when_exits_run_out = Some(stop);
         core.run(&plan(&self.scratch), receiver).await
@@ -190,7 +190,7 @@ async fn the_freshness_warnings_are_logged_at_each_run_of_the_core_and_not_at_jo
     assert_eq!(
         warnings[..2],
         [
-            "WARN: Image freshness: the image is 10 days old and should be rebuilt with `runners build`.",
+            "WARN: Image freshness: the image is 10 days old and should be rebuilt with `marshal build`.",
             "WARN: Image freshness: runner 2.337.0 was released 33 days ago, so each job's runner likely updates itself at start; update the CLI to get a newer runner, then rebuild the image.",
         ]
     );
@@ -372,8 +372,8 @@ mod instance {
 
     fn stop_build_start() -> String {
         format!(
-            "{}; run `runners stop`, then `runners build --config {CONFIG_PATH}`, \
-             then `runners start --config {CONFIG_PATH}`",
+            "{}; run `marshal stop`, then `marshal build --config {CONFIG_PATH}`, \
+             then `marshal start --config {CONFIG_PATH}`",
             refusal()
         )
     }
@@ -387,8 +387,8 @@ mod instance {
         assert_eq!(rig.core.runs.get(), 1);
         assert!(rig.clock.sleeps().is_empty(), "it is not restarted");
         assert!(rig.log.lines().contains(&format!(
-            "WARN: The instance ends: {}. Run `runners build --config {CONFIG_PATH}`, \
-             then `runners start --config {CONFIG_PATH}`.",
+            "WARN: The instance ends: {}. Run `marshal build --config {CONFIG_PATH}`, \
+             then `marshal start --config {CONFIG_PATH}`.",
             refusal()
         )));
     }
@@ -613,7 +613,7 @@ mod process {
             assert_eq!(finished.status.code(), Some(1), "{}", finished.stderr);
             let config = fs::canonicalize(&host.config).unwrap();
             let advice = format!(
-                "Run `runners build --config {0}`, then `runners start --config {0}`.",
+                "Run `marshal build --config {0}`, then `marshal start --config {0}`.",
                 config.display()
             );
             assert!(finished.stderr.contains(expected), "{}", finished.stderr);
@@ -691,7 +691,7 @@ mod process {
         );
         assert_eq!(
             lines[at + 4],
-            "warning: the image was not built by `runners build`, so its build age is unknown"
+            "warning: the image was not built by `marshal build`, so its build age is unknown"
         );
         assert!(
             lines[at + 5].starts_with("warning: runner 2.337.0 was released "),
@@ -717,7 +717,7 @@ mod process {
         assert!(
             finished
                 .stderr
-                .contains("WARNING: Image freshness: the image was not built by `runners build`"),
+                .contains("WARNING: Image freshness: the image was not built by `marshal build`"),
             "{}",
             finished.stderr
         );

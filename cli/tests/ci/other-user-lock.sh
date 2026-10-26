@@ -11,7 +11,7 @@ held=3
 
 # under /tmp, not the runner's temporary directory, so the nobody account can
 # reach it on macOS too, where a user's own temporary directory is private
-work_dir="$(mktemp -d /tmp/runners-other-user.XXXXXX)"
+work_dir="$(mktemp -d /tmp/marshal-other-user.XXXXXX)"
 holder=""
 cleanup() {
   if [ -n "$holder" ]; then
@@ -40,7 +40,7 @@ if ! grep -qx locked "$work_dir/holder.out"; then
   echo "The helper did not take the lock." >&2
   exit 1
 fi
-ls -l "$work_dir/root/.runners-instance.lock"
+ls -l "$work_dir/root/.marshal-instance.lock"
 
 status=0
 output="$(sudo -n -u nobody "$work_dir/instance-helper" try --root "$work_dir/root" 2>&1)" \

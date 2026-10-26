@@ -226,7 +226,7 @@ async fn run_instance(parts: Parts<'_>, plan: crate::validate::Plan) -> u8 {
         Err(error) => return log_error(log, &error),
     };
     log.info(&format!(
-        "The instance is running; stop it with Ctrl+C or `runners stop`. Its channel is {}.",
+        "The instance is running; stop it with Ctrl+C or `marshal stop`. Its channel is {}.",
         server.address()
     ));
     let config = DockerConfig {
@@ -375,7 +375,7 @@ pub(crate) async fn signals(
 ) -> Infallible {
     let mut listeners = listeners(log);
     if listeners.is_empty() {
-        log.warn("No signal can be handled, so only `runners stop` stops the instance.");
+        log.warn("No signal can be handled, so only `marshal stop` stops the instance.");
     }
     let mut stopping = false;
     loop {

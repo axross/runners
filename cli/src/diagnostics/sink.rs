@@ -303,9 +303,9 @@ mod tests {
     #[test]
     fn a_verbatim_path_compares_as_a_configuration_names_it() {
         for (canonical, plain) in [
-            (r"\\?\C:\runners", r"C:\runners"),
-            (r"\\?\UNC\host\share\runners", r"\\host\share\runners"),
-            (r"C:\runners", r"C:\runners"),
+            (r"\\?\C:\marshal", r"C:\marshal"),
+            (r"\\?\UNC\host\share\marshal", r"\\host\share\marshal"),
+            (r"C:\marshal", r"C:\marshal"),
         ] {
             assert_eq!(
                 without_verbatim_prefix(PathBuf::from(canonical)),

@@ -7,8 +7,8 @@
     clippy::indexing_slicing
 )]
 
-use runners_cli::profile::Profile;
-use runners_cli::validate::{Failure, validate};
+use marshal_cli::profile::Profile;
+use marshal_cli::validate::{Failure, validate};
 
 fn errors(profile: Profile, configuration: &str) -> Vec<String> {
     match validate(configuration.as_bytes(), profile, None).outcome {

@@ -7,11 +7,11 @@
     clippy::indexing_slicing
 )]
 
-use runners_cli::affinity::select_cpus;
-use runners_cli::profile::Profile;
-use runners_cli::runtime::pool::pools_from_plan;
-use runners_cli::summary::plan_summary;
-use runners_cli::validate::validate;
+use marshal_cli::affinity::select_cpus;
+use marshal_cli::profile::Profile;
+use marshal_cli::runtime::pool::pools_from_plan;
+use marshal_cli::summary::plan_summary;
+use marshal_cli::validate::validate;
 
 /// The configuration the PowerShell test builds from `split-pools.json`: two slots
 /// of 1.5 CPUs, then one slot of a hair over 1 CPU, whose affinity count is 2.

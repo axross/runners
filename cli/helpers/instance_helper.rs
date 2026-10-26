@@ -1,4 +1,4 @@
-//! A stand-in for a second `runners` process, built so the instance-layer tests and
+//! A stand-in for a second `marshal` process, built so the instance-layer tests and
 //! CI can run the lock and the channel in real processes, and as another user.
 //!
 //! It takes its roots from `--root`, which only a debug build allows, so it can never
@@ -29,13 +29,13 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 #[cfg(debug_assertions)]
-use runners_cli::instance::channel::ChannelServer;
+use marshal_cli::instance::channel::ChannelServer;
 #[cfg(debug_assertions)]
-use runners_cli::instance::lock::{InstanceLock, LockError};
+use marshal_cli::instance::lock::{InstanceLock, LockError};
 #[cfg(debug_assertions)]
-use runners_cli::instance::protocol::Response;
+use marshal_cli::instance::protocol::Response;
 #[cfg(debug_assertions)]
-use runners_cli::instance::roots::Roots;
+use marshal_cli::instance::roots::Roots;
 
 /// The exit codes, which the tests and CI read.
 #[cfg(debug_assertions)]

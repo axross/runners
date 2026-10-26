@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-pub const BINARY: &str = env!("CARGO_BIN_EXE_runners");
+pub const BINARY: &str = env!("CARGO_BIN_EXE_marshal");
 
 pub fn repository_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
@@ -113,8 +113,8 @@ impl Drop for TempDir {
 }
 
 /// A slot of a two-slot pool named `example-repo-one`, reading its token from `token`.
-pub fn slot_spec(token: PathBuf) -> runners_cli::runtime::pool::SlotSpec {
-    runners_cli::runtime::pool::SlotSpec {
+pub fn slot_spec(token: PathBuf) -> marshal_cli::runtime::pool::SlotSpec {
+    marshal_cli::runtime::pool::SlotSpec {
         pool: "example-repo-one".to_string(),
         owner: "example-owner".to_string(),
         repository: "example-repo-one".to_string(),
@@ -130,7 +130,7 @@ pub fn slot_spec(token: PathBuf) -> runners_cli::runtime::pool::SlotSpec {
         cpu_count: 2,
         cpu_offset: 2,
         memory_gb: 16,
-        mounts: vec![runners_cli::runtime::backend::Mount {
+        mounts: vec![marshal_cli::runtime::backend::Mount {
             volume: "example-repo-one-npm".to_string(),
             target: "/home/runner/.npm".to_string(),
         }],
@@ -141,14 +141,14 @@ pub fn slot_spec(token: PathBuf) -> runners_cli::runtime::pool::SlotSpec {
 
 /// Prepares the pools as the runtime core does, without its image check: admits
 /// them, waits for Docker once when one is admitted, then prepares those admitted.
-pub async fn prepare_pools<B: runners_cli::runtime::backend::Backend>(
+pub async fn prepare_pools<B: marshal_cli::runtime::backend::Backend>(
     backend: &B,
-    pools: Vec<runners_cli::runtime::pool::PoolSpec>,
-    log: &dyn runners_cli::runtime::log::Log,
-    board: &runners_cli::runtime::board::Board,
-) -> Result<Vec<runners_cli::runtime::pool::PoolSpec>, runners_cli::runtime::pool::NoPoolStartable>
+    pools: Vec<marshal_cli::runtime::pool::PoolSpec>,
+    log: &dyn marshal_cli::runtime::log::Log,
+    board: &marshal_cli::runtime::board::Board,
+) -> Result<Vec<marshal_cli::runtime::pool::PoolSpec>, marshal_cli::runtime::pool::NoPoolStartable>
 {
-    use runners_cli::runtime::pool::{NoPoolStartable, admit_pools, prepare_admitted};
+    use marshal_cli::runtime::pool::{NoPoolStartable, admit_pools, prepare_admitted};
     let admitted = admit_pools(pools, log, board);
     if admitted.is_empty() {
         return Err(NoPoolStartable);

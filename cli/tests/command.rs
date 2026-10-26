@@ -91,7 +91,7 @@ fn a_missing_file_is_rejected_with_exit_1() {
 
 #[test]
 fn a_file_over_the_size_limit_is_rejected_without_being_parsed() {
-    let limit = usize::try_from(runners_cli::command::MAX_CONFIG_BYTES).unwrap();
+    let limit = usize::try_from(marshal_cli::command::MAX_CONFIG_BYTES).unwrap();
     let mut valid = fs::read(axpc_example()).unwrap();
     let scratch = TempDir::new();
 

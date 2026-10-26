@@ -69,10 +69,10 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use runners_cli::image::contract::{
+use marshal_cli::image::contract::{
     BUILT_LABEL, CONTRACT_LABEL, CONTRACT_VERSION, RUNNER_RELEASED_LABEL, RUNNER_VERSION_LABEL,
 };
-use runners_cli::image::definition::declared_label;
+use marshal_cli::image::definition::declared_label;
 
 const JIT_VARIABLE: &str = "ACTIONS_RUNNER_INPUT_JITCONFIG";
 const PROBE_LABEL: &str = "runners.cpu-probe=1";
