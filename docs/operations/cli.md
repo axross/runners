@@ -8,8 +8,8 @@ registration, CPU placement, and the slot loop), the instance layer that keeps
 and the control channel), the image contract every runner image declares and the
 check of it, running a host with `build`, `start`, `stop`, `restart`, `status`, and
 `diagnostics`, the diagnostic containers a diagnostics-enabled pool runs and their
-export, the toolchain and the gates that cover it, and what to touch when its
-provisional name changes. The binary is `runners`. The PowerShell supervisor and rebuild task
+export, the toolchain and the gates that cover it, and why its name is fixed. The
+binary is `marshal`. The PowerShell supervisor and rebuild task
 under [`hosts/windows-docker-desktop/`](../../hosts/windows-docker-desktop) still
 run the axpc host until Phase 4b, and the CLI must not be started beside them; see
 [Windows Runner Host](./windows-runner-host.md).
@@ -17,13 +17,13 @@ run the axpc host until Phase 4b, and the CLI must not be started beside them; s
 ## Running It
 
 ```bash
-runners validate --config <path> [--profile axpc|axmc]
-runners build --config <path> [--profile axpc|axmc]
-runners start --config <path> [--profile axpc|axmc]
-runners stop
-runners restart
-runners status
-runners diagnostics
+marshal validate --config <path> [--profile axpc|axmc]
+marshal build --config <path> [--profile axpc|axmc]
+marshal start --config <path> [--profile axpc|axmc]
+marshal stop
+marshal restart
+marshal status
+marshal diagnostics
 ```
 
 `validate` reads the configuration file and the marker files above it, and writes
@@ -349,7 +349,7 @@ to `https://api.github.com`, with the PowerShell supervisor's headers
 (`name`, `runner_group_id` 1, and the pool's labels). It reads `encoded_jit_config`;
 a response without one is a failure. It differs from PowerShell in four ways:
 
-- it sends `User-Agent: runners/<version>`;
+- it sends `User-Agent: marshal/<version>`;
 - it follows no redirect, so a redirect is a failure;
 - it fails a connection after 10 s and a whole request after 30 s;
 - it fails a response larger than 1 MiB, whether the size is declared or streamed.
@@ -476,8 +476,8 @@ running instance refuses a resume too.
   canonical path is kept only to compare with a resume's.
 - A resume and a `restart` check the image after the file validates, before the
   instance answers. An image that cannot run jobs leaves the instance stopped,
-  with a reason that names the image and says to run `runners stop`, then
-  `runners build --config <path>`, then `runners start --config <path>`, because
+  with a reason that names the image and says to run `marshal stop`, then
+  `marshal build --config <path>`, then `marshal start --config <path>`, because
   `build` is refused while the instance exists. When Docker does not answer the
   check, the instance answers as before and runs the core, which checks again once
   Docker answers and moves the instance to stopped with that reason.
@@ -523,13 +523,13 @@ operating system releases it when the process ends, however it ends, and no chil
 process inherits it.
 
 - **Windows.** The lock is the first instance of the named pipe
-  `\\.\pipe\runners-instance`, created with an instance limit of one, remote
+  `\\.\pipe\marshal-instance`, created with an instance limit of one, remote
   clients rejected, a handle no child inherits, and the descriptor below that
   admits only the creating user. The process keeps it open and it carries no
   message. Creating the name again fails for every user, with access denied or pipe
   busy, and that is "held".
 - **Unix.** The lock is an exclusive advisory lock (`flock`) on a regular file: on
-  macOS `/Users/Shared/.runners-instance.lock`, and on Linux only a debug build's
+  macOS `/Users/Shared/.marshal-instance.lock`, and on Linux only a debug build's
   test root, because Linux is not a supported host. The creator sets the file's
   mode to `0644` after creating it, whatever the umask, so another user can open
   it. The file is opened for writing and, when the user may not write it,
@@ -556,7 +556,7 @@ The channel is per user, and only the instance's own user can reach it. The
 holder of the lock opens it, so a leftover Unix socket proves that no instance owns
 it.
 
-- **Windows.** The named pipe `\\.\pipe\runners-control-<user SID>` is created as
+- **Windows.** The named pipe `\\.\pipe\marshal-control-<user SID>` is created as
   the first instance, with the descriptor `D:P(A;;GA;;;<user SID>)`, which grants
   all access to that user, to no one else, and inherits nothing, and with remote
   clients rejected. The pipe crate's blocking calls run on threads of their own: one
@@ -575,7 +575,7 @@ it.
   is the accepted cost of squatting a name on a single-user host.
 - **Unix.** The socket `control.sock` is in a directory that must be a directory,
   not a link, owned by the current user, with mode `0700`: on macOS
-  `~/Library/Application Support/runners/`, and on Linux only a debug build's test
+  `~/Library/Application Support/marshal/`, and on Linux only a debug build's test
   root. The server creates the directory with that mode when it is missing and
   refuses one that is not private, without changing it. It removes a leftover
   socket of the current user and refuses anything else at the path. It sets the
@@ -741,12 +741,12 @@ more the second:
 
 | Age        | Build age                                                                                     | Runner release age                                                                                                                                        |
 | ---------- | --------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 7 to 20    | `` the image is <d> days old and should be rebuilt with `runners build` ``                    | `runner <v> was released <d> days ago, and a newer runner may exist`                                                                                      |
-| 21 or more | `` the image's operating-system packages are <d> days old; rebuild it with `runners build` `` | `runner <v> was released <d> days ago, so each job's runner likely updates itself at start; update the CLI to get a newer runner, then rebuild the image` |
+| 7 to 20    | `` the image is <d> days old and should be rebuilt with `marshal build` ``                    | `runner <v> was released <d> days ago, and a newer runner may exist`                                                                                      |
+| 21 or more | `` the image's operating-system packages are <d> days old; rebuild it with `marshal build` `` | `runner <v> was released <d> days ago, so each job's runner likely updates itself at start; update the CLI to get a newer runner, then rebuild the image` |
 
 An image without a build-time label, such as one the PowerShell rebuild task or CI
 built, has an unknown build age, and its warning says it was not built by
-`runners build`. `start` logs the current warnings at each run of the core, at
+`marshal build`. `start` logs the current warnings at each run of the core, at
 start, a resume, a `restart`, and a core restart, and not at a job launch. Neither
 the warnings nor an unknown age block a start.
 
@@ -798,17 +798,17 @@ A fresh `start` does these in order:
    image as [The Image Contract](#the-image-contract) describes, prepares the pools
    as [Names and the Slot Loop](#names-and-the-slot-loop) describes, and then runs
    every slot's loop until a stop. When the image cannot run jobs, the instance
-   ends, and `start` exits 1, saying to run `runners build --config <path>`, then
-   `runners start --config <path>`. When no pool can start, `start` exits 1.
+   ends, and `start` exits 1, saying to run `marshal build --config <path>`, then
+   `marshal start --config <path>`. When no pool can start, `start` exits 1.
 
 On Linux a release build exits 1 at the first step, because Linux is not a
 supported host, and `tests/instance_roots.rs` shows it in the release profile. A
 debug build runs on a test root, for the tests. On macOS, `start --profile axpc`
 runs the container backend with Unix containment, which serves the tests, not an
-operated host. `RUNNERS_TEST_ROOT` moves the lock, the channel, and the log
-directory, `RUNNERS_TEST_GITHUB_API` moves the GitHub base address,
-`RUNNERS_TEST_DOCKER` names the `docker` client that `start` and `build` run, the
-Unix shim's removal in `start` included, and `RUNNERS_TEST_BUILD_DEFINITION` names
+operated host. `MARSHAL_TEST_ROOT` moves the lock, the channel, and the log
+directory, `MARSHAL_TEST_GITHUB_API` moves the GitHub base address,
+`MARSHAL_TEST_DOCKER` names the `docker` client that `start` and `build` run, the
+Unix shim's removal in `start` included, and `MARSHAL_TEST_BUILD_DEFINITION` names
 a test definition that `build` builds instead of the embedded one. Only a debug
 build honours any of them: in the release profile `tests/base_address.rs` shows
 that the client stays `docker`, and `tests/build_definition.rs` that `build` keeps
@@ -999,7 +999,7 @@ does not change `start`'s exit code.
 
 **The exporter.** Each export runs in a child process: the CLI run again as the
 hidden
-`runners export --pool <pool> --directory <sink> [--container <name>] [--raw-records] [--checkout <path>] --deadline-ms <ms> -- <docker>`.
+`marshal export --pool <pool> --directory <sink> [--container <name>] [--raw-records] [--checkout <path>] --deadline-ms <ms> -- <docker>`.
 Without `--container` it only counts the pool's bundles.
 
 - **Sink checks.** Before each bundle the child checks the sink. It must be an
@@ -1148,7 +1148,7 @@ these in order:
 6. It runs one
    `docker build --pull --no-cache --label com.github.axross.runners.image=actions-runner --label com.github.axross.runners.built=<s> --tag <temporary> -`,
    with the context on standard input and the client's output on the terminal.
-   The temporary tag is `<repository>:runners-build-<yyyyMMddHHmmssfff>` in UTC,
+   The temporary tag is `<repository>:marshal-build-<yyyyMMddHHmmssfff>` in UTC,
    where the repository is the name without its tag: everything before the last
    `:` that follows the last `/`, so a registry port stays.
 7. It tags the build as the configured name, which commits it. It then removes the
@@ -1164,7 +1164,7 @@ these in order:
 The context is a ustar archive of the embedded files at their paths in
 `images/actions-runner/`, sorted by path, with mode `0644`, owner 0, and time 0, so
 the same binary always sends the same bytes. A debug build builds the directory
-named by `RUNNERS_TEST_BUILD_DEFINITION` instead, for the real-Docker test; a
+named by `MARSHAL_TEST_BUILD_DEFINITION` instead, for the real-Docker test; a
 release build ignores it, and `tests/build_definition.rs` shows both halves.
 
 `stop`, SIGINT, SIGTERM, and SIGHUP on Unix, and Ctrl+C and Ctrl+Break on Windows
@@ -1195,12 +1195,12 @@ console close can leave one too. The next `build` removes it.
 
 ### The Log
 
-Each `start` writes one file, `runners-<yyyyMMddHHmmssfff>-<pid>.log` in UTC, in a
+Each `start` writes one file, `marshal-<yyyyMMddHHmmssfff>-<pid>.log` in UTC, in a
 private per-user directory:
 
-- **Windows.** `%LOCALAPPDATA%\runners\logs\`, created when missing. Its access
+- **Windows.** `%LOCALAPPDATA%\marshal\logs\`, created when missing. Its access
   control list is not checked, because no safe call reads it.
-- **macOS.** `~/Library/Logs/runners/`, created `0700` when missing and refused
+- **macOS.** `~/Library/Logs/marshal/`, created `0700` when missing and refused
   when it is not a directory owned by the user with that mode. A file is created
   new, set to `0600` whatever the umask, and checked.
 
@@ -1233,7 +1233,7 @@ failure.
   client is killed, so the next `start`'s stale cleanup removes it.
 - **Unix.** Each job container's `docker run` client is started by the shim, the
   CLI run again as the hidden
-  `runners shim --name <container> -- <docker> <arguments>`. The shim starts the
+  `marshal shim --name <container> -- <docker> <arguments>`. The shim starts the
   client in a process group of its own, with the client's standard error joined to
   its standard output, which `start` reads and masks. Its standard input is the
   read end of a liveness pipe whose write end only `start` holds, and `start`
@@ -1241,7 +1241,7 @@ failure.
   with its code. When the pipe has closed, because `start` dropped the run or ended
   however it ended, the shim runs `docker rm -f <container>` within 5 s, kills the
   client, and exits, even when the client ended at the same time. For a diagnostic container `start` runs the shim
-  as `runners shim --name <container> --diagnostic -- <docker> <arguments>`, and
+  as `marshal shim --name <container> --diagnostic -- <docker> <arguments>`, and
   the shim then ends its container with `docker kill` within 5 s and keeps it. The
   shim shares `start`'s standard error, and its own warnings there name containers
   only.
@@ -1282,7 +1282,7 @@ is unverified until axpc checks it in Phase 4b.
 ### What the Command Tests Cover
 
 `start_command.rs` runs `start` and its clients as real processes on a test root,
-with the `fake-docker` helper named by `RUNNERS_TEST_DOCKER` and the loopback
+with the `fake-docker` helper named by `MARSHAL_TEST_DOCKER` and the loopback
 GitHub stub: the exit codes, resume, `status`'s fields, a restart that judges the file
 at the path `start` was given as `validate` does, a `stop` that gets its answer
 from an instance with no container, a `stop` that gives up after 35 s while the
@@ -1385,11 +1385,11 @@ The `rust` job in
 clippy, and tests on Linux, Windows, and macOS; the axpc checkout-rule cases that
 need drive-letter paths run only on Windows. Four more steps run on Linux only: the
 base-address, instance-roots, and build-definition tests again with `--release` and
-`RUNNERS_EXPECT_RELEASE=1`, which makes each fail if built in the wrong profile;
+`MARSHAL_EXPECT_RELEASE=1`, which makes each fail if built in the wrong profile;
 `docker build --target base` of
 [`images/actions-runner`](../../images/actions-runner), tagged and never pushed;
 the `real_docker` test with `--ignored`, pointed at that tag by
-`RUNNERS_REAL_DOCKER_IMAGE`, which also exports a container's evidence through the
+`MARSHAL_REAL_DOCKER_IMAGE`, which also exports a container's evidence through the
 exporter child from a real `docker cp` stream; and the `real_docker_build` test with
 `--ignored`,
 which removes the image it builds. The Windows and macOS hosted runners have no
@@ -1398,9 +1398,9 @@ One more step runs on Linux and macOS, `tests/ci/other-user-lock.sh`, and one on
 Windows, `tests/ci/control-pipe-security.ps1` under PowerShell 7; What the Instance
 Tests Cover says what each shows. The `fake-docker` and `instance-helper` helpers are
 further binaries in the package (`cli/helpers/`, `test = false`) that only the tests
-and those steps run, and `default-run = "runners"` keeps `cargo run` on the CLI.
+and those steps run, and `default-run = "marshal"` keeps `cargo run` on the CLI.
 `instance-helper` does nothing in a release build. A release MUST NOT ship either
-helper; the release phase that packages the binary has to name `runners` alone. Tests find fixtures relative to the
+helper; the release phase that packages the binary has to name `marshal` alone. Tests find fixtures relative to the
 crate's manifest directory, and the checkout-rule tests build a temporary directory
 with the marker files at test time. The advisory check, `cargo deny --locked check advisories`,
 fetches the RustSec database, so it runs in
@@ -1509,24 +1509,24 @@ procedural-macro crate needs the maintainer's review; see
 
 ## Renaming the CLI
 
-`runners` is provisional and is confined so a rename before it is published touches
-only these places:
+The CLI's name is `marshal`, and it is fixed. It was provisionally `runners`, the
+repository's name, until it was renamed before any release. The per-host names
+derive from it:
 
-- the binary name in [`cli/Cargo.toml`](../../cli/Cargo.toml) (`[[bin]]`), the
-  command name in `cli/src/command.rs`, and, if they change with it, the package
-  and library names in `Cargo.toml` and `Cargo.lock` and the `runners_cli` imports
-  in `cli/src/main.rs` and `cli/tests/`;
-- `CARGO_BIN_EXE_runners` in `cli/tests/support/mod.rs`,
-  `cli/tests/instance_roots.rs`, and `cli/tests/build_definition.rs`, and the
-  default binary path in `tests/host-configuration/parity.ps1`;
-- the `runners build`, `runners start`, and `runners stop` the messages name, in
-  `cli/src/build/`, `cli/src/image/check.rs`, `cli/src/instance/lifecycle.rs`, and
-  `cli/src/start.rs`, and the tests that read them;
-- the `cli/target/debug/runners` path in the README Commands table, and the
-  binary name and the example command in this document.
+- the instance lock, `\\.\pipe\marshal-instance` on Windows and
+  `/Users/Shared/.marshal-instance.lock` on macOS;
+- the control channel, `\\.\pipe\marshal-control-<user SID>` on Windows and a
+  `control.sock` under `~/Library/Application Support/marshal/` on macOS;
+- the log directory and file names, `%LOCALAPPDATA%\marshal\logs\` and
+  `~/Library/Logs/marshal/`, with the `marshal-` prefix.
 
-[Security](../conventions/security.md), [REVIEW.md](../../REVIEW.md),
-[AGENTS.md](../../AGENTS.md), the [glossary](../glossary.md), and the README Layout
-table say "the CLI", so a rename leaves them unchanged. The `runners` in the
-`.cache/runners` directory, the login-profile markers in `.agents/setup`, and the
-Amp continuation marker are the repository's name, not the binary's.
+A later rename would be a breaking change for every installed host. The renamed
+binary would not see a running instance's lock, so a second instance could start
+beside it; its clients could not reach that instance's control channel; and its
+logs would land in a new directory, away from the earlier ones.
+
+The `runners` names still in the repository are the repository's name, not the
+binary's: the image labels `com.github.axross.runners.*`, the container labels
+`runners.diagnostic-lifecycle` and `runners.cpu-probe`, the `.cache/runners`
+directory, the CI image tag `runners-docker-test:ci`, the login-profile markers in
+`.agents/setup`, and the Amp continuation marker.
