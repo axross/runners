@@ -57,6 +57,7 @@ fn profile_arg(help: &'static str) -> Arg {
 
 fn command() -> Command {
     let command = Command::new("marshal")
+        .version(env!("CARGO_PKG_VERSION"))
         .about("Manages the self-hosted runner hosts in this repository")
         .subcommand_required(true)
         .arg_required_else_help(true)

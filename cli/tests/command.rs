@@ -187,6 +187,17 @@ fn help_exits_0() {
     assert!(stdout(&output).contains("--config"));
 }
 
+#[test]
+fn version_prints_the_name_and_the_package_version() {
+    let output = run(&["--version"]);
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        format!("marshal {}\n", env!("CARGO_PKG_VERSION"))
+    );
+    assert_eq!(stderr(&output), "");
+}
+
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
 #[test]
 fn without_a_profile_on_another_os_it_stops_and_asks_for_one() {
