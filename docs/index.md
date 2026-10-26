@@ -24,7 +24,8 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   downloads are pinned, least-privilege workflow permissions, why this public
   repository runs its own jobs on GitHub-hosted runners only, the cache-poisoning
   threat model for shared runner storage, per-repository isolation on a runner
-  host, the accepted LAN-egress risk, what is never committed, and why the review
+  host, the release record for the CLI's tag-only release workflow, the accepted
+  LAN-egress risk, what is never committed, and why the review
   gate admits one bot identity by login.
 - [conventions/documentation.md](./conventions/documentation.md) - which
   document a change to each runner surface invalidates, and what the
@@ -33,8 +34,8 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
 ## Operations
 
 - [operations/development-workflow.md](./operations/development-workflow.md) -
-  the change loop, the delivery grant, branch naming, and the independent review
-  route.
+  the change loop, the delivery grant, branch naming, bumping the runner, cutting
+  a release, and the independent review route.
 - [operations/agent-sessions.md](./operations/agent-sessions.md) - how Claude
   Code and Amp sessions start, their hooks, the plan-gate delivery confirmation,
   subagents, and telemetry.
@@ -51,8 +52,8 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   runner image with `build`, running a host with `start`, `stop`, `restart`,
   `status`, and `diagnostics` (the log, containment, the stop sequence, and the
   diagnostic containers and their export), the toolchain and Rust
-  gates, the allowed
-  dependencies, and why the CLI's name is fixed.
+  gates, the release build and its dry run, installing, updating, and rolling
+  back from a release, the allowed dependencies, and why the CLI's name is fixed.
 - [operations/agent-skills.md](./operations/agent-skills.md) - installing and
   refreshing the skills from `axross/skills`, the drift checks, and the register
   of deviations and gaps.
