@@ -6,9 +6,11 @@ name: Merge Checks
 # host configuration test under Windows PowerShell 5.1, and the CLI's format,
 # lint, and tests on Linux, Windows, and macOS, with real-Docker tests and a
 # release-profile test on Linux, an other-user lock test on Linux and macOS, and a
-# control-pipe security test on Windows. the CLI's advisory check needs the
-# network and runs in rust-advisories.yaml, which is not a required check. it runs
-# on GitHub-hosted runners only. this repository is public, and GitHub advises
+# control-pipe security test on Windows, and the release build's dry run through
+# release-build.yaml, which builds the Windows and macOS release binaries and
+# publishes nothing. the CLI's advisory check needs the network and runs in
+# rust-advisories.yaml, which is not a required check. it runs on GitHub-hosted
+# runners only. this repository is public, and GitHub advises
 # against self-hosted runners on public repositories; see
 # docs/conventions/security.md.
 
@@ -141,6 +143,16 @@ jobs:
       - name: Run Real Docker Build Test
         if: runner.os == 'Linux'
         run: cargo test --locked --test real_docker_build -- --ignored
+
+  # the release build's dry run: the same reusable workflow release.yaml calls on a
+  # tag builds both release binaries, runs the release-profile tests on each target,
+  # and uploads the assembled artifact. it holds `contents: read` and publishes and
+  # attests nothing; only release.yaml's publish job does.
+  release-build:
+    name: Release Build Dry Run
+    uses: ./.github/workflows/release-build.yaml
+    permissions:
+      contents: read
 
   image:
     name: Build Runner Image

@@ -269,8 +269,12 @@ console.log(`skills-lock.json and .claude/skills/ agree (${locked.length} skills
 description = "Check the Windows host configuration validation against its fixtures and the example"
 run = "pwsh -NoProfile -NonInteractive -File hosts/windows-docker-desktop/tests/test-host-configuration.ps1"
 
+[tasks."test:release-tag"]
+description = "Check the release tag check script against a temporary git repository"
+run = "bash .github/scripts/tests/test-check-release-tag.sh"
+
 [tasks.check]
-description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, host test, Rust tests, Rust dependency check, parity test"
+description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, host test, release tag check test, Rust tests, Rust dependency check, parity test"
 depends = [
   "format:check",
   "lint",
@@ -279,6 +283,7 @@ depends = [
   "check:skills",
   "check:amp",
   "test:host",
+  "test:release-tag",
   "test:rust",
   "deny:rust",
   "test:parity",

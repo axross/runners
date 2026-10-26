@@ -1,0 +1,115 @@
+name: Release
+
+# publishes a release of the CLI when a `v*` tag is pushed, and on nothing else. the
+# check job refuses a tag that is not `v` followed by cli/Cargo.toml's version at the
+# tagged commit, or whose commit is not on the default branch; release-build.yaml
+# builds and assembles the binaries with `contents: read`; and the publish job, the
+# only job in this repository that holds `contents: write`, waits in the protected
+# `release` Environment for the maintainer's approval before it attests the binaries
+# and creates the release. a pull request never triggers this workflow, so
+# no pull request's copy of this file can reach that scope. the tag checks run from
+# the tagged commit's own files and only catch mistakes; the controls and residual
+# risks are in docs/conventions/security.md. it runs on GitHub-hosted runners only.
+
+on:
+  push:
+    tags: ["v*"]
+
+# one group per tag, never cancelled: a tag run is a release and runs to its end, and
+# a second tag has its own group.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check The Tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # the repository is public, so the default branch is fetched without a
+      # credential. the checkout is shallow; fetching main brings the history the
+      # reachability check walks.
+      - name: Fetch The Default Branch
+        run: git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+      - name: Check The Tag Against The Version And The Default Branch
+        env:
+          TAG: ${{ github.ref_name }}
+        run: bash .github/scripts/check-release-tag.sh "$TAG" "$GITHUB_SHA" refs/remotes/origin/main
+
+  build:
+    name: Build
+    needs: check
+    uses: ./.github/workflows/release-build.yaml
+    permissions:
+      contents: read
+
+  # no checkout: the job runs nothing from the repository, only the assembled files,
+  # the two actions, and gh. `contents: write` creates the release, and `id-token`
+  # and `attestations` sign and store the provenance; the attestation needs no
+  # `artifact-metadata`, which is for storage records in a registry.
+  publish:
+    name: Publish
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download The Release Files
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: release
+      - name: Check The Files And Their Checksums
+        id: files
+        working-directory: release
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          windows="marshal-${version}-windows-x64.exe"
+          macos="marshal-${version}-macos-arm64"
+          expected="$(printf '%s\n' SHA256SUMS "$macos" "$windows" | LC_ALL=C sort)"
+          present="$(find . -mindepth 1 -maxdepth 1 -printf '%P\n' | LC_ALL=C sort)"
+          if [[ "$present" != "$expected" ]]; then
+            echo "error: the release files are not exactly ${macos}, ${windows} and SHA256SUMS:" >&2
+            echo "$present" >&2
+            exit 1
+          fi
+          listed="$(awk '{ print $2 }' SHA256SUMS | LC_ALL=C sort)"
+          if [[ "$listed" != "$(printf '%s\n' "$macos" "$windows" | LC_ALL=C sort)" ]]; then
+            echo "error: SHA256SUMS does not list exactly ${macos} and ${windows}" >&2
+            exit 1
+          fi
+          sha256sum --check --strict SHA256SUMS
+          {
+            echo "windows=${windows}"
+            echo "macos=${macos}"
+          } >> "$GITHUB_OUTPUT"
+      - name: Attest The Build Provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            release/${{ steps.files.outputs.windows }}
+            release/${{ steps.files.outputs.macos }}
+      - name: Create The Release
+        working-directory: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          WINDOWS: ${{ steps.files.outputs.windows }}
+          MACOS: ${{ steps.files.outputs.macos }}
+        run: gh release create "$TAG" --verify-tag --generate-notes --repo "$GITHUB_REPOSITORY" "$WINDOWS" "$MACOS" SHA256SUMS
