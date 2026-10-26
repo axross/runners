@@ -175,11 +175,9 @@ against:
   `artifact-metadata: write`, which is for storage records in a registry this
   repository does not use. Neither the build workflow nor `merge-checks.yaml` has a
   publish or attest step.
-- **The publish job waits in the `release` Environment.** The Environment has the
-  maintainer as required reviewer, with self-review allowed, allows deployments
-  from tags matching `v*` only, and does not let administrators bypass its rules.
-  A workflow that names a missing Environment creates an unprotected one, so the
-  Environment exists before `release.yaml` reaches the default branch.
+- **The publish job waits in the `release` Environment**, whose protection is
+  listed below. A workflow that names a missing Environment creates an unprotected
+  one, so the Environment exists before `release.yaml` reaches the default branch.
 - **No credential stays in a checkout, and the publish job has none.** Every
   checkout sets `persist-credentials: false`. The check job fetches the default
   branch without a credential, since the repository is public. The publish job
@@ -207,12 +205,11 @@ against:
 What protects a release is outside the workflow files:
 
 - Only accounts with push access can push a branch or a tag here, and a tag ruleset
-  lets only the Repository admin role create, move, or delete a `v*` tag. On this
-  user-owned repository only the maintainer holds that role. The ruleset targets
-  `refs/tags/v*`, restricts creation, update, and deletion, and has that role as
-  its only bypass.
+  restricts creating, moving, and deleting a `v*` tag to the Repository admin role.
+  On this user-owned repository only the maintainer holds that role.
 - The `release` Environment requires the maintainer's approval before the publish
-  job runs.
+  job runs, admits deployments from `v*` tags only, and admits no administrator
+  bypass.
 - The install pins `--signer-workflow` to `release.yaml`, `--source-ref` to the
   tag, and `--source-digest` to the tag's commit, and refuses a commit the compare
   API does not place on the default branch, so an attestation from any other
@@ -224,7 +221,8 @@ What protects a release is outside the workflow files:
   cannot be replaced.
 
 The ruleset, the Environment, and immutable releases are repository settings, not
-files here; [Development Workflow](../operations/development-workflow.md) gives
+files here;
+[Cutting a Release](../operations/development-workflow.md#cutting-a-release) gives
 their exact values and the read-back. Agents never push a tag, create or change a
 ruleset or an Environment, or approve a pending deployment, and never call the
 deployment-approval API. Agent sessions share the maintainer's GitHub identity, so
@@ -237,8 +235,6 @@ Residual risks, accepted:
 - The binaries are not code-signed or notarised, so macOS Gatekeeper and Windows
   SmartScreen may warn or block. The install removes the macOS quarantine
   attribute; Phase 4b checks Windows on axpc and reports if SmartScreen intervenes.
-- The tag checks are advisory, as above. The ruleset, the Environment approval, and
-  the install-side checks are the controls.
 - The required reviewer and the agents are one identity, so the Environment cannot
   tell them apart; only the delivery grant's exclusion keeps an agent from
   approving a deployment.
