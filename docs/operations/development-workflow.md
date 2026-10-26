@@ -432,8 +432,8 @@ Each release then takes these steps:
    and merge it. The version is SemVer `X.Y.Z`, and the release is not marked as a
    prerelease.
 2. Tag the merged commit on the default branch `v<version>` and push the tag. The
-   check job fails unless the tag is `v` followed by that version and the commit
-   is on the default branch.
+   check job fails unless the tag is `v` followed by that version, the version is
+   a plain `X.Y.Z`, and the commit is on the default branch.
 3. When the build and assemble jobs pass, the publish job waits for approval in the
    `release` Environment. Approve it.
 4. Check the published release with the procedure in
