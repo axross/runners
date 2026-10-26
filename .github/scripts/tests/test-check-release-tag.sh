@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Runs check-release-tag.sh against a temporary git repository: a matching tag on a
 # commit at the default branch's tip, a matching tag on an older commit of that
-# branch, a tag that does not match the version, and a commit off the default branch.
+# branch, a tag that does not match the version, a prerelease tag that matches its
+# version, and a commit off the default branch.
 # Each case checks the exit status and the cause the script names.
 set -euo pipefail
 
@@ -28,6 +29,8 @@ older="$(commit_version 1.2.3 'older commit on main')"
 tip="$(commit_version 1.2.3 'tip of main')"
 git -C "$repo" switch --quiet --create side "$older"
 off_main="$(commit_version 1.2.3 'commit off main')"
+git -C "$repo" switch --quiet --create candidate "$tip"
+prerelease="$(commit_version 0.2.0-rc.1 'prerelease version')"
 git -C "$repo" switch --quiet main
 
 failures=0
@@ -56,6 +59,8 @@ expect "a tag that does not match the version" 1 "the tag must be v1.2.3" \
   v1.2.4 "$tip" refs/heads/main
 expect "a commit off the default branch" 1 "is not on the default branch" \
   v1.2.3 "$off_main" refs/heads/main
+expect "a prerelease tag that matches its version" 1 "is not vMAJOR.MINOR.PATCH" \
+  v0.2.0-rc.1 "$prerelease" refs/heads/candidate
 
 if [[ $failures -ne 0 ]]; then
   echo "${failures} release tag check case(s) failed." >&2

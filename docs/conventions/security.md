@@ -199,8 +199,10 @@ against:
 - **The tag checks are advisory.**
   [`check-release-tag.sh`](../../.github/scripts/check-release-tag.sh) fails unless
   the tag is `v` followed by `cli/Cargo.toml`'s version at the tagged commit and that
-  commit is on the default branch. It runs from the tagged commit's own files, so a
-  crafted tag could skip it. It catches mistakes, not attacks.
+  commit is on the default branch. It also fails unless the tag is
+  `vMAJOR.MINOR.PATCH`, since a release is never a prerelease or a build-metadata
+  version. It runs from the tagged commit's own files, so a crafted tag could skip
+  it. It catches mistakes, not attacks.
 
 What protects a release is outside the workflow files:
 

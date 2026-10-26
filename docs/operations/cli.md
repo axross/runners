@@ -1412,9 +1412,11 @@ fetches the RustSec database, so it runs in
 ## Releases
 
 A release is a `v<version>` tag on the default branch, where `<version>` is the
-`version` in `cli/Cargo.toml` at the tagged commit, such as `v0.1.0`. Releases are
-not marked as prereleases. [Development Workflow](./development-workflow.md) gives
-the maintainer's steps for cutting one, and
+`version` in `cli/Cargo.toml` at the tagged commit, such as `v0.1.0`. The release
+check refuses a tag that is not `vMAJOR.MINOR.PATCH`, since a release is never a
+prerelease or a build-metadata version, and releases are not marked as prereleases.
+[Development Workflow](./development-workflow.md) gives the maintainer's steps for
+cutting one, and
 [Security](../conventions/security.md#a-release-is-published-only-from-an-approved-tag)
 records the controls around it. `marshal --version` prints `marshal <version>`, from
 the same field.

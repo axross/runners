@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Refuses a release tag unless it is `v` followed by the version in cli/Cargo.toml at
-# the tagged commit, and that commit is on the default branch. Both checks always
-# run, and each failure is named. release.yaml runs this from the tagged commit's own
-# checkout, so a crafted tag could skip it: it catches mistakes, and the tag ruleset,
-# the Environment approval and the install-side checks are the controls; see
-# docs/conventions/security.md.
+# Refuses a release tag unless it is vMAJOR.MINOR.PATCH with no prerelease or build
+# suffix, is `v` followed by the version in cli/Cargo.toml at the tagged commit, and
+# that commit is on the default branch. Every check runs, and each failure is named.
+# release.yaml runs this from the tagged commit's own checkout, so a crafted tag could
+# skip it: it catches mistakes, and the tag ruleset, the Environment approval and the
+# install-side checks are the controls; see docs/conventions/security.md.
 #
 # Usage: check-release-tag.sh <tag> <commit> <default-branch-ref>
 set -euo pipefail
@@ -27,6 +27,12 @@ if ! git rev-parse --verify --quiet "${default_ref}^{commit}" >/dev/null; then
 fi
 
 failed=0
+
+release_tag='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+if [[ ! "$tag" =~ $release_tag ]]; then
+  echo "error: the tag ${tag} is not vMAJOR.MINOR.PATCH; a release is never a prerelease or a build-metadata version, and no part has a leading zero" >&2
+  failed=1
+fi
 
 if ! manifest="$(git show "${commit}:cli/Cargo.toml" 2>/dev/null)"; then
   echo "error: the tagged commit ${commit} has no cli/Cargo.toml" >&2
