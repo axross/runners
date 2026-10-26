@@ -134,7 +134,8 @@ jobs:
           $runtime = @($report -match 'vcruntime')
           if ($runtime.Count -gt 0) { throw "The binary imports a vcruntime DLL: $($runtime -join ', ')" }
           Write-Host 'The binary imports no vcruntime DLL.'
-      # macOS has shasum but not always sha256sum; Git Bash on Windows has both.
+      # sha256sum where the runner has it, as Git Bash on Windows does, and shasum
+      # on macOS, which may lack sha256sum.
       - name: Hash The Binary
         id: hash
         working-directory: dist
