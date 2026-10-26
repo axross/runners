@@ -1513,9 +1513,11 @@ The operator adds the directory to the user's `PATH`. Updating is the procedure
 with a newer tag, and rolling back is the procedure with the previous tag; the tag
 ruleset keeps an old tag from moving.
 
-Run the commands in order in one shell. Each check prints a line that starts with
-`refused:` when it fails. On such a line, stop: run nothing after it and do not
-install the binary.
+Paste a block below whole into one shell. A check that fails prints its cause after
+`refused:` and ends the block there without closing the shell, so nothing after it
+runs, and a refusal before the rename in step 6 leaves the install path as it was.
+The block's variables and working directory do not outlive it, so each run starts
+clean.
 
 1. Download the binary and `SHA256SUMS`.
 2. Refuse unless the binary's SHA-256 matches its line in `SHA256SUMS`.
@@ -1530,108 +1532,135 @@ install the binary.
    if present.
 7. Refuse unless the installed binary's `--version` prints `marshal <version>`.
 
-On macOS, in bash or zsh:
+On macOS, in bash or zsh. The block has no comment lines, because an interactive zsh
+runs a line that starts with `#` as a command unless `interactive_comments` is set:
 
 ```bash
-version=0.1.0
-asset="marshal-${version}-macos-arm64"
-cd "$(mktemp -d)" || echo "refused: no temporary directory"
+(
+  set -euo pipefail
+  refuse() { echo "refused: $*" >&2; exit 1; }
+  version=0.1.0
+  asset="marshal-${version}-macos-arm64"
+  work="$(mktemp -d)" || refuse "no temporary directory"
+  cd "$work"
 
-# 1. Download.
-gh release download "v${version}" --repo axross/runners --pattern "$asset" --pattern SHA256SUMS \
-  || echo "refused: the release files could not be downloaded"
+  gh release download "v${version}" --repo axross/runners --pattern "$asset" --pattern SHA256SUMS \
+    || refuse "the release files could not be downloaded"
 
-# 2. The checksum.
-awk -v file="$asset" '$2 == file' SHA256SUMS > "${asset}.sha256"
-{ [ -s "${asset}.sha256" ] && shasum -a 256 -c "${asset}.sha256"; } \
-  || echo "refused: ${asset} does not match SHA256SUMS"
+  awk -v file="$asset" '$2 == file' SHA256SUMS >"${asset}.sha256"
+  { [ -s "${asset}.sha256" ] && shasum -a 256 -c "${asset}.sha256"; } \
+    || refuse "${asset} does not match SHA256SUMS"
 
-# 3. The tag's commit.
-read -r type sha <<<"$(gh api "repos/axross/runners/git/ref/tags/v${version}" --jq '.object.type + " " + .object.sha')"
-if [ "$type" = tag ]; then
-  read -r type sha <<<"$(gh api "repos/axross/runners/git/tags/${sha}" --jq '.object.type + " " + .object.sha')"
-fi
-if [ "$type" = commit ]; then commit="$sha"; else echo "refused: v${version} does not resolve to a commit"; fi
+  ref="$(gh api "repos/axross/runners/git/ref/tags/v${version}" --jq '.object.type + " " + .object.sha')" \
+    || refuse "the tag v${version} could not be read"
+  read -r type sha <<<"$ref"
+  if [ "$type" = tag ]; then
+    ref="$(gh api "repos/axross/runners/git/tags/${sha}" --jq '.object.type + " " + .object.sha')" \
+      || refuse "the annotated tag v${version} could not be read"
+    read -r type sha <<<"$ref"
+  fi
+  [ "$type" = commit ] || refuse "v${version} does not resolve to a commit"
+  commit="$sha"
 
-# 4. The commit is on the default branch.
-comparison="$(gh api "repos/axross/runners/compare/main...${commit}" --jq .status)"
-case "$comparison" in
-  identical | behind) echo "${commit} is on main." ;;
-  *) echo "refused: ${commit} is not on main (${comparison})" ;;
-esac
+  comparison="$(gh api "repos/axross/runners/compare/main...${commit}" --jq .status)" \
+    || refuse "${commit} could not be compared with main"
+  case "$comparison" in
+    identical | behind) echo "${commit} is on main." ;;
+    *) refuse "${commit} is not on main (${comparison})" ;;
+  esac
 
-# 5. The attestation.
-gh attestation verify "$asset" --repo axross/runners \
-  --signer-workflow axross/runners/.github/workflows/release.yaml \
-  --source-ref "refs/tags/v${version}" --source-digest "$commit" \
-  --deny-self-hosted-runners \
-  || echo "refused: the attestation does not verify"
+  gh attestation verify "$asset" --repo axross/runners \
+    --signer-workflow axross/runners/.github/workflows/release.yaml \
+    --source-ref "refs/tags/v${version}" --source-digest "$commit" \
+    --deny-self-hosted-runners \
+    || refuse "the attestation does not verify"
 
-# 6. Stop the instance, then replace the binary through a rename.
-if [ -x ~/.local/bin/marshal ]; then
-  stopped="$(~/.local/bin/marshal stop 2>&1)" || [ "$stopped" = "No instance is running." ] \
-    || echo "refused: the instance did not stop: ${stopped}"
-fi
-mkdir -p ~/.local/bin
-cp "$asset" ~/.local/bin/marshal.new
-chmod 0755 ~/.local/bin/marshal.new
-mv -f ~/.local/bin/marshal.new ~/.local/bin/marshal
-if xattr -p com.apple.quarantine ~/.local/bin/marshal >/dev/null 2>&1; then
-  xattr -d com.apple.quarantine ~/.local/bin/marshal
-fi
+  if [ -x ~/.local/bin/marshal ]; then
+    stopped="$(~/.local/bin/marshal stop 2>&1)" || [ "$stopped" = "No instance is running." ] \
+      || refuse "the instance did not stop: ${stopped}"
+  fi
+  { mkdir -p ~/.local/bin && cp "$asset" ~/.local/bin/marshal.new \
+    && chmod 0755 ~/.local/bin/marshal.new && mv -f ~/.local/bin/marshal.new ~/.local/bin/marshal; } \
+    || refuse "the binary could not be installed in ~/.local/bin"
+  if xattr -p com.apple.quarantine ~/.local/bin/marshal >/dev/null 2>&1; then
+    xattr -d com.apple.quarantine ~/.local/bin/marshal || refuse "the quarantine attribute could not be removed"
+  fi
 
-# 7. The installed version.
-[ "$(~/.local/bin/marshal --version)" = "marshal ${version}" ] \
-  || echo "refused: the installed binary is not marshal ${version}"
+  installed="$(~/.local/bin/marshal --version)" || refuse "the installed binary does not run"
+  [ "$installed" = "marshal ${version}" ] || refuse "the installed binary is not marshal ${version}: ${installed}"
+  echo "Installed marshal ${version} at ~/.local/bin/marshal."
+)
 ```
 
 On Windows, in PowerShell:
 
 ```powershell
-$version = '0.1.0'
-$asset = "marshal-$version-windows-x64.exe"
-$work = New-Item -ItemType Directory -Path (Join-Path ([IO.Path]::GetTempPath()) ([IO.Path]::GetRandomFileName()))
-Set-Location -LiteralPath $work
+& {
+  $ErrorActionPreference = 'Stop'
+  function Refuse([string]$Why) { throw "refused: $Why" }
+  $version = '0.1.0'
+  $asset = "marshal-$version-windows-x64.exe"
+  try {
+    $work = New-Item -ItemType Directory -Path (Join-Path ([IO.Path]::GetTempPath()) ([IO.Path]::GetRandomFileName()))
+  } catch { Refuse "no temporary directory: $_" }
+  $file = Join-Path $work $asset
+  $sums = Join-Path $work 'SHA256SUMS'
 
-# 1. Download.
-gh release download "v$version" --repo axross/runners --pattern $asset --pattern SHA256SUMS
-if ($LASTEXITCODE -ne 0) { Write-Host 'refused: the release files could not be downloaded' }
+  gh release download "v$version" --repo axross/runners --pattern $asset --pattern SHA256SUMS --dir $work
+  if ($LASTEXITCODE -ne 0) { Refuse 'the release files could not be downloaded' }
 
-# 2. The checksum.
-$listed = @(Get-Content -LiteralPath SHA256SUMS | Where-Object { ($_ -split '\s+')[1] -eq $asset })
-$actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $asset).Hash.ToLowerInvariant()
-if ($listed.Count -ne 1 -or ($listed[0] -split '\s+')[0] -ne $actual) { Write-Host "refused: $asset does not match SHA256SUMS" }
+  try {
+    $listed = @(Get-Content -LiteralPath $sums | Where-Object { ($_ -split '\s+')[1] -eq $asset })
+    $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash.ToLowerInvariant()
+  } catch { Refuse "$asset or SHA256SUMS could not be read: $_" }
+  if ($listed.Count -ne 1 -or ($listed[0] -split '\s+')[0] -ne $actual) { Refuse "$asset does not match SHA256SUMS" }
 
-# 3. The tag's commit.
-$object = (gh api "repos/axross/runners/git/ref/tags/v$version" | ConvertFrom-Json).object
-if ($object.type -eq 'tag') { $object = (gh api "repos/axross/runners/git/tags/$($object.sha)" | ConvertFrom-Json).object }
-if ($object.type -eq 'commit') { $commit = $object.sha } else { Write-Host "refused: v$version does not resolve to a commit" }
+  $ref = gh api "repos/axross/runners/git/ref/tags/v$version"
+  if ($LASTEXITCODE -ne 0) { Refuse "the tag v$version could not be read" }
+  $object = ($ref | ConvertFrom-Json).object
+  if ($object.type -eq 'tag') {
+    $ref = gh api "repos/axross/runners/git/tags/$($object.sha)"
+    if ($LASTEXITCODE -ne 0) { Refuse "the annotated tag v$version could not be read" }
+    $object = ($ref | ConvertFrom-Json).object
+  }
+  if ($object.type -ne 'commit') { Refuse "v$version does not resolve to a commit" }
+  $commit = $object.sha
 
-# 4. The commit is on the default branch.
-$comparison = gh api "repos/axross/runners/compare/main...$commit" --jq .status
-if ($comparison -in 'identical', 'behind') { Write-Host "$commit is on main." } else { Write-Host "refused: $commit is not on main ($comparison)" }
+  $comparison = gh api "repos/axross/runners/compare/main...$commit" --jq .status
+  if ($LASTEXITCODE -ne 0) { Refuse "$commit could not be compared with main" }
+  if ($comparison -notin 'identical', 'behind') { Refuse "$commit is not on main ($comparison)" }
+  Write-Host "$commit is on main."
 
-# 5. The attestation.
-gh attestation verify $asset --repo axross/runners `
-  --signer-workflow axross/runners/.github/workflows/release.yaml `
-  --source-ref "refs/tags/v$version" --source-digest $commit `
-  --deny-self-hosted-runners
-if ($LASTEXITCODE -ne 0) { Write-Host 'refused: the attestation does not verify' }
+  gh attestation verify $file --repo axross/runners `
+    --signer-workflow axross/runners/.github/workflows/release.yaml `
+    --source-ref "refs/tags/v$version" --source-digest $commit `
+    --deny-self-hosted-runners
+  if ($LASTEXITCODE -ne 0) { Refuse 'the attestation does not verify' }
 
-# 6. Stop the instance, then replace the binary.
-$directory = Join-Path $env:LOCALAPPDATA 'Programs\marshal'
-$target = Join-Path $directory 'marshal.exe'
-if (Test-Path -LiteralPath $target) {
-  $stopped = (& $target stop 2>&1 | ForEach-Object { "$_" }) -join "`n"
-  if ($LASTEXITCODE -ne 0 -and $stopped.Trim() -ne 'No instance is running.') { Write-Host "refused: the instance did not stop: $stopped" }
+  $directory = Join-Path $env:LOCALAPPDATA 'Programs\marshal'
+  $target = Join-Path $directory 'marshal.exe'
+  if (Test-Path -LiteralPath $target) {
+    $stopped = & {
+      $ErrorActionPreference = 'Continue'
+      (& $target stop 2>&1 | ForEach-Object { "$_" }) -join "`n"
+    }
+    if ($LASTEXITCODE -ne 0 -and $stopped.Trim() -ne 'No instance is running.') { Refuse "the instance did not stop: $stopped" }
+  }
+  try {
+    New-Item -ItemType Directory -Force -Path $directory | Out-Null
+    Copy-Item -LiteralPath $file -Destination "$target.new" -Force
+    Move-Item -LiteralPath "$target.new" -Destination $target -Force
+  } catch { Refuse "the binary could not be installed in ${directory}: $_" }
+
+  try { $installed = & $target --version } catch { Refuse "the installed binary does not run: $_" }
+  if ($LASTEXITCODE -ne 0 -or "$installed" -ne "marshal $version") { Refuse "the installed binary is not marshal ${version}: $installed" }
+  Write-Host "Installed marshal $version at $target."
 }
-New-Item -ItemType Directory -Force -Path $directory | Out-Null
-Copy-Item -LiteralPath $asset -Destination "$target.new" -Force
-Move-Item -LiteralPath "$target.new" -Destination $target -Force
-
-# 7. The installed version.
-if ((& $target --version) -ne "marshal $version") { Write-Host "refused: the installed binary is not marshal $version" }
 ```
+
+The stop runs with `$ErrorActionPreference` at `Continue` because Windows PowerShell 5.1
+turns a native command's redirected standard error into an error, and `Stop` would end
+the block at the "No instance is running." line.
 
 Windows cannot replace an executable that is running, so step 6 also fails while an
 instance still runs from the install path. A binary fetched with
