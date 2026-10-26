@@ -26,17 +26,17 @@ pub(crate) const EXIT_FAILED: u8 = 1;
 pub(crate) const EXIT_USAGE: u8 = 2;
 
 /// Moves the lock, channel and log roots; only a debug build honours it.
-const TEST_ROOT_VARIABLE: &str = "RUNNERS_TEST_ROOT";
+const TEST_ROOT_VARIABLE: &str = "MARSHAL_TEST_ROOT";
 
 /// Moves the GitHub base address; only a debug build honours it.
-const TEST_GITHUB_API_VARIABLE: &str = "RUNNERS_TEST_GITHUB_API";
+const TEST_GITHUB_API_VARIABLE: &str = "MARSHAL_TEST_GITHUB_API";
 
 /// Names the `docker` client `start` and `build` run; only a debug build honours it.
-const TEST_DOCKER_VARIABLE: &str = "RUNNERS_TEST_DOCKER";
+const TEST_DOCKER_VARIABLE: &str = "MARSHAL_TEST_DOCKER";
 
 /// Names a test definition `build` builds instead of the embedded one; only a debug
 /// build honours it.
-const TEST_BUILD_DEFINITION_VARIABLE: &str = "RUNNERS_TEST_BUILD_DEFINITION";
+const TEST_BUILD_DEFINITION_VARIABLE: &str = "MARSHAL_TEST_BUILD_DEFINITION";
 
 fn config_arg(help: &'static str) -> Arg {
     Arg::new("config")
@@ -56,7 +56,7 @@ fn profile_arg(help: &'static str) -> Arg {
 }
 
 fn command() -> Command {
-    let command = Command::new("runners")
+    let command = Command::new("marshal")
         .about("Manages the self-hosted runner hosts in this repository")
         .subcommand_required(true)
         .arg_required_else_help(true)

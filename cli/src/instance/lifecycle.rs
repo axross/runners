@@ -395,8 +395,8 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
     fn image_reason(&self, refusal: &str) -> StopReason {
         let config = &self.settings.config_path;
         StopReason::Image(format!(
-            "{refusal}; run `runners stop`, then `runners build --config {config}`, \
-             then `runners start --config {config}`"
+            "{refusal}; run `marshal stop`, then `marshal build --config {config}`, \
+             then `marshal start --config {config}`"
         ))
     }
 
@@ -456,8 +456,8 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
                         CycleEnd::ImageRefusedAtStart(refusal) => {
                             let config = &self.settings.config_path;
                             self.log.warn(&format!(
-                                "The instance ends: {refusal}. Run `runners build --config {config}`, \
-                                 then `runners start --config {config}`."
+                                "The instance ends: {refusal}. Run `marshal build --config {config}`, \
+                                 then `marshal start --config {config}`."
                             ));
                             self.ending.set(Ending::ImageRefused);
                             Next::Exit

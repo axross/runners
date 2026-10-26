@@ -1,7 +1,7 @@
 //! What `start` logs: every line goes to the terminal and to a log file of its own
 //! in a private per-user directory, with every masked secret replaced in both.
 //!
-//! Each `start` writes one file, `runners-<yyyyMMddHHmmssfff>-<pid>.log`, and keeps
+//! Each `start` writes one file, `marshal-<yyyyMMddHHmmssfff>-<pid>.log`, and keeps
 //! the newest 10 such files in the directory, its own included. A file
 //! stops growing at 10 MiB, with a last line saying so. On macOS the
 //! directory is `0700` and each file `0600`, both owned by the user; on Windows the
@@ -27,7 +27,7 @@ const KEPT_FILES: usize = 10;
 /// The last line of a file that reached [`MAX_FILE_BYTES`].
 const FULL_LINE: &str = "The log file reached 10 MiB, so nothing more is written to it.\n";
 
-const FILE_PREFIX: &str = "runners-";
+const FILE_PREFIX: &str = "marshal-";
 const FILE_SUFFIX: &str = ".log";
 
 /// Why the log file could not be opened.
@@ -288,7 +288,7 @@ mod tests {
 
     fn scratch(name: &str) -> PathBuf {
         let directory = std::env::temp_dir().join(format!(
-            "runners-log-file-test-{name}-{}",
+            "marshal-log-file-test-{name}-{}",
             std::process::id()
         ));
         let _ = fs::remove_dir_all(&directory);

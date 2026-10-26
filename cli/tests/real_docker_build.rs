@@ -23,15 +23,15 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::rc::Rc;
 
-use runners_cli::image::check::{ImageCheck, ImageLabels};
-use runners_cli::image::contract::CONTRACT_VERSION;
-use runners_cli::runtime::backend::Backend;
-use runners_cli::runtime::clock::SystemClock;
-use runners_cli::runtime::docker::{DockerBackend, DockerConfig};
-use runners_cli::runtime::log::{Log, StderrLog};
+use marshal_cli::image::check::{ImageCheck, ImageLabels};
+use marshal_cli::image::contract::CONTRACT_VERSION;
+use marshal_cli::runtime::backend::Backend;
+use marshal_cli::runtime::clock::SystemClock;
+use marshal_cli::runtime::docker::{DockerBackend, DockerConfig};
+use marshal_cli::runtime::log::{Log, StderrLog};
 use support::{BINARY, TempDir};
 
-const REPOSITORY: &str = "runners-build-test";
+const REPOSITORY: &str = "marshal-build-test";
 
 /// What every label key starts with.
 const LABEL_PREFIX: &str = "com.github.axross.runners.";
@@ -139,8 +139,8 @@ fn build_tags_the_name_with_all_five_labels_leaves_no_temporary_tag_and_the_chec
         .args(["build", "--profile", "axpc", "--config"])
         .arg(&config)
         .current_dir(root.path())
-        .env("RUNNERS_TEST_ROOT", root.path())
-        .env("RUNNERS_TEST_BUILD_DEFINITION", &definition)
+        .env("MARSHAL_TEST_ROOT", root.path())
+        .env("MARSHAL_TEST_BUILD_DEFINITION", &definition)
         .stdin(Stdio::null())
         .output()
         .unwrap();

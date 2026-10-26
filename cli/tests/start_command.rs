@@ -12,8 +12,8 @@ mod support;
 use std::fs;
 use std::time::{Duration, Instant};
 
-use runners_cli::image::contract::{CONTRACT_VERSION, RUNNER_VERSION_LABEL};
-use runners_cli::image::definition::declared_label;
+use marshal_cli::image::contract::{CONTRACT_VERSION, RUNNER_VERSION_LABEL};
+use marshal_cli::image::definition::declared_label;
 use support::host::{Host, JIT, Started, TOKEN, registered, texts};
 use support::stub::{Reply, Stub};
 use support::{TempDir, repository_root};
@@ -300,7 +300,7 @@ fn at_most_ten_log_files_are_kept() {
         fs::set_permissions(&logs, fs::Permissions::from_mode(0o700)).unwrap();
     }
     for index in 0..10 {
-        fs::write(logs.join(format!("runners-{index:017}-1.log")), b"old").unwrap();
+        fs::write(logs.join(format!("marshal-{index:017}-1.log")), b"old").unwrap();
     }
     let stub = Stub::start(vec![registered()]);
     let started = running(&host, &stub);
@@ -311,7 +311,7 @@ fn at_most_ten_log_files_are_kept() {
     assert!(
         !kept
             .iter()
-            .any(|path| path.ends_with("runners-00000000000000000-1.log"))
+            .any(|path| path.ends_with("marshal-00000000000000000-1.log"))
     );
 }
 

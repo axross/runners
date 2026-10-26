@@ -10,7 +10,7 @@
 
 use std::io;
 
-use runners_cli::diagnostics::archive::{
+use marshal_cli::diagnostics::archive::{
     ArchiveError, EntrySink, MAX_ENTRIES, MAX_PAYLOAD_BYTES, read_archive,
 };
 

@@ -10,11 +10,11 @@ mod support;
 
 use std::time::Duration;
 
-use runners_cli::instance::fake::{CoreStep, FakeCore};
-use runners_cli::instance::lifecycle::Ending;
-use runners_cli::instance::protocol::{Outcome, Request};
-use runners_cli::profile::Profile;
-use runners_cli::runtime::fake::Call;
+use marshal_cli::instance::fake::{CoreStep, FakeCore};
+use marshal_cli::instance::lifecycle::Ending;
+use marshal_cli::instance::protocol::{Outcome, Request};
+use marshal_cli::profile::Profile;
+use marshal_cli::runtime::fake::Call;
 use support::instance::{CONFIG_PATH, Control, Rig, resume};
 
 const MINUTE: Duration = Duration::from_secs(60);
@@ -68,7 +68,7 @@ async fn the_core_restarts_after_10_30_and_60_seconds_and_a_fourth_failure_stops
 #[tokio::test(flavor = "current_thread")]
 async fn each_failure_stops_and_removes_the_containers_the_failed_core_had_started() {
     let rig = Rig::new();
-    rig.core.push(runners_cli::instance::fake::CoreStep::Fail {
+    rig.core.push(marshal_cli::instance::fake::CoreStep::Fail {
         message: "boom".to_string(),
         containers: vec!["r-1-20240305060708009".to_string()],
         after: Duration::ZERO,
@@ -92,8 +92,8 @@ async fn each_failure_stops_and_removes_the_containers_the_failed_core_had_start
 async fn a_removal_that_failed_after_a_core_failure_is_reported_when_the_instance_ends() {
     let rig = Rig::new();
     rig.backend.state.borrow_mut().remove_error =
-        Some(runners_cli::runtime::backend::BackendError::new("busy"));
-    rig.core.push(runners_cli::instance::fake::CoreStep::Fail {
+        Some(marshal_cli::runtime::backend::BackendError::new("busy"));
+    rig.core.push(marshal_cli::instance::fake::CoreStep::Fail {
         message: "boom".to_string(),
         containers: vec!["r-1-20240305060708009".to_string()],
         after: Duration::ZERO,

@@ -9,15 +9,15 @@
 
 mod support;
 
-use runners_cli::profile::Profile;
+use marshal_cli::profile::Profile;
 use std::time::Duration;
 
-use runners_cli::runtime::backend::{Backend, BackendError, DiagnosticRecord, StopRequest};
-use runners_cli::runtime::board::Board;
-use runners_cli::runtime::fake::{Call, FakeBackend, FakeContainer, MemoryLog};
-use runners_cli::runtime::log::Log;
-use runners_cli::runtime::pool::{NoPoolStartable, PoolSpec, pools_from_plan};
-use runners_cli::validate::validate;
+use marshal_cli::runtime::backend::{Backend, BackendError, DiagnosticRecord, StopRequest};
+use marshal_cli::runtime::board::Board;
+use marshal_cli::runtime::fake::{Call, FakeBackend, FakeContainer, MemoryLog};
+use marshal_cli::runtime::log::Log;
+use marshal_cli::runtime::pool::{NoPoolStartable, PoolSpec, pools_from_plan};
+use marshal_cli::validate::validate;
 use support::{TempDir, prepare_pools, write_token_file};
 
 const STAMP: &str = "20240305060708009";

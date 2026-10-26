@@ -176,7 +176,7 @@ impl GitHubRegistrar {
     pub fn new(base_override: Option<&str>, limits: HttpLimits) -> Result<Self, SetupError> {
         install_tls_provider()?;
         let base_url = resolve_base_url(base_override)?;
-        let user_agent = format!("runners/{}", env!("CARGO_PKG_VERSION"));
+        let user_agent = format!("marshal/{}", env!("CARGO_PKG_VERSION"));
         let mut builder = reqwest::Client::builder()
             .user_agent(user_agent)
             .redirect(reqwest::redirect::Policy::none())

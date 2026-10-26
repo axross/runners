@@ -5,7 +5,7 @@
 //! client the tests name; a release build ignores either request, so a release
 //! binary cannot send a token anywhere but GitHub or run another program as its
 //! `docker` client. CI runs this file twice: in the debug profile with the rest of
-//! the tests, and in the release profile with `RUNNERS_EXPECT_RELEASE=1`, which
+//! the tests, and in the release profile with `MARSHAL_EXPECT_RELEASE=1`, which
 //! makes the file fail if it was built in the wrong profile.
 #![allow(
     clippy::unwrap_used,
@@ -16,8 +16,8 @@
 
 use std::ffi::OsStr;
 
-use runners_cli::runtime::docker::{DOCKER_PROGRAM, resolve_program};
-use runners_cli::runtime::registration::{
+use marshal_cli::runtime::docker::{DOCKER_PROGRAM, resolve_program};
+use marshal_cli::runtime::registration::{
     GITHUB_API, GitHubRegistrar, HttpLimits, resolve_base_url,
 };
 
@@ -26,7 +26,7 @@ const LOOPBACK: &str = "http://127.0.0.1:34567";
 #[test]
 fn the_profile_is_the_one_ci_asked_for() {
     let debug_profile = cfg!(debug_assertions);
-    match std::env::var("RUNNERS_EXPECT_RELEASE").as_deref() {
+    match std::env::var("MARSHAL_EXPECT_RELEASE").as_deref() {
         Ok("1") => assert!(!debug_profile, "this test was built in the debug profile"),
         Ok("0") => assert!(debug_profile, "this test was built in the release profile"),
         _ => {}

@@ -10,15 +10,15 @@ mod support;
 
 use std::time::Duration;
 
-use runners_cli::runtime::backend::{
+use marshal_cli::runtime::backend::{
     BackendError, ContainerSpec, DiagnosticRecord, ExportOutcome, Mount,
 };
-use runners_cli::runtime::board::Board;
-use runners_cli::runtime::clock::SystemClock;
-use runners_cli::runtime::fake::{Call, FakeBackend, FakeClock, FakeRegistrar, MemoryLog};
-use runners_cli::runtime::log::Log;
-use runners_cli::runtime::registration::RegistrationError;
-use runners_cli::runtime::worker::{run_slot, stop_channel};
+use marshal_cli::runtime::board::Board;
+use marshal_cli::runtime::clock::SystemClock;
+use marshal_cli::runtime::fake::{Call, FakeBackend, FakeClock, FakeRegistrar, MemoryLog};
+use marshal_cli::runtime::log::Log;
+use marshal_cli::runtime::registration::RegistrationError;
+use marshal_cli::runtime::worker::{run_slot, stop_channel};
 use support::{TempDir, slot_spec, write_token_file};
 
 const TOKEN: &str = "ghp_slottoken";
@@ -53,7 +53,7 @@ impl Rig {
     }
 
     /// Runs the slot, changed by `change`, until the scripted exits run out.
-    async fn run_with(&self, change: impl FnOnce(&mut runners_cli::runtime::pool::SlotSpec)) {
+    async fn run_with(&self, change: impl FnOnce(&mut marshal_cli::runtime::pool::SlotSpec)) {
         let (stop, receiver) = stop_channel();
         self.backend.state.borrow_mut().stop_when_exits_run_out = Some(stop);
         let mut slot = slot_spec(self.scratch.path().join("token"));

@@ -346,7 +346,7 @@ mod tests {
     #[test]
     fn each_request_round_trips_through_its_line() {
         let resume =
-            Request::resume(Profile::Axpc, Path::new("/etc/runners/host config.json")).unwrap();
+            Request::resume(Profile::Axpc, Path::new("/etc/marshal/host config.json")).unwrap();
         for request in [
             Request::Status,
             Request::Stop,

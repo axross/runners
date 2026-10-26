@@ -14,15 +14,15 @@ mod support;
 use std::rc::Rc;
 use std::time::Duration;
 
-use runners_cli::instance::fake::FakeSource;
-use runners_cli::instance::lifecycle::{Ended, Instance, Settings};
-use runners_cli::instance::protocol::{Outcome, Request, Response};
-use runners_cli::instance::runtime_core::RuntimeCore;
-use runners_cli::profile::Profile;
-use runners_cli::runtime::backend::{BackendError, DiagnosticRecord, ExportOutcome};
-use runners_cli::runtime::clock::SystemClock;
-use runners_cli::runtime::fake::{Call, FakeBackend, FakeRegistrar, MemoryLog};
-use runners_cli::validate::{Plan, validate};
+use marshal_cli::instance::fake::FakeSource;
+use marshal_cli::instance::lifecycle::{Ended, Instance, Settings};
+use marshal_cli::instance::protocol::{Outcome, Request, Response};
+use marshal_cli::instance::runtime_core::RuntimeCore;
+use marshal_cli::profile::Profile;
+use marshal_cli::runtime::backend::{BackendError, DiagnosticRecord, ExportOutcome};
+use marshal_cli::runtime::clock::SystemClock;
+use marshal_cli::runtime::fake::{Call, FakeBackend, FakeRegistrar, MemoryLog};
+use marshal_cli::validate::{Plan, validate};
 use support::TempDir;
 use support::instance::{CONFIG_PATH, Control, drive, resume};
 use tokio::sync::Notify;
@@ -124,7 +124,7 @@ impl World {
         Fut: std::future::Future<Output = T>,
     {
         self.backend.state.borrow_mut().containers.push(
-            runners_cli::runtime::fake::FakeContainer {
+            marshal_cli::runtime::fake::FakeContainer {
                 name: LEFT_IN_OTHER.to_string(),
                 diagnostic: true,
             },
@@ -280,7 +280,7 @@ async fn a_stop_during_a_startup_export_finalises_the_container_the_preparation_
         .state
         .borrow_mut()
         .containers
-        .push(runners_cli::runtime::fake::FakeContainer {
+        .push(marshal_cli::runtime::fake::FakeContainer {
             name: left.to_string(),
             diagnostic: true,
         });

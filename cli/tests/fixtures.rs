@@ -14,12 +14,12 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use runners_cli::command::invalid_message;
-use runners_cli::de::Deserializer;
-use runners_cli::json;
-use runners_cli::profile::Profile;
-use runners_cli::summary::plan_summary;
-use runners_cli::validate::{Failure, validate};
+use marshal_cli::command::invalid_message;
+use marshal_cli::de::Deserializer;
+use marshal_cli::json;
+use marshal_cli::profile::Profile;
+use marshal_cli::summary::plan_summary;
+use marshal_cli::validate::{Failure, validate};
 
 /// One entry of `expectations.json`. Keys are spelled exactly and an unknown key
 /// fails the read, so a typo cannot silently turn a check off.

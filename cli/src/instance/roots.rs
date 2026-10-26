@@ -62,9 +62,9 @@ impl Roots {
     fn host() -> Result<Self, RootsError> {
         let home = std::env::home_dir().ok_or(RootsError::NoHomeDirectory)?;
         Ok(Self {
-            lock_file: PathBuf::from("/Users/Shared/.runners-instance.lock"),
-            channel_directory: home.join("Library/Application Support/runners"),
-            log_directory: home.join("Library/Logs/runners"),
+            lock_file: PathBuf::from("/Users/Shared/.marshal-instance.lock"),
+            channel_directory: home.join("Library/Application Support/marshal"),
+            log_directory: home.join("Library/Logs/marshal"),
         })
     }
 
@@ -80,7 +80,7 @@ impl Roots {
             .ok_or(RootsError::NoLocalAppData)?;
         Ok(Self {
             pipe_suffix: String::new(),
-            log_directory: PathBuf::from(local).join("runners").join("logs"),
+            log_directory: PathBuf::from(local).join("marshal").join("logs"),
         })
     }
 
@@ -90,7 +90,7 @@ impl Roots {
     #[must_use]
     pub fn for_tests(root: &Path) -> Self {
         Self {
-            lock_file: root.join(".runners-instance.lock"),
+            lock_file: root.join(".marshal-instance.lock"),
             channel_directory: root.join("channel"),
             log_directory: root.join("logs"),
         }
@@ -155,15 +155,15 @@ impl Roots {
 
 #[cfg(windows)]
 impl Roots {
-    /// `\\.\pipe\runners-instance`, which never carries a message.
+    /// `\\.\pipe\marshal-instance`, which never carries a message.
     #[must_use]
     pub fn lock_pipe_name(&self) -> String {
-        format!(r"\\.\pipe\runners-instance{}", self.pipe_suffix)
+        format!(r"\\.\pipe\marshal-instance{}", self.pipe_suffix)
     }
 
-    /// `\\.\pipe\runners-control-<user SID>`.
+    /// `\\.\pipe\marshal-control-<user SID>`.
     #[must_use]
     pub fn control_pipe_name(&self, user_sid: &str) -> String {
-        format!(r"\\.\pipe\runners-control-{user_sid}{}", self.pipe_suffix)
+        format!(r"\\.\pipe\marshal-control-{user_sid}{}", self.pipe_suffix)
     }
 }

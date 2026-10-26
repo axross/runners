@@ -80,7 +80,7 @@ fn temporary_tags(host: &Host) -> Vec<String> {
     images(host)
         .into_iter()
         .map(|(reference, _)| reference)
-        .filter(|reference| reference.contains(":runners-build-"))
+        .filter(|reference| reference.contains(":marshal-build-"))
         .collect()
 }
 
@@ -163,7 +163,7 @@ fn now_seconds() -> u64 {
 
 fn assert_temporary_tag(tag: &str, repository: &str) {
     let digits = tag
-        .strip_prefix(&format!("{repository}:runners-build-"))
+        .strip_prefix(&format!("{repository}:marshal-build-"))
         .unwrap_or_else(|| panic!("{tag} is not a temporary tag of {repository}"));
     assert_eq!(digits.len(), 17, "{tag}");
     assert!(digits.bytes().all(|byte| byte.is_ascii_digit()), "{tag}");
@@ -315,10 +315,10 @@ fn a_leftover_temporary_tag_of_this_repository_is_removed_before_the_build() {
         "images",
         &format!(
             "{PREVIOUS}\n\
-             actions-runner:runners-build-20240101000000000\tsha256:old\t{label}\n\
-             actions-runner:runners-build-20240101000000001\tsha256:unlabelled\n\
-             actions-runner:runners-build-notastamp\tsha256:odd\t{label}\n\
-             other:runners-build-20240101000000000\tsha256:other\t{label}"
+             actions-runner:marshal-build-20240101000000000\tsha256:old\t{label}\n\
+             actions-runner:marshal-build-20240101000000001\tsha256:unlabelled\n\
+             actions-runner:marshal-build-notastamp\tsha256:odd\t{label}\n\
+             other:marshal-build-20240101000000000\tsha256:other\t{label}"
         ),
     );
     let output = build(&host);
@@ -330,7 +330,7 @@ fn a_leftover_temporary_tag_of_this_repository_is_removed_before_the_build() {
             "image",
             "ls",
             "--filter",
-            "reference=actions-runner:runners-build-*",
+            "reference=actions-runner:marshal-build-*",
             "--filter",
             "label=com.github.axross.runners.image=actions-runner",
             "--format",
@@ -342,7 +342,7 @@ fn a_leftover_temporary_tag_of_this_repository_is_removed_before_the_build() {
         [
             "image",
             "rm",
-            "actions-runner:runners-build-20240101000000000"
+            "actions-runner:marshal-build-20240101000000000"
         ]
     );
     assert_eq!(words[3][0], "build", "the removal came before the build");
@@ -350,9 +350,9 @@ fn a_leftover_temporary_tag_of_this_repository_is_removed_before_the_build() {
     assert_eq!(
         left,
         [
-            "actions-runner:runners-build-20240101000000001",
-            "actions-runner:runners-build-notastamp",
-            "other:runners-build-20240101000000000"
+            "actions-runner:marshal-build-20240101000000001",
+            "actions-runner:marshal-build-notastamp",
+            "other:marshal-build-20240101000000000"
         ]
     );
 }

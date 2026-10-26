@@ -11,18 +11,18 @@ mod support;
 use std::rc::Rc;
 use std::time::Duration;
 
-use runners_cli::instance::fake::CoreStep;
-use runners_cli::instance::lifecycle::{Ending, StopTimes};
-use runners_cli::instance::protocol::{Outcome, Request};
-use runners_cli::profile::Profile;
-use runners_cli::runtime::backend::StopRequest;
-use runners_cli::runtime::fake::Call;
+use marshal_cli::instance::fake::CoreStep;
+use marshal_cli::instance::lifecycle::{Ending, StopTimes};
+use marshal_cli::instance::protocol::{Outcome, Request};
+use marshal_cli::profile::Profile;
+use marshal_cli::runtime::backend::StopRequest;
+use marshal_cli::runtime::fake::Call;
 use support::instance::{CONFIG_PATH, Rig, resume};
 use tokio::sync::Notify;
 
 const JOB: &str = "r-1-20240305060708009";
 
-fn invalid() -> Result<runners_cli::validate::Plan, Vec<String>> {
+fn invalid() -> Result<marshal_cli::validate::Plan, Vec<String>> {
     Err(vec![
         "repositories[0].slots: must be an integer from 1 to 64".to_string(),
         "imageName: required field is missing".to_string(),
@@ -207,8 +207,8 @@ async fn a_resume_naming_another_path_or_profile_is_refused_and_reads_nothing() 
             control.ask(Request::Restart).await;
             assert_eq!(control.state().await, "stopped");
             for request in [
-                resume(Profile::Axpc, "/etc/runners/other.json"),
-                resume(Profile::Axpc, "/etc/runners/host.json "),
+                resume(Profile::Axpc, "/etc/marshal/other.json"),
+                resume(Profile::Axpc, "/etc/marshal/host.json "),
                 resume(Profile::Axpc, "../../etc/passwd"),
                 resume(Profile::Axmc, CONFIG_PATH),
             ] {
@@ -333,7 +333,7 @@ async fn a_failed_container_removal_is_reported_in_how_the_instance_ended() {
     {
         let mut state = rig.backend.state.borrow_mut();
         state.running = vec![JOB.to_string()];
-        state.remove_error = Some(runners_cli::runtime::backend::BackendError::new("busy"));
+        state.remove_error = Some(marshal_cli::runtime::backend::BackendError::new("busy"));
     }
     let (ended, _) = rig
         .drive(|control| async move { control.stop().await })
@@ -353,7 +353,7 @@ async fn a_removal_that_failed_at_a_restart_is_reported_when_a_later_stop_remove
     {
         let mut state = rig.backend.state.borrow_mut();
         state.running = vec![JOB.to_string()];
-        state.remove_error = Some(runners_cli::runtime::backend::BackendError::new("busy"));
+        state.remove_error = Some(marshal_cli::runtime::backend::BackendError::new("busy"));
     }
     rig.source.results.borrow_mut().push_back(invalid());
     let (ended, ()) = rig

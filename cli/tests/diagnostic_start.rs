@@ -15,7 +15,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use runners_cli::diagnostics::exporter::COMPLETE_TEXT;
+use marshal_cli::diagnostics::exporter::COMPLETE_TEXT;
 use support::host::{Host, JIT, Started, TOKEN, registered, texts};
 use support::stub::{Reply, Stub};
 

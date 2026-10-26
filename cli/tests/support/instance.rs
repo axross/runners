@@ -13,17 +13,17 @@ use std::future::Future;
 use std::rc::Rc;
 use std::time::Duration;
 
-use runners_cli::instance::fake::{FakeCore, FakeSource};
-use runners_cli::instance::lifecycle::{Core, Ended, Instance, Settings, Source, StopTimes};
-use runners_cli::instance::protocol::{Incoming, Request, Response};
-use runners_cli::profile::Profile;
-use runners_cli::runtime::backend::Backend;
-use runners_cli::runtime::clock::Clock;
-use runners_cli::runtime::fake::{FakeBackend, FakeClock, MemoryLog};
-use runners_cli::validate::{Plan, validate};
+use marshal_cli::instance::fake::{FakeCore, FakeSource};
+use marshal_cli::instance::lifecycle::{Core, Ended, Instance, Settings, Source, StopTimes};
+use marshal_cli::instance::protocol::{Incoming, Request, Response};
+use marshal_cli::profile::Profile;
+use marshal_cli::runtime::backend::Backend;
+use marshal_cli::runtime::clock::Clock;
+use marshal_cli::runtime::fake::{FakeBackend, FakeClock, MemoryLog};
+use marshal_cli::validate::{Plan, validate};
 use tokio::sync::{mpsc, oneshot};
 
-pub const CONFIG_PATH: &str = "/etc/runners/host.json";
+pub const CONFIG_PATH: &str = "/etc/marshal/host.json";
 
 pub const START: u64 = 1_709_618_828_009;
 

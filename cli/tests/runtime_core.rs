@@ -8,13 +8,13 @@
 
 mod support;
 
-use runners_cli::image::contract::CONTRACT_VERSION;
-use runners_cli::instance::lifecycle::{Core, Ending};
-use runners_cli::instance::runtime_core::RuntimeCore;
-use runners_cli::profile::Profile;
-use runners_cli::runtime::fake::{Call, FakeBackend, FakeClock, FakeRegistrar, MemoryLog};
-use runners_cli::runtime::worker::stop_channel;
-use runners_cli::validate::{Plan, validate};
+use marshal_cli::image::contract::CONTRACT_VERSION;
+use marshal_cli::instance::lifecycle::{Core, Ending};
+use marshal_cli::instance::runtime_core::RuntimeCore;
+use marshal_cli::profile::Profile;
+use marshal_cli::runtime::fake::{Call, FakeBackend, FakeClock, FakeRegistrar, MemoryLog};
+use marshal_cli::runtime::worker::stop_channel;
+use marshal_cli::validate::{Plan, validate};
 use support::TempDir;
 
 const START: u64 = 1_709_618_828_009;

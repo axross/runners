@@ -24,7 +24,7 @@ use crate::json::{Number, Object, Value};
 
 /// The newtype struct name that asks this reader for a [`Value`], with a number
 /// delivered as its literal text.
-const VALUE_TOKEN: &str = "$runners::Value";
+const VALUE_TOKEN: &str = "$marshal::Value";
 
 /// Why a value could not be read into the requested type.
 #[derive(Debug, Clone, PartialEq, Eq)]

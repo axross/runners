@@ -16,8 +16,8 @@ use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::{Mutex, MutexGuard, PoisonError, mpsc};
 use std::time::Duration;
 
-use runners_cli::instance::lock::{InstanceLock, LockError};
-use runners_cli::instance::roots::Roots;
+use marshal_cli::instance::lock::{InstanceLock, LockError};
+use marshal_cli::instance::roots::Roots;
 use support::TempDir;
 
 const HELPER: &str = env!("CARGO_BIN_EXE_instance-helper");

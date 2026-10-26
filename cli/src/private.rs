@@ -194,7 +194,7 @@ fn uid_from_new_file() -> io::Result<u32> {
     // a random part, so another user cannot create the names first
     let names = (0..UID_FILE_ATTEMPTS).map(|_| {
         let random = RandomState::new().hash_one(COUNTER.fetch_add(1, Ordering::Relaxed));
-        format!(".runners-uid-{}-{random:016x}", std::process::id())
+        format!(".marshal-uid-{}-{random:016x}", std::process::id())
     });
     uid_from_new_file_in(&std::env::temp_dir(), names)
 }
@@ -236,7 +236,7 @@ mod tests {
 
     fn scratch(name: &str) -> PathBuf {
         let dir =
-            std::env::temp_dir().join(format!("runners-private-{}-{name}", std::process::id()));
+            std::env::temp_dir().join(format!("marshal-private-{}-{name}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir

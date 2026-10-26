@@ -11,8 +11,8 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use runners_cli::runtime::docker::{DockerBackend, DockerConfig, DockerLimits};
-use runners_cli::runtime::fake::{FakeClock, MemoryLog};
+use marshal_cli::runtime::docker::{DockerBackend, DockerConfig, DockerLimits};
+use marshal_cli::runtime::fake::{FakeClock, MemoryLog};
 
 use super::{BINARY, TempDir};
 
