@@ -1,0 +1,223 @@
+name: Release Build
+
+# builds the CLI's release binaries, for Windows x64 and macOS arm64, and assembles
+# them with SHA256SUMS into one artifact. merge-checks.yaml calls it on every pull
+# request and every push to main, as a dry run that publishes nothing, and
+# release.yaml calls it on a `v*` tag before its publish job. it holds
+# `contents: read` and nothing else, and it has no publish or attest step, so a pull
+# request that edits it gains no write scope. no cache action: a tag run could
+# restore a cache saved from another ref. the controls are recorded in
+# docs/conventions/security.md.
+#
+# `concurrency` is declared by the callers only: inside a called workflow,
+# `github.workflow` is the caller's name.
+
+on:
+  workflow_call:
+    outputs:
+      artifact:
+        description: The artifact holding the two binaries and SHA256SUMS
+        value: ${{ jobs.assemble.outputs.artifact }}
+
+permissions:
+  contents: read
+
+jobs:
+  # each target builds natively on its hosted runner, so the leg checks the
+  # compiler's host target first: a change of runner image fails the build instead
+  # of shipping the wrong architecture.
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: windows-x64
+            host: x86_64-pc-windows-msvc
+            suffix: .exe
+            sha256-output: windows_x64_sha256
+          - os: macos-latest
+            target: macos-arm64
+            host: aarch64-apple-darwin
+            suffix: ""
+            sha256-output: macos_arm64_sha256
+    # a matrix leg sets only its own hash output, so the two legs do not overwrite
+    # each other's.
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      windows_x64_sha256: ${{ steps.hash.outputs.windows_x64_sha256 }}
+      macos_arm64_sha256: ${{ steps.hash.outputs.macos_arm64_sha256 }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: cli
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install Pinned Rust Toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: Check The Compiler's Host Target
+        env:
+          EXPECTED_HOST: ${{ matrix.host }}
+        run: |
+          host="$(rustc -vV | tr -d '\r' | sed -n 's/^host: //p')"
+          if [[ "$host" != "$EXPECTED_HOST" ]]; then
+            echo "error: rustc's host target is '${host}', not ${EXPECTED_HOST}; this runner image builds the wrong architecture" >&2
+            exit 1
+          fi
+          echo "rustc's host target is ${host}."
+      - name: Read The Package Version
+        id: version
+        run: |
+          version="$(bash ../.github/scripts/package-version.sh < Cargo.toml)"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "cli/Cargo.toml's version is ${version}."
+      # the same release-profile tests the rust job in merge-checks.yaml runs on
+      # Linux, here on the target itself. MARSHAL_EXPECT_RELEASE makes each test fail
+      # if it was built in the wrong profile.
+      - name: Test That A Release Build Ignores The Debug-Only Overrides
+        env:
+          MARSHAL_EXPECT_RELEASE: "1"
+        run: cargo test --locked --release --test base_address --test instance_roots --test build_definition
+      # `cargo test` above also builds the fake-docker and instance-helper helpers
+      # into target/release; only the binary named here is copied out and uploaded.
+      - name: Build The Release Binary
+        run: cargo build --locked --release --bin marshal
+      - name: Check The Binary's Version
+        env:
+          SUFFIX: ${{ matrix.suffix }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          printed="$("target/release/marshal${SUFFIX}" --version | tr -d '\r')"
+          if [[ "$printed" != "marshal ${VERSION}" ]]; then
+            echo "error: the binary's --version printed '${printed}', not 'marshal ${VERSION}'" >&2
+            exit 1
+          fi
+          echo "The binary prints '${printed}'."
+      - name: Name The Binary For The Release
+        id: asset
+        env:
+          SUFFIX: ${{ matrix.suffix }}
+          TARGET: ${{ matrix.target }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          asset="marshal-${VERSION}-${TARGET}${SUFFIX}"
+          mkdir ../dist
+          cp "target/release/marshal${SUFFIX}" "../dist/${asset}"
+          echo "name=${asset}" >> "$GITHUB_OUTPUT"
+      # the binary links the C runtime statically (cli/.cargo/config.toml), so it
+      # must import no vcruntime DLL, which a host without the Visual C++
+      # redistributable lacks. dumpbin comes with the MSVC tools the build itself
+      # links with, and vswhere, at its fixed Visual Studio Installer path, finds
+      # it. the check fails unless dumpbin printed a dependency list that names
+      # KERNEL32.dll, so a run that read nothing cannot pass.
+      - name: Check That The Windows Binary Imports No vcruntime DLL
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          ASSET: ${{ steps.asset.outputs.name }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $dumpbin = @(& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe') | Select-Object -First 1
+          if ($LASTEXITCODE -ne 0 -or -not $dumpbin) { throw 'vswhere found no dumpbin.exe for x64.' }
+          $report = @(& $dumpbin /nologo /dependents (Join-Path '..\dist' $env:ASSET))
+          if ($LASTEXITCODE -ne 0) { throw "dumpbin exited $LASTEXITCODE." }
+          $report | Write-Host
+          if (-not ($report -match 'Image has the following dependencies')) { throw 'dumpbin printed no dependency list.' }
+          if (-not ($report -match '^\s*KERNEL32\.dll\s*$')) { throw 'dumpbin listed no KERNEL32.dll, so its output cannot be trusted.' }
+          $runtime = @($report -match 'vcruntime')
+          if ($runtime.Count -gt 0) { throw "The binary imports a vcruntime DLL: $($runtime -join ', ')" }
+          Write-Host 'The binary imports no vcruntime DLL.'
+      # sha256sum where the runner has it, as Git Bash on Windows does, and shasum
+      # on macOS, which may lack sha256sum.
+      - name: Hash The Binary
+        id: hash
+        working-directory: dist
+        env:
+          ASSET: ${{ steps.asset.outputs.name }}
+          HASH_OUTPUT: ${{ matrix.sha256-output }}
+        run: |
+          if command -v sha256sum >/dev/null 2>&1; then
+            line="$(sha256sum "$ASSET")"
+          else
+            line="$(shasum -a 256 "$ASSET")"
+          fi
+          hash="${line%% *}"
+          if [[ ! "$hash" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "error: '${line}' does not start with a SHA-256" >&2
+            exit 1
+          fi
+          echo "${HASH_OUTPUT}=${hash}" >> "$GITHUB_OUTPUT"
+          echo "${hash}  ${ASSET}"
+      - name: Upload The Binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: marshal-${{ matrix.target }}
+          path: dist/${{ steps.asset.outputs.name }}
+          if-no-files-found: error
+
+  # the hashes are handed over as job outputs, apart from the artifacts, so a file
+  # that changed between the build and here fails the check.
+  assemble:
+    name: Assemble The Release Files
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      artifact: marshal-release
+    steps:
+      - name: Download The Windows Binary
+        uses: actions/download-artifact@v8
+        with:
+          name: marshal-windows-x64
+          path: dist
+      - name: Download The macOS Binary
+        uses: actions/download-artifact@v8
+        with:
+          name: marshal-macos-arm64
+          path: dist
+      - name: Check The Hashes And Write SHA256SUMS
+        id: files
+        working-directory: dist
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          WINDOWS_SHA256: ${{ needs.build.outputs.windows_x64_sha256 }}
+          MACOS_SHA256: ${{ needs.build.outputs.macos_arm64_sha256 }}
+        run: |
+          windows="marshal-${VERSION}-windows-x64.exe"
+          macos="marshal-${VERSION}-macos-arm64"
+          expected="$(printf '%s\n' "$macos" "$windows" | LC_ALL=C sort)"
+          present="$(find . -mindepth 1 -maxdepth 1 -printf '%P\n' | LC_ALL=C sort)"
+          if [[ "$present" != "$expected" ]]; then
+            echo "error: the downloaded files are not exactly ${macos} and ${windows}:" >&2
+            echo "$present" >&2
+            exit 1
+          fi
+          for hash in "$WINDOWS_SHA256" "$MACOS_SHA256"; do
+            if [[ ! "$hash" =~ ^[0-9a-f]{64}$ ]]; then
+              echo "error: a build leg handed over '${hash}', which is not a SHA-256" >&2
+              exit 1
+            fi
+          done
+          printf '%s  %s\n' "$MACOS_SHA256" "$macos" "$WINDOWS_SHA256" "$windows" > SHA256SUMS
+          sha256sum --check --strict SHA256SUMS
+          cat SHA256SUMS
+          {
+            echo "windows=${windows}"
+            echo "macos=${macos}"
+          } >> "$GITHUB_OUTPUT"
+      - name: Upload The Release Files
+        uses: actions/upload-artifact@v7
+        with:
+          name: marshal-release
+          path: |
+            dist/${{ steps.files.outputs.windows }}
+            dist/${{ steps.files.outputs.macos }}
+            dist/SHA256SUMS
+          if-no-files-found: error

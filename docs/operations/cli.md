@@ -8,7 +8,8 @@ registration, CPU placement, and the slot loop), the instance layer that keeps
 and the control channel), the image contract every runner image declares and the
 check of it, running a host with `build`, `start`, `stop`, `restart`, `status`, and
 `diagnostics`, the diagnostic containers a diagnostics-enabled pool runs and their
-export, the toolchain and the gates that cover it, and why its name is fixed. The
+export, the toolchain and the gates that cover it, how a release is built and
+installed, and why its name is fixed. The
 binary is `marshal`. The PowerShell supervisor and rebuild task
 under [`hosts/windows-docker-desktop/`](../../hosts/windows-docker-desktop) still
 run the axpc host until Phase 4b, and the CLI must not be started beside them; see
@@ -24,6 +25,7 @@ marshal stop
 marshal restart
 marshal status
 marshal diagnostics
+marshal --version
 ```
 
 `validate` reads the configuration file and the marker files above it, and writes
@@ -1400,12 +1402,273 @@ Tests Cover says what each shows. The `fake-docker` and `instance-helper` helper
 further binaries in the package (`cli/helpers/`, `test = false`) that only the tests
 and those steps run, and `default-run = "marshal"` keeps `cargo run` on the CLI.
 `instance-helper` does nothing in a release build. A release MUST NOT ship either
-helper; the release phase that packages the binary has to name `marshal` alone. Tests find fixtures relative to the
+helper; [Releases](#releases) says how the release build keeps them out. Tests find fixtures relative to the
 crate's manifest directory, and the checkout-rule tests build a temporary directory
 with the marker files at test time. The advisory check, `cargo deny --locked check advisories`,
 fetches the RustSec database, so it runs in
 [`rust-advisories.yaml`](../../.github/workflows/rust-advisories.yaml) and not in
 `mise run check`; see [Development Workflow](./development-workflow.md).
+
+## Releases
+
+A release is a `v<version>` tag on the default branch, where `<version>` is the
+`version` in `cli/Cargo.toml` at the tagged commit, such as `v0.1.0`. The release
+check refuses a tag that is not `vMAJOR.MINOR.PATCH`, since a release is never a
+prerelease or a build-metadata version, and releases are not marked as prereleases.
+[Development Workflow](./development-workflow.md) gives the maintainer's steps for
+cutting one, and
+[Security](../conventions/security.md#a-release-is-published-only-from-an-approved-tag)
+records the controls around it. `marshal --version` prints `marshal <version>`, from
+the same field.
+
+Each release carries three files, and nothing else:
+
+| File                                | Built on         | Compiler host target     |
+| ----------------------------------- | ---------------- | ------------------------ |
+| `marshal-<version>-windows-x64.exe` | `windows-latest` | `x86_64-pc-windows-msvc` |
+| `marshal-<version>-macos-arm64`     | `macos-latest`   | `aarch64-apple-darwin`   |
+| `SHA256SUMS`                        | `ubuntu-latest`  | -                        |
+
+The files are bare binaries, not archives, since there is one file per target.
+`SHA256SUMS` is in the `sha256sum` format, one line per binary. The binaries are
+not code-signed or notarised. Nothing modifies a binary after linking, so the macOS
+binary keeps the ad-hoc signature its linker gave it.
+
+[`release-build.yaml`](../../.github/workflows/release-build.yaml) builds them. It
+is a reusable workflow with `contents: read` and no publish or attest step. Each
+target builds natively on its hosted runner, with no cross-compilation, in one leg
+that:
+
+1. fails unless `rustc`'s host target is the one in the table, so a change of
+   runner image fails the build instead of shipping the wrong architecture;
+2. runs the base-address, instance-roots, and build-definition tests with
+   `--release` and `MARSHAL_EXPECT_RELEASE=1`, the same tests the Linux `rust` job
+   runs, on the target itself;
+3. builds `cargo build --locked --release --bin marshal`;
+4. fails unless the binary's `--version` prints `marshal <version>`, with the
+   version read from `cli/Cargo.toml` by `.github/scripts/package-version.sh`;
+5. copies the binary to its release name, and on Windows fails if it imports a
+   `vcruntime` DLL;
+6. hands its SHA-256 to the next job as a job output, and uploads that one file by
+   name.
+
+An assemble job then downloads both binaries, fails unless they are exactly the two
+expected files and each SHA-256 matches the handed-over value, writes
+`SHA256SUMS`, and uploads the three files as one artifact, `marshal-release`.
+
+The Windows binary links the C runtime statically: `+crt-static` is set for
+`x86_64-pc-windows-msvc` in [`cli/.cargo/config.toml`](../../cli/.cargo/config.toml),
+so `marshal.exe` needs no Visual C++ redistributable on the host. It is set there,
+not in a workflow, so the debug tests, the release-profile tests, and the release
+build are compiled the same way. The import check runs `dumpbin /dependents`, found
+through `vswhere` among the MSVC tools the build links with. It fails unless
+`dumpbin` listed the binary's dependencies, `KERNEL32.dll` among them, so a run that
+read nothing cannot pass.
+
+A release never ships `fake-docker` or `instance-helper`. The release-profile tests
+build both into `target/release`, so the build names `marshal` alone and copies only
+that file out, each leg's artifact holds that one file, and the assemble and
+publish jobs refuse a set of files that holds anything else.
+
+[`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) calls the build
+workflow on every pull request and every push to the default branch, as the dry
+run: both legs and the assemble job run, and the `marshal-release` artifact is
+uploaded to the run, but nothing is attested or published.
+[`release.yaml`](../../.github/workflows/release.yaml) runs only on a `v*` tag:
+
+1. A check job runs `.github/scripts/check-release-tag.sh`, which fails, naming the
+   cause, unless the tag is `v` followed by `cli/Cargo.toml`'s version at the tagged
+   commit and that commit is on the default branch. `mise run test:release-tag`
+   tests it against a temporary git repository.
+2. The build workflow builds and assembles the files.
+3. A publish job in the protected `release` Environment waits for the maintainer's
+   approval. It then downloads the artifact, fails unless it holds exactly the
+   tag's three files and `sha256sum --check` passes, attests the build provenance
+   of the two binaries with `actions/attest`, and creates the release with
+   `gh release create --verify-tag --generate-notes`.
+
+The runner image's definition is embedded in the binary (see [Build](#build)), so a
+change to it, such as a runner bump, reaches a host only through a new release and
+an update.
+
+## Installing, Updating and Rolling Back
+
+`marshal` is installed from a release, never built on the host. The procedure
+accepts a binary only when its checksum matches `SHA256SUMS`, the tag's commit is
+on the default branch, and its attestation verifies against `release.yaml`, the
+exact tag, and that commit. It needs `gh` 2.102 or later, signed in
+(`gh auth status`).
+
+Until Phase 4b, the binary MUST NOT be started on axpc beside the PowerShell
+supervisor; see [Windows Runner Host](./windows-runner-host.md). Once axpc runs the
+CLI, it can roll back to the PowerShell path by stopping the CLI and registering
+its Task Scheduler tasks again, as
+[Registering the Scheduled Tasks](./windows-runner-host.md#registering-the-scheduled-tasks)
+describes.
+
+| OS      | Install path                                  |
+| ------- | --------------------------------------------- |
+| macOS   | `~/.local/bin/marshal`                        |
+| Windows | `%LOCALAPPDATA%\Programs\marshal\marshal.exe` |
+
+The operator adds the directory to the user's `PATH`. Updating is the procedure
+with a newer tag, and rolling back is the procedure with the previous tag; the tag
+ruleset keeps an old tag from moving.
+
+Paste a block below whole into one shell. A check that fails prints its cause after
+`refused:` and ends the block there without closing the shell, so nothing after it
+runs, and a refusal before the rename in step 6 leaves the install path as it was.
+The block's variables and working directory do not outlive it, so each run starts
+clean.
+
+1. Download the binary and `SHA256SUMS`.
+2. Refuse unless the binary's SHA-256 matches its line in `SHA256SUMS`.
+3. Resolve the commit the tag points to, dereferencing an annotated tag.
+4. Refuse unless the compare API reports that commit `identical` to or `behind`
+   the default branch, which means it is on it.
+5. Refuse unless `gh attestation verify` passes, pinned to `release.yaml`, the tag,
+   and the commit from step 3, with self-hosted runners denied. An attestation made
+   by any other workflow, ref, or commit fails here.
+6. Stop the instance if one is running, refusing if it does not stop, then replace
+   the binary in the install directory. On macOS, remove the quarantine attribute
+   if present.
+7. Refuse unless the installed binary's `--version` prints `marshal <version>`.
+
+On macOS, in bash or zsh. The block has no comment lines, because an interactive zsh
+runs a line that starts with `#` as a command unless `interactive_comments` is set:
+
+```bash
+(
+  set -euo pipefail
+  refuse() { echo "refused: $*" >&2; exit 1; }
+  version=0.1.0
+  asset="marshal-${version}-macos-arm64"
+  work="$(mktemp -d)" || refuse "no temporary directory"
+  cd "$work"
+
+  gh release download "v${version}" --repo axross/runners --pattern "$asset" --pattern SHA256SUMS \
+    || refuse "the release files could not be downloaded"
+
+  awk -v file="$asset" '$2 == file' SHA256SUMS >"${asset}.sha256"
+  { [ -s "${asset}.sha256" ] && shasum -a 256 -c "${asset}.sha256"; } \
+    || refuse "${asset} does not match SHA256SUMS"
+
+  ref="$(gh api "repos/axross/runners/git/ref/tags/v${version}" --jq '.object.type + " " + .object.sha')" \
+    || refuse "the tag v${version} could not be read"
+  read -r type sha <<<"$ref"
+  if [ "$type" = tag ]; then
+    ref="$(gh api "repos/axross/runners/git/tags/${sha}" --jq '.object.type + " " + .object.sha')" \
+      || refuse "the annotated tag v${version} could not be read"
+    read -r type sha <<<"$ref"
+  fi
+  [ "$type" = commit ] || refuse "v${version} does not resolve to a commit"
+  commit="$sha"
+
+  comparison="$(gh api "repos/axross/runners/compare/main...${commit}" --jq .status)" \
+    || refuse "${commit} could not be compared with main"
+  case "$comparison" in
+    identical | behind) echo "${commit} is on main." ;;
+    *) refuse "${commit} is not on main (${comparison})" ;;
+  esac
+
+  gh attestation verify "$asset" --repo axross/runners \
+    --signer-workflow axross/runners/.github/workflows/release.yaml \
+    --source-ref "refs/tags/v${version}" --source-digest "$commit" \
+    --deny-self-hosted-runners \
+    || refuse "the attestation does not verify"
+
+  if [ -x ~/.local/bin/marshal ]; then
+    stopped="$(~/.local/bin/marshal stop 2>&1)" || [ "$stopped" = "No instance is running." ] \
+      || refuse "the instance did not stop: ${stopped}"
+  fi
+  { mkdir -p ~/.local/bin && cp "$asset" ~/.local/bin/marshal.new \
+    && chmod 0755 ~/.local/bin/marshal.new && mv -f ~/.local/bin/marshal.new ~/.local/bin/marshal; } \
+    || refuse "the binary could not be installed in ~/.local/bin"
+  if xattr -p com.apple.quarantine ~/.local/bin/marshal >/dev/null 2>&1; then
+    xattr -d com.apple.quarantine ~/.local/bin/marshal || refuse "the quarantine attribute could not be removed"
+  fi
+
+  installed="$(~/.local/bin/marshal --version)" || refuse "the installed binary does not run"
+  [ "$installed" = "marshal ${version}" ] || refuse "the installed binary is not marshal ${version}: ${installed}"
+  echo "Installed marshal ${version} at ~/.local/bin/marshal."
+)
+```
+
+On Windows, in PowerShell:
+
+```powershell
+& {
+  $ErrorActionPreference = 'Stop'
+  function Refuse([string]$Why) { throw "refused: $Why" }
+  $version = '0.1.0'
+  $asset = "marshal-$version-windows-x64.exe"
+  try {
+    $work = New-Item -ItemType Directory -Path (Join-Path ([IO.Path]::GetTempPath()) ([IO.Path]::GetRandomFileName()))
+  } catch { Refuse "no temporary directory: $_" }
+  $file = Join-Path $work $asset
+  $sums = Join-Path $work 'SHA256SUMS'
+
+  gh release download "v$version" --repo axross/runners --pattern $asset --pattern SHA256SUMS --dir $work
+  if ($LASTEXITCODE -ne 0) { Refuse 'the release files could not be downloaded' }
+
+  try {
+    $listed = @(Get-Content -LiteralPath $sums | Where-Object { ($_ -split '\s+')[1] -eq $asset })
+    $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash.ToLowerInvariant()
+  } catch { Refuse "$asset or SHA256SUMS could not be read: $_" }
+  if ($listed.Count -ne 1 -or ($listed[0] -split '\s+')[0] -ne $actual) { Refuse "$asset does not match SHA256SUMS" }
+
+  $ref = gh api "repos/axross/runners/git/ref/tags/v$version"
+  if ($LASTEXITCODE -ne 0) { Refuse "the tag v$version could not be read" }
+  $object = ($ref | ConvertFrom-Json).object
+  if ($object.type -eq 'tag') {
+    $ref = gh api "repos/axross/runners/git/tags/$($object.sha)"
+    if ($LASTEXITCODE -ne 0) { Refuse "the annotated tag v$version could not be read" }
+    $object = ($ref | ConvertFrom-Json).object
+  }
+  if ($object.type -ne 'commit') { Refuse "v$version does not resolve to a commit" }
+  $commit = $object.sha
+
+  $comparison = gh api "repos/axross/runners/compare/main...$commit" --jq .status
+  if ($LASTEXITCODE -ne 0) { Refuse "$commit could not be compared with main" }
+  if ($comparison -notin 'identical', 'behind') { Refuse "$commit is not on main ($comparison)" }
+  Write-Host "$commit is on main."
+
+  gh attestation verify $file --repo axross/runners `
+    --signer-workflow axross/runners/.github/workflows/release.yaml `
+    --source-ref "refs/tags/v$version" --source-digest $commit `
+    --deny-self-hosted-runners
+  if ($LASTEXITCODE -ne 0) { Refuse 'the attestation does not verify' }
+
+  $directory = Join-Path $env:LOCALAPPDATA 'Programs\marshal'
+  $target = Join-Path $directory 'marshal.exe'
+  if (Test-Path -LiteralPath $target) {
+    $stopped = & {
+      $ErrorActionPreference = 'Continue'
+      (& $target stop 2>&1 | ForEach-Object { "$_" }) -join "`n"
+    }
+    if ($LASTEXITCODE -ne 0 -and $stopped.Trim() -ne 'No instance is running.') { Refuse "the instance did not stop: $stopped" }
+  }
+  try {
+    New-Item -ItemType Directory -Force -Path $directory | Out-Null
+    Copy-Item -LiteralPath $file -Destination "$target.new" -Force
+    Move-Item -LiteralPath "$target.new" -Destination $target -Force
+  } catch { Refuse "the binary could not be installed in ${directory}: $_" }
+
+  try { $installed = & $target --version } catch { Refuse "the installed binary does not run: $_" }
+  if ($LASTEXITCODE -ne 0 -or "$installed" -ne "marshal $version") { Refuse "the installed binary is not marshal ${version}: $installed" }
+  Write-Host "Installed marshal $version at $target."
+}
+```
+
+The stop runs with `$ErrorActionPreference` at `Continue` because Windows PowerShell 5.1
+turns a native command's redirected standard error into an error, and `Stop` would end
+the block at the "No instance is running." line.
+
+Windows cannot replace an executable that is running, so step 6 also fails while an
+instance still runs from the install path. A binary fetched with
+`gh release download` is assumed to carry no Mark of the Web, and the procedure
+does not clear one; Phase 4b checks that, and whether SmartScreen intervenes, on
+axpc.
 
 ## Dependencies
 

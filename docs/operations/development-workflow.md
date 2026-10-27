@@ -252,7 +252,14 @@ that other user is refused the lock. On Windows a further step has the helper op
 the control pipe and reads the live pipe's security descriptor back with
 PowerShell 7, failing unless it grants the current user alone. Neither step needs a
 new action, permission, or secret. It also runs the host configuration test under Windows
-PowerShell 5.1. A pull request from a fork runs without repository secrets.
+PowerShell 5.1. Its release-build job is the release build's dry run: it calls
+[`release-build.yaml`](../../.github/workflows/release-build.yaml), which builds the
+Windows x64 and macOS arm64 release binaries on their hosted runners, runs the
+release-profile tests on each, checks each binary's `--version` and, on Windows,
+that it imports no `vcruntime` DLL, and uploads the two binaries with `SHA256SUMS`
+as one artifact of the run. It holds `contents: read`, and nothing is attested or
+published; [CLI](./cli.md#releases) describes the build. A pull request from a fork
+runs without repository secrets.
 [`rust-advisories.yaml`](../../.github/workflows/rust-advisories.yaml) checks the
 CLI's locked crates against the RustSec advisory database every week, on manual
 dispatch, and on a pull request that changes `cli/Cargo.lock`, `cli/deny.toml`, or
@@ -371,6 +378,68 @@ A runner bump changes no part of the run contract, so the contract version stays
 When the new runner changes something the run contract relies on, such as a path or
 the user it runs as, [REVIEW.md](../../REVIEW.md) asks for the contract version to
 be raised, as [CLI](./cli.md#the-image-contract) describes.
+
+The CLI embeds the runner image's definition, so a host that runs the CLI builds the
+new runner only once it has a binary built after the bump. After the bump merges,
+the maintainer cuts a release, as Cutting a Release, below, describes, and each such
+host updates to it with the procedure in
+[CLI](./cli.md#installing-updating-and-rolling-back).
+
+## Cutting a Release
+
+A release of the CLI is published by
+[`release.yaml`](../../.github/workflows/release.yaml) from a `v<version>` tag;
+[CLI](./cli.md#releases) describes what it builds, and
+[Security](../conventions/security.md#a-release-is-published-only-from-an-approved-tag)
+records why each control is there. The maintainer takes these steps. The delivery
+grant lets an explicit human instruction cover release, deployment, and settings
+effects, but the release rule in Security is stricter: an agent never pushes a tag,
+creates or changes the tag ruleset or the `release` Environment, or approves a
+deployment, even when the maintainer asks in the session or another agent relays it.
+
+Before the first tag, and before `release.yaml` reaches the default branch, create
+these. A workflow that names a missing Environment creates an unprotected one, and a
+tag pushed before the ruleset exists is unprotected.
+
+1. A tag ruleset, under Settings, Rules, Rulesets:
+   - enforcement active, targeting tags that match `refs/tags/v*`;
+   - the rules "Restrict creations", "Restrict updates", and "Restrict deletions";
+   - the Repository admin role as the only entry in the bypass list.
+2. The `release` Environment, under Settings, Environments:
+   - the maintainer as the required reviewer, with self-review allowed ("Prevent
+     self-review" off);
+   - deployment branches and tags limited to selected ones, with the single tag
+     rule `v*`;
+   - "Allow administrators to bypass configured protection rules" off.
+3. Immutable releases, under Settings, General, Releases, turned on.
+
+Then read the settings back from the API, and record the result where the plan for
+the release names: the ruleset's target, rules, and bypass list; the Environment's
+required reviewer, self-review setting, deployment tag policy, and administrator
+bypass; and that immutable releases are on.
+
+```bash
+gh api repos/axross/runners/rulesets
+gh api repos/axross/runners/rulesets/<ruleset id>
+gh api repos/axross/runners/environments/release
+gh api repos/axross/runners/environments/release/deployment-branch-policies
+gh api repos/axross/runners/immutable-releases
+```
+
+Each release then takes these steps:
+
+1. Bump `version` in `cli/Cargo.toml`, and its entry in `cli/Cargo.lock` with
+   `cargo update --workspace` in `cli/`, in a pull request through the change loop,
+   and merge it. The version is SemVer `X.Y.Z`, and the release is not marked as a
+   prerelease.
+2. Tag the merged commit on the default branch `v<version>` and push the tag. The
+   check job fails unless the tag is `v` followed by that version, the version is
+   a plain `X.Y.Z`, and the commit is on the default branch.
+3. When the build and assemble jobs pass, the publish job waits for approval in the
+   `release` Environment. Approve it.
+4. Check the published release with the procedure in
+   [CLI](./cli.md#installing-updating-and-rolling-back) before installing it on a
+   host.
 
 ## Working Without an Agent
 

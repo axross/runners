@@ -1,0 +1,5 @@
+# Links the C runtime into the Windows binary, so `marshal.exe` needs no Visual C++
+# redistributable on the host. Set here rather than in a workflow so the debug
+# tests, the release-profile tests and the release build are compiled the same way.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

@@ -1,7 +1,8 @@
 # Security
 
 This project's supply-chain and runner-trust conventions: how a `uses:` reference
-under [`.github/`](../../.github) is pinned, what a workflow may be granted, where
+under [`.github/`](../../.github) is pinned, what a workflow may be granted, how a
+release of the CLI is published, where
 a self-hosted runner may and may not run, what a runner's shared storage exposes,
 and what is never committed. It does not cover application-level security, such as
 input validation or the OWASP-style concerns the installed `application-security`
@@ -129,9 +130,11 @@ on a job that runs pull-request-controlled code. `actions/checkout` sets
 API with the checkout's credential. A workflow triggered by `issue_comment` checks
 out the default branch, never the pull request's head, so no code a commenter
 could have introduced runs in a job that holds a secret.
-[`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) and
-[`rust-advisories.yaml`](../../.github/workflows/rust-advisories.yaml) hold only
-`contents: read`. [`claude-review.yaml`](../../.github/workflows/claude-review.yaml)
+[`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml),
+[`rust-advisories.yaml`](../../.github/workflows/rust-advisories.yaml), and
+[`release-build.yaml`](../../.github/workflows/release-build.yaml) hold only
+`contents: read`. [`release.yaml`](../../.github/workflows/release.yaml) grants a
+write scope to its publish job alone; the release record below says which and why. [`claude-review.yaml`](../../.github/workflows/claude-review.yaml)
 holds `contents: read` at the top and, on its one job, `contents: read` plus
 `id-token: write`. It needs no pull request, issue, or check write scope: at the
 pinned version the action exchanges the job's OpenID Connect token for a Claude
@@ -143,6 +146,106 @@ job without re-reading the action at the pinned SHA and recording why.
 An untrusted context value (a comment body, a pull request title, a branch name)
 is passed into a step through an `env:` variable and quoted, never expanded inside
 `run:`. The workflow `if:` expression is not a substitute for that.
+
+## A Release Is Published Only From an Approved Tag
+
+[`release.yaml`](../../.github/workflows/release.yaml) publishes the CLI's release
+binaries, and [`release-build.yaml`](../../.github/workflows/release-build.yaml)
+builds them; [CLI](../operations/cli.md#releases) owns the steps. This is the
+record a change to either workflow, or to the build call in
+[`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml), is checked
+against:
+
+- **A tag is the only trigger.** `release.yaml` runs on `push: tags: ['v*']` and on
+  nothing else: no pull request, dispatch, schedule, or `workflow_run` trigger.
+- **The build is split from the publish.** The build is a reusable workflow that
+  `merge-checks.yaml` calls on every pull request as the dry run and `release.yaml`
+  calls on a tag. On `pull_request` the workflow file comes from the pull request
+  itself, so a job-level `if:` or `environment:` in a workflow a pull request
+  triggers is not a control: the pull request could delete it. The only job with a
+  write scope therefore sits in a workflow no pull request triggers. One release
+  workflow with both a pull request and a tag trigger, guarded by an `if:` on its
+  publish job, was rejected for that reason.
+- **Nothing above `contents: read` outside the publish job.** Each workflow starts
+  from `contents: read`, and every job in `release-build.yaml`, the dry-run call in
+  `merge-checks.yaml`, and the check and build jobs of `release.yaml` hold
+  `contents: read` alone. The publish job holds `contents: write` to create the
+  release, `id-token: write` to request the signing certificate, and
+  `attestations: write` to store the attestation, and nothing else. It needs no
+  `artifact-metadata: write`, which is for storage records in a registry this
+  repository does not use. Neither the build workflow nor `merge-checks.yaml` has a
+  publish or attest step.
+- **The publish job waits in the `release` Environment**, whose protection is
+  listed below. A workflow that names a missing Environment creates an unprotected
+  one, so the Environment exists before `release.yaml` reaches the default branch.
+- **No credential stays in a checkout, and the publish job has none.** Every
+  checkout sets `persist-credentials: false`. The check job fetches the default
+  branch without a credential, since the repository is public. The publish job
+  checks nothing out and runs no file from the repository: it downloads the
+  assembled files, checks them, and runs `actions/attest` and `gh`.
+- **No cache.** Neither release workflow uses a cache action, because a tag run
+  could restore a cache saved from another ref. Each build compiles from
+  `Cargo.lock` with `--locked`.
+- **The tag reaches a script through `env:`**, never expanded into `run:`.
+- **Pins.** `actions/checkout`, `actions/upload-artifact`,
+  `actions/download-artifact`, and `actions/attest` stay on major tags, under
+  [`actions/*` Stays on Major Tags](#actions-stays-on-major-tags). Neither release
+  workflow uses a third-party action.
+- **A tag run is never cancelled.** Only the two calling workflows declare
+  `concurrency`, because inside a called workflow `github.workflow` is the caller's
+  name. `release.yaml`'s group is per tag and does not cancel in progress.
+- **The tag checks are advisory.**
+  [`check-release-tag.sh`](../../.github/scripts/check-release-tag.sh) fails unless
+  the tag is `v` followed by `cli/Cargo.toml`'s version at the tagged commit and that
+  commit is on the default branch. It also fails unless the tag is
+  `vMAJOR.MINOR.PATCH`, since a release is never a prerelease or a build-metadata
+  version. It runs from the tagged commit's own files, so a crafted tag could skip
+  it. It catches mistakes, not attacks.
+
+What protects a release is outside the workflow files:
+
+- Only accounts with push access can push a branch or a tag here, and a tag ruleset
+  restricts creating, moving, and deleting a `v*` tag to the Repository admin role.
+  On this user-owned repository only the maintainer holds that role.
+- The `release` Environment requires the maintainer's approval before the publish
+  job runs, admits deployments from `v*` tags only, and admits no administrator
+  bypass.
+- The install pins `--signer-workflow` to `release.yaml`, `--source-ref` to the
+  tag, and `--source-digest` to the tag's commit, and refuses a commit the compare
+  API does not place on the default branch, so an attestation from any other
+  workflow, ref, or commit is refused; see
+  [CLI](../operations/cli.md#installing-updating-and-rolling-back).
+- A tag created with `GITHUB_TOKEN` starts no workflow run, so no workflow can tag
+  its way into a release.
+- Immutable releases are on for the repository, so a published release's assets
+  cannot be replaced.
+
+The ruleset, the Environment, and immutable releases are repository settings, not
+files here;
+[Cutting a Release](../operations/development-workflow.md#cutting-a-release) gives
+their exact values and the read-back.
+
+An agent never pushes a tag, creates or changes the tag ruleset or the `release`
+Environment, or approves a pending deployment, and never calls the
+deployment-approval API. This rule is stricter than the
+[delivery grant](../operations/development-workflow.md#authorizing-delivery-operations).
+The grant lets an explicit human instruction cover release, deployment, and
+settings effects. These release effects have no such path: an agent never performs
+one, even when the maintainer asks in the session or another agent relays it. Agent
+sessions share the maintainer's GitHub identity, so to GitHub the required reviewer
+and an agent are the same account. It is this rule, not the grant's exclusion, that
+keeps an agent from tagging or approving.
+
+Residual risks, accepted:
+
+- The binaries are not code-signed or notarised, so macOS Gatekeeper and Windows
+  SmartScreen may warn or block. The install removes the macOS quarantine
+  attribute; Phase 4b checks Windows on axpc and reports if SmartScreen intervenes.
+- The required reviewer and the agents are one identity, so the Environment cannot
+  tell them apart; only the rule above, that an agent never approves a deployment,
+  keeps one from doing so.
+- The runner image's definition is embedded in the binary, so a runner bump reaches
+  a host only through a new release and an update.
 
 ## The Review Plugin Marketplace Is Not Pinned (Accepted Risk)
 
