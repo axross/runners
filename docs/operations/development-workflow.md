@@ -391,10 +391,11 @@ A release of the CLI is published by
 [`release.yaml`](../../.github/workflows/release.yaml) from a `v<version>` tag;
 [CLI](./cli.md#releases) describes what it builds, and
 [Security](../conventions/security.md#a-release-is-published-only-from-an-approved-tag)
-records why each control is there. Every step here is the maintainer's: tags,
-rulesets, Environments, repository settings, and approving a deployment are
-release, deployment, and settings effects, which the delivery grant excludes. An
-agent never performs one, even on an instruction relayed by another agent.
+records why each control is there. The maintainer takes these steps. The delivery
+grant lets an explicit human instruction cover release, deployment, and settings
+effects, but the release rule in Security is stricter: an agent never pushes a tag,
+creates or changes the tag ruleset or the `release` Environment, or approves a
+deployment, even when the maintainer asks in the session or another agent relays it.
 
 Before the first tag, and before `release.yaml` reaches the default branch, create
 these. A workflow that names a missing Environment creates an unprotected one, and a

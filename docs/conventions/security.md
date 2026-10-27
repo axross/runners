@@ -223,12 +223,18 @@ What protects a release is outside the workflow files:
 The ruleset, the Environment, and immutable releases are repository settings, not
 files here;
 [Cutting a Release](../operations/development-workflow.md#cutting-a-release) gives
-their exact values and the read-back. Agents never push a tag, create or change a
-ruleset or an Environment, or approve a pending deployment, and never call the
-deployment-approval API. Agent sessions share the maintainer's GitHub identity, so
-to GitHub the required reviewer and an agent are the same account. Only the
-delivery grant's exclusion of release, deployment, and settings effects keeps an
-agent from tagging or approving.
+their exact values and the read-back.
+
+An agent never pushes a tag, creates or changes the tag ruleset or the `release`
+Environment, or approves a pending deployment, and never calls the
+deployment-approval API. This rule is stricter than the
+[delivery grant](../operations/development-workflow.md#authorizing-delivery-operations).
+The grant lets an explicit human instruction cover release, deployment, and
+settings effects. These release effects have no such path: an agent never performs
+one, even when the maintainer asks in the session or another agent relays it. Agent
+sessions share the maintainer's GitHub identity, so to GitHub the required reviewer
+and an agent are the same account. It is this rule, not the grant's exclusion, that
+keeps an agent from tagging or approving.
 
 Residual risks, accepted:
 
@@ -236,8 +242,8 @@ Residual risks, accepted:
   SmartScreen may warn or block. The install removes the macOS quarantine
   attribute; Phase 4b checks Windows on axpc and reports if SmartScreen intervenes.
 - The required reviewer and the agents are one identity, so the Environment cannot
-  tell them apart; only the delivery grant's exclusion keeps an agent from
-  approving a deployment.
+  tell them apart; only the rule above, that an agent never approves a deployment,
+  keeps one from doing so.
 - The runner image's definition is embedded in the binary, so a runner bump reaches
   a host only through a new release and an update.
 
