@@ -1,6 +1,6 @@
-//! Runs the validator over every fixture under `tests/host-configuration/` and checks
-//! it against `expectations.json`, the file the PowerShell test and the parity
-//! harness read too.
+//! runs the validator over every fixture under `tests/host-configuration/` and checks
+//! it against `expectations.json`, which the PowerShell test and the parity harness
+//! read too.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -21,8 +21,6 @@ use marshal_cli::profile::Profile;
 use marshal_cli::summary::plan_summary;
 use marshal_cli::validate::{Failure, validate};
 
-/// One entry of `expectations.json`. Keys are spelled exactly and an unknown key
-/// fails the read, so a typo cannot silently turn a check off.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Expectation {

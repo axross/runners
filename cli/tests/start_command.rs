@@ -1,5 +1,5 @@
-//! `start`, `stop`, `restart` and `status` as real processes, on a test root, with
-//! the fake `docker` as the client `start` runs, and a loopback GitHub stub.
+//! `start`, `stop`, `restart` and `status` as real processes against the fake
+//! `docker` and a loopback GitHub stub.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -18,22 +18,19 @@ use support::host::{Host, JIT, Started, TOKEN, registered, texts};
 use support::stub::{Reply, Stub};
 use support::{TempDir, repository_root};
 
-/// Long enough for a fresh instance to prepare its pool and run its container.
+/// long enough for a fresh instance to prepare its pool and run its container.
 const RUNNING_WITHIN: Duration = Duration::from_secs(20);
 
-/// Starts an instance whose job container holds until it is removed, and waits
-/// until its slot runs the container.
-fn running(host: &Host, stub: &Stub) -> Started {
+fn start_with_held_job_container(host: &Host, stub: &Stub) -> Started {
     host.script("run_mode", "hold");
     let started = host.start(stub);
     wait_for_job(host);
     started
 }
 
-/// Waits, within [`RUNNING_WITHIN`], until the slot runs its container and the
-/// fake engine holds it, and returns the status that showed it. The slot reports
-/// the container before its client starts, so the status alone would race the
-/// fake's record.
+/// waits, within [`RUNNING_WITHIN`], until the slot runs its container and the
+/// fake engine holds it, since the slot reports the container before its client
+/// starts and the status alone would race the fake's record.
 fn wait_for_job(host: &Host) -> String {
     let started = Instant::now();
     let status = host.wait_for_status("running container r-1-", RUNNING_WITHIN);
@@ -48,8 +45,6 @@ fn wait_for_job(host: &Host) -> String {
     status
 }
 
-/// The runner version the embedded Dockerfile declares, which the fake engine's
-/// images carry.
 fn declared_runner_version() -> String {
     declared_label(RUNNER_VERSION_LABEL)
         .expect("the Dockerfile declares no runner version")
@@ -135,8 +130,8 @@ fn with_no_instance_stop_restart_and_status_say_so_and_exit_1() {
     }
 }
 
-/// An `instance-helper` holding the host's lock and serving its channel, in `mode`
-/// `serve` or `mute`. It ends when dropped, which closes its standard input.
+/// an `instance-helper` holding the host's lock and serving its channel in `mode`
+/// (`serve` or `mute`), which ends when dropped and so closes its standard input.
 struct Helper(std::process::Child);
 
 impl Helper {
@@ -240,7 +235,6 @@ fn a_run_keeps_the_token_and_the_jit_config_out_of_every_output_it_writes() {
         "{status}"
     );
 
-    // the secrets did reach the places they belong
     let authorization = stub.requests()[0]
         .header("authorization")
         .unwrap()
@@ -303,7 +297,7 @@ fn at_most_ten_log_files_are_kept() {
         fs::write(logs.join(format!("marshal-{index:017}-1.log")), b"old").unwrap();
     }
     let stub = Stub::start(vec![registered()]);
-    let started = running(&host, &stub);
+    let started = start_with_held_job_container(&host, &stub);
     assert_eq!(host.client(&["stop"]).status.code(), Some(0));
     started.finish(Duration::from_secs(40));
     let kept = host.log_files();
@@ -315,7 +309,7 @@ fn at_most_ten_log_files_are_kept() {
     );
 }
 
-/// An instance with no container ends as soon as it is asked to stop, so its answer
+/// an instance with no container ends as soon as it is asked to stop, so its answer
 /// must reach `stop` before the process exits.
 #[test]
 fn stop_on_an_instance_with_no_container_gets_its_answer_and_exits_0() {
@@ -335,7 +329,7 @@ fn stop_on_an_instance_with_no_container_gets_its_answer_and_exits_0() {
 fn a_start_right_after_a_successful_stop_finds_the_lock_free() {
     let host = Host::new();
     let stub = Stub::start(vec![registered()]);
-    let started = running(&host, &stub);
+    let started = start_with_held_job_container(&host, &stub);
     assert_eq!(host.client(&["stop"]).status.code(), Some(0));
     let invalid = host.root.write("invalid.json", b"{}");
     let next = host
@@ -355,7 +349,7 @@ fn a_start_right_after_a_successful_stop_finds_the_lock_free() {
 fn a_second_start_on_a_running_instance_exits_1_naming_its_state_and_runs_nothing() {
     let host = Host::new();
     let stub = Stub::start(vec![registered()]);
-    let started = running(&host, &stub);
+    let started = start_with_held_job_container(&host, &stub);
     let before = host.invocations().len();
     let second = host
         .command(&["start", "--profile", "axpc", "--config"])
@@ -381,7 +375,7 @@ fn a_second_start_on_a_running_instance_exits_1_naming_its_state_and_runs_nothin
 fn start_resumes_a_stopped_instance_only_with_its_own_path_and_a_valid_configuration() {
     let host = Host::new();
     let stub = Stub::start(vec![registered(), registered()]);
-    let started = running(&host, &stub);
+    let started = start_with_held_job_container(&host, &stub);
     let valid = fs::read(&host.config).unwrap();
     let other = TempDir::new();
     let other_config = other.write("host.json", &valid);
@@ -426,14 +420,12 @@ fn start_resumes_a_stopped_instance_only_with_its_own_path_and_a_valid_configura
     );
 }
 
-/// What `validate` and `start` print when no checkout was found above the file.
 const NO_CHECKOUT_NOTE: &str = "no checkout of this project was found";
 
-/// The configuration path `start` is given, under a checkout in the host's root,
-/// and the `diagnosticDirectory` the test compares with that checkout. On Unix the
-/// path reaches the file through a link out of the checkout, so only a lexical walk
-/// finds the checkout; an axpc directory is a Windows path there, so it is never
-/// inside the checkout and only the note shows the walk.
+/// the configuration path `start` is given, under a checkout in the host's root,
+/// and the `diagnosticDirectory` compared with that checkout; on Unix the path
+/// reaches the file through a link out of the checkout, so only a lexical walk
+/// finds it, and an axpc directory is a Windows path there, never inside it.
 #[cfg(unix)]
 fn under_a_checkout(host: &Host) -> (std::path::PathBuf, String) {
     fs::create_dir_all(host.path("elsewhere")).unwrap();
@@ -444,7 +436,7 @@ fn under_a_checkout(host: &Host) -> (std::path::PathBuf, String) {
     )
 }
 
-/// On Windows the directory lies inside the checkout, so the configuration is
+/// on Windows the directory lies inside the checkout, so the configuration is
 /// invalid whenever the checkout is found.
 #[cfg(windows)]
 fn under_a_checkout(host: &Host) -> (std::path::PathBuf, String) {
@@ -520,7 +512,7 @@ fn a_restart_judges_the_file_at_the_path_start_was_given_as_validate_does() {
 fn stop_ends_within_30_seconds_when_the_containers_ignore_the_grace_period() {
     let host = Host::new();
     let stub = Stub::start(vec![registered()]);
-    let started = running(&host, &stub);
+    let started = start_with_held_job_container(&host, &stub);
     host.script("stop_hangs", "");
     let asked = Instant::now();
     let stop = host.command(&["stop"]).spawn().unwrap();
@@ -575,7 +567,7 @@ mod signals {
         for signal in ["INT", "TERM", "HUP"] {
             let host = Host::new();
             let stub = Stub::start(vec![registered()]);
-            let started = running(&host, &stub);
+            let started = start_with_held_job_container(&host, &stub);
             send_signal(started.pid(), signal);
             let finished = started.finish(Duration::from_secs(30));
             assert_eq!(
@@ -592,7 +584,7 @@ mod signals {
     fn a_second_sigint_goes_straight_to_forced_removal() {
         let host = Host::new();
         let stub = Stub::start(vec![registered()]);
-        let started = running(&host, &stub);
+        let started = start_with_held_job_container(&host, &stub);
         host.script("stop_hangs", "");
         send_signal(started.pid(), "INT");
         host.wait_for_status("state: stopping", Duration::from_secs(5));
@@ -614,14 +606,14 @@ mod signals {
     }
 }
 
-/// Killing `start` outright makes each shim remove its container. Standard error
-/// is shared with the shims, so it closes only when every shim has ended.
+/// killing `start` outright makes each shim remove its container, which standard
+/// error shows by closing only when every shim has ended.
 #[cfg(unix)]
 #[test]
 fn a_killed_start_leaves_each_shim_to_remove_its_container() {
     let host = Host::new();
     let stub = Stub::start(vec![registered()]);
-    let mut started = running(&host, &stub);
+    let mut started = start_with_held_job_container(&host, &stub);
     assert_eq!(job_containers(&host).len(), 1);
     started.kill();
     assert!(
@@ -631,7 +623,7 @@ fn a_killed_start_leaves_each_shim_to_remove_its_container() {
     assert!(job_containers(&host).is_empty(), "{:?}", host.containers());
 }
 
-/// Killing `start` outright ends every child in its Job Object, which the test
+/// killing `start` outright ends every child in its Job Object, which the test
 /// sees through a handle to the job container's client.
 #[cfg(windows)]
 #[test]
@@ -639,7 +631,7 @@ fn a_killed_start_ends_every_child_in_its_job_object() {
     use winsafe::{self as w, co};
     let host = Host::new();
     let stub = Stub::start(vec![registered()]);
-    let mut started = running(&host, &stub);
+    let mut started = start_with_held_job_container(&host, &stub);
     let client =
         w::HPROCESS::OpenProcess(co::PROCESS::SYNCHRONIZE, false, host.job_client_pid()).unwrap();
     started.kill();

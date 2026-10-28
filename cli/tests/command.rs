@@ -1,4 +1,4 @@
-//! The command line, run as the built binary.
+//! the command line, run as the built binary.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -101,7 +101,6 @@ fn a_file_over_the_size_limit_is_rejected_without_being_parsed() {
     let output = run_path(&at_limit, Some("axpc"));
     assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
 
-    // one byte more is refused before parsing
     valid.push(b' ');
     let over = scratch.write("over.json", &valid);
     let output = run_path(&over, Some("axpc"));

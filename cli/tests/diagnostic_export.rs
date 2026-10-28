@@ -1,5 +1,5 @@
-//! Finalising a diagnostic container through the container backend: the exporter
-//! child, this CLI run again, against the fake `docker`, writing into a real sink.
+//! finalising a diagnostic container through the container backend, with the
+//! exporter child (this CLI run again) against the fake `docker` and a real sink.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -31,16 +31,14 @@ const NAME: &str = "d-1-20240305060708009";
 const OTHER: &str = "d-2-20240305060708009";
 const LABEL: &str = "runners.diagnostic-lifecycle=1";
 
-/// The identity the fake `docker` reads back.
-fn readback() -> String {
+fn fake_identity_readback() -> String {
     format!(
         "sha256:{}|1500000000|17179869184|17179869184|150000|100000|0-3|false|0",
         "0".repeat(64)
     )
 }
 
-/// Diagnostic containers the fake engine holds, ended and kept.
-fn kept(fake: &Fake, names: &[&str]) {
+fn fake_holds_ended_diagnostic_containers(fake: &Fake, names: &[&str]) {
     let lines: Vec<String> = names
         .iter()
         .map(|name| format!("{name}\t{LABEL}\texited"))
@@ -48,7 +46,7 @@ fn kept(fake: &Fake, names: &[&str]) {
     fake.script("containers", &lines.join("\n"));
 }
 
-/// A sink private to the user, named without links, as the checks require.
+/// a sink private to the user and named without links, as the checks require.
 fn private_sink(scratch: &TempDir) -> PathBuf {
     let sink = scratch.path().join("sink");
     fs::create_dir(&sink).unwrap();
@@ -79,7 +77,7 @@ fn record(sink: &Path, raw_records: bool) -> DiagnosticRecord {
     }
 }
 
-/// Finalises `name` on a clock that starts now, as the job end does.
+/// finalises `name` on a clock that starts now, as the job end does.
 async fn finalize(fake: &Fake, record: &DiagnosticRecord, name: &str) -> Finalized {
     let retained = fake.backend.retained();
     if !retained.contains(name) {
@@ -89,7 +87,7 @@ async fn finalize(fake: &Fake, record: &DiagnosticRecord, name: &str) -> Finaliz
     diagnostic::finalize(&fake.backend, &claim, Deadlines::from(Instant::now())).await
 }
 
-/// The pool's bundles in the sink, sorted.
+/// the pool's bundles in the sink, sorted.
 fn bundles(sink: &Path) -> Vec<PathBuf> {
     let mut found: Vec<PathBuf> = fs::read_dir(sink)
         .unwrap()
@@ -112,7 +110,6 @@ fn calls_of<'a>(invocations: &'a [Invocation], command: &str) -> Vec<&'a Invocat
         .collect()
 }
 
-/// The number of the first call to the fake `docker` that ran `command`.
 fn call_number(fake: &Fake, command: &str) -> usize {
     fake.invocations()
         .iter()
@@ -120,8 +117,8 @@ fn call_number(fake: &Fake, command: &str) -> usize {
         .unwrap_or_else(|| panic!("docker {command} was never run"))
 }
 
-/// Whether call `number` of the fake `docker` ends within `within`, which the
-/// lock it holds while it lives shows.
+/// whether call `number` of the fake `docker` ends within `within`, seen through
+/// the lock it holds while it lives.
 fn ended_within(fake: &Fake, number: usize, within: Duration) -> bool {
     let alive = fake.dir.path().join(format!("inv-{number:06}.alive"));
     let (ended, wait) = mpsc::channel();
@@ -147,7 +144,7 @@ async fn an_ended_container_yields_one_complete_bundle_and_is_removed() {
     let fake = Fake::exporting();
     let scratch = TempDir::new();
     let sink = private_sink(&scratch);
-    kept(&fake, &[NAME]);
+    fake_holds_ended_diagnostic_containers(&fake, &[NAME]);
     let finalized = finalize(&fake, &record(&sink, false), NAME).await;
     assert_eq!(finalized, complete(1));
     assert!(fake.containers().is_empty(), "the container was removed");
@@ -174,7 +171,7 @@ async fn an_ended_container_yields_one_complete_bundle_and_is_removed() {
     );
     assert_eq!(
         fs::read_to_string(bundle.join("identity.txt")).unwrap(),
-        format!("{IDENTITY_HEADER}\n{}\n", readback())
+        format!("{IDENTITY_HEADER}\n{}\n", fake_identity_readback())
     );
     assert_eq!(
         fs::read_to_string(bundle.join("metrics.txt")).unwrap(),
@@ -205,7 +202,6 @@ async fn an_ended_container_yields_one_complete_bundle_and_is_removed() {
         calls_of(&invocations, "rm").last().unwrap().arguments,
         ["rm", "-f", NAME]
     );
-    // the exporter's clients carry no registration and run in groups of their own
     for call in inspect.iter().chain(&copy) {
         assert_eq!(call.jit, None);
         #[cfg(unix)]
@@ -220,7 +216,7 @@ async fn raw_records_are_written_only_when_the_record_turns_them_on() {
     let scratch = TempDir::new();
     let sink = private_sink(&scratch);
     fake.script("cp_mode", "raw");
-    kept(&fake, &[NAME]);
+    fake_holds_ended_diagnostic_containers(&fake, &[NAME]);
     assert_eq!(
         finalize(&fake, &record(&sink, true), NAME).await,
         complete(1)
@@ -235,8 +231,7 @@ async fn raw_records_are_written_only_when_the_record_turns_them_on() {
         "raw record\n"
     );
 
-    // with raw records off the same archive is refused, and the container still goes
-    kept(&fake, &[OTHER]);
+    fake_holds_ended_diagnostic_containers(&fake, &[OTHER]);
     let finalized = finalize(&fake, &record(&sink, false), OTHER).await;
     assert_eq!(finalized.export, ExportOutcome::Failed);
     assert!(finalized.removed);
@@ -253,7 +248,7 @@ async fn a_gap_is_a_complete_bundle_without_the_final_observation() {
     let scratch = TempDir::new();
     let sink = private_sink(&scratch);
     fake.script("cp_mode", "gap");
-    kept(&fake, &[NAME]);
+    fake_holds_ended_diagnostic_containers(&fake, &[NAME]);
     let finalized = finalize(&fake, &record(&sink, false), NAME).await;
     assert_eq!(
         finalized,
@@ -273,9 +268,7 @@ async fn a_gap_is_a_complete_bundle_without_the_final_observation() {
     );
 }
 
-/// A failed copy, a refused archive, a full sink, a missing one and, on Unix, one
-/// that is not private: each export fails or is refused, and the container is
-/// removed all the same.
+/// an export that fails or is refused still removes the container.
 #[tokio::test(flavor = "current_thread")]
 async fn the_container_is_removed_whatever_the_export_does() {
     for (case, expected) in [
@@ -300,7 +293,7 @@ async fn the_container_is_removed_whatever_the_export_does() {
             "missing" => sink = sink.join("missing"),
             _ => set_mode(&sink, 0o755),
         }
-        kept(&fake, &[NAME]);
+        fake_holds_ended_diagnostic_containers(&fake, &[NAME]);
         let finalized = finalize(&fake, &record(&sink, false), NAME).await;
         assert_eq!(finalized.export, expected, "{case}");
         assert!(finalized.removed, "{case}");
@@ -325,9 +318,9 @@ async fn the_container_is_removed_whatever_the_export_does() {
     }
 }
 
-/// The PowerShell test's identity cases: the allowlisted readback, fragmented
-/// output, and an unfiltered value, which is refused without being repeated;
-/// output of a kibibyte or more and a failed inspect are refused too.
+/// the PowerShell test's identity cases: the allowlisted readback and fragmented
+/// output are accepted; an unfiltered value, one of a kibibyte or more, and a
+/// failed inspect are refused.
 #[tokio::test(flavor = "current_thread")]
 async fn the_identity_readback_gives_the_powershell_outcomes() {
     let marker = "4f0c3a51b8e24d6f9a7e2c1d0b9a8f7e";
@@ -341,14 +334,14 @@ async fn the_identity_readback_gives_the_powershell_outcomes() {
         let scratch = TempDir::new();
         let sink = private_sink(&scratch);
         fake.script("identity_mode", mode);
-        kept(&fake, &[NAME]);
+        fake_holds_ended_diagnostic_containers(&fake, &[NAME]);
         let finalized = finalize(&fake, &record(&sink, false), NAME).await;
         let bundle = &bundles(&sink)[0];
         if accepted {
             assert_eq!(finalized, complete(1), "{mode}");
             assert_eq!(
                 fs::read_to_string(bundle.join("identity.txt")).unwrap(),
-                format!("{IDENTITY_HEADER}\n{}\n", readback()),
+                format!("{IDENTITY_HEADER}\n{}\n", fake_identity_readback()),
                 "{mode}"
             );
         } else {
@@ -378,7 +371,7 @@ async fn a_failed_removal_is_retried_by_the_next_finalisation_without_a_second_b
     let sink = private_sink(&scratch);
     let record = record(&sink, false);
     fake.script("rm_fails", "");
-    kept(&fake, &[NAME]);
+    fake_holds_ended_diagnostic_containers(&fake, &[NAME]);
     let first = finalize(&fake, &record, NAME).await;
     assert_eq!(
         first,
@@ -409,7 +402,7 @@ async fn a_failed_removal_is_retried_by_the_next_finalisation_without_a_second_b
     assert_eq!(calls_of(&invocations, "rm").len(), 2);
 }
 
-/// Two slots' containers export at once into a sink that holds nine of the pool's
+/// two slots' containers export at once into a sink that holds nine of the pool's
 /// bundles: the admission lock lets one take the tenth, and the other is refused.
 #[tokio::test(flavor = "current_thread")]
 async fn an_eleventh_bundle_is_refused_with_two_slots_exporting_at_once() {
@@ -422,7 +415,7 @@ async fn an_eleventh_bundle_is_refused_with_two_slots_exporting_at_once() {
     // another pool's bundles do not count
     fs::create_dir(sink.join("other-bundle-x")).unwrap();
     let record = record(&sink, false);
-    kept(&fake, &[NAME, OTHER]);
+    fake_holds_ended_diagnostic_containers(&fake, &[NAME, OTHER]);
     let retained = fake.backend.retained();
     retained.adopt(NAME, &record);
     retained.adopt(OTHER, &record);
@@ -477,7 +470,7 @@ async fn a_count_reads_the_pools_bundles_or_gives_none() {
     );
 }
 
-/// A copy that never ends: the export ends at 18 s, its client with it, and the
+/// a copy that never ends: the export ends at 18 s, its client with it, and the
 /// removal follows at once.
 #[tokio::test(flavor = "current_thread")]
 async fn a_stalled_copy_ends_the_export_by_18_seconds_and_its_client_with_it() {
@@ -485,7 +478,7 @@ async fn a_stalled_copy_ends_the_export_by_18_seconds_and_its_client_with_it() {
     let scratch = TempDir::new();
     let sink = private_sink(&scratch);
     fake.script("cp_mode", "hang");
-    kept(&fake, &[NAME]);
+    fake_holds_ended_diagnostic_containers(&fake, &[NAME]);
     let started = Instant::now();
     let finalized = finalize(&fake, &record(&sink, false), NAME).await;
     let took = started.elapsed();
@@ -503,7 +496,7 @@ async fn a_stalled_copy_ends_the_export_by_18_seconds_and_its_client_with_it() {
     assert!(!support::files(bundle).contains(&"complete.txt".to_string()));
 }
 
-/// A copy and a removal that never end: the finalisation ends by 24 s, and every
+/// a copy and a removal that never end: the finalisation ends by 24 s, and every
 /// client it started has ended.
 #[tokio::test(flavor = "current_thread")]
 async fn a_stalled_copy_and_removal_end_the_finalisation_by_24_seconds() {
@@ -512,7 +505,7 @@ async fn a_stalled_copy_and_removal_end_the_finalisation_by_24_seconds() {
     let sink = private_sink(&scratch);
     fake.script("cp_mode", "hang");
     fake.script("rm_hangs", "");
-    kept(&fake, &[NAME]);
+    fake_holds_ended_diagnostic_containers(&fake, &[NAME]);
     let started = Instant::now();
     let finalized = finalize(&fake, &record(&sink, false), NAME).await;
     let took = started.elapsed();
@@ -531,14 +524,14 @@ async fn a_stalled_copy_and_removal_end_the_finalisation_by_24_seconds() {
     }
 }
 
-/// An exporter that ignores its liveness pipe: the pipe closes at 18 s, the child
+/// an exporter that ignores its liveness pipe: the pipe closes at 18 s, the child
 /// is killed a second later, and its end is seen through the lock it held.
 #[tokio::test(flavor = "current_thread")]
 async fn an_exporter_that_overruns_is_killed_a_second_after_its_pipe_closes() {
     let fake = Fake::exporting_with(FAKE_DOCKER);
     let scratch = TempDir::new();
     let sink = private_sink(&scratch);
-    kept(&fake, &[NAME]);
+    fake_holds_ended_diagnostic_containers(&fake, &[NAME]);
     let started = Instant::now();
     let finalized = finalize(&fake, &record(&sink, false), NAME).await;
     let took = started.elapsed();
@@ -567,7 +560,7 @@ async fn an_exporter_that_overruns_is_killed_a_second_after_its_pipe_closes() {
     );
 }
 
-/// The exporter child itself: when its standard input closes, as it does when its
+/// the exporter child itself: when its standard input closes, as it does when its
 /// instance ends however it ends, it kills its client and exits.
 #[test]
 fn an_exporter_whose_pipe_closes_ends_with_its_clients() {
@@ -575,7 +568,7 @@ fn an_exporter_whose_pipe_closes_ends_with_its_clients() {
     let scratch = TempDir::new();
     let sink = private_sink(&scratch);
     fake.script("cp_mode", "hang");
-    kept(&fake, &[NAME]);
+    fake_holds_ended_diagnostic_containers(&fake, &[NAME]);
     let request = ExportRequest {
         pool: "d".to_string(),
         container: Some(NAME.to_string()),
@@ -619,7 +612,7 @@ fn an_exporter_whose_pipe_closes_ends_with_its_clients() {
     );
 }
 
-/// Pool `d`, with diagnostics on into `sink`, and its token in `scratch`.
+/// pool `d`, with diagnostics on into `sink`, and its token in `scratch`.
 fn diagnostic_pool(scratch: &TempDir, sink: &Path) -> marshal_cli::runtime::pool::PoolSpec {
     let config = r#"{"imageName":"actions-runner:local","repositories":[{"owner":"o",
         "repository":"d","name":"d","slots":1,"tokenPath":"C:\\d.token","volumes":[],

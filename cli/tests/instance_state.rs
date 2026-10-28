@@ -1,4 +1,4 @@
-//! The instance's state model, driven through the fake backend, core and source.
+//! the instance's state model, driven through the fake backend, core and source.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,

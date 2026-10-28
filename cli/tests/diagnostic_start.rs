@@ -1,7 +1,6 @@
-//! A diagnostics-enabled pool under `start`, as real processes: the job-end
-//! bundle, the stop, the forced stop and the hard kill, the next `start`, the
-//! `diagnostics` client, and the token and JIT configuration kept out of all of
-//! it. The fake `docker` is the client, and the exporter child is this CLI.
+//! a diagnostics-enabled pool under `start` as real processes: the bundle, the
+//! stops and the kill, the next `start` and the `diagnostics` client, with the
+//! token and JIT configuration kept out of all of it.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -19,12 +18,8 @@ use marshal_cli::diagnostics::exporter::COMPLETE_TEXT;
 use support::host::{Host, JIT, Started, TOKEN, registered, texts};
 use support::stub::{Reply, Stub};
 
-/// Long enough for a fresh instance to prepare its pool and run its container.
 const RUNNING_WITHIN: Duration = Duration::from_secs(20);
 
-/// The sink the configuration names, escaped for JSON, and where it is. On Unix
-/// an axpc path is a relative name, read from the working directory, which is the
-/// host's root.
 #[cfg(unix)]
 fn sink_path(root: &Path) -> (String, PathBuf) {
     (r"C:\\diag".to_string(), root.join(r"C:\diag"))
@@ -36,7 +31,7 @@ fn sink_path(root: &Path) -> (String, PathBuf) {
     (path.to_str().unwrap().replace('\\', r"\\"), path)
 }
 
-/// A host whose pool `r` has diagnostics on, into a sink private to the user.
+/// a host whose pool `r` has diagnostics on, into a sink private to the user.
 fn diagnostic_host() -> (Host, PathBuf) {
     let host = Host::new();
     let (json, sink) = sink_path(host.root.path());
@@ -54,7 +49,7 @@ fn diagnostic_host() -> (Host, PathBuf) {
     (host, sink)
 }
 
-/// Replies for one registration; the next one stalls, so the slot waits there
+/// replies for one registration; the next one stalls, so the slot waits there
 /// for the stop.
 fn one_job() -> Stub {
     Stub::start(vec![registered(), Reply::Stall])
@@ -69,7 +64,6 @@ fn bundles(sink: &Path) -> Vec<PathBuf> {
     found
 }
 
-/// Waits within `within` until `condition` holds.
 fn wait_until(what: &str, within: Duration, mut condition: impl FnMut() -> bool) {
     let started = Instant::now();
     while !condition() {
@@ -78,7 +72,7 @@ fn wait_until(what: &str, within: Duration, mut condition: impl FnMut() -> bool)
     }
 }
 
-/// The job containers the fake engine holds, ended or not.
+/// the job containers the fake engine holds, ended or not.
 fn job_containers(host: &Host) -> Vec<String> {
     host.containers()
         .into_iter()
@@ -86,7 +80,6 @@ fn job_containers(host: &Host) -> Vec<String> {
         .collect()
 }
 
-/// Whether a `docker rm` of a job container ran.
 fn job_removal_tried(host: &Host) -> bool {
     calls_of(host, "rm")
         .iter()
@@ -100,7 +93,6 @@ fn calls_of(host: &Host, command: &str) -> Vec<Vec<String>> {
         .collect()
 }
 
-/// Where pool `d`'s token file is, beside `r`'s.
 fn d_token(host: &Host) -> PathBuf {
     let token = host.json_token().replace(r"\\", r"\");
     host.path(&token.replace("r.token", "d.token"))
@@ -185,9 +177,8 @@ fn an_export_gap_is_a_warning_and_the_container_is_still_removed() {
     assert_eq!(bundles(&sink).len(), 1);
 }
 
-/// A run with the known token and JIT configuration, a job that prints its JIT
-/// configuration, a stop, and `diagnostics`: neither secret reaches a bundle, the
-/// terminal, the log file or an answer.
+/// neither the token nor the JIT configuration, which the job prints, reaches a
+/// bundle, the terminal, the log file or an answer.
 #[test]
 fn the_token_and_jit_configuration_reach_no_bundle_terminal_log_or_answer() {
     let (host, sink) = diagnostic_host();
@@ -219,7 +210,6 @@ fn the_token_and_jit_configuration_reach_no_bundle_terminal_log_or_answer() {
             "text {index} holds a secret:\n{text}"
         );
     }
-    // only the job's own `docker run` was given the JIT configuration
     let calls = host.invocations();
     assert!(!calls.is_empty());
     for (number, words) in calls.iter().enumerate() {
@@ -241,15 +231,14 @@ fn diagnostics_without_an_instance_exits_1() {
     assert!(stderr.contains("No instance is running."), "{stderr}");
 }
 
-/// The job end exports the container but cannot remove it. `diagnostics` fails
-/// while the removal does, then removes it and exits 0, with the pool's counts.
+/// when the job end exports a container but cannot remove it, `diagnostics` fails
+/// while the removal does, then removes it and exits 0 with the pool's counts.
 #[test]
 fn diagnostics_removes_a_container_whose_removal_failed_and_prints_the_counts() {
     let (host, sink) = diagnostic_host();
     host.script("rm_fails", "");
     let stub = one_job();
     let started = host.start(&stub);
-    // the slot holds the container until its finalisation reports the failure
     wait_until("the job end's removal fails", RUNNING_WITHIN, || {
         log_text(&host).contains("it stays retained, and the next finalisation removes it")
     });
@@ -279,9 +268,9 @@ fn diagnostics_removes_a_container_whose_removal_failed_and_prints_the_counts() 
     assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
 }
 
-/// Pool `r` has diagnostics off and a labelled container an earlier run left, so
-/// it is refused and the container is left to the manual recovery; pool `d` runs,
-/// but its sink is gone, so its count is unknown.
+/// pool `r` has diagnostics off and a labelled container an earlier run left, so it
+/// is refused and the container is left to the manual recovery, while pool `d`
+/// runs but its sink is gone, so its count is unknown.
 #[test]
 fn diagnostics_fails_for_a_container_left_to_the_manual_recovery_and_shows_an_unknown_count() {
     let host = Host::new();
@@ -331,9 +320,9 @@ mod signals {
     use super::*;
     use support::host::{send_group_signal, send_signal};
 
-    /// A Ctrl+C in the terminal reaches the whole foreground group, but the exporter
-    /// child runs in a group of its own, so the export it is making goes on while
-    /// the instance stops, and the bundle is complete.
+    /// a Ctrl+C in the terminal reaches the whole foreground group, but the exporter
+    /// child runs in a group of its own, so its export goes on while the instance
+    /// stops and the bundle is complete.
     #[test]
     fn a_first_sigint_during_a_job_end_export_still_yields_a_complete_bundle() {
         let (host, sink) = diagnostic_host();
@@ -355,7 +344,7 @@ mod signals {
         assert!(job_containers(&host).is_empty());
     }
 
-    /// A second SIGINT keeps the running diagnostic container, ended; `start`
+    /// a second SIGINT keeps the running diagnostic container, ended; `start`
     /// exits 1 naming it, and the next `start` exports, removes and reports it.
     #[test]
     fn a_second_sigint_ends_and_keeps_the_container_for_the_next_start() {
@@ -394,9 +383,8 @@ mod signals {
         next_start_finalises(&host, &sink, &name);
     }
 
-    /// Killing `start` outright closes the shim's pipe; in its diagnostic mode the
-    /// shim ends the container with `docker kill` and keeps it. Standard error is
-    /// shared with the shims, so it closes only when every shim has ended.
+    /// killing `start` outright closes the shim's pipe, and in its diagnostic mode
+    /// the shim ends the container with `docker kill` and keeps it.
     #[test]
     fn a_killed_start_leaves_the_diagnostic_container_ended_for_the_next_start() {
         let (host, sink) = diagnostic_host();
@@ -447,10 +435,9 @@ mod signals {
     }
 }
 
-/// The exporter child of a job-end export outlives nothing: killing `start`
-/// ends it with its copy client, through its liveness pipe on Unix and through
-/// the Job Object on Windows. Standard error is shared with the exporter, so it
-/// closes only when the exporter has ended.
+/// killing `start` ends the exporter child of a job-end export with its copy
+/// client, through its liveness pipe on Unix and the Job Object on Windows, and
+/// standard error, which it shares, closes only when the exporter has ended.
 #[test]
 fn an_exporter_whose_instance_is_killed_ends_with_its_clients() {
     let (host, _sink) = diagnostic_host();
@@ -482,9 +469,8 @@ fn an_exporter_whose_instance_is_killed_ends_with_its_clients() {
     );
 }
 
-/// A stop with an ordinary and a diagnostic container whose `docker stop`
-/// ignores the grace period: both columns of the timeline finish, and the stop
-/// ends within 30 s with both removed and the bundle written.
+/// a stop with an ordinary and a diagnostic container whose `docker stop` ignores
+/// the grace period ends within 30 s with both removed and the bundle written.
 #[test]
 fn a_stop_with_diagnostic_and_ordinary_containers_ends_within_30_seconds() {
     let host = Host::new();

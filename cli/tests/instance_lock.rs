@@ -1,6 +1,5 @@
-//! The single-instance lock, within a process and across processes.
-//!
-//! Only debug builds can move the lock's root, so the file is debug-only.
+//! the single-instance lock, within a process and across processes; only debug
+//! builds can move its root, so the file is debug-only.
 #![cfg(debug_assertions)]
 #![allow(
     clippy::unwrap_used,
@@ -22,10 +21,8 @@ use support::TempDir;
 
 const HELPER: &str = env!("CARGO_BIN_EXE_instance-helper");
 
-/// The exit code `instance-helper try` reports when the lock is held.
 const HELD: i32 = 3;
 
-/// A helper process that holds the lock.
 struct Holder {
     process: Child,
     stdin: Option<ChildStdin>,
@@ -66,7 +63,7 @@ impl Holder {
         Self::start(command)
     }
 
-    /// Holds under a umask that removes every permission from group and others.
+    /// holds under a umask that removes every permission from group and others.
     #[cfg(unix)]
     fn hold_under_restrictive_umask(root: &TempDir) -> Self {
         let mut command = Command::new("/bin/sh");
@@ -93,8 +90,8 @@ impl Drop for Holder {
     }
 }
 
-/// Runs the tests of this file one at a time. A process one test spawns holds a
-/// copy of every open descriptor of this process until it calls `exec`, so a lock
+/// runs the tests of this file one at a time, since a process one test spawns holds
+/// a copy of every open descriptor of this process until it calls `exec`, so a lock
 /// another test has just dropped would still read as held.
 fn serial() -> MutexGuard<'static, ()> {
     static SERIAL: Mutex<()> = Mutex::new(());
@@ -150,7 +147,7 @@ fn a_hard_killed_holder_frees_the_lock_at_once_while_its_child_still_runs() {
     let mut holder = Holder::hold(&root, true);
     assert_eq!(InstanceLock::acquire(&roots).unwrap_err(), LockError::Held);
 
-    // The child shares the helper's standard output, so that stream stays open for
+    // the child shares the helper's standard output, so that stream stays open for
     // as long as the child lives, and only then.
     let (finished, ended) = mpsc::channel();
     let mut stdout = holder.stdout.take().unwrap();
@@ -180,7 +177,6 @@ mod unix {
 
     use super::*;
 
-    /// The exit code `instance-helper try` reports when the lock cannot be opened.
     const CANNOT_OPEN: i32 = 4;
 
     fn mode(path: &std::path::Path) -> u32 {
@@ -252,7 +248,7 @@ mod unix {
         );
     }
 
-    /// Acquires on a thread of its own, so an open that waits fails the test
+    /// acquires on a thread of its own, so an open that waits fails the test
     /// instead of hanging it.
     fn acquire_promptly(roots: &Roots) -> Result<InstanceLock, LockError> {
         let (sender, receiver) = mpsc::channel();
