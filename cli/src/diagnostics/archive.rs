@@ -1,68 +1,66 @@
-//! The strict archive subset a diagnostic copy is read through, as the PowerShell
-//! exporter reads it: ustar headers with matching checksums and no prefix, regular
-//! files and the collector's own directory entry only, `metrics.txt` and, with raw
-//! records on, `raw-<n>.log`, each once, within the entry and byte limits. Nothing
-//! is extracted by a path the job chose: an accepted name is a fixed file name.
+//! the strict archive subset a diagnostic copy is read through, as the PowerShell
+//! exporter reads it: ustar regular files named `metrics.txt` and, with raw records
+//! on, `raw-<n>.log`, each once, within the entry and byte limits; nothing is
+//! extracted by a path the job chose, since an accepted name is a fixed file name.
 
 use std::future::Future;
 use std::io;
 
 use tokio::io::{AsyncRead, AsyncReadExt};
 
-/// The most headers read, the end of the archive included.
+/// the most headers read, the end of the archive included.
 pub const MAX_ENTRIES: usize = 132;
 
-/// The largest `metrics.txt`.
+/// the largest `metrics.txt`.
 pub const MAX_METRICS_BYTES: u64 = 8 * 1024 * 1024;
 
-/// The most bytes of every raw file together.
+/// the most bytes of every raw file together.
 pub const MAX_RAW_BYTES: u64 = 32 * 1024 * 1024;
 
-/// The most bytes of a bundle, [`RESERVED_BYTES`] included.
+/// the most bytes of a bundle, [`RESERVED_BYTES`] included.
 pub const MAX_PAYLOAD_BYTES: u64 = 40 * 1024 * 1024;
 
-/// The bytes a bundle keeps for the host's own files.
+/// the bytes a bundle keeps for the host's own files.
 pub const RESERVED_BYTES: u64 = 4096;
 
-/// The collector's metrics file, which every archive must hold.
+/// the collector's metrics file, which every archive must hold.
 pub const METRICS_FILE: &str = "metrics.txt";
 
 const BLOCK: usize = 512;
 
-/// The most bytes copied in one piece.
 const PIECE_BYTES: u64 = 64 * 1024;
 
-/// Why an archive was refused. Files already written stay, as a partial bundle.
+/// why an archive was refused; files already written stay, as a partial bundle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArchiveError {
-    /// The stream ended inside a header or a file.
+    /// the stream ended inside a header or a file.
     Truncated,
-    /// A size is not octal, or the prefix field is used.
+    /// a size is not octal, or the prefix field is used.
     Header,
     Checksum,
-    /// The collector's directory entry has a size.
+    /// the collector's directory entry has a size.
     Directory,
-    /// A link, a device or any other record that is not a regular file.
+    /// a link, a device or any other record that is not a regular file.
     Special,
-    /// A name other than the accepted ones, or a raw file with raw records off.
+    /// a name other than the accepted ones, or a raw file with raw records off.
     Name,
     Duplicate,
-    /// A file is over its limit, or the bundle over its payload.
+    /// a file is over its limit, or the bundle over its payload.
     Budget,
-    /// More than [`MAX_ENTRIES`] headers.
+    /// more than [`MAX_ENTRIES`] headers.
     TooManyEntries,
-    /// The archive ended without `metrics.txt`.
+    /// the archive ended without `metrics.txt`.
     CollectorMissing,
-    /// The sink could not take a file.
+    /// the sink could not take a file.
     Write(io::ErrorKind),
 }
 
-/// Where accepted files go.
+/// where accepted files go.
 pub trait EntrySink {
-    /// Starts the file `name`, which never exists yet.
+    /// starts the file `name`, which never exists yet.
     fn open(&mut self, name: &str) -> impl Future<Output = io::Result<()>>;
 
-    /// Appends to the file last started.
+    /// appends to the file last started.
     fn write(&mut self, bytes: Vec<u8>) -> impl Future<Output = io::Result<()>>;
 }
 
@@ -86,7 +84,7 @@ fn field(header: &[u8], start: usize, length: usize) -> &[u8] {
     header.get(start..start + length).unwrap_or_default()
 }
 
-/// The ASCII octal number in `bytes`, with NULs and spaces trimmed from both ends,
+/// the ASCII octal number in `bytes`, with NULs and spaces trimmed from both ends,
 /// of at most `digits` digits.
 fn octal(bytes: &[u8], digits: usize) -> Option<u64> {
     let text = std::str::from_utf8(bytes).ok()?;
@@ -100,7 +98,7 @@ fn octal(bytes: &[u8], digits: usize) -> Option<u64> {
     u64::from_str_radix(text, 8).ok()
 }
 
-/// A header's name, size and type, once its size, prefix and checksum hold.
+/// a header's name, size and type, once its size, prefix and checksum hold.
 fn parse(header: &[u8]) -> Result<(String, u64, u8), ArchiveError> {
     let size = octal(field(header, 124, 12), 11);
     let prefix_used = field(header, 345, 155).iter().any(|byte| *byte != 0);
@@ -143,12 +141,8 @@ fn is_raw(name: &str) -> bool {
         })
 }
 
-/// Reads the archive on `stream` into `sink`, refusing anything outside the subset.
-/// The caller bounds the time it takes.
-///
-/// # Errors
-///
-/// See [`ArchiveError`].
+/// reads the archive on `stream` into `sink`, refusing anything outside the subset;
+/// the caller bounds the time it takes.
 pub async fn read_archive<R: AsyncRead + Unpin, S: EntrySink>(
     stream: &mut R,
     raw_records: bool,

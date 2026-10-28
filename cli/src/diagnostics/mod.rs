@@ -1,12 +1,7 @@
-//! The exporter: what writes a diagnostic container's bundle into its pool's sink.
-//!
-//! Each export runs in a child process, this CLI run again under a hidden
-//! subcommand, so a hung sink or client can only hold the child, which the
-//! instance ends at the export deadline. The child checks the sink, admits the
-//! bundle within the pool's quota, then writes `identity.txt`, the files of the
-//! collector's archive, and `complete.txt` last, in the PowerShell exporter's
-//! formats. It prints only its admission and the pool's bundle count, and exits
-//! with the PowerShell exporter's codes.
+//! the exporter: what writes a diagnostic container's bundle into its pool's sink,
+//! in a child process (this CLI run again) so a hung sink or client can only hold
+//! the child, which the instance ends at the export deadline; its file formats and
+//! exit codes are the PowerShell exporter's, see `docs/operations/cli.md`.
 
 pub mod archive;
 pub mod exporter;
@@ -19,46 +14,46 @@ use std::time::Duration;
 
 use crate::runtime::backend::ExportOutcome;
 
-/// The hidden subcommand that runs the exporter.
+/// the hidden subcommand that runs the exporter.
 pub const EXPORT_COMMAND: &str = "export";
 
-/// The exit code of a complete bundle, or of a count.
+/// the exit code of a complete bundle, or of a count.
 pub const EXIT_COMPLETE: u8 = 0;
 
-/// The exit code of a failed, refused or unfinished export.
+/// the exit code of a failed, refused or unfinished export.
 pub const EXIT_FAILED: u8 = 1;
 
-/// The exit code of a complete bundle whose final observation is missing.
+/// the exit code of a complete bundle whose final observation is missing.
 pub const EXIT_GAP: u8 = 3;
 
-/// The exit code when the sink already holds the pool's ten bundles.
+/// the exit code when the sink already holds the pool's ten bundles.
 pub const EXIT_SINK_FULL: u8 = 4;
 
-/// The line the exporter prints once it has created the bundle, which lets the
+/// the line the exporter prints once it has created the bundle, which lets the
 /// instance admit the pool's next export.
 pub const ADMITTED: &str = "admitted";
 
-/// The start of the line that gives the pool's bundles in the sink.
+/// the start of the line that gives the pool's bundles in the sink.
 pub const BUNDLES: &str = "bundles ";
 
-/// What one run of the exporter does.
+/// what one run of the exporter does.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExportRequest {
-    /// The pool, whose name starts each of its bundles' names.
+    /// the pool, whose name starts each of its bundles' names.
     pub pool: String,
-    /// The container to export, or `None` to only count the pool's bundles.
+    /// the container to export, or `None` to only count the pool's bundles.
     pub container: Option<String>,
-    /// The sink, as the configuration names it.
+    /// the sink, as the configuration names it.
     pub directory: String,
     pub raw_records: bool,
-    /// The checkout the sink must lie outside, when one was found.
+    /// the checkout the sink must lie outside, when one was found.
     pub checkout: Option<PathBuf>,
-    /// How long the exporter has, counted from its start.
+    /// how long the exporter has, counted from its start.
     pub deadline: Duration,
 }
 
 impl ExportRequest {
-    /// The arguments that run this request with `docker` as the client, after the
+    /// the arguments that run this request with `docker` as the client, after the
     /// program itself.
     #[must_use]
     pub fn arguments(&self, docker: &OsStr) -> Vec<OsString> {
@@ -89,7 +84,7 @@ impl ExportRequest {
     }
 }
 
-/// What an exporter's exit code means; an exporter without one, ended by a signal,
+/// what an exporter's exit code means; an exporter without one, ended by a signal,
 /// failed.
 #[must_use]
 pub fn outcome_of_exit(code: Option<i32>) -> ExportOutcome {
