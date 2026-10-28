@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# No -e: formatting is best effort, and no failure here may block the edit.
+# no -e: formatting is best effort, and no failure here may block the edit.
 set -uo pipefail
 
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
@@ -17,8 +17,8 @@ cd "$PROJECT_DIR" || exit 0
 
 export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
-# Rust is formatted by the pinned rustfmt, run from the crate so rust-toolchain.toml
-# selects it. RUSTUP_AUTO_INSTALL=0 keeps an edit from starting a toolchain download.
+# run from the crate so rust-toolchain.toml selects rustfmt; RUSTUP_AUTO_INSTALL=0
+# keeps an edit from starting a toolchain download.
 case "$FILE_PATH" in
   *.rs)
     command -v cargo >/dev/null 2>&1 || exit 0
