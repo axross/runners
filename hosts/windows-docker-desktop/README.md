@@ -1,13 +1,19 @@
 # Windows with Docker Desktop
 
-Scripts that run ephemeral GitHub Actions runners for several repositories from
-one Windows machine with Docker Desktop. A supervisor reads a machine-local host
-configuration, and for each target repository keeps its slots filled with
-single-job containers built from
+PowerShell scripts that run ephemeral GitHub Actions runners for several
+repositories from one Windows machine with Docker Desktop. A supervisor reads a
+machine-local host configuration, and for each target repository keeps its slots
+filled with single-job containers built from
 [`images/actions-runner/`](../../images/actions-runner/README.md).
-[Windows Runner Host](../../docs/operations/windows-runner-host.md) owns the
-operator procedure: prerequisites, tokens, scheduled tasks, health checks, and
-recovery.
+
+The axpc host does not run these scripts. It runs its pools with the CLI,
+`marshal`, and [Windows Runner Host](../../docs/operations/windows-runner-host.md)
+owns that operator procedure: prerequisites, tokens, health checks, and recovery.
+The scripts and their scheduled tasks stay only as the way back if the CLI
+misbehaves, until they are removed; that document's
+[Rolling Back to the PowerShell Supervisor](../../docs/operations/windows-runner-host.md#rolling-back-to-the-powershell-supervisor)
+section is the only procedure that runs them. The example configuration and the
+shared fixtures serve both.
 
 | File                              | Purpose                                                                                                     |
 | --------------------------------- | ----------------------------------------------------------------------------------------------------------- |
@@ -61,9 +67,10 @@ The image, resource limits, slots, mounts, and diagnostic settings do not change
 
 ## Commands
 
-From an elevated PowerShell prompt for the registration, and any prompt for the
-rest. Before the first command, follow the Allowing the Scripts to Run section of
-[Windows Runner Host](../../docs/operations/windows-runner-host.md).
+These run only during a rollback, from an elevated PowerShell prompt for the
+registration and any prompt for the rest. Before the first command, follow the
+Allowing the Scripts to Run part of the
+[rollback section](../../docs/operations/windows-runner-host.md#rolling-back-to-the-powershell-supervisor).
 
 ```powershell
 .\supervisor.ps1 -ConfigPath C:\path\to\runner-host.json -ValidateOnly
