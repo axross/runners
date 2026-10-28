@@ -241,6 +241,7 @@ function Get-MemoryLimit {
     return [int]$value
 }
 
+# returns the entry's name.
 function Get-EntryName {
     param([Parameter(Mandatory)]$Node, [Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)]$Errors)
 
