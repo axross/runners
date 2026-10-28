@@ -434,24 +434,47 @@ Do these once, before the first dispatch:
 
 ### Each Release
 
-1. Dispatch `release.yaml` on main, from Actions, Release, Run workflow, or with
+1. Before dispatching, check that every commit on main since the last `v*` tag
+   came from a merged pull request:
+
+   ```bash
+   git fetch origin main --tags
+   last="$(git describe --tags --abbrev=0 --match 'v*' origin/main)"
+   for sha in $(git rev-list --first-parent "${last}..origin/main"); do
+     pr="$(gh api "repos/axross/runners/commits/${sha}/pulls" --jq '[.[] | select(.merged_at != null and .base.ref == "main") | "#\(.number)"] | join(" ")')"
+     printf '%s %s\n' "$(git log -1 --format='%h %s' "$sha")" "${pr:-NO MERGED PULL REQUEST}"
+   done
+   ```
+
+   Each line names a commit and the pull request that merged it. A line that ends
+   in `NO MERGED PULL REQUEST` is a commit pushed to main directly, which the
+   ruleset on main does not block. Do not dispatch: find out who pushed it and why.
+   [Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
+   records this as a residual risk of the npm tree's token.
+
+2. Dispatch `release.yaml` on main, from Actions, Release, Run workflow, or with
    `gh workflow run release.yaml --repo axross/runners --ref main`. A dispatch made
-   while another release runs waits for it.
-2. When there is nothing to release, the plan job hands out no version, and the
+   while another release runs waits for it. The `release` concurrency group holds
+   one waiting run, so a later dispatch cancels an earlier one that is still
+   waiting, and only the latest of them runs.
+3. When there is nothing to release, the plan job hands out no version, and the
    other jobs are skipped. The run is green and releases nothing.
-3. After a green run, check that the release exists and carries exactly the two
+4. After a green run, check that the release exists and carries exactly the two
    binaries and `SHA256SUMS`:
 
    ```bash
    gh release view v<version> --repo axross/runners --json isDraft,assets --jq '{isDraft, assets: [.assets[].name]}'
    ```
 
-   A green run can still release nothing. If main moved after the dispatch, the
-   release job logs "The local branch main is behind the remote one, therefore a
-   new version won't be published." and ends without a tag or a release. Dispatch
-   again.
+   A green run can still release nothing. The plan and release jobs both check out
+   the commit main was on at the dispatch, and each checks that main has not moved
+   since. If main moved before the plan job ran, the plan job logs "The local
+   branch main is behind the remote one, therefore a new version won't be
+   published.", hands out no version, and the other jobs are skipped. If main moved
+   after the plan job, the release job logs the same line and ends without a tag or
+   a release. Either way, run step 1 again and dispatch again.
 
-4. Check the release with the procedure in
+5. Check the release with the procedure in
    [CLI](./cli.md#installing-updating-and-rolling-back) before installing it on a
    host.
 
@@ -489,7 +512,8 @@ that subject, so the title decides the release:
 - `build(deps)` releases a patch, through the `releaseRules` in
   [`release/.releaserc.json`](../../release/.releaserc.json). That is the subject
   Dependabot writes for the runner image and the CLI's crates and toolchain, so
-  such a bump reaches hosts in a release.
+  such a bump reaches hosts in a release. Its notes list it under Dependencies,
+  through the notes generator's `presetConfig.types` in the same file.
 - Every other subject releases nothing. That includes `build(deps-dev)`, since
   dev-dependencies are not in the binary, though such a bump can still change a
   crate the binary shares in `Cargo.lock`; the CLI has no dev-dependencies today.

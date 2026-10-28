@@ -104,12 +104,16 @@ every release without adding a signature check. A step that installs the toolcha
 
 The other is the Node that `actions/setup-node` installs in `release.yaml`, at the
 exact version in `mise.toml`. It takes Node from the runner's tool cache or from
-GitHub's own builds, and this repository pins no checksum for it. It is trusted
-under the joint-trust decision in
-[`actions/*` Stays on Major Tags](#actions-stays-on-major-tags): GitHub owns the
-action, the builds, and the runner that runs them. The action receives the job's
-token by default, to fetch GitHub's list of those builds. Any other unpinned
-download remains a finding.
+GitHub's own builds, listed in the `actions/node-versions` manifest, and this
+repository pins no checksum for it. That path is trusted under the joint-trust
+decision in [`actions/*` Stays on Major Tags](#actions-stays-on-major-tags): GitHub
+owns the action, the builds, and the runner that runs them. The action receives the
+job's token by default, to fetch that manifest. When the manifest lacks the version
+or cannot be fetched, `actions/setup-node@v7` falls back to downloading Node from
+nodejs.org, again with no checksum. That path is outside the joint-trust argument,
+since the Node.js project is a separate party, and it is accepted as a residual
+risk of the release workflow, below. Any other unpinned download remains a
+finding.
 
 ## `actions/*` Stays on Major Tags
 
@@ -197,9 +201,10 @@ the record a change to either workflow, to the build call in
   - the release job holds `contents: write`, to push the tag and its note and to
     create the release, and runs the npm tree.
 
-  A job that runs the npm tree can push tags and edit releases, but it cannot mint
-  an attestation, so a binary it substitutes fails `gh attestation verify` at
-  install. One release job with all three scopes, as `parsable/parsable-dev-mcp`
+  A job that runs the npm tree can push tags and edit releases, and its token can
+  fast-forward main, but it cannot mint an attestation, so a binary it substitutes
+  fails `gh attestation verify` at install. A change it pushes to main is another
+  matter, as the residual risks below say. One release job with all three scopes, as `parsable/parsable-dev-mcp`
   has, was rejected: any package in the npm tree could then attest any binary as
   `release.yaml` on `refs/heads/main`. No job needs `artifact-metadata: write`,
   which is for storage records in a registry. `@semantic-release/github`'s comments
@@ -218,9 +223,9 @@ the record a change to either workflow, to the build call in
 - **No credential stays in a checkout.** Every checkout sets
   `persist-credentials: false`. Under GitHub Actions, semantic-release builds an
   `x-access-token:` URL from `GITHUB_TOKEN` for its own git commands.
-- **No cache.** No job uses a cache action, and `actions/setup-node` has no `cache`
-  input and `package-manager-cache: false`, because a release run could restore a
-  cache that another ref saved. Each build compiles from `Cargo.lock` with
+- **No cache.** No job uses a cache action, and `actions/setup-node` is given no
+  `cache` input and `package-manager-cache: false`, because a release run could
+  restore a cache that another ref saved. Each build compiles from `Cargo.lock` with
   `--locked`, and `npm ci` installs from `release/package-lock.json`.
 - **Context values reach a script through `env:`**, never expanded into `run:`.
 - **Pins.** `actions/checkout`, `actions/setup-node`, `actions/upload-artifact`,
@@ -289,6 +294,17 @@ Residual risks, accepted:
   published releases; and push to any branch that no rule protects. It cannot mint
   an attestation, so a binary it substitutes fails `gh attestation verify` at
   install. It can deny a release, or publish one whose binaries hosts then refuse.
+- **The npm tree can push to main.** The ruleset on main blocks only deleting the
+  branch and pushes that are not fast-forwards. The plan and release jobs'
+  `GITHUB_TOKEN` can therefore fast-forward main with a source change that touches
+  no workflow file, and a push made with that token starts no workflow run. The
+  next dispatch would build that change and attest it as genuine. The control is
+  the check in
+  [Each Release](../operations/development-workflow.md#each-release), before
+  each dispatch, that every commit on main since the last `v*` tag came from a
+  merged pull request. A stronger option is a rule on main that requires a
+  pull request, with only the maintainer able to bypass it. That is the
+  maintainer's choice, and it is not in place.
 - **The attest job attests whatever passes its checks.** `SHA256SUMS` comes from
   the same build artifact, so the check catches transport damage, not a compromised
   build leg.
@@ -302,7 +318,10 @@ Residual risks, accepted:
   Immutable releases lock only the tags of published releases.
 - **A weaker install pin.** `--source-ref refs/heads/main` proves that the build
   ran from main, not from a particular tag. `--source-digest` and the reachability
-  check still tie the binary to one commit on main.
+  check still tie the binary to one commit on main, but no longer to a version.
+  The install therefore checks the downloaded binary's `--version` before it
+  replaces the installed one, so an older genuine binary under a newer version's
+  name is refused without touching the install path.
 - **A green run can release nothing.** If main moves after the dispatch, the
   release job logs that the local branch is behind the remote one and ends without
   a tag or a release, after the binaries are attested.
@@ -316,6 +335,17 @@ Residual risks, accepted:
   [Cutting a Release](../operations/development-workflow.md#cutting-a-release).
 - **Versions follow commit subjects.** A mistitled squash merge releases the wrong
   bump, or none, and no check catches it.
+- **Node can come from nodejs.org.** When the `actions/node-versions` manifest
+  lacks `24.21.0` or cannot be fetched, `actions/setup-node` downloads Node from
+  nodejs.org with no checksum, outside the joint-trust argument in
+  [Pinning Convention](#pinning-convention). That Node runs the npm tree with
+  `contents: write`.
+- **Advisories in an npm that is never loaded.** `npm audit` reports advisories,
+  undici (high) and ip-address (moderate), only in the npm CLI that
+  `@semantic-release/npm` bundles. That plugin is installed as a hard dependency of
+  semantic-release but never loaded, because `release/.releaserc.json` replaces the
+  plugin list. No CI job audits `release/`; Dependabot's `npm` entry covers
+  `/release` for version updates.
 - The binaries are not code-signed or notarised, so macOS Gatekeeper and Windows
   SmartScreen may warn or block. The install removes the macOS quarantine
   attribute; Phase 4b checks Windows on axpc and reports if SmartScreen intervenes.
@@ -372,8 +402,9 @@ The controls that remain are these, and none of them pins the command:
   unprivileged user namespaces for the job's ephemeral VM;
 - the least-privilege job permissions described above;
 - the author-association gate below, which limits who can start a run;
-- a ruleset blocking direct pushes to the default branch, which the maintainer is
-  adding and which is outside this repository's files;
+- the default branch's ruleset, outside this repository's files, which blocks
+  deleting the branch and pushes that are not fast-forwards, but not a direct
+  fast-forward push;
 - the vendor's own trust: a change to that repository's default branch is made by
   the organization that also supplies the action and the model.
 
