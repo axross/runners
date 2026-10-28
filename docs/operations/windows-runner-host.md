@@ -874,9 +874,11 @@ binary embeds the image definition:
 
 1. Merge the Dependabot pull request that bumps the `FROM` line in
    `images/actions-runner/Dockerfile`, with the edits it needs by hand; see
-   [Development Workflow](./development-workflow.md#bumping-the-runner).
-2. The maintainer cuts a release, as
-   [Cutting a Release](./development-workflow.md#cutting-a-release) describes.
+   [Development Workflow](./development-workflow.md#bumping-the-runner). Keep its
+   `build(deps)` title when merging: it releases a patch, as
+   [Version Rules](./development-workflow.md#version-rules) describes.
+2. The maintainer dispatches `release.yaml` on main, as
+   [Each Release](./development-workflow.md#each-release) describes.
 3. Update `marshal` to that release with the procedure in
    [CLI](./cli.md#installing-updating-and-rolling-back), which stops the instance
    first.
