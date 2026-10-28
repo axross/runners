@@ -517,8 +517,8 @@ that subject, so the title decides the release:
 - Every other subject releases nothing. That includes `build(deps-dev)`, since
   dev-dependencies are not in the binary, though such a bump can still change a
   crate the binary shares in `Cargo.lock`; the CLI has no dev-dependencies today.
-  It also includes Dependabot's `ci(deps)` action bumps and its `chore(deps)` bumps
-  of `release/`.
+  It also includes Dependabot's `ci(deps)` action bumps and its `chore(deps-dev)`
+  bumps of `release/`.
 
 The repository has one version, so a `feat` or `fix` of any scope, such as
 `feat(host)`, raises the CLI's version. No check enforces titles, and a mistitled
