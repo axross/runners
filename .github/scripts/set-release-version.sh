@@ -1,14 +1,11 @@
 #!/usr/bin/env bash
-# Writes a release version over the placeholder in the CLI's Cargo.toml [package]
-# table and in its marshal-cli entry in Cargo.lock. Each release build leg runs it
-# before compiling, so the version exists only in the runner and main keeps the
-# placeholder. It refuses, changing neither file, unless the version is X.Y.Z or
-# X.Y.Z-<prerelease>, each file has exactly one such version line, and that line
-# holds the placeholder. It runs on the BSD tools of macOS and keeps a file's CRLF
-# line endings, as a Windows checkout has them, so it writes through a temporary
-# file rather than `sed -i`.
-#
-# Usage: set-release-version.sh <version> [<cli directory>]
+# writes a release version over the placeholder in the CLI's Cargo.toml
+# [package] table and its marshal-cli entry in Cargo.lock, in the runner only.
+# it refuses unless the version is X.Y.Z or X.Y.Z-<prerelease> and each file
+# has exactly one version line, holding the placeholder. it writes through a
+# temporary file, not `sed -i`, to run on the BSD tools of macOS and keep the
+# CRLF line endings of a Windows checkout. docs/operations/cli.md describes the
+# release build.
 set -euo pipefail
 
 placeholder="0.0.0-dev"
@@ -32,10 +29,10 @@ fi
 work="$(mktemp -d "${TMPDIR:-/tmp}/set-release-version.XXXXXX")"
 trap 'rm -rf -- "$work"' EXIT
 
-# Each of these copies its file to <copy> with the version written over the quoted
-# value on the line it selects, and prints the number of lines it selected and the
-# first selected value, which check compares with the placeholder before either
-# copy is used. A trailing CR is set aside before matching and written back after.
+# each function copies its file to <copy> with the version written over the
+# line it selects, and prints how many lines it selected and the first value,
+# which check compares with the placeholder. a trailing CR is set aside before
+# matching and written back after.
 
 # manifest_version <file> <copy>: the version line in the [package] table.
 manifest_version() {

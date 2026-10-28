@@ -1,15 +1,10 @@
 name: Release Build
 
-# builds the CLI's release binaries, for Windows x64 and macOS arm64, at the version
-# its caller passes, and assembles them with SHA256SUMS into one artifact.
-# merge-checks.yaml calls it on every pull request and every push to main with a
-# dry-run version, publishing nothing, and release.yaml calls it with the version
-# its plan job worked out, before its attest and release jobs. each leg writes the
-# version into cli/Cargo.toml and cli/Cargo.lock in the runner only; main keeps the
-# placeholder. it holds `contents: read` and nothing else, and it has no publish or
-# attest step, so a pull request that edits it gains no write scope. no cache
-# action: a release build could restore a cache that another ref saved. the
-# controls are recorded in docs/conventions/security.md.
+# builds the CLI's release binaries for Windows x64 and macOS arm64 at the
+# version its caller passes, and assembles them with SHA256SUMS into one
+# artifact. merge-checks.yaml calls it as a dry run and release.yaml for a
+# release; it holds `contents: read` and has no publish or attest step. the
+# controls are in docs/conventions/security.md.
 #
 # `concurrency` is declared by the callers only: inside a called workflow,
 # `github.workflow` is the caller's name.
@@ -30,9 +25,6 @@ permissions:
   contents: read
 
 jobs:
-  # each target builds natively on its hosted runner, so the leg checks the
-  # compiler's host target first: a change of runner image fails the build instead
-  # of shipping the wrong architecture.
   build:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
@@ -77,21 +69,14 @@ jobs:
             exit 1
           fi
           echo "rustc's host target is ${host}."
-      # before anything compiles, so `--locked` below fails if the two files
-      # disagree and the binary's --version is the input's.
       - name: Write The Release Version
         env:
           VERSION: ${{ inputs.version }}
         run: bash ../.github/scripts/set-release-version.sh "$VERSION"
-      # the same release-profile tests the rust job in merge-checks.yaml runs on
-      # Linux, here on the target itself. MARSHAL_EXPECT_RELEASE makes each test fail
-      # if it was built in the wrong profile.
       - name: Test That A Release Build Ignores The Debug-Only Overrides
         env:
           MARSHAL_EXPECT_RELEASE: "1"
         run: cargo test --locked --release --test base_address --test instance_roots --test build_definition
-      # `cargo test` above also builds the fake-docker and instance-helper helpers
-      # into target/release; only the binary named here is copied out and uploaded.
       - name: Build The Release Binary
         run: cargo build --locked --release --bin marshal
       - name: Check The Binary's Version
@@ -116,12 +101,6 @@ jobs:
           mkdir ../dist
           cp "target/release/marshal${SUFFIX}" "../dist/${asset}"
           echo "name=${asset}" >> "$GITHUB_OUTPUT"
-      # the binary links the C runtime statically (cli/.cargo/config.toml), so it
-      # must import no vcruntime DLL, which a host without the Visual C++
-      # redistributable lacks. dumpbin comes with the MSVC tools the build itself
-      # links with, and vswhere, at its fixed Visual Studio Installer path, finds
-      # it. the check fails unless dumpbin printed a dependency list that names
-      # KERNEL32.dll, so a run that read nothing cannot pass.
       - name: Check That The Windows Binary Imports No vcruntime DLL
         if: runner.os == 'Windows'
         shell: pwsh
