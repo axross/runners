@@ -505,8 +505,10 @@ lives in the tag and the release.
 `release/package.json` pins `conventional-changelog-conventionalcommits` to the
 `9.x` line. `@semantic-release/release-notes-generator` renders notes with
 `conventional-changelog-writer` 8, and a `10.x` preset needs writer 9: with it,
-the notes step fails, the plan job fails, and nothing is released. Do not merge a
-Dependabot bump of the preset to `10.x` until the notes generator moves to writer 9.
+the notes step fails, the plan job fails, and nothing is released. CI never runs
+semantic-release, so it would not catch that. `.github/dependabot.yml` therefore
+ignores the preset's `10.x` and later; remove that rule once the notes generator
+moves to writer 9.
 
 ## Working Without an Agent
 
