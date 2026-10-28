@@ -2,8 +2,8 @@
 # Runs verify-release.sh, the release gate, against temporary release directories:
 # the plan phase writing the version to GITHUB_OUTPUT, the release phase passing
 # with the exact files and refusing a missing file, an extra file, a binary named
-# for another version, a SHA256SUMS that lists one binary only, and a checksum
-# mismatch, and an unset or unknown RELEASE_PHASE. Each case checks the exit status
+# for another version, a binary that is a directory, a SHA256SUMS that lists one
+# binary only, and a checksum mismatch, and an unset or unknown RELEASE_PHASE. Each case checks the exit status
 # and the cause the script names.
 set -euo pipefail
 
@@ -80,6 +80,12 @@ expect "an extra file" 1 "are not exactly ${macos}, ${windows} and SHA256SUMS" \
 release_files "${work}/other-version" "marshal-1.2.4-windows-x64.exe"
 expect "a binary named for another version" 1 "are not exactly ${macos}, ${windows} and SHA256SUMS" \
   release "$version" "${work}/other-version"
+
+release_files "${work}/directory"
+rm "${work}/directory/${macos}"
+mkdir "${work}/directory/${macos}"
+expect "a binary that is a directory" 1 "${macos} is not a regular file" \
+  release "$version" "${work}/directory"
 
 release_files "${work}/one-listed"
 (cd "${work}/one-listed" && sha256sum "$macos" >SHA256SUMS)
