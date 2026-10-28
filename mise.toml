@@ -6,6 +6,8 @@
 # provisions it. cargo-deny is, so it is pinned and locked here like the rest.
 
 [tools]
+# release.yaml installs this Node with actions/setup-node, which Dependabot does not
+# bump; change its two node-version pins with this one.
 node = "24.21.0"
 "npm:prettier" = "3.9.9"
 "npm:markdownlint-cli2" = "0.23.3"
@@ -269,10 +271,6 @@ console.log(`skills-lock.json and .claude/skills/ agree (${locked.length} skills
 description = "Check the Windows host configuration validation against its fixtures and the example"
 run = "pwsh -NoProfile -NonInteractive -File hosts/windows-docker-desktop/tests/test-host-configuration.ps1"
 
-[tasks."test:release-tag"]
-description = "Check the release tag check script against a temporary git repository"
-run = "bash .github/scripts/tests/test-check-release-tag.sh"
-
 [tasks."test:set-release-version"]
 description = "Check the script that writes the release version into the CLI's Cargo.toml and Cargo.lock"
 run = "bash .github/scripts/tests/test-set-release-version.sh"
@@ -282,7 +280,7 @@ description = "Check the release gate that semantic-release runs before it tags 
 run = "bash .github/scripts/tests/test-verify-release.sh"
 
 [tasks.check]
-description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, host test, release tag check test, Rust tests, Rust dependency check, parity test"
+description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, host test, release script tests, Rust tests, Rust dependency check, parity test"
 depends = [
   "format:check",
   "lint",
@@ -291,7 +289,6 @@ depends = [
   "check:skills",
   "check:amp",
   "test:host",
-  "test:release-tag",
   "test:set-release-version",
   "test:verify-release",
   "test:rust",

@@ -144,15 +144,18 @@ jobs:
         if: runner.os == 'Linux'
         run: cargo test --locked --test real_docker_build -- --ignored
 
-  # the release build's dry run: the same reusable workflow release.yaml calls on a
-  # tag builds both release binaries, runs the release-profile tests on each target,
-  # and uploads the assembled artifact. it holds `contents: read` and publishes and
-  # attests nothing; only release.yaml's publish job does.
+  # the release build's dry run: the same reusable workflow release.yaml calls
+  # builds both release binaries at a dry-run version, which each leg writes over
+  # the placeholder and checks with --version, runs the release-profile tests on
+  # each target, and uploads the assembled artifact. it holds `contents: read` and
+  # publishes and attests nothing; only release.yaml's attest and release jobs do.
   release-build:
     name: Release Build Dry Run
     uses: ./.github/workflows/release-build.yaml
     permissions:
       contents: read
+    with:
+      version: 0.0.0-dryrun.${{ github.run_number }}
 
   image:
     name: Build Runner Image
