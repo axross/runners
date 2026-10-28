@@ -1558,8 +1558,7 @@ clean.
    the installed one. On macOS, make the file executable and remove its quarantine
    attribute, if present, before running it.
 7. Stop the instance if one is running, refusing if it does not stop, then replace
-   the binary in the install directory. On macOS, remove the quarantine attribute
-   if present.
+   the binary in the install directory.
 8. Refuse unless the installed binary's `--version` prints `marshal <version>`.
 
 On macOS, in bash or zsh. The block has no comment lines, because an interactive zsh
@@ -1619,9 +1618,6 @@ runs a line that starts with `#` as a command unless `interactive_comments` is s
   { mkdir -p ~/.local/bin && cp "$asset" ~/.local/bin/marshal.new \
     && chmod 0755 ~/.local/bin/marshal.new && mv -f ~/.local/bin/marshal.new ~/.local/bin/marshal; } \
     || refuse "the binary could not be installed in ~/.local/bin"
-  if xattr -p com.apple.quarantine ~/.local/bin/marshal >/dev/null 2>&1; then
-    xattr -d com.apple.quarantine ~/.local/bin/marshal || refuse "the quarantine attribute could not be removed"
-  fi
 
   installed="$(~/.local/bin/marshal --version)" || refuse "the installed binary does not run"
   [ "$installed" = "marshal ${version}" ] || refuse "the installed binary is not marshal ${version}: ${installed}"
