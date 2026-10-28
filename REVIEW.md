@@ -147,10 +147,11 @@ Codex review uses its native priority label.
   [Security](docs/conventions/security.md#actions-stays-on-major-tags); do not
   report it. A reusable workflow, a `docker://` reference, and a `run:` step
   that downloads and executes remote code without a checksum are held to the
-  same standard. The one recorded exception is a step that installs the Rust
-  toolchain `cli/rust-toolchain.toml` names through `rustup`; see
-  [Security](docs/conventions/security.md#pinning-convention). Any other unpinned
-  download is still a finding.
+  same standard. There are two recorded exceptions, both in
+  [Security](docs/conventions/security.md#pinning-convention): a step that
+  installs the Rust toolchain `cli/rust-toolchain.toml` names through `rustup`,
+  and the Node that `actions/setup-node` installs in `release.yaml`. Any other
+  unpinned download is still a finding.
 - **Least-privilege workflow permissions.** Every workflow declares a
   top-level `permissions:` block that starts from `contents: read`. A broader
   scope is granted on the job that needs it, is justified in a comment or in

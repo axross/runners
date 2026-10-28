@@ -98,7 +98,7 @@ jobs:
       - name: Download The Release Files
         uses: actions/download-artifact@v8
         with:
-          name: marshal-release
+          name: ${{ needs.build.outputs.artifact }}
           path: release-files
       # the same check as verify-release.sh in the release job, which this job
       # cannot run without a checkout.
@@ -145,7 +145,7 @@ jobs:
   # keeps no credential: semantic-release authenticates its push with GITHUB_TOKEN.
   release:
     name: Release
-    needs: [plan, attest]
+    needs: [plan, build, attest]
     if: github.ref == 'refs/heads/main' && needs.plan.outputs.version != ''
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -170,7 +170,7 @@ jobs:
       - name: Download The Release Files
         uses: actions/download-artifact@v8
         with:
-          name: marshal-release
+          name: ${{ needs.build.outputs.artifact }}
           path: release-files
       - name: Release
         working-directory: release
