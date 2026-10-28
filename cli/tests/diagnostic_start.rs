@@ -433,8 +433,8 @@ mod signals {
     }
 }
 
-/// through its liveness pipe on Unix and the Job Object on Windows, and standard
-/// error, which it shares, closes only when the exporter has ended.
+/// the exporter ends through its liveness pipe on Unix and the Job Object on Windows;
+/// standard error, which it shares, closes only when it has ended.
 #[test]
 fn an_exporter_whose_instance_is_killed_ends_with_its_clients() {
     let (host, _sink) = diagnostic_host();
