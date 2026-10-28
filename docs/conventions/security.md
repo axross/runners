@@ -240,7 +240,9 @@ Residual risks, accepted:
 
 - The binaries are not code-signed or notarised, so macOS Gatekeeper and Windows
   SmartScreen may warn or block. The install removes the macOS quarantine
-  attribute; Phase 4b checks Windows on axpc and reports if SmartScreen intervenes.
+  attribute. Whether a Windows binary the install downloads carries a Mark of the
+  Web, and whether SmartScreen intervenes, are not yet verified on axpc
+  ([#56](https://github.com/axross/runners/issues/56)).
 - The required reviewer and the agents are one identity, so the Environment cannot
   tell them apart; only the rule above, that an agent never approves a deployment,
   keeps one from doing so.
@@ -395,9 +397,10 @@ later host:
   refuses a token file that is not a regular file owned by the current user with
   mode `0600`, and skips its pool with a warning. On Windows the CLI does not check
   the token file's access control list, because no safe call reads it, so the
-  restriction rests on the operator's setup: today the Task Scheduler setup
-  restricts each file, and an operator procedure that replaces that setup has to
-  keep an explicit step for it.
+  restriction rests on the operator: the explicit step under Restricting a Token
+  File in [Windows Runner Host](../operations/windows-runner-host.md#restricting-a-token-file)
+  restricts each file at install and at every rotation, and the rollback's Task
+  Scheduler setup does the same.
 - Multiple execution pools for one repository MUST use the same token file;
   entries for different repositories MUST NOT share it. Extra pools do not expand
   the token's repository authority.
@@ -540,9 +543,10 @@ how a bundle is written.
   with are under Sink checks in [CLI](../operations/cli.md#diagnostics).
 - On Windows the CLI does not check the sink's owner or access rules, because no
   safe call reads them; a bundle inherits the sink's rules. The PowerShell exporter
-  checks them, so the operator's ACL step in
+  of the rollback path checks them, but on a host that runs the CLI the operator's
+  ACL step in
   [Windows Runner Host](../operations/windows-runner-host.md#collecting-private-diagnostics)
-  is the only protection left once Phase 4c deletes the PowerShell scripts. A sink
+  is the only protection. A sink
   whose rules admit another user would expose the evidence to that user. This is
   accepted on a single-user host, with the ACL step kept in the procedure.
 - The sink is never mounted into a job. The container's evidence leaves it only

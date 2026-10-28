@@ -69,8 +69,8 @@ previous one exits.
 
 **Supervisor** - the host-side process that keeps each slot of every **Execution
 Pool** filled: it requests a **JIT Config** with the target repository's token,
-starts a runner container, waits for it to exit, and repeats. On axpc it is still
-the PowerShell script; the **CLI**'s `start` is the supervisor that replaces it.
+starts a runner container, waits for it to exit, and repeats. On axpc it is the
+**CLI**'s `start`; the PowerShell script it replaced stays only as a rollback path.
 
 **CLI** - this project's Rust command line tool, under `cli/`. `validate` checks a
 **Host Configuration**; `build` builds its **Runner Image** from the definition
