@@ -142,9 +142,8 @@ pub trait Core {
         stop: watch::Receiver<bool>,
     ) -> impl Future<Output = Result<(), CoreFailure>>;
 
-    /// checks the image `plan` names once, without waiting for Docker, as a resume
-    /// does before it answers; returns why the image cannot run jobs, or `Ok` when
-    /// it can or Docker could not say, since the next run checks again.
+    /// checks the image `plan` names once, without waiting for Docker; returns why
+    /// the image cannot run jobs, or `Ok` when it can or Docker could not say.
     fn check_image(&self, plan: &Plan) -> impl Future<Output = Result<(), String>>;
 
     /// what the core is doing now, as `status` fields.
@@ -170,7 +169,7 @@ pub struct Settings {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ended {
     /// whether every removal of ordinary containers in the instance's life
-    /// succeeded: at a stop, a restart, or a failure of the runtime core.
+    /// succeeded.
     pub containers_removed: bool,
     /// why the instance ended: what its first run of the core found, or
     /// [`Ending::Ordinary`] when it ended otherwise.
@@ -190,7 +189,9 @@ enum CycleEnd {
     StopRequested,
     LimitReached,
     NothingToRun,
+    /// the image cannot run jobs, as the message says, at the first run of the core.
     ImageRefusedAtStart(String),
+    /// the same at a later run.
     ImageRefused(String),
 }
 
@@ -492,9 +493,9 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
         }
     }
 
-    /// asks the core to stop and runs the container steps and any `diagnostics` under
-    /// way within the exit deadline, dropping whatever still runs; the containers
-    /// are read first, because dropping a worker forgets its container.
+    /// asks the core to stop and runs the container steps within the exit deadline,
+    /// dropping whatever still runs; the containers are read first, because dropping
+    /// a worker forgets its container.
     async fn wind_down<F: Future<Output = CycleEnd>>(
         &self,
         stop: &watch::Sender<bool>,
@@ -580,8 +581,8 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
         }
     }
 
-    /// reads and validates the instance's own configuration again, clearing the
-    /// core's failure count, checks its image, and answers `reply` with the result.
+    /// reads and validates the instance's own configuration again, clears the core's
+    /// failure count, checks its image, and answers `reply`.
     async fn resume(&self, requests: &mut Requests, reply: oneshot::Sender<Response>) -> Next {
         self.policy.borrow_mut().clear();
         self.set_state(State::Resuming);

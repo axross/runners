@@ -28,11 +28,15 @@ pub enum Call {
     WaitUntilAvailable,
     ListPoolContainers(String),
     RemoveContainers(Vec<String>),
-    PrepareVolumes { image: String, volumes: Vec<String> },
+    PrepareVolumes {
+        image: String,
+        volumes: Vec<String>,
+    },
     SelectCpuset(CpuRequest),
     RunContainer(ContainerSpec),
     StopContainers(StopRequest),
     KillContainers(Vec<String>),
+    /// an export began, with the deadline it was given.
     ExportDiagnostic(String, tokio::time::Instant),
     CountBundles(String),
 }
@@ -80,6 +84,7 @@ pub struct FakeState {
     /// every export is complete; a complete export or one with a gap admits a
     /// bundle.
     pub export_results: VecDeque<ExportOutcome>,
+    /// the bundles written, as container and record, in order.
     pub bundles: Vec<(String, DiagnosticRecord)>,
     /// when set, an export waits for a permit of this before it ends, which holds
     /// its container's finalisation.
@@ -91,8 +96,8 @@ pub struct FakeState {
     pub bundle_counts: VecDeque<Option<u32>>,
     /// a kill fails with this error, once it is recorded.
     pub kill_error: Option<BackendError>,
-    /// every `run_container` waits, as a running job does, until a stop, a kill or
-    /// a removal is asked for, of any container.
+    /// every `run_container` waits until a stop, a kill or a removal is asked for,
+    /// of any container.
     pub hold_runs: bool,
 }
 

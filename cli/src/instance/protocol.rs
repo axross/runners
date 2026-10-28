@@ -141,8 +141,7 @@ pub fn read_line_limited<R: BufRead>(reader: &mut R, limit: usize) -> io::Result
     Ok(Some(line))
 }
 
-/// whether `line`, read with a limit of `limit` bytes, stopped at the limit before
-/// its line break, so the line is longer than the limit allows.
+/// whether `line`, read with `limit`, stopped at the limit before its line break.
 #[must_use]
 pub fn line_is_cut(line: &[u8], limit: usize) -> bool {
     line.last() != Some(&b'\n') && line.len() >= limit
@@ -300,8 +299,8 @@ pub struct Incoming {
 }
 
 /// hands the request on `line` to the instance and returns the receiver its answer
-/// arrives on, or the answer to send at once: a refusal of a line that is not a
-/// request, or [`Response::ending`] when the instance takes no more requests.
+/// arrives on, or the answer to send at once when the line is not a request or the
+/// instance takes no more.
 pub fn submit(
     line: &[u8],
     requests: &mpsc::UnboundedSender<Incoming>,

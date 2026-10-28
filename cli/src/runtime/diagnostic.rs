@@ -236,8 +236,7 @@ pub async fn finalize_claimed<B: Backend>(
 }
 
 /// waits until no other path holds the container, then finalises it on the clock
-/// that started at `start` if it is still retained, as after a cancelled path or a
-/// failed removal.
+/// that started at `start` if it is still retained.
 async fn finalize_once_released<B: Backend>(
     backend: &B,
     log: &dyn Log,
@@ -335,9 +334,8 @@ pub struct Flushed {
     pub nothing: bool,
 }
 
-/// finalises every retained container nobody holds whose job has ended, on one
-/// 24 s clock, and counts the bundles of every pool with such a container or with
-/// diagnostics on in `enabled`.
+/// finalises every retained container nobody holds whose job has ended, on one 24 s
+/// clock, and counts the bundles of their pools and of the pools in `enabled`.
 pub async fn flush<B: Backend>(
     backend: &B,
     log: &dyn Log,

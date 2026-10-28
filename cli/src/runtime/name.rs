@@ -58,8 +58,7 @@ pub(crate) fn civil_from_days(days: u64) -> (u64, u64, u64) {
     (year, month, day)
 }
 
-/// converts a proleptic Gregorian date from 1970 on to days since 1970-01-01, the
-/// inverse of `civil_from_days`.
+/// the inverse of `civil_from_days`, for dates from 1970 on.
 pub(crate) fn days_from_civil(year: u64, month: u64, day: u64) -> u64 {
     let year = if month <= 2 { year - 1 } else { year };
     let era = year / 400;

@@ -55,8 +55,8 @@ pub fn only_user_descriptor(sid: &str) -> io::Result<SecurityDescriptor> {
     SecurityDescriptor::deserialize(&wide)
 }
 
-/// whether creating a pipe failed because its name is taken: another process created
-/// the first instance, or all instances are in use.
+/// whether creating a pipe failed because its name is taken or all instances are in
+/// use.
 #[must_use]
 pub fn name_is_taken(error: &io::Error) -> bool {
     matches!(

@@ -1,6 +1,5 @@
 //! the diagnostic containers a backend retains from their start until a removal
-//! succeeds, and the claim that lets one path at a time finalise each; a claim ends
-//! however its path ends, a panic included, leaving the container retained and free.
+//! succeeds, and the claim that lets one path at a time finalise each.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -220,8 +219,8 @@ impl Retained {
         }
     }
 
-    /// asks every finalisation to stop exporting and keep its container: a forced
-    /// stop ends and keeps the diagnostic containers instead.
+    /// asks every finalisation to stop exporting and keep its container, as a forced
+    /// stop does.
     pub fn force(&self) {
         self.forced.send_replace(true);
     }

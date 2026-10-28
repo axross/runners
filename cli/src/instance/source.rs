@@ -9,8 +9,8 @@ use crate::validate::Plan;
 
 use super::lifecycle::Source;
 
-/// reads and validates one file, fixed when it is built from the path the instance
-/// started with, so a request can never make it read another.
+/// reads and validates the one file it is built with, so a request can never make it
+/// read another.
 pub struct FileSource<'a> {
     path: PathBuf,
     profile: Profile,

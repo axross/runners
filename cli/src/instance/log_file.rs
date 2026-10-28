@@ -39,8 +39,7 @@ fn failed(what: &str, path: &Path, error: &dyn fmt::Display) -> LogFileError {
     LogFileError(format!("{what} {}: {error}", path.display()))
 }
 
-/// a writer that stops at 10 MiB: a line that would leave no room for the last
-/// line is replaced by it, and nothing follows.
+/// a writer that stops at 10 MiB with a last line saying so.
 pub struct Capped<W> {
     out: W,
     written: u64,
@@ -133,8 +132,8 @@ pub struct OpenedLog {
 }
 
 /// opens a new log file in `directory`, created private when missing, and removes
-/// the oldest files beyond the newest 10, a file that cannot be removed not
-/// stopping the open; on macOS a directory or file that is not private is an error.
+/// the oldest files beyond the newest 10; on macOS a directory or file that is not
+/// private is an error.
 pub fn open_log_file(directory: &Path) -> Result<OpenedLog, LogFileError> {
     prepare_directory(directory)?;
     let path = directory.join(format!(

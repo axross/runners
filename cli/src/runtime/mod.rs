@@ -1,5 +1,6 @@
-//! the container backend, registration and the slot loop that run a host's pools;
-//! `docs/operations/cli.md` describes the layer.
+//! the container backend, registration and the slot loop that run a host's pools,
+//! all independent of the operating system except how the container backend
+//! contains its job clients; `docs/operations/cli.md` describes the layer.
 
 pub mod backend;
 pub mod board;

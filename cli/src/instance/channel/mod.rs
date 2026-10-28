@@ -1,8 +1,7 @@
-//! the control channel, per user and reachable only by the instance's own user, over
-//! which `stop`, `restart`, `status` and a resuming `start` talk to the instance
-//! (`docs/operations/cli.md` describes the pipe and the socket). only the holder of
-//! the instance lock can open the server, so a leftover socket file proves no other
-//! instance owns it and is replaced.
+//! the control channel, reachable only by the instance's own user; only the holder
+//! of the instance lock can open the server, so a leftover socket file proves no
+//! other instance owns it and is replaced; `docs/operations/cli.md` describes the
+//! pipe and the socket.
 
 mod client;
 #[cfg(unix)]
@@ -83,9 +82,8 @@ use windows::Server as Inner;
 
 impl ChannelServer {
     /// opens the channel and sends every request it receives to `requests`, with the
-    /// sender its answer goes back through; the lock proves no other instance owns
-    /// the name, every error is a startup failure, and on Unix this must run inside a
-    /// Tokio runtime.
+    /// sender its answer goes back through; every error is a startup failure, and on
+    /// Unix this must run inside a Tokio runtime.
     pub fn open(
         lock: &InstanceLock,
         roots: &Roots,
@@ -97,10 +95,10 @@ impl ChannelServer {
         })
     }
 
-    /// stops accepting, then waits up to `within` for every connection already
-    /// accepted to end, so an answer the instance gave reaches its client before the
-    /// process exits; drop the request receiver first, so a request still waiting
-    /// gets its "ending" answer at once rather than holding its connection open.
+    /// stops accepting, then waits up to `within` for accepted connections to end, so
+    /// an answer already given reaches its client before the process exits; drop the
+    /// request receiver first, so a request still waiting gets its "ending" answer at
+    /// once.
     pub async fn close(self, within: Duration) {
         self.inner.close(within).await;
     }

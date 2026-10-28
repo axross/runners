@@ -1,6 +1,5 @@
-//! a pool of one repository: what it runs and how it is made ready. a pool that
-//! cannot be prepared is skipped with a warning, so it does not take the others
-//! down; `docs/operations/cli.md` describes the preparation.
+//! a pool of one repository: what it runs and how it is made ready;
+//! `docs/operations/cli.md` describes the preparation.
 
 use std::fmt;
 use std::path::PathBuf;

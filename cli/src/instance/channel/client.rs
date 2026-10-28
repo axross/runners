@@ -43,8 +43,7 @@ enum Event {
 
 /// sends `request` to this user's instance and waits up to `answer_within` for its
 /// answer, after connecting for up to [`CONNECT_TIMEOUT`], on a thread of its own so
-/// a connection that never completes ends the call at the limit rather than when
-/// the operating system gives up.
+/// a connection that never completes ends the call at the limit.
 pub fn exchange(
     roots: &Roots,
     request: &Request,

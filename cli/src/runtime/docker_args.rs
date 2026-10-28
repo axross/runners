@@ -22,8 +22,8 @@ pub const PROBE_LABEL: &str = "runners.cpu-probe=1";
 /// what the probe container runs to print the CPUs it may use.
 pub const PROBE_READER: &str = "while read -r key value; do if [ \"$key\" = Cpus_allowed_list: ]; then printf \"%s\\n\" \"$value\"; exit; fi; done < /proc/self/status; exit 1";
 
-/// the launcher script's checks, before `exec "$@"`: the container's own CPU list
-/// must equal the one selected, or the runner does not start.
+/// the launcher's checks before `exec "$@"`: the container's CPU list must equal the
+/// selected one.
 #[must_use]
 pub fn guard_script() -> String {
     [
@@ -51,8 +51,8 @@ fn launcher() -> String {
     format!("{}\nexec \"$@\"", guard_script())
 }
 
-/// the diagnostic variant's launcher: the guard, then the collector, in raw mode
-/// when asked, or the runner itself with a gap when the collector is missing.
+/// the diagnostic variant's launcher: the guard, then the collector, or the runner
+/// with a gap when it is missing.
 #[must_use]
 pub fn diagnostic_launcher(raw_records: bool) -> String {
     let mode = if raw_records { " raw-run" } else { "" };
@@ -121,8 +121,7 @@ pub fn job_run_arguments(spec: &ContainerSpec) -> Vec<String> {
     arguments
 }
 
-/// where the collector writes its records inside a diagnostic container, as the
-/// source of the copy.
+/// where the collector writes its records, the source of the copy.
 pub const DIAGNOSTIC_SOURCE: &str = "/tmp/runner-diagnostics/.";
 
 /// the fixed allowlist of fields `identity.txt` holds, and nothing else of the
@@ -256,8 +255,8 @@ pub fn probe_run_arguments(probe: &str, image: &str) -> Vec<String> {
     ])
 }
 
-/// reads the labels the image check needs, with one fixed format, of `reference` as
-/// `docker run` resolves it.
+/// reads the labels the image check needs, of `reference` as `docker run` resolves
+/// it.
 #[must_use]
 pub fn image_inspect_arguments(reference: &str) -> Vec<String> {
     strings(&["image", "inspect", "--format", &labels_format(), reference])

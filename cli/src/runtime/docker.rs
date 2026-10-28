@@ -1,6 +1,6 @@
-//! the container backend, which runs the `docker` command line client in a process
-//! group of its own and never trusts a client's output to be short or valid text;
-//! `docs/operations/cli.md` describes the argument lists, budgets and the shim.
+//! the container backend, which runs the `docker` command line client and never
+//! trusts a client's output to be short or valid text; `docs/operations/cli.md`
+//! describes the argument lists, budgets and the shim.
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
@@ -89,9 +89,8 @@ pub enum JobLauncher {
     /// as a child of this process, killed when the run is dropped.
     #[default]
     Direct,
-    /// by the shim: this program run again as `<program> shim`, which cleans up the
-    /// container when its liveness pipe from this process closes, however this
-    /// process ended.
+    /// by the shim, which cleans up the container when its liveness pipe closes,
+    /// however this process ended.
     #[cfg(unix)]
     Shim(PathBuf),
 }
@@ -444,8 +443,8 @@ impl<C: Clock> DockerBackend<C> {
             .clone()
     }
 
-    /// the exporter request for `record`'s sink, naming `container` to export or
-    /// none to only count its bundles, with the time left until `deadline`.
+    /// the exporter request for `record`'s sink; no `container` only counts its
+    /// bundles.
     fn export_request(
         &self,
         record: &DiagnosticRecord,
@@ -484,9 +483,8 @@ impl<C: Clock> DockerBackend<C> {
         command.spawn().ok()
     }
 
-    /// runs the exporter child for `request` until it ends or `deadline` passes,
-    /// closing its liveness pipe first and killing it only [`EXPORTER_TERMINATION`]
-    /// later; `admission` is released once the child has created the bundle or ended.
+    /// runs the exporter child for `request` until it ends or `deadline` passes;
+    /// `admission` is released once the child has created the bundle or ended.
     async fn run_exporter(
         &self,
         request: &ExportRequest,

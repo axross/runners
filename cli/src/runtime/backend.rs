@@ -78,8 +78,7 @@ pub struct DiagnosticRecord {
     pub raw_records: bool,
 }
 
-/// the time a diagnostic container's export has, and the time its whole
-/// finalisation has, its removal included.
+/// the export deadline and the whole finalisation's deadline, removal included.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Deadlines {
     pub export: Instant,
@@ -248,13 +247,12 @@ pub trait Backend {
         budget: Duration,
     ) -> impl Future<Output = Result<(), BackendError>>;
 
-    /// the diagnostic containers this backend retains: a `run_container` retains
-    /// one, and only a successful removal by a finalisation forgets it, a panic
-    /// included.
+    /// the diagnostic containers this backend retains; only a successful removal by a
+    /// finalisation forgets one, a panic included.
     fn retained(&self) -> &Retained;
 
-    /// exports a diagnostic container into its record's sink, by `deadline`, leaving
-    /// the removal to the finalisation in `runtime::diagnostic`.
+    /// exports a diagnostic container into its record's sink by `deadline`; the
+    /// finalisation removes it.
     fn export_diagnostic(
         &self,
         name: &str,

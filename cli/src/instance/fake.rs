@@ -28,6 +28,7 @@ pub enum CoreStep {
     },
     /// returns `Ok` at once, though no stop was asked for.
     EndWithoutStop,
+    /// panics with `message`.
     Panic(String),
     /// fails at once because no pool could start.
     NothingToRun,
@@ -35,6 +36,7 @@ pub enum CoreStep {
     RefuseImage(String),
     /// never ends, even when the stop is asked for.
     IgnoreStop,
+    /// runs until the stop is asked for.
     RunUntilStop,
 }
 
@@ -43,6 +45,7 @@ pub enum CoreStep {
 #[derive(Default)]
 pub struct FakeCore {
     pub steps: RefCell<VecDeque<CoreStep>>,
+    /// how many times the core was started.
     pub runs: Cell<usize>,
     /// the clock a failing step lets time pass on.
     pub clock: RefCell<Option<Rc<FakeClock>>>,
@@ -53,6 +56,7 @@ pub struct FakeCore {
     pub report: RefCell<Vec<(&'static str, String)>>,
     /// the answers to `check_image`; when they run out, every check passes.
     pub image_checks: RefCell<VecDeque<Result<(), String>>>,
+    /// how many times the image was checked.
     pub image_checked: Cell<usize>,
 }
 
@@ -131,6 +135,7 @@ impl Core for FakeCore {
 pub struct FakeSource {
     plan: Plan,
     pub results: RefCell<VecDeque<Result<Plan, Vec<String>>>>,
+    /// how many times the configuration was read.
     pub loads: Cell<usize>,
     /// when set, a read waits for this before it answers, which holds the instance in
     /// its resuming state.

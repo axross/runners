@@ -17,8 +17,8 @@ use super::secret::Secret;
 /// where registrations go, unless a debug build is told otherwise.
 pub const GITHUB_API: &str = "https://api.github.com";
 
-/// the runner group every registration joins: the default group, which the endpoint
-/// requires even though a repository-level runner has no group to choose.
+/// the default runner group, which the endpoint requires although a
+/// repository-level runner has none to choose.
 pub const RUNNER_GROUP_ID: u64 = 1;
 
 const API_VERSION: &str = "2022-11-28";
