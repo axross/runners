@@ -54,6 +54,8 @@ place below that depends on one says so:
   install procedure uses to download and verify `marshal`.
 - **Windows PowerShell 5.1** (shipped with Windows) or PowerShell 7, for the inline
   access control steps and the install procedure.
+- **No PowerShell supervisor or its scheduled tasks.** A host that still runs them
+  stops them first; see [Installing marshal](#installing-marshal).
 - **A checkout of this repository**, until Phase 4c, in a stable location, because
   [the rollback](#rolling-back-to-the-powershell-supervisor) runs its scripts and
   their scheduled tasks run them from there. Nothing else uses it: the CLI needs no
@@ -99,6 +101,12 @@ in its `runs-on` is one the registration carries, so `runs-on: axpc` selects it,
 and so does `runs-on: self-hosted`.
 
 ## Installing marshal
+
+On a host that still runs the PowerShell supervisor, first stop it and remove its
+tasks as [Returning to the CLI](#returning-to-the-cli) describes. Never run
+`marshal start` or `marshal build` while either task is registered: `start`'s stale
+cleanup removes the supervisor's job containers, and the scripts do not take the
+CLI's instance lock.
 
 Install `marshal` from a release with the Windows procedure in
 [CLI](./cli.md#installing-updating-and-rolling-back), never by building it on the
@@ -366,10 +374,15 @@ it. Going back to placement without affinity means the PowerShell path under
 with the saved pre-affinity host scripts and their compatible configuration and
 image, in its own authorized maintenance window. Stop job admission and drain work,
 stop the instance with `marshal stop`, and recover marked diagnostic containers
-before replacing scripts or images. Do not rebuild during the rollback. Validate
-offline, and only then start the supervisor. Confirm the restored source/image
-identities and requested/effective CPU sets and quotas before resuming admission;
-an empty requested cpuset is not an empty effective set. Restore no WSL allocation
+before replacing scripts or images. In that section's steps, this case replaces
+step 3's checkout of the default branch and step 4's rebuild with restoring the
+saved scripts and image; still allow the scripts to run as step 3 says. Do not
+rebuild during the rollback: right after step 5, run
+`Disable-ScheduledTask -TaskName actions-runner-weekly-rebuild`, and keep the task
+disabled until the readback below is confirmed. Validate offline, and only then
+start the supervisor. Confirm the restored source/image
+identities and requested/effective CPU sets and quotas before resuming admission
+and re-enabling the weekly rebuild task; an empty requested cpuset is not an empty effective set. Restore no WSL allocation
 or Windows process-affinity setting: this feature changes neither. A failed runtime
 readback blocks rollout, not independent pool work.
 
@@ -692,23 +705,32 @@ Recover them with the CLI alone, after separate host authorization:
 
    The second command counts the entry's bundles in the sink. Archive enough of
    them privately, outside the sink, that the count is below 10 minus the number of
-   containers to recover. The next step removes a container even when its export
-   fails, so a sink that fills during the recovery loses that container's evidence.
+   containers to recover. The export refuses a bundle once the entry has 10, and the
+   entry's next jobs after step 2 take quota too, so the count leaves them room. The
+   next step removes a container even when its export fails, so a sink that fills
+   during the recovery loses that container's evidence.
    Never dump configuration or registration values.
 
 2. **Recover.** Keep `diagnostics` on for that entry, or turn it on again with
    `diagnosticDirectory` set to the sink from step 1, and run `marshal validate`.
-   Then run `marshal start`, or `marshal restart` when an instance is already
-   running. The entry's preparation adopts each leftover container, exports it, and
+   Then run `marshal start`, or, when an instance is already running,
+   `marshal restart` in an authorized quiet window, because `restart` stops every
+   entry's job containers. The entry's preparation adopts each leftover container, exports it, and
    removes it before any slot registers, and logs one line for each:
    `Diagnostic container <name> that an earlier run left: exported, removed.`, with
    `export gap` or `not removed` in place of either word. It removes the container
    even when the export fails, reporting an `export gap`; that is why step 1 comes
    first.
-3. **Confirm.** Run `marshal diagnostics` from another terminal. It exits 0 when no
-   container stays retained. An exit of 1 means a container is still retained,
-   such as one whose removal failed: run `marshal diagnostics` again, or abandon it
-   as in step 5.
+3. **Confirm.** First wait until the `start` log has step 2's line for every
+   container step 1 listed: `diagnostics` acts only on containers no other path
+   holds, so while the preparation is still adopting them it can exit 0 too early.
+   Treat a line with `export gap` or `not removed` as not recovered: an
+   `export gap` container is already removed, and its evidence is lost. Run step 1's
+   `docker ps -a` listing again and confirm that it lists nothing. Then run
+   `marshal diagnostics` from another terminal, which exits 0 when no container
+   stays retained. An exit of 1 means a container is still retained, such as one
+   whose removal failed: run `marshal diagnostics` again, or abandon it as in
+   step 5.
 4. **Then disable.** Run `marshal stop`, set `diagnostics` to `false`, remove
    `diagnosticDirectory` and `diagnosticRawRecords`, run `marshal validate`, and
    then run `marshal start`.
@@ -819,8 +841,9 @@ isolation rules the host enforces between repositories are in
 ## Rebuilding the Image for Operating-System Updates
 
 No task rebuilds the image, so the operating-system packages in it are only as
-fresh as its last `marshal build`. Rebuild it weekly, and also whenever `start`,
-`marshal restart`, or `marshal status` shows a build-age warning: from 7 days
+fresh as its last `marshal build`. Rebuild it weekly, and also whenever the `start`
+log (at start, a resume, or a restart) or `marshal status` shows a build-age
+warning: from 7 days
 `` the image is <d> days old and should be rebuilt with `marshal build` ``, and from
 21 days a warning that its operating-system packages are that old. An image that
 `marshal build` did not build, such as one from the PowerShell rebuild script, has

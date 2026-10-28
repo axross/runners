@@ -12,8 +12,11 @@ owns that operator procedure: prerequisites, tokens, health checks, and recovery
 The scripts and their scheduled tasks stay only as the way back if the CLI
 misbehaves, until they are removed; that document's
 [Rolling Back to the PowerShell Supervisor](../../docs/operations/windows-runner-host.md#rolling-back-to-the-powershell-supervisor)
-section is the only procedure that runs them. The example configuration and the
-shared fixtures serve both.
+section is the only procedure that runs them. On a host that still runs the
+supervisor, first stop it and remove its tasks as that document's
+[Returning to the CLI](../../docs/operations/windows-runner-host.md#returning-to-the-cli)
+describes; never run `marshal start` or `marshal build` while either task is
+registered. The example configuration and the shared fixtures serve both.
 
 | File                              | Purpose                                                                                                     |
 | --------------------------------- | ----------------------------------------------------------------------------------------------------------- |
@@ -30,8 +33,10 @@ shared fixtures serve both.
 
 The scripts target Windows PowerShell 5.1, which the scheduled tasks use, and are
 written to run on PowerShell 7 as well. CI runs the configuration test under both;
-the rest is unverified on 5.1 until the check on a real host, which
-[Windows Runner Host](../../docs/operations/windows-runner-host.md) describes.
+the rest is unverified on 5.1, as the What Was Verified of the PowerShell Path
+section of
+[Windows Runner Host](../../docs/operations/windows-runner-host.md#what-was-verified-of-the-powershell-path)
+records.
 Their files are ASCII-only.
 
 ## Host configuration

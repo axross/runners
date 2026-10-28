@@ -277,7 +277,7 @@ before validating a consumer. Use a separate candidate tag, not the host's
 production tag, and do not mount a shared SDK/home or runner socket. Image
 rollout remains a separate operator decision.
 
-The host's uncached weekly rebuild downloads both archives again: together
+Each uncached rebuild of the image downloads both archives again: together
 1,327,934,693 bytes (about 1.33 GB), containing 4,107,528,665 bytes of extracted
 file content before filesystem/layer overhead. This is a download/content
 cost, not a measured final image delta. The additional Java, SDK, CMake, and
