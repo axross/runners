@@ -273,6 +273,10 @@ run = "pwsh -NoProfile -NonInteractive -File hosts/windows-docker-desktop/tests/
 description = "Check the release tag check script against a temporary git repository"
 run = "bash .github/scripts/tests/test-check-release-tag.sh"
 
+[tasks."test:set-release-version"]
+description = "Check the script that writes the release version into the CLI's Cargo.toml and Cargo.lock"
+run = "bash .github/scripts/tests/test-set-release-version.sh"
+
 [tasks.check]
 description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, host test, release tag check test, Rust tests, Rust dependency check, parity test"
 depends = [
@@ -284,6 +288,7 @@ depends = [
   "check:amp",
   "test:host",
   "test:release-tag",
+  "test:set-release-version",
   "test:rust",
   "deny:rust",
   "test:parity",
