@@ -277,6 +277,10 @@ run = "bash .github/scripts/tests/test-check-release-tag.sh"
 description = "Check the script that writes the release version into the CLI's Cargo.toml and Cargo.lock"
 run = "bash .github/scripts/tests/test-set-release-version.sh"
 
+[tasks."test:verify-release"]
+description = "Check the release gate that semantic-release runs before it tags and publishes"
+run = "bash .github/scripts/tests/test-verify-release.sh"
+
 [tasks.check]
 description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, host test, release tag check test, Rust tests, Rust dependency check, parity test"
 depends = [
@@ -289,6 +293,7 @@ depends = [
   "test:host",
   "test:release-tag",
   "test:set-release-version",
+  "test:verify-release",
   "test:rust",
   "deny:rust",
   "test:parity",
