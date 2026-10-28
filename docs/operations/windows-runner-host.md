@@ -698,7 +698,7 @@ Recover them with the CLI alone, after separate host authorization:
    access control step under
    [Collecting private diagnostics](#collecting-private-diagnostics) was done. List
    the containers to recover, keeping only names that are the entry's `name`, a
-   hyphen, a slot number, a hyphen, and 17 digits:
+   hyphen, a slot number, a hyphen, and 17 digits, and record those names:
 
    ```powershell
    docker ps -a --filter "name=<name>-" --filter "label=runners.diagnostic-lifecycle=1" --format "{{.Names}}"
@@ -724,11 +724,14 @@ Recover them with the CLI alone, after separate host authorization:
    even when the export fails, reporting an `export gap`; that is why step 1 comes
    first.
 3. **Confirm.** First wait until the `start` log has step 2's line for every
-   container step 1 listed: `diagnostics` acts only on containers no other path
+   container step 1 recorded: `diagnostics` acts only on containers no other path
    holds, so while the preparation is still adopting them it can exit 0 too early.
    Treat a line with `export gap` or `not removed` as not recovered: an
    `export gap` container is already removed, and its evidence is lost. Run step 1's
-   `docker ps -a` listing again and confirm that it lists nothing. Then run
+   `docker ps -a` listing again and confirm that none of the names step 1 recorded
+   is still listed. Other names can appear: step 2 started the entry's slots with
+   diagnostics on, so each live slot's job container has the same name pattern and
+   label. Those are expected, and must not be removed. Then run
    `marshal diagnostics` from another terminal, which exits 0 when no container
    stays retained. An exit of 1 means a container is still retained, such as one
    whose removal failed: run `marshal diagnostics` again, or abandon it as in
