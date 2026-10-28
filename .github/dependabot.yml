@@ -41,3 +41,20 @@ updates:
     commit-message:
       prefix: "build"
       include: "scope"
+
+  # semantic-release and its plugins, which release.yaml installs from
+  # release/package-lock.json. the prefix is `chore` because their bumps change
+  # nothing in a binary, so they release nothing; the `build(deps)` prefix above
+  # releases a patch (release/.releaserc.json).
+  - package-ecosystem: "npm"
+    directory: "/release"
+    schedule:
+      interval: "weekly"
+    # the 10.x preset needs conventional-changelog-writer 9, and the notes
+    # generator still uses 8. lift this when the generator moves to writer 9.
+    ignore:
+      - dependency-name: "conventional-changelog-conventionalcommits"
+        versions: [">=10"]
+    commit-message:
+      prefix: "chore"
+      include: "scope"

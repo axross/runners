@@ -4,7 +4,7 @@ members = ["."]
 
 [package]
 name = "marshal-cli"
-version = "0.1.0"
+version = "0.0.0-dev"
 edition = "2024"
 description = "Management CLI for the self-hosted runner hosts in this repository"
 publish = false

@@ -1420,15 +1420,27 @@ fetches the RustSec database, so it runs in
 
 ## Releases
 
-A release is a `v<version>` tag on the default branch, where `<version>` is the
-`version` in `cli/Cargo.toml` at the tagged commit, such as `v0.1.0`. The release
-check refuses a tag that is not `vMAJOR.MINOR.PATCH`, since a release is never a
-prerelease or a build-metadata version, and releases are not marked as prereleases.
-[Development Workflow](./development-workflow.md) gives the maintainer's steps for
-cutting one, and
-[Security](../conventions/security.md#a-release-is-published-only-from-an-approved-tag)
-records the controls around it. `marshal --version` prints `marshal <version>`, from
-the same field.
+A release is a `v<version>` tag on the default branch and the GitHub release that
+carries its files, such as `v0.1.0`. The maintainer starts one by dispatching
+[`release.yaml`](../../.github/workflows/release.yaml) on main, and semantic-release
+works out the version from the commits since the last `v*` tag. Releases are never
+prereleases.
+[Development Workflow](./development-workflow.md#cutting-a-release) gives the
+maintainer's steps and the version rules, and
+[Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
+records the controls around it.
+
+The version is never committed. `cli/Cargo.toml` and `cli/Cargo.lock` on main hold
+the placeholder `0.0.0-dev`, so a local build prints `marshal 0.0.0-dev`. Each
+release build leg writes the version over the placeholder in the runner, with
+[`.github/scripts/set-release-version.sh`](../../.github/scripts/set-release-version.sh),
+before it compiles. The script refuses, changing neither file, unless the version
+is `X.Y.Z` or `X.Y.Z-<prerelease>`, each file has exactly one version line for the
+CLI, and that line holds the placeholder. It writes through a temporary file, so it
+runs with the BSD tools on macOS and keeps the CRLF line endings of a Windows
+checkout. `--locked` then fails if the two files disagree, and
+`marshal --version` prints `marshal <version>`, from the same field.
+`mise run test:set-release-version` tests the script.
 
 Each release carries three files, and nothing else:
 
@@ -1444,21 +1456,22 @@ not code-signed or notarised. Nothing modifies a binary after linking, so the ma
 binary keeps the ad-hoc signature its linker gave it.
 
 [`release-build.yaml`](../../.github/workflows/release-build.yaml) builds them. It
-is a reusable workflow with `contents: read` and no publish or attest step. Each
-target builds natively on its hosted runner, with no cross-compilation, in one leg
-that:
+is a reusable workflow with `contents: read` and no publish or attest step, and its
+caller passes the version. Each target builds natively on its hosted runner, with
+no cross-compilation, in one leg that:
 
 1. fails unless `rustc`'s host target is the one in the table, so a change of
    runner image fails the build instead of shipping the wrong architecture;
-2. runs the base-address, instance-roots, and build-definition tests with
+2. writes the version with `set-release-version.sh`;
+3. runs the base-address, instance-roots, and build-definition tests with
    `--release` and `MARSHAL_EXPECT_RELEASE=1`, the same tests the Linux `rust` job
    runs, on the target itself;
-3. builds `cargo build --locked --release --bin marshal`;
-4. fails unless the binary's `--version` prints `marshal <version>`, with the
-   version read from `cli/Cargo.toml` by `.github/scripts/package-version.sh`;
-5. copies the binary to its release name, and on Windows fails if it imports a
+4. builds `cargo build --locked --release --bin marshal`;
+5. fails unless the binary's `--version` prints `marshal <version>`, with the
+   version its caller passed;
+6. copies the binary to its release name, and on Windows fails if it imports a
    `vcruntime` DLL;
-6. hands its SHA-256 to the next job as a job output, and uploads that one file by
+7. hands its SHA-256 to the next job as a job output, and uploads that one file by
    name.
 
 An assemble job then downloads both binaries, fails unless they are exactly the two
@@ -1476,25 +1489,35 @@ read nothing cannot pass.
 
 A release never ships `fake-docker` or `instance-helper`. The release-profile tests
 build both into `target/release`, so the build names `marshal` alone and copies only
-that file out, each leg's artifact holds that one file, and the assemble and
-publish jobs refuse a set of files that holds anything else.
+that file out, each leg's artifact holds that one file, and the assemble job, the
+attest job, and the release gate refuse a set of files that holds anything else.
 
 [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) calls the build
 workflow on every pull request and every push to the default branch, as the dry
-run: both legs and the assemble job run, and the `marshal-release` artifact is
-uploaded to the run, but nothing is attested or published.
-[`release.yaml`](../../.github/workflows/release.yaml) runs only on a `v*` tag:
+run, with the version `0.0.0-dryrun.<run number>`: both legs and the assemble job
+run, each binary must print `marshal 0.0.0-dryrun.<run number>`, and the
+`marshal-release` artifact is uploaded to the run, but nothing is attested or
+published. [`release.yaml`](../../.github/workflows/release.yaml) runs only on a
+manual dispatch on main, in four jobs on the dispatched commit:
 
-1. A check job runs `.github/scripts/check-release-tag.sh`, which fails, naming the
-   cause, unless the tag is `v` followed by `cli/Cargo.toml`'s version at the tagged
-   commit and that commit is on the default branch. `mise run test:release-tag`
-   tests it against a temporary git repository.
-2. The build workflow builds and assembles the files.
-3. A publish job in the protected `release` Environment waits for the maintainer's
-   approval. It then downloads the artifact, fails unless it holds exactly the
-   tag's three files and `sha256sum --check` passes, attests the build provenance
-   of the two binaries with `actions/attest`, and creates the release with
-   `gh release create --verify-tag --generate-notes`.
+1. A plan job runs semantic-release as a dry run. Its gate,
+   [`.github/scripts/verify-release.sh`](../../.github/scripts/verify-release.sh),
+   which `@semantic-release/exec` runs from
+   [`release/.releaserc.json`](../../release/.releaserc.json), hands out the next
+   version. With nothing to release, it hands out none, and the other jobs are
+   skipped.
+2. The build workflow builds and assembles the files at that version.
+3. An attest job downloads the artifact and fails unless it holds exactly that
+   version's three files, `SHA256SUMS` lists exactly the two binaries, and
+   `sha256sum --check --strict` passes. It then attests the build provenance of the
+   two binaries with `actions/attest`. It checks nothing out and installs no npm
+   package.
+4. A release job downloads the artifact and runs semantic-release. The gate makes
+   the same check for the version semantic-release worked out in that run, before
+   anything is tagged. semantic-release then pushes the tag and its note, and
+   `@semantic-release/github` creates a draft release with the generated notes,
+   uploads the three files, and publishes it. `mise run test:verify-release` tests
+   the gate.
 
 The runner image's definition is embedded in the binary (see [Build](#build)), so a
 change to it, such as a runner bump, reaches a host only through a new release and
@@ -1504,8 +1527,8 @@ an update.
 
 `marshal` is installed from a release, never built on the host. The procedure
 accepts a binary only when its checksum matches `SHA256SUMS`, the tag's commit is
-on the default branch, and its attestation verifies against `release.yaml`, the
-exact tag, and that commit. It needs `gh` 2.102 or later, signed in
+on the default branch, and its attestation verifies against `release.yaml` run from
+main, at that commit. It needs `gh` 2.102 or later, signed in
 (`gh auth status`).
 
 axpc runs the binary this procedure installs, and
@@ -1523,12 +1546,12 @@ describes.
 | Windows | `%LOCALAPPDATA%\Programs\marshal\marshal.exe` |
 
 The operator adds the directory to the user's `PATH`. Updating is the procedure
-with a newer tag, and rolling back is the procedure with the previous tag; the tag
-ruleset keeps an old tag from moving.
+with a newer tag, and rolling back is the procedure with the previous tag;
+immutable releases keep a published release's tag from moving.
 
 Paste a block below whole into one shell. A check that fails prints its cause after
 `refused:` and ends the block there without closing the shell, so nothing after it
-runs, and a refusal before the rename in step 6 leaves the install path as it was.
+runs, and a refusal before the rename in step 7 leaves the install path as it was.
 The block's variables and working directory do not outlive it, so each run starts
 clean.
 
@@ -1537,13 +1560,17 @@ clean.
 3. Resolve the commit the tag points to, dereferencing an annotated tag.
 4. Refuse unless the compare API reports that commit `identical` to or `behind`
    the default branch, which means it is on it.
-5. Refuse unless `gh attestation verify` passes, pinned to `release.yaml`, the tag,
-   and the commit from step 3, with self-hosted runners denied. An attestation made
-   by any other workflow, ref, or commit fails here.
-6. Stop the instance if one is running, refusing if it does not stop, then replace
-   the binary in the install directory. On macOS, remove the quarantine attribute
-   if present.
-7. Refuse unless the installed binary's `--version` prints `marshal <version>`.
+5. Refuse unless `gh attestation verify` passes, pinned to `release.yaml`, the
+   branch `refs/heads/main`, and the commit from step 3, with self-hosted runners
+   denied. An attestation made by any other workflow, branch, or commit fails here.
+6. Refuse unless the downloaded binary's `--version` prints `marshal <version>`.
+   The attestation ties the binary to a commit on main, not to a version, so this
+   step keeps an older genuine binary under a newer version's name from replacing
+   the installed one. On macOS, make the file executable and remove its quarantine
+   attribute, if present, before running it.
+7. Stop the instance if one is running, refusing if it does not stop, then replace
+   the binary in the install directory.
+8. Refuse unless the installed binary's `--version` prints `marshal <version>`.
 
 On macOS, in bash or zsh. The block has no comment lines, because an interactive zsh
 runs a line that starts with `#` as a command unless `interactive_comments` is set:
@@ -1584,9 +1611,16 @@ runs a line that starts with `#` as a command unless `interactive_comments` is s
 
   gh attestation verify "$asset" --repo axross/runners \
     --signer-workflow axross/runners/.github/workflows/release.yaml \
-    --source-ref "refs/tags/v${version}" --source-digest "$commit" \
+    --source-ref refs/heads/main --source-digest "$commit" \
     --deny-self-hosted-runners \
     || refuse "the attestation does not verify"
+
+  chmod 0755 "$asset" || refuse "${asset} could not be made executable"
+  if xattr -p com.apple.quarantine "$asset" >/dev/null 2>&1; then
+    xattr -d com.apple.quarantine "$asset" || refuse "the quarantine attribute could not be removed from ${asset}"
+  fi
+  downloaded="$(./"$asset" --version)" || refuse "the downloaded binary does not run"
+  [ "$downloaded" = "marshal ${version}" ] || refuse "the downloaded binary is not marshal ${version}: ${downloaded}"
 
   if [ -x ~/.local/bin/marshal ]; then
     stopped="$(~/.local/bin/marshal stop 2>&1)" || [ "$stopped" = "No instance is running." ] \
@@ -1595,9 +1629,6 @@ runs a line that starts with `#` as a command unless `interactive_comments` is s
   { mkdir -p ~/.local/bin && cp "$asset" ~/.local/bin/marshal.new \
     && chmod 0755 ~/.local/bin/marshal.new && mv -f ~/.local/bin/marshal.new ~/.local/bin/marshal; } \
     || refuse "the binary could not be installed in ~/.local/bin"
-  if xattr -p com.apple.quarantine ~/.local/bin/marshal >/dev/null 2>&1; then
-    xattr -d com.apple.quarantine ~/.local/bin/marshal || refuse "the quarantine attribute could not be removed"
-  fi
 
   installed="$(~/.local/bin/marshal --version)" || refuse "the installed binary does not run"
   [ "$installed" = "marshal ${version}" ] || refuse "the installed binary is not marshal ${version}: ${installed}"
@@ -1646,9 +1677,12 @@ On Windows, in PowerShell:
 
   gh attestation verify $file --repo axross/runners `
     --signer-workflow axross/runners/.github/workflows/release.yaml `
-    --source-ref "refs/tags/v$version" --source-digest $commit `
+    --source-ref refs/heads/main --source-digest $commit `
     --deny-self-hosted-runners
   if ($LASTEXITCODE -ne 0) { Refuse 'the attestation does not verify' }
+
+  try { $downloaded = & $file --version } catch { Refuse "the downloaded binary does not run: $_" }
+  if ($LASTEXITCODE -ne 0 -or "$downloaded" -ne "marshal $version") { Refuse "the downloaded binary is not marshal ${version}: $downloaded" }
 
   $directory = Join-Path $env:LOCALAPPDATA 'Programs\marshal'
   $target = Join-Path $directory 'marshal.exe'
@@ -1675,7 +1709,7 @@ The stop runs with `$ErrorActionPreference` at `Continue` because Windows PowerS
 turns a native command's redirected standard error into an error, and `Stop` would end
 the block at the "No instance is running." line.
 
-Windows cannot replace an executable that is running, so step 6 also fails while an
+Windows cannot replace an executable that is running, so step 7 also fails while an
 instance still runs from the install path. A binary fetched with
 `gh release download` is assumed to carry no Mark of the Web, and the procedure
 does not clear one. That assumption, and whether SmartScreen intervenes, are
