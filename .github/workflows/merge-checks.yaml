@@ -1,10 +1,9 @@
 name: Merge Checks
 
 # the repository's own CI: the gates behind mise run check, the CLI tests on
-# Linux, Windows, and macOS, the runner image build, the host test under Windows
-# PowerShell 5.1, and the release build's dry run. it runs on GitHub-hosted
-# runners only, because this repository is public; see
-# docs/conventions/security.md and docs/operations/development-workflow.md.
+# Linux, Windows, and macOS, the image build, the host test under Windows
+# PowerShell 5.1, and the release dry run. GitHub-hosted runners only, because
+# this repository is public; see docs/conventions/security.md.
 
 on:
   pull_request:

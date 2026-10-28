@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
-# the release gate: @semantic-release/exec's verifyReleaseCmd in
-# release/.releaserc.json, which semantic-release runs from release/ with the
-# version it is about to release, in a dry run as well. RELEASE_PHASE says which
-# job of release.yaml calls it: plan hands the version on through GITHUB_OUTPUT,
-# and release refuses unless the directory holds exactly the two binaries and
-# SHA256SUMS and the checksums match. any other RELEASE_PHASE is refused, so a
-# job that forgets to set it cannot release. it runs on Linux, where sha256sum
-# is GNU's.
+# the release gate: verifyReleaseCmd in release/.releaserc.json, run from
+# release/ with the version about to be released, in a dry run as well.
+# RELEASE_PHASE names the release.yaml job calling it: plan hands the version on
+# through GITHUB_OUTPUT, release verifies the artifact; any other value is
+# refused, so a job that forgets it cannot release. runs on Linux, where
+# sha256sum is GNU's.
 set -euo pipefail
 
 if [[ $# -ne 2 ]]; then

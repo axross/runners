@@ -1,8 +1,7 @@
 # cargo-deny policy for the CLI. `mise run deny:rust` runs the bans, licenses and
-# sources checks, which need no advisory database; the advisory check fetches
-# the RustSec database, so it runs in .github/workflows/rust-advisories.yaml.
-# docs/operations/cli.md records why each allowed licence and each crate is
-# accepted.
+# sources checks, which need no advisory database; the advisory check runs in
+# .github/workflows/rust-advisories.yaml. docs/operations/cli.md records why
+# each crate and licence is accepted.
 
 [graph]
 targets = [

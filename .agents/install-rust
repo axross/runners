@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # installs the Rust toolchain that cli/rust-toolchain.toml pins, and rustup
 # first when it is absent; docs/operations/agent-sessions.md describes it.
-# rustup comes from a pinned rustup-init release verified by SHA-256; the
-# toolchain itself is fetched by rustup over HTTPS, the exception
-# docs/conventions/security.md records. refresh the version and the hash
-# together, the hash computed from the real download.
+# rustup comes from a pinned rustup-init release verified by SHA-256; rustup
+# fetches the toolchain over HTTPS, the exception docs/conventions/security.md
+# records.
 set -euo pipefail
 
 RUSTUP_INIT_VERSION='1.29.2'

@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
-# writes a release version over the placeholder in the CLI's Cargo.toml
-# [package] table and its marshal-cli entry in Cargo.lock, in the runner only.
-# it refuses unless the version is X.Y.Z or X.Y.Z-<prerelease> and each file
-# has exactly one version line, holding the placeholder. it writes through a
-# temporary file, not `sed -i`, to run on the BSD tools of macOS and keep the
-# CRLF line endings of a Windows checkout. docs/operations/cli.md describes the
-# release build.
+# writes a release version over the placeholder in the CLI's Cargo.toml and
+# Cargo.lock, in the runner only; refuses unless it is X.Y.Z or X.Y.Z-<prerelease>
+# and each file has exactly one placeholder line. uses a temporary file, not
+# `sed -i`, for the BSD tools of macOS and CRLF checkouts. see
+# docs/operations/cli.md.
 set -euo pipefail
 
 placeholder="0.0.0-dev"
