@@ -48,7 +48,6 @@ fn open(root: &TempDir) -> (Open, mpsc::UnboundedReceiver<Incoming>) {
     (channel, requests)
 }
 
-/// sends a request from a thread of its own, as the client process would.
 async fn ask(roots: &Roots, request: Request) -> Result<Response, ClientError> {
     let roots = roots.clone();
     tokio::task::spawn_blocking(move || exchange(&roots, &request, PATIENCE))

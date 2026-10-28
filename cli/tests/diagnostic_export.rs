@@ -318,9 +318,7 @@ async fn the_container_is_removed_whatever_the_export_does() {
     }
 }
 
-/// the PowerShell test's identity cases: the allowlisted readback and fragmented
-/// output are accepted; an unfiltered value, one of a kibibyte or more, and a
-/// failed inspect are refused.
+/// the PowerShell test's identity cases.
 #[tokio::test(flavor = "current_thread")]
 async fn the_identity_readback_gives_the_powershell_outcomes() {
     let marker = "4f0c3a51b8e24d6f9a7e2c1d0b9a8f7e";

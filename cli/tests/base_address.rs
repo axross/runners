@@ -1,8 +1,6 @@
-//! the GitHub base address and the `docker` client cannot be moved in a release
-//! build: a debug build accepts `http://127.0.0.1:<port>` for the loopback tests
-//! and any client the tests name, but a release build ignores either request, so a
-//! release binary cannot send a token anywhere but GitHub or run another program
-//! as its `docker` client.
+//! the GitHub base address and the `docker` client move only in a debug build; a
+//! release build ignores either request, so a release binary cannot send a token
+//! anywhere but GitHub or run another program as its `docker` client.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,

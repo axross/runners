@@ -251,7 +251,6 @@ async fn a_truncated_copy_keeps_the_bytes_it_read_as_a_partial_file() {
     assert_eq!(sink.files.len(), 1);
     assert_eq!(sink.files[0].0, "metrics.txt");
     assert!(sink.files[0].1.len() <= 5, "{}", sink.files[0].1.len());
-    // a stream that ends inside a header is truncated too.
     let (result, _) = read(&[0u8; 100], false).await;
     assert_eq!(result, Err(ArchiveError::Truncated));
 }

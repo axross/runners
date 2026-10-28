@@ -260,9 +260,8 @@ async fn a_restart_during_a_job_end_export_waits_for_it_and_one_bundle_results()
     assert_eq!(world.bundles().len(), 2);
 }
 
-/// a stop that arrives while pool preparation exports a container an earlier run
-/// left cancels the preparation, and the container steps finalise it once that
-/// claim ends, so it is not kept.
+/// the container steps finalise it once the preparation's claim ends, so it is not
+/// kept.
 #[tokio::test(flavor = "current_thread")]
 async fn a_stop_during_a_startup_export_finalises_the_container_the_preparation_left() {
     let world = World::new();

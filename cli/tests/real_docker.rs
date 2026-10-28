@@ -23,7 +23,6 @@ use marshal_cli::runtime::log::StderrLog;
 use marshal_cli::runtime::secret::Secret;
 use marshal_cli::validate::PlannedVolume;
 
-/// removes everything the test may have created, whatever way it ends.
 struct Cleanup {
     pool: String,
     volume: String,
@@ -203,9 +202,7 @@ async fn a_container_and_the_cpu_probe_run_through_the_backend_and_leave_nothing
     );
 }
 
-/// a container that writes a small `metrics.txt` where the collector writes it is
-/// exported by the CLI's exporter child from a real `docker cp` stream into a
-/// private sink, then removed.
+/// the container writes a small `metrics.txt` where the collector writes it.
 #[tokio::test(flavor = "current_thread")]
 #[ignore = "needs a Docker daemon and MARSHAL_REAL_DOCKER_IMAGE; CI runs it in its own step"]
 async fn a_real_copy_stream_is_exported_into_a_bundle_and_the_container_removed() {

@@ -1,6 +1,5 @@
-//! a diagnostics-enabled pool under `start` as real processes: the bundle, the
-//! stops and the kill, the next `start` and the `diagnostics` client, with the
-//! token and JIT configuration kept out of all of it.
+//! a diagnostics-enabled pool under `start` as real processes, with the token and
+//! JIT configuration kept out of all of it.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -268,9 +267,8 @@ fn diagnostics_removes_a_container_whose_removal_failed_and_prints_the_counts() 
     assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
 }
 
-/// pool `r` has diagnostics off and a labelled container an earlier run left, so it
-/// is refused and the container is left to the manual recovery, while pool `d`
-/// runs but its sink is gone, so its count is unknown.
+/// pool `r` has diagnostics off and a labelled container an earlier run left; pool
+/// `d` runs but its sink is gone.
 #[test]
 fn diagnostics_fails_for_a_container_left_to_the_manual_recovery_and_shows_an_unknown_count() {
     let host = Host::new();
@@ -435,9 +433,8 @@ mod signals {
     }
 }
 
-/// killing `start` ends the exporter child of a job-end export with its copy
-/// client, through its liveness pipe on Unix and the Job Object on Windows, and
-/// standard error, which it shares, closes only when the exporter has ended.
+/// through its liveness pipe on Unix and the Job Object on Windows, and standard
+/// error, which it shares, closes only when the exporter has ended.
 #[test]
 fn an_exporter_whose_instance_is_killed_ends_with_its_clients() {
     let (host, _sink) = diagnostic_host();

@@ -422,10 +422,9 @@ fn start_resumes_a_stopped_instance_only_with_its_own_path_and_a_valid_configura
 
 const NO_CHECKOUT_NOTE: &str = "no checkout of this project was found";
 
-/// the configuration path `start` is given, under a checkout in the host's root,
-/// and the `diagnosticDirectory` compared with that checkout; on Unix the path
-/// reaches the file through a link out of the checkout, so only a lexical walk
-/// finds it, and an axpc directory is a Windows path there, never inside it.
+/// on Unix the path reaches the file through a link out of the checkout, so only a
+/// lexical walk finds it, and an axpc directory is a Windows path there, never
+/// inside it.
 #[cfg(unix)]
 fn under_a_checkout(host: &Host) -> (std::path::PathBuf, String) {
     fs::create_dir_all(host.path("elsewhere")).unwrap();

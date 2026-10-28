@@ -1,8 +1,7 @@
-//! `build` against a real Docker daemon, on Linux only, with the debug-only test
-//! definition in `tests/build-definition`, which holds the runner image's base and
-//! contract labels and nothing else, then the container backend's check of the
-//! built image, as `start` does; the test is `#[ignore]`d so a plain `cargo test`
-//! never needs a daemon, and fails when Docker is missing.
+//! `build` against a real Docker daemon on Linux, with the debug-only definition in
+//! `tests/build-definition`, then the container backend's check of the built image;
+//! `#[ignore]`d so a plain `cargo test` never needs a daemon, and it fails when
+//! Docker is missing.
 #![cfg(target_os = "linux")]
 #![allow(
     clippy::unwrap_used,
@@ -50,7 +49,6 @@ fn declared_labels(definition: &Path) -> BTreeMap<String, String> {
         .collect()
 }
 
-/// removes every image of the test's repository, whatever way the test ends.
 struct Cleanup;
 
 impl Cleanup {

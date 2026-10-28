@@ -95,7 +95,6 @@ fn a_file_over_the_size_limit_is_rejected_without_being_parsed() {
     let mut valid = fs::read(axpc_example()).unwrap();
     let scratch = TempDir::new();
 
-    // exactly at the limit, padded with whitespace after a valid document
     valid.resize(limit, b' ');
     let at_limit = scratch.write("at-limit.json", &valid);
     let output = run_path(&at_limit, Some("axpc"));
