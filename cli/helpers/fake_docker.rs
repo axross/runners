@@ -55,6 +55,7 @@
 //!   file exists and ends with `final=observed` otherwise; `cp_mode` (`raw`, which
 //!   adds `raw-1.log`, `gap`, without the final observation, `bad`, with a
 //!   traversal name, `fail`, `hang`, `slow`, which waits 2 s first) changes it;
+//! - `kill_fails` fails a `kill`;
 //! - `export` stands in for an exporter child that ignores its liveness pipe: it
 //!   waits without reading its standard input.
 

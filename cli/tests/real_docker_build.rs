@@ -1,7 +1,7 @@
 //! `build` against a real Docker daemon on Linux, with the debug-only definition in
 //! `tests/build-definition`, then the container backend's check of the built image;
 //! `#[ignore]`d so a plain `cargo test` never needs a daemon, and it fails when
-//! Docker is missing.
+//! Docker is missing, so a step that cannot run the test does not look as if it passed.
 #![cfg(target_os = "linux")]
 #![allow(
     clippy::unwrap_used,

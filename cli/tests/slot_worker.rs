@@ -461,8 +461,8 @@ fn diagnostic_record() -> DiagnosticRecord {
     }
 }
 
-/// the last run ends as the stop is asked for, so its container is left retained to
-/// the stop's steps.
+/// the last run ends as the stop is asked for, so its container, unlike the earlier
+/// ones, is left retained to the stop's steps.
 #[tokio::test(flavor = "current_thread")]
 async fn a_diagnostic_container_is_finalised_before_the_slot_registers_again_and_a_gap_keeps_the_backoff()
  {

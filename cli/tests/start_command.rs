@@ -131,7 +131,7 @@ fn with_no_instance_stop_restart_and_status_say_so_and_exit_1() {
 }
 
 /// an `instance-helper` holding the host's lock and serving its channel in `mode`
-/// (`serve` or `mute`), which ends when dropped and so closes its standard input.
+/// (`serve` or `mute`); dropping it closes its standard input, which ends it.
 struct Helper(std::process::Child);
 
 impl Helper {
@@ -422,9 +422,9 @@ fn start_resumes_a_stopped_instance_only_with_its_own_path_and_a_valid_configura
 
 const NO_CHECKOUT_NOTE: &str = "no checkout of this project was found";
 
-/// on Unix the path reaches the file through a link out of the checkout, so only a
-/// lexical walk finds it, and an axpc directory is a Windows path there, never
-/// inside it.
+/// the configuration path `start` is given, under a checkout; on Unix it reaches the
+/// file through a link out of the checkout, so only a lexical walk finds it, and an
+/// axpc directory is a Windows path there, never inside it.
 #[cfg(unix)]
 fn under_a_checkout(host: &Host) -> (std::path::PathBuf, String) {
     fs::create_dir_all(host.path("elsewhere")).unwrap();

@@ -1,6 +1,7 @@
 //! the container backend against a real Docker daemon, on Linux only; the tests are
 //! `#[ignore]`d so a plain `cargo test` never needs a daemon, and each fails when
-//! Docker or the image `MARSHAL_REAL_DOCKER_IMAGE` names is missing.
+//! Docker or the image `MARSHAL_REAL_DOCKER_IMAGE` names is missing, so a step that
+//! cannot run a test does not look as if it passed.
 #![cfg(target_os = "linux")]
 #![allow(
     clippy::unwrap_used,
@@ -202,7 +203,7 @@ async fn a_container_and_the_cpu_probe_run_through_the_backend_and_leave_nothing
     );
 }
 
-/// the container writes a small `metrics.txt` where the collector writes it.
+/// the test's container writes a small `metrics.txt` where the collector writes it.
 #[tokio::test(flavor = "current_thread")]
 #[ignore = "needs a Docker daemon and MARSHAL_REAL_DOCKER_IMAGE; CI runs it in its own step"]
 async fn a_real_copy_stream_is_exported_into_a_bundle_and_the_container_removed() {
