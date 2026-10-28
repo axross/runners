@@ -1,18 +1,18 @@
-//! The two host profiles a configuration can be validated against.
+//! the two host profiles a configuration can be validated against.
 
 use std::fmt;
 
-/// The machine a configuration describes. It decides the registration labels, the
-/// path form of private paths, and which fields exist.
+/// the machine a configuration describes, which decides its registration labels,
+/// the path form of its private paths, and its fields.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Profile {
-    /// The Windows host with Docker Desktop, run by the PowerShell supervisor.
+    /// the Windows host with Docker Desktop, run by the PowerShell supervisor.
     Axpc,
-    /// The macOS host that runs VM pools.
+    /// the macOS host that runs VM pools.
     Axmc,
 }
 
-/// The operating system of an axmc pool's virtual machines.
+/// the operating system of an axmc pool's virtual machines.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Os {
     Linux,
@@ -22,7 +22,7 @@ pub enum Os {
 const AXPC_PLATFORM_LABELS: [&str; 3] = ["self-hosted", "linux", "x64"];
 const AXMC_LINUX_PLATFORM_LABELS: [&str; 3] = ["self-hosted", "linux", "ARM64"];
 const AXMC_MACOS_PLATFORM_LABELS: [&str; 3] = ["self-hosted", "macOS", "ARM64"];
-/// Every platform label either host registers. A pool cannot carry one it does not
+/// every platform label either host registers; a pool cannot carry one it does not
 /// provide itself.
 const ALL_PLATFORM_LABELS: [&str; 5] = ["self-hosted", "linux", "x64", "macOS", "ARM64"];
 
@@ -60,7 +60,7 @@ const AXMC_ENTRY_FIELDS: [&str; 14] = [
 ];
 
 impl Profile {
-    /// Parses a profile name as `--profile` spells it.
+    /// parses a profile name as `--profile` spells it.
     #[must_use]
     pub fn from_name(name: &str) -> Option<Self> {
         match name {
@@ -70,7 +70,7 @@ impl Profile {
         }
     }
 
-    /// The profile of the machine the CLI runs on, when that machine is one of the
+    /// the profile of the machine the CLI runs on, when that machine is one of the
     /// two hosts.
     #[must_use]
     pub fn of_this_machine() -> Option<Self> {
@@ -91,14 +91,14 @@ impl Profile {
         }
     }
 
-    /// The label a pool carries when its `labels` is absent or empty.
+    /// the label a pool carries when its `labels` is absent or empty.
     #[must_use]
     pub fn routing_label(self) -> &'static str {
         self.name()
     }
 
-    /// The labels every registration carries. An axmc pool whose OS is unusable
-    /// carries only what both OSes share.
+    /// the labels every registration carries, only what both OSes share for an axmc
+    /// pool whose OS is unusable.
     #[must_use]
     pub fn platform_labels(self, os: Option<Os>) -> &'static [&'static str] {
         match (self, os) {
@@ -109,8 +109,8 @@ impl Profile {
         }
     }
 
-    /// The platform labels of any host or OS. An axmc pool rejects one that it does
-    /// not provide itself; axpc keeps accepting them, as its schema always has.
+    /// the platform labels of any host or OS, which an axmc pool rejects when it does
+    /// not provide them itself; axpc accepts them.
     #[must_use]
     pub fn foreign_platform_labels(self) -> &'static [&'static str] {
         match self {

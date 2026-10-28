@@ -1,25 +1,23 @@
-//! Where each slot's CPUs start, and which of the CPUs a container may use it takes.
-//!
-//! The offsets are shared by the plan summary `validate` prints and the backend, so
-//! the two agree. The selection reproduces the PowerShell supervisor's
-//! `Select-CpuAffinity`: a slot starts at its offset modulo the available CPUs and
-//! takes consecutive IDs from the sorted inventory, wrapping at the end.
+//! where each slot's CPUs start, shared by the plan summary and the backend, and
+//! which of the allowed CPUs it takes, as the PowerShell supervisor's
+//! `Select-CpuAffinity` does: consecutive IDs of the sorted inventory from its
+//! offset modulo the allowed CPUs, wrapping at the end.
 
 use std::fmt;
 
 use crate::validate::Entry;
 
-/// The longest allowed-CPU list the selection reads, which is also the most the
+/// the longest allowed-CPU list the selection reads, which is also the most the
 /// backend accepts from the probe.
 pub const MAX_CPU_LIST_BYTES: usize = 64 * 1024;
 
-/// The CPUs a slot's affinity selects: the quota rounded up.
+/// the CPUs a slot's affinity selects: the quota rounded up.
 #[must_use]
 pub fn affinity_count(entry: &Entry) -> u64 {
     entry.cpus.ceil() as u64
 }
 
-/// Where the entry's first slot starts among the affinity positions, after every
+/// where the entry's first slot starts among the affinity positions, after every
 /// preceding entry's slots.
 #[must_use]
 pub fn affinity_offset(entries: &[Entry], index: usize) -> u64 {
@@ -30,7 +28,7 @@ pub fn affinity_offset(entries: &[Entry], index: usize) -> u64 {
         .sum()
 }
 
-/// Where a slot starts, counting slots from 1: its entry's offset, then the CPUs
+/// where a slot starts, counting slots from 1: its entry's offset, then the CPUs
 /// of the entry's earlier slots.
 #[must_use]
 pub fn slot_offset(entries: &[Entry], index: usize, slot: u32) -> u64 {
@@ -39,7 +37,7 @@ pub fn slot_offset(entries: &[Entry], index: usize, slot: u32) -> u64 {
     affinity_offset(entries, index) + preceding_slots * count
 }
 
-/// Why an allowed-CPU list or a request against it was refused.
+/// why an allowed-CPU list or a request against it was refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CpuError {
     InvalidList,
@@ -67,10 +65,10 @@ impl fmt::Display for CpuError {
 
 impl std::error::Error for CpuError {}
 
-/// The largest affinity cardinality, which is the largest `cpus` a pool may ask for.
+/// the largest affinity cardinality, which is the largest `cpus` a pool may ask for.
 const MAX_COUNT: u64 = 64;
 
-/// One range of the allowed list, both ends included.
+/// one range of the allowed list, both ends included.
 #[derive(Clone, Copy)]
 struct Span {
     first: i32,
@@ -83,15 +81,10 @@ impl Span {
     }
 }
 
-/// Selects `count` CPU IDs from the allowed list `available` (the text of
-/// `Cpus_allowed_list`), starting at `offset` modulo the number of allowed CPUs,
-/// and returns them in canonical `a,b-c` form.
-///
-/// # Errors
-///
-/// The list must be ordered, distinct ranges of IDs that fit an `i32`, with no
-/// space, sign or leading zero, at most [`MAX_CPU_LIST_BYTES`] long; `count` must
-/// be from 1 to 64 and no larger than the number of allowed CPUs.
+/// selects `count` CPU IDs from the allowed list `available` (the text of
+/// `Cpus_allowed_list`: ordered, distinct ranges with no space, sign or leading
+/// zero), starting at `offset` modulo the number of allowed CPUs, and returns them
+/// in canonical `a,b-c` form.
 pub fn select_cpus(available: &str, count: u64, offset: u64) -> Result<String, CpuError> {
     if !(1..=MAX_COUNT).contains(&count) {
         return Err(CpuError::CountOutOfRange);
@@ -113,7 +106,7 @@ fn parse_list(available: &str) -> Result<Vec<Span>, CpuError> {
     if available.len() > MAX_CPU_LIST_BYTES {
         return Err(CpuError::InvalidList);
     }
-    // The whole list's syntax is judged before any ID's range or order, as the
+    // the whole list's syntax is judged before any ID's range or order, as the
     // PowerShell `Select-CpuAffinity` does, so a list with several defects gets the
     // same refusal from both.
     if !available.split(',').all(is_well_formed_range) {
@@ -140,7 +133,7 @@ fn parse_list(available: &str) -> Result<Vec<Span>, CpuError> {
     Ok(spans)
 }
 
-/// An ID or an `ID-ID` range, with at most one `-`.
+/// an ID or an `ID-ID` range, with at most one `-`.
 fn is_well_formed_range(part: &str) -> bool {
     match part.split_once('-') {
         Some((first, last)) => is_well_formed_id(first) && is_well_formed_id(last),
@@ -148,7 +141,7 @@ fn is_well_formed_range(part: &str) -> bool {
     }
 }
 
-/// Decimal digits with no sign, space, or leading zero (a lone `0` is fine).
+/// decimal digits with no sign, space, or leading zero (a lone `0` is fine).
 fn is_well_formed_id(text: &str) -> bool {
     let digits = text.as_bytes();
     !digits.is_empty()
@@ -156,12 +149,12 @@ fn is_well_formed_id(text: &str) -> bool {
         && (digits.len() == 1 || digits.first() != Some(&b'0'))
 }
 
-/// Parses an ID that [`is_well_formed_id`] accepted; one beyond `i32` is refused.
+/// parses an ID that [`is_well_formed_id`] accepted; one beyond `i32` is refused.
 fn parse_id(text: &str) -> Result<i32, CpuError> {
     text.parse().map_err(|_| CpuError::UnrepresentableId)
 }
 
-/// Returns the ID at `position` among the allowed CPUs counted in order.
+/// returns the ID at `position` among the allowed CPUs counted in order.
 fn id_at(mut position: u64, spans: &[Span]) -> Option<i32> {
     for span in spans {
         if position < span.len() {
@@ -172,7 +165,7 @@ fn id_at(mut position: u64, spans: &[Span]) -> Option<i32> {
     None
 }
 
-/// Writes sorted, distinct IDs as comma-separated IDs and runs: `2,5-6,11`.
+/// writes sorted, distinct IDs as comma-separated IDs and runs: `2,5-6,11`.
 fn canonical(sorted: &[i32]) -> String {
     let mut parts: Vec<String> = Vec::new();
     let mut ids = sorted.iter().copied().peekable();
@@ -194,9 +187,8 @@ fn canonical(sorted: &[i32]) -> String {
 mod tests {
     use super::*;
 
-    /// The inventory and the five slots of the PowerShell golden case in
-    /// `test-cpu-affinity.ps1`: entries of 2 CPUs with 2 slots and 1 slot give the
-    /// offsets 0, 2 and 4, and the last two offsets (6 and 5) overcommit.
+    /// the inventory and the offsets 0, 2, 4, 6 and 5 of the PowerShell golden case
+    /// in `test-cpu-affinity.ps1`, whose last two offsets overcommit.
     const INVENTORY: &str = "2,5-6,11,14-15";
 
     #[test]

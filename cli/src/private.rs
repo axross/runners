@@ -1,14 +1,8 @@
-//! Files and directories only the current user may use.
-//!
-//! The control socket lives in a private directory, and on macOS a token file must be
-//! private too. A private directory is a real directory, not a link, owned by the
-//! current user with mode `0700`; a private file is a regular file owned by the
-//! current user with mode `0600`. The checks read what the file system says and
-//! never repair it, so a directory someone else made, or one that was opened up, is
-//! refused rather than adopted.
-//!
-//! `std` has no call for the process's own user ID and `unsafe` is forbidden, so
-//! [`current_uid`] reads it as the owner of a file the process creates.
+//! files and directories only the current user may use: a private directory is a
+//! real directory, not a link, owned by the current user with mode `0700`, and a
+//! private file a regular file with mode `0600`; the checks never repair what they
+//! refuse. `std` has no call for the process's own user ID and `unsafe` is
+//! forbidden, so [`current_uid`] reads it as the owner of a file the process creates.
 
 use std::fmt;
 use std::fs::{self, Metadata};
@@ -19,19 +13,18 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-/// The mode of a private directory.
+/// the mode of a private directory.
 pub const DIRECTORY_MODE: u32 = 0o700;
 
-/// The mode of a private file, a token file or a socket.
+/// the mode of a private file, a token file or a socket.
 pub const FILE_MODE: u32 = 0o600;
 
-/// The permission bits that count, including the special ones.
+/// the permission bits that count, including the special ones.
 const MODE_MASK: u32 = 0o7777;
 
-/// How many names [`current_uid`] tries for its file before giving up.
 const UID_FILE_ATTEMPTS: usize = 8;
 
-/// Why a path is not private.
+/// why a path is not private.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PrivateError {
     Missing(PathBuf),
@@ -125,11 +118,7 @@ fn require_owner_and_mode(
     Ok(())
 }
 
-/// Checks that `path` is a directory, not a link, owned by `uid`, with mode `0700`.
-///
-/// # Errors
-///
-/// See [`PrivateError`].
+/// checks that `path` is a directory, not a link, owned by `uid`, with mode `0700`.
 pub fn check_private_directory(path: &Path, uid: u32) -> Result<(), PrivateError> {
     let metadata = examine(path)?;
     if !metadata.file_type().is_dir() {
@@ -138,13 +127,9 @@ pub fn check_private_directory(path: &Path, uid: u32) -> Result<(), PrivateError
     require_owner_and_mode(path, &metadata, uid, DIRECTORY_MODE)
 }
 
-/// Creates `path` with mode `0700` when it does not exist, then checks it as
-/// [`check_private_directory`] does. Its parent must exist. A directory that is
-/// already there is checked, never changed.
-///
-/// # Errors
-///
-/// See [`PrivateError`].
+/// creates `path` with mode `0700` when it does not exist, its parent having to
+/// exist, then checks it as [`check_private_directory`] does; a directory already
+/// there is checked, never changed.
 pub fn ensure_private_directory(path: &Path, uid: u32) -> Result<(), PrivateError> {
     match fs::DirBuilder::new().mode(DIRECTORY_MODE).create(path) {
         Ok(()) => {}
@@ -159,14 +144,10 @@ pub fn ensure_private_directory(path: &Path, uid: u32) -> Result<(), PrivateErro
     check_private_directory(path, uid)
 }
 
-/// Checks the metadata of the open file at `path`: a regular file owned by `uid`
-/// with mode `0600`. The caller passes the metadata of the file it holds open, so
+/// checks the metadata of the open file at `path`: a regular file owned by `uid`
+/// with mode `0600`; the caller passes the metadata of the file it holds open, so
 /// the answer is about the file it will read, not about whatever the path names
 /// later.
-///
-/// # Errors
-///
-/// See [`PrivateError`].
 pub fn check_private_file(path: &Path, metadata: &Metadata, uid: u32) -> Result<(), PrivateError> {
     if !metadata.file_type().is_file() {
         return Err(PrivateError::NotARegularFile(path.to_path_buf()));
@@ -174,12 +155,8 @@ pub fn check_private_file(path: &Path, metadata: &Metadata, uid: u32) -> Result<
     require_owner_and_mode(path, metadata, uid, FILE_MODE)
 }
 
-/// The current user's ID, read as the owner of a file this process creates in the
-/// temporary directory. It is read once.
-///
-/// # Errors
-///
-/// Fails when the temporary directory cannot hold a file.
+/// the current user's ID, read once as the owner of a file this process creates in
+/// the temporary directory, failing when that directory cannot hold a file.
 pub fn current_uid() -> io::Result<u32> {
     static UID: OnceLock<u32> = OnceLock::new();
     if let Some(uid) = UID.get() {
@@ -199,8 +176,8 @@ fn uid_from_new_file() -> io::Result<u32> {
     uid_from_new_file_in(&std::env::temp_dir(), names)
 }
 
-/// Creates a file in `directory` under the first of `names` that is free, reads its
-/// owner, and removes it. A name that is taken is skipped, never opened.
+/// creates a file in `directory` under the first of `names` that is free, reads its
+/// owner, and removes it; a name that is taken is skipped, never opened.
 fn uid_from_new_file_in(
     directory: &Path,
     names: impl IntoIterator<Item = String>,

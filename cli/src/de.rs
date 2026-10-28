@@ -1,15 +1,8 @@
-//! The parsed JSON tree as a serde data format.
-//!
-//! [`Deserializer`] reads any type that derives `Deserialize` from a
-//! [`Value`]. A failed read is an [`Error`], never a panic, and reading a struct
-//! from anything but an object is one. Only reading is implemented: nothing uses
-//! serde's `Serialize`, and the one JSON body the crate sends is written by hand.
-//!
-//! A foreign target sees a number as `i64`, `u64`, `i128` or `f64`, so `1e400` is
-//! infinity there. The tree's own [`Value`] keeps the literal text instead: its
-//! `Deserialize` asks for a private newtype struct, and this reader answers a
-//! number node by handing over the literal. That protocol works only with this
-//! reader.
+//! the parsed JSON tree as a serde data format: [`Deserializer`] reads any type that
+//! derives `Deserialize` from a [`Value`], and only reading is implemented, since the
+//! crate writes its one JSON body by hand; a foreign target sees a number as `i64`, `u64`, `i128` or `f64`, so `1e400` is infinity
+//! there, while [`Value`] keeps the literal text through a private newtype-struct
+//! protocol that works only with this reader.
 
 use std::fmt;
 
@@ -22,11 +15,11 @@ use serde::de::{
 use crate::fold;
 use crate::json::{Number, Object, Value};
 
-/// The newtype struct name that asks this reader for a [`Value`], with a number
+/// the newtype struct name that asks this reader for a [`Value`], with a number
 /// delivered as its literal text.
 const VALUE_TOKEN: &str = "$marshal::Value";
 
-/// Why a value could not be read into the requested type.
+/// why a value could not be read into the requested type.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Error {
     message: String,
@@ -48,7 +41,7 @@ impl de::Error for Error {
     }
 }
 
-/// Reads a type from a parsed value.
+/// reads a type from a parsed value.
 #[derive(Debug, Clone, Copy)]
 pub struct Deserializer<'de> {
     value: &'de Value,
@@ -64,9 +57,8 @@ impl<'de> Deserializer<'de> {
         }
     }
 
-    /// Matches an object's member names to a struct's field names ignoring ASCII
-    /// case, the way PowerShell finds a property. Only struct fields are matched
-    /// this way; map keys and enum variants stay exact.
+    /// matches an object's member names to a struct's field names ignoring ASCII
+    /// case, as PowerShell finds a property; map keys and enum variants stay exact.
     #[must_use]
     pub fn ignoring_field_case(self) -> Self {
         Self {
@@ -95,7 +87,7 @@ impl<'de> Deserializer<'de> {
     }
 }
 
-/// Hands a number to the visitor as the narrowest integer it fits, else a double.
+/// hands a number to the visitor as the narrowest integer it fits, else a double.
 fn visit_number<'de, V: Visitor<'de>>(number: &Number, visitor: V) -> Result<V::Value, Error> {
     match number.as_integer() {
         Some(integer) => {
@@ -221,7 +213,7 @@ impl<'de> SeqAccess<'de> for Elements<'de> {
     }
 }
 
-/// The members of an object, in document order. `folding` lists the field names a
+/// the members of an object, in document order; `folding` lists the field names a
 /// struct read matches member names to, when the caller asked to ignore case.
 struct Members<'de, I> {
     members: I,
@@ -278,8 +270,8 @@ where
     }
 }
 
-/// An enum read from an object with one member: the member's name is the variant
-/// and its value is the variant's content.
+/// an enum read from an object with one member, whose name is the variant and whose
+/// value is its content.
 struct Variant<'de> {
     name: &'de str,
     payload: &'de Value,

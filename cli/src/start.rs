@@ -1,11 +1,5 @@
 //! `start`: runs the host's pools in the foreground as the machine's one instance,
-//! or asks a stopped instance to resume.
-//!
-//! A fresh `start` takes the instance lock, validates the configuration and prints
-//! its plan, opens its log file, contains its children, builds the HTTPS client,
-//! opens the control channel, and then runs the instance until a stop. A `start`
-//! that finds the lock held changes nothing locally: it asks this user's instance
-//! to resume, which only a stopped instance does.
+//! or asks a stopped instance to resume; see `docs/operations/cli.md`.
 
 use std::convert::Infallible;
 use std::ffi::{OsStr, OsString};
@@ -35,37 +29,36 @@ use crate::runtime::log::Log;
 use crate::runtime::registration::{GitHubRegistrar, HttpLimits};
 use crate::summary::plan_summary;
 
-/// How long a resuming `start` waits for the instance's answer.
 const RESUME_ANSWER_WITHIN: Duration = Duration::from_secs(10);
 
-/// What a console close, a logoff or a shutdown leaves the instance's forced stop,
+/// what a console close, a logoff or a shutdown leaves the instance's forced stop,
 /// inside the 5 s the operating system allows a close handler, with
 /// [`ANSWERS_WITHIN`] after it.
 const CLOSE_REMOVE_BUDGET: Duration = Duration::from_secs(4);
 
-/// How long the ending instance gives the answers it has already sent, such as the
+/// how long the ending instance gives the answers it has already sent, such as the
 /// one to `stop`, to reach their clients before the channel closes.
 pub(crate) const ANSWERS_WITHIN: Duration = Duration::from_millis(500);
 
-/// What a command that needs the instance lock says when the lock is held and this
+/// what a command that needs the instance lock says when the lock is held and this
 /// user's channel does not answer.
 pub(crate) const LOCK_HELD_ELSEWHERE: &str = "the instance lock is held, by another OS user or by an instance of this user \
      that is still starting or ending; the lock does not say which";
 
-/// What `start` was given.
+/// what `start` was given.
 pub struct StartRequest<'a> {
     pub config: &'a Path,
     pub profile: Profile,
-    /// Moves the lock, channel and log roots; a debug build only.
+    /// moves the lock, channel and log roots; a debug build only.
     pub test_root: Option<&'a Path>,
-    /// Moves the GitHub base address; a debug build only.
+    /// moves the GitHub base address; a debug build only.
     pub github_api: Option<&'a str>,
-    /// Names the `docker` client; a debug build only.
+    /// names the `docker` client; a debug build only.
     pub docker: Option<&'a OsStr>,
 }
 
-/// Runs `start` and returns its exit code. Messages before the log file opens go to
-/// `err`; after that, every line goes through the log.
+/// runs `start` and returns its exit code; messages before the log file opens go to
+/// `err`, and every line after goes through the log.
 pub fn start(request: &StartRequest<'_>, err: &mut dyn Write) -> u8 {
     let roots = match Roots::resolve(request.test_root) {
         Ok(roots) => roots,
@@ -169,7 +162,7 @@ pub(crate) fn single_threaded_runtime() -> io::Result<tokio::runtime::Runtime> {
         .build()
 }
 
-/// Asks this user's instance, which holds the lock, to resume with the same path
+/// asks this user's instance, which holds the lock, to resume with the same path
 /// and profile.
 fn resume(roots: &Roots, request: &StartRequest<'_>, err: &mut dyn Write) -> u8 {
     let path = match fs::canonicalize(request.config) {
@@ -199,20 +192,19 @@ fn resume(roots: &Roots, request: &StartRequest<'_>, err: &mut dyn Write) -> u8 
     }
 }
 
-/// What the instance is run with.
 struct Parts<'a> {
     lock: &'a InstanceLock,
     roots: &'a Roots,
-    /// Holds the canonical path, which a resume is compared with.
+    /// holds the canonical path, which a resume is compared with.
     settings: Settings,
-    /// The path as given, made absolute, which every read uses: the checkout rule
+    /// the path as given, made absolute, which every read uses: the checkout rule
     /// walks it lexically, as at the first validation.
     config_path: PathBuf,
     launcher: JobLauncher,
     docker: OsString,
-    /// This program, run again as the exporter child.
+    /// this program, run again as the exporter child.
     exporter: Option<PathBuf>,
-    /// The checkout above the configuration, which every sink must lie outside.
+    /// the checkout above the configuration, which every sink must lie outside.
     checkout: Option<PathBuf>,
     registrar: &'a GitHubRegistrar,
     log: Rc<StartLog>,
@@ -294,7 +286,7 @@ async fn run_instance(parts: Parts<'_>, plan: crate::validate::Plan) -> u8 {
     code
 }
 
-/// Asks the instance to stop, as `stop` does, through its own request channel.
+/// asks the instance to stop, as `stop` does, through its own request channel.
 pub(crate) fn request_stop(sender: &mpsc::UnboundedSender<Incoming>) {
     let (reply, _) = oneshot::channel();
     let _ = sender.send(Incoming {
@@ -303,18 +295,16 @@ pub(crate) fn request_stop(sender: &mpsc::UnboundedSender<Incoming>) {
     });
 }
 
-/// Polls a signal stream for its next signal.
 type PollSignal = Box<dyn FnMut(&mut Context<'_>) -> Poll<Option<()>>>;
 
-/// One signal `start` listens for.
 struct Listener {
     name: &'static str,
-    /// A second one forces removal.
+    /// a second one forces removal.
     is_interrupt: bool,
     poll: PollSignal,
 }
 
-/// The listener for a stream `opened` gives, or a warning naming the signal when it
+/// the listener for a stream `opened` gives, or a warning naming the signal when it
 /// could not be opened.
 fn listener<S: 'static>(
     name: &'static str,
@@ -336,7 +326,7 @@ fn listener<S: 'static>(
     }
 }
 
-/// Listens for SIGINT, SIGTERM and SIGHUP.
+/// listens for SIGINT, SIGTERM and SIGHUP.
 #[cfg(unix)]
 fn listeners(log: &dyn Log) -> Vec<Listener> {
     use tokio::signal::unix::{Signal, SignalKind, signal};
@@ -352,7 +342,7 @@ fn listeners(log: &dyn Log) -> Vec<Listener> {
     .collect()
 }
 
-/// Listens for Ctrl+C and Ctrl+Break, which `start` treats alike.
+/// listens for Ctrl+C and Ctrl+Break, which `start` treats alike.
 #[cfg(windows)]
 fn listeners(log: &dyn Log) -> Vec<Listener> {
     use tokio::signal::windows::{CtrlBreak, CtrlC, ctrl_break, ctrl_c};
@@ -365,8 +355,8 @@ fn listeners(log: &dyn Log) -> Vec<Listener> {
     .collect()
 }
 
-/// Turns each signal [`listeners`] could open into a stop, and a second interrupt
-/// into `force`, when there is one. A signal that could not be opened keeps its
+/// turns each signal [`listeners`] could open into a stop, and a second interrupt
+/// into `force` when there is one; a signal that could not be opened keeps its
 /// default action.
 pub(crate) async fn signals(
     sender: &mpsc::UnboundedSender<Incoming>,
@@ -413,11 +403,11 @@ fn on_signal(
     }
 }
 
-/// On Windows, waits for the console to close or the user to log off or the
-/// machine to shut down. The async runtime's handler does not return to the
+/// on Windows, waits for the console to close or the user to log off or the
+/// machine to shut down; the async runtime's handler does not return to the
 /// operating system for these events, so the process lives until `start` has
-/// stopped the instance within [`CLOSE_REMOVE_BUDGET`] and exits; see the CLI
-/// document.
+/// stopped the instance within [`CLOSE_REMOVE_BUDGET`] and exits, see
+/// `docs/operations/cli.md`.
 #[cfg(windows)]
 async fn console_closed(log: &dyn Log) {
     use tokio::signal::windows::{ctrl_close, ctrl_logoff, ctrl_shutdown};
@@ -442,9 +432,9 @@ async fn console_closed(_log: &dyn Log) {
     std::future::pending().await
 }
 
-/// Puts this process in a Job Object that kills every process in it when the last
-/// handle closes. The handle is never closed by the CLI, so the operating system
-/// closes it when the process ends, however it ends, after the exit code is set.
+/// puts this process in a Job Object that kills every process in it when the last
+/// handle closes; the CLI never closes the handle, so the operating system does
+/// when the process ends, however it ends, after the exit code is set.
 #[cfg(windows)]
 pub(crate) fn contain() -> Result<JobLauncher, String> {
     use win32job::{ExtendedLimitInfo, Job};
@@ -459,7 +449,7 @@ pub(crate) fn contain() -> Result<JobLauncher, String> {
     Ok(JobLauncher::Direct)
 }
 
-/// Runs each job container's client through the shim, this program run again, so
+/// runs each job container's client through the shim, this program run again, so
 /// the container is removed when this process ends, however it ends.
 #[cfg(unix)]
 fn contain() -> Result<JobLauncher, String> {
@@ -468,7 +458,7 @@ fn contain() -> Result<JobLauncher, String> {
         .map_err(|error| format!("this program cannot be found to run the shim: {error}"))
 }
 
-/// A panic's message could hold anything, so the default hook, which writes it to
+/// a panic's message could hold anything, so the default hook, which writes it to
 /// the terminal unmasked, is replaced by one that names only where it happened.
 pub(crate) fn hide_panic_messages() {
     std::panic::set_hook(Box::new(|info| {

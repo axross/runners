@@ -1,17 +1,9 @@
-//! The shim between the CLI and one job container's `docker run` client, on Unix.
-//!
-//! `start` runs the CLI again as `marshal shim --name <container> -- <docker>
-//! <arguments>`. The shim starts the client, in a process group of its own, with the
-//! client's standard error joined to its standard output, which the CLI reads. Its
-//! own standard input is the read end of a liveness pipe whose write end only the
-//! CLI holds. When the client ends while the pipe is open, the shim exits with its
-//! code. When the pipe has closed, because the CLI dropped the run or ended however
-//! it ended, the shim force-removes the container within 5 s, kills the client, and
-//! exits, even when the client ended at the same time. In diagnostic mode, for a
-//! diagnostic container, it ends the container with `docker kill` instead and keeps
-//! it, so its evidence survives for the next finalisation. The JIT configuration
-//! reaches the client through the environment the shim inherits, and the removal's
-//! client does not get it.
+//! the shim between the CLI and one job container's `docker run` client, on Unix:
+//! when the liveness pipe on its standard input closes, it force-removes the
+//! container within 5 s (in diagnostic mode it kills the container and keeps it),
+//! kills the client and exits; the JIT configuration reaches the client through the
+//! environment the shim inherits, and the removal's client does not get it; see
+//! `docs/operations/cli.md`.
 
 use std::ffi::{OsStr, OsString};
 use std::os::fd::AsFd;
@@ -28,27 +20,24 @@ use crate::runtime::clock::SystemClock;
 use crate::runtime::docker::{DockerBackend, DockerConfig};
 use crate::runtime::log::StderrLog;
 
-/// The hidden subcommand that runs the shim.
+/// the hidden subcommand that runs the shim.
 pub const SHIM_COMMAND: &str = "shim";
 
-/// The flag that runs the shim in diagnostic mode.
+/// the flag that runs the shim in diagnostic mode.
 pub const DIAGNOSTIC_FLAG: &str = "--diagnostic";
 
-/// How long the shim gives the removal, or the kill, of its container once the
-/// pipe has closed.
 const REMOVE_BUDGET: Duration = Duration::from_secs(5);
 
-/// The exit code when the client cannot be started or supervised.
 const CANNOT_RUN: u8 = 125;
 
-/// The exit code after the pipe closed and the container was removed, or ended.
+/// the exit code after the pipe closed and the container was removed, or ended.
 const CLI_GONE: u8 = 0;
 
-/// The exit code after the pipe closed and the removal or the kill failed or ran
+/// the exit code after the pipe closed and the removal or the kill failed or ran
 /// out of time.
 const REMOVAL_FAILED: u8 = 1;
 
-/// Runs the shim for the container `name`, whose client is `program` with
+/// runs the shim for the container `name`, whose client is `program` with
 /// `arguments`; with `diagnostic`, in diagnostic mode.
 #[must_use]
 pub fn run(name: &str, diagnostic: bool, program: &OsStr, arguments: &[OsString]) -> ExitCode {
@@ -62,7 +51,7 @@ pub fn run(name: &str, diagnostic: bool, program: &OsStr, arguments: &[OsString]
     runtime.block_on(supervise(name, diagnostic, program, arguments))
 }
 
-/// Waits on a thread of its own for standard input to end, which is when the CLI's
+/// waits on a thread of its own for standard input to end, which is when the CLI's
 /// end of the pipe closes.
 fn input_closed() -> oneshot::Receiver<()> {
     let (closed, receiver) = oneshot::channel();
@@ -73,7 +62,7 @@ fn input_closed() -> oneshot::Receiver<()> {
     receiver
 }
 
-/// The client's exit code, or 128 plus the signal that ended it.
+/// the client's exit code, or 128 plus the signal that ended it.
 fn exit_code(status: &ExitStatus) -> u8 {
     let code = status
         .code()
@@ -133,7 +122,7 @@ async fn supervise(
     }
 }
 
-/// Force-removes the container, or ends a diagnostic one and keeps it, within
+/// force-removes the container, or ends a diagnostic one and keeps it, within
 /// [`REMOVE_BUDGET`], with the container backend's own calls.
 async fn clean_up(name: &str, diagnostic: bool, program: &OsStr) -> bool {
     let config = DockerConfig {
