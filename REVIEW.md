@@ -206,13 +206,15 @@ Apply the lens for each kind of file in the diff.
 - **Release workflows.** A change to
   [`release-build.yaml`](./.github/workflows/release-build.yaml),
   [`release.yaml`](./.github/workflows/release.yaml), the release-build job in
-  `merge-checks.yaml`, the scripts under `.github/scripts/`, or
-  `cli/.cargo/config.toml` is checked against each bullet of the release record in
-  [Security](docs/conventions/security.md#a-release-is-published-only-from-an-approved-tag).
-  A publish or attest step outside `release.yaml`, an asset other than the two
-  named binaries and `SHA256SUMS`, such as a helper binary, or a departure from the
-  record that the change does not also make to the record, is a finding. A change
-  that relaxes the record needs the maintainer's review.
+  `merge-checks.yaml`, the scripts under `.github/scripts/`, the release tooling
+  under [`release/`](./release), or `cli/.cargo/config.toml` is checked against
+  each bullet of the release record in
+  [Security](docs/conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main).
+  A publish or attest step outside `release.yaml`, a job that both runs the npm
+  tree and holds `id-token: write`, an asset other than the two named binaries and
+  `SHA256SUMS`, such as a helper binary, or a departure from the record that the
+  change does not also make to the record, is a finding. A change that relaxes the
+  record needs the maintainer's review.
 - **Rust.** The CLI under `cli/` has no `unsafe` and no panic on an input path
   (`unwrap`, `expect`, `panic!`, indexing); it collects every error in the
   PowerShell validator's order rather than returning the first. A new crate has an

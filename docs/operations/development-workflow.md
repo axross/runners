@@ -380,66 +380,133 @@ the user it runs as, [REVIEW.md](../../REVIEW.md) asks for the contract version 
 be raised, as [CLI](./cli.md#the-image-contract) describes.
 
 The CLI embeds the runner image's definition, so a host that runs the CLI builds the
-new runner only once it has a binary built after the bump. After the bump merges,
-the maintainer cuts a release, as Cutting a Release, below, describes, and each such
-host updates to it with the procedure in
+new runner only once it has a binary built after the bump. Keep the pull request's
+`build(deps)` title when merging: it releases a patch, as Version Rules, under
+Cutting a Release, below, describes. After the bump merges, the maintainer
+dispatches a release, and each such host updates to it with the procedure in
 [CLI](./cli.md#installing-updating-and-rolling-back).
 
 ## Cutting a Release
 
-A release of the CLI is published by
-[`release.yaml`](../../.github/workflows/release.yaml) from a `v<version>` tag;
-[CLI](./cli.md#releases) describes what it builds, and
-[Security](../conventions/security.md#a-release-is-published-only-from-an-approved-tag)
-records why each control is there. The maintainer takes these steps. The delivery
-grant lets an explicit human instruction cover release, deployment, and settings
-effects, but the release rule in Security is stricter: an agent never pushes a tag,
-creates or changes the tag ruleset or the `release` Environment, or approves a
-deployment, even when the maintainer asks in the session or another agent relays it.
+The maintainer releases the CLI by dispatching
+[`release.yaml`](../../.github/workflows/release.yaml) on main. semantic-release
+works out the version from the commits, as Version Rules, below, describes.
+[CLI](./cli.md#releases) describes what the workflow builds, and
+[Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
+records why each control is there. The maintainer takes every step in this
+section. The delivery grant lets an explicit human instruction cover release,
+deployment, and settings effects, but the release rule in Security is stricter: an
+agent never dispatches `release.yaml`, never pushes, moves, or deletes a `v*` tag,
+and never changes release settings, even when the maintainer asks in the session or
+another agent relays it.
 
-Before the first tag, and before `release.yaml` reaches the default branch, create
-these. A workflow that names a missing Environment creates an unprotected one, and a
-tag pushed before the ruleset exists is unprotected.
+### Before the First Release
 
-1. A tag ruleset, under Settings, Rules, Rulesets:
-   - enforcement active, targeting tags that match `refs/tags/v*`;
-   - the rules "Restrict creations", "Restrict updates", and "Restrict deletions";
-   - the Repository admin role as the only entry in the bypass list.
-2. The `release` Environment, under Settings, Environments:
-   - the maintainer as the required reviewer, with self-review allowed ("Prevent
-     self-review" off);
-   - deployment branches and tags limited to selected ones, with the single tag
-     rule `v*`;
-   - "Allow administrators to bypass configured protection rules" off.
-3. Immutable releases, under Settings, General, Releases, turned on.
+Do these once, before the first dispatch:
 
-Then read the settings back from the API, and record the result where the plan for
-the release names: the ruleset's target, rules, and bypass list; the Environment's
-required reviewer, self-review setting, deployment tag policy, and administrator
-bypass; and that immutable releases are on.
+1. Turn on immutable releases, under Settings, General, Releases.
+2. Remove the `release` Environment, under Settings, Environments, if it exists.
+   Nothing uses it.
+3. Push the base tag `v0.0.0` on `d33d097`:
 
-```bash
-gh api repos/axross/runners/rulesets
-gh api repos/axross/runners/rulesets/<ruleset id>
-gh api repos/axross/runners/environments/release
-gh api repos/axross/runners/environments/release/deployment-branch-policies
-gh api repos/axross/runners/immutable-releases
-```
+   ```bash
+   git tag v0.0.0 d33d097
+   git push origin refs/tags/v0.0.0
+   ```
 
-Each release then takes these steps:
+   semantic-release counts from the last `v*` tag, and a bare tag with no release
+   is enough. `d33d097` is the only commit that works. On an earlier commit, the
+   breaking `refactor(cli)!` of #54 would come after the tag, and the first release
+   would be `1.0.0`. The next commit, `82f74ca`, holds the tag-triggered
+   `release.yaml` of #53, so a tag there would start that workflow and give a red
+   run. A tag on any later commit would put this flow's own `feat(release)` commit
+   inside `v0.0.0`, so it would not count toward a release. On `d33d097`, the first
+   release is `0.1.0`.
 
-1. Bump `version` in `cli/Cargo.toml`, and its entry in `cli/Cargo.lock` with
-   `cargo update --workspace` in `cli/`, in a pull request through the change loop,
-   and merge it. The version is SemVer `X.Y.Z`, and the release is not marked as a
-   prerelease.
-2. Tag the merged commit on the default branch `v<version>` and push the tag. The
-   check job fails unless the tag is `v` followed by that version, the version is
-   a plain `X.Y.Z`, and the commit is on the default branch.
-3. When the build and assemble jobs pass, the publish job waits for approval in the
-   `release` Environment. Approve it.
-4. Check the published release with the procedure in
+4. Read the setting and the tag back, and record the result where the plan for the
+   first release names:
+
+   ```bash
+   gh api repos/axross/runners/immutable-releases
+   gh api repos/axross/runners/environments --jq '[.environments[].name]'
+   gh api repos/axross/runners/git/ref/tags/v0.0.0 --jq .object.sha
+   ```
+
+### Each Release
+
+1. Dispatch `release.yaml` on main, from Actions, Release, Run workflow, or with
+   `gh workflow run release.yaml --repo axross/runners --ref main`. A dispatch made
+   while another release runs waits for it.
+2. When there is nothing to release, the plan job hands out no version, and the
+   other jobs are skipped. The run is green and releases nothing.
+3. After a green run, check that the release exists and carries exactly the two
+   binaries and `SHA256SUMS`:
+
+   ```bash
+   gh release view v<version> --repo axross/runners --json isDraft,assets --jq '{isDraft, assets: [.assets[].name]}'
+   ```
+
+   A green run can still release nothing. If main moved after the dispatch, the
+   release job logs "The local branch main is behind the remote one, therefore a
+   new version won't be published." and ends without a tag or a release. Dispatch
+   again.
+
+4. Check the release with the procedure in
    [CLI](./cli.md#installing-updating-and-rolling-back) before installing it on a
    host.
+
+### Cleaning Up a Partial Release
+
+semantic-release pushes the tag `v<version>` and its note,
+`refs/notes/semantic-release-v<version>`, before `@semantic-release/github` creates
+a draft release, uploads the files, and publishes it. If that last part fails, the
+tag is left without a published release. It still counts as the last release, so
+the next dispatch would skip that version. Before dispatching again:
+
+1. Delete the draft release, if there is one, from the repository's Releases page
+   or with `gh release delete v<version> --repo axross/runners`.
+2. Delete the tag and the note:
+
+   ```bash
+   git push origin --delete refs/tags/v<version> refs/notes/semantic-release-v<version>
+   ```
+
+3. Dispatch `release.yaml` again.
+
+A published release is immutable, so this applies only to one that was never
+published.
+
+### Version Rules
+
+semantic-release reads the subject of each commit on main since the last `v*` tag
+with the `conventionalcommits` preset. A pull request's squash-merge title becomes
+that subject, so the title decides the release:
+
+- `feat` releases a minor version.
+- `fix`, `perf`, and `revert` release a patch.
+- A breaking marker, `!` after the type or a `BREAKING CHANGE:` footer, releases a
+  major version. On `0.x` it releases `1.0.0`, not the next minor.
+- `build(deps)` releases a patch, through the `releaseRules` in
+  [`release/.releaserc.json`](../../release/.releaserc.json). That is the subject
+  Dependabot writes for the runner image and the CLI's crates and toolchain, so
+  such a bump reaches hosts in a release.
+- Every other subject releases nothing. That includes `build(deps-dev)`, since
+  dev-dependencies are not in the binary, though such a bump can still change a
+  crate the binary shares in `Cargo.lock`; the CLI has no dev-dependencies today.
+  It also includes Dependabot's `ci(deps)` action bumps and its `chore(deps)` bumps
+  of `release/`.
+
+The repository has one version, so a `feat` or `fix` of any scope, such as
+`feat(host)`, raises the CLI's version. No check enforces titles, and a mistitled
+squash merge releases the wrong bump or none, so correct a title before merging.
+Releases are never prereleases, and nothing is committed back to main: the version
+lives in the tag and the release.
+
+`release/package.json` pins `conventional-changelog-conventionalcommits` to the
+`9.x` line. `@semantic-release/release-notes-generator` renders notes with
+`conventional-changelog-writer` 8, and a `10.x` preset needs writer 9: with it,
+the notes step fails, the plan job fails, and nothing is released. Do not merge a
+Dependabot bump of the preset to `10.x` until the notes generator moves to writer 9.
 
 ## Working Without an Agent
 
