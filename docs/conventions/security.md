@@ -268,8 +268,9 @@ What protects a release is outside the workflow files:
   runners, and refuses a commit the compare API does not place on main. An
   attestation from any other workflow, branch, or commit is refused; see
   [CLI](../operations/cli.md#installing-updating-and-rolling-back).
-- Immutable releases are on for the repository, so a published release's assets
-  cannot be replaced and its tag cannot be moved or deleted.
+- Immutable releases are turned on for the repository before the first dispatch,
+  so a published release's assets cannot be replaced and its tag cannot be moved
+  or deleted.
 
 Immutable releases are a repository setting, not a file here;
 [Cutting a Release](../operations/development-workflow.md#cutting-a-release) gives
@@ -346,6 +347,10 @@ Residual risks, accepted:
   semantic-release but never loaded, because `release/.releaserc.json` replaces the
   plugin list. No CI job audits `release/`; Dependabot's `npm` entry covers
   `/release` for version updates.
+- **No pull request runs semantic-release.** Neither `mise run check` nor Merge
+  Checks loads `release/.releaserc.json`, so a Dependabot bump in `release/` that
+  breaks the plan job merges green and fails only on the next dispatch, before any
+  tag or release is made.
 - The binaries are not code-signed or notarised, so macOS Gatekeeper and Windows
   SmartScreen may warn or block. The install removes the macOS quarantine
   attribute; Phase 4b checks Windows on axpc and reports if SmartScreen intervenes.
