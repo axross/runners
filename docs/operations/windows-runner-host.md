@@ -983,7 +983,10 @@ task is registered. `start`'s stale cleanup removes the supervisor's job
 containers, and the scripts do not take the CLI's instance lock, so a `build` and
 the rebuild task could replace the same image at once.
 
-1. At a quiet time, stop the CLI with `marshal stop`, and confirm that it exits 0.
+1. At a quiet time, stop the CLI with `marshal stop`. It exits 0 once the instance
+   has stopped. It prints `No instance is running.` and exits 1 when there is none;
+   that is fine here. Any other exit 1 means the instance still holds its lock: see
+   [Recovery](#recovery), and do not go on until it has stopped.
 2. List the labelled containers with
    `docker ps -a --filter "label=runners.diagnostic-lifecycle=1" --format "{{.Names}}"`.
    If a diagnostics-enabled entry left any, recover them first: with `marshal`,
