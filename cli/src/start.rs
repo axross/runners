@@ -404,7 +404,8 @@ fn on_signal(
 }
 
 /// on Windows, waits for the console to close or the user to log off or the machine
-/// to shut down; the process lives until `start` has stopped the instance within
+/// to shut down; the runtime's handler does not return to the operating system for
+/// these, so the process lives until `start` has stopped the instance within
 /// [`CLOSE_REMOVE_BUDGET`], see `docs/operations/cli.md`.
 #[cfg(windows)]
 async fn console_closed(log: &dyn Log) {

@@ -1,6 +1,7 @@
 //! `build`: builds the runner image the host configuration names, from the
-//! definition embedded in this binary, as an instance in its own `building` state;
-//! see `docs/operations/cli.md`.
+//! definition embedded in this binary, as an instance in its own `building` state that
+//! holds the instance lock throughout, so it is refused while any instance exists and
+//! so is a `start` during it; see `docs/operations/cli.md`.
 
 mod arguments;
 mod steps;

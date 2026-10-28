@@ -43,7 +43,7 @@ impl Number {
     }
 
     /// returns the nearest double, infinity for a literal beyond the range of a
-    /// double.
+    /// double, as in PowerShell.
     #[must_use]
     pub fn as_f64(&self) -> f64 {
         self.literal.parse().unwrap_or(f64::NAN)

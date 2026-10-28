@@ -1,5 +1,6 @@
-//! the `docker` steps of `build`, and what a stop does at each of them; see
-//! `docs/operations/cli.md`.
+//! the `docker` steps of `build`, and what a stop does at each of them; the configured
+//! name changes only at the commit, the final retag, so a stop before it keeps the
+//! previous image; see `docs/operations/cli.md`.
 
 use std::ffi::OsString;
 use std::future::Future;
@@ -57,7 +58,7 @@ struct Output {
 }
 
 impl Output {
-    /// its output on one line, cut as an error text is.
+    /// a finished client's output on one line, cut as an error text is.
     fn text(&self) -> String {
         scrub_error_text(&format!("{} {}", self.stdout, self.stderr), "")
     }
@@ -382,6 +383,7 @@ impl Steps<'_> {
                 self.limits.command_budget.as_secs()
             ),
         };
+        // dropping the wait kills a client still running
         drop(waiting);
         let inspected = self
             .capture(

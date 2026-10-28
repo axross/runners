@@ -1,5 +1,6 @@
 //! the image contract: what a built image must declare for this CLI to run jobs in
-//! it; see `docs/operations/cli.md`.
+//! it; the tests below go red when the run contract changes without a version bump
+//! or the runner pin and its release date disagree; see `docs/operations/cli.md`.
 
 use super::definition::DOCKERFILE;
 

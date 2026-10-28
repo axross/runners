@@ -3,7 +3,8 @@
 use std::path::{Component, Path, PathBuf};
 
 /// returns the first directory at or above the configuration file that holds both
-/// `.git` and `cli/Cargo.toml`, walking lexically without resolving a link.
+/// `.git` and `cli/Cargo.toml`, so a dotfiles repository at the home directory is not
+/// taken for it, walking lexically without resolving a link.
 #[must_use]
 pub fn find(config: &Path) -> Option<PathBuf> {
     let absolute = lexical_absolute(config)?;

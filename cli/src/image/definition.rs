@@ -17,7 +17,8 @@ pub fn declared_label(label: &str) -> Option<&'static str> {
 }
 
 /// every file of the image definition, at its path in `images/actions-runner/`,
-/// sorted by that path, which is the order the build context writes them in.
+/// sorted by that path, which is the order the build context writes them in; a unit
+/// test fails when it is not exactly the Dockerfile and every file it copies.
 pub const EMBEDDED: &[(&str, &[u8])] = &[
     ("Dockerfile", DOCKERFILE),
     (

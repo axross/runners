@@ -1,5 +1,7 @@
-//! files and directories only the current user may use: a private directory is `0700`
-//! and a private file `0600`, and the checks never repair what they refuse; see
+//! files and directories only the current user may use: the control socket lives in a
+//! private directory and, on macOS, a token file must be private too; a private
+//! directory is `0700` and a private file `0600`, and the checks never repair, so a
+//! directory someone else made or one that was opened up is refused, not adopted; see
 //! `docs/operations/cli.md`.
 
 use std::fmt;

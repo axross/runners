@@ -16,8 +16,9 @@ pub fn lowercase(text: &str) -> String {
 }
 
 /// reports whether two strings are equal character by character under simple case
-/// folding, with no normalization; token paths are the only compared values that can
-/// hold non-ASCII characters.
+/// folding, with no normalization, ignorable characters or context-sensitive
+/// lowercasing; token paths are the only compared values that can hold non-ASCII
+/// characters.
 #[must_use]
 pub fn eq_folded(first: &str, second: &str) -> bool {
     let mut first = first.chars();
@@ -57,8 +58,10 @@ fn simple_lowercase(c: char) -> char {
     single(c.to_lowercase()).unwrap_or(c)
 }
 
-/// approximates Unicode simple case folding with the standard library; the dotless i
-/// is the one character it misjudges, because only Turkic folding maps it.
+/// approximates Unicode simple case folding with the standard library: a character
+/// folds to the lowercase of its uppercase when both are one character, and otherwise
+/// stays, as simple folding has no mapping for it either; the dotless i is the one
+/// character it misjudges, because only Turkic folding maps it.
 fn fold_char(c: char) -> char {
     if c == '\u{0131}' {
         return c;
@@ -88,8 +91,9 @@ mod tests {
 
     #[test]
     fn simple_folding_differs_from_powershell_eq_on_declared_pairs() {
-        // PowerShell 7 on Linux compares these as different; docs/operations/cli.md
-        // declares them as divergences.
+        // PowerShell 7 on Linux compares these as different, while simple case folding
+        // equates each with its partner; docs/operations/cli.md declares them as
+        // divergences.
         assert!(eq_folded("\u{17f}", "s"));
         assert!(eq_folded("\u{17f}", "S"));
         assert!(eq_folded("\u{345}", "\u{3b9}"));

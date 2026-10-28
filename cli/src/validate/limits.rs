@@ -16,7 +16,7 @@ const NANOS_PER_CPU: u128 = 1_000_000_000;
 const SIGNIFICANT_DIGITS_AFTER_FIRST: usize = 14;
 
 /// returns an integer field's value when it is an integer literal from 1 to `max`;
-/// `8.0` and `1e1` are not.
+/// `8.0` and `1e1` are not, as in PowerShell.
 #[must_use]
 pub fn bounded_integer(value: &Value, max: u32) -> Option<u32> {
     let Value::Number(number) = value else {

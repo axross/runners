@@ -1,7 +1,8 @@
 //! the sink checks and bundle admission: a sink must be an existing directory outside
-//! the checkout, with no link in its path and, on Unix, private to the current user
-//! (on Windows its owner and rules are not checked); the checks never repair what
-//! they refuse; see `docs/operations/cli.md`.
+//! the checkout, refused when missing and never created, with no link in its path and,
+//! on Unix, private to the current user (on Windows its owner and rules are not
+//! checked and a bundle inherits the sink's); the checks never repair what they
+//! refuse; see `docs/operations/cli.md`.
 
 use std::fmt;
 use std::fs;

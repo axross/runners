@@ -10,7 +10,6 @@ fn names_collide(first: &str, second: &str) -> bool {
     first == second || extends(first, second) || extends(second, first)
 }
 
-/// reports whether `name` is `prefix`, a `-`, and more.
 fn extends(name: &str, prefix: &str) -> bool {
     name.strip_prefix(prefix)
         .is_some_and(|rest| rest.starts_with('-'))
@@ -46,7 +45,9 @@ impl<'a> Keys<'a> {
 }
 
 /// records every collision between a later entry and an earlier one, in entry order;
-/// token files compare under simple case folding, as Windows file names ignore case.
+/// token files compare under simple case folding, as Windows file names ignore case,
+/// and pools whose OS differs can share a non-platform label, as their platform
+/// labels differ.
 pub fn check_entries(entries: &[Entry], profile: Profile, errors: &mut Errors) {
     let keys: Vec<Keys> = entries
         .iter()
