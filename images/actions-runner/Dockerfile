@@ -87,16 +87,16 @@ USER runner
 
 FROM base
 
-# the base image ends as the unprivileged runner user; root is needed only for
-# the package install and directory setup below. the base image names its user
-# and publishes no numeric id, so the name is the only stable reference.
+# root is needed only for the package install and directory setup below; the
+# base image publishes no numeric id for its runner user, so the name is the
+# only stable reference.
 # hadolint ignore=DL3066
 USER root
 
-# every package a job assumes is present must be installed here: the package
-# index is removed in the same layer, so a job-time apt-get install finds none.
-# versions are not pinned because the noble archive replaces revisions and a
-# pinned revision would fail the build once it is superseded.
+# every package a job assumes must be installed here: the package index is
+# removed in the same layer, so a job-time apt-get install finds none. versions
+# are not pinned because the noble archive replaces revisions, so a pinned one
+# would fail once superseded.
 # hadolint ignore=DL3008
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -139,10 +139,9 @@ RUN g++ -std=c++17 -O2 -Wall -Wextra -Werror /tmp/runner-diagnostics.cpp -o /usr
 # hadolint ignore=DL3066
 USER runner
 
-# the image contract: the run contract version this image serves, and the runner
-# release the base image pins with that release's date. the CLI embeds this file
-# and reads its own contract version from these labels. a runner bump in the FROM
-# line above edits both runner labels by hand; see docs/operations/cli.md.
+# the image contract labels: the CLI embeds this file and reads its contract
+# version from them. a runner bump in the FROM line above edits both runner
+# labels by hand; see docs/operations/cli.md.
 LABEL com.github.axross.runners.contract="1" \
       com.github.axross.runners.runner-version="2.337.0" \
       com.github.axross.runners.runner-released="2026-08-26"

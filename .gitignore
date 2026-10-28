@@ -14,10 +14,9 @@ token.txt
 *.key
 .DS_Store
 
-# Credentials files a GitHub Actions runner writes when it is configured
+# credentials files a GitHub Actions runner writes when it is configured
 .runner
 .credentials
 .credentials_rsaparams
 
-# Rust build output.
 /cli/target/

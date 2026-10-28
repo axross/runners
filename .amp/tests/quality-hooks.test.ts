@@ -50,7 +50,7 @@ function setup(options: {
     },
   };
 
-  // The plugin's PluginAPI type comes from a package that is not installed here,
+  // the plugin's PluginAPI type comes from a package that is not installed here,
   // and Node strips it without resolving it, so a stub is typed loosely.
   qualityHooks(amp as never, runtime);
   const context = { logger: { log: (message: string) => logs.push(message) } };
