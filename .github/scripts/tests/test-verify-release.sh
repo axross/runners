@@ -3,11 +3,14 @@
 # the plan phase writing the version to GITHUB_OUTPUT, the release phase passing
 # with the exact files and refusing a missing file, an extra file, a binary named
 # for another version, a binary that is a directory, a SHA256SUMS that lists one
-# binary only, and a checksum mismatch, and an unset or unknown RELEASE_PHASE. Each case checks the exit status
-# and the cause the script names.
+# binary only, and a checksum mismatch, and an unset or unknown RELEASE_PHASE. Each
+# case checks the exit status and the cause the script names. It also checks that
+# the asset globs in release/.releaserc.json match exactly the files the gate
+# passes, so the upload and the gate agree on the names.
 set -euo pipefail
 
 gate="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/verify-release.sh"
+config="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)/release/.releaserc.json"
 work="$(mktemp -d)"
 trap 'rm -rf -- "$work"' EXIT
 
@@ -66,6 +69,45 @@ GITHUB_OUTPUT="" expect "the plan phase without GITHUB_OUTPUT" 1 "GITHUB_OUTPUT 
 release_files "${work}/exact"
 expect "the release phase with the exact files" 0 "are complete and match SHA256SUMS" \
   release "$version" "${work}/exact"
+
+# @semantic-release/github uploads what its asset globs match, relative to
+# release/. Expanded over the exact files, each glob must match one file, and
+# together they must match the two binaries and SHA256SUMS.
+expect_assets() {
+  local directory="$1" pattern hits names=() problem=""
+  local -a assets
+  mapfile -t assets < <(node -e '
+    const config = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
+    const github = config.plugins.find((plugin) => [].concat(plugin)[0] === "@semantic-release/github");
+    for (const asset of github[1].assets) console.log(typeof asset === "string" ? asset : asset.path);
+  ' "$config")
+  if [[ ${#assets[@]} -ne 3 ]]; then
+    problem="${config} lists ${#assets[@]} asset globs, not 3"
+  fi
+  for pattern in "${assets[@]}"; do
+    [[ -z "$problem" ]] || break
+    if [[ "$pattern" != ../release-files/* ]]; then
+      problem="the asset glob ${pattern} is not under ../release-files/"
+      break
+    fi
+    hits="$(cd "$directory" && shopt -s nullglob && for file in ${pattern#../release-files/}; do if [[ -e "$file" ]]; then echo "$file"; fi; done)"
+    if [[ -z "$hits" || "$hits" == *$'\n'* ]]; then
+      problem="the asset glob ${pattern} matches '${hits//$'\n'/ }', not one file"
+      break
+    fi
+    names+=("$hits")
+  done
+  if [[ -z "$problem" && "$(printf '%s\n' "${names[@]}" | sort)" != "$(printf '%s\n' SHA256SUMS "$macos" "$windows" | sort)" ]]; then
+    problem="the asset globs match ${names[*]}, not ${macos}, ${windows} and SHA256SUMS"
+  fi
+  if [[ -n "$problem" ]]; then
+    echo "FAIL the asset globs match the release files: ${problem}" >&2
+    failures=$((failures + 1))
+  else
+    echo "ok   the asset globs match the release files"
+  fi
+}
+expect_assets "${work}/exact"
 
 release_files "${work}/missing"
 rm "${work}/missing/${macos}"
