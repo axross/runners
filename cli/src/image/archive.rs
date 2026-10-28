@@ -1,21 +1,18 @@
-//! The build context `build` streams to `docker build -`: a minimal ustar archive
-//! of the definition's files.
-//!
-//! It holds regular files only, in the definition's order, each with mode `0644`,
-//! owner and group 0, time 0, and a path short enough for the name field, so the
-//! same files always give the same bytes.
+//! the build context `build` streams to `docker build -`: a minimal ustar archive
+//! of the definition's files, with fixed mode, owner and time so the same files give
+//! the same bytes; see `docs/operations/cli.md`.
 
 use super::definition::DefinitionFile;
 
 const BLOCK: usize = 512;
 
-/// The longest path the name field holds, leaving its terminating NUL.
+/// the longest path the name field holds, leaving its terminating NUL.
 const MAX_PATH_BYTES: usize = 99;
 
-/// The largest file an 11-digit octal size field holds.
+/// the largest file an 11-digit octal size field holds.
 const MAX_FILE_BYTES: u64 = 0o77_777_777_777;
 
-/// Writes an octal field of `width` bytes: digits padded with zeros, then a NUL.
+/// writes an octal field of `width` bytes: digits padded with zeros, then a NUL.
 fn octal(value: u64, width: usize) -> Vec<u8> {
     let mut field = format!("{value:0digits$o}", digits = width - 1).into_bytes();
     field.push(0);
@@ -29,7 +26,7 @@ fn padded(text: &[u8], width: usize) -> Vec<u8> {
     field
 }
 
-/// The 512-byte header of a regular file.
+/// the 512-byte header of a regular file.
 fn header(path: &str, size: u64) -> Vec<u8> {
     // the fields before the checksum: name, mode, uid, gid, size, mtime
     let mut before = padded(path.as_bytes(), 100);
@@ -72,12 +69,8 @@ fn valid_path(path: &str) -> bool {
             .all(|part| !part.is_empty() && part != "." && part != "..")
 }
 
-/// The archive of `files`, in their order.
-///
-/// # Errors
-///
-/// A path the name field cannot hold as a plain relative path, or a file too
-/// large for the size field.
+/// the archive of `files` in their order, failing on a path the name field cannot
+/// hold as a plain relative path or a file too large for the size field.
 pub fn context_archive(files: &[DefinitionFile]) -> Result<Vec<u8>, String> {
     let mut archive = Vec::new();
     for file in files {
@@ -95,7 +88,6 @@ pub fn context_archive(files: &[DefinitionFile]) -> Result<Vec<u8>, String> {
         archive.extend(&file.bytes);
         archive.resize(archive.len().next_multiple_of(BLOCK), 0);
     }
-    // the archive ends with two zero blocks
     archive.resize(archive.len() + 2 * BLOCK, 0);
     Ok(archive)
 }

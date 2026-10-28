@@ -1,9 +1,8 @@
-//! The little of the Dockerfile syntax the contract tests read: instructions, the
+//! the little of the Dockerfile syntax the contract tests read: instructions, the
 //! base image, the files copied from the build context, and the final stage's
-//! labels. It is test-only: the binary reads its contract version at compile time
-//! and never parses the Dockerfile at run time.
+//! labels; it is test-only, since the binary never parses the Dockerfile at run time.
 
-/// The instructions, each as its upper-cased keyword and its arguments, with
+/// the instructions, each as its upper-cased keyword and its arguments, with
 /// continued lines joined and comment lines dropped, as Docker reads them.
 pub fn instructions(text: &str) -> Vec<(String, String)> {
     let mut found = Vec::new();
@@ -31,7 +30,7 @@ pub fn instructions(text: &str) -> Vec<(String, String)> {
     found
 }
 
-/// The image the first stage starts from, as its `FROM` names it.
+/// the image the first stage starts from, as its `FROM` names it.
 pub fn base_reference(text: &str) -> Option<String> {
     let (_, arguments) = instructions(text)
         .into_iter()
@@ -42,20 +41,16 @@ pub fn base_reference(text: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-/// The tag of an image reference such as `name:tag@sha256:...`.
+/// the tag of an image reference such as `name:tag@sha256:...`.
 pub fn reference_tag(reference: &str) -> Option<&str> {
     let named = reference.split('@').next()?;
     let last = named.rsplit('/').next()?;
     last.split_once(':').map(|(_, tag)| tag)
 }
 
-/// The build-context files the `COPY` and `ADD` instructions read: every source of
-/// one without `--from`.
-///
-/// # Errors
-///
-/// A form the tests cannot check: the JSON form, a wildcard, an absolute path or one
-/// that leaves the context.
+/// the build-context files the `COPY` and `ADD` instructions read, every source of
+/// one without `--from`; the JSON form, a wildcard, an absolute path or one that
+/// leaves the context is an error.
 pub fn local_copy_sources(text: &str) -> Result<Vec<String>, String> {
     let mut sources = Vec::new();
     for (keyword, arguments) in instructions(text) {
@@ -89,7 +84,7 @@ pub fn local_copy_sources(text: &str) -> Result<Vec<String>, String> {
     Ok(sources)
 }
 
-/// The labels the final stage declares, as `key="value"` pairs, in order.
+/// the labels the final stage declares, as `key="value"` pairs, in order.
 pub fn final_stage_labels(text: &str) -> Vec<(String, String)> {
     let all = instructions(text);
     let final_stage = all

@@ -1,8 +1,6 @@
-//! The check of a built image: its labels, the four outcomes they sort into, and
-//! the freshness warnings and `status` lines they give.
-//!
-//! The backend reads the labels; this module only interprets them, so the same
-//! rules apply whichever backend reads them and however the clock is injected.
+//! the check of a built image: its labels, the four outcomes they sort into, and
+//! the freshness warnings and `status` lines they give; the backend reads the
+//! labels and this module only interprets them; see `docs/operations/cli.md`.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -13,27 +11,25 @@ use super::contract::{
     BUILT_LABEL, CONTRACT_LABEL, CONTRACT_VERSION, RUNNER_RELEASED_LABEL, RUNNER_VERSION_LABEL,
 };
 
-/// The bound on both clients of one image check, together: the inspect and, when
-/// it fails, the listing. Re-validation and the check fit in a resuming `start`'s
-/// 10 s wait, and the container steps and the check in `restart`'s 35 s.
+/// the bound on both clients of one image check together, the inspect and, when it
+/// fails, the listing; it lets the check fit a resuming `start`'s 10 s wait and
+/// `restart`'s 35 s.
 pub const IMAGE_CHECK_BUDGET: std::time::Duration = std::time::Duration::from_secs(4);
 
-/// The most bytes of an inspect's output read.
+/// the most bytes of an inspect's output read.
 pub const MAX_INSPECT_BYTES: usize = 64 * 1024;
 
 const SECONDS_PER_DAY: u64 = 86_400;
 
-/// An age from this many days gives the first warning.
 const FIRST_WARNING_DAYS: u64 = 7;
 
-/// An age from this many days gives the second warning.
 const SECOND_WARNING_DAYS: u64 = 21;
 
-/// The longest label value `status` shows as it is; a longer one, or one that is
+/// the longest label value `status` shows as it is; a longer one, or one that is
 /// not plain text, shows as malformed.
 const MAX_SHOWN_VALUE: usize = 32;
 
-/// The labels the check reads, in the order the inspect format prints them.
+/// the labels the check reads, in the order the inspect format prints them.
 const READ_LABELS: [&str; 4] = [
     CONTRACT_LABEL,
     BUILT_LABEL,
@@ -41,7 +37,7 @@ const READ_LABELS: [&str; 4] = [
     RUNNER_RELEASED_LABEL,
 ];
 
-/// The Go template `docker image inspect` prints the labels with: a JSON array of
+/// the Go template `docker image inspect` prints the labels with: a JSON array of
 /// their values, where a missing label prints as an empty string.
 #[must_use]
 pub fn labels_format() -> String {
@@ -52,7 +48,7 @@ pub fn labels_format() -> String {
     format!("[{}]", values.join(","))
 }
 
-/// The image labels the check reads; `None` for one the image does not carry.
+/// the image labels the check reads; `None` for one the image does not carry.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ImageLabels {
     pub contract: Option<String>,
@@ -62,7 +58,7 @@ pub struct ImageLabels {
 }
 
 impl ImageLabels {
-    /// Reads the output of an inspect with [`labels_format`], or `None` when it is
+    /// reads the output of an inspect with [`labels_format`], or `None` when it is
     /// not what that format prints.
     #[must_use]
     pub fn from_inspect(output: &[u8]) -> Option<Self> {
@@ -85,21 +81,21 @@ impl ImageLabels {
     }
 }
 
-/// What one check of the configured image found.
+/// what one check of the configured image found.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ImageCheck {
-    /// The image's contract label is this CLI's.
+    /// the image's contract label is this CLI's.
     Matching(ImageLabels),
-    /// The image exists, but its contract label is missing, malformed or another.
+    /// the image exists, but its contract label is missing, malformed or another.
     Mismatched(ImageLabels),
-    /// No image has the name.
+    /// no image has the name.
     Missing,
-    /// Docker could not say, within the bound; never read as a mismatch.
+    /// docker could not say, within the bound; never read as a mismatch.
     Unavailable(String),
 }
 
 impl ImageCheck {
-    /// Sorts the labels of an image that exists.
+    /// sorts the labels of an image that exists.
     #[must_use]
     pub fn of_labels(labels: ImageLabels) -> Self {
         if labels.contract.as_deref().and_then(contract_number) == Some(CONTRACT_VERSION) {
@@ -109,7 +105,7 @@ impl ImageCheck {
         }
     }
 
-    /// Why the image cannot run jobs, naming it and both contract versions, or
+    /// why the image cannot run jobs, naming it and both contract versions, or
     /// `None` when it can, or when Docker could not say.
     #[must_use]
     pub fn refusal(&self, image: &str) -> Option<String> {
@@ -133,7 +129,7 @@ impl ImageCheck {
     }
 }
 
-/// The reference the check reads: the name as `docker run` resolves it, so a name
+/// the reference the check reads: the name as `docker run` resolves it, so a name
 /// whose last path part has no tag or digest is `<name>:latest`.
 #[must_use]
 pub fn checked_reference(image: &str) -> String {
@@ -150,7 +146,6 @@ fn contract_number(text: &str) -> Option<u32> {
     digits.then(|| text.parse().ok()).flatten()
 }
 
-/// A label value as `status` and a refusal show it.
 fn shown(value: &str) -> &str {
     let plain = value.len() <= MAX_SHOWN_VALUE && value.bytes().all(|byte| byte.is_ascii_graphic());
     if plain { value } else { "malformed" }
@@ -160,7 +155,7 @@ fn shown_contract(labels: &ImageLabels) -> &str {
     labels.contract.as_deref().map_or("none", shown)
 }
 
-/// The build time of a `built` label, in Unix seconds.
+/// the build time of a `built` label, in Unix seconds.
 fn built_seconds(labels: &ImageLabels) -> Option<u64> {
     let text = labels.built.as_deref()?;
     if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
@@ -169,7 +164,7 @@ fn built_seconds(labels: &ImageLabels) -> Option<u64> {
     text.parse().ok()
 }
 
-/// The runner version and the Unix seconds of its release day's start, when both
+/// the runner version and the Unix seconds of its release day's start, when both
 /// labels are well formed.
 fn runner_release(labels: &ImageLabels) -> Option<(&str, u64)> {
     let version = labels.runner_version.as_deref()?;
@@ -180,7 +175,7 @@ fn runner_release(labels: &ImageLabels) -> Option<(&str, u64)> {
     Some((version, date_seconds(date)?))
 }
 
-/// The start of a `YYYY-MM-DD` day in UTC, in Unix seconds, from 1970 on.
+/// the start of a `YYYY-MM-DD` day in UTC, in Unix seconds, from 1970 on.
 fn date_seconds(text: &str) -> Option<u64> {
     let mut parts = text.split('-');
     let (Some(year), Some(month), Some(day), None) =
@@ -204,7 +199,7 @@ fn date_seconds(text: &str) -> Option<u64> {
     (civil_from_days(days) == date).then_some(days * SECONDS_PER_DAY)
 }
 
-/// Whole days from `then` to `now`, rounded down; none when `then` is later.
+/// whole days from `then` to `now`, rounded down; none when `then` is later.
 #[must_use]
 pub fn age_days(now: SystemTime, then: u64) -> u64 {
     let now = now
@@ -213,7 +208,7 @@ pub fn age_days(now: SystemTime, then: u64) -> u64 {
     now.saturating_sub(then) / SECONDS_PER_DAY
 }
 
-/// The freshness warnings for the image a check found, as of `now`.
+/// the freshness warnings for the image a check found, as of `now`.
 #[must_use]
 pub fn freshness_warnings(check: &ImageCheck, now: SystemTime) -> Vec<String> {
     let Some(labels) = check.labels() else {
@@ -248,7 +243,7 @@ pub fn freshness_warnings(check: &ImageCheck, now: SystemTime) -> Vec<String> {
     warnings
 }
 
-/// The `status` lines for `image`, as of its latest check, or of none.
+/// the `status` lines for `image`, as of its latest check, or of none.
 #[must_use]
 pub fn status_fields(
     image: &str,
@@ -426,7 +421,7 @@ mod tests {
         }
     }
 
-    /// The warning an age gives, as `none`, `7-day` or `21-day`, for the build age
+    /// the warning an age gives, as `none`, `7-day` or `21-day`, for the build age
     /// and the runner release age, each measured while the other is a day old.
     fn warning_kinds(days: u64) -> (String, String) {
         let released = date_seconds("2026-08-26").unwrap();

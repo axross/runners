@@ -1,46 +1,37 @@
-//! The image contract: what a built image must declare for this CLI to run jobs in
-//! it.
-//!
-//! The Dockerfile's final stage declares the contract version, the runner version
-//! its base image pins, and that release's date. The CLI's own contract version is
-//! read from the same embedded Dockerfile when the binary is compiled, so the two
-//! cannot drift inside one binary. Changing the run contract, or what the image
-//! must provide, bumps the version; the tests below go red when the run contract
-//! changes without it, and when the runner pin and its release date disagree.
+//! the image contract: what a built image must declare for this CLI to run jobs in
+//! it; see `docs/operations/cli.md`.
 
 use super::definition::DOCKERFILE;
 
-/// The image contract version an image declares.
+/// the image contract version an image declares.
 pub const CONTRACT_LABEL: &str = "com.github.axross.runners.contract";
 
-/// The runner version the image's base pins.
+/// the runner version the image's base pins.
 pub const RUNNER_VERSION_LABEL: &str = "com.github.axross.runners.runner-version";
 
-/// That runner release's date, as `YYYY-MM-DD`, read as 00:00 UTC.
+/// the runner release's date, as `YYYY-MM-DD`, read as 00:00 UTC.
 pub const RUNNER_RELEASED_LABEL: &str = "com.github.axross.runners.runner-released";
 
-/// The label `build`, and the PowerShell rebuild script, give every image they
+/// the label `build`, and the PowerShell rebuild script, give every image they
 /// build; both prune dangling images by it.
 pub const IMAGE_LABEL: &str = "com.github.axross.runners.image";
 
-/// The value of [`IMAGE_LABEL`].
+/// the value of [`IMAGE_LABEL`].
 pub const IMAGE_LABEL_VALUE: &str = "actions-runner";
 
-/// The build time `build` gives an image, in Unix seconds.
+/// the build time `build` gives an image, in Unix seconds.
 pub const BUILT_LABEL: &str = "com.github.axross.runners.built";
 
-/// The image contract version of this CLI, as the embedded Dockerfile declares it.
+/// the image contract version of this CLI, as the embedded Dockerfile declares it.
 #[allow(clippy::panic)] // evaluated at compile time, so a bad declaration fails the build
 pub const CONTRACT_VERSION: u32 = match declared_contract(DOCKERFILE) {
     Some(version) => version,
     None => panic!("the Dockerfile does not declare a positive contract version"),
 };
 
-/// The text the contract version follows in the Dockerfile: the label, `=` and
-/// the opening quote.
 const CONTRACT_DECLARATION: &[u8] = b"com.github.axross.runners.contract=\"";
 
-/// The version in the first `com.github.axross.runners.contract="<n>"` of `text`:
+/// the version in the first `com.github.axross.runners.contract="<n>"` of `text`:
 /// a positive decimal integer without a leading zero.
 const fn declared_contract(mut text: &[u8]) -> Option<u32> {
     loop {
@@ -106,13 +97,13 @@ mod tests {
     };
     use crate::validate::PlannedVolume;
 
-    /// Each runner release the image has pinned, with its date from the
-    /// `actions/runner` release page. A runner bump adds its row.
+    /// each pinned runner release with its date from the `actions/runner` release
+    /// page; a runner bump adds its row.
     const RUNNER_RELEASES: &[(&str, &str)] = &[("2.337.0", "2026-08-26")];
 
-    /// Each contract version with the fingerprint of the run contract it was
-    /// approved for. A change to the run contract bumps the version in the
-    /// Dockerfile and adds a row; the old rows stay as the record.
+    /// each contract version with the fingerprint of the run contract it was
+    /// approved for; a change to the run contract bumps the version and adds a row,
+    /// and the old rows stay.
     const APPROVED_CONTRACTS: &[(u32, u64)] = &[(1, 0xd875_2700_4418_2c5d)];
 
     fn dockerfile() -> String {
@@ -160,7 +151,7 @@ mod tests {
         }
     }
 
-    /// Why the declared runner labels disagree with the base image's tag or the
+    /// why the declared runner labels disagree with the base image's tag or the
     /// release table.
     fn release_problems(
         base_tag: Option<&str>,
@@ -203,26 +194,22 @@ mod tests {
         let table = &[("2.337.0", "2026-08-26")];
         let date = Some("2026-08-26");
         assert!(release_problems(Some("2.337.0"), Some("2.337.0"), date, table).is_empty());
-        // the base moved on, the labels did not
         assert_eq!(
             release_problems(Some("2.338.0"), Some("2.337.0"), date, table).len(),
             1
         );
-        // the labels moved on, the table did not
         let unknown = release_problems(Some("2.338.0"), Some("2.338.0"), date, table);
         assert_eq!(unknown.len(), 1);
         assert!(unknown[0].contains("no row"), "{unknown:?}");
-        // the date is not the release's
         let wrong = release_problems(Some("2.337.0"), Some("2.337.0"), Some("2026-08-27"), table);
         assert!(wrong[0].contains("was released on 2026-08-26"), "{wrong:?}");
-        // the labels are missing
         assert_eq!(
             release_problems(Some("2.337.0"), None, None, table).len(),
             2
         );
     }
 
-    /// Why the embedded files are not exactly the Dockerfile and its local copies.
+    /// why the embedded files are not exactly the Dockerfile and its local copies.
     fn embedded_set_problems(dockerfile: &str, embedded: &[&str]) -> Vec<String> {
         let mut wanted: BTreeSet<String> = match local_copy_sources(dockerfile) {
             Ok(sources) => sources.into_iter().collect(),
@@ -301,7 +288,7 @@ mod tests {
         }
     }
 
-    /// Every argument list of the run contract for fixed inputs, and the labels the
+    /// every argument list of the run contract for fixed inputs, and the labels the
     /// CLI reads, one list per line with its arguments NUL separated.
     fn run_contract_text() -> String {
         let spec = sample_spec();
@@ -349,7 +336,7 @@ mod tests {
         })
     }
 
-    /// Why the run contract does not match the version it is declared under.
+    /// why the run contract does not match the version it is declared under.
     fn contract_problem(version: u32, fingerprint: u64, table: &[(u32, u64)]) -> Option<String> {
         match table.iter().find(|(approved, _)| *approved == version) {
             None => Some(format!(
