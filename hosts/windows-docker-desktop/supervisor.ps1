@@ -10,9 +10,8 @@
     and PowerShell 7.
 
 .PARAMETER ValidateOnly
-    validates the configuration and prints the plan, then exits; exits 1 on an
-    invalid configuration. calls neither Docker nor GitHub and reads no token
-    file.
+    exits 1 on an invalid configuration; calls neither Docker nor GitHub and
+    reads no token file.
 #>
 param(
     [Parameter(Mandatory)][string]$ConfigPath,

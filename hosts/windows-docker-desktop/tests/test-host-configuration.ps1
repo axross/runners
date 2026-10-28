@@ -5,12 +5,10 @@
     -ValidateOnly mode, and a few rules the host scripts must keep.
 
 .DESCRIPTION
-    runs the shared fixtures under tests/host-configuration/shared/ against the
-    expectations in tests/host-configuration/expectations.json (the pwsh7/ ones
-    are skipped below PowerShell 7), the example configuration, and the job
-    container, slot job and stale container name checks, all without Docker. runs
-    on Windows PowerShell 5.1 as well as PowerShell 7, and calls neither Docker
-    nor GitHub.
+    runs the shared fixtures (the pwsh7/ ones only on PowerShell 7), the example
+    configuration, and the job container, slot job and stale container name
+    checks, on Windows PowerShell 5.1 as well as PowerShell 7; calls neither
+    Docker nor GitHub. see docs/operations/cli.md.
 #>
 $ErrorActionPreference = 'Stop'
 

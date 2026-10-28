@@ -5,13 +5,11 @@
     validator does, with the same ordered errors and summaries.
 
 .DESCRIPTION
-    runs both validators over every shared fixture, the axpc example and a copy
-    of it with a UTF-8 byte-order mark built at run time (a formatter would strip
-    a stored one), and only the PowerShell validator over the declared-divergence
-    fixtures under rust/raw/. a self-test first requires the harness to fail on a
-    wrong expectation and on a validator that drops an error. runs under
-    PowerShell 7 only; Windows PowerShell 5.1 on a byte-order mark is not probed.
-    see docs/operations/cli.md.
+    runs both validators over every shared fixture, the axpc example and its
+    byte-order-mark copy, and only the PowerShell validator over the
+    declared-divergence fixtures, after a self-test of the harness; see
+    docs/operations/cli.md. runs under PowerShell 7 only; Windows PowerShell 5.1
+    on a byte-order mark is not probed.
 #>
 param(
     [string]$Binary = (Join-Path $PSScriptRoot '../../cli/target/debug/marshal')

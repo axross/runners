@@ -319,8 +319,8 @@ printf 'CPU affinity verified: %s\n' "$allowed"
 }
 
 # returns the name of a slot's next job container, which is also its GitHub
-# runner name: the entry's name, the 1-based slot index and a 17-digit
-# timestamp. the invariant culture keeps the digits ASCII under any calendar.
+# runner name; the invariant culture keeps the timestamp digits ASCII under any
+# calendar.
 function Get-JobContainerName {
     param(
         [Parameter(Mandatory)][string]$EntryName,
@@ -331,9 +331,8 @@ function Get-JobContainerName {
     return "$EntryName-$Slot-$($Now.ToString('yyyyMMddHHmmssfff', [System.Globalization.CultureInfo]::InvariantCulture))"
 }
 
-# returns the pattern that matches only the names Get-JobContainerName gives
-# this entry's containers, so a container of another entry whose name starts
-# with this one is not matched. \z rather than $ keeps a trailing newline out.
+# matches only this entry's job container names, so an entry whose name extends
+# this one is not matched; \z rather than $ keeps a trailing newline out.
 function Get-JobContainerNamePattern {
     param([Parameter(Mandatory)][string]$Name)
 

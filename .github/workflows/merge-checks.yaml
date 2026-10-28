@@ -134,10 +134,8 @@ jobs:
       - name: Smoke Test Runner Image
         run: bash images/actions-runner/tests/smoke-test.sh actions-runner:ci
 
-  # the host scripts target the Windows PowerShell 5.1 that ships with Windows
-  # and that the scheduled tasks use, which the check job's PowerShell 7 does not
-  # cover. this runs only the configuration test, which calls neither Docker nor
-  # GitHub.
+  # the host scripts target the Windows PowerShell 5.1 that the scheduled tasks
+  # use, which the check job's PowerShell 7 does not cover.
   host-windows:
     name: Test Host Scripts On Windows PowerShell 5.1
     runs-on: windows-latest

@@ -7,14 +7,14 @@
     "MD013": false, // line-length: prose lines are intentionally long
     "MD033": false, // inline HTML: `<!-- ai-agent -->` markers are used
     "MD041": false,
-    "MD024": { "siblings_only": true }, // duplicate headings are fine unless siblings
+    "MD024": { "siblings_only": true },
     "MD029": false,
     "MD040": false,
     "MD036": false, // emphasis-as-heading: `**Guidelines:**` labels are intentional
     "MD026": false,
     "MD028": false, // blank line between adjacent blockquotes is intentional
     "MD031": false, // blanks around fences: Prettier governs fenced-block spacing
-    "MD010": { "code_blocks": false }, // hard tabs allowed inside code samples
+    "MD010": { "code_blocks": false },
   },
   // skip gitignored paths, such as the Claude Code worktrees under
   // `.claude/worktrees/`, which hold full copies of this repository.

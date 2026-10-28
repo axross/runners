@@ -3,10 +3,8 @@ name: Release Build
 # builds the CLI's release binaries for Windows x64 and macOS arm64 at the
 # version its caller passes, with SHA256SUMS in one artifact. merge-checks.yaml
 # calls it as a dry run and release.yaml for a release; it has no publish or
-# attest step. see docs/conventions/security.md.
-#
-# `concurrency` is declared by the callers only: inside a called workflow,
-# `github.workflow` is the caller's name.
+# attest step. see docs/conventions/security.md, which also says why only the
+# callers declare `concurrency`.
 
 on:
   workflow_call:

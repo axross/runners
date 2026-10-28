@@ -7,7 +7,8 @@
 .DESCRIPTION
     Read-HostConfiguration turns the JSON file into a plan, rejecting a
     configuration as a whole, with one message line per problem, before any
-    container starts. nothing here calls Docker or GitHub, or reads a token
+    container starts. a helper that finds a problem records why in the errors
+    list and returns $null. nothing here calls Docker or GitHub, or reads a token
     file.
 #>
 
@@ -36,7 +37,7 @@ $script:MountPathPattern = '^/[A-Za-z0-9_./-]+\z'
 # working directory or drive the scheduled task does not control.
 $script:TokenPathPattern = '^(?:[A-Za-z]:\\|\\\\)\S'
 
-# returns the property's value, or $null after recording why it is unusable.
+# returns the property's value.
 function Get-Field {
     param(
         [Parameter(Mandatory)]$Node,
@@ -53,7 +54,7 @@ function Get-Field {
     return , $property.Value
 }
 
-# returns the string field if it matches -Pattern, or $null after recording why.
+# returns the string field if it matches -Pattern.
 function Get-StringField {
     param(
         [Parameter(Mandatory)]$Node,
@@ -102,8 +103,7 @@ function Test-IsObject {
     return $false
 }
 
-# returns the registration labels, defaults when the field is absent or empty,
-# or $null after recording why a present list is unusable.
+# returns the registration labels, defaults when the field is absent or empty.
 function Get-RegistrationLabel {
     param([Parameter(Mandatory)]$Node, [Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)]$Errors)
 
@@ -201,10 +201,9 @@ function Get-VolumeDefinition {
     return , $definitions.ToArray()
 }
 
-# returns the entry's CPU limit, the default when absent, or $null after
-# recording why it is unusable. ConvertFrom-Json returns a fraction as a
-# different numeric type depending on the PowerShell version, so every numeric
-# type is accepted.
+# returns the entry's CPU limit, the default when absent. ConvertFrom-Json
+# returns a fraction as a different numeric type depending on the PowerShell
+# version, so every numeric type is accepted.
 function Get-CpuLimit {
     param([Parameter(Mandatory)]$Node, [Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)]$Errors)
 
@@ -226,7 +225,7 @@ function Get-CpuLimit {
 }
 
 # returns the entry's memory limit in whole gigabytes, the default when the
-# field is absent, or $null after recording why the value is unusable.
+# field is absent.
 function Get-MemoryLimit {
     param([Parameter(Mandatory)]$Node, [Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)]$Errors)
 
@@ -242,7 +241,6 @@ function Get-MemoryLimit {
     return [int]$value
 }
 
-# returns the entry's name, or $null after recording why it is unusable.
 function Get-EntryName {
     param([Parameter(Mandatory)]$Node, [Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)]$Errors)
 
@@ -255,7 +253,7 @@ function Get-EntryName {
     return $name
 }
 
-# returns one repository's plan entry, or $null after recording every problem.
+# returns one repository's plan entry.
 function Get-RepositoryPlan {
     param(
         [Parameter(Mandatory)]$Node,
@@ -437,9 +435,8 @@ function Read-HostConfiguration {
     }
 }
 
-# returns the CPU count as text for Docker and for the summary: the invariant
-# culture keeps the decimal point whatever the machine's regional settings, and
-# the custom format never switches to an exponent.
+# the invariant culture keeps the decimal point whatever the machine's regional
+# settings, and the custom format never switches to an exponent.
 function Format-CpuCount {
     param([Parameter(Mandatory)][double]$Cpus)
 

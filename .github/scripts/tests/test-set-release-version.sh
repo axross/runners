@@ -111,7 +111,6 @@ for invalid in v1.2.3 1.2 1.2.3+build.1 01.2.3 1.2.3- ""; do
   fi
 done
 
-# neither file changes when only one of them lacks the placeholder.
 released_manifest="$(with_version "$manifest" 0.1.0)"
 case_dir="${work}/no-placeholder"
 fixture "$case_dir" "$released_manifest"

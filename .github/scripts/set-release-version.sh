@@ -29,8 +29,7 @@ trap 'rm -rf -- "$work"' EXIT
 
 # each function copies its file to <copy> with the version written over the
 # line it selects, and prints how many lines it selected and the first value,
-# which check compares with the placeholder. a trailing CR is set aside before
-# matching and written back after.
+# which check compares with the placeholder.
 
 # manifest_version <file> <copy>: the version line in the [package] table.
 manifest_version() {
@@ -73,7 +72,6 @@ lockfile_version() {
 }
 
 failed=0
-# check <file> <function that selects its version line> <what that line is>
 check() {
   local file="$1" select="$2" what="$3" result count value
   if [[ ! -f "$file" ]]; then
