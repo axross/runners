@@ -1,9 +1,5 @@
-//! What runs the pools: the container backend, registration, and the slot loop.
-//!
-//! Everything here is independent of the operating system the CLI runs on, apart
-//! from how the container backend contains its job clients. `start` runs it through
-//! the instance layer; tests also drive it through a backend seam, a fake `docker`
-//! and a loopback GitHub stub.
+//! the container backend, registration and the slot loop that run a host's pools;
+//! `docs/operations/cli.md` describes the layer.
 
 pub mod backend;
 pub mod board;

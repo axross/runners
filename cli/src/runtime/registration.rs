@@ -1,10 +1,6 @@
-//! Just-in-time runner registration with GitHub.
-//!
-//! The request is the PowerShell supervisor's: the same endpoint, headers, body and
-//! response field. It adds a `User-Agent`, follows no redirect, fails a connection
-//! after 10 s and a whole request after 30 s, and fails a response over 1 MiB. The
-//! token travels in a header marked sensitive and is replaced by `<token>` in every
-//! error text.
+//! just-in-time runner registration with GitHub; the token travels in a header
+//! marked sensitive and is replaced by `<token>` in every error text, as
+//! `docs/operations/cli.md` describes.
 
 use std::fmt;
 use std::future::Future;
@@ -18,21 +14,21 @@ use crate::validate::patterns::{is_owner, is_repository};
 use super::scrub::scrub_error_text;
 use super::secret::Secret;
 
-/// Where registrations go, unless a debug build is told otherwise.
+/// where registrations go, unless a debug build is told otherwise.
 pub const GITHUB_API: &str = "https://api.github.com";
 
-/// The runner group every registration joins: the default group, which the endpoint
+/// the runner group every registration joins: the default group, which the endpoint
 /// requires even though a repository-level runner has no group to choose.
 pub const RUNNER_GROUP_ID: u64 = 1;
 
 const API_VERSION: &str = "2022-11-28";
 const ACCEPT_VALUE: &str = "application/vnd.github+json";
 
-/// The time and size bounds on one registration request.
+/// the time and size bounds on one registration request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HttpLimits {
     pub connect_timeout: Duration,
-    /// The whole request, from connecting to the last byte of the response.
+    /// the whole request, from connecting to the last byte of the response.
     pub total_timeout: Duration,
     pub max_response_bytes: usize,
 }
@@ -47,17 +43,17 @@ impl Default for HttpLimits {
     }
 }
 
-/// What a registration asks for.
+/// what a registration asks for.
 pub struct JitRequest<'a> {
     pub owner: &'a str,
     pub repository: &'a str,
-    /// The runner's name, which is also its container's name.
+    /// the runner's name, which is also its container's name.
     pub name: &'a str,
     pub labels: &'a [String],
     pub token: &'a Secret,
 }
 
-/// Why a registration failed. The text is scrubbed of the token, on one line, and
+/// why a registration failed; the text is scrubbed of the token, on one line, and
 /// at most 503 characters.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RegistrationError(String);
@@ -77,7 +73,7 @@ impl fmt::Display for RegistrationError {
 
 impl std::error::Error for RegistrationError {}
 
-/// Something that can turn a request into a JIT configuration.
+/// something that can turn a request into a JIT configuration.
 pub trait Registrar {
     fn request_jit(
         &self,
@@ -85,7 +81,7 @@ pub trait Registrar {
     ) -> impl Future<Output = Result<Secret, RegistrationError>>;
 }
 
-/// Why the HTTPS client could not be set up. This is a startup failure.
+/// why the HTTPS client could not be set up; this is a startup failure.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SetupError(String);
 
@@ -97,13 +93,9 @@ impl fmt::Display for SetupError {
 
 impl std::error::Error for SetupError {}
 
-/// Installs the `ring` crypto provider as the process default, which the HTTPS
-/// client needs before it is built. Calling it again, or after another provider was
+/// installs the `ring` crypto provider as the process default, which the HTTPS
+/// client needs before it is built; calling it again, or after another provider was
 /// installed, succeeds.
-///
-/// # Errors
-///
-/// Fails when no provider is installed and none can be.
 pub fn install_tls_provider() -> Result<(), SetupError> {
     if rustls::crypto::CryptoProvider::get_default().is_some() {
         return Ok(());
@@ -119,16 +111,9 @@ pub fn install_tls_provider() -> Result<(), SetupError> {
     }
 }
 
-/// Resolves the base address of the API.
-///
-/// A release build always returns [`GITHUB_API`] and ignores `requested`, so a
-/// release binary cannot send a token anywhere but GitHub. A debug build accepts
-/// `http://127.0.0.1:<port>` for tests and refuses any other value.
-///
-/// # Errors
-///
-/// A debug build refuses a `requested` address that is not a loopback address with
-/// a port.
+/// resolves the API's base address: a release build always returns [`GITHUB_API`]
+/// and ignores `requested`, so a release binary cannot send a token anywhere but
+/// GitHub, and a debug build accepts only `http://127.0.0.1:<port>`, for tests.
 pub fn resolve_base_url(requested: Option<&str>) -> Result<String, SetupError> {
     #[cfg(debug_assertions)]
     if let Some(requested) = requested {
@@ -145,7 +130,7 @@ pub fn resolve_base_url(requested: Option<&str>) -> Result<String, SetupError> {
     Ok(GITHUB_API.to_string())
 }
 
-/// Whether the text is exactly `http://127.0.0.1:<port>` with a port from 1 to 65535.
+/// whether the text is exactly `http://127.0.0.1:<port>` with a port from 1 to 65535.
 #[cfg(any(debug_assertions, test))]
 fn is_loopback_base(text: &str) -> bool {
     let Some(port) = text.strip_prefix("http://127.0.0.1:") else {
@@ -158,7 +143,7 @@ fn is_loopback_base(text: &str) -> bool {
     digits && port.parse::<u32>().is_ok_and(|number| number <= 65535)
 }
 
-/// The registration client over HTTPS.
+/// the registration client over HTTPS.
 pub struct GitHubRegistrar {
     client: reqwest::Client,
     base_url: String,
@@ -166,13 +151,8 @@ pub struct GitHubRegistrar {
 }
 
 impl GitHubRegistrar {
-    /// Builds the client. `base_override` is honoured only by a debug build; see
+    /// builds the client; `base_override` is honoured only by a debug build, see
     /// [`resolve_base_url`].
-    ///
-    /// # Errors
-    ///
-    /// Fails when the TLS provider cannot be installed or the client cannot be
-    /// built, for example because the platform has no trusted roots to load.
     pub fn new(base_override: Option<&str>, limits: HttpLimits) -> Result<Self, SetupError> {
         install_tls_provider()?;
         let base_url = resolve_base_url(base_override)?;
@@ -198,7 +178,7 @@ impl GitHubRegistrar {
         })
     }
 
-    /// The address registrations go to, for tests.
+    /// the address registrations go to, for tests.
     #[must_use]
     pub fn base_url(&self) -> &str {
         &self.base_url
@@ -274,7 +254,7 @@ fn too_large(cap: usize) -> String {
     format!("the response is larger than {cap} bytes")
 }
 
-/// The error's own text and every cause's, in order.
+/// the error's own text and every cause's, in order.
 fn error_chain(error: &dyn std::error::Error) -> String {
     let mut text = error.to_string();
     let mut source = error.source();
@@ -286,7 +266,7 @@ fn error_chain(error: &dyn std::error::Error) -> String {
     text
 }
 
-/// The `encoded_jit_config` of a response, when it is a non-blank string.
+/// the `encoded_jit_config` of a response, when it is a non-blank string.
 fn encoded_jit_config(body: &[u8]) -> Option<String> {
     let Value::Object(object) = json::parse(body).ok()? else {
         return None;
@@ -299,7 +279,7 @@ fn encoded_jit_config(body: &[u8]) -> Option<String> {
     })
 }
 
-/// The request body: the runner's name, the group, and the labels, as compact JSON.
+/// the request body: the runner's name, the group, and the labels, as compact JSON.
 #[must_use]
 pub fn jit_request_body(name: &str, labels: &[String]) -> String {
     let mut body = String::from("{\"name\":");
@@ -317,7 +297,7 @@ pub fn jit_request_body(name: &str, labels: &[String]) -> String {
     body
 }
 
-/// Writes a JSON string literal with the escapes RFC 8259 requires.
+/// writes a JSON string literal with the escapes RFC 8259 requires.
 fn write_json_string(out: &mut String, text: &str) {
     out.push('"');
     for character in text.chars() {

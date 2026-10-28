@@ -1,30 +1,28 @@
-//! The exact `docker` argument lists of the run contract.
-//!
-//! These reproduce `docker-commands.ps1` and the supervisor's helper functions
-//! argument for argument. The tests compare them with the PowerShell source.
+//! the exact `docker` argument lists of the run contract, which the tests hold equal
+//! to `hosts/windows-docker-desktop/docker-commands.ps1`.
 
 use super::backend::{ContainerSpec, Mount};
 use crate::image::check::labels_format;
 use crate::validate::PlannedVolume;
 
-/// The command a job container runs after the launcher verifies its CPUs.
+/// the command a job container runs after the launcher verifies its CPUs.
 pub const RUN_COMMAND: &str = "/home/runner/run.sh";
 
-/// The variable that carries the JIT configuration to the runner. The client is
+/// the variable that carries the JIT configuration to the runner; the client is
 /// told the name only, and reads the value from its own environment.
 pub const JIT_VARIABLE: &str = "ACTIONS_RUNNER_INPUT_JITCONFIG";
 
-/// The label that marks a container as diagnostics evidence, which cleanup never
+/// the label that marks a container as diagnostics evidence, which cleanup never
 /// removes.
 pub const DIAGNOSTIC_LABEL: &str = "runners.diagnostic-lifecycle=1";
 
-/// The label that marks a CPU probe container.
+/// the label that marks a CPU probe container.
 pub const PROBE_LABEL: &str = "runners.cpu-probe=1";
 
-/// What the probe container runs to print the CPUs it may use.
+/// what the probe container runs to print the CPUs it may use.
 pub const PROBE_READER: &str = "while read -r key value; do if [ \"$key\" = Cpus_allowed_list: ]; then printf \"%s\\n\" \"$value\"; exit; fi; done < /proc/self/status; exit 1";
 
-/// The launcher script's checks, before `exec "$@"`: the container's own CPU list
+/// the launcher script's checks, before `exec "$@"`: the container's own CPU list
 /// must equal the one selected, or the runner does not start.
 #[must_use]
 pub fn guard_script() -> String {
@@ -53,7 +51,7 @@ fn launcher() -> String {
     format!("{}\nexec \"$@\"", guard_script())
 }
 
-/// The diagnostic variant's launcher: the guard, then the collector, in raw mode
+/// the diagnostic variant's launcher: the guard, then the collector, in raw mode
 /// when asked, or the runner itself with a gap when the collector is missing.
 #[must_use]
 pub fn diagnostic_launcher(raw_records: bool) -> String {
@@ -80,11 +78,9 @@ fn mount_arguments(mounts: &[Mount]) -> Vec<String> {
         .collect()
 }
 
-/// The arguments of the one `docker run` that starts a job container: the
-/// diagnostic variant for a diagnostics-enabled pool's, without `--rm`, with the
-/// diagnostics label and with the diagnostic launcher. The limits and the name come
-/// before the image, because Docker reads what follows the image as the
-/// container's own command.
+/// the arguments of the one `docker run` that starts a job container, the
+/// diagnostic variant for a diagnostics-enabled pool's; the options come before the
+/// image, because Docker reads what follows it as the container's own command.
 #[must_use]
 pub fn job_run_arguments(spec: &ContainerSpec) -> Vec<String> {
     let (removal, label, launcher): (&[&str], &[&str], String) = match &spec.diagnostic {
@@ -125,28 +121,28 @@ pub fn job_run_arguments(spec: &ContainerSpec) -> Vec<String> {
     arguments
 }
 
-/// Where the collector writes its records inside a diagnostic container, as the
+/// where the collector writes its records inside a diagnostic container, as the
 /// source of the copy.
 pub const DIAGNOSTIC_SOURCE: &str = "/tmp/runner-diagnostics/.";
 
-/// The fixed allowlist of fields `identity.txt` holds, and nothing else of the
+/// the fixed allowlist of fields `identity.txt` holds, and nothing else of the
 /// container's configuration.
 pub const IDENTITY_FORMAT: &str = "{{.Image}}|{{.HostConfig.NanoCpus}}|{{.HostConfig.Memory}}|{{.HostConfig.MemorySwap}}|{{.HostConfig.CpuQuota}}|{{.HostConfig.CpuPeriod}}|{{.HostConfig.CpusetCpus}}|{{.State.OOMKilled}}|{{.State.ExitCode}}";
 
-/// Reads a container's identity through [`IDENTITY_FORMAT`].
+/// reads a container's identity through [`IDENTITY_FORMAT`].
 #[must_use]
 pub fn identity_arguments(name: &str) -> Vec<String> {
     strings(&["inspect", "--format", IDENTITY_FORMAT, name])
 }
 
-/// Copies the collector's directory out of a container, as an archive on standard
+/// copies the collector's directory out of a container, as an archive on standard
 /// output.
 #[must_use]
 pub fn copy_arguments(name: &str) -> Vec<String> {
     strings(&["cp", &format!("{name}:{DIAGNOSTIC_SOURCE}"), "-"])
 }
 
-/// Ends containers at once, without removing them.
+/// ends containers at once, without removing them.
 #[must_use]
 pub fn kill_arguments(names: &[String]) -> Vec<String> {
     let mut arguments = strings(&["kill"]);
@@ -166,7 +162,7 @@ pub fn info_arguments() -> Vec<String> {
     strings(&["info"])
 }
 
-/// Lists a pool's containers by name prefix.
+/// lists a pool's containers by name prefix.
 #[must_use]
 pub fn pool_list_arguments(pool: &str) -> Vec<String> {
     strings(&[
@@ -179,7 +175,7 @@ pub fn pool_list_arguments(pool: &str) -> Vec<String> {
     ])
 }
 
-/// Lists those of a pool's containers that carry the diagnostics label.
+/// lists those of a pool's containers that carry the diagnostics label.
 #[must_use]
 pub fn pool_diagnostic_list_arguments(pool: &str) -> Vec<String> {
     strings(&[
@@ -213,7 +209,7 @@ pub fn volume_create_arguments(volume: &PlannedVolume) -> Vec<String> {
     strings(&["volume", "create", &volume.name])
 }
 
-/// The short root container that gives the runner user the volumes' mount points.
+/// the short root container that gives the runner user the volumes' mount points.
 #[must_use]
 pub fn volume_chown_arguments(image: &str, volumes: &[PlannedVolume]) -> Vec<String> {
     let mut arguments = strings(&["run", "--rm", "--pull", "never", "--user", "root"]);
@@ -224,7 +220,7 @@ pub fn volume_chown_arguments(image: &str, volumes: &[PlannedVolume]) -> Vec<Str
     arguments
 }
 
-/// Finds a probe container by its exact name and its label.
+/// finds a probe container by its exact name and its label.
 #[must_use]
 pub fn probe_find_arguments(probe: &str) -> Vec<String> {
     strings(&[
@@ -239,7 +235,7 @@ pub fn probe_find_arguments(probe: &str) -> Vec<String> {
     ])
 }
 
-/// Runs the probe: no network, no pull, no registration, no mounts, no limits.
+/// runs the probe: no network, no pull, no registration, no mounts, no limits.
 #[must_use]
 pub fn probe_run_arguments(probe: &str, image: &str) -> Vec<String> {
     strings(&[
@@ -260,14 +256,14 @@ pub fn probe_run_arguments(probe: &str, image: &str) -> Vec<String> {
     ])
 }
 
-/// Reads the labels the image check needs, with one fixed format. `reference` is
-/// the name as `docker run` resolves it.
+/// reads the labels the image check needs, with one fixed format, of `reference` as
+/// `docker run` resolves it.
 #[must_use]
 pub fn image_inspect_arguments(reference: &str) -> Vec<String> {
     strings(&["image", "inspect", "--format", &labels_format(), reference])
 }
 
-/// Lists the ID of the image `reference` names, and nothing when there is none.
+/// lists the ID of the image `reference` names, and nothing when there is none.
 #[must_use]
 pub fn image_list_arguments(reference: &str) -> Vec<String> {
     strings(&["image", "ls", "--quiet", reference])
@@ -341,8 +337,6 @@ mod tests {
         assert_eq!(arguments.last().map(String::as_str), Some(RUN_COMMAND));
     }
 
-    /// The text between `@'` and `'@` of the PowerShell here-string that starts with
-    /// `set -eu`, and the probe's reader script, from the supervisor's own source.
     fn powershell_source() -> String {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../hosts/windows-docker-desktop/docker-commands.ps1");
@@ -392,8 +386,6 @@ mod tests {
         }
     }
 
-    /// `diagnostic-export.ps1`, where the PowerShell exporter reads the identity
-    /// and copies the collector's directory.
     fn powershell_export_source() -> String {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../hosts/windows-docker-desktop/diagnostic-export.ps1");

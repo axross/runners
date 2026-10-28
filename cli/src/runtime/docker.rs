@@ -1,17 +1,6 @@
-//! The container backend: it runs the `docker` command line client.
-//!
-//! Every client starts in its own process group, so a Ctrl+C in the terminal reaches
-//! the CLI only, which then stops the containers in order. A client's output is
-//! never trusted to be short or valid text: the probe's is capped, a job
-//! container's lines are forwarded in bounded pieces, and any other client's is read
-//! within its time budget and cut to the length of a registration error when it
-//! becomes error text.
-//!
-//! On Unix `start` runs each job container's client through the shim, so a
-//! container is removed, or a diagnostic one ended and kept, even when the CLI is
-//! killed; see [`JobLauncher`]. A diagnostic container's export runs in the
-//! exporter child, which [`DockerBackend`] starts with a liveness pipe and ends at
-//! the export deadline.
+//! the container backend, which runs the `docker` command line client in a process
+//! group of its own and never trusts a client's output to be short or valid text;
+//! `docs/operations/cli.md` describes the argument lists, budgets and the shim.
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
@@ -47,40 +36,37 @@ use super::retained::Retained;
 use super::scrub::scrub_error_text;
 use super::secret::Secret;
 
-/// How long Docker is given between checks while it is not answering.
+/// how long Docker is given between checks while it is not answering.
 pub const DOCKER_POLL_INTERVAL: Duration = Duration::from_secs(5);
 
-/// The most bytes of one line of a container's output forwarded as one message.
 const MAX_LINE_BYTES: u64 = 64 * 1024;
 
-/// A Windows process creation flag: the client gets its own process group, so a
-/// console Ctrl+C is not delivered to it.
+/// the Windows flag that gives a client its own process group, so a console Ctrl+C
+/// does not reach it.
 #[cfg(windows)]
 const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
 
-/// How long an exporter gets to end after its liveness pipe closes at the export
+/// how long an exporter gets to end after its liveness pipe closes at the export
 /// deadline, before it is killed.
 pub const EXPORTER_TERMINATION: Duration = Duration::from_secs(1);
 
-/// The most bytes of one line the exporter prints that are read.
 const MAX_EXPORTER_LINE_BYTES: u64 = 64;
 
-/// The time bounds on the clients other than a job container's.
+/// the time bounds on the clients other than a job container's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DockerLimits {
-    /// A bound on a listing, a volume command or an info call. A removal and a
-    /// stop take the budget their caller passes instead. The PowerShell
-    /// supervisor had none.
+    /// a bound on a listing, a volume command or an info call; a removal and a stop
+    /// take the budget their caller passes instead.
     pub command_budget: Duration,
-    /// The whole budget of one CPU probe, client termination included.
+    /// the whole budget of one CPU probe, client termination included.
     pub probe_budget: Duration,
-    /// The budget of reconciling and removing a leftover probe.
+    /// the budget of reconciling and removing a leftover probe.
     pub probe_cleanup_budget: Duration,
-    /// The budget of one image check, both its clients together.
+    /// the budget of one image check, both its clients together.
     pub image_check_budget: Duration,
-    /// The time reserved at the end of a budget to end a client that overran it.
+    /// the time reserved at the end of a budget to end a client that overran it.
     pub client_termination: Duration,
-    /// The most bytes of probe output read.
+    /// the most bytes of probe output read.
     pub probe_output_bytes: usize,
 }
 
@@ -97,32 +83,27 @@ impl Default for DockerLimits {
     }
 }
 
-/// How a job container's `docker run` client is started.
+/// how a job container's `docker run` client is started.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum JobLauncher {
-    /// As a child of this process, killed when the run is dropped.
+    /// as a child of this process, killed when the run is dropped.
     #[default]
     Direct,
-    /// By the shim: this program run again as `<program> shim`, which starts the
-    /// client and holds the read end of a liveness pipe from this process. When the
-    /// pipe closes, because the run was dropped or this process ended however it
-    /// ended, the shim force-removes the container, or ends a diagnostic one and
-    /// keeps it, kills the client and exits.
+    /// by the shim: this program run again as `<program> shim`, which cleans up the
+    /// container when its liveness pipe from this process closes, however this
+    /// process ended.
     #[cfg(unix)]
     Shim(PathBuf),
 }
 
-/// The client a release build always runs, found by the operating system's search.
+/// the client a release build always runs, found by the operating system's search.
 pub const DOCKER_PROGRAM: &str = "docker";
 
-/// Resolves the client `start` runs.
-///
-/// A release build always returns [`DOCKER_PROGRAM`] and ignores `requested`, so a
-/// release binary cannot be made to run another program as its client. A debug
-/// build runs `requested` when given one, for the tests: on Windows a bare name is
-/// searched for in this program's directory and the system directories before
-/// `PATH`, so a fake `docker` placed first on `PATH` loses to a real one installed
-/// in `System32`.
+/// resolves the client `start` runs: a release build always returns
+/// [`DOCKER_PROGRAM`], so a release binary cannot be made to run another program,
+/// and a debug build runs `requested` for the tests (on Windows a bare name is
+/// found in the system directories before `PATH`, so a fake `docker` placed first
+/// on `PATH` loses to a real one in `System32`).
 #[must_use]
 pub fn resolve_program(requested: Option<&OsStr>) -> OsString {
     #[cfg(debug_assertions)]
@@ -134,19 +115,19 @@ pub fn resolve_program(requested: Option<&OsStr>) -> OsString {
     OsString::from(DOCKER_PROGRAM)
 }
 
-/// How to reach the `docker` client.
+/// how to reach the `docker` client.
 #[derive(Debug, Clone)]
 pub struct DockerConfig {
-    /// The client to run, found on `PATH` when it has no directory.
+    /// the client to run, found on `PATH` when it has no directory.
     pub program: OsString,
-    /// Variables to add to every client's environment.
+    /// variables to add to every client's environment.
     pub environment: Vec<(OsString, OsString)>,
     pub limits: DockerLimits,
     pub launcher: JobLauncher,
-    /// The program run as the exporter child: this CLI. Without one, every export
+    /// the program run as the exporter child: this CLI; without one, every export
     /// fails, and its container is still removed.
     pub exporter: Option<PathBuf>,
-    /// The checkout every sink must lie outside, when one was found.
+    /// the checkout every sink must lie outside, when one was found.
     pub checkout: Option<PathBuf>,
 }
 
@@ -163,7 +144,6 @@ impl Default for DockerConfig {
     }
 }
 
-/// What a finished client left.
 struct Captured {
     code: Option<i32>,
     stdout: String,
@@ -175,16 +155,14 @@ impl Captured {
         self.code == Some(0)
     }
 
-    /// The client's output for an error message, standard output then standard
-    /// error, on one line and cut as a registration error is.
     fn output_text(&self) -> String {
         scrub_error_text(&format!("{} {}", self.stdout, self.stderr), "")
     }
 }
 
-/// Builds a client command. The JIT variable is cleared, so only the one `run`
+/// builds a client command with the JIT variable cleared, so only the one `run`
 /// that sets it carries a registration; the client is killed when its future is
-/// dropped, and starts in its own process group.
+/// dropped and starts in its own process group.
 pub(crate) fn client_command(
     program: &OsStr,
     environment: &[(OsString, OsString)],
@@ -206,8 +184,8 @@ pub(crate) fn client_command(
     command
 }
 
-/// The admission lock of one pool and sink, which an export holds until its child
-/// has created the bundle.
+/// the admission lock of one pool and sink, held by an export until its child has
+/// created the bundle.
 type Admission = Rc<tokio::sync::Mutex<()>>;
 
 pub struct DockerBackend<C> {
@@ -219,11 +197,9 @@ pub struct DockerBackend<C> {
     admissions: RefCell<BTreeMap<(String, String), Admission>>,
 }
 
-/// Removes a container from the running set when its run ends, including when the
-/// future that waits for it is dropped, which kills the `docker` client and leaves
-/// the container running in the daemon. A panic that unwinds through the run
-/// leaves the name in the set, so whoever supervises the panicking code can still
-/// read the container and remove it; a successful removal forgets it.
+/// removes a container from the running set when its run ends, a dropped future
+/// included; a panic leaves the name, so the supervisor can still read and remove
+/// the container.
 struct RunningGuard<'a> {
     set: &'a RefCell<BTreeSet<String>>,
     name: String,
@@ -253,10 +229,9 @@ impl<C: Clock> DockerBackend<C> {
         client_command(&self.config.program, &self.config.environment, arguments)
     }
 
-    /// The command that starts a job container: the client itself, or the shim that
-    /// starts it. The shim's standard input is the liveness pipe, it is not killed
-    /// when the run is dropped, because closing that pipe makes it clean up, and it
-    /// writes the client's standard error into its standard output.
+    /// the command that starts a job container, the client itself or the shim,
+    /// which is not killed when the run is dropped because closing its liveness pipe
+    /// makes it clean up.
     fn job_command(&self, spec: &ContainerSpec) -> Command {
         let arguments = job_run_arguments(spec);
         match &self.config.launcher {
@@ -291,7 +266,7 @@ impl<C: Clock> DockerBackend<C> {
         }
     }
 
-    /// Runs a client to its end within `budget` and returns what it printed.
+    /// runs a client to its end within `budget` and returns what it printed.
     async fn capture(
         &self,
         arguments: &[String],
@@ -335,9 +310,9 @@ impl<C: Clock> DockerBackend<C> {
         )))
     }
 
-    /// Runs a client with standard error discarded and at most `cap` bytes of
+    /// runs a client with standard error discarded and at most `cap` bytes of
     /// standard output, ending it at `budget` less the time reserved to terminate
-    /// it. A client over the cap or the budget is ended and refused.
+    /// it; a client over the cap or the budget is ended and refused.
     async fn run_capped(
         &self,
         arguments: &[String],
@@ -389,7 +364,7 @@ impl<C: Clock> DockerBackend<C> {
             })
     }
 
-    /// Removes a leftover CPU probe of this exact name, and only one that carries
+    /// removes a leftover CPU probe of this exact name, and only one that carries
     /// the probe label.
     async fn remove_probe(&self, probe: &str) -> Result<(), BackendError> {
         let limits = self.config.limits;
@@ -469,7 +444,7 @@ impl<C: Clock> DockerBackend<C> {
             .clone()
     }
 
-    /// The exporter request for `record`'s sink, naming `container` to export or
+    /// the exporter request for `record`'s sink, naming `container` to export or
     /// none to only count its bundles, with the time left until `deadline`.
     fn export_request(
         &self,
@@ -487,11 +462,8 @@ impl<C: Clock> DockerBackend<C> {
         }
     }
 
-    /// Starts the exporter child for `request`. Its standard input is the liveness
-    /// pipe, its standard output is read, and its standard error, where it writes
-    /// only a panic's location, is this process's, so it stays open while the child
-    /// lives. Closing the pipe, not a kill, ends it when its run is dropped, so it
-    /// can kill its own clients first.
+    /// starts the exporter child for `request` with a liveness pipe as its standard
+    /// input, closing which ends it, so it can kill its own clients first.
     fn exporter(&self, request: &ExportRequest) -> Option<Child> {
         let program = self.config.exporter.as_ref()?;
         let mut command = Command::new(program);
@@ -512,10 +484,9 @@ impl<C: Clock> DockerBackend<C> {
         command.spawn().ok()
     }
 
-    /// Runs the exporter child for `request` until it ends or `deadline` passes. At
-    /// the deadline its liveness pipe closes first, and it is killed only
-    /// [`EXPORTER_TERMINATION`] later. `admission` is released when the child says
-    /// it has created the bundle, or when it ends.
+    /// runs the exporter child for `request` until it ends or `deadline` passes,
+    /// closing its liveness pipe first and killing it only [`EXPORTER_TERMINATION`]
+    /// later; `admission` is released once the child has created the bundle or ended.
     async fn run_exporter(
         &self,
         request: &ExportRequest,
@@ -576,22 +547,19 @@ impl<C: Clock> DockerBackend<C> {
     }
 }
 
-/// Why a capped client gave no result.
 enum CappedFailure {
-    /// The budget left no time to run it.
     DeadlineSpent,
-    /// It could not start, overran its cap or its budget, or its output could not
+    /// it could not start, overran its cap or its budget, or its output could not
     /// be read.
     Unavailable,
 }
 
-/// Removes one trailing `\n` or `\r\n`.
 fn strip_line_end(text: &str) -> &str {
     let text = text.strip_suffix('\n').unwrap_or(text);
     text.strip_suffix('\r').unwrap_or(text)
 }
 
-/// Reads to the end, failing when more than `cap` bytes arrive or the read fails.
+/// reads to the end, failing when more than `cap` bytes arrive or the read fails.
 async fn read_capped<R: AsyncRead + Unpin>(reader: &mut R, cap: usize) -> Option<Vec<u8>> {
     let limit = u64::try_from(cap).ok()?.checked_add(1)?;
     let mut bytes = Vec::new();
@@ -602,14 +570,13 @@ async fn read_capped<R: AsyncRead + Unpin>(reader: &mut R, cap: usize) -> Option
     Some(bytes)
 }
 
-/// Kills a client and waits for it for at most `limit`.
 async fn end_client(child: &mut Child, limit: Duration) {
     let _ = tokio::time::timeout(limit, child.kill()).await;
 }
 
-/// Forwards each line a container prints to the log until its stream ends. A line
+/// forwards each line a container prints to the log until its stream ends; a line
 /// longer than [`MAX_LINE_BYTES`] goes in pieces, each cut where it splits no masked
-/// secret: the bytes after the cut wait for the next piece.
+/// secret.
 async fn forward_lines<R: AsyncRead + Unpin>(stream: Option<R>, log: &dyn Log) {
     let Some(stream) = stream else {
         return;
@@ -777,7 +744,7 @@ impl<C: Clock> Backend for DockerBackend<C> {
     async fn select_cpuset(&self, request: &CpuRequest) -> Result<String, BackendError> {
         let selection = self.read_allowed_cpus(request).await;
         // the cleanup runs whatever the probe did, and its failure outranks the
-        // probe's result, as in the PowerShell `finally`.
+        // probe's result.
         self.remove_probe(&request.probe_name).await?;
         selection
     }
@@ -862,9 +829,8 @@ impl<C: Clock> Backend for DockerBackend<C> {
         &self.retained
     }
 
-    /// Exports the container into its record's sink by `deadline`, once this pool
-    /// and sink's admission lock is free; an export that cannot take it by then
-    /// fails.
+    /// exports the container into its record's sink by `deadline`, once the pool and
+    /// sink's admission lock is free; an export that cannot take it by then fails.
     async fn export_diagnostic(
         &self,
         name: &str,

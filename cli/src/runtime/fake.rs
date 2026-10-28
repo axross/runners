@@ -1,8 +1,5 @@
-//! In-memory stand-ins for the seams, for tests of the code above them.
-//!
-//! They record what they were asked and answer from a script. They are part of the
-//! library so the integration tests and the later instance layer can use them. They
-//! are test-only and never wired into a command.
+//! in-memory stand-ins for the seams, for tests of the code above them; they record
+//! what they were asked, answer from a script, and no command wires them in.
 
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
@@ -25,86 +22,81 @@ use super::registration::{JitRequest, Registrar, RegistrationError};
 use super::retained::Retained;
 use super::secret::Secret;
 
-/// One call a [`FakeBackend`] received.
+/// one call a [`FakeBackend`] received.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Call {
     WaitUntilAvailable,
     ListPoolContainers(String),
     RemoveContainers(Vec<String>),
-    PrepareVolumes {
-        image: String,
-        volumes: Vec<String>,
-    },
+    PrepareVolumes { image: String, volumes: Vec<String> },
     SelectCpuset(CpuRequest),
     RunContainer(ContainerSpec),
     StopContainers(StopRequest),
     KillContainers(Vec<String>),
-    /// An export began, with the deadline it was given.
     ExportDiagnostic(String, tokio::time::Instant),
     CountBundles(String),
 }
 
-/// A container the fake engine holds.
+/// a container the fake engine holds.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FakeContainer {
     pub name: String,
     pub diagnostic: bool,
 }
 
-/// What a [`FakeBackend`] answers and what it saw.
+/// what a [`FakeBackend`] answers and what it saw.
 #[derive(Default)]
 pub struct FakeState {
     pub calls: Vec<Call>,
     pub containers: Vec<FakeContainer>,
     pub list_error: Option<BackendError>,
     pub remove_error: Option<BackendError>,
-    /// A volume name whose preparation fails.
+    /// a volume name whose preparation fails.
     pub failing_volume: Option<String>,
-    /// The answers to `select_cpuset`, then `0` for every call after them.
+    /// the answers to `select_cpuset`, then `0` for every call after them.
     pub cpusets: VecDeque<Result<String, BackendError>>,
-    /// The exits of `run_container`; when they run out, the stop is asked for and
+    /// the exits of `run_container`; when they run out, the stop is asked for and
     /// the run exits 0.
     pub exits: VecDeque<Result<i32, BackendError>>,
     pub stop_when_exits_run_out: Option<watch::Sender<bool>>,
-    /// Called at the start of every `run_container`, before its exit is chosen.
+    /// called at the start of every `run_container`, before its exit is chosen.
     pub on_run: Option<Box<dyn FnMut()>>,
-    /// The JIT configurations handed to `run_container`, in order.
+    /// the JIT configurations handed to `run_container`, in order.
     pub jit_values: Vec<String>,
-    /// What `running_containers` reports; stopping or removing a name drops it.
+    /// what `running_containers` reports; stopping or removing a name drops it.
     pub running: Vec<String>,
-    /// A stop request fails with this error, once it is recorded.
+    /// a stop request fails with this error, once it is recorded.
     pub stop_error: Option<BackendError>,
-    /// A stop request, once recorded, never ends, as a `docker stop` whose
-    /// containers ignore the grace period would not before its budget.
+    /// a stop request, once recorded, never ends, as a `docker stop` that outlasts
+    /// its budget.
     pub stop_hangs: bool,
-    /// The images each `check_image` was asked about, in order. They are kept out
+    /// the images each `check_image` was asked about, in order; they are kept out
     /// of `calls`, so a test of the other calls sees only those.
     pub image_checks: Vec<String>,
-    /// The answers to `check_image`; when they run out, every check matches, with
+    /// the answers to `check_image`; when they run out, every check matches, with
     /// [`matching_labels`] as the image's labels.
     pub image_answers: VecDeque<ImageCheck>,
-    /// The outcomes of the exports `export_diagnostic` runs; when they run out,
-    /// every export is complete. A complete export or one with a gap admits a
+    /// the outcomes of the exports `export_diagnostic` runs; when they run out,
+    /// every export is complete; a complete export or one with a gap admits a
     /// bundle.
     pub export_results: VecDeque<ExportOutcome>,
-    /// The bundles written, as container and record, in order.
     pub bundles: Vec<(String, DiagnosticRecord)>,
-    /// When set, an export waits for a permit of this before it ends, which holds
+    /// when set, an export waits for a permit of this before it ends, which holds
     /// its container's finalisation.
     pub export_gate: Option<Rc<Notify>>,
-    /// Called at the start of every export.
+    /// called at the start of every export.
     pub on_export: Option<Box<dyn FnMut()>>,
-    /// The answers to `count_bundles`; when they run out, the bundles written for
+    /// the answers to `count_bundles`; when they run out, the bundles written for
     /// the pool are counted.
     pub bundle_counts: VecDeque<Option<u32>>,
-    /// A kill fails with this error, once it is recorded.
+    /// a kill fails with this error, once it is recorded.
     pub kill_error: Option<BackendError>,
-    /// Every `run_container` waits, as a running job does, until a stop, a kill or
+    /// every `run_container` waits, as a running job does, until a stop, a kill or
     /// a removal is asked for, of any container.
     pub hold_runs: bool,
 }
 
-/// The labels of the image a [`FakeBackend`] answers with by default: this CLI's
+/// the labels of the image a [`FakeBackend`] answers with by default: this CLI's
 /// contract and nothing else.
 #[must_use]
 pub fn matching_labels() -> ImageLabels {
@@ -118,7 +110,7 @@ pub fn matching_labels() -> ImageLabels {
 pub struct FakeBackend {
     pub state: RefCell<FakeState>,
     pub retained: Retained,
-    /// Fired by a stop, a kill or a removal, which ends every held run.
+    /// fired by a stop, a kill or a removal, which ends every held run.
     ended: Notify,
 }
 
@@ -335,7 +327,7 @@ impl Backend for FakeBackend {
     }
 }
 
-/// How many bundles the fake wrote for `pool`.
+/// how many bundles the fake wrote for `pool`.
 fn bundles_of(state: &FakeState, pool: &str) -> u32 {
     let count = state
         .bundles
@@ -345,7 +337,7 @@ fn bundles_of(state: &FakeState, pool: &str) -> u32 {
     u32::try_from(count).unwrap_or(u32::MAX)
 }
 
-/// What a [`FakeRegistrar`] was asked for.
+/// what a [`FakeRegistrar`] was asked for.
 #[derive(Clone, PartialEq, Eq)]
 pub struct SeenRegistration {
     pub owner: String,
@@ -369,10 +361,10 @@ impl std::fmt::Debug for SeenRegistration {
 
 #[derive(Default)]
 pub struct FakeRegistrar {
-    /// The answers, then `jit` for every call after them.
+    /// the answers, then `jit` for every call after them.
     pub results: RefCell<VecDeque<Result<String, RegistrationError>>>,
     pub seen: RefCell<Vec<SeenRegistration>>,
-    /// Asked for the stop during the first request, before it answers.
+    /// asked for the stop during the first request, before it answers.
     pub stop_during_request: RefCell<Option<watch::Sender<bool>>>,
 }
 
@@ -396,7 +388,7 @@ impl Registrar for FakeRegistrar {
     }
 }
 
-/// A clock that does not wait: a sleep is recorded, moves the time forward, and
+/// a clock that does not wait: a sleep is recorded, moves the time forward, and
 /// completes at once.
 pub struct FakeClock {
     now: Cell<SystemTime>,
@@ -406,7 +398,7 @@ pub struct FakeClock {
 }
 
 impl FakeClock {
-    /// A clock that starts at `unix_millis` after the epoch.
+    /// a clock that starts at `unix_millis` after the epoch.
     #[must_use]
     pub fn at(unix_millis: u64) -> Self {
         Self {
@@ -417,13 +409,13 @@ impl FakeClock {
         }
     }
 
-    /// Asks for a stop once this many sleeps have been recorded.
+    /// asks for a stop once this many sleeps have been recorded.
     pub fn stop_after(&self, sleeps: usize, stop: watch::Sender<bool>) {
         self.stop_after_sleeps.set(Some(sleeps));
         *self.stop.borrow_mut() = Some(stop);
     }
 
-    /// Moves the time forward without a sleep, as time passing between events.
+    /// moves the time forward without a sleep, as time passing between events.
     pub fn advance(&self, duration: Duration) {
         self.now.set(self.now.get() + duration);
     }
@@ -454,7 +446,7 @@ impl Clock for FakeClock {
     }
 }
 
-/// Collects the lines, each prefixed `INFO: ` or `WARN: `, with every masked secret
+/// collects the lines, each prefixed `INFO: ` or `WARN: `, with every masked secret
 /// replaced as a real sink replaces it.
 #[derive(Default)]
 pub struct MemoryLog {

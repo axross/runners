@@ -1,4 +1,4 @@
-//! The loop of one slot: check the image, probe the CPUs, register, run one job
+//! the loop of one slot: check the image, probe the CPUs, register, run one job
 //! container, repeat.
 
 use std::time::Duration;
@@ -19,13 +19,13 @@ use super::pool::SlotSpec;
 use super::registration::{JitRequest, Registrar};
 use super::token::read_token;
 
-/// The delay after a slot's first failure.
+/// the delay after a slot's first failure.
 pub const INITIAL_BACKOFF: Duration = Duration::from_secs(5);
 
-/// The longest delay between attempts.
+/// the longest delay between attempts.
 pub const MAX_BACKOFF: Duration = Duration::from_secs(300);
 
-/// A slot's delay between failed attempts: 5 s, doubling to 300 s, back to 5 s
+/// a slot's delay between failed attempts: 5 s, doubling to 300 s, back to 5 s
 /// after a container exits 0.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Backoff {
@@ -41,7 +41,7 @@ impl Default for Backoff {
 }
 
 impl Backoff {
-    /// The delay to wait now; the one after it doubles.
+    /// the delay to wait now; the one after it doubles.
     pub fn fail(&mut self) -> Duration {
         let delay = self.next;
         self.next = (delay * 2).min(MAX_BACKOFF);
@@ -58,7 +58,7 @@ impl Backoff {
     }
 }
 
-/// A stop request for the workers. Dropping the sender stops them too.
+/// a stop request for the workers; dropping the sender stops them too.
 #[must_use]
 pub fn stop_channel() -> (watch::Sender<bool>, watch::Receiver<bool>) {
     watch::channel(false)
@@ -76,7 +76,7 @@ pub(crate) async fn wait_for_stop(stop: &mut watch::Receiver<bool>) {
     }
 }
 
-/// Sleeps `delay` unless a stop arrives first. Returns whether a stop was asked for.
+/// sleeps `delay` unless a stop arrives first; returns whether a stop was asked for.
 pub(crate) async fn sleep_or_stop<K: Clock>(
     clock: &K,
     stop: &mut watch::Receiver<bool>,
@@ -91,7 +91,6 @@ pub(crate) async fn sleep_or_stop<K: Clock>(
     }
 }
 
-/// Where a slot reports: its log and the status board.
 struct Report<'a> {
     log: &'a dyn Log,
     board: &'a Board,
@@ -104,8 +103,8 @@ impl Report<'_> {
     }
 }
 
-/// Warns that an attempt failed and waits out the backoff, ending early on a stop.
-/// Returns whether a stop was asked for.
+/// warns that an attempt failed and waits out the backoff, ending early on a stop;
+/// returns whether a stop was asked for.
 async fn back_off<K: Clock>(
     report: &Report<'_>,
     clock: &K,
@@ -122,17 +121,8 @@ async fn back_off<K: Clock>(
     sleep_or_stop(clock, stop, backoff.fail()).await
 }
 
-/// Runs one slot until a stop is asked for. A container already running is left to
-/// the stop sequence, which ends it; the loop then returns.
-///
-/// Each attempt checks the image, then probes the CPUs, then registers, then runs
-/// the container. An image that cannot run jobs, a Docker that does not answer the
-/// check, a failed probe or registration, or a non-zero exit, waits out the
-/// backoff; an exit of 0 starts the replacement at once. A diagnostic container is
-/// finalised first, on a clock that starts when it ended, unless a stop is under
-/// way, whose container steps take it instead; its export's gaps never change the
-/// backoff. The slot's state goes on `board`, and the token it reads and the JIT
-/// configuration it holds are masked in `log`.
+/// runs one slot until a stop is asked for, leaving a container already running to
+/// the stop sequence.
 pub async fn run_slot<B: Backend, K: Clock, R: Registrar>(
     slot: &SlotSpec,
     backend: &B,

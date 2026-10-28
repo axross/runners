@@ -1,9 +1,6 @@
-//! What each pool and slot is doing now, and what the latest image check found,
-//! for `status`.
-//!
-//! Pool preparation, the image checks and the slot loops write their state here as
-//! they go, and the instance reads it when a client asks. A state names pools,
-//! slots, containers, images and reasons, never a token or a JIT configuration.
+//! what each pool and slot is doing now, and what the latest image check found,
+//! for `status`; a state names pools, slots, containers, images and reasons, never
+//! a token or a JIT configuration.
 
 use std::cell::RefCell;
 use std::fmt;
@@ -11,11 +8,11 @@ use std::time::SystemTime;
 
 use crate::image::check::{ImageCheck, status_fields};
 
-/// Where a pool is.
+/// where a pool is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PoolState {
     WaitingForDocker,
-    /// Its stale containers are being removed and its volumes prepared.
+    /// its stale containers are being removed and its volumes prepared.
     Preparing,
     Running,
     Skipped(String),
@@ -32,13 +29,13 @@ impl fmt::Display for PoolState {
     }
 }
 
-/// Where a slot is.
+/// where a slot is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SlotState {
-    /// Probing its CPUs and asking GitHub for a registration.
+    /// probing its CPUs and asking GitHub for a registration.
     Registering,
     BackingOff,
-    /// Running the job container of this name.
+    /// running the job container of this name.
     Running(String),
 }
 
@@ -52,14 +49,13 @@ impl fmt::Display for SlotState {
     }
 }
 
-/// The configured image, and what its latest check found, if one answered.
 #[derive(Debug)]
 struct ImageRecord {
     name: String,
     check: Option<ImageCheck>,
 }
 
-/// The pools in the order they were first reported, each with its slots, and the
+/// the pools in the order they were first reported, each with its slots, and the
 /// image they run.
 #[derive(Debug, Default)]
 pub struct Board {
@@ -77,24 +73,23 @@ fn upsert<T>(entries: &RefCell<Vec<(String, T)>>, key: String, value: T) {
 }
 
 impl Board {
-    /// Records a pool's state; `pool` names it as a `status` line shows it.
+    /// records a pool's state, under the name a `status` line shows.
     pub fn set_pool(&self, pool: &str, state: PoolState) {
         upsert(&self.pools, pool.to_string(), state);
     }
 
-    /// Records a slot's state; `slot` names it as a `status` line shows it.
+    /// records a slot's state, under the name a `status` line shows.
     pub fn set_slot(&self, slot: &str, state: SlotState) {
         upsert(&self.slots, slot.to_string(), state);
     }
 
-    /// Forgets every pool and slot, as when the runtime core ends. The image check
-    /// stays, as the latest one Docker answered.
+    /// forgets every pool and slot; the latest image check stays.
     pub fn clear(&self) {
         self.pools.borrow_mut().clear();
         self.slots.borrow_mut().clear();
     }
 
-    /// Names the image the pools run. A check of another image is forgotten.
+    /// names the image the pools run; a check of another image is forgotten.
     pub fn expect_image(&self, image: &str) {
         let mut record = self.image.borrow_mut();
         if record.as_ref().is_none_or(|held| held.name != image) {
@@ -105,7 +100,7 @@ impl Board {
         }
     }
 
-    /// Records what a check of `image` found. An unavailable Docker said nothing
+    /// records what a check of `image` found; an unavailable Docker said nothing
     /// about the image, so it leaves the latest answer in place.
     pub fn record_image(&self, image: &str, check: &ImageCheck) {
         self.expect_image(image);
@@ -117,8 +112,8 @@ impl Board {
         }
     }
 
-    /// The `status` lines of the image, as of its latest check, its ages counted
-    /// to `now`; none before an image is named.
+    /// the `status` lines of the image, its ages counted to `now`; none before an
+    /// image is named.
     #[must_use]
     pub fn image_fields(&self, now: SystemTime) -> Vec<(&'static str, String)> {
         self.image
@@ -129,7 +124,7 @@ impl Board {
             })
     }
 
-    /// One `pool` field per pool and then one `slot` field per slot, each
+    /// one `pool` field per pool, then one `slot` field per slot, each
     /// `<name>: <state>`.
     #[must_use]
     pub fn fields(&self) -> Vec<(&'static str, String)> {
