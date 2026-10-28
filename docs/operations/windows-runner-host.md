@@ -110,8 +110,10 @@ CLI's instance lock.
 
 Install `marshal` from a release with the Windows procedure in
 [CLI](./cli.md#installing-updating-and-rolling-back), never by building it on the
-host. The procedure refuses a binary whose checksum, tag commit, or attestation does
-not verify, and installs it at `%LOCALAPPDATA%\Programs\marshal\marshal.exe`. Add
+host. The procedure refuses a binary whose checksum, commit on main, or attestation
+from `release.yaml` on main does not verify, or whose `--version` does not print the
+release's version, before it replaces anything. It installs the binary at
+`%LOCALAPPDATA%\Programs\marshal\marshal.exe`. Add
 that directory to your user `Path` under **Settings, System, About, Advanced system
 settings, Environment Variables**, then open a new terminal and confirm that
 `marshal --version` prints `marshal <version>`.
