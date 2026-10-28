@@ -5,21 +5,12 @@
     -ValidateOnly mode, and a few rules the host scripts must keep.
 
 .DESCRIPTION
-    the shared fixtures under tests/host-configuration/shared/ and the
-    expectations in tests/host-configuration/expectations.json are read by this
-    test and by the Rust validator's tests. each fixture under rejected/ breaks
-    exactly one rule, or a few in a known order, and must be rejected with a
-    non-zero exit code and a message holding the expected text. each fixture
-    under accepted/ sits on the edge of a rule and must be accepted. the
-    fixtures under pwsh7/ are judged differently by Windows PowerShell 5.1 and
-    are skipped below PowerShell 7. a fixture without an expectation, or an
-    expectation without a fixture, fails the test. the example configuration
-    must be accepted and plan distinct names and volume names for its two
-    repositories, with the default limits where it sets none. the job container's `docker run` arguments, a slot job's
-    positional arguments against its worker script block's parameters, and the
-    stale container name pattern are built and checked without Docker. runs under the PowerShell that runs it, on Windows
-    PowerShell 5.1 as well as PowerShell 7, and calls neither Docker nor
-    GitHub.
+    runs the shared fixtures under tests/host-configuration/shared/ against the
+    expectations in tests/host-configuration/expectations.json (the pwsh7/ ones
+    are skipped below PowerShell 7), the example configuration, and the job
+    container, slot job and stale container name checks, all without Docker. runs
+    on Windows PowerShell 5.1 as well as PowerShell 7, and calls neither Docker
+    nor GitHub.
 #>
 $ErrorActionPreference = 'Stop'
 
@@ -63,9 +54,8 @@ function Assert-Case {
 }
 
 # every shared fixture has an entry in expectations.json, keyed by its path below
-# tests/host-configuration/: the outcome, and the text its output must and must
-# not contain. arrays are wrapped in @() because Windows PowerShell 5.1 unrolls a
-# one-element array it reads from JSON.
+# tests/host-configuration/. arrays are wrapped in @() because Windows PowerShell
+# 5.1 unrolls a one-element array it reads from JSON.
 $expectations = Get-Content -LiteralPath (Join-Path $sharedRoot 'expectations.json') -Raw | ConvertFrom-Json
 $sharedExpectations = @($expectations.PSObject.Properties | Where-Object { $_.Name.StartsWith('shared/') })
 $sharedFixtures = @(Get-ChildItem -LiteralPath $sharedDirectory -Recurse -File -Filter '*.json' |
@@ -119,8 +109,6 @@ Assert-Case -Name 'example registers the default labels and the custom label' `
 Assert-Case -Name 'example registers the default labels and the second custom label' `
     -Passed ($accepted.Text.Contains('labels:            self-hosted, linux, x64, axpc, example-label-two')) -Detail $accepted.Text
 
-# the job container's arguments for the entry in shared/accepted/explicit-limits.json,
-# with the limits formatted the way the supervisor formats them for a slot job.
 # the limits and the name must sit before the image, because Docker reads
 # whatever follows the image as the container's own command.
 $limitsPlan = Read-HostConfiguration -Path (Join-Path $sharedDirectory 'accepted/explicit-limits.json')
@@ -230,10 +218,6 @@ foreach ($entry in $poolPlan.Repositories) {
         -Detail 'cleanup crossed pool names'
 }
 
-# the former inline mutations of split-pools.json are shared/rejected/pool-*.json.
-
-# the stale-container cleanup matches only the containers Get-JobContainerName
-# gives this entry.
 $ownPattern = Get-JobContainerNamePattern -Name 'example-repo-one'
 $stamp = '20240305060708009'
 Assert-Case -Name 'stale container pattern matches the name Get-JobContainerName gives' `

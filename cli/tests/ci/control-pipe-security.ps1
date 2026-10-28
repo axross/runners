@@ -1,8 +1,7 @@
-# Reads back the security descriptor of a live control pipe and fails unless it
-# grants the current user alone. The debug helper opens the channel in a
-# debug-only root and prints the pipe's name; this script connects as a client and
-# reads the descriptor from the pipe handle, which the CLI cannot do without
-# unsafe code. CI runs it under PowerShell 7 on the Windows hosted runner.
+# reads back the security descriptor of a live control pipe that the debug
+# helper opens, and fails unless it grants the current user alone;
+# docs/operations/cli.md describes the test. CI runs it under PowerShell 7 on
+# the Windows hosted runner.
 param(
     [Parameter(Mandatory = $true)]
     [string] $Helper
