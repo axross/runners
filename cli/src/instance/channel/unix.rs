@@ -1,4 +1,4 @@
-//! The control socket.
+//! the control socket.
 
 use std::fs;
 use std::io;
@@ -19,19 +19,18 @@ use super::super::protocol::{Incoming, MAX_REQUEST_BYTES, Response, line_is_cut,
 use super::super::roots::Roots;
 use super::{ChannelError, ClientError, MAX_CONNECTIONS};
 
-/// How long a connected client has to send its request.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// How long the accept loop waits after the operating system refuses a connection,
+/// how long the accept loop waits after the operating system refuses a connection,
 /// such as when it has no file descriptors left.
 const ACCEPT_BACKOFF: Duration = Duration::from_millis(100);
 
-/// The listening socket. Dropping it stops accepting and removes the socket file.
+/// the listening socket; dropping it stops accepting and removes the socket file.
 #[derive(Debug)]
 pub struct Server {
     socket: PathBuf,
     accepting: JoinHandle<()>,
-    /// One permit per connection being served, so holding them all means none is.
+    /// one permit per connection being served, so holding them all means none is.
     connections: Arc<Semaphore>,
 }
 
@@ -46,7 +45,7 @@ fn io_error(detail: &str, error: &io::Error) -> ChannelError {
     ChannelError::Io(format!("{detail}: {error}"))
 }
 
-/// Removes a socket file a hard-killed instance left behind. Anything else at the
+/// removes a socket file a hard-killed instance left behind; anything else at the
 /// path is not ours to remove.
 fn remove_leftover(socket: &Path, uid: u32) -> Result<(), ChannelError> {
     match fs::symlink_metadata(socket) {
@@ -62,8 +61,8 @@ fn remove_leftover(socket: &Path, uid: u32) -> Result<(), ChannelError> {
     }
 }
 
-/// Sets the socket to `0600` and checks it: a socket, owned by the user, with that
-/// mode. The directory is private, so nobody else could reach it in the meantime.
+/// sets the socket to `0600` and checks it: a socket, owned by the user, with that
+/// mode; the directory is private, so nobody else could reach it in the meantime.
 fn restrict(socket: &Path, uid: u32) -> Result<(), ChannelError> {
     fs::set_permissions(socket, fs::Permissions::from_mode(FILE_MODE))
         .map_err(|error| io_error("setting the socket's mode", &error))?;
@@ -94,7 +93,7 @@ impl Server {
         Self::open_accepting(roots, requests, uid)
     }
 
-    /// Opens the socket and accepts only peers whose user ID is `peer_uid`.
+    /// opens the socket and accepts only peers whose user ID is `peer_uid`.
     pub fn open_accepting(
         roots: &Roots,
         requests: mpsc::UnboundedSender<Incoming>,
@@ -159,7 +158,7 @@ async fn accept(
     }
 }
 
-/// Serves one connection: a peer of another user, a request that does not arrive in
+/// serves one connection: a peer of another user, a request that does not arrive in
 /// time, and a line longer than the limit are dropped without an answer.
 async fn serve(stream: UnixStream, requests: mpsc::UnboundedSender<Incoming>, peer_uid: u32) {
     match stream.peer_cred() {
@@ -184,7 +183,7 @@ async fn serve(stream: UnixStream, requests: mpsc::UnboundedSender<Incoming>, pe
     }
 }
 
-/// Connects to this user's socket, after checking its directory is private.
+/// connects to this user's socket, after checking its directory is private.
 pub fn connect(roots: &Roots) -> Result<StdUnixStream, ClientError> {
     let uid = private::current_uid().map_err(|error| ClientError::Failed(error.to_string()))?;
     match private::check_private_directory(roots.channel_directory(), uid) {

@@ -1,12 +1,7 @@
-//! What `start` logs: every line goes to the terminal and to a log file of its own
-//! in a private per-user directory, with every masked secret replaced in both.
-//!
-//! Each `start` writes one file, `marshal-<yyyyMMddHHmmssfff>-<pid>.log`, and keeps
-//! the newest 10 such files in the directory, its own included. A file
-//! stops growing at 10 MiB, with a last line saying so. On macOS the
-//! directory is `0700` and each file `0600`, both owned by the user; on Windows the
-//! directory is under the user's local application data, whose access the CLI does
-//! not check. A write to a terminal that is gone is ignored, and the file goes on.
+//! what `start` logs: every line goes to the terminal and to a log file of its own
+//! in a private per-user directory, with every masked secret replaced in both; on
+//! macOS the directory is `0700` and each file `0600`, and on Windows the CLI does
+//! not check the directory's access, as `docs/operations/cli.md` describes.
 
 use std::cell::RefCell;
 use std::fmt;
@@ -18,19 +13,17 @@ use std::time::SystemTime;
 use crate::runtime::log::{Log, Masks};
 use crate::runtime::name::stamp;
 
-/// The size at which a log file stops, its last line included.
+/// the size at which a log file stops, its last line included.
 const MAX_FILE_BYTES: u64 = 10 * 1024 * 1024;
 
-/// How many log files are kept, the newest by name.
 const KEPT_FILES: usize = 10;
 
-/// The last line of a file that reached [`MAX_FILE_BYTES`].
 const FULL_LINE: &str = "The log file reached 10 MiB, so nothing more is written to it.\n";
 
 const FILE_PREFIX: &str = "marshal-";
 const FILE_SUFFIX: &str = ".log";
 
-/// Why the log file could not be opened.
+/// why the log file could not be opened.
 #[derive(Debug)]
 pub struct LogFileError(String);
 
@@ -46,8 +39,8 @@ fn failed(what: &str, path: &Path, error: &dyn fmt::Display) -> LogFileError {
     LogFileError(format!("{what} {}: {error}", path.display()))
 }
 
-/// A writer that stops at 10 MiB. A line that would leave no room for
-/// the last line is not written; the last line is, and nothing after it.
+/// a writer that stops at 10 MiB: a line that would leave no room for the last
+/// line is replaced by it, and nothing follows.
 pub struct Capped<W> {
     out: W,
     written: u64,
@@ -63,7 +56,7 @@ impl<W: Write> Capped<W> {
         }
     }
 
-    /// Writes `line`, which ends with its line break. A failed write stops the file
+    /// writes `line`, which ends with its line break; a failed write stops the file
     /// as reaching the cap does.
     fn write_line(&mut self, line: &str) -> io::Result<()> {
         if self.full {
@@ -89,7 +82,7 @@ impl<W: Write> Capped<W> {
     }
 }
 
-/// The log `start` writes through.
+/// the log `start` writes through.
 pub struct StartLog {
     masks: Masks,
     file: RefCell<Capped<File>>,
@@ -131,21 +124,17 @@ impl Log for StartLog {
     }
 }
 
-/// A new log file.
+/// a new log file.
 pub struct OpenedLog {
     pub path: PathBuf,
     pub file: Capped<File>,
-    /// Why an old file beyond the newest 10 could not be removed, when one could not.
+    /// why an old file beyond the newest 10 could not be removed, when one could not.
     pub pruning_failed: Option<String>,
 }
 
-/// Opens a new log file in `directory`, created private when missing, and removes
-/// the oldest files beyond the newest 10. A file that cannot be removed does not
-/// stop the open.
-///
-/// # Errors
-///
-/// See [`LogFileError`]; on macOS a directory or file that is not private is one.
+/// opens a new log file in `directory`, created private when missing, and removes
+/// the oldest files beyond the newest 10, a file that cannot be removed not
+/// stopping the open; on macOS a directory or file that is not private is an error.
 pub fn open_log_file(directory: &Path) -> Result<OpenedLog, LogFileError> {
     prepare_directory(directory)?;
     let path = directory.join(format!(
@@ -174,7 +163,7 @@ fn prepare_directory(directory: &Path) -> Result<(), LogFileError> {
     fs::create_dir_all(directory).map_err(|error| failed("creating", directory, &error))
 }
 
-/// Creates the file, refusing one that exists. On Unix it is `0600` whatever the
+/// creates the file, refusing one that exists; on Unix it is `0600` whatever the
 /// umask, and checked as a private file.
 #[cfg(unix)]
 fn create_private(path: &Path) -> Result<File, LogFileError> {
@@ -207,9 +196,9 @@ fn create_private(path: &Path) -> Result<File, LogFileError> {
         .map_err(|error| failed("creating", path, &error))
 }
 
-/// Removes the oldest log files, by name, beyond [`KEPT_FILES`]. Only regular
-/// files named as a log file count; anything else is left alone. Returns the first
-/// failure, after trying every file.
+/// removes the oldest log files, by name, beyond [`KEPT_FILES`]; only regular files
+/// named as a log file count, and the first failure is returned after trying every
+/// file.
 fn prune(directory: &Path) -> Result<(), String> {
     let entries = fs::read_dir(directory)
         .map_err(|error| format!("listing {}: {error}", directory.display()))?;

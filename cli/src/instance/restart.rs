@@ -1,36 +1,35 @@
-//! When a failed runtime core is started again, and when the instance gives up.
+//! when a failed runtime core is started again, and when the instance gives up.
 
 use std::collections::VecDeque;
 use std::time::{Duration, SystemTime};
 
-/// The failures that count are those no older than this.
+/// the failures that count are those no older than this.
 pub const WINDOW: Duration = Duration::from_secs(10 * 60);
 
-/// The wait before the core restarts after its first, second, and third failure in
-/// the window. A fourth failure in the window stops the instance.
+/// the wait before the core restarts after its first, second, and third failure in
+/// the window; a fourth failure in the window stops the instance.
 pub const DELAYS: [Duration; 3] = [
     Duration::from_secs(10),
     Duration::from_secs(30),
     Duration::from_secs(60),
 ];
 
-/// What a failure leads to.
+/// what a failure leads to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Verdict {
     RestartAfter(Duration),
     Stop,
 }
 
-/// The core's recent failures, in a window that slides with the clock.
+/// the core's recent failures, in a window that slides with the clock.
 #[derive(Debug, Default)]
 pub struct RestartPolicy {
     failures: VecDeque<SystemTime>,
 }
 
 impl RestartPolicy {
-    /// Records a failure at `now` and says what follows. A failure older than the
-    /// window, and so no longer counted, is forgotten first. One exactly as old as
-    /// the window still counts.
+    /// records a failure at `now` and says what follows; a failure older than the
+    /// window is forgotten first, and one exactly as old still counts.
     pub fn record_failure(&mut self, now: SystemTime) -> Verdict {
         self.failures.retain(|failed_at| {
             now.duration_since(*failed_at)
@@ -43,12 +42,12 @@ impl RestartPolicy {
         }
     }
 
-    /// Forgets every failure, as a resume does.
+    /// forgets every failure, as a resume does.
     pub fn clear(&mut self) {
         self.failures.clear();
     }
 
-    /// How many failures are held, counted or not yet forgotten.
+    /// how many failures are held, counted or not yet forgotten.
     #[cfg(test)]
     #[must_use]
     pub fn held(&self) -> usize {

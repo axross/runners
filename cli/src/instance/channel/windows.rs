@@ -1,4 +1,4 @@
-//! The control pipe.
+//! the control pipe.
 
 use std::ffi::OsStr;
 use std::io::{self, BufReader, Write};
@@ -20,31 +20,22 @@ use super::{CONNECT_TIMEOUT, ChannelError, ClientError, MAX_CONNECTIONS};
 
 type Stream = DuplexPipeStream<pipe_mode::Bytes>;
 
-/// How long closing the server waits to connect to its own pipe, each time.
+/// how long closing the server waits to connect to its own pipe, each time.
 const WAKE_TIMEOUT: Duration = Duration::from_millis(500);
-/// How often closing the server tries to connect to its own pipe.
+/// how often closing the server tries to connect to its own pipe.
 const WAKE_ATTEMPTS: usize = 2;
-/// How often [`Server::close`] checks whether every connection has ended.
+/// how often [`Server::close`] checks whether every connection has ended.
 const CLOSE_POLL: Duration = Duration::from_millis(10);
 
-/// The listening pipe.
-///
-/// Dropping it tells the accepting thread to stop and wakes it with a connection of
-/// its own, and waits for the thread to end only when that connection is made. A
-/// client the thread accepts after the drop is closed unanswered. When no wake
-/// connects, the thread stays blocked in `accept` and keeps the pipe open until the
-/// next client arrives or the process ends.
-///
-/// Serving threads are never joined; [`close`](Self::close) waits a bounded time
-/// for them to end. A client that has connected and sends nothing holds its thread,
-/// and that thread's clone of the request sender, until it disconnects, so the
-/// request channel need not close when the server is dropped.
+/// the listening pipe; serving threads are never joined, so a client that sends
+/// nothing holds its thread, and that thread's clone of the request sender, until it
+/// disconnects.
 #[derive(Debug)]
 pub struct Server {
     closing: Arc<AtomicBool>,
     name: String,
     accepting: Option<JoinHandle<()>>,
-    /// The connections being served.
+    /// the connections being served.
     active: Arc<AtomicUsize>,
 }
 
@@ -146,8 +137,8 @@ fn accept(
     }
 }
 
-/// Serves one connection. The pipe crate's blocking calls have no timeout, so a
-/// client that connects and sends nothing holds this thread until it disconnects.
+/// serves one connection; the pipe crate's blocking calls have no timeout, so a
+/// client that sends nothing holds this thread until it disconnects.
 fn serve(stream: &Stream, requests: &mpsc::UnboundedSender<Incoming>) {
     let mut reader = BufReader::new(stream);
     let Ok(Some(line)) = read_line_limited(&mut reader, MAX_REQUEST_BYTES) else {
@@ -165,7 +156,7 @@ fn serve(stream: &Stream, requests: &mpsc::UnboundedSender<Incoming>) {
         .and_then(|()| writer.flush());
 }
 
-/// Connects to this user's pipe.
+/// connects to this user's pipe.
 pub fn connect(roots: &Roots) -> Result<Stream, ClientError> {
     let sid = current_user_sid().map_err(|error| ClientError::Failed(error.to_string()))?;
     let name = roots.control_pipe_name(&sid);

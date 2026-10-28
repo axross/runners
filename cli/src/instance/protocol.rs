@@ -1,12 +1,6 @@
-//! The text protocol of the control channel.
-//!
-//! A request is one UTF-8 line: `status`, `stop`, `restart`, `diagnostics`, or
-//! `resume <profile> <path>`, where the path is the rest of the line. A response is
-//! one or more lines that end with a line `end`: the first is `ok` or `refused`,
-//! with an optional message, and each further line is a field name, a space and its
-//! value. A response carries states, reasons, and names, never a token or a JIT
-//! configuration, and no request carries a path for the instance to read: a resume
-//! names the path only so the instance can compare it with its own.
+//! the text protocol of the control channel, as `docs/operations/cli.md` describes;
+//! a response carries states, reasons, and names, never a token or a JIT
+//! configuration, and no request carries a path for the instance to read.
 
 use std::fmt;
 use std::io::{self, BufRead, Read};
@@ -16,45 +10,45 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::profile::Profile;
 
-/// The line that ends a response.
+/// the line that ends a response.
 pub const END: &str = "end";
 
-/// The longest request line, including its line break. A path is at most a few
+/// the longest request line, including its line break; a path is at most a few
 /// kilobytes, so this only stops a client from making the instance buffer without
 /// limit.
 pub const MAX_REQUEST_BYTES: usize = 16 * 1024;
 
-/// The longest response a client reads.
+/// the longest response a client reads.
 pub const MAX_RESPONSE_BYTES: usize = 64 * 1024;
 
-/// What a client asks of the instance.
+/// what a client asks of the instance.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request {
     Status,
     Stop,
     Restart,
-    /// Finalise the diagnostic containers the instance retains.
+    /// finalise the diagnostic containers the instance retains.
     Diagnostics,
     Resume(ResumeRequest),
 }
 
-/// The profile and path `start` was given, for the instance to compare with its own.
+/// the profile and path `start` was given, for the instance to compare with its own.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResumeRequest {
     pub profile: Profile,
     pub path: String,
 }
 
-/// Why a request line cannot be sent or understood.
+/// why a request line cannot be sent or understood.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RequestError {
-    /// The line is not one of the five requests.
+    /// the line is not one of the five requests.
     Unknown,
-    /// The line is not UTF-8 text.
+    /// the line is not UTF-8 text.
     NotText,
-    /// The line is longer than [`MAX_REQUEST_BYTES`].
+    /// the line is longer than [`MAX_REQUEST_BYTES`].
     TooLong,
-    /// A path to resume with has a line break or is not UTF-8.
+    /// a path to resume with has a line break or is not UTF-8.
     UnsendablePath,
 }
 
@@ -74,12 +68,8 @@ impl fmt::Display for RequestError {
 impl std::error::Error for RequestError {}
 
 impl Request {
-    /// A resume for `path`, which should already be canonical.
-    ///
-    /// # Errors
-    ///
-    /// A path that is not UTF-8, or holds a line break, cannot be a line of the
-    /// protocol, so `start` refuses it before it connects.
+    /// a resume for `path`, which should already be canonical; `start` refuses one
+    /// that is not UTF-8 or holds a line break before it connects.
     pub fn resume(profile: Profile, path: &Path) -> Result<Self, RequestError> {
         let text = path.to_str().ok_or(RequestError::UnsendablePath)?;
         if text.is_empty() || text.contains(['\n', '\r']) {
@@ -91,7 +81,7 @@ impl Request {
         }))
     }
 
-    /// The request as the line a client sends, with its line break.
+    /// the request as the line a client sends, with its line break.
     #[must_use]
     pub fn encode(&self) -> String {
         match self {
@@ -103,11 +93,7 @@ impl Request {
         }
     }
 
-    /// Reads one request line, with or without its line break.
-    ///
-    /// # Errors
-    ///
-    /// See [`RequestError`].
+    /// reads one request line, with or without its line break.
     pub fn parse(line: &[u8]) -> Result<Self, RequestError> {
         if line.len() > MAX_REQUEST_BYTES {
             return Err(RequestError::TooLong);
@@ -134,12 +120,9 @@ impl Request {
     }
 }
 
-/// Reads one line of at most `limit` bytes, keeping its line break. Returns `None`
-/// at the end of the stream before any byte.
-///
-/// # Errors
-///
-/// A line that does not end within `limit` bytes is [`io::ErrorKind::InvalidData`].
+/// reads one line of at most `limit` bytes, keeping its line break; returns `None`
+/// at the end of the stream before any byte, and [`io::ErrorKind::InvalidData`] for
+/// a line that does not end within `limit` bytes.
 pub fn read_line_limited<R: BufRead>(reader: &mut R, limit: usize) -> io::Result<Option<Vec<u8>>> {
     let mut line = Vec::new();
     let read = reader
@@ -158,21 +141,21 @@ pub fn read_line_limited<R: BufRead>(reader: &mut R, limit: usize) -> io::Result
     Ok(Some(line))
 }
 
-/// Whether `line`, read with a limit of `limit` bytes, stopped at the limit before
+/// whether `line`, read with a limit of `limit` bytes, stopped at the limit before
 /// its line break, so the line is longer than the limit allows.
 #[must_use]
 pub fn line_is_cut(line: &[u8], limit: usize) -> bool {
     line.last() != Some(&b'\n') && line.len() >= limit
 }
 
-/// Whether the instance did what was asked.
+/// whether the instance did what was asked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Outcome {
     Ok,
     Refused,
 }
 
-/// What the instance answers.
+/// what the instance answers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Response {
     pub outcome: Outcome,
@@ -180,14 +163,14 @@ pub struct Response {
     fields: Vec<(String, String)>,
 }
 
-/// Why a response cannot be read.
+/// why a response cannot be read.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResponseError {
-    /// The response ended before its `end` line.
+    /// the response ended before its `end` line.
     Truncated,
-    /// The first line is neither `ok` nor `refused`.
+    /// the first line is neither `ok` nor `refused`.
     Malformed,
-    /// A line is not UTF-8 text.
+    /// a line is not UTF-8 text.
     NotText,
 }
 
@@ -203,7 +186,7 @@ impl fmt::Display for ResponseError {
 
 impl std::error::Error for ResponseError {}
 
-/// A line break would end the line early, so it becomes a space.
+/// a line break would end the line early, so it becomes a space.
 fn one_line(text: &str) -> String {
     text.replace(['\n', '\r'], " ")
 }
@@ -227,20 +210,20 @@ impl Response {
         }
     }
 
-    /// The answer to a request the instance ended before it could take or answer.
+    /// the answer to a request the instance ended before it could take or answer.
     #[must_use]
     pub fn ending() -> Self {
         Self::refused("the instance is ending")
     }
 
-    /// Adds a field. `name` is a fixed word without a space.
+    /// adds a field; `name` is a fixed word without a space.
     #[must_use]
     pub fn with(mut self, name: &str, value: &str) -> Self {
         self.fields.push((name.to_string(), one_line(value)));
         self
     }
 
-    /// The first field called `name`.
+    /// the first field called `name`.
     #[must_use]
     pub fn field(&self, name: &str) -> Option<&str> {
         self.fields
@@ -254,7 +237,7 @@ impl Response {
         &self.fields
     }
 
-    /// The response as the text the instance sends, ending with the `end` line.
+    /// the response as the text the instance sends, ending with the `end` line.
     #[must_use]
     pub fn encode(&self) -> String {
         let word = match self.outcome {
@@ -274,11 +257,7 @@ impl Response {
         text
     }
 
-    /// Reads a response up to its `end` line.
-    ///
-    /// # Errors
-    ///
-    /// See [`ResponseError`]; an I/O error reads as a truncated answer.
+    /// reads a response up to its `end` line; an I/O error reads as a truncated answer.
     pub fn read<R: BufRead>(reader: &mut R) -> Result<Self, ResponseError> {
         let mut consumed = 0usize;
         let mut next = |reader: &mut R| -> Result<String, ResponseError> {
@@ -313,20 +292,16 @@ impl Response {
     }
 }
 
-/// A request that reached the instance, and where its answer goes.
+/// a request that reached the instance, and where its answer goes.
 #[derive(Debug)]
 pub struct Incoming {
     pub request: Request,
     pub reply: oneshot::Sender<Response>,
 }
 
-/// Hands the request on `line` to the instance and returns the receiver its answer
-/// arrives on. Each transport waits on that receiver in its own way.
-///
-/// # Errors
-///
-/// The answer to send at once: the refusal of a line that is not a request, or
-/// [`Response::ending`] when the instance takes no more requests.
+/// hands the request on `line` to the instance and returns the receiver its answer
+/// arrives on, or the answer to send at once: a refusal of a line that is not a
+/// request, or [`Response::ending`] when the instance takes no more requests.
 pub fn submit(
     line: &[u8],
     requests: &mpsc::UnboundedSender<Incoming>,
@@ -489,7 +464,7 @@ mod tests {
         assert_eq!(read_line_limited(&mut &b""[..], 10).unwrap(), None);
     }
 
-    /// A field line that, after `ok\n`, leaves `room` bytes of the response limit.
+    /// a field line that, after `ok\n`, leaves `room` bytes of the response limit.
     fn field_leaving(room: usize) -> String {
         let value = "a".repeat(MAX_RESPONSE_BYTES - "ok\n".len() - "f \n".len() - room);
         format!("f {value}\n")

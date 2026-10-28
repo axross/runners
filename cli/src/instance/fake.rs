@@ -1,7 +1,6 @@
-//! In-memory stand-ins for the instance's seams, for tests of the code above them.
-//!
-//! They record what they were asked and answer from a script. They are test-only and
-//! never wired into a command.
+//! in-memory stand-ins for the instance's seams, for tests of the code above them;
+//! they record what they were asked, answer from a script, and no command wires
+//! them in.
 
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
@@ -17,47 +16,43 @@ use crate::validate::Plan;
 
 use super::lifecycle::{Core, CoreFailure, Ending, Source};
 
-/// What one run of a [`FakeCore`] does.
+/// what one run of a [`FakeCore`] does.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CoreStep {
-    /// Lets `after` pass on the clock, then fails with `message`, reporting the
+    /// lets `after` pass on the clock, then fails with `message`, reporting the
     /// containers it had started.
     Fail {
         message: String,
         containers: Vec<String>,
         after: Duration,
     },
-    /// Returns `Ok` at once, though no stop was asked for.
+    /// returns `Ok` at once, though no stop was asked for.
     EndWithoutStop,
-    /// Panics with `message`.
     Panic(String),
-    /// Fails at once because no pool could start.
+    /// fails at once because no pool could start.
     NothingToRun,
-    /// Fails at once because the image cannot run jobs, as `message` says.
+    /// fails at once because the image cannot run jobs, as `message` says.
     RefuseImage(String),
-    /// Never ends, even when the stop is asked for.
+    /// never ends, even when the stop is asked for.
     IgnoreStop,
-    /// Runs until the stop is asked for.
     RunUntilStop,
 }
 
-/// A runtime core that follows a script. When the script runs out it runs until the
+/// a runtime core that follows a script; when the script runs out it runs until the
 /// stop.
 #[derive(Default)]
 pub struct FakeCore {
     pub steps: RefCell<VecDeque<CoreStep>>,
-    /// How many times the core was started.
     pub runs: Cell<usize>,
-    /// The clock a failing step lets time pass on.
+    /// the clock a failing step lets time pass on.
     pub clock: RefCell<Option<Rc<FakeClock>>>,
-    /// When set, a core that was asked to stop waits for this before it ends, which
+    /// when set, a core that was asked to stop waits for this before it ends, which
     /// holds the instance in its stopping state.
     pub end_gate: RefCell<Option<Rc<Notify>>>,
-    /// What the core reports to `status`.
+    /// what the core reports to `status`.
     pub report: RefCell<Vec<(&'static str, String)>>,
-    /// The answers to `check_image`; when they run out, every check passes.
+    /// the answers to `check_image`; when they run out, every check passes.
     pub image_checks: RefCell<VecDeque<Result<(), String>>>,
-    /// How many times the image was checked.
     pub image_checked: Cell<usize>,
 }
 
@@ -66,7 +61,7 @@ impl FakeCore {
         self.steps.borrow_mut().push_back(step);
     }
 
-    /// A step that fails at once with `message`.
+    /// a step that fails at once with `message`.
     #[must_use]
     pub fn failure(message: &str) -> CoreStep {
         CoreStep::Fail {
@@ -131,14 +126,13 @@ impl Core for FakeCore {
     }
 }
 
-/// A configuration source that answers from a script and counts its reads. When the
+/// a configuration source that answers from a script and counts its reads; when the
 /// script runs out it answers with the plan it was built with.
 pub struct FakeSource {
     plan: Plan,
     pub results: RefCell<VecDeque<Result<Plan, Vec<String>>>>,
-    /// How many times the configuration was read.
     pub loads: Cell<usize>,
-    /// When set, a read waits for this before it answers, which holds the instance in
+    /// when set, a read waits for this before it answers, which holds the instance in
     /// its resuming state.
     pub gate: RefCell<Option<Rc<Notify>>>,
 }
