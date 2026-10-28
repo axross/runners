@@ -458,8 +458,8 @@ function Get-SlotCpuAffinityOffset {
 }
 
 # returns the arguments of a slot's background job, keyed by the worker script
-# block's parameter names and in their order. Start-Job binds them to those
-# parameters by position, so a value out of order reaches the wrong parameter.
+# block's parameter names and in their order, because Start-Job binds them to
+# those parameters by position and a value out of order reaches the wrong one.
 function Get-SlotWorkerArgument {
     param(
         [Parameter(Mandatory)]$Plan,
