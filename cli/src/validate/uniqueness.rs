@@ -1,4 +1,4 @@
-//! The checks across entries: names, token files and routing labels.
+//! the checks across entries: names, token files and routing labels.
 
 use crate::fold;
 use crate::profile::Profile;
@@ -10,21 +10,21 @@ fn names_collide(first: &str, second: &str) -> bool {
     first == second || extends(first, second) || extends(second, first)
 }
 
-/// Reports whether `name` is `prefix`, a `-`, and more.
+/// reports whether `name` is `prefix`, a `-`, and more.
 fn extends(name: &str, prefix: &str) -> bool {
     name.strip_prefix(prefix)
         .is_some_and(|rest| rest.starts_with('-'))
 }
 
-/// An entry with the values the pairwise checks compare, prepared once so that a
+/// an entry with the values the pairwise checks compare, prepared once so that a
 /// pair without a collision allocates nothing.
 struct Keys<'a> {
     entry: &'a Entry,
     repository: String,
     token_path: String,
-    /// The labels that are not platform labels of this entry's own OS, each with its
-    /// ASCII lowercase form. Two entries' lists compare only when their OS is the
-    /// same, as the check in `check_entries` ensures.
+    /// the labels that are not platform labels of this entry's own OS, each with its
+    /// ASCII lowercase form; two entries' lists compare only when their OS is the
+    /// same.
     routing_labels: Vec<(&'a str, String)>,
 }
 
@@ -45,11 +45,10 @@ impl<'a> Keys<'a> {
     }
 }
 
-/// Records every collision between a later entry and an earlier one, in the order
-/// the entries appear. Token files compare under simple case folding, as Windows
-/// file names ignore case. Platform labels cannot tell two pools apart, so only a
-/// shared non-platform label makes same-repository routing ambiguous, and pools
-/// whose OS differs can share one because their platform labels differ.
+/// records every collision between a later entry and an earlier one, in entry order;
+/// token files compare under simple case folding, as Windows file names ignore case,
+/// and a non-platform label is ambiguous only between pools of the same OS, whose
+/// platform labels cannot tell them apart.
 pub fn check_entries(entries: &[Entry], profile: Profile, errors: &mut Errors) {
     let keys: Vec<Keys> = entries
         .iter()

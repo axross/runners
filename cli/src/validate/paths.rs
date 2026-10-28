@@ -1,4 +1,4 @@
-//! Path forms of the two hosts, and the rule that private paths lie outside the
+//! path forms of the two hosts, and the rule that private paths lie outside the
 //! checkout.
 
 use std::path::Path;
@@ -6,7 +6,7 @@ use std::path::Path;
 use crate::fold;
 use crate::profile::Profile;
 
-/// Reports whether the text is an absolute POSIX path: it starts with `/`, holds no
+/// reports whether the text is an absolute POSIX path: it starts with `/`, holds no
 /// control character, and has no empty, `.` or `..` component.
 #[must_use]
 pub fn is_absolute_posix(text: &str) -> bool {
@@ -19,16 +19,15 @@ pub fn is_absolute_posix(text: &str) -> bool {
             .all(|part| !part.is_empty() && part != "." && part != "..")
 }
 
-/// Reports whether the path has a `.` or `..` component between backslashes.
+/// reports whether the path has a `.` or `..` component between backslashes.
 #[must_use]
 pub fn has_windows_dot_component(text: &str) -> bool {
     text.split('\\').any(|part| part == "." || part == "..")
 }
 
-/// Reports whether `directory` is the checkout or lies inside it. The comparison
-/// is lexical on the paths with repeated separators collapsed and `.` and `..`
-/// components resolved, and it never follows a link. It ignores case for axpc,
-/// whose paths are Windows paths, and respects it for axmc.
+/// reports whether `directory` is the checkout or lies inside it, comparing
+/// lexically with repeated separators collapsed and `.` and `..` resolved, never
+/// following a link, and ignoring case on axpc only.
 #[must_use]
 pub fn is_inside_checkout(directory: &str, checkout: &Path, profile: Profile) -> bool {
     let separator = match profile {
@@ -46,8 +45,8 @@ pub fn is_inside_checkout(directory: &str, checkout: &Path, profile: Profile) ->
     }
 }
 
-/// Collapses repeated separators, resolves `.` and `..` components lexically, and
-/// drops a trailing separator. A leading separator is kept.
+/// collapses repeated separators, resolves `.` and `..` components lexically, and
+/// drops a trailing separator; a leading separator is kept.
 fn normalize(path: &str, separator: char) -> String {
     let rooted = path.starts_with(separator);
     let mut parts: Vec<&str> = Vec::new();

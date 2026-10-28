@@ -1,4 +1,4 @@
-//! A pool's cache volumes, which only the Docker host has.
+//! a pool's cache volumes, which only the Docker host has.
 
 use std::collections::HashSet;
 
@@ -26,7 +26,7 @@ pub struct Volume {
     pub mount_path: String,
 }
 
-/// Returns the volume definitions, or `None` after recording every problem.
+/// returns the volume definitions, or `None` after recording every problem.
 pub fn volume_definitions(volumes: &Field, path: &str, errors: &mut Errors) -> Option<Vec<Volume>> {
     let field = format!("{path}.volumes");
     let value = fields::required(volumes, &field, errors)?;

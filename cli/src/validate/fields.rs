@@ -1,9 +1,7 @@
-//! Reading fields from the parsed tree and recording what is wrong with them.
-//!
-//! A field the PowerShell validator reads as a required value reports `null` as
-//! "required field is missing"; a field it reads directly reports `null` as that
-//! field's type error. [`required`] is the first kind, and a caller that matches on
-//! [`Field::get`] itself is the second.
+//! reading fields from the parsed tree and recording what is wrong with them:
+//! [`required`] reads as the PowerShell validator reads a required value, and a
+//! caller matching on [`Field::get`] as it reads a field directly; see
+//! `docs/operations/cli.md`.
 
 use std::fmt;
 
@@ -13,9 +11,8 @@ use serde::de::{self, DeserializeOwned, Visitor};
 use crate::de::Deserializer;
 use crate::json::{Object, Value};
 
-/// One member of an object as the validator reads it: absent, an explicit `null`,
-/// or a value. A derived type holds one per name, so a missing member, a `null` and
-/// a wrong type never stop the read.
+/// one member of an object as the validator reads it: absent, an explicit `null`,
+/// or a value, so a missing member, a `null` and a wrong type never stop the read.
 #[derive(Debug, Default)]
 pub enum Field {
     #[default]
@@ -27,7 +24,7 @@ pub enum Field {
 static NULL: Value = Value::Null;
 
 impl Field {
-    /// Returns the member's value, `null` included, or `None` when it is absent.
+    /// returns the member's value, `null` included, or `None` when it is absent.
     #[must_use]
     pub fn get(&self) -> Option<&Value> {
         match self {
@@ -62,7 +59,7 @@ impl<'de> Visitor<'de> for FieldVisitor {
     }
 }
 
-/// The ordered list of problems found so far, one line each.
+/// the ordered list of problems found so far, one line each.
 #[derive(Debug, Default)]
 pub struct Errors {
     items: Vec<String>,
@@ -84,7 +81,7 @@ impl Errors {
     }
 }
 
-/// Returns the field's value, or records that it is missing. A `null` is missing.
+/// returns the field's value, or records that it is missing; a `null` is missing.
 pub fn required<'a>(field: &'a Field, path: &str, errors: &mut Errors) -> Option<&'a Value> {
     match field.get() {
         None | Some(Value::Null) => {
@@ -95,7 +92,7 @@ pub fn required<'a>(field: &'a Field, path: &str, errors: &mut Errors) -> Option
     }
 }
 
-/// Returns the string field when `accepts` passes it, or records why not.
+/// returns the string field when `accepts` passes it, or records why not.
 pub fn string<'a>(
     field: &'a Field,
     path: &str,
@@ -113,8 +110,8 @@ pub fn string<'a>(
     }
 }
 
-/// Reads an object's members into `T`, or records that the node is not an object.
-/// The members `allowed` does not list are recorded first, in document order.
+/// reads an object's members into `T`, or records that the node is not an object;
+/// the members `allowed` does not list are recorded first, in document order.
 pub fn read_object<T: DeserializeOwned>(
     value: &Value,
     path: &str,
@@ -135,7 +132,7 @@ pub fn read_object<T: DeserializeOwned>(
     }
 }
 
-/// Records every member of the node that `allowed` does not list. The comparison is
+/// records every member of the node that `allowed` does not list; the comparison is
 /// case-sensitive, so `Owner` is unknown even though the read finds it.
 fn unknown_fields(node: &Object, allowed: &[&str], path: &str, errors: &mut Errors) {
     for (name, _) in node.iter() {

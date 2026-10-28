@@ -1,9 +1,6 @@
-//! Host configuration validation.
-//!
-//! [`validate`] is a pure function from configuration bytes and a profile to a plan
-//! or an ordered list of errors. It reads nothing but its arguments, so a token
-//! file's existence and permissions are not its concern. Every error is collected,
-//! in the order the PowerShell validator reports it, with its message text.
+//! host configuration validation: [`validate`] is a pure function from configuration
+//! bytes and a profile to a plan or an ordered list of errors, in the order and with
+//! the message text of `hosts/windows-docker-desktop/host-configuration.ps1`.
 
 mod budget;
 mod entry;
@@ -30,25 +27,25 @@ pub use plan::{Budget, Entry, Plan, PlannedVolume};
 
 use fields::{Errors, Field};
 
-/// Why a configuration was not accepted.
+/// why a configuration was not accepted.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Failure {
-    /// The file is not a JSON document the validator can read.
+    /// the file is not a JSON document the validator can read.
     Unreadable(String),
-    /// The document breaks rules, listed in the order they were found.
+    /// the document breaks rules, listed in the order they were found.
     Invalid(Vec<String>),
 }
 
-/// The outcome of validating one configuration.
+/// the outcome of validating one configuration.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Validation {
     pub outcome: Result<Plan, Failure>,
-    /// True when an entry's `diagnosticDirectory` could not be compared with a
+    /// true when an entry's `diagnosticDirectory` could not be compared with a
     /// checkout because none was given.
     pub checkout_rule_skipped: bool,
 }
 
-/// The members of the configuration's root, named for both profiles.
+/// the members of the configuration's root, named for both profiles.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RootFields {
@@ -67,7 +64,7 @@ struct Context<'a> {
     checkout_rule_skipped: bool,
 }
 
-/// Validates a configuration against a profile. `checkout` is the project checkout
+/// validates a configuration against a profile; `checkout` is the project checkout
 /// that private directories must lie outside, when one is known.
 #[must_use]
 pub fn validate(bytes: &[u8], profile: Profile, checkout: Option<&Path>) -> Validation {
@@ -125,8 +122,8 @@ fn read_root(root: &Value, cx: &mut Context) -> Option<Plan> {
     })
 }
 
-/// Reads the image name: required on axpc, optional on axmc, where its use is
-/// undecided. A present value follows the same rule on both.
+/// reads the image name: required on axpc, optional on axmc, and checked the same
+/// way where present.
 fn read_image_name(image_name: &Field, cx: &mut Context) -> Option<String> {
     let expectation = "a local Docker image name with a tag, such as name:tag";
     if cx.profile == Profile::Axmc {
@@ -181,7 +178,7 @@ mod tests {
 
     use super::*;
 
-    /// Records the field names a derived type asks its deserializer for.
+    /// records the field names a derived type asks its deserializer for.
     struct Probe<'a>(&'a mut Vec<String>);
 
     impl<'de> de::Deserializer<'de> for Probe<'_> {
@@ -252,7 +249,7 @@ mod tests {
         T::deserialize(Deserializer::new(&tree).ignoring_field_case())
     }
 
-    /// Reads an object with every member set to `value`, then an empty object.
+    /// reads an object with every member set to `value`, then an empty object.
     fn reads_any_value<T: for<'de> Deserialize<'de>>() {
         for value in ["1", "[]", "{}"] {
             let members: Vec<_> = field_names::<T>()

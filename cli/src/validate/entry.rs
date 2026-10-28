@@ -1,4 +1,4 @@
-//! One repository entry: its fields, then whether it takes part in the cross-entry
+//! one repository entry: its fields, then whether it takes part in the cross-entry
 //! checks.
 
 use serde::Deserialize;
@@ -16,14 +16,13 @@ use super::plan::{Entry, PlannedVolume};
 use super::volumes::volume_definitions;
 
 const MAX_NAME_LENGTH: usize = 64;
-// GitHub documents no limit for a runner's name. The runner name is the entry's name
-// plus a slot number and a 17-digit timestamp, so capping the entry name keeps every
-// name short, on an assumed limit rather than a known one.
+// GitHub documents no limit for a runner's name; the runner name is the entry's name
+// plus a slot number and a 17-digit timestamp, so this caps it on an assumed limit.
 
 const POSIX_PATH: &str = "an absolute POSIX path without control characters or empty, '.' or '..' components, such as /path/to/file";
 
-/// The members of an entry, named for both profiles. A profile ignores the ones it
-/// does not have: they are unknown fields there, which the read already reported.
+/// the members of an entry, named for both profiles; a profile ignores the ones it
+/// does not have, which the read already reported as unknown.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct EntryFields {
@@ -57,10 +56,9 @@ pub(super) struct EntryFields {
     disk_gb: Field,
 }
 
-/// Returns the entry, or `None` after recording every problem. An entry whose
-/// owner, repository, token path, labels, volumes, slots, name, CPU and memory
-/// values (and on axmc its OS and disk) are all usable is returned even when a
-/// diagnostic field is not, so it still takes part in the cross-entry checks.
+/// returns the entry, or `None` after recording every problem; an entry whose other
+/// fields are usable is returned even when a diagnostic field is not, so it still
+/// takes part in the cross-entry checks.
 pub fn read_entry(value: &Value, path: &str, cx: &mut Context) -> Option<Entry> {
     let profile = cx.profile;
     let node =
@@ -172,7 +170,7 @@ fn read_os(field: &Field, path: &str, profile: Profile, errors: &mut Errors) -> 
     os
 }
 
-/// Reads the cache volumes on axpc. An axmc pool keeps none, so the field is
+/// reads the cache volumes on axpc; an axmc pool keeps none, so the field is
 /// rejected there, whatever it holds.
 fn read_volumes(
     node: &EntryFields,
@@ -232,7 +230,7 @@ fn read_disk(disk_gb: &Field, path: &str, errors: &mut Errors) -> Option<u32> {
     limits::read_bounded_integer(value, &field, MAX_DISK_GB, errors)
 }
 
-/// Returns the two diagnostic switches, each false when absent or not a boolean.
+/// returns the two diagnostic switches, each false when absent or not a boolean.
 fn read_diagnostic_flags(node: &EntryFields, path: &str, errors: &mut Errors) -> (bool, bool) {
     let mut flags = [false, false];
     for (flag, (field, setting)) in flags.iter_mut().zip([
@@ -248,7 +246,7 @@ fn read_diagnostic_flags(node: &EntryFields, path: &str, errors: &mut Errors) ->
     (flags[0], flags[1])
 }
 
-/// Returns the directory of a diagnostics-enabled entry, when it is valid.
+/// returns the directory of a diagnostics-enabled entry, when it is valid.
 fn read_diagnostic_directory(
     directory: &Field,
     path: &str,

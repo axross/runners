@@ -1,4 +1,4 @@
-//! A pool's registration labels.
+//! a pool's registration labels.
 
 use std::collections::HashSet;
 
@@ -9,9 +9,9 @@ use crate::profile::{Os, Profile};
 use super::fields::{Errors, Field};
 use super::patterns;
 
-/// Returns the registration labels: the platform labels followed by the entry's own,
-/// or the platform labels and the routing label when the field is absent or empty.
-/// Returns `None` after recording why a present list is unusable.
+/// returns the registration labels, the platform labels then the entry's own (or the
+/// routing label when the field is absent or empty), or `None` after recording why
+/// a present list is unusable.
 pub fn registration_labels(
     field: &Field,
     path: &str,
@@ -76,7 +76,7 @@ pub fn registration_labels(
     })
 }
 
-/// Says why a label that matches the label pattern is a platform label the pool
+/// says why a label that matches the label pattern is a platform label the pool
 /// must not list, or `None` when it is an ordinary label.
 fn platform_problem(label: &str, profile: Profile, os: Option<Os>) -> Option<String> {
     let is = |candidates: &[&str]| {

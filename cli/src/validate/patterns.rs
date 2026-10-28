@@ -1,5 +1,5 @@
-//! The value patterns of the host configuration. Each one matches the whole value,
-//! as the PowerShell validator's `\z` does, so a trailing newline never passes.
+//! the value patterns of the host configuration; each matches the whole value, as
+//! the PowerShell validator's `\z` does, so a trailing newline never passes.
 
 use std::sync::LazyLock;
 
@@ -19,7 +19,7 @@ static REPOSITORY: LazyLock<Regex> = LazyLock::new(|| compile(r"^[A-Za-z0-9_.-]+
 static IMAGE_NAME: LazyLock<Regex> = LazyLock::new(|| compile(r"^[A-Za-z0-9][A-Za-z0-9_.:/@-]*\z"));
 static LABEL: LazyLock<Regex> = LazyLock::new(|| compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]*\z"));
 static MOUNT_PATH: LazyLock<Regex> = LazyLock::new(|| compile(r"^/[A-Za-z0-9_./-]+\z"));
-// a drive letter and a backslash, or a UNC path. A path that is only rooted, such
+// a drive letter and a backslash, or a UNC path; a path that is only rooted, such
 // as C:name or \name, resolves against a directory or drive the host does not control.
 static WINDOWS_TOKEN_PATH: LazyLock<Regex> = LazyLock::new(|| compile(r"^(?:[A-Za-z]:\\|\\\\)\S"));
 static WINDOWS_DIRECTORY: LazyLock<Regex> =
