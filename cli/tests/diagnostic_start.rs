@@ -17,8 +17,12 @@ use marshal_cli::diagnostics::exporter::COMPLETE_TEXT;
 use support::host::{Host, JIT, Started, TOKEN, registered, texts};
 use support::stub::{Reply, Stub};
 
+/// long enough for a fresh instance to prepare its pool and run its container.
 const RUNNING_WITHIN: Duration = Duration::from_secs(20);
 
+/// the sink the configuration names, escaped for JSON, and where it is; on Unix an
+/// axpc path is a relative name, read from the working directory, which is the
+/// host's root.
 #[cfg(unix)]
 fn sink_path(root: &Path) -> (String, PathBuf) {
     (r"C:\\diag".to_string(), root.join(r"C:\diag"))
@@ -267,8 +271,9 @@ fn diagnostics_removes_a_container_whose_removal_failed_and_prints_the_counts() 
     assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
 }
 
-/// pool `r` has diagnostics off and a labelled container an earlier run left; pool
-/// `d` runs but its sink is gone.
+/// pool `r` has diagnostics off and a labelled container an earlier run left, so it
+/// is refused and the container is left to the manual recovery; pool `d` runs, but
+/// its sink is gone, so its count is unknown.
 #[test]
 fn diagnostics_fails_for_a_container_left_to_the_manual_recovery_and_shows_an_unknown_count() {
     let host = Host::new();
@@ -382,7 +387,8 @@ mod signals {
     }
 
     /// killing `start` outright closes the shim's pipe, and in its diagnostic mode
-    /// the shim ends the container with `docker kill` and keeps it.
+    /// the shim ends the container with `docker kill` and keeps it. standard error is
+    /// shared with the shims, so it closes only when every shim has ended.
     #[test]
     fn a_killed_start_leaves_the_diagnostic_container_ended_for_the_next_start() {
         let (host, sink) = diagnostic_host();

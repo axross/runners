@@ -29,8 +29,8 @@ fn start_with_held_job_container(host: &Host, stub: &Stub) -> Started {
 }
 
 /// waits, within [`RUNNING_WITHIN`], until the slot runs its container and the
-/// fake engine holds it, since the slot reports the container before its client
-/// starts and the status alone would race the fake's record.
+/// fake engine holds it; the slot reports the container before its client starts,
+/// so the status alone would race the fake's record.
 fn wait_for_job(host: &Host) -> String {
     let started = Instant::now();
     let status = host.wait_for_status("running container r-1-", RUNNING_WITHIN);

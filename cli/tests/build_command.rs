@@ -639,7 +639,8 @@ mod instance {
     use super::*;
 
     /// waits until the fake engine holds the slot's job container, after which the
-    /// instance calls `docker` no more until it is stopped.
+    /// instance calls `docker` no more until it is stopped; the slot reports the
+    /// container before its client starts, so the status alone would race that call.
     fn wait_for_job(host: &Host) {
         let started = Instant::now();
         host.wait_for_status("running container r-1-", BUILT_WITHIN);

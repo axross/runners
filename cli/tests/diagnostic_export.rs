@@ -318,7 +318,8 @@ async fn the_container_is_removed_whatever_the_export_does() {
     }
 }
 
-/// the PowerShell test's identity cases.
+/// the PowerShell test's identity cases; an unfiltered value is refused without
+/// being repeated.
 #[tokio::test(flavor = "current_thread")]
 async fn the_identity_readback_gives_the_powershell_outcomes() {
     let marker = "4f0c3a51b8e24d6f9a7e2c1d0b9a8f7e";

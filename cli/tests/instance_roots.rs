@@ -1,7 +1,8 @@
 //! the lock, the control channel and the logs cannot be moved in a release build: a
 //! debug build moves them to a test root when asked, but a release build ignores
 //! the request and keeps the host's fixed locations, so a release binary cannot be
-//! pointed at a lock, a channel or a log directory an attacker prepared.
+//! pointed at a lock, a channel or a log directory an attacker prepared. Linux has
+//! no host roots, so there an ignored request reads as an unsupported host.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
