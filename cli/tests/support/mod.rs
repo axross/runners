@@ -1,4 +1,4 @@
-//! Helpers shared by the integration tests. Each test crate uses a subset.
+//! helpers shared by the integration tests; each test crate uses a subset.
 
 #![allow(
     dead_code,
@@ -45,7 +45,7 @@ pub fn stderr(output: &Output) -> String {
     String::from_utf8_lossy(&output.stderr).into_owned()
 }
 
-/// A directory under the system temporary directory that is removed when dropped.
+/// a directory under the system temporary directory that is removed when dropped.
 pub struct TempDir {
     path: PathBuf,
 }
@@ -73,7 +73,6 @@ impl TempDir {
         path
     }
 
-    /// Writes a token file private to the user, as macOS requires.
     pub fn write_token(&self, relative: &str, contents: &[u8]) -> PathBuf {
         let path = self.write(relative, contents);
         make_private(&path);
@@ -81,13 +80,13 @@ impl TempDir {
     }
 }
 
-/// Writes a file and makes it private to the user, as macOS requires of a token file.
+/// writes a file and makes it private to the user, as macOS requires of a token file.
 pub fn write_token_file(path: &Path, contents: &[u8]) {
     fs::write(path, contents).unwrap();
     make_private(path);
 }
 
-/// The names of a bundle's files, sorted.
+/// the names of a bundle's files, sorted.
 pub fn files(bundle: &Path) -> Vec<String> {
     let mut names: Vec<String> = fs::read_dir(bundle)
         .unwrap()
@@ -112,7 +111,7 @@ impl Drop for TempDir {
     }
 }
 
-/// A slot of a two-slot pool named `example-repo-one`, reading its token from `token`.
+/// a slot of a two-slot pool named `example-repo-one`, reading its token from `token`.
 pub fn slot_spec(token: PathBuf) -> marshal_cli::runtime::pool::SlotSpec {
     marshal_cli::runtime::pool::SlotSpec {
         pool: "example-repo-one".to_string(),
@@ -139,8 +138,7 @@ pub fn slot_spec(token: PathBuf) -> marshal_cli::runtime::pool::SlotSpec {
     }
 }
 
-/// Prepares the pools as the runtime core does, without its image check: admits
-/// them, waits for Docker once when one is admitted, then prepares those admitted.
+/// prepares the pools as the runtime core does, without its image check.
 pub async fn prepare_pools<B: marshal_cli::runtime::backend::Backend>(
     backend: &B,
     pools: Vec<marshal_cli::runtime::pool::PoolSpec>,

@@ -1,4 +1,4 @@
-//! A rig that runs an [`Instance`] on fake seams and talks to it like the control
+//! a rig that runs an [`Instance`] on fake seams and talks to it like the control
 //! channel does.
 #![allow(
     dead_code,
@@ -27,7 +27,7 @@ pub const CONFIG_PATH: &str = "/etc/marshal/host.json";
 
 pub const START: u64 = 1_709_618_828_009;
 
-/// A valid axpc configuration with one pool of one slot.
+/// a valid axpc configuration with one pool of one slot.
 pub const CONFIG: &str = r#"{"imageName":"actions-runner:local","repositories":[{"owner":"o","repository":"r",
         "name":"r","slots":1,"tokenPath":"C:\\r.token","volumes":[]}]}"#;
 
@@ -43,7 +43,7 @@ pub struct Rig {
     pub core: FakeCore,
     pub source: FakeSource,
     pub log: MemoryLog,
-    /// The stop times the instance runs with.
+    /// the stop times the instance runs with.
     pub times: Cell<StopTimes>,
     plan: Plan,
 }
@@ -72,8 +72,8 @@ impl Rig {
         }
     }
 
-    /// Runs the instance and the script together. The script ends the instance, as
-    /// a client's `stop` does, and the rig fails a run that takes over ten seconds.
+    /// runs the instance and the script together, failing a run that takes over ten
+    /// seconds.
     pub async fn drive<F, Fut, T>(&self, script: F) -> (Ended, T)
     where
         F: FnOnce(Control) -> Fut,
@@ -98,8 +98,8 @@ impl Rig {
     }
 }
 
-/// Runs `instance` from `plan` and the script together, failing a run that takes
-/// longer than `within`. The script ends the instance, as a client's `stop` does.
+/// runs `instance` from `plan` and the script together, failing a run that takes
+/// longer than `within`; the script ends the instance, as a client's `stop` does.
 pub async fn drive<B, K, C, S, F, Fut, T>(
     instance: &Instance<'_, B, K, C, S>,
     plan: Plan,
@@ -117,7 +117,6 @@ where
     let (sender, mut receiver) = mpsc::unbounded_channel();
     let (force, mut forced) = mpsc::unbounded_channel();
     let run = instance.run(plan, &mut receiver);
-    // what a second Ctrl+C does, on a request from the script
     let forcing = async {
         while forced.recv().await.is_some() {
             instance.force_removal();
@@ -141,7 +140,7 @@ pub struct Control {
 }
 
 impl Control {
-    /// Sends a request and returns where its answer will arrive.
+    /// sends a request and returns where its answer will arrive.
     pub fn send(&self, request: Request) -> oneshot::Receiver<Response> {
         let (reply, answer) = oneshot::channel();
         self.sender.send(Incoming { request, reply }).unwrap();
@@ -160,7 +159,7 @@ impl Control {
             .to_string()
     }
 
-    /// Waits until `status` reports `state`, giving the instance's tasks turns.
+    /// waits until `status` reports `state`, giving the instance's tasks turns.
     pub async fn wait_for_state(&self, state: &str) {
         for _ in 0..10_000 {
             if self.state().await == state {
@@ -175,7 +174,7 @@ impl Control {
         self.ask(Request::Stop).await
     }
 
-    /// Asks for forced removal, as a second Ctrl+C does.
+    /// asks for forced removal, as a second Ctrl+C does.
     pub fn force_removal(&self) {
         self.force.send(()).unwrap();
     }

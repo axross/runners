@@ -1,4 +1,4 @@
-//! A loopback stand-in for the GitHub API, one scripted reply per connection.
+//! a loopback stand-in for the GitHub API, one scripted reply per connection.
 #![allow(
     dead_code,
     clippy::unwrap_used,
@@ -14,19 +14,19 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-/// What the stub does with one connection.
+/// what the stub does with one connection.
 pub enum Reply {
-    /// A status line, extra headers, and a body.
+    /// a status line, extra headers, and a body.
     Respond {
         status: &'static str,
         headers: Vec<(&'static str, String)>,
         body: Vec<u8>,
     },
-    /// Reads the request and never answers.
+    /// reads the request and never answers.
     Stall,
-    /// Answers 200 with a chunked body of this many bytes.
+    /// answers 200 with a chunked body of this many bytes.
     Chunked(usize),
-    /// Redirects to another path on the stub itself, so a client that follows it
+    /// redirects to another path on the stub itself, so a client that follows it
     /// reaches the stub's next reply.
     RedirectToSelf,
 }
@@ -49,12 +49,12 @@ impl Reply {
     }
 }
 
-/// One request the stub read.
+/// one request the stub read.
 #[derive(Debug, Clone)]
 pub struct Recorded {
     pub method: String,
     pub path: String,
-    /// Header names in lower case.
+    /// header names in lower case.
     pub headers: Vec<(String, String)>,
     pub body: Vec<u8>,
 }

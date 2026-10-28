@@ -1,4 +1,4 @@
-//! A scratch directory and a [`DockerBackend`] pointed at the fake `docker`.
+//! a scratch directory and a [`DockerBackend`] pointed at the fake `docker`.
 #![allow(
     dead_code,
     clippy::unwrap_used,
@@ -34,12 +34,12 @@ impl Fake {
         Self::with(limits, None)
     }
 
-    /// A backend whose exporter child is `exporter`.
+    /// a backend whose exporter child is `exporter`.
     pub fn exporting_with(exporter: &str) -> Self {
         Self::with(DockerLimits::default(), Some(PathBuf::from(exporter)))
     }
 
-    /// A backend whose exporter child is this CLI.
+    /// a backend whose exporter child is this CLI.
     pub fn exporting() -> Self {
         Self::exporting_with(BINARY)
     }
@@ -67,12 +67,12 @@ impl Fake {
         }
     }
 
-    /// Sets a script file the fake reads.
+    /// sets a script file the fake reads.
     pub fn script(&self, file: &str, content: &str) {
         std::fs::write(self.dir.path().join(file), content).unwrap();
     }
 
-    /// The containers the fake engine holds, as `name` lines.
+    /// the containers the fake engine holds, as `name` lines.
     pub fn containers(&self) -> Vec<String> {
         std::fs::read_to_string(self.dir.path().join("containers"))
             .unwrap_or_default()
@@ -83,7 +83,7 @@ impl Fake {
             .collect()
     }
 
-    /// Every call the fake received, in order: its arguments and whether the JIT
+    /// every call the fake received, in order: its arguments and whether the JIT
     /// variable was set, and to what.
     pub fn invocations(&self) -> Vec<Invocation> {
         invocations(self.dir.path())
@@ -95,7 +95,7 @@ pub struct Invocation {
     pub arguments: Vec<String>,
     pub jit: Option<String>,
     pub pid: u32,
-    /// The process group the call ran in, on Unix.
+    /// the process group the call ran in, on Unix.
     pub pgid: Option<u32>,
 }
 
