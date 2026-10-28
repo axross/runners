@@ -1,19 +1,16 @@
-//! A stand-in for the `docker` command line client, for the tests that run the real
-//! container backend.
-//!
-//! It is a compiled helper, not a script, because Windows finds only `.exe` programs.
+//! a stand-in for the `docker` client, compiled because Windows finds only `.exe`
+//! programs, for the tests that run the real container backend.
 //! `FAKE_DOCKER_DIR` names a directory it records into and reads its script from:
 //!
-//! - every call writes `inv-<n>.argv` (the arguments, NUL separated) and
-//!   `inv-<n>.pid`, `inv-<n>.pgid` (on Unix), and `inv-<n>.jit` when `ACTIONS_RUNNER_INPUT_JITCONFIG` is set;
-//!   it also holds an exclusive lock on `inv-<n>.alive` until it ends, so a test
-//!   that takes that lock sees the call end, however it ends. It takes that lock
-//!   before it writes its arguments, so a call a test can see already holds it;
+//! - every call writes `inv-<n>.argv` (the arguments, NUL separated), `inv-<n>.pid`,
+//!   `inv-<n>.pgid` (on Unix) and, when `ACTIONS_RUNNER_INPUT_JITCONFIG` is set,
+//!   `inv-<n>.jit`; it holds an exclusive lock on `inv-<n>.alive` until it ends, so
+//!   a test that takes that lock sees the call end, however it ends;
 //! - `containers` holds the fake engine's containers, one
 //!   `name<TAB>label,label<TAB>state` per line, which `ps`, `rm`, `stop`, `kill`
-//!   and `run` read and change. A container labelled as diagnostics evidence runs
-//!   without `--rm`, so ending it leaves it in the file with the state `exited`;
-//!   ending any other removes it;
+//!   and `run` read and change; a container labelled as diagnostics evidence runs
+//!   without `--rm`, so ending it leaves it in the file with the state `exited`,
+//!   while ending any other removes it;
 //! - the files `info_failures` (a count, decremented per call, each failure
 //!   saying on standard error that the daemon cannot be reached), `ps_fails`,
 //!   `ps_label_fails`, `rm_fails`, `rm_hangs`, `stop_fails`, `stop_hangs`,
@@ -22,19 +19,18 @@
 //!   `run_exit` change what the call does; a `stop_fails` that holds `longline`
 //!   also prints a long line to standard error.
 //!
-//! A `stop_hangs` stop ignores the grace period: it waits without stopping
-//! anything, as a container that ignores its stop signal makes `docker stop` wait.
-//! A `run_prints_jit` job container prints its JIT configuration to standard
+//! a `stop_hangs` stop ignores the grace period: it waits without stopping
+//! anything, as a container that ignores its stop signal makes `docker stop` wait;
+//! a `run_prints_jit` job container prints its JIT configuration to standard
 //! output and standard error, as a careless runner could.
 //!
-//! A `hold` job container stays until its entry leaves `containers` or exits,
-//! then exits 137, so `rm -f`, `stop` and `kill` end it as they would end a real
-//! one. Every wait is
-//! bounded, so a test that fails does not leave the helper running. A `longline` job
-//! container prints one line of [`LONG_LINE_BYTES`] bytes, the letters `a` to `z` in
-//! turn, then exits as an ordinary job does.
+//! a `hold` job container stays until its entry leaves `containers` or exits, then
+//! exits 137, so `rm -f`, `stop` and `kill` end it as they would end a real one;
+//! a `longline` job container prints one line of [`LONG_LINE_BYTES`] bytes, the
+//! letters `a` to `z` in turn, then exits as an ordinary job does. every wait is
+//! bounded, so a test that fails does not leave the helper running.
 //!
-//! Images:
+//! images:
 //!
 //! - without an `images` file, every image exists, with this CLI's contract, the
 //!   runner the Dockerfile declares, and a build time of now;
@@ -49,7 +45,7 @@
 //!   before it hangs), `tag_fails`, `image_rm_fails`, `prune_hangs` and
 //!   `prune_fails` change what those calls do.
 //!
-//! Diagnostic exports:
+//! diagnostic exports:
 //!
 //! - `inspect --format <format> <container>` prints a container's identity in the
 //!   allowlisted shape; `identity_mode` (`fragmented`, `unfiltered`, `long`,
@@ -95,8 +91,7 @@ fn run() -> Result<u8, String> {
     let dir =
         PathBuf::from(std::env::var_os("FAKE_DOCKER_DIR").ok_or("FAKE_DOCKER_DIR is not set")?);
     let arguments: Vec<String> = std::env::args().skip(1).collect();
-    // held until this call ends
-    let _alive = record(&dir, &arguments)?;
+    let _held_until_exit = record(&dir, &arguments)?;
     let words: Vec<&str> = arguments.iter().map(String::as_str).collect();
     match words.as_slice() {
         ["info", ..] => info(&dir),
@@ -155,7 +150,7 @@ fn record(dir: &Path, arguments: &[String]) -> Result<fs::File, String> {
     Err("no invocation number".to_string())
 }
 
-/// Writes the process group this call runs in, where `ps` can tell it.
+/// records the process group this call runs in, where `ps` can tell it.
 #[cfg(unix)]
 fn record_process_group(stem: &Path) {
     let output = std::process::Command::new("ps")
@@ -203,7 +198,6 @@ fn info(dir: &Path) -> Result<u8, String> {
     Ok(1)
 }
 
-/// One fake container: its name, labels, and whether it has exited.
 struct Container {
     name: String,
     labels: Vec<String>,
@@ -211,7 +205,7 @@ struct Container {
 }
 
 impl Container {
-    /// A diagnostic container runs without `--rm`, so it outlives its end.
+    /// a diagnostic container runs without `--rm`, so it outlives its end.
     fn kept(&self) -> bool {
         self.labels.iter().any(|label| label == DIAGNOSTIC_LABEL)
     }
@@ -239,7 +233,7 @@ fn load(dir: &Path) -> Vec<Container> {
         .collect()
 }
 
-/// Changes the container store under a lock, since several clients run at once.
+/// changes the container store under a lock, as several clients run at once.
 fn update(dir: &Path, change: impl FnOnce(Vec<Container>) -> Vec<Container>) -> Result<(), String> {
     let lock = fs::OpenOptions::new()
         .create(true)
@@ -251,7 +245,7 @@ fn update(dir: &Path, change: impl FnOnce(Vec<Container>) -> Vec<Container>) -> 
     save(dir, &change(load(dir)))
 }
 
-/// Replaces the store whole, so a client that reads it never sees it half written.
+/// replaces the store whole, so a reader never sees it half written.
 fn save(dir: &Path, containers: &[Container]) -> Result<(), String> {
     let lines: Vec<String> = containers
         .iter()
@@ -269,7 +263,7 @@ fn save(dir: &Path, containers: &[Container]) -> Result<(), String> {
     fs::rename(staged, dir.join("containers")).map_err(|error| error.to_string())
 }
 
-/// Ends the named containers as a real engine does: one run with `--rm` goes,
+/// ends the named containers as a real engine does: one run with `--rm` goes,
 /// one without stays as exited.
 fn end(dir: &Path, names: &[&str]) -> Result<(), String> {
     update(dir, |containers| {
@@ -367,7 +361,7 @@ fn container_exists(dir: &Path, name: &str) -> bool {
     load(dir).iter().any(|container| container.name == name)
 }
 
-/// The allowlisted identity of a container, or what `identity_mode` asks for.
+/// prints the allowlisted identity of a container, or what `identity_mode` asks for.
 fn identity(dir: &Path, name: &str) -> Result<u8, String> {
     if !container_exists(dir, name) {
         let _ = writeln!(std::io::stderr(), "Error: No such container: {name}");
@@ -403,14 +397,13 @@ fn identity(dir: &Path, name: &str) -> Result<u8, String> {
     Ok(0)
 }
 
-/// Copies `bytes` into `header` at `start`.
 fn put(header: &mut [u8], start: usize, bytes: &[u8]) {
     if let Some(slot) = header.get_mut(start..start + bytes.len()) {
         slot.copy_from_slice(bytes);
     }
 }
 
-/// One ustar header for a file or directory entry of `size` bytes.
+/// one ustar header for a file or directory entry of `size` bytes.
 fn tar_header(name: &str, size: usize, kind: u8) -> Vec<u8> {
     let mut header = vec![0u8; 512];
     put(&mut header, 0, name.as_bytes());
@@ -430,7 +423,7 @@ fn tar_file(archive: &mut Vec<u8>, name: &str, contents: &[u8]) {
     archive.resize(archive.len().div_ceil(512) * 512, 0);
 }
 
-/// The collector's directory as `docker cp` streams it, or what `cp_mode` asks for.
+/// prints the collector's directory as `docker cp` streams it, or what `cp_mode` asks for.
 fn copy(dir: &Path, source: &str) -> Result<u8, String> {
     let name = source
         .strip_suffix(":/tmp/runner-diagnostics/.")
@@ -559,7 +552,6 @@ fn job(dir: &Path, name: &str, diagnostic: bool) -> Result<u8, String> {
     Ok(code)
 }
 
-/// Writes one line of [`LONG_LINE_BYTES`] bytes, the letters `a` to `z` in turn.
 fn print_long_line(out: &mut impl Write) {
     let line: Vec<u8> = (b'a'..=b'z').cycle().take(LONG_LINE_BYTES).collect();
     let _ = out.write_all(&line);
@@ -574,7 +566,6 @@ fn sleep_while(mut condition: impl FnMut() -> bool) {
     }
 }
 
-/// One fake image: a reference, the ID it names, and its labels.
 #[derive(Clone)]
 struct Image {
     reference: String,
@@ -588,7 +579,7 @@ fn now_seconds() -> u64 {
         .map_or(0, |since| since.as_secs())
 }
 
-/// The image every reference names when there is no `images` file.
+/// the image every reference names when there is no `images` file.
 fn default_image(reference: &str) -> Image {
     Image {
         reference: reference.to_string(),
@@ -612,7 +603,7 @@ fn default_image(reference: &str) -> Image {
     }
 }
 
-/// The images, or `None` when there is no `images` file and every image exists.
+/// the images, or `None` when there is no `images` file and every image exists.
 fn load_images(dir: &Path) -> Option<Vec<Image>> {
     let text = fs::read_to_string(dir.join("images")).ok()?;
     Some(
@@ -664,7 +655,7 @@ fn json_string(text: &str) -> String {
     format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
-/// Prints the image's labels as the CLI's format asks: each
+/// prints the image's labels as the CLI's format asks: each
 /// `{{json (index .Config.Labels "<key>")}}` becomes the label's value as JSON, or
 /// `""` when the image has no such label.
 fn inspect(dir: &Path, format: &str, reference: &str) -> Result<u8, String> {
@@ -762,7 +753,7 @@ fn prune(dir: &Path) -> Result<u8, String> {
     Ok(failing(dir, "prune_fails"))
 }
 
-/// Reads the context from standard input into `inv-<n>.stdin`, then tags a new
+/// reads the context from standard input into `inv-<n>.stdin`, then tags a new
 /// image with the build's labels.
 fn build(dir: &Path, arguments: &[&str]) -> Result<u8, String> {
     let mut context = Vec::new();
@@ -805,7 +796,7 @@ fn build(dir: &Path, arguments: &[&str]) -> Result<u8, String> {
     Ok(0)
 }
 
-/// The stem of the newest `inv-<n>` this call recorded.
+/// the stem of the newest `inv-<n>` this call recorded.
 fn latest_invocation(dir: &Path) -> Result<PathBuf, String> {
     let pid = std::process::id().to_string();
     (0..100_000)
