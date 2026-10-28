@@ -1,8 +1,7 @@
-//! the sink checks and bundle admission: a sink must be an existing directory
-//! outside the checkout, never created, with no link or, on Windows, reparse point
-//! in its path, and on Unix owned by the current user with mode `0700`, where a
-//! bundle is created `0700`; on Windows its owner and access rules are not checked
-//! and a bundle inherits the sink's; the checks never repair what they refuse.
+//! the sink checks and bundle admission: a sink must be an existing directory outside
+//! the checkout, with no link in its path and, on Unix, private to the current user
+//! (on Windows its owner and rules are not checked); the checks never repair what
+//! they refuse; see `docs/operations/cli.md`.
 
 use std::fmt;
 use std::fs;
@@ -76,8 +75,8 @@ fn is_link(metadata: &fs::Metadata) -> bool {
     metadata.file_type().is_symlink()
 }
 
-/// checks that `path` is a directory, that neither it nor any directory above it
-/// is a link, and on Unix that it is private to the current user.
+/// checks that `path` is a directory with no link in it and, on Unix, private to the
+/// current user.
 fn check_directory(path: &Path) -> Result<(), SinkError> {
     for ancestor in path.ancestors() {
         if ancestor.as_os_str().is_empty() || ancestor.parent().is_none() {

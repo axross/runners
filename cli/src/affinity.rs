@@ -1,7 +1,6 @@
-//! where each slot's CPUs start, shared by the plan summary and the backend, and
-//! which of the allowed CPUs it takes, as the PowerShell supervisor's
-//! `Select-CpuAffinity` does: consecutive IDs of the sorted inventory from its
-//! offset modulo the allowed CPUs, wrapping at the end.
+//! where each slot's CPUs start, shared by the plan summary and the backend, and which
+//! allowed CPUs it takes, as the PowerShell supervisor's `Select-CpuAffinity` does;
+//! see `docs/operations/cli.md`.
 
 use std::fmt;
 
@@ -17,8 +16,7 @@ pub fn affinity_count(entry: &Entry) -> u64 {
     entry.cpus.ceil() as u64
 }
 
-/// where the entry's first slot starts among the affinity positions, after every
-/// preceding entry's slots.
+/// where the entry's first slot starts, after every preceding entry's slots.
 #[must_use]
 pub fn affinity_offset(entries: &[Entry], index: usize) -> u64 {
     entries
@@ -82,9 +80,8 @@ impl Span {
 }
 
 /// selects `count` CPU IDs from the allowed list `available` (the text of
-/// `Cpus_allowed_list`: ordered, distinct ranges with no space, sign or leading
-/// zero), starting at `offset` modulo the number of allowed CPUs, and returns them
-/// in canonical `a,b-c` form.
+/// `Cpus_allowed_list`), starting at `offset` modulo the number of allowed CPUs, and
+/// returns them in canonical `a,b-c` form.
 pub fn select_cpus(available: &str, count: u64, offset: u64) -> Result<String, CpuError> {
     if !(1..=MAX_COUNT).contains(&count) {
         return Err(CpuError::CountOutOfRange);
@@ -106,9 +103,8 @@ fn parse_list(available: &str) -> Result<Vec<Span>, CpuError> {
     if available.len() > MAX_CPU_LIST_BYTES {
         return Err(CpuError::InvalidList);
     }
-    // the whole list's syntax is judged before any ID's range or order, as the
-    // PowerShell `Select-CpuAffinity` does, so a list with several defects gets the
-    // same refusal from both.
+    // the whole list's syntax is judged before any ID's range or order, as
+    // `Select-CpuAffinity` does, so both give one refusal
     if !available.split(',').all(is_well_formed_range) {
         return Err(CpuError::InvalidList);
     }
@@ -149,7 +145,6 @@ fn is_well_formed_id(text: &str) -> bool {
         && (digits.len() == 1 || digits.first() != Some(&b'0'))
 }
 
-/// parses an ID that [`is_well_formed_id`] accepted; one beyond `i32` is refused.
 fn parse_id(text: &str) -> Result<i32, CpuError> {
     text.parse().map_err(|_| CpuError::UnrepresentableId)
 }

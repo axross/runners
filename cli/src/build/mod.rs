@@ -30,8 +30,8 @@ use steps::{BuildLimits, Steps};
 
 const HOLDER_ANSWER_WITHIN: Duration = Duration::from_secs(5);
 
-/// whatever still runs then is dropped, which kills its client, and `build` ends,
-/// inside `stop`'s 30 s.
+/// whatever still runs at this deadline is dropped, which kills its client, so
+/// `build` ends inside `stop`'s 30 s.
 const EXIT_DEADLINE_AFTER_STOP: Duration = Duration::from_secs(28);
 
 /// what `build` was given.
@@ -46,8 +46,8 @@ pub struct BuildRequest<'a> {
     pub definition: Option<&'a Path>,
 }
 
-/// runs `build` and returns its exit code, reaching Docker only after the lock is
-/// taken, the configuration is valid and the image name can be tagged.
+/// runs `build` and returns its exit code; Docker is reached only after the lock,
+/// validation and the tag check.
 pub fn build(request: &BuildRequest<'_>, err: &mut dyn Write) -> u8 {
     let roots = match Roots::resolve(request.test_root) {
         Ok(roots) => roots,

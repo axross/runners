@@ -12,14 +12,12 @@ const MAX_PATH_BYTES: usize = 99;
 /// the largest file an 11-digit octal size field holds.
 const MAX_FILE_BYTES: u64 = 0o77_777_777_777;
 
-/// writes an octal field of `width` bytes: digits padded with zeros, then a NUL.
 fn octal(value: u64, width: usize) -> Vec<u8> {
     let mut field = format!("{value:0digits$o}", digits = width - 1).into_bytes();
     field.push(0);
     field
 }
 
-/// `text` padded with NULs to `width` bytes.
 fn padded(text: &[u8], width: usize) -> Vec<u8> {
     let mut field = text.to_vec();
     field.resize(width, 0);

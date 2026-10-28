@@ -1,8 +1,6 @@
-//! files and directories only the current user may use: a private directory is a
-//! real directory, not a link, owned by the current user with mode `0700`, and a
-//! private file a regular file with mode `0600`; the checks never repair what they
-//! refuse. `std` has no call for the process's own user ID and `unsafe` is
-//! forbidden, so [`current_uid`] reads it as the owner of a file the process creates.
+//! files and directories only the current user may use: a private directory is `0700`
+//! and a private file `0600`, and the checks never repair what they refuse; see
+//! `docs/operations/cli.md`.
 
 use std::fmt;
 use std::fs::{self, Metadata};
@@ -156,7 +154,8 @@ pub fn check_private_file(path: &Path, metadata: &Metadata, uid: u32) -> Result<
 }
 
 /// the current user's ID, read once as the owner of a file this process creates in
-/// the temporary directory, failing when that directory cannot hold a file.
+/// the temporary directory, as `std` has no call for it and `unsafe` is forbidden;
+/// it fails when that directory cannot hold a file.
 pub fn current_uid() -> io::Result<u32> {
     static UID: OnceLock<u32> = OnceLock::new();
     if let Some(uid) = UID.get() {

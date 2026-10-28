@@ -16,9 +16,8 @@ pub fn lowercase(text: &str) -> String {
 }
 
 /// reports whether two strings are equal character by character under simple case
-/// folding, with no normalization, ignorable characters or context-sensitive
-/// lowercasing; token paths are the only compared values that can hold non-ASCII
-/// characters.
+/// folding, with no normalization; token paths are the only compared values that can
+/// hold non-ASCII characters.
 #[must_use]
 pub fn eq_folded(first: &str, second: &str) -> bool {
     let mut first = first.chars();
@@ -32,8 +31,7 @@ pub fn eq_folded(first: &str, second: &str) -> bool {
     }
 }
 
-/// returns `text` with every character folded as [`eq_folded`] folds it, so two
-/// strings are `eq_folded` exactly when their folded forms are equal.
+/// returns `text` folded as [`eq_folded`] folds it.
 #[must_use]
 pub fn folded(text: &str) -> String {
     text.chars().map(fold_char).collect()
@@ -59,10 +57,8 @@ fn simple_lowercase(c: char) -> char {
     single(c.to_lowercase()).unwrap_or(c)
 }
 
-/// approximates Unicode simple case folding with the standard library's case
-/// mappings: a character folds to the lowercase of its uppercase when both are a
-/// single character, and otherwise stays; the dotless i is the one character this
-/// misjudges, because only Turkic folding maps it.
+/// approximates Unicode simple case folding with the standard library; the dotless i
+/// is the one character it misjudges, because only Turkic folding maps it.
 fn fold_char(c: char) -> char {
     if c == '\u{0131}' {
         return c;

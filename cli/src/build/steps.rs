@@ -34,7 +34,7 @@ pub struct BuildLimits {
     pub tag_grace_after_stop: Duration,
     /// how long the inspect that decides an interrupted retag may take.
     pub commit_inspect: Duration,
-    /// the temporary tag is removed by then.
+    /// the temporary tag is removed within this.
     pub removal_by_after_stop: Duration,
 }
 
@@ -93,8 +93,8 @@ fn unix_seconds(time: SystemTime) -> u64 {
 }
 
 impl Steps<'_> {
-    /// runs the build until the configured name holds the new image, failing with
-    /// why and what the name holds when the build did not commit or that is unknown.
+    /// runs the build until the configured name holds the new image; the error says
+    /// why not, and what the name holds.
     pub async fn run(&self) -> Result<(), String> {
         let info = info_arguments();
         let answered = match self
@@ -248,8 +248,7 @@ impl Steps<'_> {
         }
     }
 
-    /// removes the temporary tags of this repository that carry the image label,
-    /// which a killed `build` left; a failure is a warning.
+    /// removes the temporary tags a killed `build` left; a failure is a warning.
     async fn remove_leftovers(&self) {
         let listed = match self.checked(&leftover_list_arguments(self.image)).await {
             Ok(listed) => listed,
@@ -309,8 +308,8 @@ impl Steps<'_> {
         }
     }
 
-    /// removes the temporary tag, if the build made one, by the stop's removal
-    /// deadline once a stop is asked for; a failure is a warning naming the tag.
+    /// removes the temporary tag by the stop's removal deadline once a stop is asked
+    /// for; a failure is a warning naming the tag.
     async fn remove_temporary(&self, temporary: &str) {
         let removal = async {
             let listed = self.checked(&image_list_arguments(temporary)).await?;
@@ -383,7 +382,6 @@ impl Steps<'_> {
                 self.limits.command_budget.as_secs()
             ),
         };
-        // dropping the wait kills a client still running
         drop(waiting);
         let inspected = self
             .capture(
@@ -402,8 +400,8 @@ impl Steps<'_> {
         }
     }
 
-    /// after the commit: the temporary tag goes, and the dangling images that
-    /// carry the image label are pruned unless a stop was asked for.
+    /// after the commit: removes the temporary tag and prunes the dangling images,
+    /// unless a stop was asked for.
     async fn after_commit(&self, temporary: &str) {
         self.remove_temporary(temporary).await;
         if self.stop.borrow().is_some() {
@@ -445,10 +443,9 @@ mod tests {
         }
     }
 
-    /// a directory holding a `docker` script that appends each call's first two
-    /// words to `calls`; its `tag` runs the shell command `tag`, and its inspect
-    /// reports `inspected` as the configured name's build time, or, when that is
-    /// `None`, the one the build was labelled with.
+    /// a fake `docker` in a temporary directory that logs each call's first two words
+    /// to `calls`; its `tag` runs the shell command `tag`, and its inspect reports
+    /// `inspected` or the build's own time.
     fn docker(name: &str, tag: &str, inspected: Option<&str>) -> PathBuf {
         let dir =
             std::env::temp_dir().join(format!("marshal-build-steps-{name}-{}", std::process::id()));

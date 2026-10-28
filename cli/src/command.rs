@@ -25,17 +25,13 @@ pub(crate) const EXIT_OK: u8 = 0;
 pub(crate) const EXIT_FAILED: u8 = 1;
 pub(crate) const EXIT_USAGE: u8 = 2;
 
-/// moves the lock, channel and log roots; only a debug build honours it.
+// test overrides; only a debug build honours them, see docs/operations/cli.md
 const TEST_ROOT_VARIABLE: &str = "MARSHAL_TEST_ROOT";
 
-/// moves the GitHub base address; only a debug build honours it.
 const TEST_GITHUB_API_VARIABLE: &str = "MARSHAL_TEST_GITHUB_API";
 
-/// names the `docker` client `start` and `build` run; only a debug build honours it.
 const TEST_DOCKER_VARIABLE: &str = "MARSHAL_TEST_DOCKER";
 
-/// names a test definition `build` builds instead of the embedded one; only a debug
-/// build honours it.
 const TEST_BUILD_DEFINITION_VARIABLE: &str = "MARSHAL_TEST_BUILD_DEFINITION";
 
 fn config_arg(help: &'static str) -> Arg {
@@ -425,8 +421,8 @@ pub(crate) fn checkout_rule_note(config: &Path) -> String {
     )
 }
 
-/// returns the message that lists every problem, in the PowerShell validator's
-/// format: a header naming the file, then one line per problem.
+/// returns the problems as the PowerShell validator prints them: a header naming the
+/// file, then one line each.
 #[must_use]
 pub fn invalid_message(config: &Path, errors: &[String]) -> String {
     let mut message = format!("Invalid host configuration ({}):", config.display());

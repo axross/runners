@@ -10,8 +10,7 @@ fn image_label() -> String {
     format!("{IMAGE_LABEL}={IMAGE_LABEL_VALUE}")
 }
 
-/// the image name without its tag: everything before the last `:` that follows
-/// the last `/`, so a registry port stays.
+/// the image name without its tag, so a registry port stays.
 #[must_use]
 pub fn repository_of(image: &str) -> &str {
     let last_part_start = image.rfind('/').map_or(0, |slash| slash + 1);
@@ -63,8 +62,7 @@ pub fn leftover_list_arguments(image: &str) -> Vec<String> {
     ])
 }
 
-/// the one build: no cache, a fresh base, the context on standard input, the image
-/// and build-time labels, and the temporary tag.
+/// the arguments of the one `docker build`.
 #[must_use]
 pub fn build_arguments(temporary: &str, built: u64) -> Vec<String> {
     strings(&[

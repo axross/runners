@@ -46,9 +46,7 @@ impl<'a> Keys<'a> {
 }
 
 /// records every collision between a later entry and an earlier one, in entry order;
-/// token files compare under simple case folding, as Windows file names ignore case,
-/// and a non-platform label is ambiguous only between pools of the same OS, whose
-/// platform labels cannot tell them apart.
+/// token files compare under simple case folding, as Windows file names ignore case.
 pub fn check_entries(entries: &[Entry], profile: Profile, errors: &mut Errors) {
     let keys: Vec<Keys> = entries
         .iter()

@@ -28,8 +28,8 @@ fn shape() -> Option<&'static Regex> {
     SHAPE_REGEX.get_or_init(|| Regex::new(SHAPE).ok()).as_ref()
 }
 
-/// the text of `identity.txt` for inspect `output`: the header line, then the
-/// trimmed readback, each ending with a line break.
+/// the text of `identity.txt` for inspect `output`: the header line, then the trimmed
+/// readback.
 pub fn identity_text(output: &[u8]) -> Result<String, IdentityError> {
     if output.len() >= MAX_IDENTITY_BYTES {
         return Err(IdentityError::OutputLimit);

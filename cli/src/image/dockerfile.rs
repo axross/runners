@@ -1,6 +1,5 @@
-//! the little of the Dockerfile syntax the contract tests read: instructions, the
-//! base image, the files copied from the build context, and the final stage's
-//! labels; it is test-only, since the binary never parses the Dockerfile at run time.
+//! the little of the Dockerfile syntax the contract tests read; it is test-only, since
+//! the binary never parses the Dockerfile at run time.
 
 /// the instructions, each as its upper-cased keyword and its arguments, with
 /// continued lines joined and comment lines dropped, as Docker reads them.

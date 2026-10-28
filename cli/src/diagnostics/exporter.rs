@@ -1,8 +1,7 @@
 //! the exporter child: one export, or one count, of a pool's sink; it ends at its
 //! deadline or when its standard input, the instance's liveness pipe, closes, killing
-//! its `docker` clients first, which run in a process group of their own with the JIT
-//! variable cleared, and every file system call runs on a blocking thread so a hung
-//! sink cannot keep it from ending.
+//! its `docker` clients first, which run with the JIT variable cleared; see
+//! `docs/operations/cli.md`.
 
 use std::ffi::OsStr;
 use std::io::{Read, Write};
@@ -34,8 +33,7 @@ const FINAL_OBSERVED: &str = "final=observed";
 /// the most bytes a copy client may print after the end of its archive.
 const MAX_TRAILER_BYTES: u64 = 1024 * 1024;
 
-/// runs the exporter for `request` with `docker` as the client, and returns its
-/// exit code.
+/// runs the exporter for `request` and returns its exit code.
 #[must_use]
 pub fn run(request: &ExportRequest, docker: &OsStr) -> ExitCode {
     let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
@@ -50,8 +48,7 @@ pub fn run(request: &ExportRequest, docker: &OsStr) -> ExitCode {
     ExitCode::from(code)
 }
 
-/// waits on a thread of its own for standard input to end, which is when the
-/// instance's end of the liveness pipe closes.
+/// waits on a thread of its own for standard input to end, the liveness pipe closing.
 fn input_closed() -> oneshot::Receiver<()> {
     let (closed, receiver) = oneshot::channel();
     std::thread::spawn(move || {
@@ -77,7 +74,6 @@ async fn blocking<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) 
     tokio::task::spawn_blocking(work).await.ok()
 }
 
-/// prints one line of the protocol the instance reads.
 fn say(line: &str) {
     let mut out = std::io::stdout().lock();
     let _ = writeln!(out, "{line}");
@@ -168,8 +164,6 @@ fn final_observed(metrics: &Path) -> Option<bool> {
     }))
 }
 
-/// starts a client whose standard output is read and whose standard error is
-/// discarded.
 fn client(docker: &OsStr, arguments: &[String]) -> Option<Child> {
     let mut command = client_command(docker, &[], arguments);
     command.stdout(Stdio::piped()).stderr(Stdio::null());
@@ -196,8 +190,6 @@ async fn read_capped<R: AsyncRead + Unpin>(stream: R, cap: usize) -> Option<Vec<
     Some(bytes)
 }
 
-/// writes the archive's accepted files into the bundle, each through a blocking
-/// thread.
 struct BundleSink {
     bundle: PathBuf,
     file: Option<std::fs::File>,

@@ -1,8 +1,5 @@
-//! the parsed JSON tree as a serde data format: [`Deserializer`] reads any type that
-//! derives `Deserialize` from a [`Value`], and only reading is implemented, since the
-//! crate writes its one JSON body by hand; a foreign target sees a number as `i64`, `u64`, `i128` or `f64`, so `1e400` is infinity
-//! there, while [`Value`] keeps the literal text through a private newtype-struct
-//! protocol that works only with this reader.
+//! the parsed JSON tree as a serde data format, read-only: [`Deserializer`] reads any
+//! `Deserialize` type from a [`Value`]; see `docs/operations/cli.md`.
 
 use std::fmt;
 
@@ -57,8 +54,8 @@ impl<'de> Deserializer<'de> {
         }
     }
 
-    /// matches an object's member names to a struct's field names ignoring ASCII
-    /// case, as PowerShell finds a property; map keys and enum variants stay exact.
+    /// matches member names to struct field names ignoring ASCII case, as PowerShell
+    /// does; map keys and enum variants stay exact.
     #[must_use]
     pub fn ignoring_field_case(self) -> Self {
         Self {
@@ -345,8 +342,6 @@ impl<'de> Visitor<'de> for ValueVisitor {
         Ok(Value::String(text.to_string()))
     }
 
-    // only this reader asks for the token, and it answers a number node with its
-    // literal text
     fn visit_newtype_struct<D: de::Deserializer<'de>>(
         self,
         deserializer: D,

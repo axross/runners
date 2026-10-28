@@ -1,9 +1,6 @@
-//! the shim between the CLI and one job container's `docker run` client, on Unix:
-//! when the liveness pipe on its standard input closes, it force-removes the
-//! container within 5 s (in diagnostic mode it kills the container and keeps it),
-//! kills the client and exits; the JIT configuration reaches the client through the
-//! environment the shim inherits, and the removal's client does not get it; see
-//! `docs/operations/cli.md`.
+//! the shim between the CLI and one job container's `docker run` client, on Unix; only
+//! the client gets the JIT configuration, through the environment the shim inherits,
+//! never the removal's client; see `docs/operations/cli.md`.
 
 use std::ffi::{OsStr, OsString};
 use std::os::fd::AsFd;
@@ -51,8 +48,7 @@ pub fn run(name: &str, diagnostic: bool, program: &OsStr, arguments: &[OsString]
     runtime.block_on(supervise(name, diagnostic, program, arguments))
 }
 
-/// waits on a thread of its own for standard input to end, which is when the CLI's
-/// end of the pipe closes.
+/// waits on a thread of its own for standard input to end, the liveness pipe closing.
 fn input_closed() -> oneshot::Receiver<()> {
     let (closed, receiver) = oneshot::channel();
     std::thread::spawn(move || {
@@ -123,7 +119,7 @@ async fn supervise(
 }
 
 /// force-removes the container, or ends a diagnostic one and keeps it, within
-/// [`REMOVE_BUDGET`], with the container backend's own calls.
+/// [`REMOVE_BUDGET`].
 async fn clean_up(name: &str, diagnostic: bool, program: &OsStr) -> bool {
     let config = DockerConfig {
         program: program.to_os_string(),

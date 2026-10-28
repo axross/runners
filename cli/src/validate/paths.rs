@@ -26,8 +26,7 @@ pub fn has_windows_dot_component(text: &str) -> bool {
 }
 
 /// reports whether `directory` is the checkout or lies inside it, comparing
-/// lexically with repeated separators collapsed and `.` and `..` resolved, never
-/// following a link, and ignoring case on axpc only.
+/// lexically, never following a link, and ignoring case on axpc only.
 #[must_use]
 pub fn is_inside_checkout(directory: &str, checkout: &Path, profile: Profile) -> bool {
     let separator = match profile {

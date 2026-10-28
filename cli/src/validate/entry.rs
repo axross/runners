@@ -56,9 +56,8 @@ pub(super) struct EntryFields {
     disk_gb: Field,
 }
 
-/// returns the entry, or `None` after recording every problem; an entry whose other
-/// fields are usable is returned even when a diagnostic field is not, so it still
-/// takes part in the cross-entry checks.
+/// returns the entry, or `None` after recording every problem; an entry with a bad
+/// diagnostic field is still returned, so it takes part in the cross-entry checks.
 pub fn read_entry(value: &Value, path: &str, cx: &mut Context) -> Option<Entry> {
     let profile = cx.profile;
     let node =

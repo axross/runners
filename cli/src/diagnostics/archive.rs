@@ -1,7 +1,6 @@
 //! the strict archive subset a diagnostic copy is read through, as the PowerShell
-//! exporter reads it: ustar regular files named `metrics.txt` and, with raw records
-//! on, `raw-<n>.log`, each once, within the entry and byte limits; nothing is
-//! extracted by a path the job chose, since an accepted name is a fixed file name.
+//! exporter reads it; only fixed file names are accepted, so nothing is extracted by
+//! a path the job chose; see `docs/operations/cli.md`.
 
 use std::future::Future;
 use std::io;

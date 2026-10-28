@@ -403,11 +403,9 @@ fn on_signal(
     }
 }
 
-/// on Windows, waits for the console to close or the user to log off or the
-/// machine to shut down; the async runtime's handler does not return to the
-/// operating system for these events, so the process lives until `start` has
-/// stopped the instance within [`CLOSE_REMOVE_BUDGET`] and exits, see
-/// `docs/operations/cli.md`.
+/// on Windows, waits for the console to close or the user to log off or the machine
+/// to shut down; the process lives until `start` has stopped the instance within
+/// [`CLOSE_REMOVE_BUDGET`], see `docs/operations/cli.md`.
 #[cfg(windows)]
 async fn console_closed(log: &dyn Log) {
     use tokio::signal::windows::{ctrl_close, ctrl_logoff, ctrl_shutdown};
@@ -432,9 +430,9 @@ async fn console_closed(_log: &dyn Log) {
     std::future::pending().await
 }
 
-/// puts this process in a Job Object that kills every process in it when the last
-/// handle closes; the CLI never closes the handle, so the operating system does
-/// when the process ends, however it ends, after the exit code is set.
+/// puts this process in a Job Object with kill-on-close and never closes its handle,
+/// so the operating system closes it when the process ends; see
+/// `docs/operations/cli.md`.
 #[cfg(windows)]
 pub(crate) fn contain() -> Result<JobLauncher, String> {
     use win32job::{ExtendedLimitInfo, Job};
@@ -449,8 +447,8 @@ pub(crate) fn contain() -> Result<JobLauncher, String> {
     Ok(JobLauncher::Direct)
 }
 
-/// runs each job container's client through the shim, this program run again, so
-/// the container is removed when this process ends, however it ends.
+/// runs each job container's client through the shim, so the container is removed
+/// when this process ends, however it ends.
 #[cfg(unix)]
 fn contain() -> Result<JobLauncher, String> {
     std::env::current_exe()

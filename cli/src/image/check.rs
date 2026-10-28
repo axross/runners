@@ -1,6 +1,7 @@
 //! the check of a built image: its labels, the four outcomes they sort into, and
 //! the freshness warnings and `status` lines they give; the backend reads the
-//! labels and this module only interprets them; see `docs/operations/cli.md`.
+//! labels and this module only interprets them, so the same rules apply whichever
+//! backend reads them and however the clock is injected; see `docs/operations/cli.md`.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -37,8 +38,8 @@ const READ_LABELS: [&str; 4] = [
     RUNNER_RELEASED_LABEL,
 ];
 
-/// the Go template `docker image inspect` prints the labels with: a JSON array of
-/// their values, where a missing label prints as an empty string.
+/// the Go template that prints the labels as a JSON array, a missing label as an
+/// empty string.
 #[must_use]
 pub fn labels_format() -> String {
     let values: Vec<String> = READ_LABELS

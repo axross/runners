@@ -120,10 +120,9 @@ fn print_status(response: &Response, out: &mut dyn Write, err: &mut dyn Write) -
     EXIT_OK
 }
 
-/// asks the instance to stop, then waits up to [`STOP_WAIT`] from the request for
-/// its lock to be free, which the operating system makes it as the process ends; it
-/// tells by taking the lock and letting it go at once, so a `start` right after a
-/// successful `stop` finds the lock free.
+/// asks the instance to stop, then waits up to [`STOP_WAIT`] from the request for its
+/// lock to be free; taking the lock and letting it go at once means a `start` right
+/// after a successful `stop` finds it free.
 fn stop(roots: &Roots, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
     let started = Instant::now();
     match exchange(roots, &Request::Stop, STATUS_ANSWER_WITHIN) {
