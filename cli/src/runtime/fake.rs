@@ -1,5 +1,6 @@
 //! in-memory stand-ins for the seams, for tests of the code above them; they record
-//! what they were asked, answer from a script, and no command wires them in.
+//! what they were asked, answer from a script, are part of the library so the
+//! integration tests can use them, and no command wires them in.
 
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;

@@ -1,6 +1,7 @@
 //! what the Windows pipes share: the current user's SID, and the security
 //! descriptor that lets only that user use a pipe, built from its text form so no
-//! `unsafe` is needed.
+//! `unsafe` is needed; neither crate here reads a live pipe's descriptor back, so CI
+//! reads it from PowerShell.
 
 use std::ffi::OsStr;
 use std::io;

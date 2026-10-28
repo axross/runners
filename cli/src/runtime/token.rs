@@ -1,7 +1,7 @@
-//! reading a pool's token file again at every registration, trimmed and never
-//! printed; on macOS the file must be a regular file owned by the current user with
-//! mode `0600`, and on Windows its access control list is not checked, because no
-//! safe call reads it.
+//! reading a pool's token file again at every registration, so a rotated token
+//! applies to the next job, trimmed and never printed; on macOS the file must be a
+//! regular file owned by the current user with mode `0600`, and on Windows its access
+//! control list is not checked, because no safe call reads it.
 
 use std::fmt;
 use std::io::{self, Read};

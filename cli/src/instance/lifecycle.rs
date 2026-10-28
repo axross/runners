@@ -1,5 +1,8 @@
 //! the instance: the state it is in, and what each request and each failure of the
-//! runtime core does to it, as `docs/operations/cli.md` describes.
+//! runtime core does to it, as `docs/operations/cli.md` describes; one task owns the
+//! state, so a request that arrives during a transition is answered at once: `status`
+//! tells the truth, `stop` is taken, and `restart`, `diagnostics` and `resume` are
+//! refused.
 
 use std::cell::{Cell, RefCell};
 use std::fmt;
@@ -143,7 +146,8 @@ pub trait Core {
     ) -> impl Future<Output = Result<(), CoreFailure>>;
 
     /// checks the image `plan` names once, without waiting for Docker; returns why
-    /// the image cannot run jobs, or `Ok` when it can or Docker could not say.
+    /// the image cannot run jobs, or `Ok` when it can or Docker could not say, since
+    /// the next run checks again.
     fn check_image(&self, plan: &Plan) -> impl Future<Output = Result<(), String>>;
 
     /// what the core is doing now, as `status` fields.
@@ -175,7 +179,7 @@ pub struct Ended {
     /// [`Ending::Ordinary`] when it ended otherwise.
     pub ending: Ending,
     /// the diagnostic containers the backend still retains, which the next start
-    /// finalises.
+    /// finalises: kept by a forced stop, or not yet removed.
     pub kept: Vec<String>,
 }
 

@@ -1,6 +1,7 @@
 //! what `start` logs: every line goes to the terminal and to a log file of its own
-//! in a private per-user directory, with every masked secret replaced in both; on
-//! macOS the directory is `0700` and each file `0600`, and on Windows the CLI does
+//! in a private per-user directory, with every masked secret replaced in both; a
+//! write to a terminal that is gone is ignored and the file goes on; on macOS the
+//! directory is `0700` and each file `0600`, and on Windows the CLI does
 //! not check the directory's access, as `docs/operations/cli.md` describes.
 
 use std::cell::RefCell;

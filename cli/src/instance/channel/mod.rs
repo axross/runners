@@ -1,7 +1,9 @@
-//! the control channel, reachable only by the instance's own user; only the holder
-//! of the instance lock can open the server, so a leftover socket file proves no
-//! other instance owns it and is replaced; `docs/operations/cli.md` describes the
-//! pipe and the socket.
+//! the control channel, reachable only by the instance's own user: a Windows pipe
+//! whose descriptor grants only that user and rejects remote clients, or a Unix
+//! socket of mode `0600` in a `0700` directory that checks each peer's user ID; only
+//! the holder of the instance lock can open the server, so a leftover socket file
+//! proves no other instance owns it and is replaced; `docs/operations/cli.md`
+//! describes the pipe and the socket.
 
 mod client;
 #[cfg(unix)]

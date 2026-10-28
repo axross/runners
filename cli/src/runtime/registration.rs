@@ -1,5 +1,6 @@
-//! just-in-time runner registration with GitHub; the token travels in a header
-//! marked sensitive and is replaced by `<token>` in every error text, as
+//! just-in-time runner registration with GitHub, the PowerShell supervisor's request
+//! plus a `User-Agent`, no redirect, and time and size limits; the token travels in
+//! a header marked sensitive and is replaced by `<token>` in every error text, as
 //! `docs/operations/cli.md` describes.
 
 use std::fmt;
@@ -95,7 +96,7 @@ impl std::error::Error for SetupError {}
 
 /// installs the `ring` crypto provider as the process default, which the HTTPS
 /// client needs before it is built; calling it again, or after another provider was
-/// installed, succeeds.
+/// installed, succeeds, and it fails when no provider is installed and none can be.
 pub fn install_tls_provider() -> Result<(), SetupError> {
     if rustls::crypto::CryptoProvider::get_default().is_some() {
         return Ok(());
@@ -152,7 +153,8 @@ pub struct GitHubRegistrar {
 
 impl GitHubRegistrar {
     /// builds the client; `base_override` is honoured only by a debug build, see
-    /// [`resolve_base_url`].
+    /// [`resolve_base_url`], and it fails when the TLS provider cannot be installed or
+    /// the client cannot be built, such as without trusted roots to load.
     pub fn new(base_override: Option<&str>, limits: HttpLimits) -> Result<Self, SetupError> {
         install_tls_provider()?;
         let base_url = resolve_base_url(base_override)?;

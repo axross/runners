@@ -24,7 +24,8 @@ pub const STOP_WITHIN: Duration = Duration::from_secs(12);
 /// the bundles a pool's sink may hold, partial ones included.
 pub const BUNDLE_QUOTA: u32 = 10;
 
-/// the text of each export that has a gap, and `None` for one without.
+/// the PowerShell supervisor's text for each export that has a gap, and `None` for
+/// one without.
 #[must_use]
 pub fn gap_text(outcome: ExportOutcome) -> Option<&'static str> {
     match outcome {
@@ -335,7 +336,9 @@ pub struct Flushed {
 }
 
 /// finalises every retained container nobody holds whose job has ended, on one 24 s
-/// clock, and counts the bundles of their pools and of the pools in `enabled`.
+/// clock, and counts the bundles of their pools and of the pools in `enabled`; a
+/// pool with only a container left to the manual recovery gets a line without a
+/// count.
 pub async fn flush<B: Backend>(
     backend: &B,
     log: &dyn Log,

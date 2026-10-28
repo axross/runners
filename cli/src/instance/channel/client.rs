@@ -16,7 +16,8 @@ pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClientError {
     /// nothing answers at the channel: it does not exist, refuses, or did not accept
-    /// within [`CONNECT_TIMEOUT`].
+    /// within [`CONNECT_TIMEOUT`], also before a new instance opens its channel and
+    /// after an ending one closes it.
     NoInstance,
     /// the instance accepted the request and did not answer in time.
     NoAnswer,

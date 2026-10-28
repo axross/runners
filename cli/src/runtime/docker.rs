@@ -154,6 +154,8 @@ impl Captured {
         self.code == Some(0)
     }
 
+    /// the client's output for an error message, on one line and cut as a registration
+    /// error is.
     fn output_text(&self) -> String {
         scrub_error_text(&format!("{} {}", self.stdout, self.stderr), "")
     }
@@ -161,7 +163,7 @@ impl Captured {
 
 /// builds a client command with the JIT variable cleared, so only the one `run`
 /// that sets it carries a registration; the client is killed when its future is
-/// dropped and starts in its own process group.
+/// dropped and starts in its own process group, so a Ctrl+C reaches only the CLI.
 pub(crate) fn client_command(
     program: &OsStr,
     environment: &[(OsString, OsString)],
@@ -230,7 +232,8 @@ impl<C: Clock> DockerBackend<C> {
 
     /// the command that starts a job container, the client itself or the shim,
     /// which is not killed when the run is dropped because closing its liveness pipe
-    /// makes it clean up.
+    /// makes it clean up, and which writes the client's standard error to its standard
+    /// output.
     fn job_command(&self, spec: &ContainerSpec) -> Command {
         let arguments = job_run_arguments(spec);
         match &self.config.launcher {
@@ -462,7 +465,8 @@ impl<C: Clock> DockerBackend<C> {
     }
 
     /// starts the exporter child for `request` with a liveness pipe as its standard
-    /// input, closing which ends it, so it can kill its own clients first.
+    /// input, closing which ends it, so it can kill its own clients first; its
+    /// standard error is this process's, and it writes only a panic's location there.
     fn exporter(&self, request: &ExportRequest) -> Option<Child> {
         let program = self.config.exporter.as_ref()?;
         let mut command = Command::new(program);
@@ -546,9 +550,10 @@ impl<C: Clock> DockerBackend<C> {
 }
 
 enum CappedFailure {
+    /// the budget left no time to run it.
     DeadlineSpent,
-    /// it could not start, overran its cap or its budget, or its output could not
-    /// be read.
+    /// the client could not start, overran its cap or its budget, or its output could
+    /// not be read.
     Unavailable,
 }
 
@@ -742,7 +747,7 @@ impl<C: Clock> Backend for DockerBackend<C> {
     async fn select_cpuset(&self, request: &CpuRequest) -> Result<String, BackendError> {
         let selection = self.read_allowed_cpus(request).await;
         // the cleanup runs whatever the probe did, and its failure outranks the
-        // probe's result.
+        // probe's result, as in the PowerShell `finally`.
         self.remove_probe(&request.probe_name).await?;
         selection
     }

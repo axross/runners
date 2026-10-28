@@ -336,6 +336,8 @@ mod tests {
         assert_eq!(arguments.last().map(String::as_str), Some(RUN_COMMAND));
     }
 
+    /// the PowerShell here-string that starts with `set -eu` and the probe's reader
+    /// script, from `docker-commands.ps1`.
     fn powershell_source() -> String {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../hosts/windows-docker-desktop/docker-commands.ps1");
@@ -385,6 +387,8 @@ mod tests {
         }
     }
 
+    /// `diagnostic-export.ps1`, where the PowerShell exporter reads the identity and
+    /// copies the collector's directory.
     fn powershell_export_source() -> String {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../hosts/windows-docker-desktop/diagnostic-export.ps1");

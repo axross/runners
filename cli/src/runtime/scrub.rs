@@ -4,7 +4,8 @@
 pub const MAX_ERROR_CHARS: usize = 500;
 
 /// replaces `secret` with `<token>`, collapses whitespace, and cuts the text to
-/// [`MAX_ERROR_CHARS`] characters followed by `...`.
+/// [`MAX_ERROR_CHARS`] characters followed by `...`, as the PowerShell supervisor does
+/// for a registration error.
 #[must_use]
 pub fn scrub_error_text(text: &str, secret: &str) -> String {
     let replaced = if secret.is_empty() {

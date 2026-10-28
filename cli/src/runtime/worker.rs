@@ -122,7 +122,9 @@ async fn back_off<K: Clock>(
 }
 
 /// runs one slot until a stop is asked for, leaving a container already running to
-/// the stop sequence.
+/// the stop sequence; a diagnostic container is finalised after its run unless a stop
+/// is under way, and its export's gaps never change the backoff; the token it reads
+/// and the JIT configuration it holds are masked in `log`.
 pub async fn run_slot<B: Backend, K: Clock, R: Registrar>(
     slot: &SlotSpec,
     backend: &B,

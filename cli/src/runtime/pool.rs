@@ -1,5 +1,5 @@
-//! a pool of one repository: what it runs and how it is made ready;
-//! `docs/operations/cli.md` describes the preparation.
+//! a pool of one repository: what it runs and how it is made ready, following the
+//! PowerShell supervisor; `docs/operations/cli.md` describes the preparation.
 
 use std::fmt;
 use std::path::PathBuf;
@@ -18,6 +18,7 @@ use super::log::Log;
 use super::name::{cpu_probe_name, is_own_container_name};
 use super::token::read_token;
 
+/// the bound on removing one stale container.
 const STALE_REMOVE_BUDGET: Duration = Duration::from_secs(120);
 
 /// one repository's pool, from a valid axpc plan.
@@ -219,7 +220,7 @@ pub fn admit_pools(pools: Vec<PoolSpec>, log: &dyn Log, board: &Board) -> Vec<Po
 
 /// the second step, once Docker answers: removes each admitted pool's stale
 /// containers, prepares its volumes, and returns the pools that can run; a pool
-/// that fails either is skipped with a warning.
+/// that fails either is skipped with a warning, and it fails when none is left.
 pub async fn prepare_admitted<B: Backend>(
     backend: &B,
     admitted: Vec<PoolSpec>,
@@ -250,7 +251,8 @@ pub async fn prepare_admitted<B: Backend>(
     Ok(prepared)
 }
 
-/// removes the pool's own leftover containers; a labelled one is never removed
+/// removes the pool's own leftover containers; a labelled one the backend already
+/// retains keeps its record and is left alone, and any other is never removed
 /// without its export, so it is finalised, or with diagnostics off stopped and the
 /// pool refused.
 async fn clear_stale_containers<B: Backend>(
