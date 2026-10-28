@@ -1540,7 +1540,7 @@ immutable releases keep a published release's tag from moving.
 
 Paste a block below whole into one shell. A check that fails prints its cause after
 `refused:` and ends the block there without closing the shell, so nothing after it
-runs, and a refusal before the rename in step 6 leaves the install path as it was.
+runs, and a refusal before the rename in step 7 leaves the install path as it was.
 The block's variables and working directory do not outlive it, so each run starts
 clean.
 
@@ -1552,10 +1552,15 @@ clean.
 5. Refuse unless `gh attestation verify` passes, pinned to `release.yaml`, the
    branch `refs/heads/main`, and the commit from step 3, with self-hosted runners
    denied. An attestation made by any other workflow, branch, or commit fails here.
-6. Stop the instance if one is running, refusing if it does not stop, then replace
+6. Refuse unless the downloaded binary's `--version` prints `marshal <version>`.
+   The attestation ties the binary to a commit on main, not to a version, so this
+   step keeps an older genuine binary under a newer version's name from replacing
+   the installed one. On macOS, make the file executable and remove its quarantine
+   attribute, if present, before running it.
+7. Stop the instance if one is running, refusing if it does not stop, then replace
    the binary in the install directory. On macOS, remove the quarantine attribute
    if present.
-7. Refuse unless the installed binary's `--version` prints `marshal <version>`.
+8. Refuse unless the installed binary's `--version` prints `marshal <version>`.
 
 On macOS, in bash or zsh. The block has no comment lines, because an interactive zsh
 runs a line that starts with `#` as a command unless `interactive_comments` is set:
@@ -1599,6 +1604,13 @@ runs a line that starts with `#` as a command unless `interactive_comments` is s
     --source-ref refs/heads/main --source-digest "$commit" \
     --deny-self-hosted-runners \
     || refuse "the attestation does not verify"
+
+  chmod 0755 "$asset" || refuse "${asset} could not be made executable"
+  if xattr -p com.apple.quarantine "$asset" >/dev/null 2>&1; then
+    xattr -d com.apple.quarantine "$asset" || refuse "the quarantine attribute could not be removed from ${asset}"
+  fi
+  downloaded="$(./"$asset" --version)" || refuse "the downloaded binary does not run"
+  [ "$downloaded" = "marshal ${version}" ] || refuse "the downloaded binary is not marshal ${version}: ${downloaded}"
 
   if [ -x ~/.local/bin/marshal ]; then
     stopped="$(~/.local/bin/marshal stop 2>&1)" || [ "$stopped" = "No instance is running." ] \
@@ -1662,6 +1674,9 @@ On Windows, in PowerShell:
     --deny-self-hosted-runners
   if ($LASTEXITCODE -ne 0) { Refuse 'the attestation does not verify' }
 
+  try { $downloaded = & $file --version } catch { Refuse "the downloaded binary does not run: $_" }
+  if ($LASTEXITCODE -ne 0 -or "$downloaded" -ne "marshal $version") { Refuse "the downloaded binary is not marshal ${version}: $downloaded" }
+
   $directory = Join-Path $env:LOCALAPPDATA 'Programs\marshal'
   $target = Join-Path $directory 'marshal.exe'
   if (Test-Path -LiteralPath $target) {
@@ -1687,7 +1702,7 @@ The stop runs with `$ErrorActionPreference` at `Continue` because Windows PowerS
 turns a native command's redirected standard error into an error, and `Stop` would end
 the block at the "No instance is running." line.
 
-Windows cannot replace an executable that is running, so step 6 also fails while an
+Windows cannot replace an executable that is running, so step 7 also fails while an
 instance still runs from the install path. A binary fetched with
 `gh release download` is assumed to carry no Mark of the Web, and the procedure
 does not clear one; Phase 4b checks that, and whether SmartScreen intervenes, on
