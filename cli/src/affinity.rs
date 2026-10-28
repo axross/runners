@@ -104,7 +104,7 @@ fn parse_list(available: &str) -> Result<Vec<Span>, CpuError> {
         return Err(CpuError::InvalidList);
     }
     // the whole list's syntax is judged before any ID's range or order, as
-    // `Select-CpuAffinity` does, so both give one refusal
+    // `Select-CpuAffinity` does, so both give the same refusal
     if !available.split(',').all(is_well_formed_range) {
         return Err(CpuError::InvalidList);
     }
