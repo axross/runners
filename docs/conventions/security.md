@@ -62,7 +62,9 @@ its package from the PowerShell Gallery and refuses it unless its SHA-256 matche
 refreshed together, with the hash computed from the real download. A manual
 refresh of a mise tool version is: edit `mise.toml`, run
 `mise lock --platform linux-x64`, and commit `mise.toml`, `mise.lock`, and
-`.mise/locks/` together.
+`.mise/locks/` together. When the tool is Node, also set the two `node-version`
+pins in [`release.yaml`](../../.github/workflows/release.yaml) to the same version,
+since Dependabot does not bump them.
 
 The CLI under [`cli/`](../../cli) is pinned the same way. Its Rust toolchain is
 one exact stable release in
@@ -91,15 +93,27 @@ computed from the real download, and are not covered by Dependabot. Dependabot
 does cover the CLI's own dependencies: its `cargo` and `rust-toolchain` entries
 for `/cli` propose the crate and toolchain refreshes as pull requests.
 
-The Rust toolchain is the one download in this repository that is not
+The Rust toolchain is one of two downloads in this repository that are not
 checksum-pinned, and the maintainer accepted that exception when approving the
 CLI's plan. `rustup` fetches a channel manifest over HTTPS and checks each
 component's hash against that manifest, but it does not verify the manifest's
 signature, so the trust rests on the HTTPS connection to the Rust project's
 distribution server. Recording the manifest's hash here would need a refresh for
 every release without adding a signature check. A step that installs the toolchain
-`cli/rust-toolchain.toml` names through `rustup` is this recorded exception; any
-other unpinned download remains a finding.
+`cli/rust-toolchain.toml` names through `rustup` is this recorded exception.
+
+The other is the Node that `actions/setup-node` installs in `release.yaml`, at the
+exact version in `mise.toml`. It takes Node from the runner's tool cache or from
+GitHub's own builds, listed in the `actions/node-versions` manifest, and this
+repository pins no checksum for it. That path is trusted under the joint-trust
+decision in [`actions/*` Stays on Major Tags](#actions-stays-on-major-tags): GitHub
+owns the action, the builds, and the runner that runs them. The action receives the
+job's token by default, to fetch that manifest. When the manifest lacks the version
+or cannot be fetched, `actions/setup-node@v7` falls back to downloading Node from
+nodejs.org, again with no checksum. That path is outside the joint-trust argument,
+since the Node.js project is a separate party, and it is accepted as a residual
+risk of the release workflow, below. Any other unpinned download remains a
+finding.
 
 ## `actions/*` Stays on Major Tags
 
@@ -133,8 +147,9 @@ could have introduced runs in a job that holds a secret.
 [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml),
 [`rust-advisories.yaml`](../../.github/workflows/rust-advisories.yaml), and
 [`release-build.yaml`](../../.github/workflows/release-build.yaml) hold only
-`contents: read`. [`release.yaml`](../../.github/workflows/release.yaml) grants a
-write scope to its publish job alone; the release record below says which and why. [`claude-review.yaml`](../../.github/workflows/claude-review.yaml)
+`contents: read`. [`release.yaml`](../../.github/workflows/release.yaml) grants write
+scopes to its plan, attest, and release jobs; the release record below says which
+and why. [`claude-review.yaml`](../../.github/workflows/claude-review.yaml)
 holds `contents: read` at the top and, on its one job, `contents: read` plus
 `id-token: write`. It needs no pull request, issue, or check write scope: at the
 pinned version the action exchanges the job's OpenID Connect token for a Claude
@@ -147,103 +162,198 @@ An untrusted context value (a comment body, a pull request title, a branch name)
 is passed into a step through an `env:` variable and quoted, never expanded inside
 `run:`. The workflow `if:` expression is not a substitute for that.
 
-## A Release Is Published Only From an Approved Tag
+## A Release Is Published Only From a Dispatch on Main
 
-[`release.yaml`](../../.github/workflows/release.yaml) publishes the CLI's release
-binaries, and [`release-build.yaml`](../../.github/workflows/release-build.yaml)
-builds them; [CLI](../operations/cli.md#releases) owns the steps. This is the
-record a change to either workflow, or to the build call in
-[`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml), is checked
-against:
+[`release.yaml`](../../.github/workflows/release.yaml) releases the CLI with
+semantic-release, and [`release-build.yaml`](../../.github/workflows/release-build.yaml)
+builds the binaries; [CLI](../operations/cli.md#releases) owns the steps. This is
+the record a change to either workflow, to the build call in
+[`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml), to
+[`release/`](../../release), or to the scripts under
+[`.github/scripts/`](../../.github/scripts) is checked against:
 
-- **A tag is the only trigger.** `release.yaml` runs on `push: tags: ['v*']` and on
-  nothing else: no pull request, dispatch, schedule, or `workflow_run` trigger.
-- **The build is split from the publish.** The build is a reusable workflow that
-  `merge-checks.yaml` calls on every pull request as the dry run and `release.yaml`
-  calls on a tag. On `pull_request` the workflow file comes from the pull request
+- **A manual dispatch is the only trigger.** `release.yaml` runs on
+  `workflow_dispatch` and on nothing else: no push, tag, pull request, schedule, or
+  `workflow_run` trigger. The dispatch is the maintainer's decision to release.
+  There is no Environment and no approval step.
+- **The branch guard is advisory.** Every job in `release.yaml` has
+  `if: github.ref == 'refs/heads/main'`. A dispatch on another branch runs that
+  branch's own copy of the file, which could drop the guard, so it binds only the
+  copy on main. The controls are the install-side `--source-ref refs/heads/main`
+  and the compare-API check that the commit is on main.
+- **The build is split from the release.** The build is a reusable workflow that
+  `merge-checks.yaml` calls on every pull request as the dry run, with the version
+  `0.0.0-dryrun.<run number>`, and `release.yaml` calls with the version its plan
+  job worked out. On `pull_request` the workflow file comes from the pull request
   itself, so a job-level `if:` or `environment:` in a workflow a pull request
-  triggers is not a control: the pull request could delete it. The only job with a
+  triggers is not a control: the pull request could delete it. Every job with a
   write scope therefore sits in a workflow no pull request triggers. One release
-  workflow with both a pull request and a tag trigger, guarded by an `if:` on its
-  publish job, was rejected for that reason.
-- **Nothing above `contents: read` outside the publish job.** Each workflow starts
-  from `contents: read`, and every job in `release-build.yaml`, the dry-run call in
-  `merge-checks.yaml`, and the check and build jobs of `release.yaml` hold
-  `contents: read` alone. The publish job holds `contents: write` to create the
-  release, `id-token: write` to request the signing certificate, and
-  `attestations: write` to store the attestation, and nothing else. It needs no
-  `artifact-metadata: write`, which is for storage records in a registry this
-  repository does not use. Neither the build workflow nor `merge-checks.yaml` has a
-  publish or attest step.
-- **The publish job waits in the `release` Environment**, whose protection is
-  listed below. A workflow that names a missing Environment creates an unprotected
-  one, so the Environment exists before `release.yaml` reaches the default branch.
-- **No credential stays in a checkout, and the publish job has none.** Every
-  checkout sets `persist-credentials: false`. The check job fetches the default
-  branch without a credential, since the repository is public. The publish job
-  checks nothing out and runs no file from the repository: it downloads the
-  assembled files, checks them, and runs `actions/attest` and `gh`.
-- **No cache.** Neither release workflow uses a cache action, because a tag run
-  could restore a cache saved from another ref. Each build compiles from
-  `Cargo.lock` with `--locked`.
-- **The tag reaches a script through `env:`**, never expanded into `run:`.
-- **Pins.** `actions/checkout`, `actions/upload-artifact`,
+  workflow with both a pull request and a release trigger, guarded by an `if:`, was
+  rejected for that reason.
+- **No job holds both kinds of write.** `release.yaml` starts from
+  `contents: read`, and each job's `permissions` replaces that with exactly this:
+  - the plan job holds `contents: write`, for the `git push --dry-run` that
+    semantic-release's dry run makes, and runs the npm tree;
+  - the build job holds `contents: read`;
+  - the attest job holds `id-token: write` and `attestations: write`, and nothing
+    else. It checks nothing out and installs no npm package: it downloads the
+    files, checks them, and runs `actions/attest`;
+  - the release job holds `contents: write`, to push the tag and its note and to
+    create the release, and runs the npm tree.
+
+  A job that runs the npm tree can push tags and edit releases, and its token can
+  fast-forward main, but it cannot mint an attestation, so a binary it substitutes
+  fails `gh attestation verify` at install. A change it pushes to main is another
+  matter, as the residual risks below say. One release job with all three scopes
+  was rejected: any package in the npm tree could then attest any binary as
+  `release.yaml` on `refs/heads/main`. No job needs `artifact-metadata: write`,
+  which is for storage records in a registry. `@semantic-release/github`'s comments
+  and labels are off, so the release job needs no issue or pull request scope.
+  Every job in `release-build.yaml` and the dry-run call in `merge-checks.yaml` hold
+  `contents: read` alone, and neither has a publish or attest step.
+
+- **The files are checked twice before they are used.** The attest job, and the
+  release gate [`verify-release.sh`](../../.github/scripts/verify-release.sh) that
+  semantic-release runs before it tags anything, each refuse unless the files are
+  exactly the two binaries named for the version and `SHA256SUMS`, `SHA256SUMS`
+  lists exactly those two, and `sha256sum --check --strict` passes. The gate checks
+  against the version semantic-release worked out in its own run.
+  `@semantic-release/github` skips an asset that is missing rather than failing, so
+  the gate is what holds the file set.
+- **No credential stays in a checkout.** Every checkout sets
+  `persist-credentials: false`. Under GitHub Actions, semantic-release builds an
+  `x-access-token:` URL from `GITHUB_TOKEN` for its own git commands.
+- **No cache.** No job uses a cache action, and `actions/setup-node` is given no
+  `cache` input and `package-manager-cache: false`, because a release run could
+  restore a cache that another ref saved. Each build compiles from `Cargo.lock` with
+  `--locked`, and `npm ci` installs from `release/package-lock.json`.
+- **Context values reach a script through `env:`**, never expanded into `run:`.
+- **Pins.** `actions/checkout`, `actions/setup-node`, `actions/upload-artifact`,
   `actions/download-artifact`, and `actions/attest` stay on major tags, under
   [`actions/*` Stays on Major Tags](#actions-stays-on-major-tags). Neither release
-  workflow uses a third-party action.
-- **A tag run is never cancelled.** Only the two calling workflows declare
+  workflow uses a third-party action. `jdx/mise-action` was rejected for Node here:
+  at this repository's pin it caches by default, installs every mise tool, and
+  receives the job token. `actions/setup-node` installs Node `24.21.0`, the version
+  in `mise.toml`, and the Node download is trusted under the same joint-trust
+  decision, not by a checksum; see [Pinning Convention](#pinning-convention).
+  `release/package.json` names an exact version of semantic-release and of each
+  plugin and preset, `release/package-lock.json` records each package's integrity hash, and
+  `npm ci --ignore-scripts` installs exactly that and runs no install script.
+  Dependabot's `npm` entry proposes the refreshes. `release/` keeps these packages
+  out of the repository root and out of mise's tool locks.
+- **A release run is never cancelled.** Only the two calling workflows declare
   `concurrency`, because inside a called workflow `github.workflow` is the caller's
-  name. `release.yaml`'s group is per tag and does not cancel in progress.
-- **The tag checks are advisory.**
-  [`check-release-tag.sh`](../../.github/scripts/check-release-tag.sh) fails unless
-  the tag is `v` followed by `cli/Cargo.toml`'s version at the tagged commit and that
-  commit is on the default branch. It also fails unless the tag is
-  `vMAJOR.MINOR.PATCH`, since a release is never a prerelease or a build-metadata
-  version. It runs from the tagged commit's own files, so a crafted tag could skip
-  it. It catches mistakes, not attacks.
+  name. `release.yaml`'s group is `release`, and it does not cancel in progress, so
+  a run is never stopped between pushing the tag and publishing.
+- **The version comes from the commits, and main keeps a placeholder.**
+  semantic-release picks the version from the Conventional Commit subjects since
+  the last `v*` tag. Its `releaseRules` add a patch for `build(deps)`, the prefix
+  Dependabot writes for the runner image and the CLI's crates and toolchain, and
+  Dependabot's `npm` entry writes `chore`, which releases nothing.
+  [Cutting a Release](../operations/development-workflow.md#cutting-a-release)
+  states the rules. Nothing is committed back: `cli/Cargo.toml` and `cli/Cargo.lock`
+  on main hold `0.0.0-dev`, and
+  [`set-release-version.sh`](../../.github/scripts/set-release-version.sh) writes
+  the version in each build leg. It refuses unless both files hold the placeholder
+  exactly once, `--locked` fails if they disagree, and the leg's `--version` check
+  compares the binary with the version.
 
 What protects a release is outside the workflow files:
 
-- Only accounts with push access can push a branch or a tag here, and a tag ruleset
-  restricts creating, moving, and deleting a `v*` tag to the Repository admin role.
-  On this user-owned repository only the maintainer holds that role.
-- The `release` Environment requires the maintainer's approval before the publish
-  job runs, admits deployments from `v*` tags only, and admits no administrator
-  bypass.
-- The install pins `--signer-workflow` to `release.yaml`, `--source-ref` to the
-  tag, and `--source-digest` to the tag's commit, and refuses a commit the compare
-  API does not place on the default branch, so an attestation from any other
-  workflow, ref, or commit is refused; see
+- Only accounts with write access can dispatch a workflow or push a tag here. On
+  this user-owned repository that is the maintainer, and the agents that share the
+  maintainer's identity.
+- The install pins `--signer-workflow` to `release.yaml`, `--source-ref` to
+  `refs/heads/main`, and `--source-digest` to the tag's commit, denies self-hosted
+  runners, and refuses a commit the compare API does not place on main. An
+  attestation from any other workflow, branch, or commit is refused; see
   [CLI](../operations/cli.md#installing-updating-and-rolling-back).
-- A tag created with `GITHUB_TOKEN` starts no workflow run, so no workflow can tag
-  its way into a release.
-- Immutable releases are on for the repository, so a published release's assets
-  cannot be replaced.
+- Immutable releases are turned on for the repository before the first dispatch,
+  so a published release's assets cannot be replaced and its tag cannot be moved
+  or deleted.
 
-The ruleset, the Environment, and immutable releases are repository settings, not
-files here;
+Immutable releases are a repository setting, not a file here;
 [Cutting a Release](../operations/development-workflow.md#cutting-a-release) gives
-their exact values and the read-back.
+the setting and its read-back.
 
-An agent never pushes a tag, creates or changes the tag ruleset or the `release`
-Environment, or approves a pending deployment, and never calls the
-deployment-approval API. This rule is stricter than the
+An agent never dispatches `release.yaml`, never pushes, moves, or deletes a `v*`
+tag, and never changes release settings, such as immutable releases or an
+Environment or ruleset that applies to releases. This rule is absolute, and it is
+stricter than the
 [delivery grant](../operations/development-workflow.md#authorizing-delivery-operations).
 The grant lets an explicit human instruction cover release, deployment, and
 settings effects. These release effects have no such path: an agent never performs
-one, even when the maintainer asks in the session or another agent relays it. Agent
-sessions share the maintainer's GitHub identity, so to GitHub the required reviewer
-and an agent are the same account. It is this rule, not the grant's exclusion, that
-keeps an agent from tagging or approving.
+one, even when the maintainer asks in the session or another agent relays it.
+Agent sessions share the maintainer's GitHub identity, so to GitHub a dispatch by an
+agent and one by the maintainer are the same. With no approval step and no tag
+ruleset, this rule is the only control on agents.
 
 Residual risks, accepted:
 
+- **The npm tree runs with `contents: write`.** A compromised package in the plan
+  or release job can push, move, or delete tags; create, edit, or delete draft and
+  published releases; and push to any branch that no rule protects. It cannot mint
+  an attestation, so a binary it substitutes fails `gh attestation verify` at
+  install. It can deny a release, or publish one whose binaries hosts then refuse.
+- **The npm tree can push to main.** The ruleset on main blocks only deleting the
+  branch and pushes that are not fast-forwards. The plan and release jobs'
+  `GITHUB_TOKEN` can therefore fast-forward main with a source change that touches
+  no workflow file, and a push made with that token starts no workflow run. The
+  next dispatch would build that change and attest it as genuine. The control is
+  the check in
+  [Each Release](../operations/development-workflow.md#each-release), before
+  each dispatch, that every commit on main since the last `v*` tag came from a
+  merged pull request. A stronger option is a rule on main that requires a
+  pull request, with only the maintainer able to bypass it. That is the
+  maintainer's choice, and it is not in place.
+- **The attest job attests whatever passes its checks.** `SHA256SUMS` comes from
+  the same build artifact, so the check catches transport damage, not a compromised
+  build leg.
+- **No approval step and no tag ruleset.** Any account with write access can
+  dispatch a release, and that is the account the agents run as. The rule above is
+  the only control on agents. The maintainer accepted this in choosing a manual
+  dispatch with no ruleset.
+- **Unprotected tags change the next version.** Any account with write access can
+  push, move, or delete a `v*` tag that has no published release, `v0.0.0`
+  included, and that changes the version semantic-release works out next.
+  Immutable releases lock only the tags of published releases.
+- **A weaker install pin.** `--source-ref refs/heads/main` proves that the build
+  ran from main, not from a particular tag. `--source-digest` and the reachability
+  check still tie the binary to one commit on main, but no longer to a version.
+  The install therefore checks the downloaded binary's `--version` before it
+  replaces the installed one, so an older genuine binary under a newer version's
+  name is refused without touching the install path.
+- **A green run can release nothing.** If main moves after the dispatch, the
+  release job logs that the local branch is behind the remote one and ends without
+  a tag or a release, after the binaries are attested.
+  [Cutting a Release](../operations/development-workflow.md#cutting-a-release)
+  says to check that the release exists after a green run.
+- **A partial release.** semantic-release pushes the tag and its
+  `refs/notes/semantic-release-<tag>` note before `@semantic-release/github`
+  creates the draft release. If the upload fails, the tag still counts as the last
+  release, so the next dispatch skips that version. The clean-up is the
+  maintainer's, in
+  [Cutting a Release](../operations/development-workflow.md#cutting-a-release).
+- **Versions follow commit subjects.** A mistitled squash merge releases the wrong
+  bump, or none, and no check catches it.
+- **Node can come from nodejs.org.** When the `actions/node-versions` manifest
+  lacks `24.21.0` or cannot be fetched, `actions/setup-node` downloads Node from
+  nodejs.org with no checksum, outside the joint-trust argument in
+  [Pinning Convention](#pinning-convention). That Node runs the npm tree with
+  `contents: write`.
+- **Advisories in an npm that is never loaded.** `npm audit` reports advisories,
+  undici (high) and ip-address (moderate), only in the npm CLI that
+  `@semantic-release/npm` bundles. That plugin is installed as a hard dependency of
+  semantic-release but never loaded, because `release/.releaserc.json` replaces the
+  plugin list. No CI job audits `release/`; Dependabot's `npm` entry covers
+  `/release` for version updates.
+- **No pull request runs semantic-release.** Neither `mise run check` nor Merge
+  Checks loads `release/.releaserc.json`, so a Dependabot bump in `release/` that
+  breaks the plan job merges green and fails only on the next dispatch, before any
+  tag or release is made.
 - The binaries are not code-signed or notarised, so macOS Gatekeeper and Windows
   SmartScreen may warn or block. The install removes the macOS quarantine
   attribute; Phase 4b checks Windows on axpc and reports if SmartScreen intervenes.
-- The required reviewer and the agents are one identity, so the Environment cannot
-  tell them apart; only the rule above, that an agent never approves a deployment,
-  keeps one from doing so.
 - The runner image's definition is embedded in the binary, so a runner bump reaches
   a host only through a new release and an update.
 
@@ -297,8 +407,9 @@ The controls that remain are these, and none of them pins the command:
   unprivileged user namespaces for the job's ephemeral VM;
 - the least-privilege job permissions described above;
 - the author-association gate below, which limits who can start a run;
-- a ruleset blocking direct pushes to the default branch, which the maintainer is
-  adding and which is outside this repository's files;
+- the default branch's ruleset, outside this repository's files, which blocks
+  deleting the branch and pushes that are not fast-forwards, but not a direct
+  fast-forward push;
 - the vendor's own trust: a change to that repository's default branch is made by
   the organization that also supplies the action and the model.
 

@@ -1,70 +1,97 @@
 name: Release
 
-# publishes a release of the CLI when a `v*` tag is pushed, and on nothing else. the
-# check job refuses a tag that is not `v` followed by cli/Cargo.toml's version at the
-# tagged commit, or whose commit is not on the default branch; release-build.yaml
-# builds and assembles the binaries with `contents: read`; and the publish job, the
-# only job in this repository that holds `contents: write`, waits in the protected
-# `release` Environment for the maintainer's approval before it attests the binaries
-# and creates the release. a pull request never triggers this workflow, so
-# no pull request's copy of this file can reach that scope. the tag checks run from
-# the tagged commit's own files and only catch mistakes; the controls and residual
-# risks are in docs/conventions/security.md. it runs on GitHub-hosted runners only.
+# releases the CLI with semantic-release, on a manual dispatch on main and on nothing
+# else. the dispatch is the maintainer's decision to release; an agent never makes
+# it. four jobs run on the dispatched commit:
+#
+#   plan     semantic-release as a dry run reads the Conventional Commits since the
+#            last `v*` tag and hands out the next version, or none.
+#   build    release-build.yaml builds and assembles the binaries at that version,
+#            with `contents: read`.
+#   attest   checks the files and attests the binaries' build provenance. it runs
+#            no npm package, so nothing in the npm tree can mint an attestation.
+#   release  semantic-release for real: release/.releaserc.json's gate checks the
+#            files for the version it is about to release, then it pushes the tag
+#            and its note and publishes the GitHub release with the three files.
+#
+# with nothing to release, the plan job hands out no version and the other jobs are
+# skipped. nothing is committed to main, which keeps the placeholder version. the
+# `if:` on main binds only this copy of the file, since a dispatch on another
+# branch runs that branch's copy; the install-side checks are the control. the
+# controls and residual risks are in docs/conventions/security.md. it runs on
+# GitHub-hosted runners only.
 
 on:
-  push:
-    tags: ["v*"]
+  workflow_dispatch:
 
-# one group per tag, never cancelled: a tag run is a release and runs to its end, and
-# a second tag has its own group.
+# one release at a time, never cancelled: a run stopped between pushing the tag and
+# publishing would leave a tag without its release.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  check:
-    name: Check The Tag
+  # `contents: write` is for the dry run's `git push --dry-run`, which
+  # semantic-release authenticates with GITHUB_TOKEN itself, so the checkout keeps
+  # no credential.
+  plan:
+    name: Plan The Release
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions:
-      contents: read
+      contents: write
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
+          fetch-depth: 0
           persist-credentials: false
-      # the repository is public, so the default branch is fetched without a
-      # credential. the checkout is shallow; fetching main brings the history the
-      # reachability check walks.
-      - name: Fetch The Default Branch
-        run: git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-      - name: Check The Tag Against The Version And The Default Branch
+      # the same Node as mise.toml, which Dependabot does not bump here.
+      - name: Install Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - name: Install semantic-release
+        working-directory: release
+        run: npm ci --ignore-scripts
+      # .github/scripts/verify-release.sh writes the version to this step's
+      # outputs. with nothing to release semantic-release never calls it, and the
+      # output stays empty.
+      - name: Work Out The Next Version
+        id: plan
+        working-directory: release
         env:
-          TAG: ${{ github.ref_name }}
-        run: bash .github/scripts/check-release-tag.sh "$TAG" "$GITHUB_SHA" refs/remotes/origin/main
+          RELEASE_PHASE: plan
+          GITHUB_TOKEN: ${{ github.token }}
+        run: npx --no -- semantic-release --dry-run
 
   build:
     name: Build
-    needs: check
+    needs: plan
+    if: github.ref == 'refs/heads/main' && needs.plan.outputs.version != ''
     uses: ./.github/workflows/release-build.yaml
     permissions:
       contents: read
+    with:
+      version: ${{ needs.plan.outputs.version }}
 
-  # no checkout: the job runs nothing from the repository, only the assembled files,
-  # the two actions, and gh. `contents: write` creates the release, and `id-token`
-  # and `attestations` sign and store the provenance; the attestation needs no
+  # no checkout and no npm package: the job runs only the artifact download, the
+  # check below, and actions/attest. the attestation needs no
   # `artifact-metadata`, which is for storage records in a registry.
-  publish:
-    name: Publish
-    needs: build
+  attest:
+    name: Attest The Build Provenance
+    needs: [plan, build]
+    if: github.ref == 'refs/heads/main' && needs.plan.outputs.version != ''
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    environment: release
     permissions:
-      contents: write
       id-token: write
       attestations: write
     steps:
@@ -72,16 +99,17 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: ${{ needs.build.outputs.artifact }}
-          path: release
+          path: release-files
+      # the same check as verify-release.sh in the release job, which this job
+      # cannot run without a checkout.
       - name: Check The Files And Their Checksums
         id: files
-        working-directory: release
+        working-directory: release-files
         env:
-          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.plan.outputs.version }}
         run: |
-          version="${TAG#v}"
-          windows="marshal-${version}-windows-x64.exe"
-          macos="marshal-${version}-macos-arm64"
+          windows="marshal-${VERSION}-windows-x64.exe"
+          macos="marshal-${VERSION}-macos-arm64"
           expected="$(printf '%s\n' SHA256SUMS "$macos" "$windows" | LC_ALL=C sort)"
           present="$(find . -mindepth 1 -maxdepth 1 -printf '%P\n' | LC_ALL=C sort)"
           if [[ "$present" != "$expected" ]]; then
@@ -89,6 +117,12 @@ jobs:
             echo "$present" >&2
             exit 1
           fi
+          for file in SHA256SUMS "$macos" "$windows"; do
+            if [[ ! -f "$file" ]]; then
+              echo "error: ${file} is not a regular file" >&2
+              exit 1
+            fi
+          done
           listed="$(awk '{ print $2 }' SHA256SUMS | LC_ALL=C sort)"
           if [[ "$listed" != "$(printf '%s\n' "$macos" "$windows" | LC_ALL=C sort)" ]]; then
             echo "error: SHA256SUMS does not list exactly ${macos} and ${windows}" >&2
@@ -103,13 +137,44 @@ jobs:
         uses: actions/attest@v4
         with:
           subject-path: |
-            release/${{ steps.files.outputs.windows }}
-            release/${{ steps.files.outputs.macos }}
-      - name: Create The Release
+            release-files/${{ steps.files.outputs.windows }}
+            release-files/${{ steps.files.outputs.macos }}
+
+  # `contents: write` pushes the tag and its note and creates the release. the
+  # job holds no `id-token`, so the npm tree it runs cannot attest. the checkout
+  # keeps no credential: semantic-release authenticates its push with GITHUB_TOKEN.
+  release:
+    name: Release
+    needs: [plan, build, attest]
+    if: github.ref == 'refs/heads/main' && needs.plan.outputs.version != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - name: Install semantic-release
+        working-directory: release
+        run: npm ci --ignore-scripts
+      # into release-files/, where the gate and the asset globs in
+      # release/.releaserc.json look for them.
+      - name: Download The Release Files
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: release-files
+      - name: Release
         working-directory: release
         env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
-          WINDOWS: ${{ steps.files.outputs.windows }}
-          MACOS: ${{ steps.files.outputs.macos }}
-        run: gh release create "$TAG" --verify-tag --generate-notes --repo "$GITHUB_REPOSITORY" "$WINDOWS" "$MACOS" SHA256SUMS
+          RELEASE_PHASE: release
+          GITHUB_TOKEN: ${{ github.token }}
+        run: npx --no -- semantic-release

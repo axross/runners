@@ -1,19 +1,26 @@
 name: Release Build
 
-# builds the CLI's release binaries, for Windows x64 and macOS arm64, and assembles
-# them with SHA256SUMS into one artifact. merge-checks.yaml calls it on every pull
-# request and every push to main, as a dry run that publishes nothing, and
-# release.yaml calls it on a `v*` tag before its publish job. it holds
-# `contents: read` and nothing else, and it has no publish or attest step, so a pull
-# request that edits it gains no write scope. no cache action: a tag run could
-# restore a cache saved from another ref. the controls are recorded in
-# docs/conventions/security.md.
+# builds the CLI's release binaries, for Windows x64 and macOS arm64, at the version
+# its caller passes, and assembles them with SHA256SUMS into one artifact.
+# merge-checks.yaml calls it on every pull request and every push to main with a
+# dry-run version, publishing nothing, and release.yaml calls it with the version
+# its plan job worked out, before its attest and release jobs. each leg writes the
+# version into cli/Cargo.toml and cli/Cargo.lock in the runner only; main keeps the
+# placeholder. it holds `contents: read` and nothing else, and it has no publish or
+# attest step, so a pull request that edits it gains no write scope. no cache
+# action: a release build could restore a cache that another ref saved. the
+# controls are recorded in docs/conventions/security.md.
 #
 # `concurrency` is declared by the callers only: inside a called workflow,
 # `github.workflow` is the caller's name.
 
 on:
   workflow_call:
+    inputs:
+      version:
+        description: The version to build, X.Y.Z or X.Y.Z-<prerelease>
+        required: true
+        type: string
     outputs:
       artifact:
         description: The artifact holding the two binaries and SHA256SUMS
@@ -47,7 +54,6 @@ jobs:
     # a matrix leg sets only its own hash output, so the two legs do not overwrite
     # each other's.
     outputs:
-      version: ${{ steps.version.outputs.version }}
       windows_x64_sha256: ${{ steps.hash.outputs.windows_x64_sha256 }}
       macos_arm64_sha256: ${{ steps.hash.outputs.macos_arm64_sha256 }}
     defaults:
@@ -71,12 +77,12 @@ jobs:
             exit 1
           fi
           echo "rustc's host target is ${host}."
-      - name: Read The Package Version
-        id: version
-        run: |
-          version="$(bash ../.github/scripts/package-version.sh < Cargo.toml)"
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
-          echo "cli/Cargo.toml's version is ${version}."
+      # before anything compiles, so `--locked` below fails if the two files
+      # disagree and the binary's --version is the input's.
+      - name: Write The Release Version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: bash ../.github/scripts/set-release-version.sh "$VERSION"
       # the same release-profile tests the rust job in merge-checks.yaml runs on
       # Linux, here on the target itself. MARSHAL_EXPECT_RELEASE makes each test fail
       # if it was built in the wrong profile.
@@ -91,7 +97,7 @@ jobs:
       - name: Check The Binary's Version
         env:
           SUFFIX: ${{ matrix.suffix }}
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ inputs.version }}
         run: |
           printed="$("target/release/marshal${SUFFIX}" --version | tr -d '\r')"
           if [[ "$printed" != "marshal ${VERSION}" ]]; then
@@ -104,7 +110,7 @@ jobs:
         env:
           SUFFIX: ${{ matrix.suffix }}
           TARGET: ${{ matrix.target }}
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ inputs.version }}
         run: |
           asset="marshal-${VERSION}-${TARGET}${SUFFIX}"
           mkdir ../dist
@@ -186,7 +192,7 @@ jobs:
         id: files
         working-directory: dist
         env:
-          VERSION: ${{ needs.build.outputs.version }}
+          VERSION: ${{ inputs.version }}
           WINDOWS_SHA256: ${{ needs.build.outputs.windows_x64_sha256 }}
           MACOS_SHA256: ${{ needs.build.outputs.macos_arm64_sha256 }}
         run: |

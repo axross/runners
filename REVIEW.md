@@ -147,10 +147,11 @@ Codex review uses its native priority label.
   [Security](docs/conventions/security.md#actions-stays-on-major-tags); do not
   report it. A reusable workflow, a `docker://` reference, and a `run:` step
   that downloads and executes remote code without a checksum are held to the
-  same standard. The one recorded exception is a step that installs the Rust
-  toolchain `cli/rust-toolchain.toml` names through `rustup`; see
-  [Security](docs/conventions/security.md#pinning-convention). Any other unpinned
-  download is still a finding.
+  same standard. There are two recorded exceptions, both in
+  [Security](docs/conventions/security.md#pinning-convention): a step that
+  installs the Rust toolchain `cli/rust-toolchain.toml` names through `rustup`,
+  and the Node that `actions/setup-node` installs in `release.yaml`. Any other
+  unpinned download is still a finding.
 - **Least-privilege workflow permissions.** Every workflow declares a
   top-level `permissions:` block that starts from `contents: read`. A broader
   scope is granted on the job that needs it, is justified in a comment or in
@@ -206,13 +207,15 @@ Apply the lens for each kind of file in the diff.
 - **Release workflows.** A change to
   [`release-build.yaml`](./.github/workflows/release-build.yaml),
   [`release.yaml`](./.github/workflows/release.yaml), the release-build job in
-  `merge-checks.yaml`, the scripts under `.github/scripts/`, or
-  `cli/.cargo/config.toml` is checked against each bullet of the release record in
-  [Security](docs/conventions/security.md#a-release-is-published-only-from-an-approved-tag).
-  A publish or attest step outside `release.yaml`, an asset other than the two
-  named binaries and `SHA256SUMS`, such as a helper binary, or a departure from the
-  record that the change does not also make to the record, is a finding. A change
-  that relaxes the record needs the maintainer's review.
+  `merge-checks.yaml`, the scripts under `.github/scripts/`, the release tooling
+  under [`release/`](./release), or `cli/.cargo/config.toml` is checked against
+  each bullet of the release record in
+  [Security](docs/conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main).
+  A publish or attest step outside `release.yaml`, a job that both runs the npm
+  tree and holds `id-token: write`, an asset other than the two named binaries and
+  `SHA256SUMS`, such as a helper binary, or a departure from the record that the
+  change does not also make to the record, is a finding. A change that relaxes the
+  record needs the maintainer's review.
 - **Rust.** The CLI under `cli/` has no `unsafe` and no panic on an input path
   (`unwrap`, `expect`, `panic!`, indexing); it collects every error in the
   PowerShell validator's order rather than returning the first. A new crate has an

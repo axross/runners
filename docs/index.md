@@ -24,7 +24,7 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   downloads are pinned, least-privilege workflow permissions, why this public
   repository runs its own jobs on GitHub-hosted runners only, the cache-poisoning
   threat model for shared runner storage, per-repository isolation on a runner
-  host, the release record for the CLI's tag-only release workflow, the accepted
+  host, the release record for the CLI's dispatch-only release workflow, the accepted
   LAN-egress risk, what is never committed, and why the review
   gate admits one bot identity by login.
 - [conventions/documentation.md](./conventions/documentation.md) - which

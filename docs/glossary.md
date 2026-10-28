@@ -77,6 +77,17 @@ the PowerShell script; the **CLI**'s `start` is the supervisor that replaces it.
 the binary embeds; `start` runs a host's pools in the foreground as the
 **Supervisor**, and `stop`, `restart`, `status`, and `diagnostics` talk to it.
 
+**CLI Release** - a `v<version>` tag on main and the GitHub release that carries
+the **CLI**'s two binaries and `SHA256SUMS`. The maintainer starts one by
+dispatching `release.yaml`, and semantic-release picks the version from the commit
+subjects since the last `v*` tag. See
+[operations/development-workflow.md](./operations/development-workflow.md#cutting-a-release).
+
+**Placeholder Version** - `0.0.0-dev`, the version the **CLI**'s `Cargo.toml` and
+`Cargo.lock` hold on main. A release build writes the release version over it in
+the runner only, so the version is never committed. See
+[operations/cli.md](./operations/cli.md#releases).
+
 **Instance State** - where the one running `start` on a machine stands: running,
 stopping, stopped with a reason, or resuming; or `building`, while a `build` holds
 the instance lock instead. `status` reports it, and it decides which requests the
