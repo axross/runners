@@ -204,8 +204,8 @@ the record a change to either workflow, to the build call in
   A job that runs the npm tree can push tags and edit releases, and its token can
   fast-forward main, but it cannot mint an attestation, so a binary it substitutes
   fails `gh attestation verify` at install. A change it pushes to main is another
-  matter, as the residual risks below say. One release job with all three scopes, as `parsable/parsable-dev-mcp`
-  has, was rejected: any package in the npm tree could then attest any binary as
+  matter, as the residual risks below say. One release job with all three scopes
+  was rejected: any package in the npm tree could then attest any binary as
   `release.yaml` on `refs/heads/main`. No job needs `artifact-metadata: write`,
   which is for storage records in a registry. `@semantic-release/github`'s comments
   and labels are off, so the release job needs no issue or pull request scope.
