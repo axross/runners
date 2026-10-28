@@ -1,0 +1,38 @@
+{
+  "branches": ["main"],
+  "tagFormat": "v${version}",
+  "plugins": [
+    [
+      "@semantic-release/commit-analyzer",
+      {
+        "preset": "conventionalcommits",
+        "releaseRules": [
+          { "type": "build", "scope": "deps", "release": "patch" }
+        ]
+      }
+    ],
+    [
+      "@semantic-release/release-notes-generator",
+      { "preset": "conventionalcommits" }
+    ],
+    [
+      "@semantic-release/exec",
+      {
+        "verifyReleaseCmd": "bash ../.github/scripts/verify-release.sh ${nextRelease.version} ../release-files"
+      }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "assets": [
+          "../release-files/marshal-*-windows-x64.exe",
+          "../release-files/marshal-*-macos-arm64",
+          "../release-files/SHA256SUMS"
+        ],
+        "successCommentCondition": false,
+        "failCommentCondition": false,
+        "releasedLabels": false
+      }
+    ]
+  ]
+}

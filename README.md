@@ -23,6 +23,7 @@ agent-host configuration is not here yet. Layout:
 | `images/actions-runner/`        | The runner image: GitHub's runner image plus build dependencies, pinned by digest                                                                        | Present |
 | `hosts/windows-docker-desktop/` | The supervisor, image rebuild, and scheduled-task scripts, and an example configuration                                                                  | Present |
 | `cli/`                          | The CLI: `validate` checks a host configuration, `build` builds the runner image, and `start`, `stop`, `restart`, `status`, and `diagnostics` run a host | Present |
+| `release/`                      | The pinned semantic-release tooling that `release.yaml` runs to tag and publish the CLI's releases                                                       | Present |
 | `hosts/macos/`                  | An example configuration for the macOS host profile, `axmc`                                                                                              | Present |
 | `agent-hosts/claude-code/`      | WSL 2 service units and templates for Claude Code Remote Control                                                                                         | Planned |
 | `agent-hosts/amp/`              | WSL 2 service units and templates for Amp runners                                                                                                        | Planned |

@@ -11,6 +11,9 @@ skills-lock.json
 mise.lock
 .mise/
 
+# npm generates the release tooling's lockfile, and Dependabot rewrites it.
+release/package-lock.json
+
 # Machine-local Claude Code settings.
 .claude/settings.local.json
 
