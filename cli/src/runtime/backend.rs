@@ -248,7 +248,7 @@ pub trait Backend {
     ) -> impl Future<Output = Result<(), BackendError>>;
 
     /// the diagnostic containers this backend retains; only a successful removal by a
-    /// finalisation forgets one, a panic included.
+    /// finalisation forgets one, and a panic does not.
     fn retained(&self) -> &Retained;
 
     /// exports a diagnostic container into its record's sink by `deadline`; the

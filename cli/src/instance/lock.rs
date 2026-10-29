@@ -1,9 +1,9 @@
-//! the machine-wide single-instance lock, taken before anything else `start` does
-//! and released by the operating system when the process ends, however it ends; no
-//! child process inherits it; on Windows only the creating user may connect to its
-//! pipe, and on Unix its file is `0644` and opened without following a link or
-//! waiting; `docs/operations/cli.md` describes the Windows pipe, the Unix file and
-//! the release.
+//! the machine-wide single-instance lock, taken before the configuration is validated
+//! or anything is cleaned up, and released by the operating system when the process
+//! ends, however it ends; no child process inherits it; on Windows only the creating
+//! user may connect to its pipe, and on Unix its file is `0644` and opened without
+//! following a link or waiting; `docs/operations/cli.md` describes the Windows pipe,
+//! the Unix file and the release.
 
 use std::fmt;
 

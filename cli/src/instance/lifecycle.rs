@@ -2,7 +2,7 @@
 //! runtime core does to it, as `docs/operations/cli.md` describes; one task owns the
 //! state, so a request that arrives during a transition is answered at once: `status`
 //! tells the truth, `stop` is taken, and `restart`, `diagnostics` and `resume` are
-//! refused.
+//! refused until the transition ends.
 
 use std::cell::{Cell, RefCell};
 use std::fmt;

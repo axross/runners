@@ -1,5 +1,7 @@
-//! the exact `docker` argument lists of the run contract, which the tests hold equal
-//! to `hosts/windows-docker-desktop/docker-commands.ps1`.
+//! the exact `docker` argument lists of the run contract, the PowerShell supervisor's
+//! own from `hosts/windows-docker-desktop/docker-commands.ps1` and its helper
+//! functions, except the stop call (see `docs/operations/cli.md`); the tests hold only
+//! the launcher guard and the probe's reader script equal to that file.
 
 use super::backend::{ContainerSpec, Mount};
 use crate::image::check::labels_format;

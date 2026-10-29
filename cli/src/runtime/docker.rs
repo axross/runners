@@ -101,8 +101,8 @@ pub const DOCKER_PROGRAM: &str = "docker";
 /// resolves the client `start` runs: a release build always returns
 /// [`DOCKER_PROGRAM`], so a release binary cannot be made to run another program,
 /// and a debug build runs `requested` for the tests (on Windows a bare name is
-/// found in the system directories before `PATH`, so a fake `docker` placed first
-/// on `PATH` loses to a real one in `System32`).
+/// found in this program's directory and the system directories before `PATH`, so a
+/// fake `docker` placed first on `PATH` loses to a real one in `System32`).
 #[must_use]
 pub fn resolve_program(requested: Option<&OsStr>) -> OsString {
     #[cfg(debug_assertions)]
@@ -199,8 +199,8 @@ pub struct DockerBackend<C> {
 }
 
 /// removes a container from the running set when its run ends, a dropped future
-/// included; a panic leaves the name, so the supervisor can still read and remove
-/// the container.
+/// included; a panic leaves the name, so whatever supervises the code can still read
+/// and remove the container.
 struct RunningGuard<'a> {
     set: &'a RefCell<BTreeSet<String>>,
     name: String,
