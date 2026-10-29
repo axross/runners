@@ -14,8 +14,6 @@ version=1.2.3
 windows="marshal-${version}-windows-x64.exe"
 macos="marshal-${version}-macos-arm64"
 
-# release_files <directory> [<windows name> [<macos name>]]: two binaries and the
-# SHA256SUMS that lists them.
 release_files() {
   local directory="$1" windows_name="${2:-$windows}" macos_name="${3:-$macos}"
   mkdir -p "$directory"

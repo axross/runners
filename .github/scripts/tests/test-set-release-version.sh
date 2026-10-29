@@ -76,7 +76,6 @@ $(cat "$2")"
   fi
 }
 
-# with_version <text> <version>: the text with the marshal-cli version replaced.
 with_version() {
   printf '%s' "$1" | awk -v version="$2" '
     /^name = "marshal-cli"$/ { print; target = 1; next }

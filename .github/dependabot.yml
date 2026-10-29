@@ -22,8 +22,9 @@ updates:
       prefix: "build"
       include: "scope"
 
-  # the CLI's crates and toolchain, both under cli/. the rustup-init pin in
-  # .agents/install-rust is refreshed by hand with its checksum.
+  # the CLI's crates and toolchain, both under cli/; docs/operations/cli.md says
+  # how a red bump is handled. the rustup-init pin in .agents/install-rust is
+  # refreshed by hand with its checksum.
   - package-ecosystem: "cargo"
     directory: "/cli"
     schedule:

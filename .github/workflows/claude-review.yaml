@@ -32,8 +32,9 @@ jobs:
     env:
       # best-effort scrub of CLAUDE_CODE_OAUTH_TOKEN and the ACTIONS_* runtime
       # tokens from the environments of the model's shell commands; GH_TOKEN and
-      # GITHUB_TOKEN stay because gh needs them. the action forwards it to its run
-      # step. it reduces, and does not remove, what a prompt injection can reach.
+      # GITHUB_TOKEN stay because gh needs them. the action forwards the variable
+      # to its run step. it reduces, and does not remove, what a prompt injection
+      # can reach.
       CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"
     steps:
       # with the scrub set, Claude Code refuses to start without bubblewrap, and

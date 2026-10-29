@@ -3,8 +3,9 @@
 # release/ with the version about to be released, in a dry run as well.
 # RELEASE_PHASE names the release.yaml job calling it: plan hands the version on
 # through GITHUB_OUTPUT; release refuses unless the directory holds exactly the
-# two binaries and a SHA256SUMS that checks, before anything is tagged or
-# published. any other value is refused, so a job that forgets it cannot release.
+# two binaries named for the version and a SHA256SUMS that lists only them and
+# passes `sha256sum --check --strict`, before anything is tagged or published.
+# any other value is refused, so a job that forgets it cannot release.
 # runs on Linux, where sha256sum is GNU's.
 set -euo pipefail
 

@@ -17,7 +17,7 @@ if command -v mise >/dev/null 2>&1; then
   hash -r 2>/dev/null || true
 
   if [ -n "${CLAUDE_ENV_FILE:-}" ] && ! grep -q 'mise activate bash' "$CLAUDE_ENV_FILE" 2>/dev/null; then
-    # shellcheck disable=SC2016 # written literally, expanded when the env file is sourced
+    # shellcheck disable=SC2016 # the line is written literally and expanded when the env file is sourced
     echo 'eval "$(mise activate bash)"' >> "$CLAUDE_ENV_FILE"
   fi
 else
@@ -31,7 +31,7 @@ if [ -x .agents/install-rust ]; then
   .agents/install-rust >&2 || echo "warning: .agents/install-rust failed, so the Rust gates are unavailable until it succeeds (see docs/operations/agent-sessions.md)" >&2
 fi
 if [ -n "${CLAUDE_ENV_FILE:-}" ] && ! grep -Fq '.cargo/bin' "$CLAUDE_ENV_FILE" 2>/dev/null; then
-  # shellcheck disable=SC2016 # written literally, expanded when the env file is sourced
+  # shellcheck disable=SC2016 # the line is written literally and expanded when the env file is sourced
   echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> "$CLAUDE_ENV_FILE"
 fi
 
