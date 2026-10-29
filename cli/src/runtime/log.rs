@@ -8,9 +8,9 @@ use super::secret::Secret;
 
 const MASK: &str = "<masked>";
 
-/// a sink for the lines the runtime reports; it replaces every secret it was told
-/// to mask, so one that reaches a line by another route, such as a container's
-/// output, is still hidden.
+/// a sink for the lines the runtime reports; callers never put a secret in a line on
+/// purpose, and the sink also replaces every secret it was told to mask, so one that
+/// reaches a line by another route, such as a container's output, is still hidden.
 pub trait Log {
     fn info(&self, line: &str);
     fn warn(&self, line: &str);
