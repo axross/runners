@@ -67,8 +67,8 @@ impl Definition {
 
 /// the definition `build` sends: the embedded one, or, in a debug build only, the
 /// regular files directly in `requested` for the real-Docker test; a release build
-/// ignores `requested`, and a test definition that cannot be read or holds more than
-/// a few small regular files fails.
+/// ignores `requested`, so it builds only what it embeds, and a test definition that
+/// cannot be read or holds more than a few small regular files fails.
 pub fn resolve_definition(requested: Option<&Path>) -> Result<Definition, String> {
     #[cfg(debug_assertions)]
     if let Some(directory) = requested {

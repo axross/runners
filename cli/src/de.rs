@@ -343,6 +343,8 @@ impl<'de> Visitor<'de> for ValueVisitor {
         Ok(Value::String(text.to_string()))
     }
 
+    // only this reader asks for the token, and it answers a number node with its
+    // literal text
     fn visit_newtype_struct<D: de::Deserializer<'de>>(
         self,
         deserializer: D,

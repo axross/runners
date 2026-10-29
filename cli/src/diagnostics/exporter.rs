@@ -1,7 +1,8 @@
 //! the exporter child: one export, or one count, of a pool's sink; it ends at its
 //! deadline or when its standard input, the instance's liveness pipe, closes, killing
-//! its `docker` clients first, which run with the JIT variable cleared; see
-//! `docs/operations/cli.md`.
+//! its `docker` clients first, which run with the JIT variable cleared; every file
+//! system call runs on a blocking thread, so a hung sink cannot keep it from ending;
+//! see `docs/operations/cli.md`.
 
 use std::ffi::OsStr;
 use std::io::{Read, Write};
