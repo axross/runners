@@ -236,6 +236,7 @@ fn a_run_keeps_the_token_and_the_jit_config_out_of_every_output_it_writes() {
         "{status}"
     );
 
+    // the secrets did reach the places they belong
     let authorization = stub.requests()[0]
         .header("authorization")
         .unwrap()
