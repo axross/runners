@@ -29,8 +29,9 @@ fn start_with_held_job_container(host: &Host, stub: &Stub) -> Started {
 }
 
 /// waits, within [`RUNNING_WITHIN`], until the slot runs its container and the
-/// fake engine holds it; the slot reports the container before its client starts,
-/// so the status alone would race the fake's record.
+/// fake engine holds it, and returns the status that showed it; the slot reports the
+/// container before its client starts, so the status alone would race the fake's
+/// record.
 fn wait_for_job(host: &Host) -> String {
     let started = Instant::now();
     let status = host.wait_for_status("running container r-1-", RUNNING_WITHIN);
@@ -422,9 +423,10 @@ fn start_resumes_a_stopped_instance_only_with_its_own_path_and_a_valid_configura
 
 const NO_CHECKOUT_NOTE: &str = "no checkout of this project was found";
 
-/// the configuration path `start` is given, under a checkout; on Unix it reaches the
-/// file through a link out of the checkout, so only a lexical walk finds it, and an
-/// axpc directory is a Windows path there, never inside it.
+/// the configuration path `start` is given, under a checkout, and the
+/// `diagnosticDirectory` the test compares with it; on Unix the path reaches the file
+/// through a link out of the checkout, so only a lexical walk finds it, and an axpc
+/// directory is a Windows path there, never inside it, so only the note shows the walk.
 #[cfg(unix)]
 fn under_a_checkout(host: &Host) -> (std::path::PathBuf, String) {
     fs::create_dir_all(host.path("elsewhere")).unwrap();
@@ -605,8 +607,8 @@ mod signals {
     }
 }
 
-/// killing `start` outright makes each shim remove its container, which standard
-/// error shows by closing only when every shim has ended.
+/// killing `start` outright makes each shim remove its container; standard error
+/// is shared with the shims, so it closes only when every shim has ended.
 #[cfg(unix)]
 #[test]
 fn a_killed_start_leaves_each_shim_to_remove_its_container() {

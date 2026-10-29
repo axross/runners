@@ -1,5 +1,7 @@
 //! one owner per diagnostic container, and the `diagnostics` request, through the
-//! instance, its runtime core and the fake backend together.
+//! instance, its runtime core and the fake backend together, with each path that
+//! finalises a container (the job end, the stop sequence's container steps and
+//! `diagnostics`) meeting the others.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -260,8 +262,9 @@ async fn a_restart_during_a_job_end_export_waits_for_it_and_one_bundle_results()
     assert_eq!(world.bundles().len(), 2);
 }
 
-/// the container steps finalise the container the preparation left once its claim
-/// ends, so it is not kept.
+/// a stop that arrives while pool preparation exports a container an earlier run
+/// left cancels the preparation; the container steps, which found the container
+/// held, finalise it once that claim ends, so it is not kept.
 #[tokio::test(flavor = "current_thread")]
 async fn a_stop_during_a_startup_export_finalises_the_container_the_preparation_left() {
     let world = World::new();
@@ -578,6 +581,8 @@ async fn a_forced_stop_during_an_export_kills_and_keeps_the_container() {
     ))));
 }
 
+/// the job end leaves its container retained: its export fails, and so does its
+/// removal; the slot then backs off, idle.
 fn failing_job_end(world: &World) {
     let mut state = world.backend.state.borrow_mut();
     state.export_results.push_back(ExportOutcome::Failed);

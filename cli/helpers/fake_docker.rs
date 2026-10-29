@@ -5,7 +5,9 @@
 //! - every call writes `inv-<n>.argv` (the arguments, NUL separated), `inv-<n>.pid`,
 //!   `inv-<n>.pgid` (on Unix) and, when `ACTIONS_RUNNER_INPUT_JITCONFIG` is set,
 //!   `inv-<n>.jit`; it holds an exclusive lock on `inv-<n>.alive` until it ends, so
-//!   a test that takes that lock sees the call end, however it ends;
+//!   a test that takes that lock sees the call end, however it ends, and it takes
+//!   that lock before it writes its arguments, so a call a test can see already
+//!   holds it;
 //! - `containers` holds the fake engine's containers, one
 //!   `name<TAB>label,label<TAB>state` per line, which `ps`, `rm`, `stop`, `kill`
 //!   and `run` read and change; a container labelled as diagnostics evidence runs

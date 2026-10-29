@@ -1,5 +1,6 @@
-//! a diagnostics-enabled pool under `start` as real processes, with the token and
-//! JIT configuration kept out of all of it.
+//! a diagnostics-enabled pool under `start` as real processes, with the fake `docker`
+//! as the client and this CLI as the exporter child, and the token and JIT
+//! configuration kept out of all of it.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,

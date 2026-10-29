@@ -21,6 +21,8 @@ use marshal_cli::profile::Profile;
 use marshal_cli::summary::plan_summary;
 use marshal_cli::validate::{Failure, validate};
 
+/// one entry of `expectations.json`; an unknown key fails the read, so a typo cannot
+/// silently turn a check off.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Expectation {

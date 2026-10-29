@@ -138,7 +138,8 @@ pub fn slot_spec(token: PathBuf) -> marshal_cli::runtime::pool::SlotSpec {
     }
 }
 
-/// prepares the pools as the runtime core does, without its image check.
+/// prepares the pools as the runtime core does, without its image check: admits
+/// them, waits for Docker once when one is admitted, then prepares those admitted.
 pub async fn prepare_pools<B: marshal_cli::runtime::backend::Backend>(
     backend: &B,
     pools: Vec<marshal_cli::runtime::pool::PoolSpec>,

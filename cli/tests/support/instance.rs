@@ -73,7 +73,7 @@ impl Rig {
     }
 
     /// runs the instance and the script together, failing a run that takes over ten
-    /// seconds.
+    /// seconds; the script ends the instance, as a client's `stop` does.
     pub async fn drive<F, Fut, T>(&self, script: F) -> (Ended, T)
     where
         F: FnOnce(Control) -> Fut,

@@ -461,8 +461,10 @@ fn diagnostic_record() -> DiagnosticRecord {
     }
 }
 
-/// the last run ends as the stop is asked for, so its container, unlike the earlier
-/// ones, is left retained to the stop's steps.
+/// each diagnostic run's container is finalised, on one clock of 18 s and 24 s, and
+/// removed before the slot probes and registers again; a gap is a warning that
+/// leaves the backoff as the exits alone make it. the last run ends as the stop is
+/// asked for, so its container is left retained to the stop's steps.
 #[tokio::test(flavor = "current_thread")]
 async fn a_diagnostic_container_is_finalised_before_the_slot_registers_again_and_a_gap_keeps_the_backoff()
  {
