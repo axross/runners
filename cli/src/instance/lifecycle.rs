@@ -1,14 +1,8 @@
-//! The instance: the state it is in, and what each request and each failure of the
-//! runtime core does to it.
-//!
-//! The instance is running or stopped, with stopping and resuming between them.
-//! One task owns the state and serves the requests of the control channel, so a
-//! request that arrives during a transition is answered at once: `status` tells the
-//! truth, `stop` is taken, and `restart`, `diagnostics` and `resume` are refused
-//! until the transition ends. The pools themselves run in a [`Core`], which this module
-//! supervises: an error or a panic of the core while no stop was asked for is a
-//! failure, and the core is restarted. What starts and stops a process is the
-//! caller's.
+//! the instance: the state it is in, and what each request and each failure of the
+//! runtime core does to it, as `docs/operations/cli.md` describes; one task owns the
+//! state, so a request that arrives during a transition is answered at once: `status`
+//! tells the truth, `stop` is taken, and `restart`, `diagnostics` and `resume` are
+//! refused until the transition ends.
 
 use std::cell::{Cell, RefCell};
 use std::fmt;
@@ -33,20 +27,19 @@ use crate::validate::Plan;
 use super::protocol::{Incoming, Request, Response};
 use super::restart::{RestartPolicy, Verdict, WINDOW};
 
-/// The times of the stop sequence, each counted from the step's own start except
+/// the times of the stop sequence, each counted from the step's own start except
 /// the last.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StopTimes {
-    /// The grace `docker stop` gives each container before it kills it.
+    /// the grace `docker stop` gives each container before it kills it.
     pub grace: Duration,
-    /// The stop call is ended at this budget.
+    /// the stop call is ended at this budget.
     pub stop_budget: Duration,
-    /// The removal of what remains is ended at this budget, so the container steps
+    /// the removal of what remains is ended at this budget, so the container steps
     /// take 26 s at the most.
     pub remove_budget: Duration,
-    /// Counted from the stop request: whatever still runs then, the container
-    /// steps, the core's workers and their clients, is dropped, which kills the
-    /// clients, and the instance ends.
+    /// counted from the stop request; whatever still runs then is dropped, which
+    /// kills the clients, and the instance ends.
     pub exit_deadline: Duration,
 }
 
@@ -61,14 +54,14 @@ impl Default for StopTimes {
     }
 }
 
-/// Why the instance is stopped.
+/// why the instance is stopped.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StopReason {
-    /// The configuration failed validation at a restart or a resume.
+    /// the configuration failed validation at a restart or a resume.
     InvalidConfiguration(String),
-    /// The runtime core failed more often than the window allows.
+    /// the runtime core failed more often than the window allows.
     RestartLimit,
-    /// The configured image's contract is not this CLI's, or the image is missing;
+    /// the configured image's contract is not this CLI's, or the image is missing;
     /// the text says which and how to rebuild it.
     Image(String),
 }
@@ -90,7 +83,7 @@ impl fmt::Display for StopReason {
     }
 }
 
-/// Where the instance is.
+/// where the instance is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum State {
     Running,
@@ -100,7 +93,7 @@ pub enum State {
 }
 
 impl State {
-    /// The word `status` and a refusal use for the state.
+    /// the word `status` and a refusal use for the state.
     #[must_use]
     pub fn name(&self) -> &'static str {
         match self {
@@ -112,86 +105,81 @@ impl State {
     }
 }
 
-/// What a failed run of the runtime core means for the instance, and so how the
+/// what a failed run of the runtime core means for the instance, and so how the
 /// instance ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Ending {
-    /// A failure like any other, which the restart policy counts. For the instance,
+    /// a failure like any other, which the restart policy counts; for the instance,
     /// an end for any other reason, such as a stop.
     Ordinary,
-    /// No pool could start. At the instance's first run of the core this ends the
-    /// instance; at a later run it is a failure like any other.
+    /// no pool could start; at the first run of the core this ends the instance, at
+    /// a later run it is a failure like any other.
     NothingToRun,
-    /// The configured image cannot run jobs. At the instance's first run of the
-    /// core this ends the instance; at a later run it stops it. Either way it is
-    /// not counted as a failure.
+    /// the configured image cannot run jobs; at the first run of the core this ends
+    /// the instance, at a later run it stops it, and it is never counted as a
+    /// failure.
     ImageRefused,
 }
 
-/// How the runtime core ended when no stop was asked for.
+/// how the runtime core ended when no stop was asked for.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoreFailure {
-    /// What went wrong; it never holds a secret.
+    /// what went wrong; it never holds a secret.
     pub message: String,
-    /// The containers the core had started and not seen end. The core is gone, so
-    /// only it can say; the instance stops and removes them.
+    /// the containers the core had started and not seen end; the core is gone, so
+    /// only it can say, and the instance stops and removes them.
     pub containers: Vec<String>,
-    /// What the failure means for the instance; for a refused image, `message` says
+    /// what the failure means for the instance; for a refused image, `message` says
     /// why.
     pub ending: Ending,
 }
 
-/// The part of `start` that runs the pools.
-///
-/// A real core prepares the pools and runs their slots until the stop is asked for.
-/// A panic is a failure: the instance turns it into a [`CoreFailure`].
+/// the part of `start` that runs the pools; a panic is a failure, which the
+/// instance turns into a [`CoreFailure`].
 pub trait Core {
-    /// Runs until `stop` becomes true, then returns `Ok`. Returning in any other
-    /// way, with or without an error, is a failure of the core.
+    /// runs until `stop` becomes true, then returns `Ok`; returning in any other way,
+    /// with or without an error, is a failure of the core.
     fn run(
         &self,
         plan: &Plan,
         stop: watch::Receiver<bool>,
     ) -> impl Future<Output = Result<(), CoreFailure>>;
 
-    /// Checks the image `plan` names once, without waiting for Docker, as a resume
-    /// does before it answers. Returns why the image cannot run jobs, or `Ok` when
-    /// it can or Docker could not say: the next run checks again once Docker
-    /// answers.
+    /// checks the image `plan` names once, without waiting for Docker; returns why
+    /// the image cannot run jobs, or `Ok` when it can or Docker could not say, since
+    /// the next run checks again.
     fn check_image(&self, plan: &Plan) -> impl Future<Output = Result<(), String>>;
 
-    /// What the core is doing now, as `status` fields: each pool's and each slot's
-    /// state while it runs, and the image's as of its latest check on every call.
+    /// what the core is doing now, as `status` fields.
     fn report(&self) -> Vec<(&'static str, String)>;
 }
 
-/// The instance's own configuration file, read again at a restart or a resume. It
-/// takes no path: the file it reads is fixed when it is built, and no request can
-/// name another.
+/// the instance's own configuration file, read again at a restart or a resume; it
+/// takes no path, so no request can name another.
 pub trait Source {
-    /// The validated plan, or every problem that stops it from being one.
+    /// the validated plan, or every problem that stops it from being one.
     fn load(&self) -> impl Future<Output = Result<Plan, Vec<String>>>;
 }
 
-/// What the instance was started with.
+/// what the instance was started with.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
-    /// The canonical path of the configuration file, the only one a resume may name.
+    /// the canonical path of the configuration file, the only one a resume may name.
     pub config_path: String,
     pub profile: Profile,
 }
 
-/// How the instance ended.
+/// how the instance ended.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ended {
-    /// Whether every removal of ordinary containers in the instance's life
-    /// succeeded: at a stop, a restart, or a failure of the runtime core.
+    /// whether every removal of ordinary containers in the instance's life
+    /// succeeded.
     pub containers_removed: bool,
-    /// Why the instance ended: what its first run of the core found, or
+    /// why the instance ended: what its first run of the core found, or
     /// [`Ending::Ordinary`] when it ended otherwise.
     pub ending: Ending,
-    /// The diagnostic containers the backend still retains, which the next start
-    /// finalises: ended and kept by a forced stop, or not yet removed.
+    /// the diagnostic containers the backend still retains, which the next start
+    /// finalises: kept by a forced stop, or not yet removed.
     pub kept: Vec<String>,
 }
 
@@ -205,21 +193,18 @@ enum CycleEnd {
     StopRequested,
     LimitReached,
     NothingToRun,
-    /// The image cannot run jobs, as the message says, at the first run of the core.
     ImageRefusedAtStart(String),
-    /// The same at a later run.
     ImageRefused(String),
 }
 
-/// What reading and checking the configuration again at a resume found.
 enum Reloaded {
     Run(Plan),
     Invalid(Vec<String>),
     ImageRefused(String),
 }
 
-/// Polls the core and turns a panic into an error carrying the panic's message, so
-/// a panicking core is a failure rather than the end of the process.
+/// polls the core, turning a panic into an error carrying its message, so a
+/// panicking core is a failure rather than the end of the process.
 struct CatchPanic<F>(Pin<Box<F>>);
 
 impl<F: Future> Future for CatchPanic<F> {
@@ -246,13 +231,12 @@ fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
 
 type Requests = mpsc::UnboundedReceiver<Incoming>;
 
-/// A `diagnostics` request under way, and where its answer goes.
+/// a `diagnostics` request under way, and where its answer goes.
 type Flush<'f> = Option<(
     Pin<Box<dyn Future<Output = Response> + 'f>>,
     oneshot::Sender<Response>,
 )>;
 
-/// Waits for the `diagnostics` request under way, which must be there.
 async fn flushed(flush: &mut Flush<'_>) -> Response {
     match flush {
         Some((future, _)) => future.as_mut().await,
@@ -260,7 +244,7 @@ async fn flushed(flush: &mut Flush<'_>) -> Response {
     }
 }
 
-/// The answer to `diagnostics`: a `pool` field per pool, a `container` field per
+/// the answer to `diagnostics`: a `pool` field per pool, a `container` field per
 /// container line, and a `result` of `removed`, `incomplete` or `nothing`.
 fn flushed_response(flushed: &Flushed) -> Response {
     let response = Response::ok("");
@@ -299,7 +283,7 @@ pub struct Instance<'a, B, K, C, S> {
     core_has_run: Cell<bool>,
     ending: Cell<Ending>,
     force: watch::Sender<bool>,
-    /// The diagnostics-enabled pools of the plan the core runs, or ran last.
+    /// the diagnostics-enabled pools of the plan the core runs, or ran last.
     enabled: RefCell<Vec<DiagnosticRecord>>,
 }
 
@@ -332,7 +316,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
         }
     }
 
-    /// The instance with other stop times, so a test can reach the exit deadline
+    /// the instance with other stop times, so a test can reach the exit deadline
     /// quickly; a debug build only.
     #[cfg(debug_assertions)]
     #[doc(hidden)]
@@ -342,17 +326,16 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
         self
     }
 
-    /// Skips the grace period: a `docker stop` under way, or one still to come, is
-    /// abandoned and what remains is force-removed at once, while every diagnostic
-    /// container is ended and kept without its export. A second Ctrl+C or SIGINT
-    /// asks for it.
+    /// skips the grace period, force-removing what remains at once while every
+    /// diagnostic container is ended and kept without its export; a second Ctrl+C or
+    /// SIGINT asks for it.
     pub fn force_removal(&self) {
         self.force.send_replace(true);
         self.backend.retained().force();
     }
 
-    /// Runs the instance with its first plan until a stop is asked for. It answers
-    /// every request that reaches `requests`. When the channel closes while the
+    /// runs the instance with its first plan until a stop is asked for, answering
+    /// every request that reaches `requests`; when the channel closes while the
     /// instance is stopped, nothing can resume it, so it ends.
     pub async fn run(&self, plan: Plan, requests: &mut Requests) -> Ended {
         let mut next = Next::Run(plan);
@@ -390,7 +373,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
         response
     }
 
-    /// The stop reason for an image that cannot run jobs: `build` is refused while
+    /// the stop reason for an image that cannot run jobs; `build` is refused while
     /// the instance exists, so the instance is stopped first.
     fn image_reason(&self, refusal: &str) -> StopReason {
         let config = &self.settings.config_path;
@@ -405,8 +388,6 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
         Response::refused(&format!("the instance is {name}")).with("state", name)
     }
 
-    /// Finalises the diagnostic containers nobody holds whose job has ended, and
-    /// gives the answer to `diagnostics`.
     async fn flush_diagnostics(&self) -> Response {
         let enabled = self.enabled.borrow().clone();
         flushed_response(&diagnostic::flush(self.backend, self.log, &enabled).await)
@@ -514,11 +495,9 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
         }
     }
 
-    /// Asks the core to stop and runs the container steps while it winds down, and
-    /// lets a `diagnostics` under way finish, all within the exit deadline; whatever
-    /// still runs then is dropped with `cycle`, which kills its clients. The
-    /// containers are read before the core's workers go, because dropping a worker
-    /// forgets its container.
+    /// asks the core to stop and runs the container steps within the exit deadline,
+    /// dropping whatever still runs; the containers are read first, because dropping
+    /// a worker forgets its container.
     async fn wind_down<F: Future<Output = CycleEnd>>(
         &self,
         stop: &watch::Sender<bool>,
@@ -604,8 +583,8 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
         }
     }
 
-    /// Reads and validates the instance's own configuration again, clearing the
-    /// core's failure count, checks its image, and answers `reply` with the result.
+    /// reads and validates the instance's own configuration again, clears the core's
+    /// failure count, checks its image, and answers `reply`.
     async fn resume(&self, requests: &mut Requests, reply: oneshot::Sender<Response>) -> Next {
         self.policy.borrow_mut().clear();
         self.set_state(State::Resuming);
@@ -638,7 +617,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
         next
     }
 
-    /// Leaves the instance stopped for `reason`, with the answer a resume gets.
+    /// leaves the instance stopped for `reason`, with the answer a resume gets.
     fn stay_stopped(&self, reason: StopReason) -> (Next, Response) {
         self.log
             .warn(&format!("The instance is stopped: {reason}."));
@@ -648,8 +627,8 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
         (Next::Idle, response)
     }
 
-    /// Runs `work` while answering requests. With `abortable`, a `stop` ends the wait
-    /// and returns `None`; without it, the work finishes and the stop is left in
+    /// runs `work` while answering requests; with `abortable`, a `stop` ends the wait
+    /// and returns `None`, and without it the work finishes and the stop is left in
     /// `exit_requested` for the caller.
     async fn serve<T>(
         &self,
@@ -675,7 +654,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
         }
     }
 
-    /// Answers a request that arrives during a transition.
+    /// answers a request that arrives during a transition.
     fn answer_busy(&self, incoming: Incoming) {
         let response = match incoming.request {
             Request::Status => self.status(),
@@ -688,7 +667,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
         let _ = incoming.reply.send(response);
     }
 
-    /// Runs the core, and runs it again after each failure until the policy gives up
+    /// runs the core, and runs it again after each failure until the policy gives up
     /// or a stop is asked for.
     async fn core_cycle(&self, plan: &Plan, mut stop: watch::Receiver<bool>) -> CycleEnd {
         loop {
@@ -749,8 +728,6 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
         }
     }
 
-    /// Runs the ordinary containers' steps and the diagnostic containers' alongside,
-    /// the latter on a clock that starts now.
     async fn container_steps(&self, containers: Vec<String>) {
         let start = tokio::time::Instant::now();
         tokio::join!(
@@ -759,8 +736,8 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
         );
     }
 
-    /// Stops the containers in one call, and removes whatever remains in another. A
-    /// forced removal abandons the stop, or skips it. A failed removal is
+    /// stops the containers in one call, and removes whatever remains in another; a
+    /// forced removal abandons the stop or skips it, and a failed removal is
     /// remembered until the instance ends.
     async fn ordinary_steps(&self, containers: Vec<String>) {
         if containers.is_empty() {

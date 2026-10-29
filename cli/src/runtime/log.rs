@@ -1,4 +1,4 @@
-//! Where the runtime's messages go, and the masking of the secrets they must not
+//! where the runtime's messages go, and the masking of the secrets they must not
 //! show.
 
 use std::cell::RefCell;
@@ -6,38 +6,36 @@ use std::io::Write;
 
 use super::secret::Secret;
 
-/// What a masked secret becomes in a line.
 const MASK: &str = "<masked>";
 
-/// A sink for the lines the runtime reports. Callers never put a secret in a line on
-/// purpose; a sink also replaces every secret it was told to mask, so a secret that
+/// a sink for the lines the runtime reports; callers never put a secret in a line on
+/// purpose, and the sink also replaces every secret it was told to mask, so one that
 /// reaches a line by another route, such as a container's output, is still hidden.
 pub trait Log {
     fn info(&self, line: &str);
     fn warn(&self, line: &str);
 
-    /// The secrets this sink hides; [`info`](Self::info) and [`warn`](Self::warn)
-    /// apply them to every line.
+    /// the secrets this sink hides, applied to every line.
     fn masks(&self) -> &Masks;
 
-    /// Hides `secret` in every later line until [`unmask`](Self::unmask) is called
-    /// for it. Masking a secret that is already masked changes nothing.
+    /// hides `secret` in every later line until [`unmask`](Self::unmask); masking
+    /// it twice changes nothing.
     fn mask(&self, secret: &Secret) {
         self.masks().add(secret);
     }
 
-    /// Stops hiding `secret`.
+    /// stops hiding `secret`.
     fn unmask(&self, secret: &Secret) {
         self.masks().remove(secret);
     }
 
-    /// See [`Masks::held_back`].
+    /// see [`Masks::held_back`].
     fn held_back(&self, piece: &[u8]) -> usize {
         self.masks().held_back(piece)
     }
 }
 
-/// The secrets a sink hides.
+/// the secrets a sink hides.
 #[derive(Debug, Default)]
 pub struct Masks {
     secrets: RefCell<Vec<String>>,
@@ -59,9 +57,8 @@ impl Masks {
         }
     }
 
-    /// How many bytes at the end of `piece`, a part of a line whose rest follows,
-    /// wait to be logged with that rest: enough that cutting `piece` there splits no
-    /// secret, whether one lies whole in `piece` or runs on past its end.
+    /// how many bytes at the end of `piece`, a part of a line, wait for the rest of
+    /// it so that cutting there splits no secret.
     #[must_use]
     pub fn held_back(&self, piece: &[u8]) -> usize {
         let secrets = self.secrets.borrow();
@@ -81,8 +78,8 @@ impl Masks {
         piece.len() - split.unwrap_or(cut)
     }
 
-    /// `line` with every secret replaced by `<masked>`, the longest first, so a
-    /// secret that holds a shorter one is still replaced whole.
+    /// `line` with every secret replaced by `<masked>`, longest first, so one that
+    /// holds a shorter one is replaced whole.
     #[must_use]
     pub fn apply(&self, line: &str) -> String {
         let mut secrets = self.secrets.borrow().clone();
@@ -93,7 +90,7 @@ impl Masks {
     }
 }
 
-/// Writes to standard error, ignoring a stream that cannot be written.
+/// writes to standard error, ignoring a stream that cannot be written.
 #[derive(Debug, Default)]
 pub struct StderrLog {
     masks: Masks,
@@ -113,7 +110,7 @@ impl Log for StderrLog {
     }
 }
 
-/// Masks a secret for as long as it lives, however the scope that holds it ends.
+/// masks a secret for as long as it lives, however the scope that holds it ends.
 pub struct Masked<'a> {
     log: &'a dyn Log,
     secret: &'a Secret,

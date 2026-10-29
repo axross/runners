@@ -1,10 +1,6 @@
-//! Finalising diagnostic containers: export, then removal, on one clock.
-//!
-//! A job-end finalisation runs on a clock that starts when the container ended.
-//! The stop sequence's container steps, a pool's preparation at startup, and the
-//! `diagnostics` request each run one clock over the containers they act on: one
-//! `docker stop` ended at 12 s, then each export by 18 s and each removal by 24 s.
-//! Each warning names only the pool, the container and the gap, never evidence.
+//! finalising diagnostic containers, export then removal, on one clock, as
+//! `docs/operations/cli.md` describes; each warning names only the pool, the
+//! container and the gap, never evidence.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -19,16 +15,16 @@ use super::backend::{
 use super::log::Log;
 use super::retained::Claim;
 
-/// The grace one `docker stop` gives the diagnostic containers, Docker's default.
+/// the grace one `docker stop` gives the diagnostic containers, Docker's default.
 pub const STOP_GRACE: Duration = Duration::from_secs(10);
 
-/// From the clock start to the end of that stop.
+/// from the clock start to the end of that stop.
 pub const STOP_WITHIN: Duration = Duration::from_secs(12);
 
-/// The bundles a pool's sink may hold, partial ones included.
+/// the bundles a pool's sink may hold, partial ones included.
 pub const BUNDLE_QUOTA: u32 = 10;
 
-/// The PowerShell supervisor's text for each export that has a gap, and `None` for
+/// the PowerShell supervisor's text for each export that has a gap, and `None` for
 /// one without.
 #[must_use]
 pub fn gap_text(outcome: ExportOutcome) -> Option<&'static str> {
@@ -54,7 +50,7 @@ fn warn_gap(log: &dyn Log, record: &DiagnosticRecord, name: &str, text: &str) {
     ));
 }
 
-/// Logs what a finalisation did that needs the operator's eye.
+/// logs what a finalisation did that needs the operator's eye.
 pub fn report(log: &dyn Log, record: &DiagnosticRecord, name: &str, finalized: &Finalized) {
     if finalized.kept {
         log.warn(&format!(
@@ -76,11 +72,10 @@ pub fn report(log: &dyn Log, record: &DiagnosticRecord, name: &str, finalized: &
     }
 }
 
-/// Finalises a claimed diagnostic container with its record: exports it, unless a
-/// bundle was already admitted for it, by `deadlines.export`, then removes it
-/// whatever the export did, by `deadlines.removal`. A forced stop, asked for
-/// through [`Retained::force`](super::retained::Retained::force), ends the export
-/// and keeps the container.
+/// exports a claimed container unless a bundle was already admitted, then removes
+/// it whatever the export did, by the deadlines; a forced stop, asked for through
+/// [`Retained::force`](super::retained::Retained::force), ends the export and keeps
+/// the container.
 pub async fn finalize<B: Backend>(
     backend: &B,
     claim: &Claim<'_>,
@@ -133,7 +128,7 @@ pub async fn finalize<B: Backend>(
     finalized
 }
 
-/// Finalises a container whose job ended at `ended`, unless another path holds it.
+/// finalises a container whose job ended at `ended`, unless another path holds it.
 pub async fn finalize_at_job_end<B: Backend>(
     backend: &B,
     log: &dyn Log,
@@ -147,7 +142,7 @@ pub async fn finalize_at_job_end<B: Backend>(
     report(log, claim.record(), name, &finalized);
 }
 
-/// Polls every future until all have ended, and returns their outputs in order.
+/// polls every future until all have ended, and returns their outputs in order.
 pub async fn join_all<F: Future>(futures: Vec<F>) -> Vec<F::Output> {
     let mut pending: Vec<Option<Pin<Box<F>>>> = futures
         .into_iter()
@@ -177,7 +172,7 @@ pub async fn join_all<F: Future>(futures: Vec<F>) -> Vec<F::Output> {
     outputs.into_iter().flatten().collect()
 }
 
-/// One container a run of [`finalize_claimed`] acted on.
+/// one container a run of [`finalize_claimed`] acted on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Acted {
     pub name: String,
@@ -185,9 +180,9 @@ pub struct Acted {
     pub finalized: Finalized,
 }
 
-/// Stops the claimed containers in one call ended at 12 s, then finalises each on
-/// the clock that started at `start`, and logs what needs the operator's eye. A
-/// failed stop is a gap; the export and the removal are still attempted.
+/// stops the claimed containers in one call ended at 12 s, then finalises each on
+/// the clock that started at `start`, logging what needs the operator's eye; a
+/// failed stop is a gap, and the export and removal are still attempted.
 pub async fn finalize_claimed<B: Backend>(
     backend: &B,
     log: &dyn Log,
@@ -241,9 +236,8 @@ pub async fn finalize_claimed<B: Backend>(
         .collect()
 }
 
-/// Waits until no other path holds the container, then finalises it on the clock
-/// that started at `start` if it is still retained, as it is when that path was
-/// cancelled or its removal failed.
+/// waits until no other path holds the container, then finalises it on the clock
+/// that started at `start` if it is still retained.
 async fn finalize_once_released<B: Backend>(
     backend: &B,
     log: &dyn Log,
@@ -257,11 +251,11 @@ async fn finalize_once_released<B: Backend>(
     }
 }
 
-/// The diagnostic column of the stop sequence's container steps, on the clock that
-/// started at `start`: it finalises every retained container nobody holds, and
-/// waits for those another path is finalising, then finalises any of them that
-/// path left retained. A forced stop, at any point, ends
-/// every retained container with `docker kill` within `kill_budget` and keeps it.
+/// the diagnostic column of the stop sequence's container steps, on the clock that
+/// started at `start`: it finalises every retained container nobody holds, waits
+/// for those another path is finalising and finalises any it left retained; a
+/// forced stop, at any point, ends every retained container with `docker kill`
+/// within `kill_budget` and keeps it.
 pub async fn container_steps<B: Backend>(
     backend: &B,
     log: &dyn Log,
@@ -305,12 +299,12 @@ pub async fn container_steps<B: Backend>(
     }
 }
 
-/// The per-pool line of a `diagnostics` answer, and the remaining count it shows.
+/// the per-pool line of a `diagnostics` answer, and the remaining count it shows.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PoolCount {
     pub pool: String,
     pub written: u32,
-    /// The pool's bundles in its sink, or `None` when they could not be counted.
+    /// the pool's bundles in its sink, or `None` when they could not be counted.
     pub bundles: Option<u32>,
 }
 
@@ -329,24 +323,24 @@ impl PoolCount {
     }
 }
 
-/// What a `diagnostics` request did.
+/// what a `diagnostics` request did.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Flushed {
     pub pools: Vec<PoolCount>,
-    /// One line per container whose export had a gap, whose removal failed, or
+    /// one line per container whose export had a gap, whose removal failed, or
     /// which was left to the manual recovery.
     pub containers: Vec<String>,
-    /// Every container acted on was removed, and none was left to the manual
+    /// every container acted on was removed, and none was left to the manual
     /// recovery.
     pub complete: bool,
-    /// There was nothing to act on and no pool has diagnostics on.
+    /// there was nothing to act on and no pool has diagnostics on.
     pub nothing: bool,
 }
 
-/// Finalises every retained container nobody holds whose job has ended, on one
-/// 24 s clock with each container's record, and counts the bundles of every pool
-/// with such a container or with diagnostics on in `enabled`. A pool with only a
-/// container left to the manual recovery gets a line without a count.
+/// finalises every retained container nobody holds whose job has ended, on one 24 s
+/// clock, and counts the bundles of their pools and of the pools in `enabled`; a
+/// pool with only a container left to the manual recovery gets a line without a
+/// count.
 pub async fn flush<B: Backend>(
     backend: &B,
     log: &dyn Log,

@@ -1,7 +1,6 @@
-//! What makes `start` one instance per machine: the state it is in, the lock that
-//! keeps a second one out, the channel other terminals use to talk to it, the
-//! runtime core it supervises, and its log file. Tests also drive the layer through
-//! its seams.
+//! what makes `start` one instance per machine: its state, the lock, the control
+//! channel, the runtime core it supervises and the log file;
+//! `docs/operations/cli.md` describes the layer.
 
 pub mod channel;
 #[cfg(any(debug_assertions, test))]

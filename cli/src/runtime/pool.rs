@@ -1,11 +1,5 @@
-//! A pool of one repository: what it runs and how it is made ready.
-//!
-//! Preparation follows the PowerShell supervisor: a pool with a missing or blank
-//! token file is skipped, Docker is waited for, and then each pool's stale
-//! containers are removed and its volumes prepared. A pool that cannot be prepared
-//! is skipped with a warning naming it, so it does not take the others down. A
-//! diagnostics-enabled pool's labelled containers that an earlier process left are
-//! finalised first; with diagnostics off they are stopped and refuse the pool.
+//! a pool of one repository: what it runs and how it is made ready, following the
+//! PowerShell supervisor; `docs/operations/cli.md` describes the preparation.
 
 use std::fmt;
 use std::path::PathBuf;
@@ -24,36 +18,35 @@ use super::log::Log;
 use super::name::{cpu_probe_name, is_own_container_name};
 use super::token::read_token;
 
-/// The bound on removing one stale container. The PowerShell supervisor had none.
 const STALE_REMOVE_BUDGET: Duration = Duration::from_secs(120);
 
-/// One repository's pool, from a valid axpc plan.
+/// one repository's pool, from a valid axpc plan.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PoolSpec {
-    /// Where the entry sits in the configuration file, such as `repositories[0]`.
+    /// where the entry sits in the configuration file, such as `repositories[0]`.
     pub path: String,
-    /// The entry's name: the start of every container and runner name.
+    /// the entry's name: the start of every container and runner name.
     pub name: String,
     pub owner: String,
     pub repository: String,
     pub slots: u32,
     pub token_path: PathBuf,
     pub labels: Vec<String>,
-    /// The CPU quota as text.
+    /// the CPU quota as text.
     pub cpus: String,
-    /// How many CPU IDs each slot takes.
+    /// how many CPU IDs each slot takes.
     pub cpu_count: u64,
-    /// Where the pool's first slot starts among the affinity positions.
+    /// where the pool's first slot starts among the affinity positions.
     pub cpu_offset: u64,
     pub memory_gb: u32,
     pub volumes: Vec<PlannedVolume>,
-    /// Where the pool's evidence goes, when its diagnostics are on.
+    /// where the pool's evidence goes, when its diagnostics are on.
     pub diagnostic: Option<DiagnosticRecord>,
     pub image: String,
     slot_offsets: Vec<u64>,
 }
 
-/// One slot of a pool, counting from 1.
+/// one slot of a pool, counting from 1.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SlotSpec {
     pub pool: String,
@@ -71,7 +64,7 @@ pub struct SlotSpec {
     pub diagnostic: Option<DiagnosticRecord>,
 }
 
-/// Why a plan cannot become pools.
+/// why a plan cannot become pools.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlanError(&'static str);
 
@@ -83,11 +76,8 @@ impl fmt::Display for PlanError {
 
 impl std::error::Error for PlanError {}
 
-/// Turns a valid axpc plan into pools, in the plan's order.
-///
-/// # Errors
-///
-/// The container backend runs the axpc profile only.
+/// turns a valid axpc plan into pools, in the plan's order, and fails for any other
+/// profile.
 pub fn pools_from_plan(plan: &Plan) -> Result<Vec<PoolSpec>, PlanError> {
     let (Profile::Axpc, Some(image)) = (plan.profile, plan.image_name.as_ref()) else {
         return Err(PlanError(
@@ -102,7 +92,7 @@ pub fn pools_from_plan(plan: &Plan) -> Result<Vec<PoolSpec>, PlanError> {
         .collect())
 }
 
-/// The settings of a diagnostics-enabled entry's evidence.
+/// the settings of a diagnostics-enabled entry's evidence.
 fn diagnostic_record(entry: &Entry) -> Option<DiagnosticRecord> {
     let directory = entry
         .diagnostic_directory
@@ -115,7 +105,7 @@ fn diagnostic_record(entry: &Entry) -> Option<DiagnosticRecord> {
     })
 }
 
-/// The evidence settings of every diagnostics-enabled pool of `plan`, in order.
+/// the evidence settings of every diagnostics-enabled pool of `plan`, in order.
 #[must_use]
 pub fn diagnostic_records(plan: &Plan) -> Vec<DiagnosticRecord> {
     plan.entries.iter().filter_map(diagnostic_record).collect()
@@ -144,13 +134,13 @@ fn pool_from_entry(plan: &Plan, index: usize, entry: &Entry, image: &str) -> Poo
 }
 
 impl PoolSpec {
-    /// The pool and its repository as a warning names them.
+    /// the pool and its repository as a warning names them.
     #[must_use]
     pub fn describe(&self) -> String {
         format!("{} ({}/{})", self.path, self.owner, self.repository)
     }
 
-    /// The pool's slots, numbered from 1.
+    /// the pool's slots, numbered from 1.
     #[must_use]
     pub fn slot_specs(&self) -> Vec<SlotSpec> {
         (1..=self.slots)
@@ -175,20 +165,20 @@ impl PoolSpec {
 }
 
 impl SlotSpec {
-    /// The name of the container that reads this slot's allowed CPUs.
+    /// the name of the container that reads this slot's allowed CPUs.
     #[must_use]
     pub fn probe_name(&self) -> String {
         cpu_probe_name(&self.pool, self.number)
     }
 
-    /// How the slot is named in a log line.
+    /// how the slot is named in a log line.
     #[must_use]
     pub fn label(&self) -> String {
         format!("{} slot {}", self.pool, self.number)
     }
 }
 
-/// No pool could be started, so there is nothing to run.
+/// no pool could be started, so there is nothing to run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NoPoolStartable;
 
@@ -208,10 +198,9 @@ fn skip(log: &dyn Log, board: &Board, pool: &PoolSpec, reason: &str) {
     board.set_pool(&pool.name, PoolState::Skipped(reason.to_string()));
 }
 
-/// The first step of preparing the pools, which needs no Docker: the pools whose
-/// token file reads, in order, each now waiting for Docker. The others are skipped
-/// with a warning that names the pool and the reason. Each pool's state goes on
-/// `board`, and every token read is masked in `log`.
+/// the first step of preparing the pools, needing no Docker: returns the pools
+/// whose token file reads, skipping the others with a warning; every token read is
+/// masked in `log`.
 #[must_use]
 pub fn admit_pools(pools: Vec<PoolSpec>, log: &dyn Log, board: &Board) -> Vec<PoolSpec> {
     let mut admitted = Vec::new();
@@ -228,14 +217,10 @@ pub fn admit_pools(pools: Vec<PoolSpec>, log: &dyn Log, board: &Board) -> Vec<Po
     admitted
 }
 
-/// The second step, once Docker answers: each admitted pool's stale containers are
-/// removed and its volumes prepared, and the pools that can run are returned in
-/// order. A pool whose stale containers cannot be listed, whose labelled one
-/// remains, or whose volumes cannot be prepared is skipped with a warning.
-///
-/// # Errors
-///
-/// Fails when no pool is left.
+/// the second step, once Docker answers: removes each admitted pool's stale
+/// containers, prepares its volumes, and returns the pools that can run; a pool whose
+/// stale containers cannot be listed, whose labelled one remains, or whose volumes
+/// cannot be prepared is skipped with a warning, and it fails when none is left.
 pub async fn prepare_admitted<B: Backend>(
     backend: &B,
     admitted: Vec<PoolSpec>,
@@ -266,11 +251,10 @@ pub async fn prepare_admitted<B: Backend>(
     Ok(prepared)
 }
 
-/// Removes the pool's own leftover containers: those named like its slots' and not
-/// labelled as diagnostics evidence. A labelled one the backend already retains
-/// keeps its record and is left alone. Any other labelled one is never removed
-/// without its export: with diagnostics on it is retained with the pool's settings
-/// and finalised; with diagnostics off it gets a bounded stop and refuses the pool.
+/// removes the pool's own leftover containers; a labelled one the backend already
+/// retains keeps its record and is left alone, and any other is never removed
+/// without its export, so it is finalised, or with diagnostics off stopped and the
+/// pool refused.
 async fn clear_stale_containers<B: Backend>(
     backend: &B,
     pool: &PoolSpec,
@@ -314,7 +298,7 @@ async fn clear_stale_containers<B: Backend>(
     }
 }
 
-/// Retains the labelled containers an earlier process left with the pool's current
+/// retains the labelled containers an earlier process left with the pool's current
 /// settings, and finalises them on one clock, reporting each one.
 async fn finalize_left<B: Backend>(
     backend: &B,
@@ -352,7 +336,7 @@ async fn finalize_left<B: Backend>(
     }
 }
 
-/// Gives the labelled containers of a pool with diagnostics off a bounded stop and
+/// gives the labelled containers of a pool with diagnostics off a bounded stop and
 /// refuses the pool, leaving them to the manual recovery.
 async fn refuse_left<B: Backend>(
     backend: &B,

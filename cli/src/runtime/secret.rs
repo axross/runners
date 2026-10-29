@@ -1,10 +1,9 @@
-//! A value that must not reach a log line, a command line, or an error message.
+//! a value that must not reach a log line, a command line, or an error message.
 
 use std::fmt;
 
-/// A token or a JIT configuration. Its `Debug` form is redacted, it has no
-/// `Display`, and reading the value takes an explicit call, so a formatting macro
-/// cannot print it by accident.
+/// a token or JIT configuration with a redacted `Debug` and no `Display`, so a
+/// formatting macro cannot print it by accident.
 pub struct Secret(String);
 
 impl Secret {
@@ -13,7 +12,7 @@ impl Secret {
         Self(value)
     }
 
-    /// The value, for the one place that hands it to its destination.
+    /// the value, for the one place that hands it to its destination.
     #[must_use]
     pub fn expose(&self) -> &str {
         &self.0

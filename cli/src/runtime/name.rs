@@ -1,6 +1,4 @@
-//! Runner and container names: `<pool>-<slot>-<yyyyMMddHHmmssfff>` in UTC.
-//!
-//! The name is the GitHub runner name and the container name at once. Cleanup
+//! runner and container names, `<pool>-<slot>-<yyyyMMddHHmmssfff>` in UTC; cleanup
 //! recognises a pool's own containers by this shape and nothing looser.
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -9,13 +7,13 @@ pub(crate) const DIGITS_IN_STAMP: usize = 17;
 const LATEST_UNIX_MILLIS: u64 = 253_402_300_799_999;
 const MILLIS_PER_DAY: u64 = 86_400_000;
 
-/// Returns the next container name of a pool's slot, counting slots from 1.
+/// the next container name of a pool's slot, counting slots from 1.
 #[must_use]
 pub fn job_container_name(pool: &str, slot: u32, now: SystemTime) -> String {
     format!("{pool}-{slot}-{}", stamp(now))
 }
 
-/// Writes `time` as `yyyyMMddHHmmssfff` in UTC; a time before the epoch as the
+/// writes `time` as `yyyyMMddHHmmssfff` in UTC; a time before the epoch as the
 /// epoch.
 #[must_use]
 pub fn stamp(time: SystemTime) -> String {
@@ -23,8 +21,8 @@ pub fn stamp(time: SystemTime) -> String {
     format_stamp(u64::try_from(since_epoch.as_millis()).unwrap_or(u64::MAX))
 }
 
-/// Writes milliseconds since the Unix epoch as `yyyyMMddHHmmssfff` in UTC. A time
-/// after the year 9999 is written as the last millisecond of that year.
+/// writes milliseconds since the Unix epoch as `yyyyMMddHHmmssfff` in UTC, clamped
+/// to the last millisecond of the year 9999.
 #[must_use]
 pub fn format_stamp(unix_millis: u64) -> String {
     let millis = unix_millis.min(LATEST_UNIX_MILLIS);
@@ -40,8 +38,8 @@ pub fn format_stamp(unix_millis: u64) -> String {
     )
 }
 
-/// Converts days since 1970-01-01 to a proleptic Gregorian date (Howard Hinnant's
-/// `civil_from_days`), for days from the epoch on.
+/// converts days since 1970-01-01 to a proleptic Gregorian date, by Howard
+/// Hinnant's `civil_from_days`.
 pub(crate) fn civil_from_days(days: u64) -> (u64, u64, u64) {
     let shifted = days + 719_468;
     let era = shifted / 146_097;
@@ -60,8 +58,7 @@ pub(crate) fn civil_from_days(days: u64) -> (u64, u64, u64) {
     (year, month, day)
 }
 
-/// Converts a proleptic Gregorian date from 1970 on to days since 1970-01-01
-/// (Howard Hinnant's `days_from_civil`), the inverse of `civil_from_days`.
+/// the inverse of `civil_from_days`, for dates from 1970 on.
 pub(crate) fn days_from_civil(year: u64, month: u64, day: u64) -> u64 {
     let year = if month <= 2 { year - 1 } else { year };
     let era = year / 400;
@@ -72,15 +69,14 @@ pub(crate) fn days_from_civil(year: u64, month: u64, day: u64) -> u64 {
     (era * 146_097 + day_of_era).saturating_sub(719_468)
 }
 
-/// Returns the name of a pool's CPU probe container for a slot.
+/// the name of a pool's CPU probe container for a slot.
 #[must_use]
 pub fn cpu_probe_name(pool: &str, slot: u32) -> String {
     format!("{pool}-cpu-probe-{slot}")
 }
 
-/// Whether `candidate` is a container name [`job_container_name`] gives this pool:
-/// the pool's name, a hyphen, a slot number, a hyphen, and exactly 17 ASCII digits,
-/// and nothing else. Case matters.
+/// whether `candidate` is the pool's name, a hyphen, a slot number, a hyphen and
+/// exactly 17 ASCII digits, and nothing else; case matters.
 #[must_use]
 pub fn is_own_container_name(pool: &str, candidate: &str) -> bool {
     let Some(rest) = candidate
