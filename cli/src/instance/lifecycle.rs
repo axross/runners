@@ -193,9 +193,7 @@ enum CycleEnd {
     StopRequested,
     LimitReached,
     NothingToRun,
-    /// the image cannot run jobs, as the message says, at the first run of the core.
     ImageRefusedAtStart(String),
-    /// the same at a later run.
     ImageRefused(String),
 }
 
@@ -730,8 +728,6 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
         }
     }
 
-    /// runs the ordinary containers' steps and the diagnostic containers' alongside,
-    /// the latter on a clock that starts now.
     async fn container_steps(&self, containers: Vec<String>) {
         let start = tokio::time::Instant::now();
         tokio::join!(

@@ -252,8 +252,10 @@ async fn finalize_once_released<B: Backend>(
 }
 
 /// the diagnostic column of the stop sequence's container steps, on the clock that
-/// started at `start`; a forced stop, at any point, ends every retained container
-/// with `docker kill` within `kill_budget` and keeps it.
+/// started at `start`: it finalises every retained container nobody holds, waits
+/// for those another path is finalising and finalises any it left retained; a
+/// forced stop, at any point, ends every retained container with `docker kill`
+/// within `kill_budget` and keeps it.
 pub async fn container_steps<B: Backend>(
     backend: &B,
     log: &dyn Log,

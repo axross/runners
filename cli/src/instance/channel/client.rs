@@ -102,7 +102,6 @@ mod tests {
 
     use super::*;
 
-    /// a connection that reads a fixed answer and swallows what is written.
     struct Scripted(Cursor<Vec<u8>>);
 
     impl Read for Scripted {

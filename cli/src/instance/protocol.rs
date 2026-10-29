@@ -464,7 +464,6 @@ mod tests {
         assert_eq!(read_line_limited(&mut &b""[..], 10).unwrap(), None);
     }
 
-    /// a field line that, after `ok\n`, leaves `room` bytes of the response limit.
     fn field_leaving(room: usize) -> String {
         let value = "a".repeat(MAX_RESPONSE_BYTES - "ok\n".len() - "f \n".len() - room);
         format!("f {value}\n")

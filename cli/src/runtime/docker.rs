@@ -89,8 +89,8 @@ pub enum JobLauncher {
     /// as a child of this process, killed when the run is dropped.
     #[default]
     Direct,
-    /// by the shim, which cleans up the container when its liveness pipe closes,
-    /// however this process ended.
+    /// by the shim, which, when its liveness pipe closes however this process ended,
+    /// force-removes the container, or ends a diagnostic one and keeps it.
     #[cfg(unix)]
     Shim(PathBuf),
 }

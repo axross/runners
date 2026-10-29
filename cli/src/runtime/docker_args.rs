@@ -163,7 +163,7 @@ pub fn info_arguments() -> Vec<String> {
     strings(&["info"])
 }
 
-/// lists a pool's containers by name prefix.
+/// lists the containers whose names contain the pool's name and a hyphen.
 #[must_use]
 pub fn pool_list_arguments(pool: &str) -> Vec<String> {
     strings(&[
@@ -338,8 +338,8 @@ mod tests {
         assert_eq!(arguments.last().map(String::as_str), Some(RUN_COMMAND));
     }
 
-    /// the PowerShell here-string that starts with `set -eu` and the probe's reader
-    /// script, from `docker-commands.ps1`.
+    /// the text of docker-commands.ps1, which holds the launcher guard and the probe's
+    /// reader script.
     fn powershell_source() -> String {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../hosts/windows-docker-desktop/docker-commands.ps1");
