@@ -12,7 +12,7 @@ updates:
       prefix: "ci"
       include: "scope"
 
-  # one entry per image directory under images/. the tools pinned in mise.toml
+  # one entry per image directory under images/; the tools pinned in mise.toml
   # are not covered by Dependabot and are refreshed by hand.
   - package-ecosystem: "docker"
     directory: "/images/actions-runner"
@@ -22,10 +22,9 @@ updates:
       prefix: "build"
       include: "scope"
 
-  # the CLI's crates and toolchain, both under cli/. a bump that raises new clippy
-  # warnings or adds a duplicate crate version arrives as a red pull request, and
-  # the maintainer fixes it there. the rustup-init pin in .agents/install-rust is
-  # refreshed by hand with its checksum, like the tools pinned in mise.toml.
+  # the CLI's crates and toolchain, both under cli/; docs/operations/cli.md says
+  # how a red bump is handled. the rustup-init pin in .agents/install-rust is
+  # refreshed by hand with its checksum.
   - package-ecosystem: "cargo"
     directory: "/cli"
     schedule:
@@ -44,8 +43,8 @@ updates:
 
   # semantic-release and its plugins, which release.yaml installs from
   # release/package-lock.json. the prefix is `chore` because their bumps change
-  # nothing in a binary, so they release nothing; the `build(deps)` prefix above
-  # releases a patch (release/.releaserc.json).
+  # nothing in a binary; the `build(deps)` prefix above releases a patch
+  # (release/.releaserc.json).
   - package-ecosystem: "npm"
     directory: "/release"
     schedule:

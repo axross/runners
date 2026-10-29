@@ -1,16 +1,16 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    runs the Docker command line client and reports its exit code, and builds
-    the job container's arguments, its name and the pattern that recognizes it.
-    dot-sourced by the supervisor and by each slot's background job, so it
-    depends on nothing from host-configuration.ps1.
+    runs the Docker command line client and builds the job container's
+    arguments, name and name pattern. dot-sourced by the supervisor and by each
+    slot's background job, so it depends on nothing from host-configuration.ps1.
 
 .DESCRIPTION
     Windows PowerShell 5.1 turns a native command's stderr output into a
     terminating error under $ErrorActionPreference = 'Stop' once it is
-    redirected. Invoke-Docker relaxes the preference and returns the exit code;
-    runner logging uses explicitly quoted process arguments and separate pipes.
+    redirected, so Invoke-Docker relaxes the preference and returns the exit
+    code. runner logging uses explicitly quoted process arguments and separate
+    pipes.
 #>
 
 . (Join-Path $PSScriptRoot 'diagnostic-process-lifetime.ps1')
@@ -265,11 +265,10 @@ function Get-SlotCpuAffinity {
     return $selection
 }
 
-# returns the arguments of the one `docker run` that starts a job container.
-# -Cpus is the text Format-CpuCount returns. memory and swap are both
-# -MemoryGb, so the container gets no swap beyond its memory limit. `-e NAME`
-# without a value makes the Docker client read the registration from its own
-# environment, so it is never on a command line.
+# returns the `docker run` arguments of a job container. -Cpus is the text
+# Format-CpuCount returns; memory and swap are both -MemoryGb, so there is no swap
+# beyond the limit. `-e NAME` without a value makes the Docker client read the
+# registration from its own environment, never a command line.
 function Get-JobContainerArgument {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -321,8 +320,8 @@ printf 'CPU affinity verified: %s\n' "$allowed"
 }
 
 # returns the name of a slot's next job container, which is also its GitHub
-# runner name: the entry's name, the 1-based slot index and a 17-digit
-# timestamp. the invariant culture keeps the digits ASCII under any calendar.
+# runner name; the invariant culture keeps the timestamp digits ASCII under any
+# calendar.
 function Get-JobContainerName {
     param(
         [Parameter(Mandatory)][string]$EntryName,
@@ -333,9 +332,8 @@ function Get-JobContainerName {
     return "$EntryName-$Slot-$($Now.ToString('yyyyMMddHHmmssfff', [System.Globalization.CultureInfo]::InvariantCulture))"
 }
 
-# returns the pattern that matches only the names Get-JobContainerName gives
-# this entry's containers, so a container of another entry whose name starts
-# with this one is not matched. \z rather than $ keeps a trailing newline out.
+# matches only this entry's job container names, so an entry whose name extends
+# this one is not matched; \z rather than $ keeps a trailing newline out.
 function Get-JobContainerNamePattern {
     param([Parameter(Mandatory)][string]$Name)
 

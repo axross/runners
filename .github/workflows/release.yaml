@@ -1,31 +1,15 @@
 name: Release
 
-# releases the CLI with semantic-release, on a manual dispatch on main and on nothing
-# else. the dispatch is the maintainer's decision to release; an agent never makes
-# it. four jobs run on the dispatched commit:
-#
-#   plan     semantic-release as a dry run reads the Conventional Commits since the
-#            last `v*` tag and hands out the next version, or none.
-#   build    release-build.yaml builds and assembles the binaries at that version,
-#            with `contents: read`.
-#   attest   checks the files and attests the binaries' build provenance. it runs
-#            no npm package, so nothing in the npm tree can mint an attestation.
-#   release  semantic-release for real: release/.releaserc.json's gate checks the
-#            files for the version it is about to release, then it pushes the tag
-#            and its note and publishes the GitHub release with the three files.
-#
-# with nothing to release, the plan job hands out no version and the other jobs are
-# skipped. nothing is committed to main, which keeps the placeholder version. the
-# `if:` on main binds only this copy of the file, since a dispatch on another
-# branch runs that branch's copy; the install-side checks are the control. the
-# controls and residual risks are in docs/conventions/security.md. it runs on
+# releases the CLI with semantic-release from a manual dispatch on main, and on
+# nothing else. docs/operations/cli.md describes the four jobs and
+# docs/conventions/security.md the controls and residual risks. it runs on
 # GitHub-hosted runners only.
 
 on:
   workflow_dispatch:
 
-# one release at a time, never cancelled: a run stopped between pushing the tag and
-# publishing would leave a tag without its release.
+# one release at a time, never cancelled: a run stopped between pushing the tag
+# and publishing would leave a tag without its release.
 concurrency:
   group: release
   cancel-in-progress: false
@@ -34,9 +18,6 @@ permissions:
   contents: read
 
 jobs:
-  # `contents: write` is for the dry run's `git push --dry-run`, which
-  # semantic-release authenticates with GITHUB_TOKEN itself, so the checkout keeps
-  # no credential.
   plan:
     name: Plan The Release
     if: github.ref == 'refs/heads/main'
@@ -61,9 +42,8 @@ jobs:
       - name: Install semantic-release
         working-directory: release
         run: npm ci --ignore-scripts
-      # .github/scripts/verify-release.sh writes the version to this step's
-      # outputs. with nothing to release semantic-release never calls it, and the
-      # output stays empty.
+      # verify-release.sh writes the version to this step's outputs; with nothing
+      # to release it never runs, so the output stays empty.
       - name: Work Out The Next Version
         id: plan
         working-directory: release
@@ -82,9 +62,6 @@ jobs:
     with:
       version: ${{ needs.plan.outputs.version }}
 
-  # no checkout and no npm package: the job runs only the artifact download, the
-  # check below, and actions/attest. the attestation needs no
-  # `artifact-metadata`, which is for storage records in a registry.
   attest:
     name: Attest The Build Provenance
     needs: [plan, build]
@@ -100,8 +77,8 @@ jobs:
         with:
           name: ${{ needs.build.outputs.artifact }}
           path: release-files
-      # the same check as verify-release.sh in the release job, which this job
-      # cannot run without a checkout.
+      # the same check as verify-release.sh, which needs a checkout this job does
+      # not have.
       - name: Check The Files And Their Checksums
         id: files
         working-directory: release-files
@@ -140,9 +117,6 @@ jobs:
             release-files/${{ steps.files.outputs.windows }}
             release-files/${{ steps.files.outputs.macos }}
 
-  # `contents: write` pushes the tag and its note and creates the release. the
-  # job holds no `id-token`, so the npm tree it runs cannot attest. the checkout
-  # keeps no credential: semantic-release authenticates its push with GITHUB_TOKEN.
   release:
     name: Release
     needs: [plan, build, attest]
@@ -165,8 +139,8 @@ jobs:
       - name: Install semantic-release
         working-directory: release
         run: npm ci --ignore-scripts
-      # into release-files/, where the gate and the asset globs in
-      # release/.releaserc.json look for them.
+      # release-files/ is where the gate and the asset globs in
+      # release/.releaserc.json look.
       - name: Download The Release Files
         uses: actions/download-artifact@v8
         with:

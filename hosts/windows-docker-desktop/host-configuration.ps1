@@ -5,22 +5,19 @@
     host scripts and the tests.
 
 .DESCRIPTION
-    Read-HostConfiguration turns the JSON file into a plan: the image name, and
-    per target repository the registration labels, the name that starts every
-    container, runner and volume name, the container CPU and memory limits, and
-    the volume names. a configuration is rejected as a whole, with one message
-    line per problem naming the offending field, before any container starts.
-    Get-SlotWorkerArgument turns a plan entry into a slot job's arguments.
-    nothing here calls Docker or GitHub, or reads a token file.
+    Read-HostConfiguration turns the JSON file into a plan, rejecting a
+    configuration as a whole, with one message line per problem, before any
+    container starts. a helper that finds a problem records why in the errors
+    list and returns $null. nothing here calls Docker or GitHub, or reads a token
+    file.
 #>
 
 $script:PlatformLabels = @('self-hosted', 'linux', 'x64')
 $script:DefaultLabels = @($script:PlatformLabels) + @('axpc')
 $script:MaxSlots = 16
-# GitHub documents no limit for a runner's name. the runner name is the entry's
-# name plus a slot number and a 17-digit timestamp, so capping the entry name
-# keeps every name short, on an assumed limit rather than a known one.
-$script:MaxNameLength = 64
+# the runner name is the entry's name plus a slot number and a 17-digit
+# timestamp, so capping the entry name keeps every name short.
+$script:AssumedMaxNameLength = 64
 $script:DefaultCpus = 2
 $script:MaxCpus = 64
 $script:DefaultMemoryGb = 8
@@ -36,12 +33,11 @@ $script:RepositoryPattern = '^(?!\.{1,2}\z)[A-Za-z0-9_.-]+\z'
 $script:ImageNamePattern = '^[A-Za-z0-9][A-Za-z0-9_.:/@-]*\z'
 $script:LabelPattern = '^[A-Za-z0-9][A-Za-z0-9._:/-]*\z'
 $script:MountPathPattern = '^/[A-Za-z0-9_./-]+\z'
-# a drive letter and a backslash, or a UNC path. Path.IsPathRooted would also
-# accept C:name and \name, which resolve against a working directory or drive
-# the scheduled task does not control.
+# Path.IsPathRooted would also accept C:name and \name, which resolve against a
+# working directory or drive the scheduled task does not control.
 $script:TokenPathPattern = '^(?:[A-Za-z]:\\|\\\\)\S'
 
-# returns the property's value, or $null after recording why it is unusable.
+# returns the property's value.
 function Get-Field {
     param(
         [Parameter(Mandatory)]$Node,
@@ -58,7 +54,7 @@ function Get-Field {
     return , $property.Value
 }
 
-# returns the string field if it matches -Pattern, or $null after recording why.
+# returns the string field if it matches -Pattern.
 function Get-StringField {
     param(
         [Parameter(Mandatory)]$Node,
@@ -107,8 +103,7 @@ function Test-IsObject {
     return $false
 }
 
-# returns the registration labels, defaults when the field is absent or empty,
-# or $null after recording why a present list is unusable.
+# returns the registration labels, defaults when the field is absent or empty.
 function Get-RegistrationLabel {
     param([Parameter(Mandatory)]$Node, [Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)]$Errors)
 
@@ -206,8 +201,7 @@ function Get-VolumeDefinition {
     return , $definitions.ToArray()
 }
 
-# returns the entry's CPU limit as a double, the default when the field is
-# absent, or $null after recording why the value is unusable. ConvertFrom-Json
+# returns the entry's CPU limit, the default when absent. ConvertFrom-Json
 # returns a fraction as a different numeric type depending on the PowerShell
 # version, so every numeric type is accepted.
 function Get-CpuLimit {
@@ -231,7 +225,7 @@ function Get-CpuLimit {
 }
 
 # returns the entry's memory limit in whole gigabytes, the default when the
-# field is absent, or $null after recording why the value is unusable.
+# field is absent.
 function Get-MemoryLimit {
     param([Parameter(Mandatory)]$Node, [Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)]$Errors)
 
@@ -247,20 +241,20 @@ function Get-MemoryLimit {
     return [int]$value
 }
 
-# returns the entry's name, or $null after recording why it is unusable.
+# returns the entry's name.
 function Get-EntryName {
     param([Parameter(Mandatory)]$Node, [Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)]$Errors)
 
     $name = Get-StringField -Node $Node -Name 'name' -Path "$Path.name" -Errors $Errors `
         -Pattern $script:NamePattern -Expectation 'lowercase letters, digits and hyphens, starting with a letter or digit'
-    if ($null -ne $name -and $name.Length -gt $script:MaxNameLength) {
-        $Errors.Add("$Path.name: name is $($name.Length) characters, at most $($script:MaxNameLength) are allowed because it starts every runner name")
+    if ($null -ne $name -and $name.Length -gt $script:AssumedMaxNameLength) {
+        $Errors.Add("$Path.name: name is $($name.Length) characters, at most $($script:AssumedMaxNameLength) are allowed because it starts every runner name")
         return $null
     }
     return $name
 }
 
-# returns one repository's plan entry, or $null after recording every problem.
+# returns one repository's plan entry.
 function Get-RepositoryPlan {
     param(
         [Parameter(Mandatory)]$Node,
@@ -442,9 +436,8 @@ function Read-HostConfiguration {
     }
 }
 
-# returns the CPU count as text for Docker and for the summary: the invariant
-# culture keeps the decimal point whatever the machine's regional settings, and
-# the custom format never switches to an exponent.
+# the invariant culture keeps the decimal point whatever the machine's regional
+# settings, and the custom format never switches to an exponent.
 function Format-CpuCount {
     param([Parameter(Mandatory)][double]$Cpus)
 
@@ -463,8 +456,8 @@ function Get-SlotCpuAffinityOffset {
 }
 
 # returns the arguments of a slot's background job, keyed by the worker script
-# block's parameter names and in their order. Start-Job binds them to those
-# parameters by position, so a value out of order reaches the wrong parameter.
+# block's parameter names and in their order, because Start-Job binds them to
+# those parameters by position and a value out of order reaches the wrong one.
 function Get-SlotWorkerArgument {
     param(
         [Parameter(Mandatory)]$Plan,

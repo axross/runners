@@ -1,20 +1,12 @@
 #!/usr/bin/env bash
-# The release gate: @semantic-release/exec's verifyReleaseCmd in
-# release/.releaserc.json. semantic-release runs it from release/ with the version
-# it is about to release, in a dry run as well, so RELEASE_PHASE says which job of
-# release.yaml is calling:
-#
-#   plan     append version=<version> to GITHUB_OUTPUT, for the later jobs.
-#   release  refuse unless <directory> holds exactly the two binaries named for that
-#            version and SHA256SUMS, SHA256SUMS lists exactly those two, and
-#            `sha256sum --check --strict` passes. semantic-release has tagged and
-#            published nothing yet, so a refusal stops the release.
-#
-# Any other RELEASE_PHASE, or none, is refused, so a job that forgets to set it
-# cannot release. The attest job applies the same file check without this script,
-# since it checks nothing out. It runs on Linux, where sha256sum is GNU's.
-#
-# Usage: verify-release.sh <version> <directory>
+# the release gate: verifyReleaseCmd in release/.releaserc.json, run from
+# release/ with the version about to be released, in a dry run as well.
+# RELEASE_PHASE names the release.yaml job calling it: plan hands the version on
+# through GITHUB_OUTPUT; release refuses unless the directory holds exactly the
+# two binaries named for the version and a SHA256SUMS that lists only them and
+# passes `sha256sum --check --strict`, before anything is tagged or published.
+# any other value is refused, so a job that forgets it cannot release.
+# runs on Linux, where sha256sum is GNU's.
 set -euo pipefail
 
 if [[ $# -ne 2 ]]; then

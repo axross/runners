@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
-# Shows that another OS user cannot take the instance lock while this user holds
-# it: the debug helper holds the lock in a debug-only root, and a copy of it, run
-# as nobody through sudo, must be refused with the "held" exit code. CI runs it on
-# the Linux and macOS hosted runners, whose account has passwordless sudo.
+# shows that another OS user cannot take the instance lock while this user holds
+# it, with a copy of the debug helper run as nobody through sudo;
+# docs/operations/cli.md describes the test. CI runs it on the Linux and macOS
+# hosted runners, whose account has passwordless sudo.
 set -euo pipefail
 
 helper="${1:?usage: other-user-lock.sh <instance-helper>}"
-# the exit code of `instance-helper try` when the lock is held
-held=3
+held_exit_code=3
 
 # under /tmp, not the runner's temporary directory, so the nobody account can
 # reach it on macOS too, where a user's own temporary directory is private
@@ -50,8 +49,8 @@ if [ "$status" -eq 0 ]; then
   echo "nobody took the lock while it was held." >&2
   exit 1
 fi
-if [ "$status" -ne "$held" ]; then
-  echo "nobody was refused with exit code $status, not $held (held)." >&2
+if [ "$status" -ne "$held_exit_code" ]; then
+  echo "nobody was refused with exit code $status, not $held_exit_code (held)." >&2
   exit 1
 fi
 grep -q '^refused: the instance lock is held' <<< "$output"

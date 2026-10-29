@@ -7,26 +7,12 @@
     file the host configuration lists to that user.
 
 .DESCRIPTION
-    registers "actions-runner-supervisor", which runs supervisor.ps1 at this
-    user's sign-in, and "actions-runner-weekly-rebuild", which runs
-    rebuild-image.ps1 weekly. both run as the current user at the limited run
-    level, never elevated. both point at this script's own directory and at
-    the configuration file, so moving the checkout or the file breaks them
-    silently until this script is run again.
-
-    safe to run again after editing the configuration or replacing a token
-    file: re-registration replaces the tasks, and the permission step resets
-    each token file's permissions and then restricts them again. needs an
-    elevated prompt because registering a sign-in task does.
+    needs an elevated prompt and is safe to run again; run it again after moving
+    the checkout or the configuration file, which the tasks point at. see
+    docs/operations/windows-runner-host.md.
 
 .PARAMETER ConfigPath
-    path to the host configuration JSON file. the tasks keep the absolute path.
-
-.PARAMETER WeeklyRebuildDayOfWeek
-    day the image is rebuilt.
-
-.PARAMETER WeeklyRebuildTime
-    local time the image is rebuilt.
+    path to the host configuration JSON file; the tasks keep the absolute path.
 #>
 param(
     [Parameter(Mandatory)][string]$ConfigPath,
@@ -56,9 +42,8 @@ function Register-SupervisorTask {
     $taskName = 'actions-runner-supervisor'
     $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument (Get-PowerShellArgument -ScriptName 'supervisor.ps1')
     $trigger = New-ScheduledTaskTrigger -AtLogOn -User $currentUser
-    # a backstop for the supervisor process exiting, so the host is not left
-    # without runners until the next sign-in. the slots wait out a Docker Desktop
-    # restart themselves.
+    # a backstop for the supervisor process exiting; the slots wait out a Docker
+    # Desktop restart themselves.
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
         -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit (New-TimeSpan -Days 0)
     Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings `
@@ -87,10 +72,9 @@ function Protect-TokenFile {
         Write-Warning "$($Entry.Path): token file not found at $($Entry.TokenPath) yet - create it and run this script again to restrict its permissions."
         return
     }
-    # reset first, so an entry granted by hand to another account, or inherited
-    # from the folder, is dropped. then remove inheritance, so the grant below is
-    # the only entry on the file, rather than an addition to what the folder
-    # allows.
+    # reset first, so an entry granted by hand or inherited from the folder is
+    # dropped; then remove inheritance, so the grant below is the only entry on
+    # the file.
     & icacls $Entry.TokenPath /reset | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw "icacls could not reset the permissions of $($Entry.TokenPath)."

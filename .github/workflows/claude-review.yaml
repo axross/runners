@@ -23,26 +23,23 @@ jobs:
       cancel-in-progress: true
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # The action posts to the pull request with a Claude GitHub App token it
-    # obtains by exchanging this job's OIDC token, not with the job token, so the
-    # job needs no write scope. docs/conventions/security.md records the check.
+    # the action posts with a Claude GitHub App token it gets by exchanging this
+    # job's OIDC token, so the job needs no write scope; see
+    # docs/conventions/security.md.
     permissions:
       contents: read # actions/checkout reads the default branch
       id-token: write # the OIDC token the action exchanges for the app token
     env:
-      # Best-effort scrub of secrets from the environments of the shell commands
-      # the model runs: CLAUDE_CODE_OAUTH_TOKEN and the ACTIONS_* runtime tokens
-      # are removed. GH_TOKEN and GITHUB_TOKEN, which hold the Claude GitHub App
-      # token, stay visible because gh needs them. The action forwards this
-      # variable to its run step. It reduces, and does not remove, what a prompt
-      # injection through pull request content can reach.
+      # best-effort scrub of CLAUDE_CODE_OAUTH_TOKEN and the ACTIONS_* runtime
+      # tokens from the environments of the model's shell commands; GH_TOKEN and
+      # GITHUB_TOKEN stay because gh needs them. the action forwards the variable
+      # to its run step. it reduces, and does not remove, what a prompt injection
+      # can reach.
       CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"
     steps:
-      # Required, not optional. With the scrub set, Claude Code refuses to start
-      # without bubblewrap, and every Bash call fails without socat. The action
-      # installs these packages best-effort, and only when allowed_non_write_users
-      # is set; this step fails the job instead, because the review cannot start
-      # without them.
+      # with the scrub set, Claude Code refuses to start without bubblewrap, and
+      # every Bash call fails without socat. the action installs them only when
+      # allowed_non_write_users is set, so this step fails the job instead.
       - name: Install Subprocess Isolation Dependencies
         run: |
           sudo apt-get update -qq
@@ -55,7 +52,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          # The action configures its own git authentication with the app token.
+          # the action configures its own git authentication with the app token.
           persist-credentials: false
 
       - name: Claude Review
@@ -63,7 +60,7 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           allowed_bots: "claude[bot]"
-          # Unpinned by necessity; see docs/conventions/security.md.
+          # unpinned by necessity; see docs/conventions/security.md.
           plugin_marketplaces: "https://github.com/anthropics/claude-code.git"
           plugins: "code-review@claude-code-plugins"
           prompt: "/code-review:code-review https://github.com/${{ github.repository }}/pull/${{ github.event.issue.number }} --comment"
