@@ -199,8 +199,8 @@ pub struct DockerBackend<C> {
 }
 
 /// removes a container from the running set when its run ends, a dropped future
-/// included; a panic leaves the name, so whatever supervises the code can still read
-/// and remove the container.
+/// included; a panic leaves the name until a removal succeeds, so whatever supervises
+/// the code can still read and remove the container.
 struct RunningGuard<'a> {
     set: &'a RefCell<BTreeSet<String>>,
     name: String,

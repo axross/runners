@@ -219,8 +219,9 @@ pub fn admit_pools(pools: Vec<PoolSpec>, log: &dyn Log, board: &Board) -> Vec<Po
 }
 
 /// the second step, once Docker answers: removes each admitted pool's stale
-/// containers, prepares its volumes, and returns the pools that can run; a pool
-/// that fails either is skipped with a warning, and it fails when none is left.
+/// containers, prepares its volumes, and returns the pools that can run; a pool whose
+/// stale containers cannot be listed, whose labelled one remains, or whose volumes
+/// cannot be prepared is skipped with a warning, and it fails when none is left.
 pub async fn prepare_admitted<B: Backend>(
     backend: &B,
     admitted: Vec<PoolSpec>,

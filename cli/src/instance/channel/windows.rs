@@ -27,7 +27,7 @@ const WAKE_ATTEMPTS: usize = 2;
 /// how often [`Server::close`] checks whether every connection has ended.
 const CLOSE_POLL: Duration = Duration::from_millis(10);
 
-/// the listening pipe; serving threads are never joined, so a client that sends
+/// the listening pipe; serving threads are never joined; a client that sends
 /// nothing holds its thread, and that thread's clone of the request sender, until it
 /// disconnects.
 #[derive(Debug)]
