@@ -1712,8 +1712,12 @@ the block at the "No instance is running." line.
 Windows cannot replace an executable that is running, so step 7 also fails while an
 instance still runs from the install path. A binary fetched with
 `gh release download` is assumed to carry no Mark of the Web, and the procedure
-does not clear one. That assumption, and whether SmartScreen intervenes, are
-not yet verified on axpc ([#56](https://github.com/axross/runners/issues/56)).
+does not clear one. On axpc the installed copy had no `Zone.Identifier`
+([#56](https://github.com/axross/runners/issues/56#issuecomment-6511048211)), and
+SmartScreen did not prompt, with "Check apps and files" On and Smart App Control
+Off ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511120441)).
+With Smart App Control Off, an unsigned binary is not blocked on axpc; with it On,
+the result could differ.
 
 ## Dependencies
 

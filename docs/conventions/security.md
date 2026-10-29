@@ -353,9 +353,12 @@ Residual risks, accepted:
   tag or release is made.
 - The binaries are not code-signed or notarised, so macOS Gatekeeper and Windows
   SmartScreen may warn or block. The install removes the macOS quarantine
-  attribute. Whether a Windows binary the install downloads carries a Mark of the
-  Web, and whether SmartScreen intervenes, are not yet verified on axpc
-  ([#56](https://github.com/axross/runners/issues/56)).
+  attribute. On axpc the installed Windows copy had no `Zone.Identifier`
+  ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511048211)), and
+  SmartScreen did not prompt, with "Check apps and files" On and Smart App Control
+  Off ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511120441)).
+  With Smart App Control Off, an unsigned binary is not blocked on axpc; with it
+  On, the result could differ.
 - The runner image's definition is embedded in the binary, so a runner bump reaches
   a host only through a new release and an update.
 

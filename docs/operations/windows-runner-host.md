@@ -25,8 +25,7 @@ described from the CLI's specification and the tools' documentation. These are
 not yet verified on axpc ([#56](https://github.com/axross/runners/issues/56)), and each
 place below that depends on one says so:
 
-- installing a released binary, including whether it carries a Mark of the Web and
-  whether SmartScreen intervenes;
+- installing a released binary;
 - the token-file access control step's result;
 - a real registration with GitHub;
 - a full `marshal build` of the image on Docker Desktop;
@@ -121,10 +120,14 @@ Variables**, then open a new terminal and confirm that `marshal --version` print
 The same procedure updates `marshal` with a newer tag and rolls it back with the
 previous one; it stops a running instance first. After an update, rebuild the image
 and start again, as [Updating the Runner](#updating-the-runner) describes. The
-release binaries are not code-signed. Whether a binary downloaded with
-`gh release download` carries a Mark of the Web, and whether SmartScreen intervenes
-at its first run, is not yet verified on axpc
-([#56](https://github.com/axross/runners/issues/56)).
+release binaries are not code-signed. On axpc the installed copy had no
+`Zone.Identifier`, so no Mark of the Web
+([#56](https://github.com/axross/runners/issues/56#issuecomment-6511048211)), and
+SmartScreen did not prompt at the install or at its first run from the terminal,
+with "Check apps and files" On and Smart App Control Off
+([#56](https://github.com/axross/runners/issues/56#issuecomment-6511120441)). With
+Smart App Control Off, an unsigned binary is not blocked on axpc; with it On, the
+result could differ.
 
 ## The Fine-Grained Token
 
