@@ -1,8 +1,7 @@
-//! A stand-in for a second `marshal` process, built so the instance-layer tests and
-//! CI can run the lock and the channel in real processes, and as another user.
-//!
-//! It takes its roots from `--root`, which only a debug build allows, so it can never
-//! touch a real lock or channel. A release build of it does nothing.
+//! a stand-in for a second `marshal` process, so the instance-layer tests and CI can
+//! run the lock and the channel in real processes, and as another user; it takes its
+//! roots from `--root`, which only a debug build allows, so it can never touch a real
+//! lock or channel; a release build of it does nothing.
 //!
 //! ```text
 //! instance-helper hold --root DIR [--child]   take the lock, print `locked`, wait
@@ -37,7 +36,7 @@ use marshal_cli::instance::protocol::Response;
 #[cfg(debug_assertions)]
 use marshal_cli::instance::roots::Roots;
 
-/// The exit codes, which the tests and CI read.
+/// the exit codes, which the tests and CI read.
 #[cfg(debug_assertions)]
 mod exit {
     pub const ACQUIRED: u8 = 0;
@@ -64,7 +63,7 @@ fn lock_exit(error: &LockError) -> u8 {
     }
 }
 
-/// Waits on a thread of its own for standard input to end.
+/// signals, from a thread of its own, when standard input ends.
 #[cfg(debug_assertions)]
 fn input_closed() -> tokio::sync::oneshot::Receiver<()> {
     let (closed, receiver) = tokio::sync::oneshot::channel();
@@ -75,7 +74,7 @@ fn input_closed() -> tokio::sync::oneshot::Receiver<()> {
     receiver
 }
 
-/// Serves the channel until end of input. A `mute` server keeps each request
+/// serves the channel until end of input; a `mute` server keeps each request
 /// unanswered, as an instance that has stopped answering does.
 #[cfg(debug_assertions)]
 fn serve(lock: &InstanceLock, roots: &Roots, mute: bool) -> ExitCode {

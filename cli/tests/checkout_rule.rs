@@ -1,6 +1,5 @@
-//! The rule that `diagnosticDirectory` lies outside the project checkout, found by
-//! walking up from the configuration file to the first directory that holds both
-//! `.git` and `cli/Cargo.toml`.
+//! the rule that `diagnosticDirectory` lies outside the project checkout, which
+//! `docs/operations/cli.md` describes.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -14,7 +13,6 @@ use support::{TempDir, run_path, stderr, stdout};
 
 const NOTE: &str = "no checkout of this project was found";
 
-/// A temporary tree shaped like a checkout, with the configuration under it.
 fn checkout() -> TempDir {
     let tree = TempDir::new();
     tree.write("checkout/.git/HEAD", b"ref: refs/heads/main\n");

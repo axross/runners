@@ -1,5 +1,5 @@
-//! The control channel: requests reach the instance and answers come back, on a
-//! Unix socket or a Windows pipe. Only debug builds can move the channel's root.
+//! the control channel over a Unix socket or a Windows pipe; only debug builds can
+//! move the channel's root.
 #![cfg(debug_assertions)]
 #![allow(
     clippy::unwrap_used,
@@ -29,7 +29,6 @@ use tokio::sync::mpsc;
 
 const PATIENCE: Duration = Duration::from_secs(10);
 
-/// An open channel whose requests arrive at `requests`.
 struct Open {
     roots: Roots,
     server: ChannelServer,
@@ -49,7 +48,6 @@ fn open(root: &TempDir) -> (Open, mpsc::UnboundedReceiver<Incoming>) {
     (channel, requests)
 }
 
-/// Sends a request from a thread of its own, as the client process would.
 async fn ask(roots: &Roots, request: Request) -> Result<Response, ClientError> {
     let roots = roots.clone();
     tokio::task::spawn_blocking(move || exchange(&roots, &request, PATIENCE))
@@ -57,7 +55,7 @@ async fn ask(roots: &Roots, request: Request) -> Result<Response, ClientError> {
         .unwrap()
 }
 
-/// Answers every request with `answer` and records what was asked.
+/// answers every request with `answer` and records what was asked.
 fn answer_all(
     mut requests: mpsc::UnboundedReceiver<Incoming>,
     answer: Response,
@@ -269,7 +267,6 @@ async fn no_request_makes_the_instance_read_a_configuration_path_other_than_its_
     let instance = Instance::new(settings, &backend, &clock, &core, &source, &log);
 
     let script = async {
-        // the instance's own file becomes invalid while the other stays valid
         std::fs::write(&own, b"{}").unwrap();
         let restart = ask(&roots, Request::Restart).await.unwrap();
         assert_eq!(restart.outcome, Outcome::Refused, "{restart:?}");
@@ -299,13 +296,12 @@ async fn no_request_makes_the_instance_read_a_configuration_path_other_than_its_
     assert_eq!(core.runs.get(), 1, "the core ran only with the first plan");
 }
 
-/// A connection that sends nothing, so it holds one of the server's connections.
 #[cfg(unix)]
 fn connect_idle(address: &str) -> std::os::unix::net::UnixStream {
     std::os::unix::net::UnixStream::connect(address).unwrap()
 }
 
-/// A connection that sends nothing, so it holds one of the server's connections.
+/// a connection that sends nothing, so it holds one of the server's connections.
 #[cfg(windows)]
 fn connect_idle(
     address: &str,
@@ -418,9 +414,9 @@ mod socket {
         ChannelServer::open(&lock, &roots, sender).unwrap_err()
     }
 
-    /// Sends `bytes` and reads until the server closes. A server that drops the peer
-    /// first can fail the write with a broken pipe instead of ending the read, so a
-    /// failed write reads as an empty answer.
+    /// sends `bytes` and reads until the server closes, taking a failed write as an
+    /// empty answer, since a server that drops the peer first can fail the write
+    /// with a broken pipe instead of ending the read.
     fn raw_exchange(roots: &Roots, bytes: &[u8]) -> String {
         let mut stream = UnixStream::connect(roots.socket_path()).unwrap();
         stream
@@ -443,7 +439,7 @@ mod socket {
         assert_eq!(mode(open.roots.channel_directory()), 0o700);
     }
 
-    /// Has the helper open the channel under `umask`, and returns the directory's
+    /// has the helper open the channel under `umask`, and returns the directory's
     /// mode and owner and the socket's mode while it serves.
     fn opened_under_umask(umask: &str) -> (u32, u32, u32) {
         let root = TempDir::new();
@@ -627,7 +623,7 @@ mod socket {
         assert!(requests.try_recv().is_err());
     }
 
-    /// Sends a line of `length` bytes, its line break included.
+    /// sends a line of `length` bytes, its line break included.
     async fn send_line_of(roots: &Roots, length: usize) -> String {
         let roots = roots.clone();
         tokio::task::spawn_blocking(move || {

@@ -1,10 +1,7 @@
-//! The container backend against a real Docker daemon, on Linux only.
-//!
-//! The tests are `#[ignore]`d so a plain `cargo test` never needs a daemon. CI runs
-//! them in their own step, `cargo test --locked --test real_docker -- --ignored`,
-//! after building the runner image's base stage and naming it in
-//! `MARSHAL_REAL_DOCKER_IMAGE`. Each test fails when Docker or that image is
-//! missing: a step that cannot run a test must not look as if it passed.
+//! the container backend against a real Docker daemon, on Linux only; the tests are
+//! `#[ignore]`d so a plain `cargo test` never needs a daemon, and each fails when
+//! Docker or the image `MARSHAL_REAL_DOCKER_IMAGE` names is missing, so a step that
+//! cannot run a test does not look as if it passed.
 #![cfg(target_os = "linux")]
 #![allow(
     clippy::unwrap_used,
@@ -27,14 +24,13 @@ use marshal_cli::runtime::log::StderrLog;
 use marshal_cli::runtime::secret::Secret;
 use marshal_cli::validate::PlannedVolume;
 
-/// Removes everything the test may have created, whatever way it ends.
 struct Cleanup {
     pool: String,
     volume: String,
 }
 
 impl Cleanup {
-    /// The pool's containers, or `None` when `docker ps` could not run or failed.
+    /// the pool's containers, or `None` when `docker ps` could not run or failed.
     fn try_leftovers(&self) -> Option<Vec<String>> {
         let output = Command::new("docker")
             .args([
@@ -87,7 +83,7 @@ fn cpu_list_is_well_formed(list: &str) -> bool {
         })
 }
 
-/// The image `MARSHAL_REAL_DOCKER_IMAGE` names, once Docker answers and holds it.
+/// the image `MARSHAL_REAL_DOCKER_IMAGE` names, once Docker answers and holds it.
 fn required_image() -> String {
     let image = std::env::var("MARSHAL_REAL_DOCKER_IMAGE")
         .expect("MARSHAL_REAL_DOCKER_IMAGE must name a local image, such as the runner base stage");
@@ -207,9 +203,7 @@ async fn a_container_and_the_cpu_probe_run_through_the_backend_and_leave_nothing
     );
 }
 
-/// A container that writes a small `metrics.txt` where the collector writes it,
-/// exported by the CLI's exporter child from a real `docker cp` stream into a
-/// private sink, then removed.
+/// the test's container writes a small `metrics.txt` where the collector writes it.
 #[tokio::test(flavor = "current_thread")]
 #[ignore = "needs a Docker daemon and MARSHAL_REAL_DOCKER_IMAGE; CI runs it in its own step"]
 async fn a_real_copy_stream_is_exported_into_a_bundle_and_the_container_removed() {

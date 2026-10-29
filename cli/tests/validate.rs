@@ -1,4 +1,4 @@
-//! The validator's error collection across fields and entries: a problem in one
+//! the validator's error collection across fields and entries: a problem in one
 //! place must not hide another.
 #![allow(
     clippy::unwrap_used,

@@ -1,4 +1,4 @@
-//! The restart policy of the runtime core, on an injected clock.
+//! the restart policy of the runtime core, on an injected clock.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -26,7 +26,7 @@ fn seconds(values: &[u64]) -> Vec<Duration> {
         .collect()
 }
 
-/// Waits until the instance has no more to do on its own: it is stopped, or the
+/// waits until the instance has no more to do on its own: it is stopped, or the
 /// core has run `runs` times and is waiting for a stop.
 async fn settle(control: &Control, core: &FakeCore, runs: usize) {
     for _ in 0..10_000 {

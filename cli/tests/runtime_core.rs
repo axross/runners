@@ -1,4 +1,4 @@
-//! The runtime core `start` runs, on the fake backend and registrar.
+//! the runtime core `start` runs, on the fake backend and registrar.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -19,12 +19,10 @@ use support::TempDir;
 
 const START: u64 = 1_709_618_828_009;
 
-/// The names of the fields `report` gives.
 fn reported_names(core: &impl Core) -> Vec<&'static str> {
     core.report().into_iter().map(|(name, _)| name).collect()
 }
 
-/// One pool, `r`, whose token file is `token` in `scratch`.
 fn plan(scratch: &TempDir) -> Plan {
     let config = r#"{"imageName":"actions-runner:local","repositories":[{"owner":"o","repository":"r",
         "name":"r","slots":1,"tokenPath":"C:\\r.token","volumes":[]}]}"#;
