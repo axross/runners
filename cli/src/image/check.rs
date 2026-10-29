@@ -13,8 +13,8 @@ use super::contract::{
 };
 
 /// the bound on both clients of one image check together, the inspect and, when it
-/// fails, the listing; re-validation and the check fit a resuming `start`'s 10 s wait,
-/// and the container steps and the check `restart`'s 35 s.
+/// fails, the listing; re-validation and the check fit in a resuming `start`'s 10 s
+/// wait, and the container steps and the check in `restart`'s 35 s.
 pub const IMAGE_CHECK_BUDGET: std::time::Duration = std::time::Duration::from_secs(4);
 
 /// the most bytes of an inspect's output read.
