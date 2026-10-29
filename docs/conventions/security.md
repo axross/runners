@@ -518,7 +518,9 @@ later host:
   restriction rests on the operator: the explicit step under Restricting a Token
   File in [Windows Runner Host](../operations/windows-runner-host.md#restricting-a-token-file)
   restricts each file at install and at every rotation, and the rollback's Task
-  Scheduler setup does the same.
+  Scheduler setup does the same. That step's effect is not yet verified on axpc
+  ([#56](https://github.com/axross/runners/issues/56)): its `icacls` evidence was
+  not collected there.
 - Multiple execution pools for one repository MUST use the same token file;
   entries for different repositories MUST NOT share it. Extra pools do not expand
   the token's repository authority.

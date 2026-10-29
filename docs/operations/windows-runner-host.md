@@ -28,7 +28,8 @@ place below that depends on one says so:
 - installing a released binary, and the install's refusals, which were not run on
   axpc because installation is to move to winget and Homebrew
   ([#70](https://github.com/axross/runners/issues/70));
-- the token-file access control step's result;
+- the token-file access control step's result, whose `icacls` evidence was not
+  collected on axpc;
 - a real registration with GitHub;
 - a full `marshal build` of the image on Docker Desktop;
 - Ctrl+C and Ctrl+Break in the `start` window;
@@ -186,8 +187,9 @@ listed:
 
 The last `icacls` of each file lists its access rules; it MUST list only your user,
 with `(R)`, and no inherited entry. A rule for anyone else means the step did not
-run on that file. This step's result is not yet verified on axpc
-([#56](https://github.com/axross/runners/issues/56)).
+run on that file. This step's effect is not yet verified on axpc
+([#56](https://github.com/axross/runners/issues/56)): its `icacls` evidence was not
+collected there.
 
 ## The Host Configuration
 
@@ -847,7 +849,9 @@ isolation rules the host enforces between repositories are in
   the kernel-granted set; the authorized real-host check also resolves the actual
   cgroup cpuset/quota layout.
 - **Token files:** `icacls <token file>` lists only the host user, with `(R)`; see
-  [Restricting a Token File](#restricting-a-token-file).
+  [Restricting a Token File](#restricting-a-token-file). The step's effect is not
+  yet verified on axpc ([#56](https://github.com/axross/runners/issues/56)): its
+  `icacls` evidence was not collected there.
 - **End to end:** for each pool, a workflow run whose `runs-on` matches that
   entry's routing label starts executing rather than sitting queued.
 
