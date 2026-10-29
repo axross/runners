@@ -202,7 +202,6 @@ async fn an_ended_container_yields_one_complete_bundle_and_is_removed() {
         calls_of(&invocations, "rm").last().unwrap().arguments,
         ["rm", "-f", NAME]
     );
-    // the exporter's clients carry no registration and run in groups of their own
     for call in inspect.iter().chain(&copy) {
         assert_eq!(call.jit, None);
         #[cfg(unix)]

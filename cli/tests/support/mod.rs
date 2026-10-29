@@ -73,6 +73,7 @@ impl TempDir {
         path
     }
 
+    /// writes a token file private to the user, as macOS requires.
     pub fn write_token(&self, relative: &str, contents: &[u8]) -> PathBuf {
         let path = self.write(relative, contents);
         make_private(&path);

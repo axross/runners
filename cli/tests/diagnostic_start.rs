@@ -214,6 +214,7 @@ fn the_token_and_jit_configuration_reach_no_bundle_terminal_log_or_answer() {
             "text {index} holds a secret:\n{text}"
         );
     }
+    // only the job's own `docker run` was given the JIT configuration
     let calls = host.invocations();
     assert!(!calls.is_empty());
     for (number, words) in calls.iter().enumerate() {
