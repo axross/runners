@@ -1710,7 +1710,10 @@ turns a native command's redirected standard error into an error, and `Stop` wou
 the block at the "No instance is running." line.
 
 Windows cannot replace an executable that is running, so step 7 also fails while an
-instance still runs from the install path. A binary fetched with
+instance still runs from the install path. The procedure's refusals on Windows are
+not yet verified on axpc ([#56](https://github.com/axross/runners/issues/56)): the
+refusal checks were not run there, because installation is to move to winget and
+Homebrew ([#70](https://github.com/axross/runners/issues/70)). A binary fetched with
 `gh release download` is assumed to carry no Mark of the Web, and the procedure
 does not clear one. On axpc the installed copy had no `Zone.Identifier`
 ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511048211)), and

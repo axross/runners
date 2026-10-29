@@ -25,7 +25,9 @@ described from the CLI's specification and the tools' documentation. These are
 not yet verified on axpc ([#56](https://github.com/axross/runners/issues/56)), and each
 place below that depends on one says so:
 
-- installing a released binary;
+- installing a released binary, and the install's refusals, which were not run on
+  axpc because installation is to move to winget and Homebrew
+  ([#70](https://github.com/axross/runners/issues/70));
 - the token-file access control step's result;
 - a real registration with GitHub;
 - a full `marshal build` of the image on Docker Desktop;
@@ -111,7 +113,10 @@ Install `marshal` from a release with the Windows procedure in
 [CLI](./cli.md#installing-updating-and-rolling-back), never by building it on the
 host. The procedure refuses a binary whose checksum, commit on main, or attestation
 from `release.yaml` on main does not verify, or whose `--version` does not print the
-release's version, before it replaces anything. It installs the binary at
+release's version, before it replaces anything. Those refusals are not yet verified
+on axpc ([#56](https://github.com/axross/runners/issues/56)): the refusal checks
+were not run there, because installation is to move to winget and Homebrew
+([#70](https://github.com/axross/runners/issues/70)). It installs the binary at
 `%LOCALAPPDATA%\Programs\marshal\marshal.exe`. Add that directory to your user
 `Path` under **Settings, System, About, Advanced system settings, Environment
 Variables**, then open a new terminal and confirm that `marshal --version` prints

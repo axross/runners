@@ -322,7 +322,11 @@ Residual risks, accepted:
   check still tie the binary to one commit on main, but no longer to a version.
   The install therefore checks the downloaded binary's `--version` before it
   replaces the installed one, so an older genuine binary under a newer version's
-  name is refused without touching the install path.
+  name is refused without touching the install path. On Windows that refusal, like
+  the install's other refusals, is not yet verified on axpc
+  ([#56](https://github.com/axross/runners/issues/56)): the refusal checks were not
+  run there, because installation is to move to winget and Homebrew
+  ([#70](https://github.com/axross/runners/issues/70)).
 - **A green run can release nothing.** If main moves after the dispatch, the
   release job logs that the local branch is behind the remote one and ends without
   a tag or a release, after the binaries are attested.
