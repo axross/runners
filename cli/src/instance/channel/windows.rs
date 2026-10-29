@@ -20,11 +20,8 @@ use super::{CONNECT_TIMEOUT, ChannelError, ClientError, MAX_CONNECTIONS};
 
 type Stream = DuplexPipeStream<pipe_mode::Bytes>;
 
-/// how long closing the server waits to connect to its own pipe, each time.
 const WAKE_TIMEOUT: Duration = Duration::from_millis(500);
-/// how often closing the server tries to connect to its own pipe.
 const WAKE_ATTEMPTS: usize = 2;
-/// how often [`Server::close`] checks whether every connection has ended.
 const CLOSE_POLL: Duration = Duration::from_millis(10);
 
 /// the listening pipe; serving threads are never joined; a client that sends
@@ -35,7 +32,6 @@ pub struct Server {
     closing: Arc<AtomicBool>,
     name: String,
     accepting: Option<JoinHandle<()>>,
-    /// the connections being served.
     active: Arc<AtomicUsize>,
 }
 

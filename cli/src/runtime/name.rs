@@ -75,8 +75,8 @@ pub fn cpu_probe_name(pool: &str, slot: u32) -> String {
     format!("{pool}-cpu-probe-{slot}")
 }
 
-/// whether `candidate` is exactly a container name [`job_container_name`] gives
-/// this pool, case included.
+/// whether `candidate` is the pool's name, a hyphen, a slot number, a hyphen and
+/// exactly 17 ASCII digits, and nothing else; case matters.
 #[must_use]
 pub fn is_own_container_name(pool: &str, candidate: &str) -> bool {
     let Some(rest) = candidate

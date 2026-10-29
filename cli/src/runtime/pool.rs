@@ -18,7 +18,6 @@ use super::log::Log;
 use super::name::{cpu_probe_name, is_own_container_name};
 use super::token::read_token;
 
-/// the bound on removing one stale container.
 const STALE_REMOVE_BUDGET: Duration = Duration::from_secs(120);
 
 /// one repository's pool, from a valid axpc plan.
