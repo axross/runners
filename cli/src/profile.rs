@@ -110,7 +110,7 @@ impl Profile {
     }
 
     /// the platform labels of any host or OS, which an axmc pool rejects when it does
-    /// not provide them itself; axpc accepts them.
+    /// not provide them itself; axpc accepts them, as its schema always has.
     #[must_use]
     pub fn foreign_platform_labels(self) -> &'static [&'static str] {
         match self {

@@ -76,8 +76,8 @@ fn is_link(metadata: &fs::Metadata) -> bool {
     metadata.file_type().is_symlink()
 }
 
-/// checks that `path` is a directory with no link in it and, on Unix, private to the
-/// current user.
+/// checks that `path` is a directory with no link at or above it and, on Unix, private
+/// to the current user.
 fn check_directory(path: &Path) -> Result<(), SinkError> {
     for ancestor in path.ancestors() {
         if ancestor.as_os_str().is_empty() || ancestor.parent().is_none() {

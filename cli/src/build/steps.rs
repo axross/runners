@@ -58,7 +58,6 @@ struct Output {
 }
 
 impl Output {
-    /// a finished client's output on one line, cut as an error text is.
     fn text(&self) -> String {
         scrub_error_text(&format!("{} {}", self.stdout, self.stderr), "")
     }

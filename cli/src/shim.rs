@@ -1,7 +1,9 @@
-//! the shim between the CLI and one job container's `docker run` client, on Unix; a
-//! diagnostic container is ended and kept, so its evidence survives for the next
-//! finalisation; only the client gets the JIT configuration, through the environment
-//! the shim inherits, never the removal's client; see `docs/operations/cli.md`.
+//! the shim between the CLI and one job container's `docker run` client, on Unix; it
+//! runs until the client ends or its standard input, a liveness pipe whose write end
+//! only the CLI holds, closes; a diagnostic container is ended and kept, so its
+//! evidence survives for the next finalisation; only the client gets the JIT
+//! configuration, through the environment the shim inherits, never the removal's
+//! client; see `docs/operations/cli.md`.
 
 use std::ffi::{OsStr, OsString};
 use std::os::fd::AsFd;

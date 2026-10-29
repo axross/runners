@@ -17,7 +17,8 @@ use super::volumes::volume_definitions;
 
 const MAX_NAME_LENGTH: usize = 64;
 // GitHub documents no limit for a runner's name; the runner name is the entry's name
-// plus a slot number and a 17-digit timestamp, so this caps it on an assumed limit.
+// plus a slot number and a 17-digit timestamp, so this caps the entry name on an
+// assumed limit.
 
 const POSIX_PATH: &str = "an absolute POSIX path without control characters or empty, '.' or '..' components, such as /path/to/file";
 

@@ -129,7 +129,6 @@ fn parse_list(available: &str) -> Result<Vec<Span>, CpuError> {
     Ok(spans)
 }
 
-/// an ID or an `ID-ID` range, with at most one `-`.
 fn is_well_formed_range(part: &str) -> bool {
     match part.split_once('-') {
         Some((first, last)) => is_well_formed_id(first) && is_well_formed_id(last),
@@ -137,7 +136,6 @@ fn is_well_formed_range(part: &str) -> bool {
     }
 }
 
-/// decimal digits with no sign, space, or leading zero (a lone `0` is fine).
 fn is_well_formed_id(text: &str) -> bool {
     let digits = text.as_bytes();
     !digits.is_empty()
