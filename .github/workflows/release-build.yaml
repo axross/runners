@@ -56,6 +56,8 @@ jobs:
           persist-credentials: false
       - name: Install Pinned Rust Toolchain
         run: rustup show active-toolchain || rustup toolchain install
+      # each target builds natively, so a change of runner image fails here
+      # instead of shipping the wrong architecture.
       - name: Check The Compiler's Host Target
         env:
           EXPECTED_HOST: ${{ matrix.host }}
@@ -66,14 +68,20 @@ jobs:
             exit 1
           fi
           echo "rustc's host target is ${host}."
+      # before anything compiles, so `--locked` fails if the two files disagree
+      # and the binary's --version is the input's.
       - name: Write The Release Version
         env:
           VERSION: ${{ inputs.version }}
         run: bash ../.github/scripts/set-release-version.sh "$VERSION"
+      # MARSHAL_EXPECT_RELEASE makes each test fail if it was built in the wrong
+      # profile.
       - name: Test That A Release Build Ignores The Debug-Only Overrides
         env:
           MARSHAL_EXPECT_RELEASE: "1"
         run: cargo test --locked --release --test base_address --test instance_roots --test build_definition
+      # `cargo test` above also builds the fake-docker and instance-helper helpers
+      # into target/release; only marshal is copied out.
       - name: Build The Release Binary
         run: cargo build --locked --release --bin marshal
       - name: Check The Binary's Version
@@ -98,6 +106,10 @@ jobs:
           mkdir ../dist
           cp "target/release/marshal${SUFFIX}" "../dist/${asset}"
           echo "name=${asset}" >> "$GITHUB_OUTPUT"
+      # the binary links the C runtime statically (cli/.cargo/config.toml), so a host
+      # without the Visual C++ redistributable runs it. vswhere finds dumpbin in the
+      # MSVC tools. the check fails unless dumpbin listed KERNEL32.dll, so a run
+      # that read nothing cannot pass.
       - name: Check That The Windows Binary Imports No vcruntime DLL
         if: runner.os == 'Windows'
         shell: pwsh

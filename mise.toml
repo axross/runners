@@ -16,8 +16,9 @@ powershell = "7.6.6"
 cargo-deny = "0.20.2"
 
 [env]
-# lint:powershell checks its download against this hash; refresh the version and
-# the hash together.
+# PSScriptAnalyzer is a PowerShell module, not a mise tool, so `lint:powershell`
+# downloads this version from the PowerShell Gallery on first use and refuses it
+# unless its SHA-256 matches. refresh the version and the hash together.
 PSSCRIPTANALYZER_VERSION = "1.25.0"
 PSSCRIPTANALYZER_SHA256 = "14e634c828eb98efb9f40b2918ba90f139ed5eccdf663a2a747736d996995d60"
 

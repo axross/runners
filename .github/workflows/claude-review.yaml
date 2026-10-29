@@ -23,14 +23,17 @@ jobs:
       cancel-in-progress: true
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # the action posts with a Claude GitHub App token it gets by exchanging this
+    # job's OIDC token, so the job needs no write scope; see
+    # docs/conventions/security.md.
     permissions:
-      contents: read
+      contents: read # actions/checkout reads the default branch
       id-token: write # the OIDC token the action exchanges for the app token
     env:
-      # best-effort scrub of secrets from the environments of the model's shell
-      # commands; GH_TOKEN and GITHUB_TOKEN stay because gh needs them. the
-      # action forwards it to its run step. it reduces, and does not remove, what
-      # a prompt injection through pull request content can reach.
+      # best-effort scrub of CLAUDE_CODE_OAUTH_TOKEN and the ACTIONS_* runtime
+      # tokens from the environments of the model's shell commands; GH_TOKEN and
+      # GITHUB_TOKEN stay because gh needs them. the action forwards it to its run
+      # step. it reduces, and does not remove, what a prompt injection can reach.
       CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"
     steps:
       # with the scrub set, Claude Code refuses to start without bubblewrap, and

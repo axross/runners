@@ -36,9 +36,9 @@ jobs:
           # SHA-256 of the extracted mise binary, not of the archive the action
           # downloads. update with the version; see docs/operations/agent-sessions.md.
           sha256: 63049bc35fb9065e8dc35ac8b25fdae53e9bd6f1885a843aedeba398e046a1ee
-      # naming no toolchain installs the one cli/rust-toolchain.toml pins. a
-      # rustup older than 1.28 cannot do that without a name, so show
-      # active-toolchain comes first.
+      # rustup is on the hosted runner; naming no toolchain installs the one
+      # cli/rust-toolchain.toml pins. a rustup older than 1.28 cannot do that
+      # without a name, so show active-toolchain comes first.
       - name: Install Pinned Rust Toolchain
         working-directory: cli
         run: rustup show active-toolchain || rustup toolchain install
@@ -73,12 +73,17 @@ jobs:
         run: cargo clippy --locked --all-targets -- -D warnings
       - name: Run Tests
         run: cargo test --locked
-      # a hosted Windows runner has one account, so it has no such step.
+      # another OS user must be refused the instance lock while it is held. the
+      # script runs the debug helper as `nobody` through sudo, which the Linux and
+      # macOS hosted runners allow without a password; a hosted Windows runner has
+      # one account, so it has no such step.
       - name: Test That Another User Cannot Take The Instance Lock
         if: runner.os != 'Windows'
         run: |
           cargo build --locked --bin instance-helper
           bash tests/ci/other-user-lock.sh target/debug/instance-helper
+      # the CLI cannot read a live pipe's security descriptor without unsafe code,
+      # so PowerShell reads it and fails unless it grants the current user alone.
       - name: Read Back The Control Pipe Security Descriptor
         if: runner.os == 'Windows'
         shell: pwsh
@@ -86,13 +91,18 @@ jobs:
           cargo build --locked --bin instance-helper
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ./tests/ci/control-pipe-security.ps1 -Helper target/debug/instance-helper.exe
+      # the debug-only overrides move only in a debug build; this builds the same
+      # tests in the release profile. MARSHAL_EXPECT_RELEASE makes each test fail
+      # if built in the wrong profile, so a mistake here cannot pass quietly.
       - name: Test That A Release Build Ignores The Debug-Only Overrides
         if: runner.os == 'Linux'
         env:
           MARSHAL_EXPECT_RELEASE: "1"
         run: cargo test --locked --release --test base_address --test instance_roots --test build_definition
-      # the image is built on the runner host and never pushed, so the job holds
-      # no credential.
+      # the real-Docker tests need the base stage and a daemon; the Windows and macOS
+      # hosted runners have no Linux daemon, and a missing daemon or image fails each
+      # test, so it cannot be skipped unseen. the image is never pushed, so the job
+      # holds no credential.
       - name: Build Runner Base Image For The Docker Test
         if: runner.os == 'Linux'
         run: docker build --target base --tag runners-docker-test:ci ../images/actions-runner
@@ -101,6 +111,9 @@ jobs:
         env:
           MARSHAL_REAL_DOCKER_IMAGE: runners-docker-test:ci
         run: cargo test --locked --test real_docker -- --ignored
+      # `marshal build` against the same daemon, with the debug-only test definition
+      # in tests/build-definition. a missing daemon fails the test, and the image it
+      # builds is removed and never pushed.
       - name: Run Real Docker Build Test
         if: runner.os == 'Linux'
         run: cargo test --locked --test real_docker_build -- --ignored
@@ -135,7 +148,9 @@ jobs:
         run: bash images/actions-runner/tests/smoke-test.sh actions-runner:ci
 
   # the host scripts target the Windows PowerShell 5.1 that the scheduled tasks
-  # use, which the check job's PowerShell 7 does not cover.
+  # use, which the check job's PowerShell 7 does not cover. this runs only the
+  # configuration test; Docker Desktop, Task Scheduler, and icacls are not
+  # exercised here.
   host-windows:
     name: Test Host Scripts On Windows PowerShell 5.1
     runs-on: windows-latest

@@ -9,7 +9,8 @@
     Windows PowerShell 5.1 turns a native command's stderr output into a
     terminating error under $ErrorActionPreference = 'Stop' once it is
     redirected, so Invoke-Docker relaxes the preference and returns the exit
-    code.
+    code. runner logging uses explicitly quoted process arguments and separate
+    pipes.
 #>
 
 . (Join-Path $PSScriptRoot 'diagnostic-process-lifetime.ps1')
@@ -264,10 +265,10 @@ function Get-SlotCpuAffinity {
     return $selection
 }
 
-# returns the arguments of the one `docker run` that starts a job container.
-# memory and swap are both -MemoryGb, so the container gets no swap beyond its
-# memory limit. `-e NAME` without a value makes the Docker client read the
-# registration from its own environment, so it is never on a command line.
+# returns the `docker run` arguments of a job container. -Cpus is the text
+# Format-CpuCount returns; memory and swap are both -MemoryGb, so there is no swap
+# beyond the limit. `-e NAME` without a value makes the Docker client read the
+# registration from its own environment, never a command line.
 function Get-JobContainerArgument {
     param(
         [Parameter(Mandatory)][string]$Name,

@@ -21,18 +21,25 @@ path = "src/lib.rs"
 name = "marshal"
 path = "src/main.rs"
 
+# a stand-in for the `docker` client, so the tests can run the container backend as
+# a real process. Windows finds only `.exe` programs, so it cannot be a script.
 [[bin]]
 name = "fake-docker"
 path = "helpers/fake_docker.rs"
 test = false
 doc = false
 
+# a stand-in for a second process, for the lock and channel tests and the CI step
+# that runs it as another user. a release must not ship it.
 [[bin]]
 name = "instance-helper"
 path = "helpers/instance_helper.rs"
 test = false
 doc = false
 
+# `serde` is declared without its default features: its derive runs procedural
+# macros (`serde_derive`, `syn`, `quote`, `proc-macro2`) at build time, and the
+# JSON reader is in this crate.
 [dependencies]
 clap = { version = "4.6.7", default-features = false, features = ["std", "help", "usage", "error-context"] }
 regex = { version = "1.13.1", default-features = false, features = ["std", "unicode-perl"] }
@@ -41,11 +48,16 @@ tokio = { version = "1.54.1", default-features = false, features = ["rt", "time"
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider"] }
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
 
+# the instance lock and control channel are named pipes on Windows: interprocess
+# owns the pipe calls, winsafe reads the current user's SID, and win32job puts
+# `start` in a Job Object that kills its children when it ends.
 [target.'cfg(windows)'.dependencies]
 interprocess = { version = "2.4.7", default-features = false }
 winsafe = { version = "0.0.29", default-features = false, features = ["advapi"] }
 win32job = { version = "2.0.3", default-features = false }
 
+# the Unix lock opens its file with O_NOFOLLOW and O_NONBLOCK, which std does not
+# name. tokio already depends on libc, so this adds no crate.
 [target.'cfg(unix)'.dependencies]
 libc = { version = "0.2.191", default-features = false }
 

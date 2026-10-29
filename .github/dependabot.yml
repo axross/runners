@@ -40,8 +40,9 @@ updates:
       prefix: "build"
       include: "scope"
 
-  # semantic-release and its plugins. the prefix is `chore` because their bumps
-  # change nothing in a binary; the `build(deps)` prefix above releases a patch
+  # semantic-release and its plugins, which release.yaml installs from
+  # release/package-lock.json. the prefix is `chore` because their bumps change
+  # nothing in a binary; the `build(deps)` prefix above releases a patch
   # (release/.releaserc.json).
   - package-ecosystem: "npm"
     directory: "/release"

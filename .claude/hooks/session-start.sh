@@ -24,8 +24,8 @@ else
   echo "warning: mise is not installed, so the pinned lint toolchain is unavailable (see README.md)" >&2
 fi
 
-# a network failure must not fail a session start; output goes to stderr, not
-# the context.
+# a network failure must not fail a session start, and the Rust tasks then fail
+# at once with a line naming this script; output goes to stderr, not the context.
 export PATH="$HOME/.cargo/bin:$PATH"
 if [ -x .agents/install-rust ]; then
   .agents/install-rust >&2 || echo "warning: .agents/install-rust failed, so the Rust gates are unavailable until it succeeds (see docs/operations/agent-sessions.md)" >&2

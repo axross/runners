@@ -298,8 +298,8 @@ function Invoke-SlotWorkerJob {
     Start-Job -ScriptBlock $WorkerScript -ArgumentList @($workerArguments.Values)
 }
 
-# drains a worker's output and tracks the container it runs from its protocol
-# lines.
+# drains a worker's output. the container it runs is tracked from its protocol
+# lines, read only to know what to stop on shutdown.
 function Receive-WorkerOutput {
     param([Parameter(Mandatory)]$Worker)
 
@@ -321,7 +321,8 @@ function Receive-WorkerOutput {
 }
 
 # stops the containers the workers last reported, once each, in one Docker call
-# so they share one grace period.
+# so they share one grace period. the drain first catches a container started
+# since the last pass.
 function Invoke-KnownContainerStop {
     param([Parameter(Mandatory)]$Workers, [Parameter(Mandatory)]$Stopped, [Diagnostics.Stopwatch]$Clock)
 
