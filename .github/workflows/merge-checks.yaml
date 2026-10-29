@@ -30,7 +30,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install Pinned Tools
-        uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5.0.0
+        uses: jdx/mise-action@82a612c5ab8bcda7cc5db6b7e81a8e7584c3dc6e # v5.2.3
         with:
           version: 2026.9.17
           # SHA-256 of the extracted mise binary, not of the archive the action
