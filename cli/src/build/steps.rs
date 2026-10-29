@@ -27,7 +27,7 @@ use super::arguments::{
 /// ends on a stop.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BuildLimits {
-    /// docker must answer `docker info` within this, or nothing is built.
+    /// Docker must answer `docker info` within this, or nothing is built.
     pub docker_answer: Duration,
     /// a bound on every other client, a stop aside.
     pub command_budget: Duration,
@@ -249,7 +249,8 @@ impl Steps<'_> {
         }
     }
 
-    /// removes the temporary tags a killed `build` left; a failure is a warning.
+    /// removes the temporary tags of this repository that a killed `build` left; a
+    /// failure is a warning.
     async fn remove_leftovers(&self) {
         let listed = match self.checked(&leftover_list_arguments(self.image)).await {
             Ok(listed) => listed,
@@ -342,10 +343,10 @@ impl Steps<'_> {
         ))
     }
 
-    /// tags the build as the configured image, which commits it; a stop gives the
-    /// client [`BuildLimits::tag_grace_after_stop`] to succeed, and when it does not,
-    /// or the tag stalls for the command budget, the configured name's build-time
-    /// label says whether it committed.
+    /// tags the build as the configured image, which commits it; a stop during the tag
+    /// gives the client [`BuildLimits::tag_grace_after_stop`] to succeed, and when it
+    /// does not, or the tag stalls for the command budget, the configured name's
+    /// build-time label says whether it committed.
     async fn retag(&self, temporary: &str, built: u64) -> Retag {
         let mut command = client_command(&self.program, &[], &tag_arguments(temporary, self.image));
         command.stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -402,7 +403,7 @@ impl Steps<'_> {
         }
     }
 
-    /// after the commit: removes the temporary tag and prunes the dangling images,
+    /// after the commit: removes the temporary tag, then prunes the dangling images
     /// unless a stop was asked for.
     async fn after_commit(&self, temporary: &str) {
         self.remove_temporary(temporary).await;

@@ -9,9 +9,9 @@ use crate::profile::{Os, Profile};
 use super::fields::{Errors, Field};
 use super::patterns;
 
-/// returns the registration labels, the platform labels then the entry's own (or the
-/// routing label when the field is absent or empty), or `None` after recording why
-/// a present list is unusable.
+/// returns the registration labels: the platform labels followed by the entry's own,
+/// or the platform labels and the routing label when the field is absent or empty;
+/// `None` after recording why a present list is unusable.
 pub fn registration_labels(
     field: &Field,
     path: &str,
