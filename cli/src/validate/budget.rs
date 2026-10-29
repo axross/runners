@@ -1,4 +1,4 @@
-//! The host-wide budget of an axmc configuration.
+//! the host-wide budget of an axmc configuration.
 
 use serde::Deserialize;
 
@@ -21,10 +21,10 @@ pub(super) struct BudgetFields {
     disk_gb: Field,
 }
 
-/// The most macOS virtual machines the host runs at once.
+/// the most macOS virtual machines the host runs at once.
 pub const MAX_MACOS_VMS: u32 = 2;
 
-/// Reads the root `budget` object, or records why it is unusable.
+/// reads the root `budget` object, or records why it is unusable.
 pub fn read_budget(budget: &Field, errors: &mut Errors) -> Option<Budget> {
     let value = fields::required(budget, "budget", errors)?;
     let node = fields::read_object::<BudgetFields>(value, "budget", &BUDGET_FIELDS, errors)?;
@@ -45,7 +45,7 @@ pub fn read_budget(budget: &Field, errors: &mut Errors) -> Option<Budget> {
     })
 }
 
-/// What the pools use together: the sum over the pools of slots times the limit.
+/// what the pools use together: the sum over the pools of slots times the limit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Usage {
     pub macos_vms: u32,
@@ -74,7 +74,7 @@ pub fn usage(entries: &[Entry]) -> Usage {
     total
 }
 
-/// Records each limit the pools together exceed, at path `budget`. The macOS limit
+/// records each limit the pools together exceed, at path `budget`; the macOS limit
 /// is fixed by the host, so it is checked even when the budget itself is unusable.
 pub fn check_budget(entries: &[Entry], budget: Option<&Budget>, errors: &mut Errors) {
     let used = usage(entries);

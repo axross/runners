@@ -1,17 +1,12 @@
-//! A strict, order-preserving JSON reader.
-//!
-//! It accepts RFC 8259 JSON and nothing more: no comments, no trailing commas.
-//! Numbers stay as the text the file holds, so a caller decides what an
-//! out-of-range literal means. Object members keep document order, and the
-//! duplicate-key behaviour is the one the PowerShell validator shows: a repeated
-//! key keeps its last value at the position of its last occurrence, while two keys
-//! that differ only in case are an error.
+//! a strict, order-preserving JSON reader: RFC 8259 and nothing more, with numbers
+//! kept as their literal text so a caller decides what an out-of-range one means.
+//! its duplicate-key rule is the PowerShell validator's, see `docs/operations/cli.md`.
 
 use std::collections::HashMap;
 
 use crate::fold;
 
-/// The deepest nesting the reader accepts, so that hostile input cannot exhaust
+/// the deepest nesting the reader accepts, so that hostile input cannot exhaust
 /// the stack.
 const MAX_DEPTH: usize = 128;
 
@@ -25,21 +20,20 @@ pub enum Value {
     Object(Object),
 }
 
-/// A JSON number, kept as its literal text.
+/// a JSON number, kept as its literal text.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Number {
     literal: String,
 }
 
 impl Number {
-    /// Wraps the literal text of a number the reader produced.
+    /// wraps the literal text of a number the reader produced.
     pub(crate) fn from_literal(literal: String) -> Self {
         Self { literal }
     }
 
-    /// Returns the value of an integer literal such as `8` or `-3`, or `None` for
-    /// a literal with a fraction or an exponent, such as `8.0` or `1e1`, and for
-    /// an integer too large to represent.
+    /// returns the value of an integer literal such as `8` or `-3`, or `None` for a
+    /// literal with a fraction or an exponent, or an integer too large to represent.
     #[must_use]
     pub fn as_integer(&self) -> Option<i128> {
         if self.literal.contains(['.', 'e', 'E']) {
@@ -48,8 +42,8 @@ impl Number {
         self.literal.parse().ok()
     }
 
-    /// Returns the nearest double. A literal beyond the range of a double gives
-    /// infinity, as it does in PowerShell.
+    /// returns the nearest double, infinity for a literal beyond the range of a
+    /// double, as in PowerShell.
     #[must_use]
     pub fn as_f64(&self) -> f64 {
         self.literal.parse().unwrap_or(f64::NAN)
@@ -61,11 +55,8 @@ impl Number {
     }
 }
 
-/// A JSON object whose members keep document order.
-///
-/// A repeated key leaves a gap where its earlier occurrence was, so inserting
-/// stays linear: `index` maps each key's folded form to its slot, and a slot
-/// holds `None` once a later occurrence replaced it.
+/// a JSON object whose members keep document order; a repeated key leaves a gap
+/// where its earlier occurrence was, so inserting stays linear.
 #[derive(Debug, Clone, Default)]
 pub struct Object {
     members: Vec<Option<(String, Value)>>,
@@ -106,7 +97,7 @@ impl Object {
     }
 }
 
-/// Why a document could not be read, with the position of the problem.
+/// why a document could not be read, with the position of the problem.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseError {
     pub message: String,
@@ -124,9 +115,9 @@ impl std::fmt::Display for ParseError {
     }
 }
 
-/// Reads a document. A leading byte-order mark is ignored. An empty or
-/// whitespace-only document reads as `Null`, which is a non-object root for the
-/// caller to report.
+/// reads a document, ignoring a leading byte-order mark; an empty or
+/// whitespace-only document reads as `Null`, a non-object root for the caller to
+/// report.
 pub fn parse(bytes: &[u8]) -> Result<Value, ParseError> {
     let text = std::str::from_utf8(bytes).map_err(|error| ParseError {
         message: format!(

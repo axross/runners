@@ -1,24 +1,23 @@
-//! Case-insensitive comparison, spelled out so that each caller says how much of
+//! case-insensitive comparison, spelled out so that each caller says how much of
 //! Unicode it means.
 
-/// Reports whether two strings are equal ignoring ASCII case. Owners, repository
-/// names, labels and entry names compare this way because their patterns allow
-/// nothing else.
+/// reports whether two strings are equal ignoring ASCII case, as owners, repository
+/// names, labels and entry names compare because their patterns allow nothing else.
 #[must_use]
 pub fn eq_ascii(first: &str, second: &str) -> bool {
     first.eq_ignore_ascii_case(second)
 }
 
-/// Lowercases every character that has a single-character lowercase form and
+/// lowercases every character that has a single-character lowercase form and
 /// leaves the others alone.
 #[must_use]
 pub fn lowercase(text: &str) -> String {
     text.chars().map(simple_lowercase).collect()
 }
 
-/// Reports whether two strings are equal character by character under simple case
-/// folding: no normalization, no ignorable characters, no context-sensitive
-/// lowercasing. Token paths are the only compared values that can hold non-ASCII
+/// reports whether two strings are equal character by character under simple case
+/// folding, with no normalization, ignorable characters or context-sensitive
+/// lowercasing; token paths are the only compared values that can hold non-ASCII
 /// characters.
 #[must_use]
 pub fn eq_folded(first: &str, second: &str) -> bool {
@@ -33,14 +32,13 @@ pub fn eq_folded(first: &str, second: &str) -> bool {
     }
 }
 
-/// Returns `text` with every character folded as [`eq_folded`] folds it, so two
-/// strings are `eq_folded` exactly when their folded forms are equal.
+/// returns `text` folded as [`eq_folded`] folds it.
 #[must_use]
 pub fn folded(text: &str) -> String {
     text.chars().map(fold_char).collect()
 }
 
-/// Reports whether `text` starts with `prefix` under the same folding as
+/// reports whether `text` starts with `prefix` under the same folding as
 /// [`eq_folded`].
 #[must_use]
 pub fn starts_with_folded(text: &str, prefix: &str) -> bool {
@@ -60,11 +58,10 @@ fn simple_lowercase(c: char) -> char {
     single(c.to_lowercase()).unwrap_or(c)
 }
 
-/// Approximates Unicode simple case folding with the standard library's case
-/// mappings: a character folds to the lowercase of its uppercase when both are a
-/// single character. A character whose full mapping has several characters stays
-/// as it is, as simple folding has no mapping for it either. The dotless i is the
-/// one character this misjudges, because only Turkic folding maps it.
+/// approximates Unicode simple case folding with the standard library: a character
+/// folds to the lowercase of its uppercase when both are one character, and otherwise
+/// stays, as simple folding has no mapping for it either; the dotless i is the one
+/// character it misjudges, because only Turkic folding maps it.
 fn fold_char(c: char) -> char {
     if c == '\u{0131}' {
         return c;
@@ -94,16 +91,16 @@ mod tests {
 
     #[test]
     fn simple_folding_differs_from_powershell_eq_on_declared_pairs() {
-        // PowerShell 7 on Linux compares these as different; Unicode simple case
-        // folding equates each with its partner. docs/operations/cli.md declares
-        // them as divergences.
+        // PowerShell 7 on Linux compares these as different, while simple case folding
+        // equates each with its partner; docs/operations/cli.md declares them as
+        // divergences.
         assert!(eq_folded("\u{17f}", "s"));
         assert!(eq_folded("\u{17f}", "S"));
         assert!(eq_folded("\u{345}", "\u{3b9}"));
         assert!(eq_folded("\u{345}", "\u{399}"));
         assert!(eq_folded("\u{1e9b}", "\u{1e61}"));
         assert!(eq_folded("\u{1e9b}", "\u{1e60}"));
-        // The Kelvin sign folds to k here; PowerShell's answer follows the
+        // the Kelvin sign folds to k here; PowerShell's answer follows the
         // platform's globalization data.
         assert!(eq_folded("\u{212a}", "k"));
         assert!(eq_folded("\u{212a}", "K"));

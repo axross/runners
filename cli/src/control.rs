@@ -11,24 +11,22 @@ use crate::instance::lock::{InstanceLock, LockError};
 use crate::instance::protocol::{Outcome, Request, Response};
 use crate::instance::roots::Roots;
 
-/// How long `status` waits for its answer.
 const STATUS_ANSWER_WITHIN: Duration = Duration::from_secs(5);
 
-/// How long `restart` waits for the instance to stop its containers, read its
+/// how long `restart` waits for the instance to stop its containers, read its
 /// configuration again and answer.
 const RESTART_ANSWER_WITHIN: Duration = Duration::from_secs(35);
 
-/// How long `diagnostics` waits for the instance to finalise its diagnostic
+/// how long `diagnostics` waits for the instance to finalise its diagnostic
 /// containers, on their 24 s clock, and answer.
 const DIAGNOSTICS_ANSWER_WITHIN: Duration = Duration::from_secs(30);
 
-/// How long `stop` waits for the instance to end, counted from its request.
+/// how long `stop` waits for the instance to end, counted from its request.
 const STOP_WAIT: Duration = Duration::from_secs(35);
 
-/// How often `stop` checks whether the instance's lock is free.
 const STOP_POLL: Duration = Duration::from_millis(200);
 
-/// A client command.
+/// a client command.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Client {
     Stop,
@@ -37,7 +35,7 @@ pub enum Client {
     Diagnostics,
 }
 
-/// Runs the client and returns its exit code. `test_root` moves the channel's
+/// runs the client and returns its exit code; `test_root` moves the channel's
 /// roots in a debug build only.
 pub fn run_client(
     client: Client,
@@ -72,7 +70,7 @@ pub fn run_client(
     }
 }
 
-/// Prints each `pool` and `container` line of a `diagnostics` answer, and fails
+/// prints each `pool` and `container` line of a `diagnostics` answer, and fails
 /// when a container was not removed or was left to the manual recovery.
 fn print_diagnostics(response: &Response, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
     if response.outcome == Outcome::Refused {
@@ -111,7 +109,7 @@ fn refused(err: &mut dyn Write, response: &Response) -> u8 {
     print_error(err, &format!("the instance refused: {}", response.message))
 }
 
-/// Prints each field as `name: value`.
+/// prints each field as `name: value`.
 fn print_status(response: &Response, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
     if response.outcome == Outcome::Refused {
         return refused(err, response);
@@ -122,10 +120,10 @@ fn print_status(response: &Response, out: &mut dyn Write, err: &mut dyn Write) -
     EXIT_OK
 }
 
-/// Asks the instance to stop, then waits until [`STOP_WAIT`] after the request for
-/// its lock to be free, which the operating system makes it as the process ends. It
-/// tells by taking the lock and letting it go at once, so a `start` right after a
-/// successful `stop` finds the lock free.
+/// asks the instance to stop, then waits up to [`STOP_WAIT`] from the request for its
+/// lock to be free, as the operating system frees it when the process ends; taking
+/// the lock and letting it go at once means a `start` right after a successful `stop`
+/// finds it free.
 fn stop(roots: &Roots, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
     let started = Instant::now();
     match exchange(roots, &Request::Stop, STATUS_ANSWER_WITHIN) {

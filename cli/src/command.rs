@@ -1,4 +1,4 @@
-//! The command line: argument parsing, reading the file, printing, and the exit code.
+//! the command line: argument parsing, reading the file, printing, and the exit code.
 //! `start` and the clients live in their own modules; this one routes to them.
 
 use std::ffi::OsString;
@@ -17,25 +17,21 @@ use crate::start::{StartRequest, start};
 use crate::summary::plan_summary;
 use crate::validate::{Failure, Plan, validate};
 
-/// The largest configuration `validate` reads. Real files are a few kilobytes, so
-/// this is generous; it only stops a mistaken or hostile path from being read whole.
+/// the largest configuration `validate` reads; it only stops a mistaken or hostile
+/// path from being read whole.
 pub const MAX_CONFIG_BYTES: u64 = 1024 * 1024;
 
 pub(crate) const EXIT_OK: u8 = 0;
 pub(crate) const EXIT_FAILED: u8 = 1;
 pub(crate) const EXIT_USAGE: u8 = 2;
 
-/// Moves the lock, channel and log roots; only a debug build honours it.
+// the four test-override variables below: only a debug build honours them, see docs/operations/cli.md
 const TEST_ROOT_VARIABLE: &str = "MARSHAL_TEST_ROOT";
 
-/// Moves the GitHub base address; only a debug build honours it.
 const TEST_GITHUB_API_VARIABLE: &str = "MARSHAL_TEST_GITHUB_API";
 
-/// Names the `docker` client `start` and `build` run; only a debug build honours it.
 const TEST_DOCKER_VARIABLE: &str = "MARSHAL_TEST_DOCKER";
 
-/// Names a test definition `build` builds instead of the embedded one; only a debug
-/// build honours it.
 const TEST_BUILD_DEFINITION_VARIABLE: &str = "MARSHAL_TEST_BUILD_DEFINITION";
 
 fn config_arg(help: &'static str) -> Arg {
@@ -147,7 +143,7 @@ fn command() -> Command {
     command
 }
 
-/// Runs the CLI with the given arguments, the first being the program name.
+/// runs the CLI with the given arguments, the first being the program name.
 pub fn run(
     args: impl IntoIterator<Item = OsString>,
     out: &mut dyn Write,
@@ -221,11 +217,8 @@ fn run_export(matches: &ArgMatches) -> ExitCode {
     crate::diagnostics::exporter::run(&request, docker)
 }
 
-/// The profile named on the command line, or the one this OS implies.
-///
-/// # Errors
-///
-/// Prints the usage error and returns its exit code when the OS implies none.
+/// the profile named on the command line, or the one this OS implies; prints the
+/// usage error and returns its exit code when the OS implies none.
 fn profile_of(matches: &ArgMatches, err: &mut dyn Write) -> Result<Profile, ExitCode> {
     matches
         .get_one::<String>("profile")
@@ -309,7 +302,7 @@ fn run_validate(matches: &ArgMatches, out: &mut dyn Write, err: &mut dyn Write) 
     }
 }
 
-/// Reads the file, refusing one over [`MAX_CONFIG_BYTES`] without reading past the
+/// reads the file, refusing one over [`MAX_CONFIG_BYTES`] without reading past the
 /// limit.
 fn read_limited(path: &Path) -> io::Result<Vec<u8>> {
     let mut bytes = Vec::new();
@@ -324,17 +317,17 @@ fn read_limited(path: &Path) -> io::Result<Vec<u8>> {
     Ok(bytes)
 }
 
-/// Why a host configuration file gave no plan.
+/// why a host configuration file gave no plan.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum LoadError {
-    /// The file is missing, cannot be read, or is not JSON; the message says which.
+    /// the file is missing, cannot be read, or is not JSON; the message says which.
     Unreadable(String),
-    /// The document breaks rules, listed in the order they were found.
+    /// the document breaks rules, listed in the order they were found.
     Invalid(Vec<String>),
 }
 
 impl LoadError {
-    /// The message `validate` and `start` print for the file at `config`.
+    /// the message `validate` and `start` print for the file at `config`.
     pub(crate) fn message(&self, config: &Path) -> String {
         match self {
             Self::Unreadable(message) => message.clone(),
@@ -342,7 +335,7 @@ impl LoadError {
         }
     }
 
-    /// Every problem, one per entry.
+    /// every problem, one per entry.
     pub(crate) fn into_problems(self) -> Vec<String> {
         match self {
             Self::Unreadable(message) => vec![message],
@@ -351,16 +344,16 @@ impl LoadError {
     }
 }
 
-/// A host configuration file, read and validated against the checkout above it.
+/// a host configuration file, read and validated against the checkout above it.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Loaded {
     pub(crate) outcome: Result<Plan, LoadError>,
-    /// True when no checkout was found above the file, so `diagnosticDirectory` was
+    /// true when no checkout was found above the file, so `diagnosticDirectory` was
     /// not compared with one.
     pub(crate) checkout_rule_skipped: bool,
 }
 
-/// Reads the file and validates it for `profile`.
+/// reads the file and validates it for `profile`.
 pub(crate) fn load_plan(config: &Path, profile: Profile) -> Loaded {
     let bytes = match read_limited(config) {
         Ok(bytes) => bytes,
@@ -393,7 +386,7 @@ pub(crate) fn load_plan(config: &Path, profile: Profile) -> Loaded {
     }
 }
 
-/// Validates the file and prints the outcome. Returns the exit code, or the error
+/// validates the file and prints the outcome, returning the exit code or the error
 /// that stopped output.
 fn validate_file(
     config: &Path,
@@ -419,7 +412,7 @@ fn validate_file(
     }
 }
 
-/// The note that no checkout was found above `config`, so the checkout rule was
+/// the note that no checkout was found above `config`, so the checkout rule was
 /// skipped.
 pub(crate) fn checkout_rule_note(config: &Path) -> String {
     format!(
@@ -428,8 +421,8 @@ pub(crate) fn checkout_rule_note(config: &Path) -> String {
     )
 }
 
-/// Returns the message that lists every problem, in the PowerShell validator's
-/// format: a header naming the file, then one line per problem.
+/// returns the problems as the PowerShell validator prints them: a header naming the
+/// file, then one line each.
 #[must_use]
 pub fn invalid_message(config: &Path, errors: &[String]) -> String {
     let mut message = format!("Invalid host configuration ({}):", config.display());
