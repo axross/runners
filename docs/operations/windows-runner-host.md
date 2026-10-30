@@ -21,10 +21,10 @@ and macOS runners; [CLI](./cli.md) says what each covers. The configuration
 fixtures are shared by both validators and live in
 [`tests/host-configuration/`](../../tests/host-configuration). The steps below that
 use Docker Desktop, `icacls`, and a released `marshal` on a real machine are
-described from the CLI's specification and the tools' documentation, and were then
-checked on axpc ([#56](https://github.com/axross/runners/issues/56)). Most of those
-checks rest on the maintainer's report on #56 rather than on posted output, and each
-place below that depends on one says which. Verified on axpc:
+described from the CLI's specification and the tools' documentation, and most were
+then checked on axpc ([#56](https://github.com/axross/runners/issues/56)). Most of
+those checks rest on the maintainer's report on #56 rather than on posted output,
+and each place below that depends on one says which. Verified on axpc:
 
 - installing a released binary (maintainer's report,
   [#56](https://github.com/axross/runners/issues/56#issuecomment-6511344317)), with
