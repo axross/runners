@@ -373,7 +373,8 @@ TLS uses rustls with the `ring` provider, installed explicitly by
 verifier. Installing twice is fine. A failure to install it or to build the client
 is a setup error for the caller to report, never a panic. A test builds the client
 on every operating system in CI; a handshake with GitHub, and a real registration,
-are not yet verified on axpc ([#56](https://github.com/axross/runners/issues/56)).
+are verified on axpc (maintainer's report,
+[#56](https://github.com/axross/runners/issues/56#issuecomment-6511344317)).
 
 The base address can be overridden only by a debug build, and only to
 `http://127.0.0.1:<port>`, for the loopback tests; a debug build refuses any other
@@ -644,8 +645,10 @@ to it, reads the live pipe's descriptor through .NET, and fails unless the acces
 control list is protected and holds one entry, allowing the current user full
 access. Neither crate the CLI uses reads a live pipe's descriptor without `unsafe`,
 so that check is in PowerShell. A hosted runner cannot show the Windows lock
-against a second OS user or the rejection of remote clients, and both are
-not yet verified on axpc ([#56](https://github.com/axross/runners/issues/56)).
+against a second OS user or the rejection of remote clients, and both are not yet
+verified on axpc
+([#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)):
+neither check was run there, by the maintainer's decision.
 Not verified: macOS and Windows behaviour beyond what the hosted runners show.
 
 ## The Image Contract
@@ -887,9 +890,15 @@ A second SIGINT, Ctrl+C, or Ctrl+Break skips the grace period: a `docker stop` u
 way is abandoned and the ordinary containers are removed at once, while each
 diagnostic container is ended with `docker kill` and kept without its export.
 `start` then exits 1, and its last line names each kept container. Raising Ctrl+C in a
-Windows test needs `unsafe`, so the Windows handling is checked by review, and
-Ctrl+C and Ctrl+Break are
-not yet verified on axpc ([#56](https://github.com/axross/runners/issues/56)).
+Windows test needs `unsafe`, so the Windows handling is checked by review. On axpc
+one Ctrl+C stopped the instance with exit 0, and a second Ctrl+C force-stopped it
+with exit 1 (maintainer's report,
+[#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)). That
+the second kept the diagnostic container is not yet verified on axpc
+([#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)): the
+report did not say. Ctrl+Break is not yet verified on axpc
+([#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)): it
+could not be tested.
 For Ctrl+Break, a client's own process group keeps Ctrl+C from it, but whether it
 also keeps Ctrl+Break from it is unverified.
 
@@ -1125,8 +1134,10 @@ and `cp` with a scripted archive or a stall, and stand in for the exporter child
   checkout, also when the checkout is named through a link, or not private, and on Windows one that is or lies under a junction or
   a directory symbolic link.
 
-Not yet verified on axpc ([#56](https://github.com/axross/runners/issues/56)):
-the Windows console-close handling below, and a diagnostic job on Docker Desktop.
+Verified on axpc (maintainer's report,
+[#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)): a
+diagnostic job on Docker Desktop, and the Windows console-close handling below,
+apart from its timing.
 Not verified: the macOS behaviour of the process-group signal the SIGINT tests
 send, beyond what the hosted runners show.
 
@@ -1240,7 +1251,9 @@ failure.
   when the process ends, however it ends and after its exit code is set, and every
   child in the job dies then. Docker Desktop keeps a container running after its
   client is killed, so the next `start`'s stale cleanup removes it. The Job Object
-  against Docker Desktop is not yet verified on axpc ([#56](https://github.com/axross/runners/issues/56)).
+  against Docker Desktop is not yet verified on axpc
+  ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)): the
+  hard-kill check was not run there, by the maintainer's decision.
 - **Unix.** Each job container's `docker run` client is started by the shim, the
   CLI run again as the hidden
   `marshal shim --name <container> -- <docker> <arguments>`. The shim starts the
@@ -1286,8 +1299,11 @@ From version 1.44.0
 handler does not return for them while a listener is registered: it notifies the
 listener and parks the handler thread, so the process lives until `start` finishes
 the removal and exits by itself. `cli/Cargo.toml` requires 1.54.1. No test can raise
-the close event, so this, the diagnostic containers' kill within the 4 s included,
-is not yet verified on axpc ([#56](https://github.com/axross/runners/issues/56)).
+the close event. On axpc closing the window worked as described (maintainer's
+report, [#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)),
+but the diagnostic containers' kill within the 4 s is not yet verified on axpc
+([#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)): the
+report gave no timing.
 
 ### What the Command Tests Cover
 
@@ -1327,9 +1343,13 @@ test definition in `cli/tests/build-definition/`, the runner image's digest-pinn
 base and its declared labels, and fails unless the result carries all five labels,
 no temporary tag remains, and the container backend's image check finds the image
 matching and an absent tag missing; it is `#[ignore]`d for a local `cargo test`.
-Not yet verified on axpc ([#56](https://github.com/axross/runners/issues/56)):
-Ctrl+C, Ctrl+Break, and the console close on Windows, and a `build` of the full
-image on Docker Desktop. Not verified: macOS and Windows behaviour beyond what the
+Verified on axpc (maintainer's report,
+[#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845) and
+[#56](https://github.com/axross/runners/issues/56#issuecomment-6511344317)): Ctrl+C
+and, apart from its timing, the console close on Windows, and a `build` of the full
+image on Docker Desktop. Ctrl+Break is not yet verified on axpc
+([#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)): it
+could not be tested. Not verified: macOS and Windows behaviour beyond what the
 hosted runners show.
 
 ## Fixtures and Tests
