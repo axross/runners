@@ -426,9 +426,11 @@ listed under [Diagnostics](#diagnostics). `real_docker.rs` runs a container and 
 probe through a real Docker daemon on Linux, and exports a container's small
 `metrics.txt` through the exporter child from a real `docker cp` stream; it is
 `#[ignore]`d for a local `cargo test`, and CI runs it in its own step, where it
-fails when Docker or the image is missing. Not verified: a real
+fails when Docker or the image is missing. Not verified by these tests: a real
 Docker daemon outside that CI step, the TLS handshake with GitHub, and Windows and
-macOS runtime behaviour beyond what the hosted runners show.
+macOS runtime behaviour beyond what the hosted runners show. The handshake and a
+real registration are verified on axpc instead, on the maintainer's report, as the
+TLS paragraph above says.
 
 ## The Instance Layer
 
