@@ -5,25 +5,10 @@
     under the image name the host configuration gives.
 
 .DESCRIPTION
-    builds images/actions-runner exactly as the checkout holds it, so the runner
-    version and base image digest come from its Dockerfile. it fetches nothing
-    else and never updates the checkout; pull a newer checkout by hand first to
-    move to a newer runner. the build ignores the layer cache, so the operating
-    system packages are installed again and pick up their current updates. a
-    failed build leaves the previous image under its name.
-
-    after a successful build it removes the final images this script built
-    earlier and that the new build left untagged. build caches and tagged
-    recovery images remain. only images carrying this script's own build label
-    are removed; it does not prune other dangling images, and an image built by
-    hand or before this label existed is left alone. the separate build-cache
-    reclamation procedure is in docs/operations/windows-runner-host.md.
-
-    a container already running finishes its job on the image it started with;
-    the next container a slot starts uses the rebuilt one.
-
-.PARAMETER ConfigPath
-    path to the host configuration JSON file. see runner-host.example.json.
+    builds images/actions-runner as the checkout holds it, ignoring the layer
+    cache, and afterwards removes only the images this script built earlier and
+    left untagged; see docs/operations/windows-runner-host.md. a failed build
+    leaves the previous image under its name.
 #>
 param(
     [Parameter(Mandatory)][string]$ConfigPath

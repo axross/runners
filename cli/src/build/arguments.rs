@@ -1,18 +1,16 @@
-//! The `docker` argument lists of `build`, and the temporary tag it builds under.
+//! the `docker` argument lists of `build`, and the temporary tag it builds under.
 
 use crate::image::contract::{BUILT_LABEL, IMAGE_LABEL, IMAGE_LABEL_VALUE};
 use crate::runtime::docker_args::strings;
 use crate::runtime::name::{DIGITS_IN_STAMP, stamp};
 
-/// What every temporary tag's tag part starts with.
 const TEMPORARY_TAG_PREFIX: &str = "marshal-build-";
 
 fn image_label() -> String {
     format!("{IMAGE_LABEL}={IMAGE_LABEL_VALUE}")
 }
 
-/// The image name without its tag: everything before the last `:` that follows
-/// the last `/`, so a registry port stays.
+/// the image name without its tag, so a registry port stays.
 #[must_use]
 pub fn repository_of(image: &str) -> &str {
     let last_part_start = image.rfind('/').map_or(0, |slash| slash + 1);
@@ -25,7 +23,7 @@ pub fn repository_of(image: &str) -> &str {
         .unwrap_or(image)
 }
 
-/// The tag a build made at `time` builds under: `<repository>:marshal-build-<stamp>`,
+/// the tag a build made at `time` builds under: `<repository>:marshal-build-<stamp>`,
 /// the stamp in UTC.
 #[must_use]
 pub fn temporary_tag(image: &str, time: std::time::SystemTime) -> String {
@@ -36,7 +34,7 @@ pub fn temporary_tag(image: &str, time: std::time::SystemTime) -> String {
     )
 }
 
-/// Whether `reference` is a temporary tag of `image`'s repository, and nothing
+/// whether `reference` is a temporary tag of `image`'s repository, and nothing
 /// looser.
 #[must_use]
 pub fn is_temporary_tag(image: &str, reference: &str) -> bool {
@@ -49,7 +47,7 @@ pub fn is_temporary_tag(image: &str, reference: &str) -> bool {
         })
 }
 
-/// Lists the temporary tags of `image`'s repository that carry the image label.
+/// lists the temporary tags of `image`'s repository that carry the image label.
 #[must_use]
 pub fn leftover_list_arguments(image: &str) -> Vec<String> {
     strings(&[
@@ -64,8 +62,7 @@ pub fn leftover_list_arguments(image: &str) -> Vec<String> {
     ])
 }
 
-/// The one build: no cache, a fresh base, the context on standard input, the image
-/// and build-time labels, and the temporary tag.
+/// the arguments of the one `docker build`.
 #[must_use]
 pub fn build_arguments(temporary: &str, built: u64) -> Vec<String> {
     strings(&[
@@ -92,7 +89,7 @@ pub fn image_remove_arguments(reference: &str) -> Vec<String> {
     strings(&["image", "rm", reference])
 }
 
-/// Removes the dangling images that carry the image label, as the PowerShell
+/// removes the dangling images that carry the image label, as the PowerShell
 /// rebuild script does.
 #[must_use]
 pub fn prune_arguments() -> Vec<String> {

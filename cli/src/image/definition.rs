@@ -1,13 +1,12 @@
-//! The image definition `build` sends to Docker: the files embedded in the binary
-//! at compile time, or, in a debug build only, a test definition read from a
-//! directory.
+//! the image definition `build` sends to Docker: the files embedded in the binary,
+//! or, in a debug build only, a test definition read from a directory.
 
 use std::path::Path;
 
-/// The runner image's Dockerfile.
+/// the runner image's Dockerfile.
 pub const DOCKERFILE: &[u8] = include_bytes!("../../../images/actions-runner/Dockerfile");
 
-/// The value in the first `<label>="<value>"` of [`DOCKERFILE`], in any stage.
+/// the value in the first `<label>="<value>"` of [`DOCKERFILE`], in any stage.
 #[must_use]
 pub fn declared_label(label: &str) -> Option<&'static str> {
     std::str::from_utf8(DOCKERFILE)
@@ -17,9 +16,9 @@ pub fn declared_label(label: &str) -> Option<&'static str> {
         .map(|(value, _)| value)
 }
 
-/// Every file of the image definition, at its path in `images/actions-runner/`,
-/// sorted by that path, which is the order the build context writes them in. A unit
-/// test fails when this is not exactly the Dockerfile and every file it copies.
+/// every file of the image definition, at its path in `images/actions-runner/`,
+/// sorted by that path, which is the order the build context writes them in; a unit
+/// test fails when it is not exactly the Dockerfile and every file it copies.
 pub const EMBEDDED: &[(&str, &[u8])] = &[
     ("Dockerfile", DOCKERFILE),
     (
@@ -32,27 +31,26 @@ pub const EMBEDDED: &[(&str, &[u8])] = &[
     ),
 ];
 
-/// The most files, and the most bytes in one file, a test definition may hold.
 #[cfg(debug_assertions)]
 const MAX_TEST_FILES: usize = 16;
 #[cfg(debug_assertions)]
 const MAX_TEST_FILE_BYTES: u64 = 1024 * 1024;
 
-/// One file of a definition, at its path in the build context.
+/// one file of a definition, at its path in the build context.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DefinitionFile {
     pub path: String,
     pub bytes: Vec<u8>,
 }
 
-/// The files a build context holds, sorted by path.
+/// the files a build context holds, sorted by path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Definition {
     pub files: Vec<DefinitionFile>,
 }
 
 impl Definition {
-    /// The definition embedded in this binary.
+    /// the definition embedded in this binary.
     #[must_use]
     pub fn embedded() -> Self {
         Self {
@@ -67,17 +65,10 @@ impl Definition {
     }
 }
 
-/// The definition `build` sends.
-///
-/// A release build always returns the embedded definition and ignores
-/// `requested`, as it ignores the other test overrides, so a release binary builds
-/// only what it embeds. A debug build reads `requested` when given one, for the
-/// real-Docker test: every regular file directly in that directory.
-///
-/// # Errors
-///
-/// A test definition that cannot be read, or holds anything but a few small
-/// regular files.
+/// the definition `build` sends: the embedded one, or, in a debug build only, the
+/// regular files directly in `requested` for the real-Docker test; a release build
+/// ignores `requested`, so it builds only what it embeds, and a test definition that
+/// cannot be read or holds anything but a few small regular files fails.
 pub fn resolve_definition(requested: Option<&Path>) -> Result<Definition, String> {
     #[cfg(debug_assertions)]
     if let Some(directory) = requested {

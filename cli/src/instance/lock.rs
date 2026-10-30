@@ -1,34 +1,23 @@
-//! The machine-wide single-instance lock.
-//!
-//! It is taken before the configuration is validated or anything is cleaned up, and
-//! the operating system releases it when the process ends, however it ends. No child
-//! process inherits it.
-//!
-//! On Windows the lock is the first instance of the named pipe
-//! `\\.\pipe\marshal-instance`, which only the creating user may connect to. The
-//! pipe is kept open for the life of the process and never carries a message. A
-//! second creation of the name, by any user, fails, and that failure is "held".
-//!
-//! On Unix it is an exclusive advisory lock on a file that every user may open: on
-//! macOS `/Users/Shared/.marshal-instance.lock`. The creator sets its mode to `0644`
-//! whatever the umask. A user who may not write it opens it read-only, and the lock
-//! then refuses that user rather than the open. The open follows no link at the
-//! path and never waits, so a link, a FIFO or anything else that is not a regular
-//! file there cannot be opened, rather than held.
+//! the machine-wide single-instance lock, taken before the configuration is validated
+//! or anything is cleaned up, and released by the operating system when the process
+//! ends, however it ends; no child process inherits it; on Windows only the creating
+//! user may connect to its pipe, and on Unix its file is `0644` and opened without
+//! following a link or waiting; `docs/operations/cli.md` describes the Windows pipe,
+//! the Unix file and the release.
 
 use std::fmt;
 
 use super::roots::Roots;
 
-/// Why the lock was not taken.
+/// why the lock was not taken.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LockError {
-    /// Another process holds the lock.
+    /// another process holds the lock.
     Held,
-    /// The lock file was replaced or removed after it was locked, so the lock no
+    /// the lock file was replaced or removed after it was locked, so the lock no
     /// longer excludes anyone.
     Lost,
-    /// The lock could not be opened or created at all.
+    /// the lock could not be opened or created at all.
     CannotOpen(String),
 }
 
@@ -49,18 +38,14 @@ impl fmt::Display for LockError {
 
 impl std::error::Error for LockError {}
 
-/// The held lock. Dropping it releases it.
+/// the held lock; dropping it releases it.
 #[derive(Debug)]
 pub struct InstanceLock {
     _holder: Holder,
 }
 
 impl InstanceLock {
-    /// Takes the lock for this machine, or says why it could not.
-    ///
-    /// # Errors
-    ///
-    /// See [`LockError`].
+    /// takes the lock for this machine, or says why it could not.
     pub fn acquire(roots: &Roots) -> Result<Self, LockError> {
         Ok(Self {
             _holder: acquire(roots)?,
@@ -82,15 +67,15 @@ mod unix {
 
     use super::{LockError, Roots};
 
-    /// Everyone may read the lock file, so everyone can try the lock.
+    /// everyone may read the lock file, so everyone can try the lock.
     const LOCK_FILE_MODE: u32 = 0o644;
 
-    /// How often creating the file races with its removal before giving up.
+    /// how often creating the file races with its removal before giving up.
     const OPEN_ATTEMPTS: usize = 3;
 
     const NO_FOLLOW_NO_WAIT: i32 = libc::O_NOFOLLOW | libc::O_NONBLOCK;
 
-    /// The open file; the lock lasts as long as it does.
+    /// the open file; the lock lasts as long as it does.
     #[derive(Debug)]
     pub struct Holder {
         _file: File,
@@ -100,7 +85,7 @@ mod unix {
         LockError::CannotOpen(format!("{}: {error}", path.display()))
     }
 
-    /// Opens an existing file without following a link at `path` and without
+    /// opens an existing file without following a link at `path` and without
     /// waiting, as a FIFO with no reader would make an open wait.
     fn open_existing(path: &Path, write: bool) -> io::Result<File> {
         OpenOptions::new()
@@ -110,8 +95,8 @@ mod unix {
             .open(path)
     }
 
-    /// Creates the file with mode `0644` regardless of the umask, or opens the one
-    /// that exists, for writing when the user may and read-only when not. What is
+    /// creates the file with mode `0644` regardless of the umask, or opens the one
+    /// that exists, for writing when the user may and read-only when not; what is
     /// opened must be a regular file.
     fn open(path: &Path) -> Result<File, LockError> {
         let file = open_any(path)?;
@@ -125,7 +110,7 @@ mod unix {
         Ok(file)
     }
 
-    /// Creates or opens what is at `path`, whatever it is; [`open`] checks it.
+    /// creates or opens what is at `path`, whatever it is; [`open`] checks it.
     fn open_any(path: &Path) -> Result<File, LockError> {
         let mut last = io::Error::other("no attempt was made");
         for _ in 0..OPEN_ATTEMPTS {
@@ -156,7 +141,7 @@ mod unix {
         Err(cannot_open(path, &last))
     }
 
-    /// Whether `path` still names the file `file` is. A link, a missing path, and a
+    /// whether `path` still names the file `file` is; a link, a missing path, and a
     /// different file all say no.
     fn still_named(file: &File, path: &Path) -> Result<bool, LockError> {
         let locked = file.metadata().map_err(|error| cannot_open(path, &error))?;

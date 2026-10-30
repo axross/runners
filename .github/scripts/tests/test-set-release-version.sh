@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
-# Runs set-release-version.sh against temporary copies of a Cargo.toml and a
-# Cargo.lock: a release version, a prerelease version, invalid versions, a file
-# without the placeholder, a duplicate version line, CRLF files, and the committed
-# cli/ files. Each case checks the exit status, the cause the script names, and what
-# the two files hold afterwards.
+# runs set-release-version.sh against temporary copies of a Cargo.toml and a
+# Cargo.lock, and the committed cli/ files, checking the exit status, the cause
+# the script names, and what the files hold afterwards.
 set -euo pipefail
 
 scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -12,9 +10,8 @@ committed="$(cd "${scripts}/../../cli" && pwd)"
 work="$(mktemp -d)"
 trap 'rm -rf -- "$work"' EXIT
 
-# The dependencies, one of them in a table of its own, and the other lock entry
-# hold the placeholder too, so a case fails if the script replaces anything but the
-# marshal-cli version.
+# the dependencies and the other lock entry hold the placeholder too, so a case
+# fails if the script replaces anything but the marshal-cli version.
 manifest='[workspace]
 members = ["."]
 
@@ -50,7 +47,6 @@ fail() {
   failures=$((failures + 1))
 }
 
-# fixture <case directory> [<manifest text> [<lockfile text>]]
 fixture() {
   mkdir -p "$1"
   printf '%s' "${2:-$manifest}" >"${1}/Cargo.toml"
@@ -80,7 +76,6 @@ $(cat "$2")"
   fi
 }
 
-# with_version <text> <version>: the text with the marshal-cli version replaced.
 with_version() {
   printf '%s' "$1" | awk -v version="$2" '
     /^name = "marshal-cli"$/ { print; target = 1; next }
@@ -115,7 +110,6 @@ for invalid in v1.2.3 1.2 1.2.3+build.1 01.2.3 1.2.3- ""; do
   fi
 done
 
-# Neither file changes when only one of them lacks the placeholder.
 released_manifest="$(with_version "$manifest" 0.1.0)"
 case_dir="${work}/no-placeholder"
 fixture "$case_dir" "$released_manifest"

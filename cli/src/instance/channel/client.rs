@@ -1,4 +1,4 @@
-//! The client side of the channel: connect, send one request, read one answer.
+//! the client side of the channel: connect, send one request, read one answer.
 
 use std::fmt;
 use std::io::{BufReader, Read, Write};
@@ -9,19 +9,19 @@ use std::time::Duration;
 use super::super::protocol::{Request, Response};
 use super::super::roots::Roots;
 
-/// A client gives up connecting after this long and treats it as no instance.
+/// a client gives up connecting after this long and treats it as no instance.
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 
-/// Why a client got no answer.
+/// why a client got no answer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClientError {
-    /// Nothing answers at the channel: it does not exist, refuses, or did not accept
-    /// within [`CONNECT_TIMEOUT`]. This includes the moment before a new instance
-    /// opens its channel and after an ending one closes it.
+    /// nothing answers at the channel: it does not exist, refuses, or did not accept
+    /// within [`CONNECT_TIMEOUT`], also before a new instance opens its channel and
+    /// after an ending one closes it.
     NoInstance,
-    /// The instance accepted the request and did not answer in time.
+    /// the instance accepted the request and did not answer in time.
     NoAnswer,
-    /// The exchange failed for another reason.
+    /// the exchange failed for another reason.
     Failed(String),
 }
 
@@ -42,15 +42,9 @@ enum Event {
     Answered(Result<Response, ClientError>),
 }
 
-/// Sends `request` to this user's instance and waits up to `answer_within` for its
-/// answer, after connecting for up to [`CONNECT_TIMEOUT`].
-///
-/// The exchange runs on a thread of its own, so a connection that never completes
-/// ends the call at the limit and not when the operating system gives up.
-///
-/// # Errors
-///
-/// See [`ClientError`].
+/// sends `request` to this user's instance and waits up to `answer_within` for its
+/// answer, after connecting for up to [`CONNECT_TIMEOUT`], on a thread of its own so
+/// a connection that never completes ends the call at the limit.
 pub fn exchange(
     roots: &Roots,
     request: &Request,
@@ -108,7 +102,6 @@ mod tests {
 
     use super::*;
 
-    /// A connection that reads a fixed answer and swallows what is written.
     struct Scripted(Cursor<Vec<u8>>);
 
     impl Read for Scripted {

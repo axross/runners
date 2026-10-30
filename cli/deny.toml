@@ -1,21 +1,10 @@
 # cargo-deny policy for the CLI. `mise run deny:rust` runs the bans, licenses and
-# sources checks, which read the crate metadata `cargo fetch --locked` provides
-# and need no advisory database. The advisory check fetches the RustSec database,
-# so it runs in its own workflow (.github/workflows/rust-advisories.yaml), not here.
-# docs/operations/cli.md records why each allowed licence and each crate is accepted.
-# serde brings serde_derive and syn, which run at build time, and unicode-ident, whose
-# licence expression needs Unicode-3.0. The HTTPS client brings rustls-webpki, untrusted
-# and ring, whose licences need ISC, and subtle, which needs BSD-3-Clause, and its URL
-# parser brings the proc-macro crates displaydoc, yoke-derive, zerofrom-derive and
-# zerovec-derive; tokio-macros comes with the async runtime's macros. The Windows pipe crate,
-# interprocess, brings doctest-file (a procedural-macro crate) and recvmsg, whose licence is
-# 0BSD; its other dependency, widestring, is MIT OR Apache-2.0. The Job Object crate,
-# win32job, brings thiserror with its derive thiserror-impl and the windows crate family
-# with its derives windows-implement and windows-interface, all MIT OR Apache-2.0, and the
-# two duplicate versions skipped below.
+# sources checks, which need no advisory database; the advisory check runs in
+# .github/workflows/rust-advisories.yaml. docs/operations/cli.md records why
+# each crate and licence is accepted.
 
 [graph]
-# The three operating systems the CLI is built and tested on in CI.
+# the three operating systems the CLI is built and tested on in CI.
 targets = [
   "x86_64-unknown-linux-gnu",
   "x86_64-pc-windows-msvc",
@@ -25,13 +14,13 @@ targets = [
 [licenses]
 allow = ["MIT", "Apache-2.0", "Unicode-3.0", "ISC", "BSD-3-Clause", "0BSD"]
 confidence-threshold = 0.93
-# The CLI itself is unpublished and carries no licence field.
+# the CLI itself is unpublished and carries no licence field.
 private = { ignore = true }
 
 [bans]
 multiple-versions = "deny"
 wildcards = "deny"
-# Each skip lets one older version be built beside the current one, on Windows only.
+# each skip lets one older version be built beside the current one, on Windows only.
 skip = [
   { crate = "syn:^2", reason = "thiserror-impl 1, windows-implement and windows-interface, under win32job, use syn 2, while every other derive uses syn 3" },
   { crate = "windows-link:^0.1", reason = "the windows 0.61 family under win32job uses windows-link 0.1, while windows-sys 0.61 uses 0.2" },

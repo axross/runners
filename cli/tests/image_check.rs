@@ -1,7 +1,5 @@
-//! The image check: at the first run of the core, at a resume and a `restart`, at a
-//! core restart and at each job launch, on the fake seams with an injected clock,
-//! through the container backend against the fake `docker`, and through `start` as
-//! a real process.
+//! the image check on the fake seams with an injected clock, through the container
+//! backend against the fake `docker`, and through `start` as a real process.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -50,7 +48,7 @@ fn mismatched() -> ImageCheck {
     ImageCheck::Mismatched(labels("0", Some(0), "2024-03-05"))
 }
 
-/// One pool, `r`, whose token file is `token` in `scratch`.
+/// one pool, `r`, whose token file is `token` in `scratch`.
 fn plan(scratch: &TempDir) -> Plan {
     let config = r#"{"imageName":"actions-runner:local","repositories":[{"owner":"o","repository":"r",
         "name":"r","slots":1,"tokenPath":"C:\\r.token","volumes":[]}]}"#;
@@ -90,7 +88,7 @@ impl CoreRig {
         RuntimeCore::new(&self.backend, &self.clock, &self.registrar, &self.log)
     }
 
-    /// Runs the core until its slot's scripted exits run out, or it fails.
+    /// runs the core until its slot's scripted exits run out, or it fails.
     async fn run(
         &self,
         core: &RuntimeCore<'_, FakeBackend, FakeClock, FakeRegistrar>,

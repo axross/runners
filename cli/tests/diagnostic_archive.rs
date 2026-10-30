@@ -1,6 +1,6 @@
-//! The strict archive subset a diagnostic copy is read through: the PowerShell
-//! exporter test's cases, ported, then the header, name and entry-count cases
-//! it does not build.
+//! the strict archive subset a diagnostic copy is read through: the PowerShell
+//! exporter test's cases, then the header, name and entry-count cases it does not
+//! build.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -16,7 +16,6 @@ use marshal_cli::diagnostics::archive::{
 
 const MIB: u64 = 1024 * 1024;
 
-/// The files a read accepted, in order, with their bytes.
 #[derive(Default)]
 struct Recorded {
     files: Vec<(String, Vec<u8>)>,
@@ -40,7 +39,7 @@ impl Recorded {
     }
 }
 
-/// One header as the PowerShell test's `Get-DiagnosticTar` writes it: the name,
+/// one header as the PowerShell test's `Get-DiagnosticTar` writes it: the name,
 /// the size as eleven octal digits, the type, and a six-digit checksum.
 fn header(name: &str, size: u64, kind: u8) -> Vec<u8> {
     let mut header = vec![0u8; 512];
@@ -51,7 +50,6 @@ fn header(name: &str, size: u64, kind: u8) -> Vec<u8> {
     header
 }
 
-/// Writes the checksum of `header` into it.
 fn seal(header: &mut [u8]) {
     header[148..156].fill(b' ');
     let sum: u64 = header.iter().map(|byte| u64::from(*byte)).sum();
@@ -72,7 +70,7 @@ fn diagnostic_tar(name: &str, size: u64, kind: u8, actual: Option<u64>) -> Vec<u
     archive
 }
 
-/// A regular file entry with its contents and padding, without an end.
+/// a regular file entry with its contents and padding, without an end.
 fn entry(name: &str, contents: &[u8]) -> Vec<u8> {
     let mut entry = header(name, contents.len() as u64, b'0');
     entry.extend(contents);
@@ -91,7 +89,7 @@ async fn read(archive: &[u8], raw_records: bool) -> (Result<(), ArchiveError>, R
     (result, sink)
 }
 
-/// One `Test-DiagnosticTarCase` call: the archive `Get-DiagnosticTar` builds from
+/// one `Test-DiagnosticTarCase` call: the archive `Get-DiagnosticTar` builds from
 /// these arguments, and whether the reader accepts it.
 struct Case {
     case: &'static str,
@@ -103,7 +101,7 @@ struct Case {
     accepted: bool,
 }
 
-/// A case with the PowerShell test's defaults: a regular file, every declared byte
+/// a case with the PowerShell test's defaults: a regular file, every declared byte
 /// present, raw records off, and refused.
 const fn refused(case: &'static str, name: &'static str, size: u64) -> Case {
     Case {
@@ -117,7 +115,7 @@ const fn refused(case: &'static str, name: &'static str, size: u64) -> Case {
     }
 }
 
-/// The `Test-DiagnosticTarCase` cases, each with its outcome and the payload
+/// the `Test-DiagnosticTarCase` cases, each with its outcome and the payload
 /// budget that holds whatever the outcome.
 #[tokio::test(flavor = "current_thread")]
 async fn the_powershell_archive_cases_give_the_same_outcomes() {
@@ -253,12 +251,11 @@ async fn a_truncated_copy_keeps_the_bytes_it_read_as_a_partial_file() {
     assert_eq!(sink.files.len(), 1);
     assert_eq!(sink.files[0].0, "metrics.txt");
     assert!(sink.files[0].1.len() <= 5, "{}", sink.files[0].1.len());
-    // a stream that ends inside a header is truncated too.
     let (result, _) = read(&[0u8; 100], false).await;
     assert_eq!(result, Err(ArchiveError::Truncated));
 }
 
-/// The PowerShell test's combined budget: 32 MiB of raw records, then metrics
+/// the PowerShell test's combined budget: 32 MiB of raw records, then metrics
 /// that bring the bundle, with its 4 KiB reservation, to 40 MiB and one byte more.
 #[tokio::test(flavor = "current_thread")]
 async fn the_40_mib_budget_counts_the_reservation() {
@@ -304,7 +301,6 @@ async fn accepted_files_keep_their_bytes_under_their_fixed_names() {
             ("raw-333.log", b"".as_slice()),
         ]
     );
-    // the collector's directory entries are skipped in each spelling.
     for directory in [".", "runner-diagnostics/"] {
         let mut archive = header(directory, 0, b'5');
         archive.extend(entry("metrics.txt", b"a=1\n"));

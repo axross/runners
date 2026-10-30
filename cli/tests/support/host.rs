@@ -1,6 +1,5 @@
-//! A scratch host for running `marshal start` and its clients as real processes:
-//! a test root for the lock, channel and logs, a configuration with one pool, its
-//! token file, and the fake `docker` named as the client `start` runs.
+//! a scratch host for running `marshal start` and its clients as real processes
+//! against the fake `docker`.
 #![allow(
     dead_code,
     clippy::unwrap_used,
@@ -21,13 +20,13 @@ use super::docker::FAKE_DOCKER;
 use super::stub::{Reply, Stub};
 use super::{BINARY, TempDir};
 
-/// The token the pool reads.
+/// the token the pool reads.
 pub const TOKEN: &str = "ghp_hosttoken0123456789abcdef";
 
-/// The JIT configuration the stub hands out.
+/// the JIT configuration the stub hands out.
 pub const JIT: &str = "jit-config-secret-0123456789";
 
-/// The stub's answer to a registration.
+/// the stub's answer to a registration.
 pub fn registered() -> Reply {
     Reply::json(&format!(
         r#"{{"runner":{{"id":7}},"encoded_jit_config":"{JIT}"}}"#
@@ -36,12 +35,12 @@ pub fn registered() -> Reply {
 
 pub struct Host {
     pub root: TempDir,
-    /// The configuration file `start` is given.
+    /// the configuration file `start` is given.
     pub config: PathBuf,
 }
 
-/// The token path the configuration names. On Unix an axpc path is a relative name
-/// there, read from the working directory, which is the host's root.
+/// the token path the configuration names; on Unix an axpc path is a relative name,
+/// read from the working directory, which is the host's root.
 #[cfg(unix)]
 fn token_path(_root: &Path) -> (String, PathBuf) {
     (r"C:\\r.token".to_string(), PathBuf::from(r"C:\r.token"))
@@ -53,7 +52,7 @@ fn token_path(root: &Path) -> (String, PathBuf) {
     (path.to_str().unwrap().replace('\\', r"\\"), path)
 }
 
-/// A configuration with one pool, `r`, of one slot.
+/// a configuration with one pool, `r`, of one slot.
 pub fn config_for(token: &str) -> String {
     format!(
         r#"{{"imageName":"actions-runner:local","repositories":[{{"owner":"o","repository":"r",
@@ -61,9 +60,9 @@ pub fn config_for(token: &str) -> String {
     )
 }
 
-/// A configuration with pool `r`, as [`config_for`] writes it, and a second pool,
-/// `d`, whose diagnostics go to `directory`. Its token file is `d.token` beside
-/// `r`'s; without it, `d` is never started.
+/// a configuration with pool `r`, as [`config_for`] writes it, and a second pool,
+/// `d`, whose diagnostics go to `directory` and which starts only if its token file
+/// `d.token` exists beside `r`'s.
 pub fn config_with_diagnostics(token: &str, directory: &str) -> String {
     let directory = directory.replace('\\', r"\\");
     let other = token.replace("r.token", "d.token");
@@ -89,7 +88,7 @@ impl Host {
         Self { root, config }
     }
 
-    /// The token path as the configuration names it, escaped for JSON.
+    /// the token path as the configuration names it, escaped for JSON.
     pub fn json_token(&self) -> String {
         token_path(self.root.path()).0
     }
@@ -98,22 +97,22 @@ impl Host {
         self.root.path().join(relative)
     }
 
-    /// The fake `docker`'s directory.
+    /// the fake `docker`'s directory.
     pub fn docker(&self) -> PathBuf {
         self.path("docker")
     }
 
-    /// The test root that holds the lock, the channel and the logs.
+    /// the test root that holds the lock, the channel and the logs.
     pub fn state(&self) -> PathBuf {
         self.path("state")
     }
 
-    /// Sets a script file the fake `docker` reads.
+    /// sets a script file the fake `docker` reads.
     pub fn script(&self, file: &str, content: &str) {
         fs::write(self.docker().join(file), content).unwrap();
     }
 
-    /// The command for `marshal <args>` on this host.
+    /// the command for `marshal <args>` on this host.
     pub fn command(&self, args: &[&str]) -> Command {
         let mut command = Command::new(BINARY);
         command
@@ -126,12 +125,12 @@ impl Host {
         command
     }
 
-    /// Runs a client, such as `status`, to its end.
+    /// runs a client, such as `status`, to its end.
     pub fn client(&self, args: &[&str]) -> Output {
         self.command(args).output().unwrap()
     }
 
-    /// Starts `marshal start` for `config` against `stub`.
+    /// starts `marshal start` for `config` against `stub`.
     pub fn start_with(&self, config: &Path, stub: &Stub) -> Started {
         let mut command = self.command(&["start", "--profile", "axpc"]);
         command
@@ -147,9 +146,9 @@ impl Host {
         self.start_with(&self.config, stub)
     }
 
-    /// Starts `marshal start` against `stub` as the leader of a process group of
-    /// its own, as a shell starts a foreground job, so a signal to that group is
-    /// what a terminal's Ctrl+C sends.
+    /// starts `marshal start` against `stub` as the leader of a process group of its
+    /// own, as a shell starts a foreground job, so a signal to that group is what a
+    /// terminal's Ctrl+C sends.
     #[cfg(unix)]
     pub fn start_as_group_leader(&self, stub: &Stub) -> Started {
         use std::os::unix::process::CommandExt;
@@ -164,15 +163,14 @@ impl Host {
         Started::spawn(command)
     }
 
-    /// Starts `marshal <args>` on this host, such as a `build`, without waiting
-    /// for it.
+    /// starts `marshal <args>` on this host, such as a `build`, without waiting for it.
     pub fn spawn(&self, args: &[&str]) -> Started {
         let mut command = self.command(args);
         command.stdout(Stdio::piped()).stderr(Stdio::piped());
         Started::spawn(command)
     }
 
-    /// Asks `status` until its output holds `needle`, and returns that output.
+    /// asks `status` until its output holds `needle`, and returns that output.
     pub fn wait_for_status(&self, needle: &str, within: Duration) -> String {
         let started = Instant::now();
         let mut last = String::new();
@@ -192,7 +190,6 @@ impl Host {
         );
     }
 
-    /// Every log file `start` wrote, joined.
     fn log_text(&self) -> String {
         self.log_files()
             .iter()
@@ -200,7 +197,7 @@ impl Host {
             .collect()
     }
 
-    /// The fake engine's containers, by name.
+    /// the fake engine's containers, by name.
     pub fn containers(&self) -> Vec<String> {
         fs::read_to_string(self.docker().join("containers"))
             .unwrap_or_default()
@@ -211,7 +208,7 @@ impl Host {
             .collect()
     }
 
-    /// Every call the fake `docker` recorded, in order: the file it wrote the
+    /// every call the fake `docker` recorded, in order: the file it wrote the
     /// arguments to, and the arguments.
     fn calls(&self) -> Vec<(PathBuf, Vec<String>)> {
         let mut files: Vec<PathBuf> = fs::read_dir(self.docker())
@@ -236,12 +233,12 @@ impl Host {
             .collect()
     }
 
-    /// Every call the fake `docker` recorded, as its arguments, in order.
+    /// every call the fake `docker` recorded, as its arguments, in order.
     pub fn invocations(&self) -> Vec<Vec<String>> {
         self.calls().into_iter().map(|(_, words)| words).collect()
     }
 
-    /// The process ID of the job container's `docker run` client, once it runs.
+    /// the process ID of the job container's `docker run` client, once it runs.
     pub fn job_client_pid(&self) -> u32 {
         let (argv, _) = self
             .calls()
@@ -258,7 +255,7 @@ impl Host {
             .unwrap()
     }
 
-    /// Every log file `start` wrote.
+    /// every log file `start` wrote.
     pub fn log_files(&self) -> Vec<PathBuf> {
         let mut files: Vec<PathBuf> = fs::read_dir(self.state().join("logs"))
             .map(|entries| entries.map(|entry| entry.unwrap().path()).collect())
@@ -268,7 +265,6 @@ impl Host {
     }
 }
 
-/// A stream read to its end on a thread of its own.
 struct Collector {
     text: Arc<Mutex<String>>,
     ended: mpsc::Receiver<()>,
@@ -300,19 +296,19 @@ impl Collector {
     }
 }
 
-/// A running `start`.
+/// a running `start`.
 pub struct Started {
     child: Child,
     stdout: Collector,
     stderr: Collector,
 }
 
-/// How a `start` ended.
+/// how a `start` ended.
 pub struct Finished {
     pub status: ExitStatus,
     pub stdout: String,
     pub stderr: String,
-    /// How long `finish` waited for the process to end.
+    /// how long `finish` waited for the process to end.
     pub waited: Duration,
 }
 
@@ -336,18 +332,18 @@ impl Started {
         self.stderr.text()
     }
 
-    /// Kills the process outright.
+    /// kills the process outright.
     pub fn kill(&mut self) {
         self.child.kill().unwrap();
     }
 
-    /// Waits until every writer of standard error has closed it: the process and
+    /// waits until every writer of standard error has closed it: the process and
     /// every child that inherited it.
     pub fn wait_for_stderr_to_close(&self, within: Duration) -> bool {
         self.stderr.ended.recv_timeout(within).is_ok()
     }
 
-    /// Waits up to `within` for the process to end, and kills it if it does not.
+    /// waits up to `within` for the process to end, and kills it if it does not.
     pub fn finish(mut self, within: Duration) -> Finished {
         let started = Instant::now();
         let status = loop {
@@ -382,8 +378,8 @@ impl Drop for Started {
     }
 }
 
-/// Sends `signal`, such as `INT`, to `pid` with the `kill` command, since a
-/// signal sent from the test itself would need `unsafe`.
+/// sends `signal`, such as `INT`, to `pid` with the `kill` command, since a signal
+/// sent from the test itself would need `unsafe`.
 #[cfg(unix)]
 pub fn send_signal(pid: u32, signal: &str) {
     let status = Command::new("kill")
@@ -394,7 +390,7 @@ pub fn send_signal(pid: u32, signal: &str) {
     assert!(status.success(), "kill -{signal} {pid} failed");
 }
 
-/// Sends `signal` to every process in the group `group`, as a terminal does.
+/// sends `signal` to every process in the group `group`, as a terminal does.
 #[cfg(unix)]
 pub fn send_group_signal(group: u32, signal: &str) {
     let status = Command::new("kill")
@@ -406,7 +402,7 @@ pub fn send_group_signal(group: u32, signal: &str) {
     assert!(status.success(), "kill -{signal} -- -{group} failed");
 }
 
-/// The text of `output`'s standard output and standard error.
+/// the text of `output`'s standard output and standard error.
 pub fn texts(output: &Output) -> (String, String) {
     (
         String::from_utf8_lossy(&output.stdout).into_owned(),

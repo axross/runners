@@ -1,4 +1,4 @@
-//! The slot's loop, driven through the fake seams and a clock that does not wait.
+//! the slot's loop, driven through the fake seams and a clock that does not wait.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -47,12 +47,11 @@ impl Rig {
         }
     }
 
-    /// Runs the slot until the scripted exits run out.
     async fn run(&self) {
         self.run_with(|_| {}).await;
     }
 
-    /// Runs the slot, changed by `change`, until the scripted exits run out.
+    /// runs the slot, changed by `change`, until the scripted exits run out.
     async fn run_with(&self, change: impl FnOnce(&mut marshal_cli::runtime::pool::SlotSpec)) {
         let (stop, receiver) = stop_channel();
         self.backend.state.borrow_mut().stop_when_exits_run_out = Some(stop);
@@ -102,7 +101,6 @@ async fn a_failing_probe_backs_off_5_10_20_seconds_and_registers_nothing() {
         "WARN: example-repo-one slot 2: CPU discovery or probe cleanup failed; no registration - retrying in 5s."
     );
     assert!(warnings[2].ends_with("retrying in 20s."));
-    // only the fourth attempt registered.
     assert_eq!(rig.registrar.seen.borrow().len(), 1);
 }
 
@@ -177,7 +175,6 @@ async fn a_registration_failure_backs_off_and_the_message_is_the_scrubbed_error(
         rig.warnings()[0],
         "WARN: example-repo-one slot 2: failed to request a JIT registration (Response status code does not indicate success: 403 (Forbidden). <token>) - retrying in 5s."
     );
-    // nothing ran for the failed attempts.
     let state = rig.backend.state.borrow();
     assert_eq!(
         state
@@ -464,10 +461,10 @@ fn diagnostic_record() -> DiagnosticRecord {
     }
 }
 
-/// Each diagnostic run's container is finalised, on one clock of 18 s and 24 s,
-/// and removed before the slot probes and registers again; a gap is a warning
-/// that leaves the backoff as the exits alone make it. The last run ends as the
-/// stop is asked for, so its container is left retained to the stop's steps.
+/// each diagnostic run's container is finalised, on one clock of 18 s and 24 s, and
+/// removed before the slot probes and registers again; a gap is a warning that
+/// leaves the backoff as the exits alone make it. the last run ends as the stop is
+/// asked for, so its container is left retained to the stop's steps.
 #[tokio::test(flavor = "current_thread")]
 async fn a_diagnostic_container_is_finalised_before_the_slot_registers_again_and_a_gap_keeps_the_backoff()
  {
@@ -535,7 +532,7 @@ async fn a_diagnostic_container_is_finalised_before_the_slot_registers_again_and
     );
 }
 
-/// The job-end clock bounds the whole finalisation even when the removal fails;
+/// the job-end clock bounds the whole finalisation even when the removal fails, and
 /// the container then stays retained for the next finalisation.
 #[tokio::test(flavor = "current_thread")]
 async fn a_failed_removal_at_job_end_leaves_the_container_retained_and_exported() {

@@ -1,10 +1,7 @@
-//! Reading a pool's token file.
-//!
-//! The file is read again at every registration, so a rotated token applies to the
-//! next job without a restart. The token is trimmed and never printed. On macOS the
-//! file must also be private: a regular file owned by the current user with mode
-//! `0600`. On Windows its access control list is not checked, because no safe call
-//! reads it.
+//! reading a pool's token file again at every registration, so a rotated token
+//! applies to the next job, trimmed and never printed; on macOS the file must be a
+//! regular file owned by the current user with mode `0600`, and on Windows its access
+//! control list is not checked, because no safe call reads it.
 
 use std::fmt;
 use std::io::{self, Read};
@@ -12,21 +9,21 @@ use std::path::Path;
 
 use super::secret::Secret;
 
-/// A token file is a few dozen bytes; this only stops a mistaken path from being
+/// a token file is a few dozen bytes; this only stops a mistaken path from being
 /// read whole.
 pub const MAX_TOKEN_FILE_BYTES: u64 = 1024 * 1024;
 
-/// Why a token file cannot be used. The text names the path and never the content.
+/// why a token file cannot be used; the text names the path and never the content.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenFileError {
     NotFound(String),
     Empty(String),
     TooLarge(String),
     NotText(String),
-    /// The file is not private to the current user; the text says how.
+    /// the file is not private to the current user; the text says how.
     NotPrivate(String),
     Unreadable(String, io::ErrorKind),
-    /// The current user's ID, which the privacy check needs, cannot be read.
+    /// the current user's ID, which the privacy check needs, cannot be read.
     CurrentUserUnknown(io::ErrorKind),
 }
 
@@ -59,13 +56,9 @@ impl fmt::Display for TokenFileError {
 
 impl std::error::Error for TokenFileError {}
 
-/// Reads and trims the token. A file that is missing, is not a regular file, is
-/// blank after trimming, or is not UTF-8 text is an error, and so on macOS is one
-/// that is not private.
-///
-/// # Errors
-///
-/// See [`TokenFileError`].
+/// reads and trims the token; a file that is missing, is not a regular file, is
+/// blank, or is not UTF-8 text is an error, and so on macOS is one that is not
+/// private.
 pub fn read_token(path: &Path) -> Result<Secret, TokenFileError> {
     let shown = path.display().to_string();
     let file = std::fs::File::open(path).map_err(|error| classify(&shown, &error))?;
@@ -90,8 +83,8 @@ pub fn read_token(path: &Path) -> Result<Secret, TokenFileError> {
     Ok(Secret::new(token.to_string()))
 }
 
-/// Checks the open file's metadata, so the answer is about the file that is read.
-/// Only macOS calls it; the tests on the other Unix systems check it too.
+/// checks the open file's metadata, so the answer is about the file that is read;
+/// only macOS calls it outside tests.
 #[cfg(all(unix, any(target_os = "macos", test)))]
 fn require_private(
     path: &Path,

@@ -1,4 +1,4 @@
-//! Pool preparation: token files, diagnostic containers left over, stale cleanup
+//! pool preparation: token files, diagnostic containers left over, stale cleanup
 //! and volumes.
 #![allow(
     clippy::unwrap_used,
@@ -29,8 +29,8 @@ fn entry(name: &str, token: &str, extra: &str) -> String {
     )
 }
 
-/// Pools `alpha`, `bravo` and `charlie`; `bravo` has diagnostics on. Token files
-/// are `<name>.token` in `scratch`, written for the names in `with_token`.
+/// pools `alpha`, `bravo` and `charlie`, of which `bravo` has diagnostics on; token
+/// files are `<name>.token` in `scratch`, written for the names in `with_token`.
 fn pools(scratch: &TempDir, with_token: &[(&str, &str)]) -> Vec<PoolSpec> {
     let config = format!(
         r#"{{"imageName":"actions-runner:local","repositories":[{},{},{}]}}"#,
@@ -102,14 +102,12 @@ async fn a_missing_or_blank_token_is_skipped_and_the_rest_run_a_diagnostics_pool
             && warnings[0].ends_with(" is empty."),
         "{warnings:?}"
     );
-    // every token read is masked from then on, whatever line it reaches.
     log.info("forwarded: ghp_a and ghp_b");
     assert_eq!(
         log.lines().last().unwrap(),
         "INFO: forwarded: <masked> and <masked>"
     );
 
-    // a missing file is named as missing.
     let fresh = TempDir::new();
     let missing = pools(&fresh, &[("alpha", "ghp_a")]);
     let log = MemoryLog::default();
@@ -122,10 +120,8 @@ async fn a_missing_or_blank_token_is_skipped_and_the_rest_run_a_diagnostics_pool
         "{:?}",
         log.lines()
     );
-    // no warning holds a token.
     assert!(log.lines().iter().all(|line| !line.contains("ghp_")));
 
-    // the skipped pool was never touched, and Docker was waited for once.
     let calls = backend.calls();
     assert_eq!(
         calls,
@@ -291,7 +287,6 @@ async fn a_labelled_container_is_never_removed_and_refuses_the_pool() {
     )
     .await;
     let prepared = result.unwrap();
-    // alpha is refused; charlie still starts.
     assert_eq!(names(&prepared), ["charlie"]);
     let state = backend.state.borrow();
     assert!(
@@ -325,7 +320,6 @@ async fn a_labelled_container_is_never_removed_and_refuses_the_pool() {
         backend.retained.unmanaged(),
         [("alpha".to_string(), evidence.clone())]
     );
-    // alpha's volumes were not prepared.
     assert!(
         !state.calls.iter().any(
             |c| matches!(c, Call::PrepareVolumes { volumes, .. } if volumes == &["alpha-npm"])
@@ -336,7 +330,6 @@ async fn a_labelled_container_is_never_removed_and_refuses_the_pool() {
 #[tokio::test(flavor = "current_thread")]
 async fn a_listing_a_removal_or_a_volume_failure_is_handled_per_pool() {
     let scratch = TempDir::new();
-    // a failed listing skips the pool.
     let backend = FakeBackend::default();
     backend.state.borrow_mut().list_error = Some(BackendError::new(
         "Diagnostic lifecycle identification unavailable; stale cleanup refused.",
@@ -356,7 +349,6 @@ async fn a_listing_a_removal_or_a_volume_failure_is_handled_per_pool() {
         log.lines()
     );
 
-    // a failed removal is a warning only.
     let backend = FakeBackend::default();
     {
         let mut state = backend.state.borrow_mut();
@@ -379,7 +371,6 @@ async fn a_listing_a_removal_or_a_volume_failure_is_handled_per_pool() {
             .any(|l| l.starts_with("WARN: Failed to remove stale container "))
     );
 
-    // a failed volume skips only its pool.
     let backend = FakeBackend::default();
     backend.state.borrow_mut().failing_volume = Some("alpha-npm".to_string());
     let log = MemoryLog::default();
@@ -452,7 +443,6 @@ async fn a_labelled_container_of_a_diagnostics_pool_is_exported_and_removed_at_s
         diagnostic[2],
         &Call::RemoveContainers(vec![evidence.clone()])
     );
-    // the pool's current settings became the container's record
     assert_eq!(state.bundles, [(evidence.clone(), bravo_record())]);
     assert!(state.containers.is_empty());
     assert!(!backend.retained.contains(&evidence));

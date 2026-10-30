@@ -1,11 +1,10 @@
-//! Finding the project checkout that private directories must lie outside.
+//! finding the project checkout that private directories must lie outside.
 
 use std::path::{Component, Path, PathBuf};
 
-/// Returns the first directory at or above the configuration file that holds both
-/// `.git` and `cli/Cargo.toml`. Another repository, such as a dotfiles repository at
-/// the home directory, is not this project's checkout. The walk is lexical on the
-/// absolute path and never resolves a link.
+/// returns the first directory at or above the configuration file that holds both
+/// `.git` and `cli/Cargo.toml`, so a dotfiles repository at the home directory is not
+/// taken for it, walking lexically without resolving a link.
 #[must_use]
 pub fn find(config: &Path) -> Option<PathBuf> {
     let absolute = lexical_absolute(config)?;
@@ -20,7 +19,7 @@ fn is_checkout(directory: &Path) -> bool {
     directory.join(".git").exists() && directory.join("cli").join("Cargo.toml").is_file()
 }
 
-/// Makes the path absolute and resolves `.` and `..` components lexically.
+/// makes the path absolute and resolves `.` and `..` components lexically.
 fn lexical_absolute(path: &Path) -> Option<PathBuf> {
     let absolute = std::path::absolute(path).ok()?;
     let mut resolved = PathBuf::new();

@@ -1,10 +1,7 @@
 //! `build`: builds the runner image the host configuration names, from the
-//! definition embedded in this binary.
-//!
-//! It runs as an instance in its own state, `building`: it holds the instance lock
-//! for its whole run, so it is refused while any instance exists and a `start`
-//! during it is refused, and it opens the control channel, so `status` shows the
-//! build and `stop` aborts it. It has no runtime core.
+//! definition embedded in this binary, as an instance in its own `building` state that
+//! holds the instance lock throughout, so it is refused while any instance exists and
+//! so is a `start` during it; see `docs/operations/cli.md`.
 
 mod arguments;
 mod steps;
@@ -32,28 +29,26 @@ use crate::start::{ANSWERS_WITHIN, LOCK_HELD_ELSEWHERE, signals, single_threaded
 
 use steps::{BuildLimits, Steps};
 
-/// How long a refused `build` waits for the holder's channel to name its state.
 const HOLDER_ANSWER_WITHIN: Duration = Duration::from_secs(5);
 
-/// Counted from a stop: whatever still runs then is dropped, which kills its
-/// client, and `build` ends, inside `stop`'s 30 s.
-const EXIT_DEADLINE: Duration = Duration::from_secs(28);
+/// whatever still runs at this deadline is dropped, which kills its client, so
+/// `build` ends inside `stop`'s 30 s.
+const EXIT_DEADLINE_AFTER_STOP: Duration = Duration::from_secs(28);
 
-/// What `build` was given.
+/// what `build` was given.
 pub struct BuildRequest<'a> {
     pub config: &'a Path,
     pub profile: Profile,
-    /// Moves the lock, channel and log roots; a debug build only.
+    /// moves the lock, channel and log roots; a debug build only.
     pub test_root: Option<&'a Path>,
-    /// Names the `docker` client; a debug build only.
+    /// names the `docker` client; a debug build only.
     pub docker: Option<&'a OsStr>,
-    /// Names a test definition to build instead of the embedded one; a debug build
-    /// only.
+    /// names a test definition to build instead of the embedded one; a debug build only.
     pub definition: Option<&'a Path>,
 }
 
-/// Runs `build` and returns its exit code. Nothing reaches Docker before the lock
-/// is taken, the configuration is valid and the image name can be tagged.
+/// runs `build` and returns its exit code; Docker is reached only after the lock,
+/// validation and the tag check.
 pub fn build(request: &BuildRequest<'_>, err: &mut dyn Write) -> u8 {
     let roots = match Roots::resolve(request.test_root) {
         Ok(roots) => roots,
@@ -124,7 +119,7 @@ pub fn build(request: &BuildRequest<'_>, err: &mut dyn Write) -> u8 {
     }
 }
 
-/// The lock is held: names the holder's state when this user's channel answers.
+/// names the holder's state when this user's channel answers.
 fn refuse_held(roots: &Roots, err: &mut dyn Write) -> u8 {
     match exchange(roots, &Request::Status, HOLDER_ANSWER_WITHIN) {
         Ok(response) => {
@@ -149,7 +144,7 @@ struct Build<'a> {
 }
 
 impl Build<'_> {
-    /// Opens the channel and runs the build, returning why it failed, if it did.
+    /// opens the channel and runs the build.
     async fn run(&self, context: Vec<u8>) -> Result<(), String> {
         let (sender, requests) = mpsc::unbounded_channel();
         let server = ChannelServer::open(self.lock, self.roots, sender.clone())
@@ -175,7 +170,7 @@ impl Build<'_> {
         outcome
     }
 
-    /// Runs the steps while answering requests, and ends them at the exit deadline
+    /// runs the steps while answering requests, ending them at the exit deadline
     /// once a stop is asked for.
     async fn serve(
         &self,
@@ -187,14 +182,14 @@ impl Build<'_> {
         let mut steps = pin!(steps);
         let mut open = true;
         loop {
-            let exit_by = stop.borrow().map(|at| at + EXIT_DEADLINE);
+            let exit_by = stop.borrow().map(|at| at + EXIT_DEADLINE_AFTER_STOP);
             tokio::select! {
                 outcome = &mut steps => return outcome,
                 () = tokio::time::sleep_until(exit_by.unwrap_or(started)), if exit_by.is_some() => {
                     return Err(format!(
                         "the build did not end within {} s of the stop, so what still runs is \
                          ended now; `docker image inspect {}` tells which image the name holds",
-                        EXIT_DEADLINE.as_secs(),
+                        EXIT_DEADLINE_AFTER_STOP.as_secs(),
                         self.image
                     ));
                 }

@@ -1,7 +1,7 @@
-//! One owner per diagnostic container, and the `diagnostics` request: the
+//! one owner per diagnostic container, and the `diagnostics` request, through the
 //! instance, its runtime core and the fake backend together, with each path that
-//! finalises a container — the job end, the stop sequence's container steps, and
-//! `diagnostics` — meeting the others.
+//! finalises a container (the job end, the stop sequence's container steps and
+//! `diagnostics`) meeting the others.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -28,7 +28,7 @@ use support::instance::{CONFIG_PATH, Control, drive, resume};
 use tokio::sync::Notify;
 use tokio::time::Instant;
 
-/// One pool, `d`, of one slot, with diagnostics on into `directory`.
+/// one pool, `d`, of one slot, with diagnostics on into `directory`.
 fn plan(scratch: &TempDir, directory: &str) -> Plan {
     let config = r#"{"imageName":"actions-runner:local","repositories":[{"owner":"o",
         "repository":"d","name":"d","slots":1,"tokenPath":"C:\\d.token","volumes":[],
@@ -58,7 +58,6 @@ fn plan_with_other(scratch: &TempDir, directory: &str) -> Plan {
     plan
 }
 
-/// A labelled container an earlier process left for pool `other`.
 const LEFT_IN_OTHER: &str = "other-1-20240305060708009";
 
 fn record(directory: &str) -> DiagnosticRecord {
@@ -72,9 +71,8 @@ fn record(directory: &str) -> DiagnosticRecord {
 const OLD: &str = r"C:\old";
 const NEW: &str = r"C:\new";
 
-/// The seams an instance runs on. The clock is the system's, so a slot whose
-/// container exits non-zero waits out a real backoff, which leaves it idle until
-/// the stop.
+/// the seams an instance runs on, with the system's clock, so a slot whose
+/// container exits non-zero waits out a real backoff and stays idle until the stop.
 struct World {
     scratch: TempDir,
     backend: FakeBackend,
@@ -89,7 +87,6 @@ impl World {
         scratch.write_token("token", b"ghp_ownershiptoken\n");
         let source = FakeSource::new(plan(&scratch, OLD));
         let backend = FakeBackend::default();
-        // every run exits 1 and backs off, so a slot never runs its next job at once
         backend
             .state
             .borrow_mut()
@@ -116,7 +113,7 @@ impl World {
         self.run_from(self.plan(OLD), script).await
     }
 
-    /// Leaves [`LEFT_IN_OTHER`] in the engine and runs from [`plan_with_other`], so
+    /// leaves [`LEFT_IN_OTHER`] in the engine and runs from [`plan_with_other`], so
     /// the preparation leaves that container to the manual recovery.
     async fn run_with_other<F, Fut, T>(&self, script: F) -> (Ended, T)
     where
@@ -154,7 +151,7 @@ impl World {
         drive(&instance, plan, Duration::from_secs(20), script).await
     }
 
-    /// The containers whose export began, in order.
+    /// the containers whose export began, in order.
     fn exports(&self) -> Vec<String> {
         self.backend
             .calls()
@@ -181,7 +178,7 @@ impl World {
         self.backend.state.borrow().bundles.clone()
     }
 
-    /// Waits, giving the instance turns, until `condition` holds.
+    /// waits, giving the instance turns, until `condition` holds.
     async fn until(&self, what: &str, condition: impl Fn(&Self) -> bool) {
         let started = Instant::now();
         while !condition(self) {
@@ -194,8 +191,7 @@ impl World {
         }
     }
 
-    /// Holds every export until `gate` gives a permit, and tells `began` when one
-    /// starts.
+    /// holds every export until `gate` gives a permit, and tells `began` when one starts.
     fn gate_exports(&self) -> (Rc<Notify>, Rc<Notify>) {
         let (gate, began) = (Rc::new(Notify::new()), Rc::new(Notify::new()));
         let mut state = self.backend.state.borrow_mut();
@@ -206,7 +202,7 @@ impl World {
     }
 }
 
-/// Whether an answer has not arrived yet, after the instance had time to give it.
+/// whether an answer has not arrived yet, after the instance had time to give it.
 async fn still_waiting(answer: &mut tokio::sync::oneshot::Receiver<Response>) -> bool {
     tokio::time::sleep(Duration::from_millis(200)).await;
     answer.try_recv().is_err()
@@ -222,7 +218,6 @@ async fn a_stop_during_a_job_end_export_waits_for_it_and_one_bundle_results() {
             began.notified().await;
             assert_eq!(control.stop().await.outcome, Outcome::Ok);
             tokio::time::sleep(Duration::from_millis(200)).await;
-            // the instance waits in its stop for the export, which it does not take
             assert_eq!(control.state().await, "stopping");
             assert_eq!(world.exports().len(), 1);
             assert!(world.bundles().is_empty());
@@ -253,7 +248,6 @@ async fn a_restart_during_a_job_end_export_waits_for_it_and_one_bundle_results()
             gate.notify_one();
             world.backend.state.borrow_mut().export_gate = None;
             assert_eq!(answer.await.unwrap().outcome, Outcome::Ok);
-            // the core runs again; its container ends with exit 1 and is finalised
             world
                 .until("the second run is finalised", |world| {
                     world.exports().len() == 2
@@ -268,7 +262,7 @@ async fn a_restart_during_a_job_end_export_waits_for_it_and_one_bundle_results()
     assert_eq!(world.bundles().len(), 2);
 }
 
-/// A stop that arrives while pool preparation exports a container an earlier run
+/// a stop that arrives while pool preparation exports a container an earlier run
 /// left cancels the preparation; the container steps, which found the container
 /// held, finalise it once that claim ends, so it is not kept.
 #[tokio::test(flavor = "current_thread")]
@@ -309,7 +303,7 @@ async fn a_stop_during_a_startup_export_finalises_the_container_the_preparation_
     assert!(world.runs().is_empty());
 }
 
-/// A panic in the middle of a job-end export unwinds the core; the claim ends with
+/// a panic in the middle of a job-end export unwinds the core; the claim ends with
 /// it, and the container steps of the core's failure finalise the container.
 #[tokio::test(flavor = "current_thread")]
 async fn a_container_whose_job_end_export_panics_is_finalised_by_the_following_container_steps() {
@@ -377,7 +371,7 @@ async fn diagnostics_skips_a_container_being_finalised_and_no_second_bundle_resu
     assert_eq!(world.bundles().len(), 1);
 }
 
-/// The first container's export and removal fail at its job end and again at the
+/// the first container's export and removal fail at its job end and again at the
 /// restart that leaves the instance stopped; after a resume with a changed
 /// directory, the stop finalises it with the directory it ran with.
 #[tokio::test(flavor = "current_thread")]
@@ -445,7 +439,7 @@ async fn a_resume_after_a_failed_removal_finalises_with_the_recorded_settings() 
     assert!(ended.kept.is_empty());
 }
 
-/// A running job's container, ended by the `docker stop` of a stop's container
+/// a running job's container, ended by the `docker stop` of a stop's container
 /// steps, yields exactly one bundle, within the steps' 24 s.
 #[tokio::test(flavor = "current_thread")]
 async fn a_container_the_stop_ends_yields_one_bundle_within_24_seconds() {
@@ -488,7 +482,7 @@ async fn a_container_the_stop_ends_yields_one_bundle_within_24_seconds() {
     assert!(ended.kept.is_empty());
 }
 
-/// A restart and a core failure each finalise the running container with the
+/// a restart and a core failure each finalise the running container with the
 /// settings it ran with, though the configuration changed them first.
 #[tokio::test(flavor = "current_thread")]
 async fn a_restart_finalises_the_running_container_with_the_settings_it_ran_with() {
@@ -552,7 +546,7 @@ async fn a_core_failure_finalises_the_container_with_the_settings_it_ran_with() 
     assert!(world.backend.retained.names().is_empty());
 }
 
-/// A second Ctrl+C during a job-end export ends it at once; the container is
+/// a second Ctrl+C during a job-end export ends it at once; the container is
 /// ended with `docker kill` and kept, and the instance says so.
 #[tokio::test(flavor = "current_thread")]
 async fn a_forced_stop_during_an_export_kills_and_keeps_the_container() {
@@ -587,8 +581,8 @@ async fn a_forced_stop_during_an_export_kills_and_keeps_the_container() {
     ))));
 }
 
-/// The job end leaves its container retained: its export fails, and so does its
-/// removal. Then the slot backs off, idle.
+/// the job end leaves its container retained: its export fails, and so does its
+/// removal; the slot then backs off, idle.
 fn failing_job_end(world: &World) {
     let mut state = world.backend.state.borrow_mut();
     state.export_results.push_back(ExportOutcome::Failed);
@@ -626,7 +620,6 @@ async fn diagnostics_exports_and_removes_a_container_whose_removal_failed() {
             job_end_tried(world).await;
             let name = world.runs()[0].clone();
 
-            // the removal fails again: the container stays, and the answer says so
             let again = control.ask(Request::Diagnostics).await;
             assert_eq!(again.field("result"), Some("incomplete"), "{again:?}");
             assert_eq!(
@@ -652,7 +645,6 @@ async fn diagnostics_exports_and_removes_a_container_whose_removal_failed() {
         })
         .await;
     assert_eq!(world.bundles().len(), 1, "the retry wrote no second bundle");
-    // the diagnostic containers got the bounded stop each time, as at a stop
     let stops = world
         .backend
         .calls()
@@ -700,7 +692,7 @@ async fn diagnostics_reports_a_container_left_to_the_manual_recovery_and_an_unkn
         .await;
 }
 
-/// A `restart` whose configuration no longer has the pool forgets the container
+/// a `restart` whose configuration no longer has the pool forgets the container
 /// that pool's preparation left to the manual recovery.
 #[tokio::test(flavor = "current_thread")]
 async fn a_container_left_to_the_manual_recovery_is_forgotten_with_its_pool() {
@@ -749,7 +741,6 @@ async fn diagnostics_is_allowed_while_stopped_and_refused_while_stopping_or_resu
     world
         .run(|control| async move {
             job_end_tried(world).await;
-            // a restart whose configuration is invalid leaves the instance stopped
             world
                 .source
                 .results
@@ -762,7 +753,6 @@ async fn diagnostics_is_allowed_while_stopped_and_refused_while_stopping_or_resu
             assert_eq!(stopped.field("result"), Some("removed"), "{stopped:?}");
             assert!(world.backend.retained.names().is_empty());
 
-            // resuming: the read of the configuration is held
             *world.source.gate.borrow_mut() = Some(read.clone());
             let (gate, began) = world.gate_exports();
             let resumed = control.send(resume(Profile::Axpc, CONFIG_PATH));
@@ -773,7 +763,6 @@ async fn diagnostics_is_allowed_while_stopped_and_refused_while_stopping_or_resu
             read.notify_one();
             assert_eq!(resumed.await.unwrap().outcome, Outcome::Ok);
 
-            // stopping: the next job end's export holds the stop
             began.notified().await;
             control.stop().await;
             let refused = control.ask(Request::Diagnostics).await;

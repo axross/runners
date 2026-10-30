@@ -1,4 +1,4 @@
-//! The runtime core `start` runs: it prepares the pools, checks their image once
+//! the runtime core `start` runs: it prepares the pools, checks their image once
 //! Docker answers, and runs every slot's loop until the stop is asked for.
 
 use std::cell::Cell;
@@ -24,7 +24,7 @@ use crate::validate::Plan;
 
 use super::lifecycle::{Core, CoreFailure, Ending};
 
-/// The pools of the plan on one backend, with their state on a board of their own.
+/// the pools of the plan on one backend, with their state on a board of their own.
 pub struct RuntimeCore<'a, B, K, R> {
     backend: &'a B,
     clock: &'a K,
@@ -47,7 +47,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar> RuntimeCore<'a, B, K, R> {
         }
     }
 
-    /// Admits the pools, waits for Docker, checks the image, and prepares the
+    /// admits the pools, waits for Docker, checks the image, and prepares the
     /// pools, in that order, so no pool is prepared for an image that cannot run.
     async fn prepare(
         &self,
@@ -65,7 +65,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar> RuntimeCore<'a, B, K, R> {
             .map_err(|NoPoolStartable| failure(NoPoolStartable.to_string(), Ending::NothingToRun))
     }
 
-    /// Checks the image until Docker answers the check, then logs its freshness
+    /// checks the image until Docker answers the check, then logs its freshness
     /// warnings, or fails when it cannot run jobs.
     async fn verify_image(&self, image: &str) -> Result<(), CoreFailure> {
         loop {
@@ -89,7 +89,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar> RuntimeCore<'a, B, K, R> {
     }
 }
 
-/// Empties the board when a run of the core ends, however it ends.
+/// empties the board when a run of the core ends, however it ends.
 struct Cleared<'a>(&'a Board, &'a Cell<bool>);
 
 impl Drop for Cleared<'_> {
@@ -107,7 +107,7 @@ fn failure(message: String, ending: Ending) -> CoreFailure {
     }
 }
 
-/// Runs every worker to its end, polling each that has not ended whenever one wakes.
+/// runs every worker to its end, polling each that has not ended whenever one wakes.
 async fn run_all<F: Future<Output = ()>>(mut workers: Vec<Pin<Box<F>>>) {
     std::future::poll_fn(|context| {
         workers.retain_mut(|worker| worker.as_mut().poll(context).is_pending());

@@ -1,12 +1,8 @@
 #!/usr/bin/env bash
-# Runs verify-release.sh, the release gate, against temporary release directories:
-# the plan phase writing the version to GITHUB_OUTPUT, the release phase passing
-# with the exact files and refusing a missing file, an extra file, a binary named
-# for another version, a binary that is a directory, a SHA256SUMS that lists one
-# binary only, and a checksum mismatch, and an unset or unknown RELEASE_PHASE. Each
-# case checks the exit status and the cause the script names. It also checks that
-# the asset globs in release/.releaserc.json match exactly the files the gate
-# passes, so the upload and the gate agree on the names.
+# runs verify-release.sh, the release gate, against temporary release
+# directories, and checks that the asset globs in release/.releaserc.json match
+# exactly the files the gate passes, so the upload and the gate agree on the
+# names. each case checks the exit status and the cause the script names.
 set -euo pipefail
 
 gate="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/verify-release.sh"
@@ -18,8 +14,6 @@ version=1.2.3
 windows="marshal-${version}-windows-x64.exe"
 macos="marshal-${version}-macos-arm64"
 
-# release_files <directory> [<windows name> [<macos name>]]: two binaries and the
-# SHA256SUMS that lists them.
 release_files() {
   local directory="$1" windows_name="${2:-$windows}" macos_name="${3:-$macos}"
   mkdir -p "$directory"
@@ -50,7 +44,7 @@ expect() {
   fi
 }
 
-# The plan phase appends to GITHUB_OUTPUT, so a line already there must stay.
+# the plan phase appends to GITHUB_OUTPUT, so a line already there must stay.
 output_file="${work}/github-output"
 printf 'earlier=1\n' >"$output_file"
 GITHUB_OUTPUT="$output_file" expect "the plan phase hands out the version" 0 "The next release is ${version}" \
@@ -70,9 +64,8 @@ release_files "${work}/exact"
 expect "the release phase with the exact files" 0 "are complete and match SHA256SUMS" \
   release "$version" "${work}/exact"
 
-# @semantic-release/github uploads what its asset globs match, relative to
-# release/. Expanded over the exact files, each glob must match one file, and
-# together they must match the two binaries and SHA256SUMS.
+# the asset globs @semantic-release/github uploads, relative to release/, must
+# each match one file and together the two binaries and SHA256SUMS.
 expect_assets() {
   local directory="$1" pattern hits names=() problem=""
   local -a assets

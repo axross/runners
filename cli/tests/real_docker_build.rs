@@ -1,13 +1,9 @@
-//! `build` against a real Docker daemon, on Linux only.
-//!
-//! The test is `#[ignore]`d so a plain `cargo test` never needs a daemon. CI runs it
-//! in its own step, `cargo test --locked --test real_docker_build -- --ignored`. It
-//! builds the debug-only test definition, `tests/build-definition`, which is the
-//! runner image's base and contract labels and nothing else, so the step shows
-//! what a real builder does with `build`'s context and labels without building the
-//! whole image. It then checks the built image through the container backend, as
-//! `start` does. The test fails when Docker is missing: a step that cannot run the
-//! test must not look as if it passed.
+//! `build` against a real Docker daemon on Linux, with the debug-only definition in
+//! `tests/build-definition`, which is only the runner image's base and contract
+//! labels, so it shows what a real builder does with the context and labels without
+//! building the whole image; then the container backend's check of the built image.
+//! `#[ignore]`d so a plain `cargo test` never needs a daemon, and it fails when
+//! Docker is missing, so a step that cannot run the test does not look as if it passed.
 #![cfg(target_os = "linux")]
 #![allow(
     clippy::unwrap_used,
@@ -33,10 +29,9 @@ use support::{BINARY, TempDir};
 
 const REPOSITORY: &str = "marshal-build-test";
 
-/// What every label key starts with.
 const LABEL_PREFIX: &str = "com.github.axross.runners.";
 
-/// The labels the definition's Dockerfile declares, keyed without
+/// the labels the definition's Dockerfile declares, keyed without
 /// [`LABEL_PREFIX`].
 fn declared_labels(definition: &Path) -> BTreeMap<String, String> {
     let text = std::fs::read_to_string(definition.join("Dockerfile")).unwrap();
@@ -56,11 +51,10 @@ fn declared_labels(definition: &Path) -> BTreeMap<String, String> {
         .collect()
 }
 
-/// Removes every image of the test's repository, whatever way the test ends.
 struct Cleanup;
 
 impl Cleanup {
-    /// The repository's images as `repository:tag`, or `None` when `docker image ls`
+    /// the repository's images as `repository:tag`, or `None` when `docker image ls`
     /// could not run or failed.
     fn try_images() -> Option<Vec<String>> {
         let output = Command::new("docker")

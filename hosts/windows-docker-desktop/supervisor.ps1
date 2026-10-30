@@ -5,23 +5,12 @@
     every target repository in a host configuration, on this Windows machine.
 
 .DESCRIPTION
-    for each target repository the configuration lists, this script runs that
-    many slots. a slot loops forever: request a just-in-time (JIT) runner
-    registration from GitHub with that repository's own token, start a
-    throwaway container from the runner image with the registration passed
-    through the container's environment, wait for it to finish the one job it
-    takes, then repeat. see docs/operations/windows-runner-host.md for the
-    procedure around it.
-
-    written for Windows PowerShell 5.1 and PowerShell 7.
-
-.PARAMETER ConfigPath
-    path to the host configuration JSON file. see runner-host.example.json.
+    runs the slots of each configured target repository; see
+    docs/operations/windows-runner-host.md. written for Windows PowerShell 5.1
+    and PowerShell 7.
 
 .PARAMETER ValidateOnly
-    validates the configuration and prints the planned registrations, names,
-    container name patterns, resource limits and volume names, then exits.
-    exits 1 on an invalid configuration. calls neither Docker nor GitHub and
+    exits 1 on an invalid configuration; calls neither Docker nor GitHub and
     reads no token file.
 #>
 param(
@@ -309,8 +298,8 @@ function Invoke-SlotWorkerJob {
     Start-Job -ScriptBlock $WorkerScript -ArgumentList @($workerArguments.Values)
 }
 
-# drains a worker's output. the container it is running, read only to know what
-# to stop on shutdown, is tracked from its protocol lines.
+# drains a worker's output. the container it runs is tracked from its protocol
+# lines, read only to know what to stop on shutdown.
 function Receive-WorkerOutput {
     param([Parameter(Mandatory)]$Worker)
 
@@ -331,9 +320,9 @@ function Receive-WorkerOutput {
     }
 }
 
-# stops the containers the workers last reported, once each, in a single Docker
-# call so that they share one grace period. the drain first catches a container
-# started since the last pass.
+# stops the containers the workers last reported, once each, in one Docker call
+# so they share one grace period. the drain first catches a container started
+# since the last pass.
 function Invoke-KnownContainerStop {
     param([Parameter(Mandatory)]$Workers, [Parameter(Mandatory)]$Stopped, [Diagnostics.Stopwatch]$Clock)
 
@@ -420,10 +409,8 @@ function Complete-SlotWorker {
 
 Write-Information "Runner supervisor starting: $(@($plan.Repositories).Count) entries, image $($plan.ImageName)."
 
-# one entry that cannot start (a missing token file, a volume that cannot be
-# created, a stale container that cannot be listed) is skipped with a warning
-# naming it, so it does not take the other repositories down. the warning holds
-# the entry and the reason, never a token.
+# an entry that cannot start is skipped with a warning that names it and the
+# reason, never a token, so it does not take the other repositories down.
 function Write-EntrySkipped {
     param([Parameter(Mandatory)]$Entry, [Parameter(Mandatory)][string]$Reason)
 
@@ -484,7 +471,7 @@ foreach ($entry in $prepared) {
     }
 }
 
-# Ctrl+C is the one shutdown path this script observes. the action runs in this
+# ctrl+c is the one shutdown path this script observes. the action runs in this
 # runspace, so the flag is visible to the loop below.
 $script:stopRequested = $false
 $null = Register-ObjectEvent -InputObject ([Console]) -EventName CancelKeyPress -Action {

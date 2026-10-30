@@ -1,6 +1,4 @@
-//! `build` as a real process, on a test root, with the fake `docker` as its client:
-//! what it sends, the temporary tag, the replacement and the prune, the abort, the
-//! instance lock, and the control channel while it builds.
+//! `build` as a real process, on a test root, with the fake `docker` as its client.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -19,10 +17,8 @@ use support::host::{Host, Started, config_for, registered, texts};
 use support::stub::Stub;
 use support::{TempDir, repository_root};
 
-/// The configured image before the build: an older build of the same name.
 const PREVIOUS: &str = "actions-runner:local\tsha256:previous\tcom.github.axross.runners.image=actions-runner\tcom.github.axross.runners.built=1";
 
-/// A build finishes well within this.
 const BUILT_WITHIN: Duration = Duration::from_secs(20);
 
 fn host() -> Host {
@@ -31,7 +27,6 @@ fn host() -> Host {
     host
 }
 
-/// A host whose configuration names `image`.
 fn host_for(image: &str) -> Host {
     let host = host();
     let config = config_for(&host.json_token()).replace("actions-runner:local", image);
@@ -43,7 +38,6 @@ fn build(host: &Host) -> Output {
     build_from(host, host.root.path())
 }
 
-/// Runs `build` with `directory` as its working directory.
 fn build_from(host: &Host, directory: &std::path::Path) -> Output {
     host.command(&["build", "--profile", "axpc", "--config"])
         .arg(&host.config)
@@ -57,7 +51,7 @@ fn spawn_build(host: &Host) -> Started {
     host.spawn(&["build", "--profile", "axpc", "--config", &config])
 }
 
-/// The fake engine's images, as `reference id` pairs.
+/// the fake engine's images, as `reference id` pairs.
 fn images(host: &Host) -> Vec<(String, String)> {
     fs::read_to_string(host.docker().join("images"))
         .unwrap_or_default()
@@ -84,7 +78,6 @@ fn temporary_tags(host: &Host) -> Vec<String> {
         .collect()
 }
 
-/// The calls whose first word is `first`.
 fn calls_of(host: &Host, first: &str) -> Vec<Vec<String>> {
     host.invocations()
         .into_iter()
@@ -92,7 +85,7 @@ fn calls_of(host: &Host, first: &str) -> Vec<Vec<String>> {
         .collect()
 }
 
-/// Waits until the fake `docker` records a call that starts with `words`.
+/// waits until the fake `docker` records a call that starts with `words`.
 fn wait_for(host: &Host, words: &[&str], within: Duration) {
     let started = Instant::now();
     let starts_with_words = |call: &Vec<String>| {
@@ -108,7 +101,7 @@ fn wait_for(host: &Host, words: &[&str], within: Duration) {
     }
 }
 
-/// The standard input of every `build` call, in order.
+/// the standard input of every `build` call, in order.
 fn contexts(host: &Host) -> Vec<Vec<u8>> {
     let mut files: Vec<PathBuf> = fs::read_dir(host.docker())
         .unwrap()
@@ -125,7 +118,7 @@ fn contexts(host: &Host) -> Vec<Vec<u8>> {
         .collect()
 }
 
-/// The files of a ustar archive, as `(path, bytes)`, read independently of the
+/// the files of a ustar archive, as `(path, bytes)`, read independently of the
 /// writer under test.
 fn archive_files(archive: &[u8]) -> Vec<(String, Vec<u8>)> {
     let mut files = Vec::new();
@@ -222,7 +215,6 @@ fn build_sends_one_docker_build_with_both_labels_the_temporary_tag_and_the_defin
     let first = contexts(&host).remove(0);
     assert_eq!(archive_files(&first), expected);
 
-    // the same binary sends the same bytes again
     assert_eq!(build_from(&host, empty.path()).status.code(), Some(0));
     let all = contexts(&host);
     assert_eq!(all.len(), 2);
@@ -514,9 +506,8 @@ fn the_axmc_profile_validates_then_exits_1_naming_phase_6_and_a_usage_error_exit
 mod abort {
     use super::*;
 
-    /// Waits for the build to reach a call that starts with `words`, asks `stop`,
-    /// and returns how the build and `stop` ended and how long the build took after
-    /// the stop.
+    /// waits for the build to reach a call that starts with `words`, asks `stop`,
+    /// and returns how the build and `stop` ended and how long it took after the stop.
     fn stop_at(host: &Host, words: &[&str]) -> (Output, support::host::Finished, Duration) {
         let started = spawn_build(host);
         wait_for(host, words, BUILT_WITHIN);
@@ -647,10 +638,9 @@ mod abort {
 mod instance {
     use super::*;
 
-    /// Waits until the fake engine holds the slot's job container, after which the
-    /// instance calls `docker` no more until it is stopped. The slot reports the
-    /// container before its client starts, so the status alone would race that
-    /// client's call.
+    /// waits until the fake engine holds the slot's job container, after which the
+    /// instance calls `docker` no more until it is stopped; the slot reports the
+    /// container before its client starts, so the status alone would race that call.
     fn wait_for_job(host: &Host) {
         let started = Instant::now();
         host.wait_for_status("running container r-1-", BUILT_WITHIN);

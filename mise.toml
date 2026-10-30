@@ -1,9 +1,7 @@
-# Pins the lint and format toolchain. `README.md` documents the tasks, and
-# `merge-checks.yaml` runs `mise run check`, so a local run and CI use the same
-# tool versions. The agent hooks call these tools or tasks too; docs/operations/
-# agent-sessions.md states which command each hook runs. The Rust toolchain is
-# not a mise tool: cli/rust-toolchain.toml pins it, and .agents/install-rust
-# provisions it. cargo-deny is, so it is pinned and locked here like the rest.
+# pins the lint and format toolchain, so a local run and CI use the same tool
+# versions; README.md documents the tasks and docs/operations/agent-sessions.md
+# the hooks that call them. cli/rust-toolchain.toml pins the Rust toolchain and
+# .agents/install-rust provisions it, so it is not a mise tool.
 
 [tools]
 # release.yaml installs this Node with actions/setup-node, which Dependabot does not
@@ -19,8 +17,8 @@ cargo-deny = "0.20.2"
 
 [env]
 # PSScriptAnalyzer is a PowerShell module, not a mise tool, so `lint:powershell`
-# downloads this version's package from the PowerShell Gallery on first use and
-# refuses it unless its SHA-256 matches. Refresh the version and the hash together.
+# downloads this version from the PowerShell Gallery on first use and refuses it
+# unless its SHA-256 matches. refresh the version and the hash together.
 PSSCRIPTANALYZER_VERSION = "1.25.0"
 PSSCRIPTANALYZER_SHA256 = "14e634c828eb98efb9f40b2918ba90f139ed5eccdf663a2a747736d996995d60"
 
@@ -151,12 +149,12 @@ PSSCRIPTANALYZER_FILES="$(printf '%s\n' "${files[@]}")" pwsh -NoProfile -NonInte
   $ErrorActionPreference = "Stop"
   $version = $env:PSSCRIPTANALYZER_VERSION
   $expected = $env:PSSCRIPTANALYZER_SHA256.ToLowerInvariant()
-  # Keyed by version and hash, so changing the pin installs and verifies afresh.
+  # keyed by version and hash, so changing the pin installs and verifies afresh.
   $root = Join-Path $HOME ".cache/runners/PSScriptAnalyzer-$version-$expected"
   $manifest = Join-Path $root "PSScriptAnalyzer.psd1"
   if (-not (Test-Path -LiteralPath $manifest)) {
-    # Download into the user cache under a per-process name, not a fixed name in the
-    # shared temp directory, so another local user or run cannot swap or collide with it.
+    # per-process name in the user cache, not a fixed name in the shared temp
+    # directory, so another local user or run cannot swap or collide with it.
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $root) | Out-Null
     $package = "$root.$PID.nupkg"
     Invoke-WebRequest -Uri "https://www.powershellgallery.com/api/v2/package/PSScriptAnalyzer/$version" -OutFile $package
@@ -165,9 +163,8 @@ PSSCRIPTANALYZER_FILES="$(printf '%s\n' "${files[@]}")" pwsh -NoProfile -NonInte
       Remove-Item -LiteralPath $package -Force
       throw "SHA-256 mismatch for PSScriptAnalyzer $version (expected $expected, got $actual); refusing to use it."
     }
-    # Extract only the module. The NuGet packaging entries are not part of it, and
-    # the compatibility profiles are large and used only by rules this task does
-    # not enable.
+    # extract only the module: the NuGet packaging entries are not part of it, and
+    # the compatibility profiles are large and unused by the rules this task enables.
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $staging = "$root.partial"
     if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Recurse -Force }
@@ -232,7 +229,7 @@ run = "node .claude/skills/agent-skill-authoring/scripts/check-links.mjs .claude
 description = "Run the living-project-documentation validators over docs/"
 run = '''
 #!/usr/bin/env bash
-# No -e: run every validator and report all failures, not only the first.
+# no -e: run every validator and report all failures, not only the first.
 set -uo pipefail
 failed=0
 for check in .claude/skills/living-project-documentation/scripts/check-*.mjs; do

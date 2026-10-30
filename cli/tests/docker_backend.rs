@@ -1,4 +1,4 @@
-//! The container backend, run as real processes against the fake `docker` client.
+//! the container backend, run as real processes against the fake `docker` client.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -28,7 +28,7 @@ use support::{TempDir, prepare_pools, repository_root};
 
 const PROBE_READER: &str = "while read -r key value; do if [ \"$key\" = Cpus_allowed_list: ]; then printf \"%s\\n\" \"$value\"; exit; fi; done < /proc/self/status; exit 1";
 
-/// The launcher script, written out here independently of the code under test.
+/// the launcher script, written out here independently of the code under test.
 const LAUNCHER: &str = r#"set -eu
 expected=$1
 shift
@@ -63,7 +63,7 @@ fn example_pools(scratch: &TempDir) -> Vec<marshal_cli::runtime::pool::PoolSpec>
     pools
 }
 
-/// A job container's spec with the shared defaults; a test that differs updates it.
+/// a job container's spec with the shared defaults; a test that differs updates it.
 fn spec(name: &str) -> ContainerSpec {
     ContainerSpec {
         name: name.to_string(),
@@ -77,7 +77,6 @@ fn spec(name: &str) -> ContainerSpec {
     }
 }
 
-/// The calls that removed containers.
 fn removals(fake: &Fake) -> Vec<Vec<String>> {
     fake.invocations()
         .into_iter()
@@ -104,7 +103,7 @@ fn probe_calls(probe: &str) -> Vec<Vec<String>> {
     ]
 }
 
-/// The image check a job launch runs first, written out here independently of the
+/// the image check a job launch runs first, written out here independently of the
 /// code under test.
 fn inspect_call(image: &str) -> Vec<String> {
     let format = [
@@ -390,14 +389,13 @@ async fn a_held_container_client_runs_in_its_own_process_group() {
     assert!(fake.backend.running_containers().is_empty());
 }
 
-/// The diagnostic variant of the run contract, written out here independently of
+/// the diagnostic variant of the run contract, written out here independently of
 /// the code under test from the PowerShell supervisor's `docker-commands.ps1`.
 fn diagnostic_job_call(name: &str, raw_records: bool) -> Vec<String> {
     let mut call = words(&format!(
         "run --pull never --name {name} --label runners.diagnostic-lifecycle=1 --cpus 1 --cpuset-cpus 0 --memory 1g --memory-swap 1g -e ACTIONS_RUNNER_INPUT_JITCONFIG img:tag bash -c"
     ));
     let mode = if raw_records { " raw-run" } else { "" };
-    // the guard is the ordinary launcher without its last line
     let guard = LAUNCHER.strip_suffix("\nexec \"$@\"").unwrap();
     call.push(format!(
         "{guard}\nif [ -x /usr/local/bin/runner-diagnostics ]; then exec /usr/local/bin/runner-diagnostics{mode}; else printf \"Diagnostic gap: collector missing.\\n\" >&2; exec /home/runner/run.sh; fi"
@@ -571,7 +569,6 @@ async fn probe_failures_never_yield_an_unrestricted_set() {
             fake.backend.select_cpuset(&request("p")).await.is_err(),
             "{mode}"
         );
-        // the cleanup still ran after the probe.
         let calls = fake.invocations();
         assert_eq!(
             calls.last().unwrap().arguments,
@@ -713,7 +710,6 @@ async fn stale_cleanup_through_docker_removes_only_own_unlabelled_containers() {
         ),
     );
     let result = prepare_pools(&fake.backend, pools.clone(), &*fake.log, &Board::default()).await;
-    // the labelled container refuses the pool, so nothing can start.
     assert!(result.is_err());
     assert_eq!(
         fake.containers(),
@@ -724,7 +720,6 @@ async fn stale_cleanup_through_docker_removes_only_own_unlabelled_containers() {
         ]
     );
     assert_eq!(removals(&fake), [words(&format!("rm -f {own}"))]);
-    // the labelled container got one bounded stop and stays
     let stops: Vec<Vec<String>> = fake
         .invocations()
         .into_iter()
@@ -733,7 +728,6 @@ async fn stale_cleanup_through_docker_removes_only_own_unlabelled_containers() {
         .collect();
     assert_eq!(stops, [words(&format!("stop --time 10 {evidence}"))]);
 
-    // with the labelled container gone, the pool starts.
     fake.script("containers", &format!("{own}\t\n"));
     let prepared = prepare_pools(&fake.backend, pools, &*fake.log, &Board::default())
         .await
@@ -742,7 +736,7 @@ async fn stale_cleanup_through_docker_removes_only_own_unlabelled_containers() {
     assert!(fake.containers().is_empty());
 }
 
-/// One pool with a stale container of its own and one labelled as diagnostics evidence.
+/// one pool with a stale container of its own and one labelled as diagnostics evidence.
 fn pool_with_stale_containers(
     scratch: &TempDir,
     fake: &Fake,
@@ -804,7 +798,6 @@ async fn a_failed_stale_removal_is_a_warning_and_the_pool_still_starts() {
     let scratch = TempDir::new();
     let fake = Fake::new();
     let pool = pool_with_stale_containers(&scratch, &fake);
-    // only the unlabelled container is left, so the pool is not refused.
     let own = "example-repo-one-1-20240101000000000";
     fake.script("containers", &format!("{own}\t\n"));
     fake.script("rm_fails", "1");

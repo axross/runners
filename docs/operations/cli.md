@@ -684,9 +684,10 @@ two on its command line, because they describe the build, not the definition.
 
 The CLI's own contract version is read from the same embedded Dockerfile when the
 binary is compiled, so the two cannot drift inside one binary; a Dockerfile without
-a well-formed version does not compile. Contract 1 is the run contract as Phase 2
-left it, plus the diagnostic variant's use of the collector's path and output
-directory.
+a well-formed version does not compile. The version rises when the run contract
+changes or the image must provide something it did not. Contract 1 is the run
+contract as Phase 2 left it, plus the diagnostic variant's use of the collector's
+path and output directory.
 
 Unit tests in `cli/src/image/contract.rs` keep the declaration honest:
 
@@ -1184,10 +1185,11 @@ these in order:
    below, decides whether it committed; one that committed still prunes.
 
 The context is a ustar archive of the embedded files at their paths in
-`images/actions-runner/`, sorted by path, with mode `0644`, owner 0, and time 0, so
-the same binary always sends the same bytes. A debug build builds the directory
-named by `MARSHAL_TEST_BUILD_DEFINITION` instead, for the real-Docker test; a
-release build ignores it, and `tests/build_definition.rs` shows both halves.
+`images/actions-runner/`, sorted by path, with mode `0644`, owner and group 0, and
+time 0, so the same binary always sends the same bytes. A debug build builds the
+directory named by `MARSHAL_TEST_BUILD_DEFINITION` instead, for the real-Docker
+test; a release build ignores it, and `tests/build_definition.rs` shows both
+halves.
 
 `stop`, SIGINT, SIGTERM, and SIGHUP on Unix, and Ctrl+C and Ctrl+Break on Windows
 abort a build within 30 s of the request. The build client is killed at once; the
@@ -1751,7 +1753,9 @@ A new crate MUST NOT be added without an entry here, and every crate in
 [`cli/Cargo.lock`](../../cli/Cargo.lock) has one. [`cli/deny.toml`](../../cli/deny.toml)
 allows crates.io only, one version of each crate, and the licences below. The CLI
 is unpublished, so it carries no licence field of its own; `deny.toml` ignores
-private crates for that reason.
+private crates for that reason. A Dependabot bump that raises new clippy warnings
+or adds a duplicate crate version arrives as a red pull request, and the
+maintainer fixes it there.
 
 | Crate                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Why                                                                                                                                                                                                                                                                                                                            | Licence                                                                                     |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |

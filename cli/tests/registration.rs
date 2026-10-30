@@ -1,6 +1,5 @@
-//! JIT registration against a loopback GitHub stub. The base-address override exists
-//! only in debug builds, so this file is empty in a release build; the release
-//! profile has its own test, `base_address`.
+//! JIT registration against a loopback GitHub stub; the base-address override exists
+//! only in debug builds, so this file is empty in a release build.
 #![cfg(debug_assertions)]
 #![allow(
     clippy::unwrap_used,

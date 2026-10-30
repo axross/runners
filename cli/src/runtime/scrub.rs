@@ -1,11 +1,11 @@
-//! The text of an error as it may reach a log: no secret, one line, short.
+//! the text of an error as it may reach a log: no secret, one line, short.
 
-/// The most characters of an error that reach a log, before the ellipsis.
+/// the most characters of an error that reach a log, before the ellipsis.
 pub const MAX_ERROR_CHARS: usize = 500;
 
-/// Replaces `secret` with `<token>`, collapses every run of whitespace to one space,
-/// trims the ends, and cuts the text to [`MAX_ERROR_CHARS`] characters followed by
-/// `...`, as the PowerShell supervisor does for a registration error.
+/// replaces `secret` with `<token>`, collapses whitespace, and cuts the text to
+/// [`MAX_ERROR_CHARS`] characters followed by `...`, as the PowerShell supervisor does
+/// for a registration error.
 #[must_use]
 pub fn scrub_error_text(text: &str, secret: &str) -> String {
     let replaced = if secret.is_empty() {

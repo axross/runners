@@ -1,11 +1,11 @@
-//! The plan summary `validate` prints.
+//! the plan summary `validate` prints.
 
 use crate::affinity::{affinity_count, affinity_offset};
 use crate::profile::Profile;
 use crate::validate::{Plan, format_cpu_count, format_nanos, usage};
 
-/// Returns the lines of the summary. On axpc they are the PowerShell supervisor's
-/// `-ValidateOnly` lines, one for one.
+/// returns the summary lines; on axpc they equal the PowerShell supervisor's
+/// `-ValidateOnly` lines.
 #[must_use]
 pub fn plan_summary(plan: &Plan) -> Vec<String> {
     match plan.profile {

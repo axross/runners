@@ -1,8 +1,7 @@
-//! What the Windows pipes share: the current user's SID, and the security
-//! descriptor that lets only that user use a pipe.
-//!
-//! The descriptor is built from its text form, so no `unsafe` is needed. Neither
-//! crate here reads a live pipe's descriptor back, so CI reads it from PowerShell.
+//! what the Windows pipes share: the current user's SID, and the security
+//! descriptor that lets only that user use a pipe, built from its text form so no
+//! `unsafe` is needed; neither crate here reads a live pipe's descriptor back, so CI
+//! reads it from PowerShell.
 
 use std::ffi::OsStr;
 use std::io;
@@ -21,11 +20,8 @@ fn failed(call: &str, error: impl std::fmt::Display) -> io::Error {
     io::Error::other(format!("{call} failed: {error}"))
 }
 
-/// The security identifier of the user this process runs as, such as `S-1-5-21-...`.
-///
-/// # Errors
-///
-/// Fails when the process token cannot be read.
+/// the security identifier of the user this process runs as, such as `S-1-5-21-...`;
+/// fails when the process token cannot be read.
 pub fn current_user_sid() -> io::Result<String> {
     let token = w::HPROCESS::GetCurrentProcess()
         .OpenProcessToken(co::TOKEN::QUERY)
@@ -45,26 +41,23 @@ pub fn current_user_sid() -> io::Result<String> {
     w::ConvertSidToStringSid(sid).map_err(|error| failed("ConvertSidToStringSid", error))
 }
 
-/// The text form of the descriptor that grants all access to `sid` and to no one
+/// the text form of the descriptor that grants all access to `sid` and to no one
 /// else, and does not inherit.
 #[must_use]
 fn only_user_descriptor_text(sid: &str) -> String {
     format!("D:P(A;;GA;;;{sid})")
 }
 
-/// Builds the descriptor that lets only `sid` use a pipe.
-///
-/// # Errors
-///
-/// Fails when the text is not accepted as a descriptor.
+/// builds the descriptor that lets only `sid` use a pipe; fails when the text is not
+/// accepted as a descriptor.
 pub fn only_user_descriptor(sid: &str) -> io::Result<SecurityDescriptor> {
     let text = only_user_descriptor_text(sid);
     let wide = OsStr::new(&text).to_wtf_16().map_err(io::Error::other)?;
     SecurityDescriptor::deserialize(&wide)
 }
 
-/// Whether creating a pipe failed because its name is taken: another process created
-/// the first instance, or all instances are in use.
+/// whether creating a pipe failed because its name is taken or all instances are in
+/// use.
 #[must_use]
 pub fn name_is_taken(error: &io::Error) -> bool {
     matches!(

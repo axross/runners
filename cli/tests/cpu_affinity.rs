@@ -13,7 +13,7 @@ use marshal_cli::runtime::pool::pools_from_plan;
 use marshal_cli::summary::plan_summary;
 use marshal_cli::validate::validate;
 
-/// The configuration the PowerShell test builds from `split-pools.json`: two slots
+/// the configuration the PowerShell test builds from `split-pools.json`: two slots
 /// of 1.5 CPUs, then one slot of a hair over 1 CPU, whose affinity count is 2.
 const CONFIG: &str = r#"{
   "imageName": "actions-runner:synthetic",

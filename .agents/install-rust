@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
-# Installs the Rust toolchain that cli/rust-toolchain.toml pins, installing rustup
-# first when it is absent. rustup comes from a pinned rustup-init release verified
-# by SHA-256, as .agents/setup does for mise; the toolchain itself is fetched by
-# rustup over HTTPS (docs/conventions/security.md records that exception).
-# Idempotent: it does nothing once the pinned toolchain has cargo, rustfmt and clippy.
-# With --check it only reports that, by its exit status, and installs nothing.
-# Refresh the version and the hash together, the hash computed from the real download.
+# installs the Rust toolchain that cli/rust-toolchain.toml pins, and rustup
+# first when it is absent; docs/operations/agent-sessions.md describes it.
+# rustup comes from a pinned rustup-init release verified by SHA-256; rustup
+# fetches the toolchain over HTTPS, the exception docs/conventions/security.md
+# records.
 set -euo pipefail
 
 RUSTUP_INIT_VERSION='1.29.2'
@@ -23,7 +21,7 @@ require_linux_x86_64() {
 }
 
 toolchain_is_ready() {
-  # Run from the crate so rustup resolves the pinned toolchain, not its default.
+  # run from the crate so rustup resolves the pinned toolchain, not its default.
   # RUSTUP_AUTO_INSTALL=0 makes a missing toolchain fail here instead of downloading.
   command -v cargo >/dev/null 2>&1 \
     && (cd cli && RUSTUP_AUTO_INSTALL=0 cargo fmt --version && RUSTUP_AUTO_INSTALL=0 cargo clippy --version) >/dev/null 2>&1
@@ -43,21 +41,21 @@ install_rustup() (
     exit 1
   fi
   chmod 0755 "$download"
-  # No toolchain, so the next step installs exactly the one the project pins; the
-  # profile is minimal; and the shell profiles stay untouched (PATH is the caller's).
+  # no default toolchain, so the next step installs exactly the pinned one; PATH
+  # is the caller's, so the shell profiles stay untouched.
   "$download" -y --default-toolchain none --profile minimal --no-modify-path
 )
 
 install_toolchain() {
-  # With no argument, rustup 1.28 and later installs what rust-toolchain.toml names:
-  # the pinned channel, its profile and its components.
+  # rustup 1.28 and later installs what rust-toolchain.toml names when given no
+  # argument.
   (cd cli && rustup toolchain install)
 }
 
 cd "$(dirname "$0")/.."
 case "${1:-}" in
   --check)
-    # Answers for the caller's PATH on any platform, so it precedes the platform gate and the PATH change.
+    # answers for the caller's PATH on any platform, so it precedes the platform gate and the PATH change.
     if toolchain_is_ready; then exit 0; fi
     exit 1
     ;;

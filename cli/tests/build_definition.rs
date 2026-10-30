@@ -1,12 +1,8 @@
-//! `build` sends only the definition embedded in a release build.
-//!
-//! A debug build reads a test definition from a directory when asked, for the
-//! real-Docker test; a release build ignores the request, so a release binary
-//! cannot be pointed at a Dockerfile an attacker prepared. Linux has no host roots,
-//! so a release build's `build` there refuses to run even with a test root. CI runs
-//! this file twice: in the debug profile with the rest of the tests, and in the
-//! release profile with `MARSHAL_EXPECT_RELEASE=1`, which makes the file fail if
-//! it was built in the wrong profile.
+//! `build` sends only the definition embedded in a release build: a debug build
+//! reads a test definition from a directory when asked, for the real-Docker test,
+//! but a release build ignores the request, so a release binary cannot be pointed
+//! at a Dockerfile an attacker prepared. Linux has no host roots, so a release
+//! build's `build` there refuses to run even with a test root.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,

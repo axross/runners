@@ -1,10 +1,8 @@
-//! The exporter child: one export, or one count, of a pool's sink.
-//!
-//! The child keeps the deadline it was given and ends when its standard input
-//! closes, which is the instance's liveness pipe; either way its `docker` clients
-//! are killed first. Each client runs in a process group of its own, with the JIT
-//! variable cleared and its standard error discarded, and every file system call
-//! runs on a blocking thread, so a hung sink cannot keep the child from ending.
+//! the exporter child: one export, or one count, of a pool's sink; it ends at its
+//! deadline or when its standard input, the instance's liveness pipe, closes, killing
+//! its `docker` clients first, which run with the JIT variable cleared; every file
+//! system call runs on a blocking thread, so a hung sink cannot keep it from ending;
+//! see `docs/operations/cli.md`.
 
 use std::ffi::OsStr;
 use std::io::{Read, Write};
@@ -27,17 +25,16 @@ use super::{
     ADMITTED, BUNDLES, EXIT_COMPLETE, EXIT_FAILED, EXIT_GAP, EXIT_SINK_FULL, ExportRequest,
 };
 
-/// What `complete.txt` holds, without a line break.
+/// what `complete.txt` holds, without a line break.
 pub const COMPLETE_TEXT: &str = "export complete; evidence remains untrusted and private";
 
-/// The line of `metrics.txt` the collector writes once it observed the runner's end.
+/// the line of `metrics.txt` the collector writes once it observed the runner's end.
 const FINAL_OBSERVED: &str = "final=observed";
 
-/// The most bytes a copy client may print after the end of its archive.
+/// the most bytes a copy client may print after the end of its archive.
 const MAX_TRAILER_BYTES: u64 = 1024 * 1024;
 
-/// Runs the exporter for `request` with `docker` as the client, and returns its
-/// exit code.
+/// runs the exporter for `request` and returns its exit code.
 #[must_use]
 pub fn run(request: &ExportRequest, docker: &OsStr) -> ExitCode {
     let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
@@ -52,8 +49,7 @@ pub fn run(request: &ExportRequest, docker: &OsStr) -> ExitCode {
     ExitCode::from(code)
 }
 
-/// Waits on a thread of its own for standard input to end, which is when the
-/// instance's end of the liveness pipe closes.
+/// waits on a thread of its own for standard input to end, the liveness pipe closing.
 fn input_closed() -> oneshot::Receiver<()> {
     let (closed, receiver) = oneshot::channel();
     std::thread::spawn(move || {
@@ -79,7 +75,6 @@ async fn blocking<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) 
     tokio::task::spawn_blocking(work).await.ok()
 }
 
-/// Prints one line of the protocol the instance reads.
 fn say(line: &str) {
     let mut out = std::io::stdout().lock();
     let _ = writeln!(out, "{line}");
@@ -117,7 +112,6 @@ async fn export(request: &ExportRequest, docker: &OsStr) -> u8 {
     }
 }
 
-/// Writes one whole file into the bundle.
 async fn write_file(bundle: &Path, name: &'static str, bytes: Vec<u8>) -> Option<()> {
     let bundle = bundle.to_path_buf();
     blocking(move || create_file(&bundle, name)?.write_all(&bytes))
@@ -125,7 +119,7 @@ async fn write_file(bundle: &Path, name: &'static str, bytes: Vec<u8>) -> Option
         .ok()
 }
 
-/// Writes the bundle's files and returns whether its final observation is missing.
+/// writes the bundle's files and returns whether its final observation is missing.
 async fn fill(bundle: &Path, container: &str, raw_records: bool, docker: &OsStr) -> Option<bool> {
     let identity = read_identity(docker, container).await?;
     write_file(bundle, "identity.txt", identity.into_bytes()).await?;
@@ -155,7 +149,7 @@ async fn fill(bundle: &Path, container: &str, raw_records: bool, docker: &OsStr)
     Some(!observed)
 }
 
-/// Whether `metrics.txt` holds the line `final=observed`.
+/// whether `metrics.txt` holds the line `final=observed`.
 fn final_observed(metrics: &Path) -> Option<bool> {
     let mut bytes = Vec::new();
     std::fs::File::open(metrics)
@@ -171,15 +165,13 @@ fn final_observed(metrics: &Path) -> Option<bool> {
     }))
 }
 
-/// Starts a client whose standard output is read and whose standard error is
-/// discarded.
 fn client(docker: &OsStr, arguments: &[String]) -> Option<Child> {
     let mut command = client_command(docker, &[], arguments);
     command.stdout(Stdio::piped()).stderr(Stdio::null());
     command.spawn().ok()
 }
 
-/// Reads the allowlisted identity within its cap.
+/// reads the allowlisted identity within its cap.
 async fn read_identity(docker: &OsStr, container: &str) -> Option<String> {
     let mut inspect = client(docker, &identity_arguments(container))?;
     let stdout = inspect.stdout.take()?;
@@ -188,7 +180,7 @@ async fn read_identity(docker: &OsStr, container: &str) -> Option<String> {
     inspect.wait().await.ok()?.success().then_some(text)
 }
 
-/// Reads to the end or to `cap` bytes, whichever comes first.
+/// reads to the end or to `cap` bytes, whichever comes first.
 async fn read_capped<R: AsyncRead + Unpin>(stream: R, cap: usize) -> Option<Vec<u8>> {
     let mut bytes = Vec::new();
     stream
@@ -199,8 +191,6 @@ async fn read_capped<R: AsyncRead + Unpin>(stream: R, cap: usize) -> Option<Vec<
     Some(bytes)
 }
 
-/// Writes the archive's accepted files into the bundle, each through a blocking
-/// thread.
 struct BundleSink {
     bundle: PathBuf,
     file: Option<std::fs::File>,

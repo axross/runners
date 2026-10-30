@@ -1,12 +1,6 @@
-//! The `docker` steps of `build`, and what a stop does at each of them.
-//!
-//! The build runs under a temporary tag and becomes the configured image only when
-//! it is tagged with that name, the commit point. A stop before the commit kills
-//! the build client at once and removes the temporary tag, so the configured name
-//! keeps its previous image. A stop during the retag gives the tag client a short
-//! grace; when it does not succeed within it, the configured name's build-time
-//! label tells whether the build committed, as it does for a retag that stalls. A
-//! stop after the commit finishes the tag removal and skips the prune.
+//! the `docker` steps of `build`, and what a stop does at each of them; the configured
+//! name changes only at the commit, the final retag, so a stop before it keeps the
+//! previous image; see `docs/operations/cli.md`.
 
 use std::ffi::OsString;
 use std::future::Future;
@@ -29,20 +23,20 @@ use super::arguments::{
     prune_arguments, tag_arguments, temporary_tag,
 };
 
-/// The time bounds of `build`. The build itself has none: a full build takes
-/// minutes, and a stop ends it.
+/// the time bounds of `build`, none for the build itself, which takes minutes and
+/// ends on a stop.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BuildLimits {
     /// Docker must answer `docker info` within this, or nothing is built.
     pub docker_answer: Duration,
-    /// A bound on every other client, a stop aside.
+    /// a bound on every other client, a stop aside.
     pub command_budget: Duration,
-    /// Counted from a stop: how long a retag under way may still finish.
-    pub tag_grace: Duration,
-    /// How long the inspect that decides an interrupted retag may take.
+    /// how long a retag under way may still finish.
+    pub tag_grace_after_stop: Duration,
+    /// how long the inspect that decides an interrupted retag may take.
     pub commit_inspect: Duration,
-    /// Counted from a stop: the temporary tag is removed by then.
-    pub removal_by: Duration,
+    /// the temporary tag is removed within this.
+    pub removal_by_after_stop: Duration,
 }
 
 impl Default for BuildLimits {
@@ -50,14 +44,13 @@ impl Default for BuildLimits {
         Self {
             docker_answer: Duration::from_secs(30),
             command_budget: Duration::from_secs(120),
-            tag_grace: Duration::from_secs(5),
+            tag_grace_after_stop: Duration::from_secs(5),
             commit_inspect: Duration::from_secs(4),
-            removal_by: Duration::from_secs(26),
+            removal_by_after_stop: Duration::from_secs(26),
         }
     }
 }
 
-/// What a finished client left.
 struct Output {
     succeeded: bool,
     stdout: String,
@@ -65,36 +58,32 @@ struct Output {
 }
 
 impl Output {
-    /// Its output for a message, on one line and cut as an error text is.
     fn text(&self) -> String {
         scrub_error_text(&format!("{} {}", self.stdout, self.stderr), "")
     }
 }
 
-/// How a step ended: by itself, or by a stop.
 enum Stoppable<T> {
     Done(T),
     Stopped,
 }
 
-/// Where the retag left the configured name.
 enum Retag {
     Committed,
     NotCommitted(String),
-    /// The labels could not be read after the retag was cut short, as the text
-    /// says.
+    /// the labels could not be read after the retag was cut short.
     Unknown(String),
 }
 
-/// One build of `image` from `context`.
+/// one build of `image` from `context`.
 pub struct Steps<'a> {
     pub program: OsString,
     pub image: &'a str,
-    /// The archive streamed to `docker build -`.
+    /// the archive streamed to `docker build -`.
     pub context: Vec<u8>,
     pub log: &'a dyn Log,
     pub limits: BuildLimits,
-    /// When a stop was asked for; it is set once.
+    /// when a stop was asked for; it is set once.
     pub stop: watch::Receiver<Option<Instant>>,
 }
 
@@ -104,12 +93,8 @@ fn unix_seconds(time: SystemTime) -> u64 {
 }
 
 impl Steps<'_> {
-    /// Runs the build until the configured name holds the new image.
-    ///
-    /// # Errors
-    ///
-    /// Fails, saying why and what the configured name holds, when the build did not
-    /// commit or whether it did is unknown.
+    /// runs the build until the configured name holds the new image; the error says
+    /// why not, and what the name holds.
     pub async fn run(&self) -> Result<(), String> {
         let info = info_arguments();
         let answered = match self
@@ -183,7 +168,7 @@ impl Steps<'_> {
         }
     }
 
-    /// Completes when a stop is asked for, with its time; never, when the sender is
+    /// completes when a stop is asked for, with its time; never, when the sender is
     /// gone without one.
     async fn stopped(&self) -> Instant {
         let mut stop = self.stop.clone();
@@ -197,7 +182,7 @@ impl Steps<'_> {
         }
     }
 
-    /// Runs `work` until it ends or a stop is asked for, which drops it, killing the
+    /// runs `work` until it ends or a stop is asked for, which drops it, killing the
     /// client it runs.
     async fn stoppable<T>(&self, work: impl Future<Output = T>) -> Stoppable<T> {
         tokio::select! {
@@ -207,7 +192,7 @@ impl Steps<'_> {
         }
     }
 
-    /// Runs `work` to its end, but once a stop is asked for only until `after_stop`
+    /// runs `work` to its end, but once a stop is asked for only until `after_stop`
     /// from it.
     async fn within_stop_budget<T>(
         &self,
@@ -224,7 +209,7 @@ impl Steps<'_> {
         }
     }
 
-    /// Runs a client to its end within `budget` and returns what it printed.
+    /// runs a client to its end within `budget` and returns what it printed.
     async fn capture(&self, arguments: &[String], budget: Duration) -> Result<Output, String> {
         tokio::time::timeout(budget, self.output_of(arguments))
             .await
@@ -236,7 +221,7 @@ impl Steps<'_> {
             })?
     }
 
-    /// Runs a client to its end and returns what it printed.
+    /// runs a client to its end and returns what it printed.
     async fn output_of(&self, arguments: &[String]) -> Result<Output, String> {
         let mut command = client_command(&self.program, &[], arguments);
         command.stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -263,8 +248,8 @@ impl Steps<'_> {
         }
     }
 
-    /// Removes the temporary tags an earlier `build` that was killed left: those of
-    /// this repository that carry the image label. A failure is a warning.
+    /// removes the temporary tags of this repository that a killed `build` left; a
+    /// failure is a warning.
     async fn remove_leftovers(&self) {
         let listed = match self.checked(&leftover_list_arguments(self.image)).await {
             Ok(listed) => listed,
@@ -292,7 +277,7 @@ impl Steps<'_> {
         }
     }
 
-    /// Runs the one `docker build`, streaming the context to its standard input and
+    /// runs the one `docker build`, streaming the context to its standard input and
     /// its output to the terminal.
     async fn build_image(&self, temporary: &str, built: u64) -> Result<(), String> {
         let mut command = client_command(&self.program, &[], &build_arguments(temporary, built));
@@ -324,8 +309,8 @@ impl Steps<'_> {
         }
     }
 
-    /// Removes the temporary tag, if the build made one, by the stop's removal
-    /// deadline once a stop is asked for. A failure is a warning naming the tag.
+    /// removes the temporary tag by the stop's removal deadline once a stop is asked
+    /// for; a failure is a warning naming the tag.
     async fn remove_temporary(&self, temporary: &str) {
         let removal = async {
             let listed = self.checked(&image_list_arguments(temporary)).await?;
@@ -337,7 +322,7 @@ impl Steps<'_> {
                 .map(|_| ())
         };
         if let Err(reason) = self
-            .within_stop_budget(removal, self.limits.removal_by)
+            .within_stop_budget(removal, self.limits.removal_by_after_stop)
             .await
         {
             self.log.warn(&format!(
@@ -346,7 +331,7 @@ impl Steps<'_> {
         }
     }
 
-    /// A stop before the commit: the build client is already gone.
+    /// a stop before the commit: the build client is already gone.
     async fn abort_before_commit(&self, temporary: Option<&str>) -> Result<(), String> {
         if let Some(temporary) = temporary {
             self.remove_temporary(temporary).await;
@@ -357,10 +342,10 @@ impl Steps<'_> {
         ))
     }
 
-    /// Tags the build as the configured image, which commits it. A stop during the
-    /// tag gives the client [`BuildLimits::tag_grace`] from the stop to succeed.
-    /// When it does not, or the tag stalls for the command budget, the configured
-    /// name's build-time label says whether it committed.
+    /// tags the build as the configured image, which commits it; a stop during the tag
+    /// gives the client [`BuildLimits::tag_grace_after_stop`] to succeed, and when it
+    /// does not, or the tag stalls for the command budget, the configured name's
+    /// build-time label says whether it committed.
     async fn retag(&self, temporary: &str, built: u64) -> Retag {
         let mut command = client_command(&self.program, &[], &tag_arguments(temporary, self.image));
         command.stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -384,7 +369,7 @@ impl Steps<'_> {
                 };
             }
             at = self.stopped() => {
-                let graced = tokio::time::timeout_at(at + self.limits.tag_grace, &mut waiting).await;
+                let graced = tokio::time::timeout_at(at + self.limits.tag_grace_after_stop, &mut waiting).await;
                 if let Ok(Ok(output)) = graced
                     && output.status.success()
                 {
@@ -417,8 +402,8 @@ impl Steps<'_> {
         }
     }
 
-    /// After the commit: the temporary tag goes, and the dangling images that
-    /// carry the image label are pruned unless a stop was asked for.
+    /// after the commit: removes the temporary tag, then prunes the dangling images
+    /// unless a stop was asked for.
     async fn after_commit(&self, temporary: &str) {
         self.remove_temporary(temporary).await;
         if self.stop.borrow().is_some() {
@@ -460,10 +445,9 @@ mod tests {
         }
     }
 
-    /// A directory holding a `docker` script that appends each call's first two
-    /// words to `calls`. Its `tag` runs the shell command `tag`, and its inspect
-    /// reports `inspected` as the configured name's build time, or, when that is
-    /// `None`, the one the build was labelled with.
+    /// a fake `docker` in a temporary directory that logs each call's first two words
+    /// to `calls`; its `tag` runs the shell command `tag`, and its inspect reports
+    /// `inspected` or the build's own time.
     fn docker(name: &str, tag: &str, inspected: Option<&str>) -> PathBuf {
         let dir =
             std::env::temp_dir().join(format!("marshal-build-steps-{name}-{}", std::process::id()));

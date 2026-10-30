@@ -1,10 +1,5 @@
-//! The diagnostic containers a backend retains, and who is finalising each.
-//!
-//! A diagnostic container is retained from its start until its removal succeeds,
-//! with the settings it ran with. At most one path finalises it at a time: a path
-//! claims it first, and the claim ends however that path ends, a panic included,
-//! which leaves the container retained and free for the next path. A backend owns
-//! one of these and both its own calls and the runtime above it use it.
+//! the diagnostic containers a backend retains from their start until a removal
+//! succeeds, and the claim that lets one path at a time finalise each.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -13,25 +8,21 @@ use tokio::sync::{Notify, watch};
 
 use super::backend::DiagnosticRecord;
 
-/// What is known about one retained container.
 #[derive(Debug, Clone)]
-struct Entry {
+struct RetainedEntry {
     record: DiagnosticRecord,
-    /// A bundle was admitted for it, so no later finalisation exports it again.
-    exported: bool,
-    /// A path is finalising it.
-    owned: bool,
-    /// Its `docker run` is still waited for, so its job may still run.
-    active: bool,
+    bundle_admitted: bool,
+    finalising: bool,
+    run_awaited: bool,
 }
 
 #[derive(Debug)]
 pub struct Retained {
-    entries: RefCell<BTreeMap<String, Entry>>,
+    entries: RefCell<BTreeMap<String, RetainedEntry>>,
     released: Notify,
     forced: watch::Sender<bool>,
-    /// The labelled containers of pools whose diagnostics are off, by pool, which
-    /// have no record and are left to the manual recovery.
+    /// the labelled containers of pools with diagnostics off, by pool: no record,
+    /// left to the manual recovery.
     unmanaged: RefCell<BTreeMap<String, Vec<String>>>,
 }
 
@@ -46,7 +37,7 @@ impl Default for Retained {
     }
 }
 
-/// Marks a container's job as ended when its run ends, however it ends.
+/// marks a container's job as ended when its run ends, however it ends.
 pub struct JobRun<'a> {
     retained: &'a Retained,
     name: String,
@@ -55,12 +46,12 @@ pub struct JobRun<'a> {
 impl Drop for JobRun<'_> {
     fn drop(&mut self) {
         if let Some(entry) = self.retained.entries.borrow_mut().get_mut(&self.name) {
-            entry.active = false;
+            entry.run_awaited = false;
         }
     }
 }
 
-/// The right to finalise one retained container, given up when dropped.
+/// the right to finalise one retained container, given up when dropped.
 pub struct Claim<'a> {
     retained: &'a Retained,
     name: String,
@@ -73,29 +64,29 @@ impl Claim<'_> {
         &self.name
     }
 
-    /// The settings the container ran with.
+    /// the settings the container ran with.
     #[must_use]
     pub fn record(&self) -> &DiagnosticRecord {
         &self.record
     }
 
-    /// Whether a bundle was already admitted for the container.
+    /// whether a bundle was already admitted for the container.
     #[must_use]
     pub fn exported(&self) -> bool {
         self.retained
             .entries
             .borrow()
             .get(&self.name)
-            .is_some_and(|entry| entry.exported)
+            .is_some_and(|entry| entry.bundle_admitted)
     }
 
     pub fn mark_exported(&self) {
         if let Some(entry) = self.retained.entries.borrow_mut().get_mut(&self.name) {
-            entry.exported = true;
+            entry.bundle_admitted = true;
         }
     }
 
-    /// Forgets the container, once its removal has succeeded.
+    /// forgets the container, once its removal has succeeded.
     pub fn removed(&self) {
         self.retained.entries.borrow_mut().remove(&self.name);
     }
@@ -104,28 +95,28 @@ impl Claim<'_> {
 impl Drop for Claim<'_> {
     fn drop(&mut self) {
         if let Some(entry) = self.retained.entries.borrow_mut().get_mut(&self.name) {
-            entry.owned = false;
+            entry.finalising = false;
         }
         self.retained.released.notify_waiters();
     }
 }
 
 impl Retained {
-    /// Retains a container whose run starts now, until the returned guard drops. A
-    /// container already retained keeps its claim and its export.
+    /// retains a container whose run starts now, until the returned guard drops; one
+    /// already retained keeps its claim and its export.
     pub fn started(&self, name: &str, record: &DiagnosticRecord) -> JobRun<'_> {
         self.entries
             .borrow_mut()
             .entry(name.to_string())
             .and_modify(|entry| {
                 entry.record = record.clone();
-                entry.active = true;
+                entry.run_awaited = true;
             })
-            .or_insert_with(|| Entry {
+            .or_insert_with(|| RetainedEntry {
                 record: record.clone(),
-                exported: false,
-                owned: false,
-                active: true,
+                bundle_admitted: false,
+                finalising: false,
+                run_awaited: true,
             });
         JobRun {
             retained: self,
@@ -133,17 +124,17 @@ impl Retained {
         }
     }
 
-    /// Retains a container an earlier process left, with `record` as its settings.
-    /// A container already retained keeps its own record.
+    /// retains a container an earlier process left, with `record` as its settings;
+    /// one already retained keeps its own record.
     pub fn adopt(&self, name: &str, record: &DiagnosticRecord) {
         self.entries
             .borrow_mut()
             .entry(name.to_string())
-            .or_insert_with(|| Entry {
+            .or_insert_with(|| RetainedEntry {
                 record: record.clone(),
-                exported: false,
-                owned: false,
-                active: false,
+                bundle_admitted: false,
+                finalising: false,
+                run_awaited: false,
             });
     }
 
@@ -152,13 +143,13 @@ impl Retained {
         self.entries.borrow().contains_key(name)
     }
 
-    /// Every retained container, by name.
+    /// every retained container, by name.
     #[must_use]
     pub fn names(&self) -> Vec<String> {
         self.entries.borrow().keys().cloned().collect()
     }
 
-    /// The record of a retained container.
+    /// the record of a retained container.
     #[must_use]
     pub fn record(&self, name: &str) -> Option<DiagnosticRecord> {
         self.entries
@@ -167,12 +158,12 @@ impl Retained {
             .map(|entry| entry.record.clone())
     }
 
-    /// Claims the container, unless it is not retained or another path holds it.
+    /// claims the container, unless it is not retained or another path holds it.
     #[must_use]
     pub fn claim(&self, name: &str) -> Option<Claim<'_>> {
         let mut entries = self.entries.borrow_mut();
-        let entry = entries.get_mut(name).filter(|entry| !entry.owned)?;
-        entry.owned = true;
+        let entry = entries.get_mut(name).filter(|entry| !entry.finalising)?;
+        entry.finalising = true;
         Some(Claim {
             retained: self,
             name: name.to_string(),
@@ -180,7 +171,7 @@ impl Retained {
         })
     }
 
-    /// Claims every container nobody holds, and names those another path holds.
+    /// claims every container nobody holds, and names those another path holds.
     #[must_use]
     pub fn claim_free(&self) -> (Vec<Claim<'_>>, Vec<String>) {
         let names = self.names();
@@ -190,7 +181,7 @@ impl Retained {
                 self.entries
                     .borrow()
                     .get(*name)
-                    .is_some_and(|entry| entry.owned)
+                    .is_some_and(|entry| entry.finalising)
             })
             .cloned()
             .collect();
@@ -198,20 +189,20 @@ impl Retained {
         (claims, held)
     }
 
-    /// Claims every container nobody holds whose job has ended.
+    /// claims every container nobody holds whose job has ended.
     #[must_use]
     pub fn claim_ended(&self) -> Vec<Claim<'_>> {
         let ended: Vec<String> = self
             .entries
             .borrow()
             .iter()
-            .filter(|(_, entry)| !entry.owned && !entry.active)
+            .filter(|(_, entry)| !entry.finalising && !entry.run_awaited)
             .map(|(name, _)| name.clone())
             .collect();
         ended.iter().filter_map(|name| self.claim(name)).collect()
     }
 
-    /// Waits until no path holds any of `names`.
+    /// waits until no path holds any of `names`.
     pub async fn released(&self, names: &[String]) {
         loop {
             let notified = self.released.notified();
@@ -219,7 +210,7 @@ impl Retained {
                 let entries = self.entries.borrow();
                 names
                     .iter()
-                    .any(|name| entries.get(name).is_some_and(|entry| entry.owned))
+                    .any(|name| entries.get(name).is_some_and(|entry| entry.finalising))
             };
             if !held {
                 return;
@@ -228,8 +219,8 @@ impl Retained {
         }
     }
 
-    /// Asks every finalisation to stop exporting and keep its container: a forced
-    /// stop ends and keeps the diagnostic containers instead.
+    /// asks every finalisation to stop exporting and keep its container, as a forced
+    /// stop does.
     pub fn force(&self) {
         self.forced.send_replace(true);
     }
@@ -239,8 +230,8 @@ impl Retained {
         self.forced.subscribe()
     }
 
-    /// Records the labelled containers a pool with diagnostics off left, replacing
-    /// what an earlier preparation of that pool recorded.
+    /// records the labelled containers a pool with diagnostics off left, replacing
+    /// what an earlier preparation recorded.
     pub fn set_unmanaged(&self, pool: &str, names: Vec<String>) {
         let mut unmanaged = self.unmanaged.borrow_mut();
         if names.is_empty() {
@@ -250,13 +241,12 @@ impl Retained {
         }
     }
 
-    /// Forgets the labelled containers recorded for each pool `keep` refuses, as a
-    /// plan without that pool is applied.
+    /// forgets the labelled containers recorded for each pool `keep` refuses.
     pub fn retain_unmanaged(&self, keep: impl Fn(&str) -> bool) {
         self.unmanaged.borrow_mut().retain(|pool, _| keep(pool));
     }
 
-    /// The labelled containers left to the manual recovery, as pool and name.
+    /// the labelled containers left to the manual recovery, as pool and name.
     #[must_use]
     pub fn unmanaged(&self) -> Vec<(String, String)> {
         self.unmanaged

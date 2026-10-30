@@ -1,11 +1,8 @@
-//! The sink checks and bundle admission.
-//!
-//! A sink must be an existing directory outside the checkout, and neither it nor
-//! any directory above it may be a link or, on Windows, a reparse point. A missing
-//! sink is refused, never created. On Unix it must also be owned by the current
-//! user with mode `0700`, and a bundle is created `0700`; on Windows its owner and
-//! access rules are not checked, and a bundle inherits the sink's rules. The checks
-//! read what the file system says and never repair it.
+//! the sink checks and bundle admission: a sink must be an existing directory outside
+//! the checkout, refused when missing and never created, with no link in its path and,
+//! on Unix, private to the current user (on Windows its owner and rules are not
+//! checked and a bundle inherits the sink's); the checks never repair what they
+//! refuse; see `docs/operations/cli.md`.
 
 use std::fmt;
 use std::fs;
@@ -17,12 +14,12 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use crate::profile::Profile;
 use crate::validate::is_inside_checkout;
 
-/// Why a sink or a bundle was refused.
+/// why a sink or a bundle was refused.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SinkError {
     Missing(PathBuf),
     NotADirectory(PathBuf),
-    /// The path, or a directory above it, is a link or a reparse point.
+    /// the path, or a directory above it, is a link or a reparse point.
     Link(PathBuf),
     InsideCheckout(PathBuf),
     Unreadable(PathBuf, io::ErrorKind),
@@ -50,7 +47,7 @@ impl fmt::Display for SinkError {
 
 impl std::error::Error for SinkError {}
 
-/// The profile whose path rules this OS's paths follow, for the checkout rule.
+/// the profile whose path rules this OS's paths follow, for the checkout rule.
 #[cfg(windows)]
 const PATH_RULES: Profile = Profile::Axpc;
 #[cfg(not(windows))]
@@ -79,8 +76,8 @@ fn is_link(metadata: &fs::Metadata) -> bool {
     metadata.file_type().is_symlink()
 }
 
-/// Checks that `path` is a directory, that neither it nor any directory above it
-/// is a link, and on Unix that it is private to the current user.
+/// checks that `path` is a directory with no link at or above it and, on Unix, private
+/// to the current user.
 fn check_directory(path: &Path) -> Result<(), SinkError> {
     for ancestor in path.ancestors() {
         if ancestor.as_os_str().is_empty() || ancestor.parent().is_none() {
@@ -102,12 +99,8 @@ fn check_directory(path: &Path) -> Result<(), SinkError> {
     Ok(())
 }
 
-/// The sink `directory` names, made absolute from the working directory, once it
+/// the sink `directory` names, made absolute from the working directory, once it
 /// passes the checks.
-///
-/// # Errors
-///
-/// See [`SinkError`].
 pub fn checked_sink(directory: &str, checkout: Option<&Path>) -> Result<PathBuf, SinkError> {
     let path = std::path::absolute(directory)
         .map_err(|error| SinkError::Unreadable(PathBuf::from(directory), error.kind()))?;
@@ -126,7 +119,7 @@ pub fn checked_sink(directory: &str, checkout: Option<&Path>) -> Result<PathBuf,
     Ok(path)
 }
 
-/// The path without the verbatim prefix `fs::canonicalize` gives it on Windows,
+/// the path without the verbatim prefix `fs::canonicalize` gives it on Windows,
 /// as a configuration names it.
 #[cfg(windows)]
 fn without_verbatim_prefix(path: PathBuf) -> PathBuf {
@@ -143,12 +136,8 @@ fn without_verbatim_prefix(path: PathBuf) -> PathBuf {
     path
 }
 
-/// Checks a bundle again before a file goes into it, as the PowerShell exporter
+/// checks a bundle again before a file goes into it, as the PowerShell exporter
 /// does.
-///
-/// # Errors
-///
-/// See [`SinkError`].
 pub fn check_bundle(bundle: &Path) -> Result<(), SinkError> {
     check_directory(bundle)
 }
@@ -157,12 +146,8 @@ fn bundle_prefix(pool: &str) -> String {
     format!("{pool}-bundle-")
 }
 
-/// How many entries of the sink belong to the pool's bundles, partial ones
+/// how many entries of the sink belong to the pool's bundles, partial ones
 /// included.
-///
-/// # Errors
-///
-/// Fails when the sink cannot be listed.
 pub fn count_bundles(sink: &Path, pool: &str) -> io::Result<u32> {
     let prefix = bundle_prefix(pool);
     let mut count: u32 = 0;
@@ -189,11 +174,7 @@ fn random_id() -> String {
     parts.iter().map(|part| format!("{part:016x}")).collect()
 }
 
-/// Creates a new bundle for the pool in the sink, `0700` on Unix, and checks it.
-///
-/// # Errors
-///
-/// Fails when the directory cannot be created or fails its check.
+/// creates a new bundle for the pool in the sink, `0700` on Unix, and checks it.
 pub fn create_bundle(sink: &Path, pool: &str) -> Result<PathBuf, SinkError> {
     let bundle = sink.join(format!("{}{}", bundle_prefix(pool), random_id()));
     #[cfg(unix)]
@@ -217,11 +198,8 @@ pub fn create_bundle(sink: &Path, pool: &str) -> Result<PathBuf, SinkError> {
     Ok(bundle)
 }
 
-/// Creates a file that does not exist yet in the bundle, `0600` on Unix.
-///
-/// # Errors
-///
-/// Fails when the bundle fails its check or the file exists or cannot be created.
+/// creates a file that does not exist yet in the bundle, `0600` on Unix, after
+/// checking the bundle again.
 pub fn create_file(bundle: &Path, name: &str) -> io::Result<fs::File> {
     check_bundle(bundle).map_err(io::Error::other)?;
     let mut options = fs::OpenOptions::new();
@@ -392,7 +370,7 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
 
-    /// A directory junction, which needs no privilege, made by `mklink /J`.
+    /// a directory junction, which needs no privilege, made by `mklink /J`.
     #[cfg(windows)]
     fn junction(link: &Path, target: &Path) {
         let status = std::process::Command::new("cmd")
