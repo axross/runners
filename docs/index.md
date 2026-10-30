@@ -41,8 +41,11 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   subagents, and telemetry.
 - [operations/windows-runner-host.md](./operations/windows-runner-host.md) -
   running ephemeral runners for several repositories on a Windows machine with
-  Docker Desktop: prerequisites, the per-repository token, the host
-  configuration, scheduled tasks, health checks, updating, and recovery.
+  Docker Desktop with the CLI: prerequisites, installing `marshal`, the
+  per-repository token and its file's access control, the host configuration,
+  building the image, running and stopping the pools, diagnostics and their
+  recovery, health checks, rebuilding and updating, recovery, and rolling back to
+  the PowerShell supervisor.
 - [operations/cli.md](./operations/cli.md) - the CLI under `cli/`: what `validate`
   accepts and prints for the axpc and axmc host profiles, how it stays equal to the
   PowerShell validator, the shared fixtures and the parity test, the runtime layer

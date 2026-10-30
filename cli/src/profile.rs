@@ -6,7 +6,7 @@ use std::fmt;
 /// the path form of its private paths, and its fields.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Profile {
-    /// the Windows host with Docker Desktop, run by the PowerShell supervisor.
+    /// the Windows host with Docker Desktop.
     Axpc,
     /// the macOS host that runs VM pools.
     Axmc,

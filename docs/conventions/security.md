@@ -322,7 +322,11 @@ Residual risks, accepted:
   check still tie the binary to one commit on main, but no longer to a version.
   The install therefore checks the downloaded binary's `--version` before it
   replaces the installed one, so an older genuine binary under a newer version's
-  name is refused without touching the install path.
+  name is refused without touching the install path. On Windows that refusal, like
+  the install's other refusals, is not yet verified on axpc
+  ([#56](https://github.com/axross/runners/issues/56)): the refusal checks were not
+  run there, because installation is to move to winget and Homebrew
+  ([#70](https://github.com/axross/runners/issues/70)).
 - **A green run can release nothing.** If main moves after the dispatch, the
   release job logs that the local branch is behind the remote one and ends without
   a tag or a release, after the binaries are attested.
@@ -353,7 +357,13 @@ Residual risks, accepted:
   tag or release is made.
 - The binaries are not code-signed or notarised, so macOS Gatekeeper and Windows
   SmartScreen may warn or block. The install removes the macOS quarantine
-  attribute; Phase 4b checks Windows on axpc and reports if SmartScreen intervenes.
+  attribute. On axpc the installed Windows copy had no `Zone.Identifier`
+  ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511048211)), and
+  SmartScreen did not prompt, with "Check apps and files" On and Smart App Control
+  Off ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511120441)).
+  So with Smart App Control Off, the unsigned binary the install places, which
+  carries no Mark of the Web, is not blocked on axpc. A copy that carries one, such
+  as a browser download, or a host with Smart App Control On, could be.
 - The runner image's definition is embedded in the binary, so a runner bump reaches
   a host only through a new release and an update.
 
@@ -506,9 +516,12 @@ later host:
   refuses a token file that is not a regular file owned by the current user with
   mode `0600`, and skips its pool with a warning. On Windows the CLI does not check
   the token file's access control list, because no safe call reads it, so the
-  restriction rests on the operator's setup: today the Task Scheduler setup
-  restricts each file, and an operator procedure that replaces that setup has to
-  keep an explicit step for it.
+  restriction rests on the operator: the explicit step under Restricting a Token
+  File in [Windows Runner Host](../operations/windows-runner-host.md#restricting-a-token-file)
+  restricts each file at install and at every rotation, and the rollback's Task
+  Scheduler setup does the same. That step's effect is not yet verified on axpc
+  ([#56](https://github.com/axross/runners/issues/56)): its `icacls` evidence was
+  not collected there.
 - Multiple execution pools for one repository MUST use the same token file;
   entries for different repositories MUST NOT share it. Extra pools do not expand
   the token's repository authority.
@@ -651,9 +664,10 @@ how a bundle is written.
   with are under Sink checks in [CLI](../operations/cli.md#diagnostics).
 - On Windows the CLI does not check the sink's owner or access rules, because no
   safe call reads them; a bundle inherits the sink's rules. The PowerShell exporter
-  checks them, so the operator's ACL step in
+  of the rollback path checks them, but on a host that runs the CLI the operator's
+  ACL step in
   [Windows Runner Host](../operations/windows-runner-host.md#collecting-private-diagnostics)
-  is the only protection left once Phase 4c deletes the PowerShell scripts. A sink
+  is the only protection. A sink
   whose rules admit another user would expose the evidence to that user. This is
   accepted on a single-user host, with the ACL step kept in the procedure.
 - The sink is never mounted into a job. The container's evidence leaves it only

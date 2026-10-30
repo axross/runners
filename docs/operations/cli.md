@@ -10,10 +10,11 @@ check of it, running a host with `build`, `start`, `stop`, `restart`, `status`, 
 `diagnostics`, the diagnostic containers a diagnostics-enabled pool runs and their
 export, the toolchain and the gates that cover it, how a release is built and
 installed, and why its name is fixed. The
-binary is `marshal`. The PowerShell supervisor and rebuild task
-under [`hosts/windows-docker-desktop/`](../../hosts/windows-docker-desktop) still
-run the axpc host until Phase 4b, and the CLI must not be started beside them; see
-[Windows Runner Host](./windows-runner-host.md).
+binary is `marshal`, and axpc runs its pools with it, as
+[Windows Runner Host](./windows-runner-host.md) describes. The PowerShell
+supervisor and rebuild task under
+[`hosts/windows-docker-desktop/`](../../hosts/windows-docker-desktop) stay only as
+that document's rollback path, and the CLI must not be started beside them.
 
 ## Running It
 
@@ -371,8 +372,9 @@ TLS uses rustls with the `ring` provider, installed explicitly by
 `install_tls_provider` before the client is built, and the platform's certificate
 verifier. Installing twice is fine. A failure to install it or to build the client
 is a setup error for the caller to report, never a panic. A test builds the client
-on every operating system in CI; a handshake with GitHub is first exercised on a
-real host.
+on every operating system in CI; a handshake with GitHub, and a real registration,
+are verified on axpc (maintainer's report,
+[#56](https://github.com/axross/runners/issues/56#issuecomment-6511344317)).
 
 The base address can be overridden only by a debug build, and only to
 `http://127.0.0.1:<port>`, for the loopback tests; a debug build refuses any other
@@ -424,9 +426,11 @@ listed under [Diagnostics](#diagnostics). `real_docker.rs` runs a container and 
 probe through a real Docker daemon on Linux, and exports a container's small
 `metrics.txt` through the exporter child from a real `docker cp` stream; it is
 `#[ignore]`d for a local `cargo test`, and CI runs it in its own step, where it
-fails when Docker or the image is missing. Not verified: a real
+fails when Docker or the image is missing. Not verified by these tests: a real
 Docker daemon outside that CI step, the TLS handshake with GitHub, and Windows and
-macOS runtime behaviour beyond what the hosted runners show.
+macOS runtime behaviour beyond what the hosted runners show. The handshake and a
+real registration are verified on axpc instead, on the maintainer's report, as the
+TLS paragraph above says.
 
 ## The Instance Layer
 
@@ -642,9 +646,12 @@ the "held" exit code. On the Windows hosted runner,
 to it, reads the live pipe's descriptor through .NET, and fails unless the access
 control list is protected and holds one entry, allowing the current user full
 access. Neither crate the CLI uses reads a live pipe's descriptor without `unsafe`,
-so that check is in PowerShell. Not verified: the Windows lock against a second OS
-user, and the rejection of remote clients, which a hosted runner cannot show; and
-macOS and Windows behaviour beyond what the hosted runners show.
+so that check is in PowerShell. A hosted runner cannot show the Windows lock
+against a second OS user or the rejection of remote clients, and both are not yet
+verified on axpc
+([#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)):
+neither check was run there, by the maintainer's decision.
+Not verified: macOS and Windows behaviour beyond what the hosted runners show.
 
 ## The Image Contract
 
@@ -771,9 +778,11 @@ when the image is missing or its labels are missing or malformed.
 `start` runs the host's pools in the foreground through the instance layer and the
 runtime layer, and `stop`, `restart`, `status`, and `diagnostics` talk to it from another terminal
 over the control channel. `build` builds the runner image, and the same clients
-talk to it. On axpc the PowerShell supervisor and rebuild task keep running the
-host until Phase 4b, and neither `start` nor `build` may run beside them; see
-[Windows Runner Host](./windows-runner-host.md).
+talk to it. axpc runs its pools with `start` and builds its image with `build`, as
+[Windows Runner Host](./windows-runner-host.md) describes. Neither may run beside the
+PowerShell supervisor or its rebuild task, which that document's rollback restores:
+`start`'s stale cleanup removes the supervisor's job containers, and the scripts do
+not take the instance lock.
 
 | Module                   | Holds                                                                                                |
 | ------------------------ | ---------------------------------------------------------------------------------------------------- |
@@ -884,9 +893,17 @@ A second SIGINT, Ctrl+C, or Ctrl+Break skips the grace period: a `docker stop` u
 way is abandoned and the ordinary containers are removed at once, while each
 diagnostic container is ended with `docker kill` and kept without its export.
 `start` then exits 1, and its last line names each kept container. Raising Ctrl+C in a
-Windows test needs `unsafe`, so the Windows handling is checked by review and on
-axpc in Phase 4b. That includes Ctrl+Break: a client's own process group keeps
-Ctrl+C from it, but whether it also keeps Ctrl+Break from it is unverified.
+Windows test needs `unsafe`, so the Windows handling is checked by review. On axpc
+one Ctrl+C stopped the instance with exit 0, and a second Ctrl+C force-stopped it
+with exit 1 (maintainer's report,
+[#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)). That
+the second kept the diagnostic container is not yet verified on axpc
+([#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)): the
+report did not say. Ctrl+Break is not yet verified on axpc
+([#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)): it
+could not be tested.
+For Ctrl+Break, a client's own process group keeps Ctrl+C from it, but whether it
+also keeps Ctrl+Break from it is unverified.
 
 | Exit | Meaning                                                                                                                                                                                                                                      |
 | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1120,9 +1137,12 @@ and `cp` with a scripted archive or a stall, and stand in for the exporter child
   checkout, also when the checkout is named through a link, or not private, and on Windows one that is or lies under a junction or
   a directory symbolic link.
 
-Not verified: the Windows console-close handling below, a diagnostic job on Docker
-Desktop, and the macOS behaviour of the process-group signal the SIGINT tests send,
-beyond what the hosted runners show.
+Verified on axpc (maintainer's report,
+[#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)): a
+diagnostic job on Docker Desktop, and the Windows console-close handling below,
+apart from its timing.
+Not verified: the macOS behaviour of the process-group signal the SIGINT tests
+send, beyond what the hosted runners show.
 
 ### Build
 
@@ -1234,7 +1254,10 @@ failure.
   through `win32job`, and never closes its handle. The operating system closes it
   when the process ends, however it ends and after its exit code is set, and every
   child in the job dies then. Docker Desktop keeps a container running after its
-  client is killed, so the next `start`'s stale cleanup removes it.
+  client is killed, so the next `start`'s stale cleanup removes it. The Job Object
+  against Docker Desktop is not yet verified on axpc
+  ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)): the
+  hard-kill check was not run there, by the maintainer's decision.
 - **Unix.** Each job container's `docker run` client is started by the shim, the
   CLI run again as the hidden
   `marshal shim --name <container> -- <docker> <arguments>`. The shim starts the
@@ -1280,8 +1303,11 @@ From version 1.44.0
 handler does not return for them while a listener is registered: it notifies the
 listener and parks the handler thread, so the process lives until `start` finishes
 the removal and exits by itself. `cli/Cargo.toml` requires 1.54.1. No test can raise
-the close event, so this, the diagnostic containers' kill within the 4 s included,
-is unverified until axpc checks it in Phase 4b.
+the close event. On axpc closing the window worked as described (maintainer's
+report, [#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)),
+but the diagnostic containers' kill within the 4 s is not yet verified on axpc
+([#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)): the
+report gave no timing.
 
 ### What the Command Tests Cover
 
@@ -1320,10 +1346,15 @@ and one that succeeds within a stop's grace, which commits without an inspect.
 test definition in `cli/tests/build-definition/`, the runner image's digest-pinned
 base and its declared labels, and fails unless the result carries all five labels,
 no temporary tag remains, and the container backend's image check finds the image
-matching and an absent tag missing; it is `#[ignore]`d for a local `cargo test`. Not
-verified: Ctrl+C, Ctrl+Break, and the console close on Windows, a `build` of the
-full image by the CLI, which axpc shows in Phase 4b, and macOS and Windows behaviour
-beyond what the hosted runners show.
+matching and an absent tag missing; it is `#[ignore]`d for a local `cargo test`.
+Verified on axpc (maintainer's report,
+[#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845) and
+[#56](https://github.com/axross/runners/issues/56#issuecomment-6511344317)): Ctrl+C
+and, apart from its timing, the console close on Windows, and a `build` of the full
+image on Docker Desktop. Ctrl+Break is not yet verified on axpc
+([#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)): it
+could not be tested. Not verified: macOS and Windows behaviour beyond what the
+hosted runners show.
 
 ## Fixtures and Tests
 
@@ -1524,11 +1555,13 @@ on the default branch, and its attestation verifies against `release.yaml` run f
 main, at that commit. It needs `gh` 2.102 or later, signed in
 (`gh auth status`).
 
-Until Phase 4b, the binary MUST NOT be started on axpc beside the PowerShell
-supervisor; see [Windows Runner Host](./windows-runner-host.md). Once axpc runs the
-CLI, it can roll back to the PowerShell path by stopping the CLI and registering
-its Task Scheduler tasks again, as
-[Registering the Scheduled Tasks](./windows-runner-host.md#registering-the-scheduled-tasks)
+axpc runs the binary this procedure installs, and
+[Windows Runner Host](./windows-runner-host.md) is its operator procedure. The
+binary MUST NOT be started on axpc beside the PowerShell supervisor. Until Phase 4c
+removes the PowerShell scripts, axpc can roll back to them by stopping the CLI,
+rebuilding the image with the PowerShell script, and registering its Task Scheduler
+tasks again, as
+[Rolling Back to the PowerShell Supervisor](./windows-runner-host.md#rolling-back-to-the-powershell-supervisor)
 describes.
 
 | OS      | Install path                                  |
@@ -1701,10 +1734,18 @@ turns a native command's redirected standard error into an error, and `Stop` wou
 the block at the "No instance is running." line.
 
 Windows cannot replace an executable that is running, so step 7 also fails while an
-instance still runs from the install path. A binary fetched with
+instance still runs from the install path. The procedure's refusals on Windows are
+not yet verified on axpc ([#56](https://github.com/axross/runners/issues/56)): the
+refusal checks were not run there, because installation is to move to winget and
+Homebrew ([#70](https://github.com/axross/runners/issues/70)). A binary fetched with
 `gh release download` is assumed to carry no Mark of the Web, and the procedure
-does not clear one; Phase 4b checks that, and whether SmartScreen intervenes, on
-axpc.
+does not clear one. On axpc the installed copy had no `Zone.Identifier`
+([#56](https://github.com/axross/runners/issues/56#issuecomment-6511048211)), and
+SmartScreen did not prompt, with "Check apps and files" On and Smart App Control
+Off ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511120441)).
+So with Smart App Control Off, the unsigned binary this procedure installs, which
+carries no Mark of the Web, is not blocked on axpc. A copy that carries one, such
+as a browser download, or a host with Smart App Control On, could be.
 
 ## Dependencies
 

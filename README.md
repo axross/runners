@@ -12,16 +12,17 @@ the first runner material: one runner image and the host scripts that run it for
 several repositories from a Windows machine with Docker Desktop.
 [Windows Runner Host](./docs/operations/windows-runner-host.md) owns the operator
 procedure and states what has and has not been verified on a real host. A Rust
-command line tool, the CLI, has started to replace those scripts: it checks a host
+command line tool, the CLI, `marshal`, replaces those scripts: it checks a host
 configuration, its `build` command builds the runner image, its `start`, `stop`,
 `restart`, and `status` commands run a host's pools, and its `diagnostics` command
-exports what a diagnostics-enabled pool left, but no real host uses them yet. The
-agent-host configuration is not here yet. Layout:
+exports what a diagnostics-enabled pool left. The axpc host runs its pools with a
+released `marshal`, and the scripts stay only as its rollback path. The agent-host
+configuration is not here yet. Layout:
 
 | Path                            | Holds                                                                                                                                                    | State   |
 | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | `images/actions-runner/`        | The runner image: GitHub's runner image plus build dependencies, pinned by digest                                                                        | Present |
-| `hosts/windows-docker-desktop/` | The supervisor, image rebuild, and scheduled-task scripts, and an example configuration                                                                  | Present |
+| `hosts/windows-docker-desktop/` | The supervisor, image rebuild, and scheduled-task scripts, kept as the rollback path, and an example configuration                                       | Present |
 | `cli/`                          | The CLI: `validate` checks a host configuration, `build` builds the runner image, and `start`, `stop`, `restart`, `status`, and `diagnostics` run a host | Present |
 | `release/`                      | The pinned semantic-release tooling that `release.yaml` runs to tag and publish the CLI's releases                                                       | Present |
 | `hosts/macos/`                  | An example configuration for the macOS host profile, `axmc`                                                                                              | Present |
