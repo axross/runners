@@ -152,9 +152,10 @@ release binaries are not code-signed. On axpc the installed copy had no
 ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511048211)), and
 SmartScreen did not prompt at the install or at its first run from the terminal,
 with "Check apps and files" On and Smart App Control Off
-([#56](https://github.com/axross/runners/issues/56#issuecomment-6511120441)). With
-Smart App Control Off, an unsigned binary is not blocked on axpc; with it On, the
-result could differ.
+([#56](https://github.com/axross/runners/issues/56#issuecomment-6511120441)). So
+with Smart App Control Off, the unsigned binary the install procedure places, which
+carries no Mark of the Web, is not blocked on axpc. A copy that carries one, such as
+a browser download, or a host with Smart App Control On, could be.
 
 ## The Fine-Grained Token
 

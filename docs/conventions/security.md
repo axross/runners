@@ -361,8 +361,9 @@ Residual risks, accepted:
   ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511048211)), and
   SmartScreen did not prompt, with "Check apps and files" On and Smart App Control
   Off ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511120441)).
-  With Smart App Control Off, an unsigned binary is not blocked on axpc; with it
-  On, the result could differ.
+  So with Smart App Control Off, the unsigned binary the install places, which
+  carries no Mark of the Web, is not blocked on axpc. A copy that carries one, such
+  as a browser download, or a host with Smart App Control On, could be.
 - The runner image's definition is embedded in the binary, so a runner bump reaches
   a host only through a new release and an update.
 
