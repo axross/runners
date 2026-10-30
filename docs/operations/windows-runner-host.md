@@ -21,23 +21,40 @@ and macOS runners; [CLI](./cli.md) says what each covers. The configuration
 fixtures are shared by both validators and live in
 [`tests/host-configuration/`](../../tests/host-configuration). The steps below that
 use Docker Desktop, `icacls`, and a released `marshal` on a real machine are
-described from the CLI's specification and the tools' documentation. These are
-not yet verified on axpc ([#56](https://github.com/axross/runners/issues/56)), and each
-place below that depends on one says so:
+described from the CLI's specification and the tools' documentation, and were then
+checked on axpc ([#56](https://github.com/axross/runners/issues/56)). Most of those
+checks rest on the maintainer's report on #56 rather than on posted output, and each
+place below that depends on one says which. Verified on axpc:
 
-- installing a released binary, and the install's refusals, which were not run on
-  axpc because installation is to move to winget and Homebrew
-  ([#70](https://github.com/axross/runners/issues/70));
+- installing a released binary (maintainer's report,
+  [#56](https://github.com/axross/runners/issues/56#issuecomment-6511344317)), with
+  no Mark of the Web on it and no SmartScreen prompt while Smart App Control is Off
+  ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511048211),
+  [#56](https://github.com/axross/runners/issues/56#issuecomment-6511120441));
+- a real registration with GitHub, a full `marshal build` of the image on Docker
+  Desktop, and every pool running with its labels (maintainer's report,
+  [#56](https://github.com/axross/runners/issues/56#issuecomment-6511344317));
+- jobs running, `marshal restart`, one and a second Ctrl+C in the `start` window,
+  closing the window, and a diagnostic job and its export on Docker Desktop
+  (maintainer's report,
+  [#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845));
+- `marshal stop` ending the instance in about 4 s with a job running, exit 0
+  ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511338525)).
+
+Not yet verified on axpc, each for the reason given:
+
+- the install's refusals, which were not run because installation is to move to
+  winget and Homebrew ([#70](https://github.com/axross/runners/issues/70));
 - the token-file access control step's result, whose `icacls` evidence was not
-  collected on axpc;
-- a real registration with GitHub;
-- a full `marshal build` of the image on Docker Desktop;
-- Ctrl+C and Ctrl+Break in the `start` window;
-- closing the `start` window, including the diagnostic containers' kill;
-- the Job Object against Docker Desktop, after a hard kill of `start`;
-- a diagnostic job and its export on Docker Desktop;
-- the instance lock refusing a `start` by another Windows user;
-- the control pipe rejecting a client on another machine.
+  collected;
+- Ctrl+Break in the `start` window, which could not be tested;
+- that a second Ctrl+C keeps the diagnostic container, and the timing of the
+  diagnostic containers' kill when the window closes, which the report did not give;
+- the Job Object against Docker Desktop, after a hard kill of `start`, which was not
+  run, by the maintainer's decision;
+- the instance lock refusing a `start` by another Windows user, and the control pipe
+  rejecting a client on another machine, which were not run, by the maintainer's
+  decision.
 
 ## Prerequisites
 
@@ -121,7 +138,11 @@ were not run there, because installation is to move to winget and Homebrew
 `%LOCALAPPDATA%\Programs\marshal\marshal.exe`. Add that directory to your user
 `Path` under **Settings, System, About, Advanced system settings, Environment
 Variables**, then open a new terminal and confirm that `marshal --version` prints
-`marshal <version>`.
+`marshal <version>`. The install itself is verified on axpc: the block for `0.1.0`
+ran to completion (maintainer's report,
+[#56](https://github.com/axross/runners/issues/56#issuecomment-6511344317)), and
+`marshal --version` printed `marshal 0.1.0`
+([#56](https://github.com/axross/runners/issues/56#issuecomment-6511048211)).
 
 The same procedure updates `marshal` with a newer tag and rolls it back with the
 previous one; it stops a running instance first. After an update, rebuild the image
@@ -467,8 +488,9 @@ exit codes.
 While it builds, `marshal status` in another terminal answers `state: building`, and
 `marshal stop` or Ctrl+C aborts it within 30 s; an abort before the retag leaves the
 configured name on its previous image. CI runs `marshal build` only against a small
-test definition on Linux; a full build of the image on Docker Desktop is
-not yet verified on axpc ([#56](https://github.com/axross/runners/issues/56)).
+test definition on Linux; a full build of the image on Docker Desktop is verified on
+axpc (maintainer's report,
+[#56](https://github.com/axross/runners/issues/56#issuecomment-6511344317)).
 
 The Android NDK contract, Java/SDK/Gradle inputs, and Build sections of the
 [image README](../../images/actions-runner/README.md) own version/checksum
@@ -539,30 +561,42 @@ Stop the host with `marshal stop`, or with Ctrl+C in the `start` window, which r
 the same stop sequence. A second Ctrl+C skips the grace period: the ordinary
 containers are removed at once, each diagnostic container is ended with
 `docker kill` and kept without its export, and `start` exits 1, naming each kept
-container. Ctrl+Break does the same as Ctrl+C. Ctrl+C and Ctrl+Break in the `start`
-window are not yet verified on axpc
-([#56](https://github.com/axross/runners/issues/56)).
+container. Ctrl+Break does the same as Ctrl+C. On axpc one Ctrl+C stopped the
+instance with exit 0, and a second Ctrl+C force-stopped it with exit 1 (maintainer's
+report, [#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)).
+That the second Ctrl+C kept the diagnostic container is not yet verified on axpc
+([#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)): the
+report did not say. Ctrl+Break is not yet verified on axpc
+([#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)): it
+could not be tested.
 
 Do not close the `start` window to stop it. Closing it stops the instance with
 forced removal within about 4.5 s: ordinary containers are removed, and diagnostic
 containers are ended and kept for the next `start` to finalise. A sign-out or
 shutdown does not reach `start` at all, so its containers wait for the next `start`.
-Closing the window, including the diagnostic containers' kill, is
-not yet verified on axpc ([#56](https://github.com/axross/runners/issues/56)).
+Closing the window is verified on axpc, as working as described (maintainer's
+report, [#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)).
+Its timing, and the diagnostic containers' kill within it, are not yet verified on
+axpc ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)):
+the report gave no timing.
 
 When `start` ends however it ends, even by `taskkill /F`, the Job Object it puts
 itself in ends every `docker` client it started. Docker Desktop keeps a container
 running after its client is killed, so a job can run on until the next `start`
-removes its container. The Job Object against Docker Desktop is
-not yet verified on axpc ([#56](https://github.com/axross/runners/issues/56)).
+removes its container. The Job Object against Docker Desktop is not yet verified on
+axpc ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)):
+the hard-kill check was not run, by the maintainer's decision.
 
 One instance runs per machine. A `start` by another Windows user while an instance
 runs is refused, with a message that the lock is held by another OS user or by an
 instance still starting or ending; that refusal is not yet verified on axpc
-([#56](https://github.com/axross/runners/issues/56)). The other terminals reach the
-instance through a control pipe that only its own user can open and that rejects
-remote clients; the rejection of a client on another machine is
-not yet verified on axpc ([#56](https://github.com/axross/runners/issues/56)).
+([#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)): the
+second-user check was not run, by the maintainer's decision. The other terminals
+reach the instance through a control pipe that only its own user can open and that
+rejects remote clients; the rejection of a client on another machine is not yet
+verified on axpc
+([#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)): the
+remote check was not run, by the maintainer's decision.
 [Security](../conventions/security.md#one-instance-per-machine-reached-only-by-its-user)
 records what this protects.
 
@@ -577,8 +611,9 @@ cycle:
    without registering a runner.
 2. Request a single-use registration from GitHub with that repository's token, for
    a uniquely named runner carrying the entry's labels. A real registration with
-   GitHub is not yet verified on axpc
-   ([#56](https://github.com/axross/runners/issues/56)).
+   GitHub is verified on axpc, each pool registering its platform and configured
+   labels (maintainer's report,
+   [#56](https://github.com/axross/runners/issues/56#issuecomment-6511344317)).
 3. Start a throwaway container from the image with the entry's volumes and
    the affinity guard followed by `/home/runner/run.sh`. The registration reaches the runner through the
    `ACTIONS_RUNNER_INPUT_JITCONFIG` environment variable, which the runner reads
@@ -689,8 +724,9 @@ keep their ordinary removal even when the entry now enables diagnostics. Prior
 evidence is never automatically deleted. Operators MUST review and privately
 archive or remove prior bundles before collecting beyond the quota. Retention
 outside this feature is their decision. A diagnostic job and its export on Docker
-Desktop are not yet verified on axpc
-([#56](https://github.com/axross/runners/issues/56)).
+Desktop are verified on axpc: the bundle was written with its `complete.txt`, and
+`marshal diagnostics` reported the counts and exited 0 (maintainer's report,
+[#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)).
 
 ### Recover before disabling diagnostics
 
