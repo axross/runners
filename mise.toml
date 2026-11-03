@@ -276,8 +276,16 @@ run = "bash .github/scripts/tests/test-set-release-version.sh"
 description = "Check the release gate that semantic-release runs before it tags and publishes"
 run = "bash .github/scripts/tests/test-verify-release.sh"
 
+[tasks."test:installer-version"]
+description = "Check the script that maps a release version to the version its installers carry"
+run = "bash .github/scripts/tests/test-installer-version.sh"
+
+[tasks."test:fetch-wix"]
+description = "Check that the WiX fetch refuses a package whose SHA-256 differs from the pin"
+run = "bash .github/scripts/tests/test-fetch-wix.sh"
+
 [tasks.check]
-description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, host test, release script tests, Rust tests, Rust dependency check, parity test"
+description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, host test, release script tests, installer version and WiX fetch tests, Rust tests, Rust dependency check, parity test"
 depends = [
   "format:check",
   "lint",
@@ -288,6 +296,8 @@ depends = [
   "test:host",
   "test:set-release-version",
   "test:verify-release",
+  "test:installer-version",
+  "test:fetch-wix",
   "test:rust",
   "deny:rust",
   "test:parity",
