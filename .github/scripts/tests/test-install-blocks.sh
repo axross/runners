@@ -83,6 +83,8 @@ case "$1" in
         echo "case \"\$1\" in --version) echo 'marshal ${STANDIN_PAYLOAD_VERSION}'; exit ${STANDIN_PAYLOAD_EXIT:-0};; esac"
       } >"$3/Payload/usr/local/bin/marshal"
       chmod 0644 "$3/Payload/usr/local/bin/marshal"
+      # the expanded binary carries the quarantine mark unless a case turns it off.
+      [[ "${STANDIN_PAYLOAD_QUARANTINE:-1}" == 0 ]] || : >"$3/Payload/usr/local/bin/marshal.quarantine"
     fi
     ;;
   --pkg-info) [[ -e "$STANDIN_RECEIPT" ]] ;;
@@ -119,6 +121,7 @@ begin_case() {
   export STANDIN_RECEIPT="${case_dir}/receipt"
   export STANDIN_TAG_TYPE=commit STANDIN_TAG_SHA="$commit_sha" STANDIN_ANNOTATED_SHA="$commit_sha"
   export STANDIN_COMPARE=identical STANDIN_PAYLOAD_VERSION="$version" STANDIN_PAYLOAD_EXIT=0
+  export STANDIN_PAYLOAD_QUARANTINE=1
   unset STANDIN_DOWNLOAD_FAIL STANDIN_TAG_FAIL STANDIN_ANNOTATED_FAIL STANDIN_COMPARE_FAIL STANDIN_ATTEST_FAIL STANDIN_EXPAND_FAIL
   output="" exit_status=0
 }
@@ -188,6 +191,11 @@ assert_called() {
   grep -q -F -e "$1" "$STANDIN_LOG" || fail "'$1' was not called; calls: $(tr '\n' ';' <"$STANDIN_LOG")"
 }
 
+# assert_called_matching <extended regular expression>
+assert_called_matching() {
+  grep -q -E -e "$1" "$STANDIN_LOG" || fail "no call matches '$1'; calls: $(tr '\n' ';' <"$STANDIN_LOG")"
+}
+
 assert_not_called() {
   if grep -q -F -e "$1" "$STANDIN_LOG"; then
     fail "'$1' was called; calls: $(tr '\n' ';' <"$STANDIN_LOG")"
@@ -251,9 +259,21 @@ assert_called "pkgutil --expand-full ${case_dir}/tmp/"
 assert_not_called "pkgutil --expand-full ${package} "
 assert_called "xattr -d com.apple.quarantine ${case_dir}/tmp/"
 assert_not_called "xattr -d com.apple.quarantine ${package}"
+assert_called_matching "xattr -d com.apple.quarantine .*/unpacked/Payload/usr/local/bin/marshal$"
 assert_called "payload --version"
 assert_installs_nothing
 assert_check_left_the_file
+finish_case
+
+begin_case "check: an expanded binary without a quarantine mark is not touched by xattr"
+prepare_check
+export STANDIN_PAYLOAD_QUARANTINE=0
+run_check
+assert_passed
+if grep -q -E -e "xattr -d com.apple.quarantine .*/unpacked/Payload/usr/local/bin/marshal$" "$STANDIN_LOG"; then
+  fail "xattr -d ran on an expanded binary that carries no mark"
+fi
+assert_called "xattr -p com.apple.quarantine "
 finish_case
 
 begin_case "check: the file may be called anything and sit in a folder with spaces"
