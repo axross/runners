@@ -6,6 +6,12 @@
 # built from the STANDIN_* variables below, and the caller's --jq expression is
 # applied to it with jq, as gh does, so a block with a wrong expression gets a
 # wrong value and fails its suite. it never contacts GitHub.
+#
+# STANDIN_LOG, STANDIN_RELEASE for a download, and STANDIN_TAG_SHA for a tag read are
+# required, so an unset one stops the stand-in loudly. the other STANDIN_* variables
+# default to a passing call.
+set -euo pipefail
+
 echo "gh $*" >>"$STANDIN_LOG"
 
 jq_expression=""
@@ -29,7 +35,7 @@ respond() {
   printf '%s' "$1" | jq -r "$jq_expression" || exit 1
 }
 
-case "$1 $2" in
+case "${1:-} ${2:-}" in
   "release download")
     patterns=() dir=.
     shift 2
@@ -41,7 +47,7 @@ case "$1 $2" in
       esac
     done
     [[ -z "${STANDIN_DOWNLOAD_FAIL:-}" ]] || exit 1
-    for pattern in "${patterns[@]}"; do
+    for pattern in ${patterns[@]+"${patterns[@]}"}; do
       /bin/cp "${STANDIN_RELEASE}/${pattern}" "${dir}/${pattern}" || exit 1
     done
     ;;
