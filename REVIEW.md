@@ -216,8 +216,12 @@ Apply the lens for each kind of file in the diff.
   two installers named for them, and `SHA256SUMS`, such as a helper binary, an
   installer that carries a script or a custom action that runs code, a download
   other than the pinned WiX package, or a departure from the record that the
-  change does not also make to the record, is a finding. A change that relaxes the
-  record needs the maintainer's review.
+  change does not also make to the record, is a finding. Install-time verification
+  is optional for the installers, so a document or comment that presents the check
+  block as required of an operator is a finding, and so is a change that weakens a
+  pin or drops one of the check block's four checks, or any check of the bare-binary
+  blocks that roll back to `v0.1.0`. A change that relaxes the record needs the
+  maintainer's review.
 - **Rust.** The CLI under `cli/` has no `unsafe` and no panic on an input path
   (`unwrap`, `expect`, `panic!`, indexing); it collects every error in the
   PowerShell validator's order rather than returning the first. A new crate has an

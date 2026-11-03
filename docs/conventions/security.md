@@ -198,7 +198,7 @@ is passed into a step through an `env:` variable and quoted, never expanded insi
 
 [`release.yaml`](../../.github/workflows/release.yaml) releases the CLI with
 semantic-release, and [`release-build.yaml`](../../.github/workflows/release-build.yaml)
-builds the binaries; [CLI](../operations/cli.md#releases) owns the steps. This is
+builds the binaries and their installers; [CLI](../operations/cli.md#releases) owns the steps. This is
 the record a change to either workflow, to the build call in
 [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml), to
 [`release/`](../../release), or to the scripts under
@@ -211,8 +211,8 @@ the record a change to either workflow, to the build call in
 - **The branch guard is advisory.** Every job in `release.yaml` has
   `if: github.ref == 'refs/heads/main'`. A dispatch on another branch runs that
   branch's own copy of the file, which could drop the guard, so it binds only the
-  copy on main. The controls are the install-side `--source-ref refs/heads/main`
-  and the compare-API check that the commit is on main.
+  copy on main. The controls are the optional check's `--source-ref refs/heads/main`
+  and its compare-API check that the commit is on main, for an operator who runs it.
 - **The build is split from the release.** The build is a reusable workflow that
   `merge-checks.yaml` calls on every pull request as the dry run, with the version
   `0.0.0-dryrun.<run number>`, and `release.yaml` calls with the version its plan
@@ -234,9 +234,11 @@ the record a change to either workflow, to the build call in
     create the release, and runs the npm tree.
 
   A job that runs the npm tree can push tags and edit releases, and its token can
-  fast-forward main, but it cannot mint an attestation, so a binary it substitutes
-  fails `gh attestation verify` at install. A change it pushes to main is another
-  matter, as the residual risks below say. One release job with all three scopes
+  fast-forward main, but it cannot mint an attestation, so a file it substitutes
+  fails `gh attestation verify` for an operator who runs the optional check before
+  opening it. An operator who skips the check opens the substituted file, as the
+  residual risks below say. A change it pushes to main is another matter, as they
+  also say. One release job with all three scopes
   was rejected: any package in the npm tree could then attest any binary as
   `release.yaml` on `refs/heads/main`. No job needs `artifact-metadata: write`,
   which is for storage records in a registry. `@semantic-release/github`'s comments
@@ -256,6 +258,16 @@ the record a change to either workflow, to the build call in
   against the version semantic-release worked out in its own run.
   `@semantic-release/github` skips an asset that is missing rather than failing, so
   the gate is what holds the file set.
+- **The documented install blocks run against the dry run's installers on hosted
+  runners.** The `Install Blocks` job in
+  [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) needs the dry run,
+  downloads its artifact, and holds `contents: read`. It stubs `gh` and runs the
+  blocks of [CLI](../operations/cli.md#installing-updating-and-rolling-back) with
+  the real installers, so it installs and removes the dry run's own MSI and pkg on
+  a runner that is discarded afterwards. On Windows it also creates a local user
+  outside the Administrators group and a scheduled task for it, and removes both.
+  It uses no secret, attests nothing, and adds no action beyond the `actions/*`
+  already used.
 - **No credential stays in a checkout.** Every checkout sets
   `persist-credentials: false`. Under GitHub Actions, semantic-release builds an
   `x-access-token:` URL from `GITHUB_TOKEN` for its own git commands.
@@ -301,11 +313,19 @@ What protects a release is outside the workflow files:
 - Only accounts with write access can dispatch a workflow or push a tag here. On
   this user-owned repository that is the maintainer, and the agents that share the
   maintainer's identity.
-- The install pins `--signer-workflow` to `release.yaml`, `--source-ref` to
+- Install-time verification is optional. Opening the installer is the main install
+  procedure, and the check block that goes with it is recommended, not required, so
+  nothing stops an operator who skips it from opening a file that nothing has
+  checked. The block pins `--signer-workflow` to `release.yaml`, `--source-ref` to
   `refs/heads/main`, and `--source-digest` to the tag's commit, denies self-hosted
-  runners, and refuses a commit the compare API does not place on main. An
-  attestation from any other workflow, branch, or commit is refused; see
-  [CLI](../operations/cli.md#installing-updating-and-rolling-back).
+  runners, and refuses a commit the compare API does not place on main, a checksum
+  that `SHA256SUMS` does not list, and an installer whose binary is not the
+  version's. An attestation from any other workflow, branch, or commit is refused
+  there; see
+  [CLI](../operations/cli.md#installing-updating-and-rolling-back). The
+  attestation's role is to make that check possible. The bare-binary blocks that
+  roll back to `v0.1.0` keep every one of those checks as a requirement of their
+  procedure.
 - Immutable releases are turned on for the repository before the first dispatch,
   so a published release's assets cannot be replaced and its tag cannot be moved
   or deleted.
@@ -331,8 +351,10 @@ Residual risks, accepted:
 - **The npm tree runs with `contents: write`.** A compromised package in the plan
   or release job can push, move, or delete tags; create, edit, or delete draft and
   published releases; and push to any branch that no rule protects. It cannot mint
-  an attestation, so a binary it substitutes fails `gh attestation verify` at
-  install. It can deny a release, or publish one whose binaries hosts then refuse.
+  an attestation, so a file it substitutes fails `gh attestation verify` for an
+  operator who runs the optional check. An operator who skips it opens the
+  substituted installer, which the next risk below describes. It can deny a
+  release, or publish one whose files operators who check them then refuse.
 - **The npm tree can push to main.** The ruleset on main blocks only deleting the
   branch and pushes that are not fast-forwards. The plan and release jobs'
   `GITHUB_TOKEN` can therefore fast-forward main with a source change that touches
@@ -357,14 +379,16 @@ Residual risks, accepted:
   Immutable releases lock only the tags of published releases.
 - **A weaker install pin.** `--source-ref refs/heads/main` proves that the build
   ran from main, not from a particular tag. `--source-digest` and the reachability
-  check still tie the binary to one commit on main, but no longer to a version.
-  The install therefore checks the downloaded binary's `--version` before it
-  replaces the installed one, so an older genuine binary under a newer version's
-  name is refused without touching the install path. On Windows that refusal, like
-  the install's other refusals, is not yet verified on axpc
-  ([#56](https://github.com/axross/runners/issues/56)): the refusal checks were not
-  run there, because installation is to move to winget and Homebrew
-  ([#70](https://github.com/axross/runners/issues/70)).
+  check still tie the file to one commit on main, but no longer to a version. The
+  optional check therefore runs the binary inside the downloaded installer and
+  refuses unless it prints the version's `--version`, so an older genuine installer
+  under a newer version's name is refused by an operator who runs the check. The
+  bare-binary blocks make the same check of the downloaded binary before they
+  replace the installed one, and refuse without touching the install path. These
+  refusals have run in CI against stand-ins and the dry run's installers, and have
+  not yet run on axpc or the Mac
+  ([#56](https://github.com/axross/runners/issues/56)); the refusal checks of the
+  bare-binary block were not run on axpc.
 - **A green run can release nothing.** If main moves after the dispatch, the
   release job logs that the local branch is behind the remote one and ends without
   a tag or a release, after the binaries are attested.
@@ -393,15 +417,46 @@ Residual risks, accepted:
   Checks loads `release/.releaserc.json`, so a Dependabot bump in `release/` that
   breaks the plan job merges green and fails only on the next dispatch, before any
   tag or release is made.
-- The binaries are not code-signed or notarised, so macOS Gatekeeper and Windows
-  SmartScreen may warn or block. The install removes the macOS quarantine
-  attribute. On axpc the installed Windows copy had no `Zone.Identifier`
+- **An installer opened without the check runs before anything has checked it.**
+  The maintainer chose opening the installer as the main install procedure and the
+  check as optional. The release job's npm tree can replace published files (the
+  first risk above), and an operator who skips the check opens whatever the release
+  page then holds. Signing the installers, or making the check required again, is
+  the remedy in a later change.
+- **A replaced installer can run code.** A replaced MSI could carry a custom action
+  that runs code as the user, or ask for elevation behind a prompt the procedure
+  has taught operators to pass. A replaced pkg could carry scripts that run as root
+  once the administrator password is entered. The genuine installers carry neither
+  a script nor a custom action that runs code, and the build tests that they do not.
+- **On axpc, code running as the operator can read what the operator can**,
+  including the token files `marshal start` reads. A replaced installer runs as the
+  operator, so it can read them; the per-file access control step in
+  [Windows Runner Host](../operations/windows-runner-host.md) restricts those files
+  to other accounts, not to this one.
+- **The pkg's downgrade behaviour is only what the macOS build leg measured.** The
+  MSI refuses a lower version, which stops an older genuine MSI under a newer name
+  from replacing a newer installed version on Windows even when the operator skips
+  the check. The pkg has no such refusal that this project designed; what a lower
+  pkg does over a higher one is the outcome that
+  [CLI](../operations/cli.md#installing-updating-and-rolling-back) states, and the
+  documented rollback does not depend on it.
+- **The procedure asks operators to pass prompts for unsigned files.** The
+  installers and binaries are not code-signed or notarised, so Windows SmartScreen,
+  the browser, and macOS Gatekeeper warn or block, and the procedure tells the
+  operator to choose "Run anyway", to keep the download, and to use "Open Anyway".
+  An operator who has learned to pass those prompts passes the same prompt for a
+  replaced file. The prompts are described as expected until the first install on
+  each host records them. On axpc, a binary fetched with `gh release download` had
+  no `Zone.Identifier`
   ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511048211)), and
   SmartScreen did not prompt, with "Check apps and files" On and Smart App Control
   Off ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511120441)).
-  So with Smart App Control Off, the unsigned binary the install places, which
-  carries no Mark of the Web, is not blocked on axpc. A copy that carries one, such
-  as a browser download, or a host with Smart App Control On, could be.
+  The bare-binary blocks remove the macOS quarantine attribute from what they
+  download; the installers' procedure removes no mark.
+- **Smart App Control On may block the installers.** It blocks unsigned code unless
+  its cloud service predicts the file safe, whether or not the file carries a Mark
+  of the Web, and whether it evaluates an unsigned `.msi` is not verified. It is Off
+  on axpc. Signing is the remedy in a later change.
 - The runner image's definition is embedded in the binary, so a runner bump reaches
   a host only through a new release and an update.
 
