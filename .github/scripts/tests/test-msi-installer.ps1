@@ -287,12 +287,16 @@ try {
     $result = Invoke-Msi -Arguments @('/a', "`"$ReleaseMsi`"", "TARGETDIR=`"$extract`"") -LogName 'release-extract'
     Assert-ExitCode -Result $result -Label 'msiexec /a extracts the release MSI'
     $extracted = @(Get-ChildItem -LiteralPath $extract -Recurse -File)
+    $listing = ($extracted | ForEach-Object { $_.FullName.Substring($extract.Length).TrimStart('\') }) -join ', '
+    Write-Measured "the extraction holds: $listing"
+    $imageCopy = Join-Path $extract (Split-Path -Leaf $ReleaseMsi)
+    $besidesImageCopy = @($extracted | Where-Object { $_.FullName -ne $imageCopy })
+    Assert-That ($besidesImageCopy.Count -eq 1 -and $besidesImageCopy[0].Name -eq 'marshal.exe') "the extraction holds marshal.exe and nothing else besides the administrative image's own .msi copy; it holds: $listing"
     $binaries = @($extracted | Where-Object { $_.Name -eq 'marshal.exe' })
     Assert-That ($binaries.Count -eq 1) 'the extraction holds one marshal.exe'
     Assert-That ((Get-Sha256 $binaries[0].FullName) -eq $binaryHash) 'the extracted marshal.exe has the release binary SHA-256'
     $relative = $binaries[0].FullName.Substring($extract.Length).TrimStart('\')
     Write-Measured "msiexec /a TARGETDIR=<dir> puts the binary at <dir>\$relative"
-    Write-Measured "the extraction holds: $((($extracted | ForEach-Object { $_.FullName.Substring($extract.Length).TrimStart('\') }) -join ', '))"
     Assert-That (-not (Test-Path -LiteralPath $InstallDirectory)) 'the extraction installed nothing'
 
     Write-Output '== tables and metadata of the release MSI =='
@@ -338,6 +342,8 @@ try {
         Assert-That ($hits.Count -eq 0) 'no MSI table or summary field holds a machine, account, or workspace name'
     }
     Assert-That ($strings.Count -gt 0) 'the metadata check read the MSI tables'
+    # a positive control: the scan reads the strings that name the project, so a scan that read nothing useful cannot pass.
+    Assert-That (@($strings | Where-Object { $_.IndexOf('axross', [StringComparison]::OrdinalIgnoreCase) -ge 0 }).Count -gt 0) "the strings the metadata check read hold 'axross'; it read $($strings.Count) strings"
 
     Write-Output '== an upgrade while a program runs from the install path =='
     $ping = Join-Path $env:SystemRoot 'System32\PING.EXE'

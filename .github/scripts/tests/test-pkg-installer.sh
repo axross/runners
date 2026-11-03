@@ -145,6 +145,12 @@ ok "pkgutil --expand-full expands the release package without root"
 measured "the expanded package holds: $(cd "$expanded" && echo *)"
 payload_binary="${expanded}/Payload/usr/local/bin/marshal"
 assert_true "the expanded payload holds usr/local/bin/marshal" test -f "$payload_binary"
+# find's -mindepth 1 leaves out the payload directory itself, so the listing is the
+# binary and the three directories above it, and nothing else.
+payload_entries="$(cd "${expanded}/Payload" && find . -mindepth 1 | LC_ALL=C sort | tr '\n' ' ')"
+measured "the expanded payload lists: ${payload_entries}"
+assert_equal "the expanded payload holds only usr/local/bin/marshal and its parent directories" \
+  "$payload_entries" "./usr ./usr/local ./usr/local/bin ./usr/local/bin/marshal "
 assert_equal "the expanded binary has the release binary SHA-256" "$(sha256_of "$payload_binary")" "$binary_hash"
 scripts_found="$(find "$expanded" -iname 'Scripts*' | tr '\n' ' ')"
 assert_equal "the expanded package holds no Scripts" "$scripts_found" ""
