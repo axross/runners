@@ -2250,6 +2250,9 @@ serve the artifact's real `SHA256SUMS`, a tag on main, and a passing attestation
   the install path prints the build's version;
 - installing over such a manual copy without migration is recorded as a `MEASURED:`
   line;
+- the migration block, run while the MSI is installed, removes the installed file
+  too, after which the uninstall block and a second install leave the installer's
+  binary at the install path;
 - the uninstall block removes the installation.
 
 macOS runs under zsh and the system `/bin/bash`; Windows runs under Windows
