@@ -1679,8 +1679,10 @@ describes.
      Security, choose "Open Anyway" for it within about an hour, enter the login
      password, and open the file again. Installer then asks for an administrator
      password.
-5. Open a new terminal and run `marshal --version`; it prints `marshal <version>`.
-   On macOS, `command -v marshal` prints `/usr/local/bin/marshal`.
+5. Close every terminal window, open a new one, and run `marshal --version`; it
+   prints `marshal <version>`. A new tab in a window that was already open can keep
+   the old environment. On macOS, `command -v marshal` prints
+   `/usr/local/bin/marshal`.
 
 If step 5 prints another version on Windows, or `command -v marshal` prints another
 path on macOS, a manual install from before the installers is still in place. Run
