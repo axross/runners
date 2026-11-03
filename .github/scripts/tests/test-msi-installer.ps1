@@ -381,3 +381,6 @@ try {
     if (Test-Path -LiteralPath $LogsMarker) { Remove-Item -LiteralPath $LogsMarker -Force }
     if (Test-Path -LiteralPath $work) { Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue }
 }
+
+# the CI shell wrapper exits with the last native exit code, which a stop that reported "no instance" leaves at 1.
+exit 0

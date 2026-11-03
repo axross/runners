@@ -280,3 +280,6 @@ try {
     }
     Remove-Item -LiteralPath $Work -Recurse -Force -ErrorAction SilentlyContinue
 }
+
+# the CI shell wrapper exits with the last native exit code, which a stop that reported "no instance" leaves at 1.
+exit 0

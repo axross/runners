@@ -155,3 +155,6 @@ try {
     if (Get-LocalUser -Name $UserName -ErrorAction SilentlyContinue) { Remove-LocalUser -Name $UserName }
     if (Test-Path -LiteralPath $Staging) { Remove-Item -LiteralPath $Staging -Recurse -Force -ErrorAction SilentlyContinue }
 }
+
+# the CI shell wrapper exits with the last native exit code, which a stop that reported "no instance" leaves at 1.
+exit 0

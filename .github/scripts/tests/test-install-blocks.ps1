@@ -605,3 +605,5 @@ if ($script:Failures -ne 0) {
     exit 1
 }
 Write-Output "$($script:Cases - $script:Skipped) install block cases passed, $($script:Skipped) skipped under PowerShell $($PSVersionTable.PSVersion)."
+# the CI shell wrapper exits with the last native exit code, which a stop that reported "no instance" leaves at 1.
+exit 0
