@@ -320,6 +320,17 @@ Assert-True $continued 'the calling shell did not continue after the refusal'
 Assert-Refused 'the attestation does not verify'
 Complete-Case
 
+Open-Case 'check: a commit behind main passes'
+Initialize-Check
+$script:Scenario.Compare = 'behind'
+Invoke-Check
+Assert-Passed
+Assert-True ($script:Result.Output.Contains('Passed:')) "no passed line: $($script:Result.Output)"
+Assert-Called "compare/main...$CommitSha"
+Assert-Called "gh attestation verify $($script:Installer) "
+Assert-InstallsNothing
+Complete-Case
+
 $refusals = @(
     @{ Name = 'SHA256SUMS that cannot be downloaded'; Set = { $script:Scenario.DownloadFail = $true }; Text = 'SHA256SUMS could not be downloaded'; NotCalled = @('gh attestation') },
     @{ Name = 'a tag that cannot be read'; Set = { $script:Scenario.TagFail = $true }; Text = "the tag v$Version could not be read"; NotCalled = @('gh attestation') },
@@ -525,6 +536,16 @@ Assert-PathPresent $target
 Assert-True ((Get-Sha256 $target) -eq (Get-Sha256 (Join-Path $script:Scenario.Release $BareAsset))) 'the installed file is not the downloaded one'
 Assert-Called "gh attestation verify "
 Assert-Called "--source-digest $CommitSha --deny-self-hosted-runners"
+Complete-Case
+
+Open-Case 'bare binary: a commit behind main passes'
+Initialize-Bare
+$script:Scenario.Compare = 'behind'
+Invoke-Block -Id 'windows-bare'
+Assert-Passed
+Assert-Called "compare/main...$CommitSha"
+Assert-Called 'gh attestation verify '
+Assert-PathPresent (Join-Path (& $ManualDirectory) 'marshal.exe')
 Complete-Case
 
 Open-Case 'bare binary: a running instance is stopped before the binary is replaced'

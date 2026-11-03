@@ -278,6 +278,17 @@ assert_called "compare/main...${commit_sha}"
 assert_called "--source-digest ${commit_sha} "
 finish_case
 
+begin_case "check: a commit behind main passes"
+prepare_check
+export STANDIN_COMPARE=behind
+run_check
+assert_passed
+[[ "$output" == *"Passed:"* ]] || fail "no passed line: ${output}"
+assert_called "compare/main...${commit_sha}"
+assert_called "gh attestation verify ${package} "
+assert_installs_nothing
+finish_case
+
 begin_case "check: SHA256SUMS that cannot be downloaded"
 prepare_check
 export STANDIN_DOWNLOAD_FAIL=1
@@ -507,6 +518,16 @@ run_block macos-bare
 assert_passed
 [[ "$("${case_dir}/${bare_target}" --version)" == "marshal ${bare_version}" ]] || fail "the installed binary is not the downloaded one"
 assert_called "gh attestation verify ${bare_asset} --repo axross/runners --signer-workflow axross/runners/.github/workflows/release.yaml --source-ref refs/heads/main --source-digest ${commit_sha} --deny-self-hosted-runners"
+finish_case
+
+begin_case "bare binary: a commit behind main passes"
+prepare_bare
+export STANDIN_COMPARE=behind
+run_block macos-bare
+assert_passed
+assert_called "compare/main...${commit_sha}"
+assert_called "gh attestation verify ${bare_asset} "
+[[ "$("${case_dir}/${bare_target}" --version)" == "marshal ${bare_version}" ]] || fail "the binary was not installed"
 finish_case
 
 begin_case "bare binary: a running instance is stopped before the binary is replaced"
