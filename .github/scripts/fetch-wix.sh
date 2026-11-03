@@ -40,7 +40,7 @@ packages="${work}/packages"
 package="${packages}/wix.${version}.nupkg"
 mkdir "$packages"
 
-curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --retry 3 \
+curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --retry 3 --max-time 180 \
   --output "$package" "$url" || refuse "WiX ${version} could not be downloaded from ${url}"
 
 actual="$(sha256sum "$package")"

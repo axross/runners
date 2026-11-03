@@ -180,6 +180,7 @@ jobs:
       # in dist are uploaded. each measured outcome is a MEASURED line in the log.
       - name: Test The MSI
         if: runner.os == 'Windows'
+        timeout-minutes: 15
         shell: powershell
         env:
           INSTALLER: ${{ steps.asset.outputs.installer }}
@@ -192,6 +193,7 @@ jobs:
           ..\.github\scripts\tests\test-msi-installer.ps1 -Binary (Join-Path $dist $env:ASSET) -ReleaseMsi (Join-Path $dist $env:INSTALLER) -ReleaseVersion $env:VERSION -InstallerVersion $env:INSTALLER_VERSION -WixDirectory $env:WIX_DIRECTORY -LogDirectory (Join-Path $env:RUNNER_TEMP 'installer-logs')
       - name: Test The Package
         if: runner.os == 'macOS'
+        timeout-minutes: 10
         env:
           INSTALLER: ${{ steps.asset.outputs.installer }}
           INSTALLER_VERSION: ${{ steps.installer-version.outputs.version }}
