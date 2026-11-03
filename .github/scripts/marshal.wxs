@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  the per-user Windows installer for marshal, built by build-msi.ps1, which
+  passes MarshalBinary (the release binary) and MarshalVersion (X.Y.Z, from
+  installer-version.sh). it has no dialogs, no UI extension, and no custom action
+  that runs code; the one custom action WiX adds for the downgrade message only
+  shows it and stops. docs/operations/cli.md describes it.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <!--
+    the UpgradeCode never changes: it is how a newer installer finds the product
+    an older one installed, and how the uninstall procedure finds it.
+  -->
+  <Package
+    Name="marshal"
+    Manufacturer="axross"
+    Version="$(MarshalVersion)"
+    UpgradeCode="512F67C6-97ED-4562-84F3-2584FA3BA29C"
+    Scope="perUser"
+    Language="1033"
+    InstallerVersion="500"
+    Compressed="yes"
+    Description="marshal, from github.com/axross/runners"
+  >
+    <MajorUpgrade
+      DowngradeErrorMessage="A newer version of marshal is already installed."
+      AllowSameVersionUpgrades="yes"
+    />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Property Id="ARPNOMODIFY" Value="1" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/axross/runners" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="UserProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="marshal" />
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="Main" Level="1">
+      <ComponentGroupRef Id="MarshalComponents" />
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <ComponentGroup Id="MarshalComponents" Directory="INSTALLFOLDER">
+      <Component Id="MarshalExecutable">
+        <File Id="MarshalExe" Name="marshal.exe" Source="$(MarshalBinary)" />
+        <!-- a per-user component needs a registry key path under HKCU. -->
+        <RegistryKey Root="HKCU" Key="Software\axross\marshal" ForceDeleteOnUninstall="yes">
+          <RegistryValue Name="installed" Type="integer" Value="1" KeyPath="yes" />
+        </RegistryKey>
+        <!-- appended to the user PATH, and removed with the product. -->
+        <Environment
+          Id="MarshalPath"
+          Name="PATH"
+          Action="set"
+          Part="last"
+          System="no"
+          Permanent="no"
+          Value="[INSTALLFOLDER]"
+        />
+        <!-- the folders the install created, removed when empty. -->
+        <RemoveFolder Id="RemoveMarshalFolder" Directory="INSTALLFOLDER" On="uninstall" />
+        <RemoveFolder Id="RemoveProgramsFolder" Directory="UserProgramsFolder" On="uninstall" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+</Wix>
