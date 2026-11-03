@@ -120,7 +120,6 @@ cleanup() {
   if [[ $logs_directory_existed -eq 0 ]]; then
     rmdir "$logs_directory" 2>/dev/null || true
   fi
-  sudo grep -i marshal /var/log/install.log 2>/dev/null | tee "${log_directory}/install.log" >/dev/null || true
   rm -rf -- "$work"
 }
 trap cleanup EXIT
@@ -172,12 +171,21 @@ assert_true "the bill of materials gives usr/local/bin/marshal owner root:wheel"
 
 table_of_contents="$(xar -f "$release_pkg" --dump-toc=-)"
 measured "the package archive owners: $(echo "$table_of_contents" | grep -o '<user>[^<]*</user>' | sort -u | tr '\n' ' ')"
+planted="${work}/planted-name"
 for identifying in "${USER:-}" "$(hostname)" "$(hostname -s)" "${HOME}" "${GITHUB_WORKSPACE:-}" "${RUNNER_TEMP:-}"; do
   [[ ${#identifying} -ge 4 ]] || continue
-  if grep -r -l -i -F --exclude-dir=Payload -e "$identifying" "$expanded" >/dev/null; then
+  # whole words only: the hosted runner's account, runner, is inside runners, which
+  # the identifier holds. the two plants show the match finds a name and only a name.
+  printf 'owner="%s"\n' "$identifying" >"$planted"
+  grep -l -i -F -w -e "$identifying" "$planted" >/dev/null || fail "the name check does not find '${identifying}' in a file that holds it"
+  printf 'owner="%ss"\n' "$identifying" >"$planted"
+  if grep -l -i -F -w -e "$identifying" "$planted" >/dev/null; then
+    fail "the name check finds '${identifying}' inside a longer word"
+  fi
+  if grep -r -l -i -F -w --exclude-dir=Payload -e "$identifying" "$expanded" >/dev/null; then
     fail "the expanded package holds a machine, account, or workspace name"
   fi
-  if echo "$table_of_contents" | grep -i -F -q -e "$identifying"; then
+  if echo "$table_of_contents" | grep -i -F -w -q -e "$identifying"; then
     fail "the package archive's table of contents holds a machine, account, or workspace name"
   fi
 done
