@@ -1549,9 +1549,8 @@ Installer `ProductVersion`'s limits (major and minor at most 255, patch at most
   dialogs and no UI extension, and its only custom action is the error message
   for the downgrade, which runs no code.
 - The pkg is built by [`build-pkg.sh`](../../.github/scripts/build-pkg.sh) with
-  `pkgbuild`, identifier `io.github.axross.runners.marshal`, `--ownership
-recommended`, and a payload of `usr/local/bin/marshal` with mode 0755. It has no
-  scripts.
+  `pkgbuild`, identifier `io.github.axross.runners.marshal`, `--ownership recommended`,
+  and a payload of `usr/local/bin/marshal` with mode 0755. It has no scripts.
 
 [`test-msi-installer.ps1`](../../.github/scripts/tests/test-msi-installer.ps1)
 runs on the Windows leg with the real `msiexec`, and
@@ -1624,7 +1623,8 @@ against `release.yaml` run from main, and the version of the binary inside it. I
 needs `gh` 2.102 or later, signed in (`gh auth status`). Without the check, you open
 a file that nothing has checked, and the file runs before anything else can catch a
 replaced one: an MSI runs as you, and a pkg runs as root once you enter the
-administrator password. [Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
+administrator password.
+[Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
 records that risk.
 
 The first release expected to carry installers is `0.2.0`, and the check blocks
@@ -1685,8 +1685,8 @@ path on macOS, a manual install from before the installers is still in place. Ru
 the [migration block](#migrating-from-a-manual-install), then uninstall and install
 again.
 
-The MSI installs for your user only, so it needs no administrator approval, and
-Windows may show only its progress window.
+The MSI is expected to install for your user only, with no administrator approval,
+and Windows may show only its progress window, but this is not yet measured.
 <!-- measured: whether the MSI installs, and the check block's extraction runs, for a standard user without administrator rights -->
 
 The pkg is the only part of the procedure that needs the administrator password. It
@@ -1718,6 +1718,11 @@ with the mark removed: on Windows `msiexec /a` unpacks the copy into a temporary
 folder, and on macOS `pkgutil --expand-full` does. The block has no comment lines,
 because an interactive zsh runs a line that starts with `#` as a command unless
 `interactive_comments` is set.
+
+On a host with Smart App Control On, the block's last step may be blocked, because it
+runs the unsigned `marshal` extracted from the installer. The block then refuses with
+"the binary in the installer does not run". That is not evidence of a bad file, and
+you may skip the optional check.
 
 On macOS, in bash or zsh:
 

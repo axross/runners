@@ -26,7 +26,8 @@ then checked on axpc ([#56](https://github.com/axross/runners/issues/56)). Most 
 those checks rest on the maintainer's report on #56 rather than on posted output,
 and each place below that depends on one says which. Verified on axpc:
 
-- installing `v0.1.0` from its bare binary with the manual procedure (maintainer's report,
+- installing `v0.1.0` from its bare binary with the manual procedure (maintainer's
+  report,
   [#56](https://github.com/axross/runners/issues/56#issuecomment-6511344317)), with
   no Mark of the Web on it and no SmartScreen prompt while Smart App Control is Off
   ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511048211),
@@ -951,9 +952,8 @@ binary embeds the image definition:
    [Version Rules](./development-workflow.md#version-rules) describes.
 2. The maintainer dispatches `release.yaml` on main, as
    [Each Release](./development-workflow.md#each-release) describes.
-3. Update `marshal` to that release with the procedure in
-   [CLI](./cli.md#installing-updating-and-rolling-back), which stops the instance
-   first.
+3. Stop the instance with `marshal stop`, then update `marshal` to that release with
+   the procedure in [CLI](./cli.md#installing-updating-and-rolling-back).
 4. Run `marshal build`, then `marshal start`, as in
    [Building the Runner Image](#building-the-runner-image). Containers already
    running when the update stopped the instance have ended; the next ones start on
