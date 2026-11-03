@@ -485,7 +485,16 @@ Do these once, before the first dispatch:
 
 5. Check the release with the optional check block in
    [CLI](./cli.md#installing-updating-and-rolling-back) before opening its
-   installer on a host.
+   installer on a host. This is the maintainer's release verification, not a step
+   an operator must take. The first release with installers is also the first run of
+   `gh attestation verify` against the installers, so for that release run the
+   check block on both the MSI and the pkg before opening either on a host. A
+   failure there is a release defect, and it leaves the check unusable for that
+   release. The WiX pin is recorded under
+   [Pinning Convention](../conventions/security.md#pinning-convention), and the
+   installers are unsigned, as
+   [Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
+   records.
 
 ### Cleaning Up a Partial Release
 
