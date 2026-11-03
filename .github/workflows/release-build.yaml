@@ -205,6 +205,7 @@ jobs:
           name: installer-test-logs-${{ matrix.target }}
           path: ${{ runner.temp }}/installer-logs
           retention-days: 14
+          overwrite: true
       # sha256sum where the runner has it, as Git Bash on Windows does, and shasum
       # on macOS, which may lack sha256sum.
       - name: Hash The Binary And The Installer

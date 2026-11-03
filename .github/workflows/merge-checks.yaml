@@ -195,6 +195,7 @@ jobs:
           path: ${{ runner.temp }}/install-block-logs
           retention-days: 14
           if-no-files-found: ignore
+          overwrite: true
 
   image:
     name: Build Runner Image

@@ -365,8 +365,7 @@ try {
     Write-Measured "after that upgrade PendingFileRenameOperations names marshal in $($pendingForMarshal.Count) entries: $($pendingForMarshal -join ' ; ')"
     $restartLines = @(Select-String -LiteralPath $result.Log -Pattern 'FilesInUse|Restart Manager|RmSession|reboot|ReplacedInUseFiles' | Select-Object -First 8 | ForEach-Object { $_.Line.Trim() })
     Write-Measured "that upgrade's log lines about files in use: $($restartLines -join ' ## ')"
-    $waiting.Kill()
-    $waiting.WaitForExit()
+    if (-not $waiting.HasExited) { $waiting.Kill(); $waiting.WaitForExit() }
     $installedAfter = if (Test-Path -LiteralPath $InstalledBinary) { Get-Sha256 $InstalledBinary } else { 'absent' }
     Write-Measured "after the program ended the file at the install path is $(if ($installedAfter -eq $hashB) { 'the new version' } elseif ($installedAfter -eq $waitingHash) { 'the program' } else { $installedAfter })"
     Write-Output 'All MSI installer checks passed.'
