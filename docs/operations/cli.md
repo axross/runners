@@ -1966,8 +1966,11 @@ On Windows, in PowerShell 5.1 or 7:
   uninstall first.
 - **Roll back to `v0.1.0`.** Uninstall, then use the [bare-binary
   blocks](#rolling-back-to-v010) and add the install directory to the user's `PATH`
-  by hand, as the manual install always needed. Updating from `v0.1.0` again starts
-  with the migration block.
+  by hand, as the manual install always needed. On Windows, add
+  `%LOCALAPPDATA%\Programs\marshal` to the user `Path` under **Settings, System,
+  About, Advanced system settings, Environment Variables**. On macOS, `~/.local/bin`
+  is not on the default `PATH`, so add it in the shell's startup file. Updating from
+  `v0.1.0` again starts with the migration block.
 
 Immutable releases keep a published release's tag from moving, so a version you
 install again is the file you installed before.

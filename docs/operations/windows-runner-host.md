@@ -152,8 +152,9 @@ leaves the logs under `%LOCALAPPDATA%\marshal\logs\`.
 
 The first release expected to carry the MSI is `0.2.0`. Until a release with an
 MSI exists, `v0.1.0` is installed with the bare-binary block in that procedure,
-which stays for rolling back to it, and its install itself is verified on axpc: the
-block for `0.1.0` ran to completion (maintainer's report,
+which stays for rolling back to it; the roll back bullet of that procedure gives the
+steps to put it on `Path`. The install itself is verified on axpc: the block for
+`0.1.0` ran to completion (maintainer's report,
 [#56](https://github.com/axross/runners/issues/56#issuecomment-6511344317)), and
 `marshal --version` printed `marshal 0.1.0`
 ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511048211)). The
