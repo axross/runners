@@ -94,6 +94,14 @@ install_pkg() {
   return "$status"
 }
 
+# installer_failed <log name> <message>: prints the tail of the installer's log to
+# the job log, then fails.
+installer_failed() {
+  echo "---- the last lines of ${log_directory}/$1.log" >&2
+  tail -n 30 "${log_directory}/$1.log" >&2 || true
+  fail "$2"
+}
+
 # bom_entry <Bom> <path>: the path's octal mode, symbolic mode, user, and group
 # as `lsbom` prints them, one tab-separated line.
 bom_entry() {
@@ -205,7 +213,7 @@ done
 ok "no package metadata holds a machine, account, or workspace name"
 
 echo "== the release package installs =="
-install_pkg "$release_pkg" release-install || fail "installer exited non-zero for the release package (log: ${log_directory}/release-install.log)"
+install_pkg "$release_pkg" release-install || installer_failed release-install "installer exited non-zero for the release package (log: ${log_directory}/release-install.log)"
 ok "installer exits 0 for the release package"
 after_directory="$(describe_usr_local_bin)"
 measured "/usr/local/bin before the install: ${before_directory}; after: ${after_directory}"
@@ -244,10 +252,10 @@ bash "$build_pkg" "${work}/b" 1.0.0 "${work}/b-1.0.0.pkg"
 bash "$build_pkg" "${work}/a" 2.0.0 "${work}/a-2.0.0.pkg"
 
 echo "== install, upgrade, lower version over higher =="
-install_pkg "${work}/b-1.0.0.pkg" fixture-b-1.0.0-install || fail "installer exited non-zero for version 1.0.0"
+install_pkg "${work}/b-1.0.0.pkg" fixture-b-1.0.0-install || installer_failed fixture-b-1.0.0-install "installer exited non-zero for version 1.0.0"
 assert_equal "version 1.0.0 is installed" "$(sha256_of "$installed")" "$hash_b"
 assert_equal "the receipt reports 1.0.0" "$(receipt_version)" "1.0.0"
-install_pkg "${work}/a-2.0.0.pkg" fixture-a-2.0.0-install || fail "installer exited non-zero for version 2.0.0"
+install_pkg "${work}/a-2.0.0.pkg" fixture-a-2.0.0-install || installer_failed fixture-a-2.0.0-install "installer exited non-zero for version 2.0.0"
 assert_equal "the higher version replaced the file" "$(sha256_of "$installed")" "$hash_a"
 assert_equal "the receipt reports 2.0.0" "$(receipt_version)" "2.0.0"
 status=0
