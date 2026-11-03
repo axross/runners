@@ -13,6 +13,8 @@
     documented uninstall block. the outcome is printed on lines that start with
     MEASURED, and the script throws unless every step succeeded. it needs an
     elevated shell to create the user and the task, and removes both at the end.
+    it refuses to run anywhere but a GitHub Actions runner, because it creates and
+    deletes a local user, a scheduled task and a folder under Public.
 #>
 param(
     [Parameter(Mandatory = $true)][string]$ReleaseDirectory,
@@ -21,6 +23,11 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+if ($env:GITHUB_ACTIONS -ne 'true') {
+    [Console]::Error.WriteLine('error: this test creates and deletes a local user, a scheduled task and a folder under Public, so it runs only on a GitHub Actions runner (GITHUB_ACTIONS=true).')
+    exit 2
+}
 
 if ($null -eq (Get-Command -Name jq -CommandType Application -ErrorAction SilentlyContinue)) {
     [Console]::Error.WriteLine('error: jq is required on PATH for the gh stand-in; install it (for example winget install jqlang.jq, apt install jq or brew install jq).')
