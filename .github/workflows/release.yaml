@@ -86,36 +86,43 @@ jobs:
           VERSION: ${{ needs.plan.outputs.version }}
         run: |
           windows="marshal-${VERSION}-windows-x64.exe"
+          windows_msi="marshal-${VERSION}-windows-x64.msi"
           macos="marshal-${VERSION}-macos-arm64"
-          expected="$(printf '%s\n' SHA256SUMS "$macos" "$windows" | LC_ALL=C sort)"
+          macos_pkg="marshal-${VERSION}-macos-arm64.pkg"
+          attested="$(printf '%s\n' "$macos" "$macos_pkg" "$windows" "$windows_msi" | LC_ALL=C sort)"
+          expected="$(printf '%s\n' SHA256SUMS "$macos" "$macos_pkg" "$windows" "$windows_msi" | LC_ALL=C sort)"
           present="$(find . -mindepth 1 -maxdepth 1 -printf '%P\n' | LC_ALL=C sort)"
           if [[ "$present" != "$expected" ]]; then
-            echo "error: the release files are not exactly ${macos}, ${windows} and SHA256SUMS:" >&2
+            echo "error: the release files are not exactly ${macos}, ${macos_pkg}, ${windows}, ${windows_msi} and SHA256SUMS:" >&2
             echo "$present" >&2
             exit 1
           fi
-          for file in SHA256SUMS "$macos" "$windows"; do
+          for file in SHA256SUMS "$macos" "$macos_pkg" "$windows" "$windows_msi"; do
             if [[ ! -f "$file" ]]; then
               echo "error: ${file} is not a regular file" >&2
               exit 1
             fi
           done
           listed="$(awk '{ print $2 }' SHA256SUMS | LC_ALL=C sort)"
-          if [[ "$listed" != "$(printf '%s\n' "$macos" "$windows" | LC_ALL=C sort)" ]]; then
-            echo "error: SHA256SUMS does not list exactly ${macos} and ${windows}" >&2
+          if [[ "$listed" != "$attested" ]]; then
+            echo "error: SHA256SUMS does not list exactly ${macos}, ${macos_pkg}, ${windows} and ${windows_msi}" >&2
             exit 1
           fi
           sha256sum --check --strict SHA256SUMS
           {
             echo "windows=${windows}"
+            echo "windows_msi=${windows_msi}"
             echo "macos=${macos}"
+            echo "macos_pkg=${macos_pkg}"
           } >> "$GITHUB_OUTPUT"
       - name: Attest The Build Provenance
         uses: actions/attest@v4
         with:
           subject-path: |
             release-files/${{ steps.files.outputs.windows }}
+            release-files/${{ steps.files.outputs.windows_msi }}
             release-files/${{ steps.files.outputs.macos }}
+            release-files/${{ steps.files.outputs.macos_pkg }}
 
   release:
     name: Release
