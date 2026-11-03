@@ -1858,11 +1858,12 @@ Before the first installer install, and again after any rollback to `v0.1.0`, wh
 restores the manual install, run the block for your OS. It stops the instance and
 refuses if the instance does not stop, then removes the manual install:
 
-- On Windows, the copied `marshal.exe` and the user `PATH` entry for its directory.
-  The block looks up the MSI's product by the MSI's fixed upgrade code and refuses
-  if it cannot list the products. The manual copy and the MSI share one path, so
-  when the product is installed the block removes the installed file too, says so,
-  and leaves the product registered: uninstall it and install it again.
+- On Windows, the copied `marshal.exe`, its directory when that is left empty, and the
+  user `PATH` entry for the directory. The block prints what it removed, or that there
+  is nothing to migrate. It looks up the MSI's product by the MSI's fixed upgrade code
+  and refuses if it cannot list the products. The manual copy and the MSI share one
+  path, so when the product is installed the block removes the installed file too,
+  says so, and leaves the product registered: uninstall it and install it again.
 - On macOS, `~/.local/bin/marshal` when it is present. The block leaves `~/.local/bin`
   and any `PATH` entry for it alone.
 
@@ -1909,6 +1910,7 @@ On Windows, in PowerShell 5.1 or 7:
   $upgradeCode = '{512F67C6-97ED-4562-84F3-2584FA3BA29C}'
   $directory = Join-Path $env:LOCALAPPDATA 'Programs\marshal'
   $target = Join-Path $directory 'marshal.exe'
+  $removed = New-Object System.Collections.Generic.List[string]
 
   try {
     $installer = New-Object -ComObject WindowsInstaller.Installer
@@ -1922,9 +1924,11 @@ On Windows, in PowerShell 5.1 or 7:
     }
     if ($LASTEXITCODE -ne 0 -and $stopped.Trim() -ne 'No instance is running.') { Refuse "the instance did not stop: $stopped" }
     try { Remove-Item -LiteralPath $target -Force } catch { Refuse "$target could not be removed: $_" }
+    $removed.Add($target)
   }
   if ((Test-Path -LiteralPath $directory) -and -not (Get-ChildItem -LiteralPath $directory -Force)) {
     Remove-Item -LiteralPath $directory -Force
+    $removed.Add("the empty directory $directory")
   }
 
   try {
@@ -1934,13 +1938,17 @@ On Windows, in PowerShell 5.1 or 7:
       $kept = @($entries | Where-Object { [Environment]::ExpandEnvironmentVariables($_.Trim()).TrimEnd('\') -ine $directory.TrimEnd('\') })
       if ($kept.Count -ne $entries.Count) {
         $key.SetValue('Path', ($kept -join ';'), [Microsoft.Win32.RegistryValueKind]::ExpandString)
+        $removed.Add("the user PATH entry for $directory")
       }
     } finally { $key.Close() }
   } catch { Refuse "the user PATH could not be updated: $_" }
-  if ($products.Count -gt 0) {
-    Write-Host 'The marshal installer is installed and its file was removed too; uninstall it and install it again.'
+  if ($removed.Count -eq 0) {
+    Write-Host "There is no manual install at $directory; nothing to migrate."
   } else {
-    Write-Host "Removed the manual install at $directory and its user PATH entry."
+    Write-Host "Removed $($removed -join ', ')."
+  }
+  if ($products.Count -gt 0 -and $removed.Count -gt 0) {
+    Write-Host 'The marshal installer is installed, and what was removed was part of it too; uninstall it and install it again.'
   }
 }
 ```

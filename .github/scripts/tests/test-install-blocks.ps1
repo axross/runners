@@ -395,7 +395,8 @@ Write-StandInMarshal -Path $manual -Version '0.0.1'
 Invoke-Block -Id 'windows-migrate'
 if ($OnWindows) {
     Assert-Passed
-    Assert-True ($script:Result.Output.Contains('The marshal installer is installed and its file was removed too; uninstall it and install it again.')) "no note: $($script:Result.Output)"
+    Assert-True ($script:Result.Output.Contains('The marshal installer is installed, and what was removed was part of it too; uninstall it and install it again.')) "no note: $($script:Result.Output)"
+    Assert-True ($script:Result.Output.Contains('marshal.exe')) "the removal is not named: $($script:Result.Output)"
 } else {
     Assert-Refused 'the user PATH could not be updated'
 }
@@ -436,6 +437,11 @@ if (-not $OnWindows) {
         Invoke-Block -Id 'windows-migrate'
         Assert-Passed
         Assert-Called 'New-Object -ComObject WindowsInstaller.Installer'
+        foreach ($removal in 'marshal.exe', 'the empty directory', 'the user PATH entry for') {
+            Assert-True ($script:Result.Output.Contains($removal)) "the output does not name '$removal': $($script:Result.Output)"
+        }
+        Assert-True (-not $script:Result.Output.Contains('nothing to migrate')) "the output says nothing was there: $($script:Result.Output)"
+        Assert-True (-not $script:Result.Output.Contains('The marshal installer is installed')) "the output mentions an installer that is not installed: $($script:Result.Output)"
         Assert-Absent $manual
         Assert-Absent (& $ManualDirectory)
         $after = [string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
@@ -446,6 +452,17 @@ if (-not $OnWindows) {
         $key.Close()
         $env:STANDIN_RECORD_CALLS = '1'
     }
+    Complete-Case
+}
+
+Open-Case 'migrate: there is no manual install'
+if (-not $OnWindows) {
+    Skip-Case 'the user PATH is a Windows registry value'
+} else {
+    Invoke-Block -Id 'windows-migrate'
+    Assert-Passed
+    Assert-True ($script:Result.Output.Contains('nothing to migrate')) "no note: $($script:Result.Output)"
+    Assert-True (-not $script:Result.Output.Contains('Removed')) "the output claims a removal: $($script:Result.Output)"
     Complete-Case
 }
 

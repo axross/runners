@@ -169,6 +169,9 @@ try {
     $listed = @(Get-Content -LiteralPath (Join-Path $ReleaseDirectory 'SHA256SUMS') | Where-Object { ($_ -split '\s+')[1] -eq $MsiName })
     Assert-That ($listed.Count -eq 1 -and ($listed[0] -split '\s+')[0] -eq $msiHash) 'the artifact SHA256SUMS lists the MSI with its SHA-256'
     Assert-NothingInstalled -Label 'before the tests'
+    $result = Invoke-DocumentedBlock -Id 'windows-uninstall'
+    Assert-That ($null -eq $result.Failure) "the uninstall block passes when nothing is installed ($($result.Failure))"
+    Assert-That ($result.Output.Contains('nothing to uninstall')) "the uninstall block says there is nothing to uninstall: $($result.Output)"
 
     Write-Output '== the check block passes a genuine installer given as a renamed copy with a download mark =='
     $downloads = Join-Path $Work 'Downloads'
@@ -208,6 +211,7 @@ try {
     Assert-That ((Get-InstallDirectoryPathEntry).Count -eq 1) 'the manual install is on the user PATH'
     $result = Invoke-DocumentedBlock -Id 'windows-migrate'
     Assert-That ($null -eq $result.Failure) "the migration block passes ($($result.Failure))"
+    Assert-That ($result.Output.Contains("Removed $InstalledBinary, the empty directory $InstallDirectory, the user PATH entry for $InstallDirectory.")) "the migration block names what it removed: $($result.Output)"
     Assert-NothingInstalled -Label 'after the migration block'
     Assert-That (-not (Test-Path -LiteralPath $InstallDirectory)) 'the migration block removed the empty install directory'
 
@@ -232,7 +236,7 @@ try {
     Assert-That ((Get-InstalledProduct).Count -eq 1) 'the product is listed after the install'
     $result = Invoke-DocumentedBlock -Id 'windows-migrate'
     Assert-That ($null -eq $result.Failure) "the migration block passes while the product is installed ($($result.Failure))"
-    Assert-That ($result.Output.Contains('The marshal installer is installed and its file was removed too')) "the migration block says that it removed the installed file too: $($result.Output)"
+    Assert-That ($result.Output.Contains('The marshal installer is installed, and what was removed was part of it too; uninstall it and install it again.')) "the migration block says that it removed part of the installed product: $($result.Output)"
     Assert-That (-not (Test-Path -LiteralPath $InstalledBinary)) 'the migration block removed the installed file'
     Assert-That ((Get-InstalledProduct).Count -eq 1) 'the product is still listed after the migration block'
     $result = Invoke-DocumentedBlock -Id 'windows-uninstall'
