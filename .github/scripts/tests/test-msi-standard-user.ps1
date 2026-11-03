@@ -125,14 +125,20 @@ try {
     $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $Staging 'run.ps1')`""
     $null = Register-ScheduledTask -TaskName $TaskName -Action $action -User "$env:COMPUTERNAME\$UserName" -Password $password -RunLevel Limited
     Start-ScheduledTask -TaskName $TaskName
+    $logPath = Join-Path $Staging 'result.log'
+    # a task that has not run yet is Ready too, with the last result 267011
+    # (SCHED_S_TASK_HAS_NOT_RUN), so the wait ends on the task's RESULT line, or on
+    # a task that is no longer running and has a result, such as one that never started the script.
+    $notRunYet = 267011
     $deadline = (Get-Date).AddMinutes(8)
     do {
         Start-Sleep -Seconds 5
         $state = (Get-ScheduledTask -TaskName $TaskName).State
-    } while ($state -ne 'Ready' -and (Get-Date) -lt $deadline)
-    $info = Get-ScheduledTaskInfo -TaskName $TaskName
-    $logPath = Join-Path $Staging 'result.log'
-    $logText = if (Test-Path -LiteralPath $logPath) { (Get-Content -LiteralPath $logPath) -join "`n" } else { '' }
+        $info = Get-ScheduledTaskInfo -TaskName $TaskName
+        $logText = if (Test-Path -LiteralPath $logPath) { (Get-Content -LiteralPath $logPath) -join "`n" } else { '' }
+        $finished = $logText -match '(?m)^RESULT:' -or ($state -ne 'Running' -and $info.LastTaskResult -ne $notRunYet)
+    } while (-not $finished -and (Get-Date) -lt $deadline)
+    if (-not $finished) { throw "the standard user task did not finish within 8 minutes; task state: $state; last task result: $($info.LastTaskResult); log: $logText" }
     Write-Output '== the standard user run =='
     Write-Output $logText
     Write-Output "task state: $state; last task result: $($info.LastTaskResult)"
