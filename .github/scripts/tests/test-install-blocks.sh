@@ -20,6 +20,11 @@ command -v "$shell_under_test" >/dev/null || {
   exit 2
 }
 
+command -v jq >/dev/null || {
+  echo "error: jq is required on PATH for the gh stand-in; install it (for example apt install jq or brew install jq)." >&2
+  exit 2
+}
+
 work="$(mktemp -d "${TMPDIR:-/tmp}/marshal-install-blocks.XXXXXX")"
 trap 'rm -rf -- "$work"' EXIT
 stand_ins="${work}/bin"

@@ -22,6 +22,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+if ($null -eq (Get-Command -Name jq -CommandType Application -ErrorAction SilentlyContinue)) {
+    [Console]::Error.WriteLine('error: jq is required on PATH for the gh stand-in; install it (for example winget install jqlang.jq, apt install jq or brew install jq).')
+    exit 2
+}
+
 $ReleaseDirectory = (Resolve-Path -LiteralPath $ReleaseDirectory).Path
 $UserName = 'marshalstd'
 $TaskName = 'marshal-standard-user-test'

@@ -2,6 +2,15 @@
 # documented block from docs/operations/cli.md, replacing its assignment lines,
 # and making a stand-in marshal.exe. written for Windows PowerShell 5.1 and 7.
 
+# ends the script with exit code 2 and one line when jq is not on PATH, because the
+# gh stand-in applies the blocks' --jq expressions with it.
+function Assert-JqAvailable {
+    if ($null -eq (Get-Command -Name jq -CommandType Application -ErrorAction SilentlyContinue)) {
+        [Console]::Error.WriteLine('error: jq is required on PATH for the gh stand-in; install it (for example winget install jqlang.jq, apt install jq or brew install jq).')
+        exit 2
+    }
+}
+
 function Test-RunningOnWindows {
     return [Environment]::OSVersion.Platform -eq 'Win32NT'
 }

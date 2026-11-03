@@ -24,6 +24,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $script:Document = $Document
 . (Join-Path $PSScriptRoot 'install-block-helpers.ps1')
+Assert-JqAvailable
 
 $CommitSha = '0123456789abcdef0123456789abcdef01234567'
 $ReleaseDirectory = (Resolve-Path -LiteralPath $ReleaseDirectory).Path

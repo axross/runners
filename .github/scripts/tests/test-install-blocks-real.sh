@@ -18,6 +18,10 @@ if [[ $# -ne 3 ]]; then
   echo "Usage: test-install-blocks-real.sh <shell> <release directory> <release version>" >&2
   exit 2
 fi
+command -v jq >/dev/null || {
+  echo "error: jq is required on PATH for the gh stand-in; install it (for example apt install jq or brew install jq)." >&2
+  exit 2
+}
 shell_under_test="$1"
 release_directory="$(cd "$2" && pwd)"
 version="$3"

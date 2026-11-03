@@ -19,6 +19,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'install-block-helpers.ps1')
+Assert-JqAvailable
 
 $script:Document = $Document
 $env:STANDIN_RECORD_CALLS = '1'
