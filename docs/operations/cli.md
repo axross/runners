@@ -1983,7 +1983,8 @@ On Windows, in PowerShell 5.1 or 7:
   `/usr/local/bin/marshal` and forgets the receipt with `pkgutil --forget`, which
   removes no file. When it finds no receipt the block says the package is not
   installed, runs no `sudo`, and leaves any file at `/usr/local/bin/marshal` in place,
-  because the package did not install it.
+  because the package did not install it. If the block reports such a file and you do
+  not want it, remove it with `sudo rm /usr/local/bin/marshal`.
 - **Roll back.** Uninstall, then install the older version, steps 1 to 5. The MSI
   refuses a lower version while a newer one is installed, with the message "A newer
   version of marshal is already installed.", and the installed version stays, so
@@ -2067,11 +2068,14 @@ On Windows, in PowerShell 5.1 or 7:
 ### Rolling Back to v0.1.0
 
 `v0.1.0` has no installer, so it is installed from a bare binary. If an installer is
-installed, uninstall it first with the uninstall block. The procedure accepts a binary only when its checksum
-matches `SHA256SUMS`, the tag's commit is on the default branch, and its attestation
-verifies against `release.yaml` run from main, at that commit. It needs `gh` 2.102
-or later, signed in. The blocks below pin `version=0.1.0` and are the only ones that
-copy a binary into place; the operator adds the directory to the user's `PATH`.
+installed, uninstall it first with the uninstall block. On macOS, a remaining
+`/usr/local/bin/marshal` would come first on `PATH`, ahead of the directory you add
+for the bare binary, so remove it first. The procedure accepts a binary only when its
+checksum matches `SHA256SUMS`, the tag's commit is on the default branch, and its
+attestation verifies against `release.yaml` run from main, at that commit. It needs
+`gh` 2.102 or later, signed in. The blocks below pin `version=0.1.0` and are the only
+ones that copy a binary into place; the operator adds the directory to the user's
+`PATH`.
 
 Paste a block below whole into one shell. A check that fails prints its cause after
 `refused:` and ends the block there without closing the shell, so nothing after it
