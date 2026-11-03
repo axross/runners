@@ -1573,6 +1573,8 @@ Each measured outcome is a log line that starts with `MEASURED:`, and the
 installer logs are kept as the `installer-test-logs-<target>` artifact of the run.
 A failed check fails the leg.
 
+### The Dry Run and the Release Workflow
+
 [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) calls the build
 workflow on every pull request and every push to the default branch, as the dry
 run, with the version `0.0.0-dryrun.<run number>`: both legs and the assemble job
@@ -1719,10 +1721,12 @@ folder, and on macOS `pkgutil --expand-full` does. The block has no comment line
 because an interactive zsh runs a line that starts with `#` as a command unless
 `interactive_comments` is set.
 
-On a host with Smart App Control On, the block's last step may be blocked, because it
-runs the unsigned `marshal` extracted from the installer. The block then refuses with
-"the binary in the installer does not run". That is not evidence of a bad file, and
-you may skip the optional check.
+On a Windows host with Smart App Control On, the block's last step is expected to be
+blocked, because it runs the unsigned `marshal.exe` extracted from the installer; this
+is not measured. The block then refuses with "the binary in the installer does not
+run:" and the error. The macOS block's matching refusal is "the binary in the package
+does not run". A refusal at this step is not evidence of a bad file, and you may skip
+the optional check.
 
 On macOS, in bash or zsh:
 
