@@ -63,7 +63,7 @@ function Invoke-Msi {
         $process = Start-Process -FilePath 'msiexec.exe' -ArgumentList $argumentList -Wait -PassThru -NoNewWindow
         $null = $process.Handle
         if ($process.ExitCode -ne 1618) { break }
-        Write-Output "msiexec exited 1618 for $LogName; waiting for the other installation (attempt $attempt)."
+        Write-Information "msiexec exited 1618 for $LogName; waiting for the other installation (attempt $attempt)." -InformationAction Continue
         Start-Sleep -Seconds 10
     }
     return [pscustomobject]@{ ExitCode = $process.ExitCode; Log = $log }
