@@ -13,6 +13,8 @@ shellcheck = "0.11.0"
 hadolint = "2.15.1"
 actionlint = "1.7.12"
 powershell = "7.6.6"
+# the install block suites apply the blocks' --jq expressions with it in the gh stand-in.
+jq = "1.8.2"
 cargo-deny = "0.20.2"
 
 [env]

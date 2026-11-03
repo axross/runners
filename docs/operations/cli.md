@@ -2264,8 +2264,10 @@ bare-binary blocks' refusals, the uninstall and migration refusals when the
 instance does not stop, and the uninstall refusals when `sudo rm` or
 `pkgutil --forget` fails. The `gh` stand-ins, here and in the Windows suite, serve a
 canned API response body and apply the block's `--jq` expression to it with `jq`, so
-a wrong expression fails the suite; the suites need `jq` on `PATH`. The macOS suite
-finishes in well under a minute on Linux. The `Install Blocks` job in
+a wrong expression fails the suite. `mise.toml` pins `jq` for `mise run check`, and
+the `Install Blocks` job runs the suites outside mise, so it uses its runner's own
+`jq`; the suites stop with one line when `jq` is missing. The macOS suite finishes in
+well under a minute on Linux. The `Install Blocks` job in
 [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) runs the same suite
 under zsh on macOS, and the Windows suite
 ([`test-install-blocks.ps1`](../../.github/scripts/tests/test-install-blocks.ps1))
