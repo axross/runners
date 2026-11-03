@@ -189,13 +189,29 @@ ok "the uninstall block left ~/Library/Logs/marshal"
 
 echo "== installing over a manual copy without the migration block =="
 make_manual
+manual_hash="$(sha256_of "$manual")"
 install_package "$package" "${work}/install-over-manual.log"
-at_install_path="the manual copy"
-[[ "$(sha256_of "$installed")" != "$bare_hash" ]] || at_install_path="the installer's binary"
+# which_binary <path>: names the binary at the path by its SHA-256.
+which_binary() {
+  local hash
+  [[ -n "$1" && -e "$1" ]] || { echo "nothing"; return 0; }
+  hash="$(sha256_of "$1")"
+  if [[ "$hash" == "$manual_hash" ]]; then
+    echo "the manual copy"
+  elif [[ "$hash" == "$bare_hash" ]]; then
+    echo "the installer's binary"
+  else
+    echo "another file"
+  fi
+}
+at_install_path="$(which_binary "$installed")"
 manual_remains=no
 [[ -e "$manual" ]] && manual_remains=yes
-found="$(env -i HOME="$HOME" PATH="${HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin" "$shell_under_test" -c 'command -v marshal; marshal --version' | tr '\n' ' ')"
-measured "installing the pkg beside a manual copy at ~/.local/bin/marshal, without the migration block: ${installed} is ${at_install_path}; the manual copy remains: ${manual_remains}; with ~/.local/bin ahead of /usr/local/bin on PATH, command -v marshal and marshal --version print: ${found}"
+shell_path="${HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin"
+resolved="$(env -i HOME="$HOME" PATH="$shell_path" "$shell_under_test" -c 'command -v marshal')"
+resolved_is="$(which_binary "$resolved")"
+found="$(env -i HOME="$HOME" PATH="$shell_path" "$shell_under_test" -c 'command -v marshal; marshal --version' | tr '\n' ' ')"
+measured "installing the pkg beside a manual copy at ~/.local/bin/marshal, without the migration block: ${installed} is ${at_install_path}; the manual copy remains: ${manual_remains}; with ~/.local/bin ahead of /usr/local/bin on PATH, command -v marshal resolves to ${resolved_is}, and command -v marshal and marshal --version print: ${found}"
 run_block macos-uninstall
 measured "the uninstall block after that install: exit status ${block_status}; ${installed} afterwards: $([[ -e "$installed" ]] && echo present || echo absent); the manual copy afterwards: $([[ -e "$manual" ]] && echo present || echo absent)"
 [[ $block_status -eq 0 ]] || fail "the uninstall block did not pass after the install over a manual copy"
