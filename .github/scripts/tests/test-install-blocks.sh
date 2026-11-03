@@ -2,7 +2,7 @@
 # runs the macOS install blocks of docs/operations/cli.md (the optional check,
 # migration, uninstall, and bare-binary blocks) under the shell named by the
 # argument, bash or zsh, with stand-ins first on PATH for gh, pkgutil, xattr, cp,
-# sudo, and marshal. each stand-in records its calls, so every refusal is
+# sudo, installer, and marshal. each stand-in records its calls, so every refusal is
 # produced and a case asserts what ran and what did not. nothing here touches the
 # real /usr/local/bin or the real home directory: HOME and the uninstall block's
 # installed= line point into a temporary directory.
@@ -84,6 +84,13 @@ case "$1" in
   --forget) rm -f "$STANDIN_RECEIPT" ;;
   *) exit 99 ;;
 esac
+STANDIN
+# no documented block may run installer, so the stand-in fails the block as well as
+# recording the call that assert_installs_nothing looks for.
+cat >"${stand_ins}/installer" <<'STANDIN'
+#!/usr/bin/env bash
+echo "installer $*" >>"$STANDIN_LOG"
+exit 1
 STANDIN
 chmod +x "${stand_ins}"/*
 
