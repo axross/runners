@@ -199,8 +199,8 @@ is passed into a step through an `env:` variable and quoted, never expanded insi
 
 [`release.yaml`](../../.github/workflows/release.yaml) releases the CLI with
 semantic-release, and [`release-build.yaml`](../../.github/workflows/release-build.yaml)
-builds the binaries and their installers; [CLI](../operations/cli.md#releases) owns the steps. This is
-the record a change to either workflow, to the build call in
+builds the binaries and their installers; [CLI](../operations/cli.md#releases) owns
+the steps. This is the record a change to either workflow, to the build call in
 [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml), to
 [`release/`](../../release), or to the scripts under
 [`.github/scripts/`](../../.github/scripts) is checked against:

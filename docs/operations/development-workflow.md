@@ -258,8 +258,9 @@ Windows x64 and macOS arm64 release binaries on their hosted runners, runs the
 release-profile tests on each, checks each binary's `--version` and, on Windows,
 that it imports no `vcruntime` DLL, builds and tests an MSI on the Windows leg and
 a pkg on the macOS leg with the real installers, and uploads the two binaries, the
-two installers, and `SHA256SUMS` as one artifact of the run. It holds `contents: read`, and nothing is attested or
-published; [CLI](./cli.md#releases) describes the build. Its `Install Blocks` job
+two installers, and `SHA256SUMS` as one artifact of the run. It holds
+`contents: read`, and nothing is attested or published;
+[CLI](./cli.md#releases) describes the build. Its `Install Blocks` job
 has a Windows and a macOS leg, needs that dry run, and holds `contents: read`. It
 downloads the dry run's artifact and runs the install, check, migration, and
 uninstall blocks that [CLI](./cli.md#installing-updating-and-rolling-back) documents:

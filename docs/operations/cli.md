@@ -1569,7 +1569,8 @@ upgrade while a copy of a stock waiting console program, packed as `marshal.exe`
 runs from the install path. The macOS test also records the owner and mode of
 `/usr/local/bin` before and after the install, the bill of materials' entries, a
 login zsh finding `marshal` by name, and what a lower package does over a higher
-one. Its uninstall runs the uninstall block of this document, extracted from it. Each measured outcome is a log line that starts with `MEASURED:`, and the
+one. Its uninstall runs the uninstall block of this document, extracted from it.
+Each measured outcome is a log line that starts with `MEASURED:`, and the
 installer logs are kept as the `installer-test-logs-<target>` artifact of the run.
 A failed check fails the leg.
 
@@ -1580,7 +1581,7 @@ run, each binary must print `marshal 0.0.0-dryrun.<run number>`, the installers 
 built and tested, and the `marshal-release` artifact, with all five files, is
 uploaded to the run, but nothing is attested or published. The `Install Blocks` job
 then runs the documented install blocks against that artifact, as
-[Installing, Updating and Rolling Back](#what-the-install-tests-cover) describes.
+[What the Install Tests Cover](#what-the-install-tests-cover) describes.
 [`release.yaml`](../../.github/workflows/release.yaml) runs only on a
 manual dispatch on main, in four jobs on the dispatched commit:
 
@@ -1630,8 +1631,9 @@ The first release expected to carry installers is `0.2.0`, and the check blocks
 below name it. `v0.1.0`, the only release so far, has the two bare binaries and no
 installer, so until a release with installers exists, install `v0.1.0` with the
 [bare-binary blocks](#rolling-back-to-v010). To check another release, change the
-`version=` line of a block, and in a check block the `file=` line too. If the first
-release with installers gets another version, a later change corrects the line.
+`version` assignment line of a block, and in a check block the `file` assignment
+line too. If the first release with installers gets another version, a later change
+corrects the line.
 
 The installers and these blocks have run in CI against the dry run's installers,
 and have not yet run on axpc or the Mac. Every prompt below is described as
@@ -1694,7 +1696,7 @@ creates `/usr/local/bin` when it is absent. What it does to an existing
 
 ### Checking the Download
 
-The block opens with two assignment lines: `version=`, and `file=`, the path of the
+The block opens with two assignment lines: `version`, and `file`, the path of the
 downloaded installer, for example in the browser's download folder. Edit those two
 lines, then paste the block whole into one shell. It downloads `SHA256SUMS` with
 `gh`, then refuses unless:
@@ -2224,16 +2226,19 @@ as a browser download, or a host with Smart App Control On, could be.
 
 Each block above has a marker comment, `<!-- install-block: <id> -->`, before its
 fence, and the tests extract the block from this document, so the text you paste is
-the text under test. A test replaces a block's `version=` line, and a check block's
-`file=` line, and the macOS uninstall block's `installed=` line, and changes
-nothing else.
+the text under test. A test replaces a block's `version` assignment line, and a check
+block's `file` assignment line, and the macOS uninstall block's `installed`
+assignment line, and changes nothing else.
 
 `mise run test:install-blocks` runs the macOS blocks under bash with stand-ins first
-on `PATH` for `gh`, `pkgutil`, `xattr`, `sudo`, `cp`, and `marshal`, each recording
-its calls. Every refusal is produced, and each case asserts what ran and what did not,
-so a failed check is shown to install nothing. The suite includes the bare-binary
-blocks' refusals and the uninstall and migration refusals when the instance does not
-stop. It finishes in well under a minute on Linux. The `Install Blocks` job in
+on `PATH` for `gh`, `pkgutil`, `xattr`, `sudo`, `installer`, `cp`, and `marshal`, each
+recording its calls. Every refusal is produced, and each case asserts what ran and
+what did not, so a failed check is shown to install nothing. The suite includes the
+bare-binary blocks' refusals and the uninstall and migration refusals when the
+instance does not stop. The `gh` stand-ins, here and in the Windows suite, serve a
+canned API response body and apply the block's `--jq` expression to it with `jq`, so
+a wrong expression fails the suite; the suites need `jq` on `PATH`. The macOS suite
+finishes in well under a minute on Linux. The `Install Blocks` job in
 [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) runs the same suite
 under zsh on macOS, and the Windows suite
 ([`test-install-blocks.ps1`](../../.github/scripts/tests/test-install-blocks.ps1))
