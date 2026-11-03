@@ -31,7 +31,7 @@ stage="$(mktemp -d "${TMPDIR:-/tmp}/build-pkg.XXXXXX")"
 trap 'rm -rf -- "$stage"' EXIT
 mkdir -p "${stage}/usr/local/bin"
 cp "$binary" "${stage}/usr/local/bin/marshal"
-chmod 0755 "${stage}/usr" "${stage}/usr/local" "${stage}/usr/local/bin" "${stage}/usr/local/bin/marshal"
+chmod 0755 "$stage" "${stage}/usr" "${stage}/usr/local" "${stage}/usr/local/bin" "${stage}/usr/local/bin/marshal"
 
 pkgbuild \
   --root "$stage" \

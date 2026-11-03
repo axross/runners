@@ -176,10 +176,16 @@ assert_equal "PackageInfo declares no scripts" "$(grep -c '<scripts' "$package_i
 measured "PackageInfo: $(tr -d '\n' <"$package_info")"
 
 bom="${expanded}/Bom"
+root_entry="$(bom_entry "$bom" .)"
 directory_entry="$(bom_entry "$bom" ./usr/local/bin)"
 file_entry="$(bom_entry "$bom" ./usr/local/bin/marshal)"
 measured "the bill of materials, usr/local/bin (octal mode, symbolic mode, user, group, uid, gid): ${directory_entry}"
 measured "the bill of materials, usr/local/bin/marshal (octal mode, symbolic mode, user, group, uid, gid): ${file_entry}"
+measured "the bill of materials, the root entry (octal mode, symbolic mode, user, group, uid, gid): ${root_entry:-none}"
+if [[ -n "$root_entry" ]]; then
+  IFS=$'\t' read -r octal _ <<<"$root_entry"
+  assert_equal "the bill of materials gives the root entry mode 0755" "${octal: -3}" "755"
+fi
 [[ -n "$directory_entry" ]] || fail "the bill of materials lists no usr/local/bin"
 IFS=$'\t' read -r octal _ user group user_id group_id <<<"$directory_entry"
 assert_equal "the bill of materials gives usr/local/bin mode 0755" "${octal: -3}" "755"
