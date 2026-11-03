@@ -141,8 +141,9 @@ you choose, run the optional check block on it first; that block refuses a file
 whose checksum, commit on main, attestation from `release.yaml` on main, or binary
 version does not verify, and installs nothing. Stop a running instance, then open
 the MSI. It installs `marshal.exe` at `%LOCALAPPDATA%\Programs\marshal\marshal.exe`
-for your user without a UAC prompt, adds that directory to your user `Path`, and
-lists `marshal` under **Settings, Apps**. Open a new terminal and confirm that
+for your user, which is expected to need no UAC prompt but is not yet measured,
+adds that directory to your user `Path`, and lists `marshal` under **Settings,
+Apps**. Open a new terminal and confirm that
 `marshal --version` prints `marshal <version>`.
 
 If the host runs a manual install from `v0.1.0`, run the migration block in that
