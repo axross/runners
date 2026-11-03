@@ -1561,7 +1561,7 @@ installers at fixed test versions from two copies of the binary that differ in
 trailing bytes, and judges every install by the installed file's SHA-256; those
 copies are packed and hashed, never run. They check the release installer's
 install, version, `PATH`, listing and byte identity, an upgrade, the extraction
-layout the optional check will rely on, and an uninstall that keeps the logs, and
+layout the optional check relies on, and an uninstall that keeps the logs, and
 that the installer carries no script, no code-running custom action and no
 dialogs and names only `marshal`, `axross` and the repository. The Windows test
 also builds a same-version rebuild, a lower version over a higher one, and an
@@ -1569,7 +1569,7 @@ upgrade while a copy of a stock waiting console program, packed as `marshal.exe`
 runs from the install path. The macOS test also records the owner and mode of
 `/usr/local/bin` before and after the install, the bill of materials' entries, a
 login zsh finding `marshal` by name, and what a lower package does over a higher
-one. Each measured outcome is a log line that starts with `MEASURED:`, and the
+one. Its uninstall runs the uninstall block of this document, extracted from it. Each measured outcome is a log line that starts with `MEASURED:`, and the
 installer logs are kept as the `installer-test-logs-<target>` artifact of the run.
 A failed check fails the leg.
 
@@ -1578,7 +1578,10 @@ workflow on every pull request and every push to the default branch, as the dry
 run, with the version `0.0.0-dryrun.<run number>`: both legs and the assemble job
 run, each binary must print `marshal 0.0.0-dryrun.<run number>`, the installers are
 built and tested, and the `marshal-release` artifact, with all five files, is
-uploaded to the run, but nothing is attested or published. [`release.yaml`](../../.github/workflows/release.yaml) runs only on a
+uploaded to the run, but nothing is attested or published. The `Install Blocks` job
+then runs the documented install blocks against that artifact, as
+[Installing, Updating and Rolling Back](#what-the-install-tests-cover) describes.
+[`release.yaml`](../../.github/workflows/release.yaml) runs only on a
 manual dispatch on main, in four jobs on the dispatched commit:
 
 1. A plan job runs semantic-release as a dry run. Its gate,
@@ -1606,11 +1609,35 @@ an update.
 
 ## Installing, Updating and Rolling Back
 
-`marshal` is installed from a release, never built on the host. The procedure
-accepts a binary only when its checksum matches `SHA256SUMS`, the tag's commit is
-on the default branch, and its attestation verifies against `release.yaml` run from
-main, at that commit. It needs `gh` 2.102 or later, signed in
-(`gh auth status`).
+`marshal` is installed from a release, never built on the host. You open the
+release's installer, the MSI on Windows or the pkg on macOS, and it places the
+binary, puts it on `PATH`, and handles updates and removal, so nothing is copied or
+added to `PATH` by hand. The installers are not code-signed or notarised
+([Releases](#releases)), so the system warns about them, and the steps below say
+which prompts to expect and how to pass them.
+
+Checking the downloaded installer before you open it is optional but recommended.
+The [check block](#checking-the-download) tests its checksum against
+`SHA256SUMS`, that the tag's commit is on the default branch, its attestation
+against `release.yaml` run from main, and the version of the binary inside it. It
+needs `gh` 2.102 or later, signed in (`gh auth status`). Without the check, you open
+a file that nothing has checked, and the file runs before anything else can catch a
+replaced one: an MSI runs as you, and a pkg runs as root once you enter the
+administrator password. [Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
+records that risk.
+
+The first release expected to carry installers is `0.2.0`, and the check blocks
+below name it. `v0.1.0`, the only release so far, has the two bare binaries and no
+installer, so until a release with installers exists, install `v0.1.0` with the
+[bare-binary blocks](#rolling-back-to-v010). To check another release, change the
+`version=` line of a block, and in a check block the `file=` line too. If the first
+release with installers gets another version, a later change corrects the line.
+
+The installers and these blocks have run in CI against the dry run's installers,
+and have not yet run on axpc or the Mac. Every prompt below is described as
+expected, from the platform's documentation, not as observed. The maintainer's
+first install of a release with installers on each host records what the prompts
+showed, and this document then states it.
 
 axpc runs the binary this procedure installs, and
 [Windows Runner Host](./windows-runner-host.md) is its operator procedure. The
@@ -1621,14 +1648,393 @@ tasks again, as
 [Rolling Back to the PowerShell Supervisor](./windows-runner-host.md#rolling-back-to-the-powershell-supervisor)
 describes.
 
-| OS      | Install path                                  |
-| ------- | --------------------------------------------- |
-| macOS   | `~/.local/bin/marshal`                        |
-| Windows | `%LOCALAPPDATA%\Programs\marshal\marshal.exe` |
+| OS      | Installed by            | Install path                                  |
+| ------- | ----------------------- | --------------------------------------------- |
+| Windows | the MSI                 | `%LOCALAPPDATA%\Programs\marshal\marshal.exe` |
+| macOS   | the pkg                 | `/usr/local/bin/marshal`                      |
+| macOS   | by hand, before the pkg | `~/.local/bin/marshal`                        |
+| Windows | by hand, before the MSI | `%LOCALAPPDATA%\Programs\marshal\marshal.exe` |
 
-The operator adds the directory to the user's `PATH`. Updating is the procedure
-with a newer tag, and rolling back is the procedure with the previous tag;
-immutable releases keep a published release's tag from moving.
+### Installing
+
+`<version>` is the release's version without the `v`, such as `0.2.0`.
+
+1. Download `marshal-<version>-windows-x64.msi` or
+   `marshal-<version>-macos-arm64.pkg` from the
+   [release page](https://github.com/axross/runners/releases). If the browser warns
+   that the file is uncommon or could be harmful, choose to keep it.
+2. Optionally, and recommended, run the [check block](#checking-the-download) on
+   the downloaded file before opening it.
+3. When updating, stop the running instance first with `marshal stop`.
+4. Open the downloaded file.
+   - On Windows, if SmartScreen shows "Windows protected your PC", choose "More
+     info", then "Run anyway". If another security warning names the file, choose
+     to run it. Smart App Control, when On, may block an unsigned installer; this is
+     not verified.
+   - On macOS, when the package is blocked, open System Settings, Privacy &
+     Security, choose "Open Anyway" for it within about an hour, enter the login
+     password, and open the file again. Installer then asks for an administrator
+     password.
+5. Open a new terminal and run `marshal --version`; it prints `marshal <version>`.
+   On macOS, `command -v marshal` prints `/usr/local/bin/marshal`.
+
+If step 5 prints another version on Windows, or `command -v marshal` prints another
+path on macOS, a manual install from before the installers is still in place. Run
+the [migration block](#migrating-from-a-manual-install), then uninstall and install
+again.
+
+The MSI installs for your user only, so it needs no administrator approval, and
+Windows may show only its progress window.
+<!-- measured: whether the MSI installs, and the check block's extraction runs, for a standard user without administrator rights -->
+
+The pkg is the only part of the procedure that needs the administrator password. It
+creates `/usr/local/bin` when it is absent. What it does to an existing
+`/usr/local/bin`:
+<!-- measured: the owner and mode of /usr/local/bin before and after the pkg installs, on a runner where it exists -->
+
+### Checking the Download
+
+The block opens with two assignment lines: `version=`, and `file=`, the path of the
+downloaded installer, for example in the browser's download folder. Edit those two
+lines, then paste the block whole into one shell. It downloads `SHA256SUMS` with
+`gh`, then refuses unless:
+
+1. the installer's SHA-256 matches the line of `SHA256SUMS` for the file name the
+   version gives, whatever the downloaded file is called;
+2. the tag's commit, with an annotated tag dereferenced, is on the default branch,
+   which the compare API reports as `identical` to or `behind` it;
+3. `gh attestation verify` passes, pinned to `release.yaml`, the branch
+   `refs/heads/main`, and that commit, with self-hosted runners denied; and
+4. the binary inside the installer prints `marshal <version>`. The attestation ties
+   the installer to a commit on main, not to a version, so this step keeps an older
+   genuine installer under a newer version's name from passing.
+
+A check that fails prints its cause after `refused:` and ends the block there
+without closing the shell. The block installs nothing and changes neither the
+downloaded file nor its download mark. It reads the binary from a temporary copy
+with the mark removed: on Windows `msiexec /a` unpacks the copy into a temporary
+folder, and on macOS `pkgutil --expand-full` does. The block has no comment lines,
+because an interactive zsh runs a line that starts with `#` as a command unless
+`interactive_comments` is set.
+
+On macOS, in bash or zsh:
+
+<!-- install-block: macos-check -->
+
+```bash
+(
+  version=0.2.0
+  file="$HOME/Downloads/marshal-0.2.0-macos-arm64.pkg"
+  set -euo pipefail
+  refuse() { echo "refused: $*" >&2; exit 1; }
+  name="marshal-${version}-macos-arm64.pkg"
+  work="$(mktemp -d)" || refuse "no temporary directory"
+  trap 'rm -rf "$work"' EXIT
+
+  gh release download "v${version}" --repo axross/runners --pattern SHA256SUMS --dir "$work" \
+    || refuse "SHA256SUMS could not be downloaded"
+
+  listed="$(awk -v name="$name" '$2 == name { count++; hash = $1 } END { if (count == 1) print hash }' "${work}/SHA256SUMS")"
+  [ -n "$listed" ] || refuse "SHA256SUMS has no single line for ${name}"
+  actual="$(shasum -a 256 "$file" | awk '{ print $1 }')" || refuse "${file} could not be read"
+  [ "$actual" = "$listed" ] || refuse "${file} does not match the ${name} line of SHA256SUMS"
+
+  ref="$(gh api "repos/axross/runners/git/ref/tags/v${version}" --jq '.object.type + " " + .object.sha')" \
+    || refuse "the tag v${version} could not be read"
+  read -r type sha <<<"$ref"
+  if [ "$type" = tag ]; then
+    ref="$(gh api "repos/axross/runners/git/tags/${sha}" --jq '.object.type + " " + .object.sha')" \
+      || refuse "the annotated tag v${version} could not be read"
+    read -r type sha <<<"$ref"
+  fi
+  [ "$type" = commit ] || refuse "v${version} does not resolve to a commit"
+  commit="$sha"
+
+  comparison="$(gh api "repos/axross/runners/compare/main...${commit}" --jq .status)" \
+    || refuse "${commit} could not be compared with main"
+  case "$comparison" in
+    identical | behind) echo "${commit} is on main." ;;
+    *) refuse "${commit} is not on main (${comparison})" ;;
+  esac
+
+  gh attestation verify "$file" --repo axross/runners \
+    --signer-workflow axross/runners/.github/workflows/release.yaml \
+    --source-ref refs/heads/main --source-digest "$commit" \
+    --deny-self-hosted-runners \
+    || refuse "the attestation does not verify"
+
+  copy="${work}/${name}"
+  cp "$file" "$copy" || refuse "${file} could not be copied"
+  if xattr -p com.apple.quarantine "$copy" >/dev/null 2>&1; then
+    xattr -d com.apple.quarantine "$copy" || refuse "the quarantine attribute could not be removed from the copy"
+  fi
+  pkgutil --expand-full "$copy" "${work}/unpacked" || refuse "the package could not be unpacked"
+  binary="${work}/unpacked/Payload/usr/local/bin/marshal"
+  [ -f "$binary" ] || refuse "the package holds no usr/local/bin/marshal"
+  chmod 0755 "$binary" || refuse "the unpacked binary could not be made executable"
+  if xattr -p com.apple.quarantine "$binary" >/dev/null 2>&1; then
+    xattr -d com.apple.quarantine "$binary" || refuse "the quarantine attribute could not be removed from the unpacked binary"
+  fi
+  printed="$("$binary" --version)" || refuse "the binary in the package does not run"
+  [ "$printed" = "marshal ${version}" ] || refuse "the binary in the package is not marshal ${version}: ${printed}"
+
+  echo "Passed: ${file} is the v${version} package. Nothing was installed."
+)
+```
+
+On Windows, in PowerShell 5.1 or 7:
+
+<!-- install-block: windows-check -->
+
+```powershell
+& {
+  $version = '0.2.0'
+  $file = "$env:USERPROFILE\Downloads\marshal-0.2.0-windows-x64.msi"
+  $ErrorActionPreference = 'Stop'
+  function Refuse([string]$Why) { throw "refused: $Why" }
+  $name = "marshal-$version-windows-x64.msi"
+  try {
+    $work = New-Item -ItemType Directory -Path (Join-Path ([IO.Path]::GetTempPath()) ([IO.Path]::GetRandomFileName()))
+  } catch { Refuse "no temporary directory: $_" }
+  try {
+    gh release download "v$version" --repo axross/runners --pattern SHA256SUMS --dir $work
+    if ($LASTEXITCODE -ne 0) { Refuse 'SHA256SUMS could not be downloaded' }
+
+    try {
+      $listed = @(Get-Content -LiteralPath (Join-Path $work 'SHA256SUMS') | Where-Object { ($_ -split '\s+')[1] -eq $name })
+      $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash.ToLowerInvariant()
+    } catch { Refuse "$file or SHA256SUMS could not be read: $_" }
+    if ($listed.Count -ne 1 -or ($listed[0] -split '\s+')[0] -ne $actual) { Refuse "$file does not match the $name line of SHA256SUMS" }
+
+    $ref = gh api "repos/axross/runners/git/ref/tags/v$version"
+    if ($LASTEXITCODE -ne 0) { Refuse "the tag v$version could not be read" }
+    $object = ($ref | ConvertFrom-Json).object
+    if ($object.type -eq 'tag') {
+      $ref = gh api "repos/axross/runners/git/tags/$($object.sha)"
+      if ($LASTEXITCODE -ne 0) { Refuse "the annotated tag v$version could not be read" }
+      $object = ($ref | ConvertFrom-Json).object
+    }
+    if ($object.type -ne 'commit') { Refuse "v$version does not resolve to a commit" }
+    $commit = $object.sha
+
+    $comparison = gh api "repos/axross/runners/compare/main...$commit" --jq .status
+    if ($LASTEXITCODE -ne 0) { Refuse "$commit could not be compared with main" }
+    if ($comparison -notin 'identical', 'behind') { Refuse "$commit is not on main ($comparison)" }
+    Write-Host "$commit is on main."
+
+    gh attestation verify $file --repo axross/runners `
+      --signer-workflow axross/runners/.github/workflows/release.yaml `
+      --source-ref refs/heads/main --source-digest $commit `
+      --deny-self-hosted-runners
+    if ($LASTEXITCODE -ne 0) { Refuse 'the attestation does not verify' }
+
+    $copy = Join-Path $work $name
+    try {
+      Copy-Item -LiteralPath $file -Destination $copy
+      Unblock-File -LiteralPath $copy
+    } catch { Refuse "the temporary copy could not be made: $_" }
+    $unpacked = Join-Path $work 'unpacked'
+    $unpack = Start-Process -FilePath msiexec.exe -ArgumentList @('/a', "`"$copy`"", '/qn', "TARGETDIR=`"$unpacked`"") -Wait -PassThru
+    $null = $unpack.Handle
+    if ($unpack.ExitCode -ne 0) { Refuse "msiexec could not unpack the installer (exit code $($unpack.ExitCode))" }
+    $binaries = @(Get-ChildItem -LiteralPath $unpacked -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'marshal.exe' })
+    if ($binaries.Count -ne 1) { Refuse "the installer holds $($binaries.Count) files named marshal.exe, not 1" }
+    $binary = $binaries[0].FullName
+    try { $printed = & $binary --version } catch { Refuse "the binary in the installer does not run: $_" }
+    if ($LASTEXITCODE -ne 0 -or "$printed" -ne "marshal $version") { Refuse "the binary in the installer is not marshal ${version}: $printed" }
+
+    Write-Host "Passed: $file is the v$version installer. Nothing was installed."
+  } finally {
+    Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+  }
+}
+```
+
+### Migrating From a Manual Install
+
+Before the first installer install, and again after any rollback to `v0.1.0`, which
+restores the manual install, run the block for your OS. It stops the instance and
+refuses if the instance does not stop, then removes the manual install:
+
+- On Windows, the copied `marshal.exe` and the user `PATH` entry for its directory.
+  It refuses instead when the MSI's product is installed, found by the MSI's fixed
+  upgrade code, because the manual copy and the MSI share one path, so removing the
+  copy would remove the installed file; uninstall first.
+- On macOS, `~/.local/bin/marshal` when it is present. The block leaves `~/.local/bin`
+  and any `PATH` entry for it alone.
+
+Updating from `v0.1.0` is this block, then an install. If you skip it, the recovery
+is this block, then an uninstall and an install again.
+
+Installing the MSI over a manual copy at the same path, without the block:
+<!-- measured: which binary is at the install path after the MSI installs over a manual copy without the migration block -->
+
+Installing the pkg over a manual copy at `~/.local/bin/marshal`, without the block:
+<!-- measured: which binary command -v marshal prints after the pkg installs beside a manual copy with ~/.local/bin ahead of /usr/local/bin on PATH -->
+
+On macOS, in bash or zsh:
+
+<!-- install-block: macos-migrate -->
+
+```bash
+(
+  set -euo pipefail
+  refuse() { echo "refused: $*" >&2; exit 1; }
+  manual="$HOME/.local/bin/marshal"
+  if [ ! -e "$manual" ] && [ ! -L "$manual" ]; then
+    echo "There is no manual install at ${manual}; nothing to migrate."
+    exit 0
+  fi
+
+  if [ -x "$manual" ]; then
+    stopped="$("$manual" stop 2>&1)" || [ "$stopped" = "No instance is running." ] \
+      || refuse "the instance did not stop: ${stopped}"
+  fi
+  rm -f "$manual" || refuse "${manual} could not be removed"
+  echo "Removed ${manual}."
+)
+```
+
+On Windows, in PowerShell 5.1 or 7:
+
+<!-- install-block: windows-migrate -->
+
+```powershell
+& {
+  $ErrorActionPreference = 'Stop'
+  function Refuse([string]$Why) { throw "refused: $Why" }
+  $upgradeCode = '{512F67C6-97ED-4562-84F3-2584FA3BA29C}'
+  $directory = Join-Path $env:LOCALAPPDATA 'Programs\marshal'
+  $target = Join-Path $directory 'marshal.exe'
+
+  try {
+    $installer = New-Object -ComObject WindowsInstaller.Installer
+    $products = @($installer.GetType().InvokeMember('RelatedProducts', 'GetProperty', $null, $installer, @($upgradeCode)))
+  } catch { Refuse "the installed products could not be listed: $_" }
+  if ($products.Count -gt 0) { Refuse 'the marshal installer is installed; uninstall it before migrating' }
+
+  if (Test-Path -LiteralPath $target) {
+    $stopped = & {
+      $ErrorActionPreference = 'Continue'
+      (& $target stop 2>&1 | ForEach-Object { "$_" }) -join "`n"
+    }
+    if ($LASTEXITCODE -ne 0 -and $stopped.Trim() -ne 'No instance is running.') { Refuse "the instance did not stop: $stopped" }
+    try { Remove-Item -LiteralPath $target -Force } catch { Refuse "$target could not be removed: $_" }
+  }
+  if ((Test-Path -LiteralPath $directory) -and -not (Get-ChildItem -LiteralPath $directory -Force)) {
+    Remove-Item -LiteralPath $directory -Force
+  }
+
+  try {
+    $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
+    try {
+      $entries = @(([string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)) -split ';' | Where-Object { $_.Trim() -ne '' })
+      $kept = @($entries | Where-Object { [Environment]::ExpandEnvironmentVariables($_.Trim()).TrimEnd('\') -ine $directory.TrimEnd('\') })
+      if ($kept.Count -ne $entries.Count) {
+        $key.SetValue('Path', ($kept -join ';'), [Microsoft.Win32.RegistryValueKind]::ExpandString)
+      }
+    } finally { $key.Close() }
+  } catch { Refuse "the user PATH could not be updated: $_" }
+  Write-Host "Removed the manual install at $directory and its user PATH entry."
+}
+```
+
+### Updating, Repairing, Uninstalling and Rolling Back
+
+- **Update.** Install a newer version, steps 1 to 5 above. Stop the instance first,
+  then rebuild the image and start again, as
+  [Updating the Runner](./windows-runner-host.md#updating-the-runner) describes.
+- **Upgrading while a program runs from the install path** on Windows:
+  <!-- measured: the outcome of an MSI upgrade while a program runs from the install path, and the recovery -->
+- **A lower pkg over a higher one** on macOS:
+  <!-- measured: what installer does when a lower pkg is installed over a higher one -->
+- **Repair.** Uninstall, then install.
+- **Uninstall.** The block for your OS stops the instance and refuses if it does not
+  stop. The logs stay, in `%LOCALAPPDATA%\marshal\logs\` on Windows and
+  `~/Library/Logs/marshal/` on macOS. On Windows the block finds the installed
+  product by the MSI's fixed upgrade code and removes it with `msiexec /x`, and
+  Settings, Apps removes it too, after you stop the instance. macOS has no pkg
+  uninstall, so the block removes `/usr/local/bin/marshal` and forgets the pkg's
+  receipt with `pkgutil --forget`, which removes no file.
+- **Roll back.** Uninstall, then install the older version, steps 1 to 5. The MSI
+  refuses a lower version while a newer one is installed, with the message "A newer
+  version of marshal is already installed.", and the installed version stays, so
+  uninstall first.
+- **Roll back to `v0.1.0`.** Uninstall, then use the [bare-binary
+  blocks](#rolling-back-to-v010) and add the install directory to the user's `PATH`
+  by hand, as the manual install always needed. Updating from `v0.1.0` again starts
+  with the migration block.
+
+Immutable releases keep a published release's tag from moving, so a version you
+install again is the file you installed before.
+
+On macOS, in bash or zsh:
+
+<!-- install-block: macos-uninstall -->
+
+```bash
+(
+  set -euo pipefail
+  refuse() { echo "refused: $*" >&2; exit 1; }
+  installed=/usr/local/bin/marshal
+  identifier=io.github.axross.runners.marshal
+
+  if [ -x "$installed" ]; then
+    stopped="$("$installed" stop 2>&1)" || [ "$stopped" = "No instance is running." ] \
+      || refuse "the instance did not stop: ${stopped}"
+  fi
+  sudo rm -f "$installed" || refuse "${installed} could not be removed"
+  if pkgutil --pkg-info "$identifier" >/dev/null 2>&1; then
+    sudo pkgutil --forget "$identifier" || refuse "the receipt for ${identifier} could not be forgotten"
+  fi
+  echo "Uninstalled marshal. The logs in ~/Library/Logs/marshal stay."
+)
+```
+
+On Windows, in PowerShell 5.1 or 7:
+
+<!-- install-block: windows-uninstall -->
+
+```powershell
+& {
+  $ErrorActionPreference = 'Stop'
+  function Refuse([string]$Why) { throw "refused: $Why" }
+  $upgradeCode = '{512F67C6-97ED-4562-84F3-2584FA3BA29C}'
+  $target = Join-Path $env:LOCALAPPDATA 'Programs\marshal\marshal.exe'
+
+  try {
+    $installer = New-Object -ComObject WindowsInstaller.Installer
+    $products = @($installer.GetType().InvokeMember('RelatedProducts', 'GetProperty', $null, $installer, @($upgradeCode)))
+  } catch { Refuse "the installed products could not be listed: $_" }
+  if ($products.Count -eq 0) {
+    Write-Host 'The marshal installer is not installed; nothing to uninstall.'
+    return
+  }
+
+  if (Test-Path -LiteralPath $target) {
+    $stopped = & {
+      $ErrorActionPreference = 'Continue'
+      (& $target stop 2>&1 | ForEach-Object { "$_" }) -join "`n"
+    }
+    if ($LASTEXITCODE -ne 0 -and $stopped.Trim() -ne 'No instance is running.') { Refuse "the instance did not stop: $stopped" }
+  }
+  foreach ($product in $products) {
+    $removal = Start-Process -FilePath msiexec.exe -ArgumentList @('/x', $product, '/qn', '/norestart') -Wait -PassThru
+    $null = $removal.Handle
+    if ($removal.ExitCode -ne 0) { Refuse "msiexec could not remove $product (exit code $($removal.ExitCode))" }
+  }
+  Write-Host 'Uninstalled marshal. The logs in %LOCALAPPDATA%\marshal\logs stay.'
+}
+```
+
+### Rolling Back to v0.1.0
+
+`v0.1.0` has no installer, so it is installed from a bare binary, and only after the
+installer's uninstall block. The procedure accepts a binary only when its checksum
+matches `SHA256SUMS`, the tag's commit is on the default branch, and its attestation
+verifies against `release.yaml` run from main, at that commit. It needs `gh` 2.102
+or later, signed in. The blocks below pin `version=0.1.0` and are the only ones that
+copy a binary into place; the operator adds the directory to the user's `PATH`.
 
 Paste a block below whole into one shell. A check that fails prints its cause after
 `refused:` and ends the block there without closing the shell, so nothing after it
@@ -1655,6 +2061,8 @@ clean.
 
 On macOS, in bash or zsh. The block has no comment lines, because an interactive zsh
 runs a line that starts with `#` as a command unless `interactive_comments` is set:
+
+<!-- install-block: macos-bare -->
 
 ```bash
 (
@@ -1718,6 +2126,8 @@ runs a line that starts with `#` as a command unless `interactive_comments` is s
 ```
 
 On Windows, in PowerShell:
+
+<!-- install-block: windows-bare -->
 
 ```powershell
 & {
@@ -1793,8 +2203,7 @@ the block at the "No instance is running." line.
 Windows cannot replace an executable that is running, so step 7 also fails while an
 instance still runs from the install path. The procedure's refusals on Windows are
 not yet verified on axpc ([#56](https://github.com/axross/runners/issues/56)): the
-refusal checks were not run there, because installation is to move to winget and
-Homebrew ([#70](https://github.com/axross/runners/issues/70)). A binary fetched with
+refusal checks were not run there. A binary fetched with
 `gh release download` is assumed to carry no Mark of the Web, and the procedure
 does not clear one. On axpc the installed copy had no `Zone.Identifier`
 ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511048211)), and
@@ -1803,6 +2212,46 @@ Off ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511120441))
 So with Smart App Control Off, the unsigned binary this procedure installs, which
 carries no Mark of the Web, is not blocked on axpc. A copy that carries one, such
 as a browser download, or a host with Smart App Control On, could be.
+
+### What the Install Tests Cover
+
+Each block above has a marker comment, `<!-- install-block: <id> -->`, before its
+fence, and the tests extract the block from this document, so the text you paste is
+the text under test. A test replaces a block's `version=` line, and a check block's
+`file=` line, and the macOS uninstall block's `installed=` line, and changes
+nothing else.
+
+`mise run test:install-blocks` runs the macOS blocks under bash with stand-ins first
+on `PATH` for `gh`, `pkgutil`, `xattr`, `sudo`, `cp`, and `marshal`, each recording
+its calls. Every refusal is produced, and each case asserts what ran and what did not,
+so a failed check is shown to install nothing. The suite includes the bare-binary
+blocks' refusals and the uninstall and migration refusals when the instance does not
+stop. It finishes in well under a minute on Linux. The `Install Blocks` job in
+[`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) runs the same suite
+under zsh on macOS, and the Windows suite
+([`test-install-blocks.ps1`](../../.github/scripts/tests/test-install-blocks.ps1))
+under Windows PowerShell 5.1 and PowerShell 7 on Windows.
+
+The job needs the release dry run and downloads its `marshal-release` artifact, then
+runs the documented blocks against the real installers with only `gh` stubbed, to
+serve the artifact's real `SHA256SUMS`, a tag on main, and a passing attestation:
+
+- the check block passes a genuine installer given as a renamed copy that carries a
+  seeded download mark (`Zone.Identifier` on Windows, `com.apple.quarantine` on
+  macOS), installs nothing, and leaves the file and its mark unchanged;
+- the check block refuses a genuine installer served under another version's name,
+  with a matching checksum line and a passing attestation, at the version step;
+- the migration block removes a seeded manual install that differs from the
+  installer's binary, after which the installer installs and `marshal --version` at
+  the install path prints the build's version;
+- installing over such a manual copy without migration is recorded as a `MEASURED:`
+  line;
+- the uninstall block removes the installation.
+
+macOS runs under zsh and the system `/bin/bash`; Windows runs under Windows
+PowerShell 5.1. On the Windows leg a standard local user without administrator
+rights then runs the check block and installs the MSI through a scheduled task, and
+the outcome is a `MEASURED:` line.
 
 ## Dependencies
 

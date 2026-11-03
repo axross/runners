@@ -284,8 +284,12 @@ run = "bash .github/scripts/tests/test-installer-version.sh"
 description = "Check that the WiX fetch refuses a package whose SHA-256 differs from the pin"
 run = "bash .github/scripts/tests/test-fetch-wix.sh"
 
+[tasks."test:install-blocks"]
+description = "Run the documented macOS install blocks of docs/operations/cli.md under bash against stand-ins, producing every refusal"
+run = "bash .github/scripts/tests/test-install-blocks.sh bash"
+
 [tasks.check]
-description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, host test, release script tests, installer version and WiX fetch tests, Rust tests, Rust dependency check, parity test"
+description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, host test, release script tests, installer version and WiX fetch tests, install block tests, Rust tests, Rust dependency check, parity test"
 depends = [
   "format:check",
   "lint",
@@ -298,6 +302,7 @@ depends = [
   "test:verify-release",
   "test:installer-version",
   "test:fetch-wix",
+  "test:install-blocks",
   "test:rust",
   "deny:rust",
   "test:parity",

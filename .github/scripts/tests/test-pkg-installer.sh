@@ -9,8 +9,8 @@
 # hashed, never run; the unmodified release binary alone prints its version. each
 # outcome the CLI document states is printed on a line that starts with MEASURED.
 # a failed check exits non-zero, so nothing is skipped silently. the removal at the
-# end is the uninstall block of the CLI document. macOS ships bash 3.2, so this
-# uses nothing newer. see docs/operations/cli.md.
+# end runs the uninstall block of the CLI document, extracted from it. macOS ships
+# bash 3.2, so this uses nothing newer. see docs/operations/cli.md.
 set -euo pipefail
 
 if [[ $# -ne 5 ]]; then
@@ -28,6 +28,8 @@ installed="/usr/local/bin/marshal"
 logs_directory="${HOME}/Library/Logs/marshal"
 logs_marker="${logs_directory}/installer-test.marker"
 build_pkg="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/build-pkg.sh"
+extract_block="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/extract-install-block.sh"
+cli_document="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)/docs/operations/cli.md"
 
 measured() {
   echo "MEASURED: $*"
@@ -196,8 +198,12 @@ assert_equal "a login zsh with a clean environment finds marshal by name" "$logi
 assert_equal "that marshal prints its version" "$(env -i HOME="$HOME" /bin/zsh -l -c 'marshal --version')" "marshal ${release_version}"
 
 echo "== the uninstall block =="
-sudo rm "$installed"
-sudo pkgutil --forget "$identifier"
+uninstall_block="$(bash "$extract_block" "$cli_document" macos-uninstall)"
+uninstall_status=0
+uninstall_output="$(bash -c "$uninstall_block" 2>&1)" || uninstall_status=$?
+echo "$uninstall_output"
+[[ $uninstall_status -eq 0 ]] || fail "the uninstall block of the CLI document exited ${uninstall_status}"
+ok "the uninstall block of the CLI document exits 0"
 [[ ! -e "$installed" ]] || fail "${installed} remains after the uninstall"
 ok "the uninstall removes the file"
 if has_receipt; then fail "the receipt remains after the uninstall"; fi
