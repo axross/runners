@@ -206,8 +206,8 @@ Apply the lens for each kind of file in the diff.
   `timeout-minutes`. `concurrency` cancels superseded pull request runs only.
 - **Release workflows.** A change to
   [`release-build.yaml`](./.github/workflows/release-build.yaml),
-  [`release.yaml`](./.github/workflows/release.yaml), the release-build job in
-  `merge-checks.yaml`, the scripts under `.github/scripts/`, the release tooling
+  [`release.yaml`](./.github/workflows/release.yaml), the release-build job and the
+  `Install Blocks` job in `merge-checks.yaml`, the scripts under `.github/scripts/`, the release tooling
   under [`release/`](./release), or `cli/.cargo/config.toml` is checked against
   each bullet of the release record in
   [Security](docs/conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main).

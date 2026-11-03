@@ -1730,6 +1730,10 @@ run:" and the error. The macOS block's matching refusal is "the binary in the pa
 does not run". A refusal at this step is not evidence of a bad file, and you may skip
 the optional check.
 
+On macOS, the system is expected to ask first whether Terminal may access the
+Downloads folder, which the default `file` path is in. Allow it, or the block refuses
+because the file "could not be read". This is expected, not measured.
+
 On macOS, in bash or zsh:
 
 <!-- install-block: macos-check -->
