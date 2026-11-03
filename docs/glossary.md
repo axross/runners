@@ -78,7 +78,8 @@ the binary embeds; `start` runs a host's pools in the foreground as the
 **Supervisor**, and `stop`, `restart`, `status`, and `diagnostics` talk to it.
 
 **CLI Release** - a `v<version>` tag on main and the GitHub release that carries
-the **CLI**'s two binaries and `SHA256SUMS`. The maintainer starts one by
+the **CLI**'s two binaries, the unsigned Windows MSI and macOS pkg that carry
+them, and `SHA256SUMS`. The maintainer starts one by
 dispatching `release.yaml`, and semantic-release picks the version from the commit
 subjects since the last `v*` tag. See
 [operations/development-workflow.md](./operations/development-workflow.md#cutting-a-release).

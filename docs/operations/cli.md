@@ -1466,18 +1466,21 @@ checkout. `--locked` then fails if the two files disagree, and
 `marshal --version` prints `marshal <version>`, from the same field.
 `mise run test:set-release-version` tests the script.
 
-Each release carries three files, and nothing else:
+Each release carries five files, and nothing else:
 
 | File                                | Built on         | Compiler host target     |
 | ----------------------------------- | ---------------- | ------------------------ |
 | `marshal-<version>-windows-x64.exe` | `windows-latest` | `x86_64-pc-windows-msvc` |
+| `marshal-<version>-windows-x64.msi` | `windows-latest` | -                        |
 | `marshal-<version>-macos-arm64`     | `macos-latest`   | `aarch64-apple-darwin`   |
+| `marshal-<version>-macos-arm64.pkg` | `macos-latest`   | -                        |
 | `SHA256SUMS`                        | `ubuntu-latest`  | -                        |
 
-The files are bare binaries, not archives, since there is one file per target.
-`SHA256SUMS` is in the `sha256sum` format, one line per binary. The binaries are
-not code-signed or notarised. Nothing modifies a binary after linking, so the macOS
-binary keeps the ad-hoc signature its linker gave it.
+The binaries are bare files, not archives. The `.msi` and the `.pkg` are installers
+that hold the binary of the same target unchanged. `SHA256SUMS` is in the
+`sha256sum` format, one line for each of the other four files. Neither the
+binaries nor the installers are code-signed or notarised. Nothing modifies a binary
+after linking, so the macOS binary keeps the ad-hoc signature its linker gave it.
 
 [`release-build.yaml`](../../.github/workflows/release-build.yaml) builds them. It
 is a reusable workflow with `contents: read` and no publish or attest step, and its
@@ -1495,12 +1498,15 @@ no cross-compilation, in one leg that:
    version its caller passed;
 6. copies the binary to its release name, and on Windows fails if it imports a
    `vcruntime` DLL;
-7. hands its SHA-256 to the next job as a job output, and uploads that one file by
-   name.
+7. builds the installer from the binary, as [Installers](#installers) describes,
+   and runs the installer tests there;
+8. hands the SHA-256 of the binary and of the installer to the next job as job
+   outputs, and uploads those two files by name.
 
-An assemble job then downloads both binaries, fails unless they are exactly the two
-expected files and each SHA-256 matches the handed-over value, writes
-`SHA256SUMS`, and uploads the three files as one artifact, `marshal-release`.
+An assemble job then downloads both legs' files, fails unless they are exactly the
+four expected files and each SHA-256 matches the handed-over value, writes
+`SHA256SUMS` with a line for each, and uploads the five files as one artifact,
+`marshal-release`.
 
 The Windows binary links the C runtime statically: `+crt-static` is set for
 `x86_64-pc-windows-msvc` in [`cli/.cargo/config.toml`](../../cli/.cargo/config.toml),
@@ -1513,15 +1519,66 @@ read nothing cannot pass.
 
 A release never ships `fake-docker` or `instance-helper`. The release-profile tests
 build both into `target/release`, so the build names `marshal` alone and copies only
-that file out, each leg's artifact holds that one file, and the assemble job, the
-attest job, and the release gate refuse a set of files that holds anything else.
+that file out, each leg's artifact holds that binary and its installer, and the
+assemble job, the attest job, and the release gate refuse a set of files that holds
+anything else.
+
+### Installers
+
+Each leg packs its binary into an unsigned installer, unchanged, so the installed
+file is byte-identical to the attested bare binary. An installer's own version is
+the release's `X.Y.Z`, and a dry run's is `0.0.0`, while its file name keeps the
+full dry-run version.
+[`installer-version.sh`](../../.github/scripts/installer-version.sh) maps the
+version for both legs: it keeps a release `X.Y.Z`, maps `0.0.0-dryrun.<n>` to
+`0.0.0`, and refuses any other prerelease form and an `X.Y.Z` beyond a Windows
+Installer `ProductVersion`'s limits (major and minor at most 255, patch at most
+65535). `mise run test:installer-version` tests it.
+
+- The MSI is built by
+  [`build-msi.ps1`](../../.github/scripts/build-msi.ps1) from
+  [`marshal.wxs`](../../.github/scripts/marshal.wxs) with WiX, which
+  [`fetch-wix.sh`](../../.github/scripts/fetch-wix.sh) installs from a pinned and
+  checked package; [Security](../conventions/security.md#pinning-convention)
+  records the pin. It is a per-user package named `marshal`, manufacturer `axross`,
+  with a fixed upgrade code that never changes. It installs
+  `%LOCALAPPDATA%\Programs\marshal\marshal.exe`, appends that directory to the
+  user `PATH` and removes the entry on uninstall, refuses a lower version with the
+  message "A newer version of marshal is already installed.", and replaces the
+  installed product when a build of the same version is installed. It has no
+  dialogs and no UI extension, and its only custom action is the error message
+  for the downgrade, which runs no code.
+- The pkg is built by [`build-pkg.sh`](../../.github/scripts/build-pkg.sh) with
+  `pkgbuild`, identifier `io.github.axross.runners.marshal`, `--ownership
+recommended`, and a payload of `usr/local/bin/marshal` with mode 0755. It has no
+  scripts.
+
+[`test-msi-installer.ps1`](../../.github/scripts/tests/test-msi-installer.ps1)
+runs on the Windows leg with the real `msiexec`, and
+[`test-pkg-installer.sh`](../../.github/scripts/tests/test-pkg-installer.sh) on the
+macOS leg with the real `installer` and passwordless `sudo`. Each builds throwaway
+installers at fixed test versions from two copies of the binary that differ in
+trailing bytes, and judges every install by the installed file's SHA-256; those
+copies are packed and hashed, never run. They check the release installer's
+install, version, `PATH`, listing and byte identity, an upgrade, the extraction
+layout the optional check will rely on, and an uninstall that keeps the logs, and
+that the installer carries no script, no code-running custom action and no
+dialogs and names only `marshal`, `axross` and the repository. The Windows test
+also builds a same-version rebuild, a lower version over a higher one, and an
+upgrade while a copy of a stock waiting console program, packed as `marshal.exe`,
+runs from the install path. The macOS test also records the owner and mode of
+`/usr/local/bin` before and after the install, the bill of materials' entries, a
+login zsh finding `marshal` by name, and what a lower package does over a higher
+one. Each measured outcome is a log line that starts with `MEASURED:`, and the
+installer logs are kept as the `installer-test-logs-<target>` artifact of the run.
+A failed check fails the leg.
 
 [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) calls the build
 workflow on every pull request and every push to the default branch, as the dry
 run, with the version `0.0.0-dryrun.<run number>`: both legs and the assemble job
-run, each binary must print `marshal 0.0.0-dryrun.<run number>`, and the
-`marshal-release` artifact is uploaded to the run, but nothing is attested or
-published. [`release.yaml`](../../.github/workflows/release.yaml) runs only on a
+run, each binary must print `marshal 0.0.0-dryrun.<run number>`, the installers are
+built and tested, and the `marshal-release` artifact, with all five files, is
+uploaded to the run, but nothing is attested or published. [`release.yaml`](../../.github/workflows/release.yaml) runs only on a
 manual dispatch on main, in four jobs on the dispatched commit:
 
 1. A plan job runs semantic-release as a dry run. Its gate,
@@ -1532,15 +1589,15 @@ manual dispatch on main, in four jobs on the dispatched commit:
    skipped.
 2. The build workflow builds and assembles the files at that version.
 3. An attest job downloads the artifact and fails unless it holds exactly that
-   version's three files, `SHA256SUMS` lists exactly the two binaries, and
-   `sha256sum --check --strict` passes. It then attests the build provenance of the
-   two binaries with `actions/attest`. It checks nothing out and installs no npm
-   package.
+   version's five files, `SHA256SUMS` lists exactly the two binaries and the two
+   installers, and `sha256sum --check --strict` passes. It then attests the build
+   provenance of those four files with `actions/attest`. It checks nothing out and
+   installs no npm package.
 4. A release job downloads the artifact and runs semantic-release. The gate makes
    the same check for the version semantic-release worked out in that run, before
    anything is tagged. semantic-release then pushes the tag and its note, and
    `@semantic-release/github` creates a draft release with the generated notes,
-   uploads the three files, and publishes it. `mise run test:verify-release` tests
+   uploads the five files, and publishes it. `mise run test:verify-release` tests
    the gate.
 
 The runner image's definition is embedded in the binary (see [Build](#build)), so a

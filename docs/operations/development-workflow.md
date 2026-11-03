@@ -256,8 +256,9 @@ PowerShell 5.1. Its release-build job is the release build's dry run: it calls
 [`release-build.yaml`](../../.github/workflows/release-build.yaml), which builds the
 Windows x64 and macOS arm64 release binaries on their hosted runners, runs the
 release-profile tests on each, checks each binary's `--version` and, on Windows,
-that it imports no `vcruntime` DLL, and uploads the two binaries with `SHA256SUMS`
-as one artifact of the run. It holds `contents: read`, and nothing is attested or
+that it imports no `vcruntime` DLL, builds and tests an MSI on the Windows leg and
+a pkg on the macOS leg with the real installers, and uploads the two binaries, the
+two installers, and `SHA256SUMS` as one artifact of the run. It holds `contents: read`, and nothing is attested or
 published; [CLI](./cli.md#releases) describes the build. A pull request from a fork
 runs without repository secrets.
 [`rust-advisories.yaml`](../../.github/workflows/rust-advisories.yaml) checks the
@@ -460,7 +461,7 @@ Do these once, before the first dispatch:
 3. When there is nothing to release, the plan job hands out no version, and the
    other jobs are skipped. The run is green and releases nothing.
 4. After a green run, check that the release exists and carries exactly the two
-   binaries and `SHA256SUMS`:
+   binaries, the MSI and the pkg, and `SHA256SUMS`:
 
    ```bash
    gh release view v<version> --repo axross/runners --json isDraft,assets --jq '{isDraft, assets: [.assets[].name]}'

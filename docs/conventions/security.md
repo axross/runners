@@ -93,6 +93,38 @@ computed from the real download, and are not covered by Dependabot. Dependabot
 does cover the CLI's own dependencies: its `cargo` and `rust-toolchain` entries
 for `/cli` propose the crate and toolchain refreshes as pull requests.
 
+The Windows installer's tool is pinned the same way. WiX is the one tool the
+release build fetches. [`fetch-wix.sh`](../../.github/scripts/fetch-wix.sh)
+downloads the NuGet package `wix` 7.0.1 from
+`https://api.nuget.org/v3-flatcontainer/wix/7.0.1/wix.7.0.1.nupkg`, refuses it
+unless its SHA-256 is
+`25209a1f73b20106621f11abe5e1a4e87c1d9f5c596795d246de7bb64446df17`, and only then
+installs it with `dotnet tool install --tool-path`. `dotnet` reads a NuGet.Config
+that clears every source and lists one folder holding the checked package, so no
+other source is consulted, and the package has no dependencies. `mise run
+test:fetch-wix` feeds the script a package with another SHA-256 and shows the
+refusal. No WiX extension is used, so nothing else is downloaded.
+
+WiX 7 is released under the Open Source Maintenance Fee (OSMF) EULA, and
+`wix build` refuses to run without `-acceptEula wix7`, which
+[`build-msi.ps1`](../../.github/scripts/build-msi.ps1) passes. The EULA asks a
+maintenance fee of users with revenue-generating use whose annual gross revenue
+reaches its threshold. The maintainer accepted the EULA for this project's use and
+assesses that fee themself, in approving the installers' plan
+([#71](https://github.com/axross/runners/issues/71)). Dependabot does not cover
+WiX. To bump it:
+
+1. Look up the latest WiX release, never recall it.
+2. Download `wix.<version>.nupkg` from the URL above with the new version, and
+   compute its SHA-256 from that download.
+3. Change `version` and `sha256` in `fetch-wix.sh` together, and run
+   `mise run test:fetch-wix`.
+4. If the major version changed, read the new EULA, have the maintainer accept it
+   again, and change the number in `-acceptEula wix7`.
+
+The change needs the maintainer's review, since it changes the supply-chain
+surface (see [REVIEW.md](../../REVIEW.md)).
+
 The Rust toolchain is one of two downloads in this repository that are not
 checksum-pinned, and the maintainer accepted that exception when approving the
 CLI's plan. `rustup` fetches a channel manifest over HTTPS and checks each
@@ -215,8 +247,12 @@ the record a change to either workflow, to the build call in
 - **The files are checked twice before they are used.** The attest job, and the
   release gate [`verify-release.sh`](../../.github/scripts/verify-release.sh) that
   semantic-release runs before it tags anything, each refuse unless the files are
-  exactly the two binaries named for the version and `SHA256SUMS`, `SHA256SUMS`
-  lists exactly those two, and `sha256sum --check --strict` passes. The gate checks
+  exactly the two binaries and the two installers named for the version and
+  `SHA256SUMS`, `SHA256SUMS` lists exactly those four, and
+  `sha256sum --check --strict` passes. The attest job attests the four files
+  `SHA256SUMS` lists. The installers are an MSI and a flat package that the build
+  legs pack the release binary into unchanged and test; neither is signed, and
+  neither carries a script or a custom action that runs code. The gate checks
   against the version semantic-release worked out in its own run.
   `@semantic-release/github` skips an asset that is missing rather than failing, so
   the gate is what holds the file set.
@@ -231,7 +267,9 @@ the record a change to either workflow, to the build call in
 - **Pins.** `actions/checkout`, `actions/setup-node`, `actions/upload-artifact`,
   `actions/download-artifact`, and `actions/attest` stay on major tags, under
   [`actions/*` Stays on Major Tags](#actions-stays-on-major-tags). Neither release
-  workflow uses a third-party action. `jdx/mise-action` was rejected for Node here:
+  workflow uses a third-party action, and the one tool the build fetches is WiX,
+  pinned under [Pinning Convention](#pinning-convention). `jdx/mise-action` was
+  rejected for Node here:
   at this repository's pin it caches by default, installs every mise tool, and
   receives the job token. `actions/setup-node` installs Node `24.21.0`, the version
   in `mise.toml`, and the Node download is trusted under the same joint-trust
