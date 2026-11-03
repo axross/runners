@@ -30,6 +30,7 @@ $UpgradeCode = '{512F67C6-97ED-4562-84F3-2584FA3BA29C}'
 $InstallerName = "marshal-$Version-windows-x64.msi"
 $script:Failures = 0
 $script:Cases = 0
+$script:Skipped = 0
 $script:CaseName = ''
 $script:Scenario = @{}
 $script:Calls = New-Object System.Collections.Generic.List[string]
@@ -167,6 +168,7 @@ function Complete-Case {
 
 function Skip-Case {
     param([string]$Reason)
+    $script:Skipped++
     Write-Output "SKIP $($script:CaseName): $Reason"
 }
 
@@ -592,7 +594,7 @@ Remove-Item -LiteralPath $Work -Recurse -Force -ErrorAction SilentlyContinue
 
 Write-Output ''
 if ($script:Failures -ne 0) {
-    Write-Output "$($script:Failures) failure(s) in $($script:Cases) cases."
+    Write-Output "$($script:Failures) failure(s) in $($script:Cases - $script:Skipped) cases that ran, $($script:Skipped) skipped."
     exit 1
 }
-Write-Output "All $($script:Cases) install block cases passed under PowerShell $($PSVersionTable.PSVersion)."
+Write-Output "$($script:Cases - $script:Skipped) install block cases passed, $($script:Skipped) skipped under PowerShell $($PSVersionTable.PSVersion)."
