@@ -268,7 +268,10 @@ the steps. This is the record a change to either workflow, to the build call in
   a runner that is discarded afterwards. On Windows it also creates a local user
   outside the Administrators group and a scheduled task for it, and removes both.
   It uses no secret, attests nothing, and adds no action beyond the `actions/*`
-  already used.
+  already used. This job and the build legs upload their installer logs, from
+  `msiexec /l*v` and `installer -dumplog`, as workflow artifacts kept for 14 days.
+  The logs may hold the ephemeral GitHub-hosted runner's machine and account names,
+  which the job log's "Set up job" section already shows, and they hold no secret.
 - **No credential stays in a checkout.** Every checkout sets
   `persist-credentials: false`. Under GitHub Actions, semantic-release builds an
   `x-access-token:` URL from `GITHUB_TOKEN` for its own git commands.
