@@ -93,8 +93,9 @@ computed from the real download, and are not covered by Dependabot. Dependabot
 does cover the CLI's own dependencies: its `cargo` and `rust-toolchain` entries
 for `/cli` propose the crate and toolchain refreshes as pull requests.
 
-The Windows installer's tool is pinned the same way. WiX is the one tool the
-release build fetches. [`fetch-wix.sh`](../../.github/scripts/fetch-wix.sh)
+The Windows installer's tool is pinned the same way. Besides the Rust toolchain,
+whose exception is recorded below, WiX is the one tool the release build fetches.
+[`fetch-wix.sh`](../../.github/scripts/fetch-wix.sh)
 downloads the NuGet package `wix` 7.0.1 from
 `https://api.nuget.org/v3-flatcontainer/wix/7.0.1/wix.7.0.1.nupkg`, refuses it
 unless its SHA-256 is
@@ -279,8 +280,9 @@ the record a change to either workflow, to the build call in
 - **Pins.** `actions/checkout`, `actions/setup-node`, `actions/upload-artifact`,
   `actions/download-artifact`, and `actions/attest` stay on major tags, under
   [`actions/*` Stays on Major Tags](#actions-stays-on-major-tags). Neither release
-  workflow uses a third-party action, and the one tool the build fetches is WiX,
-  pinned under [Pinning Convention](#pinning-convention). `jdx/mise-action` was
+  workflow uses a third-party action, and the one tool the build fetches besides
+  the recorded Rust toolchain exception is WiX, pinned under
+  [Pinning Convention](#pinning-convention). `jdx/mise-action` was
   rejected for Node here:
   at this repository's pin it caches by default, installs every mise tool, and
   receives the job token. `actions/setup-node` installs Node `24.21.0`, the version

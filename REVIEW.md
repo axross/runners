@@ -215,8 +215,9 @@ Apply the lens for each kind of file in the diff.
   tree and holds `id-token: write`, an asset other than the two named binaries, the
   two installers named for them, and `SHA256SUMS`, such as a helper binary, an
   installer that carries a script or a custom action that runs code, a download
-  other than the pinned WiX package, or a departure from the record that the
-  change does not also make to the record, is a finding. Install-time verification
+  other than the pinned WiX package and the recorded Rust toolchain exception, or a
+  departure from the record that the change does not also make to the record, is a
+  finding. Install-time verification
   is optional for the installers, so a document or comment that presents the check
   block as required of an operator is a finding, and so is a change that weakens a
   pin or drops one of the check block's four checks, or any check of the bare-binary
