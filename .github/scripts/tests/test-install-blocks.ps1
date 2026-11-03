@@ -384,6 +384,22 @@ Assert-NotCalled 'Start-Process'
 Assert-CheckLeftTheFile
 Complete-Case
 
+Open-Case 'check: a decoy line for a longer name does not count'
+Initialize-Check
+Set-Content -LiteralPath (Join-Path $script:Scenario.Release 'SHA256SUMS') -Value @(('0' * 64 + "  $InstallerName.sig"), "$($script:InstallerHash)  $InstallerName")
+Invoke-Check
+Assert-Passed
+Assert-Called "gh attestation verify $($script:Installer) "
+Complete-Case
+
+Open-Case 'check: only a line for a longer name is listed'
+Initialize-Check
+Set-Content -LiteralPath (Join-Path $script:Scenario.Release 'SHA256SUMS') -Value "$($script:InstallerHash)  x$InstallerName"
+Invoke-Check
+Assert-Refused "does not match the $InstallerName line of SHA256SUMS"
+Assert-NotCalled 'gh attestation'
+Complete-Case
+
 Open-Case 'check: two lines for the file name'
 Initialize-Check
 Set-Content -LiteralPath (Join-Path $script:Scenario.Release 'SHA256SUMS') -Value @("$($script:InstallerHash)  $InstallerName", "$($script:InstallerHash)  $InstallerName")

@@ -339,6 +339,23 @@ assert_installs_nothing
 assert_check_left_the_file
 finish_case
 
+begin_case "check: a decoy line for a longer name does not count"
+prepare_check
+printf '%s  %s.sig\n%s  %s\n' "0000000000000000000000000000000000000000000000000000000000000000" "$package_name" "$package_sha" "$package_name" >"${STANDIN_RELEASE}/SHA256SUMS"
+run_check
+assert_passed
+assert_called "gh attestation verify ${package} "
+finish_case
+
+begin_case "check: only a line for a longer name is listed"
+prepare_check
+printf '%s  x%s\n' "$package_sha" "$package_name" >"${STANDIN_RELEASE}/SHA256SUMS"
+run_check
+assert_refused "no single line for ${package_name}"
+assert_not_called "gh attestation"
+assert_installs_nothing
+finish_case
+
 begin_case "check: two lines for the file name"
 prepare_check
 printf '%s  %s\n%s  %s\n' "$package_sha" "$package_name" "$package_sha" "$package_name" >"${STANDIN_RELEASE}/SHA256SUMS"
