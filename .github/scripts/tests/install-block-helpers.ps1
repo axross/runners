@@ -98,7 +98,12 @@ public static class StandInMarshal {
             File.AppendAllText(self + ".calls", string.Join(" ", args) + "\n");
         }
         if (args.Length > 0 && args[0] == "--version") {
-            Console.Out.WriteLine("marshal " + settings["version"]);
+            string reported = settings["version"];
+            string atInstallPath;
+            if (settings.TryGetValue("versionAtInstallPath", out atInstallPath) && self.IndexOf("Programs" + Path.DirectorySeparatorChar + "marshal", StringComparison.OrdinalIgnoreCase) >= 0) {
+                reported = atInstallPath;
+            }
+            Console.Out.WriteLine("marshal " + reported);
             return int.Parse(settings["versionExit"]);
         }
         if (args.Length > 0 && args[0] == "stop") {
@@ -123,7 +128,9 @@ public static class StandInMarshal {
 
 # makes the stand-in marshal at the path. it answers --version and stop from the
 # settings appended to the file itself, so a copy answers the same, and records
-# every call in <path>.calls when STANDIN_RECORD_CALLS is 1. on Windows it is a
+# every call in <path>.calls when STANDIN_RECORD_CALLS is 1. when VersionAtInstallPath
+# is given, --version prints that version instead whenever the file runs from a
+# Programs\marshal directory, as a copy of the file at the install path does. on Windows it is a
 # small console program compiled with the .NET Framework's csc, because the
 # blocks run marshal.exe by path; elsewhere it is a shell script.
 function Write-StandInMarshal {
@@ -132,7 +139,8 @@ function Write-StandInMarshal {
         [Parameter(Mandatory = $true)][string]$Version,
         [string]$StopOutput = 'No instance is running.',
         [int]$StopExit = 1,
-        [int]$VersionExit = 0
+        [int]$VersionExit = 0,
+        [string]$VersionAtInstallPath = ''
     )
     $directory = Split-Path -Parent $Path
     New-Item -ItemType Directory -Force -Path $directory | Out-Null
@@ -145,7 +153,12 @@ function Write-StandInMarshal {
 get() { sed -n "s/^$1=//p" "$0"; }
 [ "$STANDIN_RECORD_CALLS" = 1 ] && echo "$*" >>"$0.calls"
 case "$1" in
-  --version) echo "marshal $(get version)"; exit "$(get versionExit)" ;;
+  --version)
+    reported="$(get version)"
+    case "$0" in
+      */Programs/marshal/*) [ -z "$(get versionAtInstallPath)" ] || reported="$(get versionAtInstallPath)" ;;
+    esac
+    echo "marshal $reported"; exit "$(get versionExit)" ;;
   stop) echo "$(get stopOutput)" >&2; exit "$(get stopExit)" ;;
 esac
 exit 2
@@ -153,7 +166,9 @@ exit 2
         [IO.File]::WriteAllText($Path, ($shellScript -replace "`r`n", "`n"))
         & chmod 0755 $Path
     }
-    $settingsText = "`n#STANDIN#`n" + (@("version=$Version", "stopOutput=$StopOutput", "stopExit=$StopExit", "versionExit=$VersionExit") -join "`n") + "`n"
+    $settings = @("version=$Version", "stopOutput=$StopOutput", "stopExit=$StopExit", "versionExit=$VersionExit")
+    if ($VersionAtInstallPath) { $settings += "versionAtInstallPath=$VersionAtInstallPath" }
+    $settingsText = "`n#STANDIN#`n" + ($settings -join "`n") + "`n"
     $stream = [IO.File]::Open($Path, [IO.FileMode]::Append)
     try {
         $bytes = [Text.Encoding]::GetEncoding(28591).GetBytes($settingsText)

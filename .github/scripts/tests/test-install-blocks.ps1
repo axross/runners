@@ -510,8 +510,8 @@ $BareVersion = '0.1.0'
 $BareAsset = "marshal-$BareVersion-windows-x64.exe"
 
 function Initialize-Bare {
-    param([string]$AssetVersion = $BareVersion)
-    Write-StandInMarshal -Path (Join-Path $script:Scenario.Release $BareAsset) -Version $AssetVersion
+    param([string]$AssetVersion = $BareVersion, [string]$VersionAtInstallPath = '')
+    Write-StandInMarshal -Path (Join-Path $script:Scenario.Release $BareAsset) -Version $AssetVersion -VersionAtInstallPath $VersionAtInstallPath
     $hash = Get-Sha256 (Join-Path $script:Scenario.Release $BareAsset)
     Set-Content -LiteralPath (Join-Path $script:Scenario.Release 'SHA256SUMS') -Value "$hash  $BareAsset"
 }
@@ -560,6 +560,13 @@ $script:Scenario.AttestFail = $true
 Invoke-Block -Id 'windows-bare'
 Assert-Refused 'the attestation does not verify'
 Assert-Absent (Join-Path (& $ManualDirectory) 'marshal.exe')
+Complete-Case
+
+Open-Case 'bare binary: a binary that reports another version once installed'
+Initialize-Bare -VersionAtInstallPath '0.9.9'
+Invoke-Block -Id 'windows-bare'
+Assert-Refused "the installed binary is not marshal ${BareVersion}: marshal 0.9.9"
+Assert-PathPresent (Join-Path (& $ManualDirectory) 'marshal.exe')
 Complete-Case
 
 Open-Case 'bare binary: an older binary under a newer name leaves the install path alone'

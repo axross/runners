@@ -543,6 +543,18 @@ assert_refused "the attestation does not verify"
 assert_absent "${case_dir}/${bare_target}"
 finish_case
 
+begin_case "bare binary: a binary that reports another version once installed"
+prepare_bare
+{
+  echo '#!/bin/sh'
+  echo "case \"\$0\" in */.local/bin/marshal) echo 'marshal 0.9.9';; *) echo 'marshal ${bare_version}';; esac"
+} >"${STANDIN_RELEASE}/${bare_asset}"
+printf '%s  %s\n' "$(sha256_of "${STANDIN_RELEASE}/${bare_asset}")" "$bare_asset" >"${STANDIN_RELEASE}/SHA256SUMS"
+run_block macos-bare
+assert_refused "the installed binary is not marshal ${bare_version}: marshal 0.9.9"
+assert_exists "${case_dir}/${bare_target}"
+finish_case
+
 begin_case "bare binary: an older binary under a newer name leaves the install path alone"
 prepare_bare
 make_marshal "${STANDIN_RELEASE}/${bare_asset}" 0.0.9 "" 0
