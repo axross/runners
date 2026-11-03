@@ -259,7 +259,14 @@ release-profile tests on each, checks each binary's `--version` and, on Windows,
 that it imports no `vcruntime` DLL, builds and tests an MSI on the Windows leg and
 a pkg on the macOS leg with the real installers, and uploads the two binaries, the
 two installers, and `SHA256SUMS` as one artifact of the run. It holds `contents: read`, and nothing is attested or
-published; [CLI](./cli.md#releases) describes the build. A pull request from a fork
+published; [CLI](./cli.md#releases) describes the build. Its `Install Blocks` job
+has a Windows and a macOS leg, needs that dry run, and holds `contents: read`. It
+downloads the dry run's artifact and runs the install, check, migration, and
+uninstall blocks that [CLI](./cli.md#installing-updating-and-rolling-back) documents:
+against stand-ins, under Windows PowerShell 5.1 and PowerShell 7 on Windows and under
+zsh and the system bash on macOS, and then against the dry run's real installers
+with only `gh` stubbed. On Windows a standard local user without administrator
+rights also runs the check block and installs the MSI. A pull request from a fork
 runs without repository secrets.
 [`rust-advisories.yaml`](../../.github/workflows/rust-advisories.yaml) checks the
 CLI's locked crates against the RustSec advisory database every week, on manual
@@ -475,9 +482,9 @@ Do these once, before the first dispatch:
    after the plan job, the release job logs the same line and ends without a tag or
    a release. Either way, run step 1 again and dispatch again.
 
-5. Check the release with the procedure in
-   [CLI](./cli.md#installing-updating-and-rolling-back) before installing it on a
-   host.
+5. Check the release with the optional check block in
+   [CLI](./cli.md#installing-updating-and-rolling-back) before opening its
+   installer on a host.
 
 ### Cleaning Up a Partial Release
 

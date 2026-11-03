@@ -84,6 +84,17 @@ dispatching `release.yaml`, and semantic-release picks the version from the comm
 subjects since the last `v*` tag. See
 [operations/development-workflow.md](./operations/development-workflow.md#cutting-a-release).
 
+**CLI Installer** - the unsigned Windows MSI or macOS pkg of a **CLI Release**, which
+holds the **CLI**'s binary unchanged and which an operator opens to install it. A
+**Check Block** checks the download first, and the installer's version is the
+release's `X.Y.Z`, or `0.0.0` for the dry run's. See
+[operations/cli.md](./operations/cli.md#installing-updating-and-rolling-back).
+
+**Check Block** - the optional block in the **CLI** document that checks a
+downloaded **CLI Installer** against `SHA256SUMS`, the tag's commit on main, the
+attestation, and the version of the binary inside it, and installs nothing. It
+ends with `refused:` and its cause when a check fails.
+
 **Placeholder Version** - `0.0.0-dev`, the version the **CLI**'s `Cargo.toml` and
 `Cargo.lock` hold on main. A release build writes the release version over it in
 the runner only, so the version is never committed. See

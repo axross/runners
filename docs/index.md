@@ -55,8 +55,9 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   runner image with `build`, running a host with `start`, `stop`, `restart`,
   `status`, and `diagnostics` (the log, containment, the stop sequence, and the
   diagnostic containers and their export), the toolchain and Rust
-  gates, the release build and its dry run, installing, updating, and rolling
-  back from a release, the allowed dependencies, and why the CLI's name is fixed.
+  gates, the release build and its dry run, installing from the MSI or the pkg,
+  the optional check of a download, migrating, updating, uninstalling, and rolling
+  back (including to the bare-binary `v0.1.0`), the tests of those blocks, the allowed dependencies, and why the CLI's name is fixed.
 - [operations/agent-skills.md](./operations/agent-skills.md) - installing and
   refreshing the skills from `axross/skills`, the drift checks, and the register
   of deviations and gaps.
