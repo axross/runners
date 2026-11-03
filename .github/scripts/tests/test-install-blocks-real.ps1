@@ -159,6 +159,9 @@ $originalPath = $key.GetValue('Path', $null, [Microsoft.Win32.RegistryValueOptio
 $originalKind = [Microsoft.Win32.RegistryValueKind]::ExpandString
 if ($null -ne $originalPath) { $originalKind = $key.GetValueKind('Path') }
 $key.Close()
+# set after the clean-start guard passes, so a refusal on a host that has marshal
+# installed never uninstalls it or rewrites its user PATH.
+$cleanupArmed = $false
 
 try {
     foreach ($required in @($GenuineMsi, $GenuineBinary, (Join-Path $ReleaseDirectory 'SHA256SUMS'))) {
@@ -169,6 +172,7 @@ try {
     $listed = @(Get-Content -LiteralPath (Join-Path $ReleaseDirectory 'SHA256SUMS') | Where-Object { ($_ -split '\s+')[1] -eq $MsiName })
     Assert-That ($listed.Count -eq 1 -and ($listed[0] -split '\s+')[0] -eq $msiHash) 'the artifact SHA256SUMS lists the MSI with its SHA-256'
     Assert-NothingInstalled -Label 'before the tests'
+    $cleanupArmed = $true
     $result = Invoke-DocumentedBlock -Id 'windows-uninstall'
     Assert-That ($null -eq $result.Failure) "the uninstall block passes when nothing is installed ($($result.Failure))"
     Assert-That ($result.Output.Contains('nothing to uninstall')) "the uninstall block says there is nothing to uninstall: $($result.Output)"
@@ -268,15 +272,17 @@ try {
     Write-Measured "the uninstall block after that install: $(if ($null -eq $result.Failure) { 'passed' } else { $result.Failure }); the file at the install path afterwards: $(if (Test-Path -LiteralPath $InstalledBinary) { 'present' } else { 'absent' })"
     Write-Output 'All Windows install block checks passed.'
 } finally {
-    foreach ($product in (Get-InstalledProduct)) {
-        $null = Invoke-Msi -Arguments @('/x', $product.PSChildName) -LogName "cleanup-$($product.PSChildName.Trim('{}'))"
-    }
-    if (Test-Path -LiteralPath $InstallDirectory) { Remove-Item -LiteralPath $InstallDirectory -Recurse -Force -ErrorAction SilentlyContinue }
-    $key = Get-UserPathKey
-    try {
-        if ($null -eq $originalPath) { $key.DeleteValue('Path', $false) } else { $key.SetValue('Path', $originalPath, $originalKind) }
-    } finally {
-        $key.Close()
+    if ($cleanupArmed) {
+        foreach ($product in (Get-InstalledProduct)) {
+            $null = Invoke-Msi -Arguments @('/x', $product.PSChildName) -LogName "cleanup-$($product.PSChildName.Trim('{}'))"
+        }
+        if (Test-Path -LiteralPath $InstallDirectory) { Remove-Item -LiteralPath $InstallDirectory -Recurse -Force -ErrorAction SilentlyContinue }
+        $key = Get-UserPathKey
+        try {
+            if ($null -eq $originalPath) { $key.DeleteValue('Path', $false) } else { $key.SetValue('Path', $originalPath, $originalKind) }
+        } finally {
+            $key.Close()
+        }
     }
     Remove-Item -LiteralPath $Work -Recurse -Force -ErrorAction SilentlyContinue
 }

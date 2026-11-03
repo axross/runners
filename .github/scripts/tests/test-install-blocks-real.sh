@@ -68,11 +68,17 @@ export STANDIN_TAG_SHA="$commit_sha"
 tmp_directory="${work}/tmp"
 mkdir -p "$tmp_directory"
 
+# set after the clean-start guards pass, so a refusal on a host that has marshal
+# installed never removes it.
+cleanup_armed=0
+
 cleanup() {
-  rm -f "$manual"
-  sudo rm -f "$installed" || true
-  sudo pkgutil --forget "$identifier" >/dev/null 2>&1 || true
-  rm -f "${logs_directory}/install-blocks-test.marker"
+  if [[ $cleanup_armed -eq 1 ]]; then
+    rm -f "$manual"
+    sudo rm -f "$installed" || true
+    sudo pkgutil --forget "$identifier" >/dev/null 2>&1 || true
+    rm -f "${logs_directory}/install-blocks-test.marker"
+  fi
   rm -rf -- "$work"
 }
 trap cleanup EXIT
@@ -128,6 +134,7 @@ sudo -n true || fail "sudo asks for a password"
 [[ ! -e "$installed" && ! -L "$installed" ]] || fail "${installed} exists before the tests"
 [[ ! -e "$manual" && ! -L "$manual" ]] || fail "${manual} exists before the tests"
 nothing_installed "before the tests"
+cleanup_armed=1
 package="${release_directory}/${package_name}"
 bare="${release_directory}/${bare_name}"
 package_hash="$(sha256_of "$package")"

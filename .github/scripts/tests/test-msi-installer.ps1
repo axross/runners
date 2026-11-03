@@ -212,12 +212,16 @@ $FixtureDirectory = Join-Path $work 'fixtures'
 $MsiDirectory = Join-Path $work 'msi'
 New-Item -ItemType Directory -Force -Path $FixtureDirectory, $MsiDirectory | Out-Null
 $waiting = $null
+# set after the clean-start guard passes, so a refusal on a host that has marshal
+# installed never uninstalls it.
+$cleanupArmed = $false
 
 try {
     $binaryHash = Get-Sha256 $Binary
 
     Write-Output '== a clean start =='
     Assert-NothingInstalled -Label 'before the tests'
+    $cleanupArmed = $true
     New-Item -ItemType Directory -Force -Path $LogsDirectory | Out-Null
     Set-Content -LiteralPath $LogsMarker -Value 'kept by the uninstall'
 
@@ -377,8 +381,10 @@ try {
     Write-Output 'All MSI installer checks passed.'
 } finally {
     if ($null -ne $waiting -and -not $waiting.HasExited) { $waiting.Kill() }
-    Uninstall-InstalledProduct
-    if (Test-Path -LiteralPath $LogsMarker) { Remove-Item -LiteralPath $LogsMarker -Force }
+    if ($cleanupArmed) {
+        Uninstall-InstalledProduct
+        if (Test-Path -LiteralPath $LogsMarker) { Remove-Item -LiteralPath $LogsMarker -Force }
+    }
     if (Test-Path -LiteralPath $work) { Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue }
 }
 

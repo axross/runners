@@ -113,12 +113,18 @@ work="$(mktemp -d "${TMPDIR:-/tmp}/marshal-pkg-test.XXXXXX")"
 logs_directory_existed=0
 [[ -d "$logs_directory" ]] && logs_directory_existed=1
 
+# set after the clean-start guards pass, so a refusal on a host that has marshal
+# installed never removes it.
+cleanup_armed=0
+
 cleanup() {
-  sudo rm -f "$installed" || true
-  sudo pkgutil --forget "$identifier" >/dev/null 2>&1 || true
-  rm -f "$logs_marker"
-  if [[ $logs_directory_existed -eq 0 ]]; then
-    rmdir "$logs_directory" 2>/dev/null || true
+  if [[ $cleanup_armed -eq 1 ]]; then
+    sudo rm -f "$installed" || true
+    sudo pkgutil --forget "$identifier" >/dev/null 2>&1 || true
+    rm -f "$logs_marker"
+    if [[ $logs_directory_existed -eq 0 ]]; then
+      rmdir "$logs_directory" 2>/dev/null || true
+    fi
   fi
   rm -rf -- "$work"
 }
@@ -134,6 +140,7 @@ ok "sudo needs no password"
 ok "${installed} is absent"
 if has_receipt; then fail "a receipt for ${identifier} exists before the tests"; fi
 ok "no receipt for ${identifier}"
+cleanup_armed=1
 before_directory="$(describe_usr_local_bin)"
 mkdir -p "$logs_directory"
 echo "kept by the uninstall" >"$logs_marker"
