@@ -95,8 +95,8 @@ for `/cli` propose the crate and toolchain refreshes as pull requests.
 
 The Windows installer's tool is pinned the same way. Besides the Rust toolchain,
 whose exception is recorded below, WiX is the one tool the release build fetches.
-[`fetch-wix.sh`](../../.github/scripts/fetch-wix.sh)
-downloads the NuGet package `wix` 7.0.1 from
+[`fetch-wix.sh`](../../.github/scripts/fetch-wix.sh) downloads the NuGet package
+`wix` 7.0.1 from
 `https://api.nuget.org/v3-flatcontainer/wix/7.0.1/wix.7.0.1.nupkg`, refuses it
 unless its SHA-256 is
 `25209a1f73b20106621f11abe5e1a4e87c1d9f5c596795d246de7bb64446df17`, and only then
@@ -285,15 +285,15 @@ the steps. This is the record a change to either workflow, to the build call in
   [`actions/*` Stays on Major Tags](#actions-stays-on-major-tags). Neither release
   workflow uses a third-party action, and the one tool the build fetches besides
   the recorded Rust toolchain exception is WiX, pinned under
-  [Pinning Convention](#pinning-convention). `jdx/mise-action` was
-  rejected for Node here:
-  at this repository's pin it caches by default, installs every mise tool, and
+  [Pinning Convention](#pinning-convention). `jdx/mise-action` was rejected for Node
+  here: at this repository's pin it caches by default, installs every mise tool, and
   receives the job token. `actions/setup-node` installs Node `24.21.0`, the version
   in `mise.toml`, and the Node download is trusted under the same joint-trust
   decision, not by a checksum; see [Pinning Convention](#pinning-convention).
   `release/package.json` names an exact version of semantic-release and of each
-  plugin and preset, `release/package-lock.json` records each package's integrity hash, and
-  `npm ci --ignore-scripts` installs exactly that and runs no install script.
+  plugin and preset, `release/package-lock.json` records each package's integrity
+  hash, and `npm ci --ignore-scripts` installs exactly that and runs no install
+  script.
   Dependabot's `npm` entry proposes the refreshes. `release/` keeps these packages
   out of the repository root and out of mise's tool locks.
 - **A release run is never cancelled.** Only the two calling workflows declare
