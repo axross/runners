@@ -129,6 +129,7 @@ function Open-Case {
     param([string]$Name)
     $script:Cases++
     $script:CaseName = $Name
+    $script:FailuresAtStart = $script:Failures
     $script:CaseDirectory = Join-Path $Work 'case'
     if (Test-Path -LiteralPath $script:CaseDirectory) { Remove-Item -LiteralPath $script:CaseDirectory -Recurse -Force }
     foreach ($child in 'release', 'downloads', 'local', 'tmp') {
@@ -163,7 +164,11 @@ function Open-Case {
 }
 
 function Complete-Case {
-    Write-Output "ok   $($script:CaseName)"
+    if ($script:Failures -gt $script:FailuresAtStart) {
+        Write-Output "not ok $($script:CaseName)"
+    } else {
+        Write-Output "ok   $($script:CaseName)"
+    }
 }
 
 function Skip-Case {

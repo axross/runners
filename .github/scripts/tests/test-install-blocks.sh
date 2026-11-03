@@ -116,6 +116,7 @@ fail() {
 begin_case() {
   cases=$((cases + 1))
   case_name="$1"
+  failures_at_start=$failures
   case_dir="${work}/case"
   rm -rf "$case_dir"
   mkdir -p "${case_dir}/home/.local/bin" "${case_dir}/release" "${case_dir}/downloads" "${case_dir}/tmp" "${case_dir}/usr-local-bin"
@@ -222,7 +223,11 @@ assert_clean_temp() {
 }
 
 finish_case() {
-  echo "ok   ${case_name}"
+  if [[ $failures -gt $failures_at_start ]]; then
+    echo "not ok ${case_name}"
+  else
+    echo "ok   ${case_name}"
+  fi
 }
 
 # the check block -------------------------------------------------------------
