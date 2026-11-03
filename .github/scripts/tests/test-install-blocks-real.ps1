@@ -225,6 +225,26 @@ try {
     Assert-That (Test-Path -LiteralPath $marker) 'the uninstall block left the logs'
     Remove-Item -LiteralPath $marker -Force
 
+    Write-Output '== the recovery after a skipped migration: the migration block, then uninstall and install again =='
+    $code = Invoke-Msi -Arguments @('/i', "`"$GenuineMsi`"") -LogName 'recovery-first-install'
+    Assert-That ($code -eq 0) "the MSI installs (msiexec exit code $code)"
+    Assert-That ((Get-InstalledProduct).Count -eq 1) 'the product is listed after the install'
+    $result = Invoke-DocumentedBlock -Id 'windows-migrate'
+    Assert-That ($null -eq $result.Failure) "the migration block passes while the product is installed ($($result.Failure))"
+    Assert-That ($result.Output.Contains('The marshal installer is installed and its file was removed too')) "the migration block says that it removed the installed file too: $($result.Output)"
+    Assert-That (-not (Test-Path -LiteralPath $InstalledBinary)) 'the migration block removed the installed file'
+    Assert-That ((Get-InstalledProduct).Count -eq 1) 'the product is still listed after the migration block'
+    $result = Invoke-DocumentedBlock -Id 'windows-uninstall'
+    Assert-That ($null -eq $result.Failure) "the uninstall block passes without marshal.exe ($($result.Failure))"
+    Assert-NothingInstalled -Label 'after the uninstall that follows the migration block'
+    $code = Invoke-Msi -Arguments @('/i', "`"$GenuineMsi`"") -LogName 'recovery-second-install'
+    Assert-That ($code -eq 0) "the MSI installs again (msiexec exit code $code)"
+    Assert-That ((Get-Sha256 $InstalledBinary) -eq $binaryHash) 'the installed file is the installer binary again'
+    Assert-That ((Get-InstallDirectoryPathEntry).Count -eq 1) 'the install put the directory on the user PATH once'
+    $result = Invoke-DocumentedBlock -Id 'windows-uninstall'
+    Assert-That ($null -eq $result.Failure) "the uninstall block passes ($($result.Failure))"
+    Assert-NothingInstalled -Label 'after the final uninstall'
+
     Write-Output '== installing over a manual copy without the migration block =='
     Write-StandInMarshal -Path $InstalledBinary -Version $manualVersion
     $manualHash = Get-Sha256 $InstalledBinary

@@ -369,14 +369,22 @@ Complete-Case
 
 $ManualDirectory = { Join-Path $env:LOCALAPPDATA 'Programs\marshal' }
 
-Open-Case 'migrate: the marshal installer is installed'
+# the user PATH is a Windows registry value, so off Windows the block ends at its
+# PATH step with a refusal, after it has stopped the instance and removed the file.
+Open-Case 'migrate: the marshal installer is installed, so its file goes too'
 $script:Scenario.Products = @('{11111111-2222-3333-4444-555555555555}')
 $manual = Join-Path (& $ManualDirectory) 'marshal.exe'
 Write-StandInMarshal -Path $manual -Version '0.0.1'
 Invoke-Block -Id 'windows-migrate'
-Assert-Refused 'the marshal installer is installed; uninstall it before migrating'
-Assert-PathPresent $manual
-Assert-True ((Get-StandInCall $manual).Count -eq 0) 'the manual copy was run'
+if ($OnWindows) {
+    Assert-Passed
+    Assert-True ($script:Result.Output.Contains('The marshal installer is installed and its file was removed too; uninstall it and install it again.')) "no note: $($script:Result.Output)"
+} else {
+    Assert-Refused 'the user PATH could not be updated'
+}
+Assert-True ((Get-StandInCall $manual) -contains 'stop') 'the instance was not asked to stop'
+Assert-Absent $manual
+Assert-InstallsNothing
 Assert-True ($script:Scenario.Installer.LastUpgradeCode -eq $UpgradeCode) "the products were looked up by '$($script:Scenario.Installer.LastUpgradeCode)', not the fixed upgrade code"
 Complete-Case
 

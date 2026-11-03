@@ -1857,9 +1857,10 @@ restores the manual install, run the block for your OS. It stops the instance an
 refuses if the instance does not stop, then removes the manual install:
 
 - On Windows, the copied `marshal.exe` and the user `PATH` entry for its directory.
-  It refuses instead when the MSI's product is installed, found by the MSI's fixed
-  upgrade code, because the manual copy and the MSI share one path, so removing the
-  copy would remove the installed file; uninstall first.
+  The block looks up the MSI's product by the MSI's fixed upgrade code and refuses
+  if it cannot list the products. The manual copy and the MSI share one path, so
+  when the product is installed the block removes the installed file too, says so,
+  and leaves the product registered: uninstall it and install it again.
 - On macOS, `~/.local/bin/marshal` when it is present. The block leaves `~/.local/bin`
   and any `PATH` entry for it alone.
 
@@ -1911,7 +1912,6 @@ On Windows, in PowerShell 5.1 or 7:
     $installer = New-Object -ComObject WindowsInstaller.Installer
     $products = @($installer.GetType().InvokeMember('RelatedProducts', 'GetProperty', $null, $installer, @($upgradeCode)))
   } catch { Refuse "the installed products could not be listed: $_" }
-  if ($products.Count -gt 0) { Refuse 'the marshal installer is installed; uninstall it before migrating' }
 
   if (Test-Path -LiteralPath $target) {
     $stopped = & {
@@ -1935,7 +1935,11 @@ On Windows, in PowerShell 5.1 or 7:
       }
     } finally { $key.Close() }
   } catch { Refuse "the user PATH could not be updated: $_" }
-  Write-Host "Removed the manual install at $directory and its user PATH entry."
+  if ($products.Count -gt 0) {
+    Write-Host 'The marshal installer is installed and its file was removed too; uninstall it and install it again.'
+  } else {
+    Write-Host "Removed the manual install at $directory and its user PATH entry."
+  }
 }
 ```
 
