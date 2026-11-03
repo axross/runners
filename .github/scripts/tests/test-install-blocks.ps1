@@ -301,6 +301,22 @@ Assert-Called 'gh api repos/axross/runners/git/tags/ffffffffffffffffffffffffffff
 Assert-Called "compare/main...$CommitSha"
 Complete-Case
 
+# a block that ended with exit would end this process, so the finally block names the
+# case before the process goes. it runs before the other refusals for that reason.
+Open-Case 'check: a refusal does not end the calling shell'
+Initialize-Check
+$script:Scenario.AttestFail = $true
+$continued = $false
+try {
+    Invoke-Check
+    $continued = $true
+} finally {
+    if (-not $continued) { Write-Output "FAIL $($script:CaseName): the block ended the calling shell" }
+}
+Assert-True $continued 'the calling shell did not continue after the refusal'
+Assert-Refused 'the attestation does not verify'
+Complete-Case
+
 $refusals = @(
     @{ Name = 'SHA256SUMS that cannot be downloaded'; Set = { $script:Scenario.DownloadFail = $true }; Text = 'SHA256SUMS could not be downloaded'; NotCalled = @('gh attestation') },
     @{ Name = 'a tag that cannot be read'; Set = { $script:Scenario.TagFail = $true }; Text = "the tag v$Version could not be read"; NotCalled = @('gh attestation') },
