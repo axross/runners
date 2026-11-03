@@ -164,10 +164,25 @@ function Get-StandInCall {
 # the stand-in for the gh calls the Windows blocks make, which the install block
 # tests share. it reads $script:Scenario (Release, DownloadFail, TagFail, TagType,
 # TagSha, AnnotatedFail, AnnotatedSha, CompareFail, Compare, AttestFail), records
-# each call in $script:Calls, and sets $LASTEXITCODE as the real gh does.
+# each call in $script:Calls, and sets $LASTEXITCODE as the real gh does. an API
+# read has a canned response body, and the caller's --jq expression is applied to
+# it with jq, as gh does, so a block with a wrong expression gets a wrong value.
 function Write-ExitCode {
     param([int]$Code)
     $global:LASTEXITCODE = $Code
+}
+
+# returns the body as JSON, or what jq makes of it under the --jq expression.
+function Get-StandInApiResponse {
+    param([Parameter(Mandatory = $true)]$Body, [string]$JqExpression)
+    $json = $Body | ConvertTo-Json -Compress -Depth 5
+    if (-not $JqExpression) { return $json }
+    if ($null -eq (Get-Command -Name jq -CommandType Application -ErrorAction SilentlyContinue)) {
+        throw 'jq is not installed, and the gh stand-in applies --jq with it.'
+    }
+    $result = $json | & jq -r $JqExpression
+    if ($LASTEXITCODE -ne 0) { Write-ExitCode 1; return }
+    return $result
 }
 
 function gh {
@@ -191,17 +206,21 @@ function gh {
     }
     if ($args[0] -eq 'api') {
         $uri = [string]$args[1]
+        $jqExpression = ''
+        for ($index = 2; $index -lt $args.Count - 1; $index++) {
+            if ($args[$index] -eq '--jq') { $jqExpression = [string]$args[$index + 1] }
+        }
         if ($uri -like '*/git/ref/tags/*') {
             if ($scenario.TagFail) { Write-ExitCode 1; return }
-            return (@{ object = @{ type = $scenario.TagType; sha = $scenario.TagSha } } | ConvertTo-Json -Compress)
+            return (Get-StandInApiResponse -Body @{ ref = 'refs/tags/v0'; object = @{ type = $scenario.TagType; sha = $scenario.TagSha } } -JqExpression $jqExpression)
         }
         if ($uri -like '*/git/tags/*') {
             if ($scenario.AnnotatedFail) { Write-ExitCode 1; return }
-            return (@{ object = @{ type = 'commit'; sha = $scenario.AnnotatedSha } } | ConvertTo-Json -Compress)
+            return (Get-StandInApiResponse -Body @{ tag = 'v0'; object = @{ type = 'commit'; sha = $scenario.AnnotatedSha } } -JqExpression $jqExpression)
         }
         if ($uri -like '*/compare/*') {
             if ($scenario.CompareFail) { Write-ExitCode 1; return }
-            return $scenario.Compare
+            return (Get-StandInApiResponse -Body @{ status = $scenario.Compare; ahead_by = 0; behind_by = 0 } -JqExpression $jqExpression)
         }
     }
     if ($args[0] -eq 'attestation' -and $args[1] -eq 'verify') {
