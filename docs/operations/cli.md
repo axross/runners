@@ -1973,8 +1973,11 @@ On Windows, in PowerShell 5.1 or 7:
   `~/Library/Logs/marshal/` on macOS. On Windows the block finds the installed
   product by the MSI's fixed upgrade code and removes it with `msiexec /x`, and
   Settings, Apps removes it too, after you stop the instance. macOS has no pkg
-  uninstall, so the block removes `/usr/local/bin/marshal` and forgets the pkg's
-  receipt with `pkgutil --forget`, which removes no file.
+  uninstall, so when `pkgutil --pkg-info` finds the pkg's receipt the block removes
+  `/usr/local/bin/marshal` and forgets the receipt with `pkgutil --forget`, which
+  removes no file. When it finds no receipt the block says the package is not
+  installed, runs no `sudo`, and leaves any file at `/usr/local/bin/marshal` in place,
+  because the package did not install it.
 - **Roll back.** Uninstall, then install the older version, steps 1 to 5. The MSI
   refuses a lower version while a newer one is installed, with the message "A newer
   version of marshal is already installed.", and the installed version stays, so
@@ -2001,14 +2004,20 @@ On macOS, in bash or zsh:
   installed=/usr/local/bin/marshal
   identifier=io.github.axross.runners.marshal
 
+  if ! pkgutil --pkg-info "$identifier" >/dev/null 2>&1; then
+    echo "The marshal package is not installed; nothing to uninstall."
+    if [ -e "$installed" ] || [ -L "$installed" ]; then
+      echo "${installed} exists but the package did not install it, so it is left in place."
+    fi
+    exit 0
+  fi
+
   if [ -x "$installed" ]; then
     stopped="$("$installed" stop 2>&1)" || [ "$stopped" = "No instance is running." ] \
       || refuse "the instance did not stop: ${stopped}"
   fi
   sudo rm -f "$installed" || refuse "${installed} could not be removed"
-  if pkgutil --pkg-info "$identifier" >/dev/null 2>&1; then
-    sudo pkgutil --forget "$identifier" || refuse "the receipt for ${identifier} could not be forgotten"
-  fi
+  sudo pkgutil --forget "$identifier" || refuse "the receipt for ${identifier} could not be forgotten"
   echo "Uninstalled marshal. The logs in ~/Library/Logs/marshal stay."
 )
 ```
@@ -2051,8 +2060,8 @@ On Windows, in PowerShell 5.1 or 7:
 
 ### Rolling Back to v0.1.0
 
-`v0.1.0` has no installer, so it is installed from a bare binary, and only after the
-installer's uninstall block. The procedure accepts a binary only when its checksum
+`v0.1.0` has no installer, so it is installed from a bare binary. If an installer is
+installed, uninstall it first with the uninstall block. The procedure accepts a binary only when its checksum
 matches `SHA256SUMS`, the tag's commit is on the default branch, and its attestation
 verifies against `release.yaml` run from main, at that commit. It needs `gh` 2.102
 or later, signed in. The blocks below pin `version=0.1.0` and are the only ones that
@@ -2247,8 +2256,9 @@ assignment line, and changes nothing else.
 on `PATH` for `gh`, `pkgutil`, `xattr`, `sudo`, `installer`, `cp`, and `marshal`, each
 recording its calls. Every refusal is produced, and each case asserts what ran and
 what did not, so a failed check is shown to install nothing. The suite includes the
-bare-binary blocks' refusals and the uninstall and migration refusals when the
-instance does not stop. The `gh` stand-ins, here and in the Windows suite, serve a
+bare-binary blocks' refusals, the uninstall and migration refusals when the
+instance does not stop, and the uninstall refusals when `sudo rm` or
+`pkgutil --forget` fails. The `gh` stand-ins, here and in the Windows suite, serve a
 canned API response body and apply the block's `--jq` expression to it with `jq`, so
 a wrong expression fails the suite; the suites need `jq` on `PATH`. The macOS suite
 finishes in well under a minute on Linux. The `Install Blocks` job in

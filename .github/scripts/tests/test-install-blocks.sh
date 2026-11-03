@@ -39,9 +39,13 @@ cases=0
 
 cp "${here}/standin-gh.sh" "${stand_ins}/gh"
 
+# STANDIN_SUDO_RM_FAIL and STANDIN_SUDO_FORGET_FAIL make sudo rm and sudo pkgutil
+# --forget fail without running them.
 cat >"${stand_ins}/sudo" <<'STANDIN'
 #!/usr/bin/env bash
 echo "sudo $*" >>"$STANDIN_LOG"
+[[ -z "${STANDIN_SUDO_RM_FAIL:-}" || "$1" != rm ]] || exit 1
+[[ -z "${STANDIN_SUDO_FORGET_FAIL:-}" || "$1 $2" != "pkgutil --forget" ]] || exit 1
 exec "$@"
 STANDIN
 
@@ -122,7 +126,7 @@ begin_case() {
   export STANDIN_TAG_TYPE=commit STANDIN_TAG_SHA="$commit_sha" STANDIN_ANNOTATED_SHA="$commit_sha"
   export STANDIN_COMPARE=identical STANDIN_PAYLOAD_VERSION="$version" STANDIN_PAYLOAD_EXIT=0
   export STANDIN_PAYLOAD_QUARANTINE=1
-  unset STANDIN_DOWNLOAD_FAIL STANDIN_TAG_FAIL STANDIN_ANNOTATED_FAIL STANDIN_COMPARE_FAIL STANDIN_ATTEST_FAIL STANDIN_EXPAND_FAIL
+  unset STANDIN_DOWNLOAD_FAIL STANDIN_TAG_FAIL STANDIN_ANNOTATED_FAIL STANDIN_COMPARE_FAIL STANDIN_ATTEST_FAIL STANDIN_EXPAND_FAIL STANDIN_SUDO_RM_FAIL STANDIN_SUDO_FORGET_FAIL
   output="" exit_status=0
 }
 
@@ -502,12 +506,24 @@ assert_absent "$installed"
 assert_absent "$STANDIN_RECEIPT"
 finish_case
 
-begin_case "uninstall: no receipt is left to forget"
+begin_case "uninstall: nothing is installed"
+run_block macos-uninstall "installed=${installed}"
+assert_passed
+[[ "$output" == *"The marshal package is not installed; nothing to uninstall."* ]] || fail "no note: ${output}"
+[[ "$output" != *"Uninstalled marshal"* ]] || fail "the block claims an uninstall: ${output}"
+assert_not_called "sudo "
+assert_not_called "marshal "
+finish_case
+
+begin_case "uninstall: a file without a receipt is left in place"
 make_marshal "$installed" "$version" "No instance is running." 1
 run_block macos-uninstall "installed=${installed}"
 assert_passed
-assert_absent "$installed"
-assert_not_called "pkgutil --forget"
+[[ "$output" == *"nothing to uninstall"* ]] || fail "no note: ${output}"
+[[ "$output" == *"${installed} exists but the package did not install it, so it is left in place."* ]] || fail "no note about the file: ${output}"
+assert_exists "$installed"
+assert_not_called "sudo "
+assert_not_called "marshal ${installed} stop"
 finish_case
 
 begin_case "uninstall: an instance that does not stop"
@@ -518,6 +534,28 @@ assert_refused "the instance did not stop: the control channel did not answer"
 assert_exists "$installed"
 assert_exists "$STANDIN_RECEIPT"
 assert_not_called "sudo "
+finish_case
+
+begin_case "uninstall: sudo rm that fails"
+make_marshal "$installed" "$version" "" 0
+: >"$STANDIN_RECEIPT"
+export STANDIN_SUDO_RM_FAIL=1
+run_block macos-uninstall "installed=${installed}"
+assert_refused "${installed} could not be removed"
+assert_exists "$installed"
+assert_exists "$STANDIN_RECEIPT"
+assert_not_called "pkgutil --forget"
+finish_case
+
+begin_case "uninstall: sudo pkgutil --forget that fails"
+make_marshal "$installed" "$version" "" 0
+: >"$STANDIN_RECEIPT"
+export STANDIN_SUDO_FORGET_FAIL=1
+run_block macos-uninstall "installed=${installed}"
+assert_refused "the receipt for io.github.axross.runners.marshal could not be forgotten"
+assert_called "sudo rm -f ${installed}"
+assert_absent "$installed"
+assert_exists "$STANDIN_RECEIPT"
 finish_case
 
 # the bare-binary block -------------------------------------------------------

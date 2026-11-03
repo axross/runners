@@ -135,6 +135,12 @@ sudo -n true || fail "sudo asks for a password"
 [[ ! -e "$manual" && ! -L "$manual" ]] || fail "${manual} exists before the tests"
 nothing_installed "before the tests"
 cleanup_armed=1
+echo "== the uninstall block before any install =="
+run_block macos-uninstall
+[[ $block_status -eq 0 ]] || fail "the uninstall block did not pass when nothing is installed: ${output}"
+[[ "$output" == *"nothing to uninstall"* ]] || fail "the uninstall block does not say there is nothing to uninstall: ${output}"
+ok "the uninstall block says there is nothing to uninstall"
+nothing_installed "after the uninstall block with nothing installed"
 package="${release_directory}/${package_name}"
 bare="${release_directory}/${bare_name}"
 package_hash="$(sha256_of "$package")"
