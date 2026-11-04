@@ -56,6 +56,9 @@ pub fn stderr(output: &Output) -> String {
 }
 
 /// a directory under the system temporary directory that is removed when dropped.
+///
+/// On Unix its path has no link in it, because the product refuses a sink or a root with a
+/// link ancestor and macOS's temporary directory sits behind one.
 pub struct TempDir {
     path: PathBuf,
 }
@@ -69,6 +72,8 @@ impl TempDir {
             COUNTER.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir_all(&path).unwrap();
+        #[cfg(unix)]
+        let path = fs::canonicalize(path).unwrap();
         Self { path }
     }
 
