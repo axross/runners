@@ -10,6 +10,7 @@ mod support;
 
 use std::time::Duration;
 
+use marshal_cli::agent::Push;
 use marshal_cli::agent::machine::Launch;
 use marshal_cli::agent::server::Limits;
 use marshal_cli::agent::snapshot::MAX_SNAPSHOT_BYTES;
@@ -48,6 +49,38 @@ async fn the_snapshot_shows_the_runners_pools_repositories_and_the_image() {
                     .is_some_and(|name| !name.is_empty())
             );
             assert_eq!(snapshot.images[0].name, "actions-runner:local");
+            rig.mark_running();
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn showing_the_state_makes_no_call_to_docker_or_github() {
+    let rig = Rig::new(ONE_POOL);
+    rig.store_token("o", "r", TOKEN);
+    rig.hold_jobs();
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Running, |mut conn| async move {
+            conn.until_runner_runs().await;
+            let calls = || {
+                (
+                    rig.backend.calls(),
+                    rig.backend.state.borrow().image_checks.clone(),
+                    rig.registrar.seen.borrow().len(),
+                )
+            };
+            let before = calls();
+            for _ in 0..5 {
+                conn.status().await;
+            }
+            conn.client.subscribe().await.unwrap();
+            // the first event, and a change that makes another
+            assert!(matches!(conn.push().await, Push::Event { .. }));
+            conn.client.token_remove("o/r").await.unwrap();
+            assert!(matches!(conn.push().await, Push::Event { .. }));
+            assert_eq!(calls(), before, "displaying the state called out");
             rig.mark_running();
             conn.ok("quit").await;
         })
