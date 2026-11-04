@@ -284,6 +284,52 @@ async fn start_deletes_the_leftover_job_vms_of_configured_pools_and_nothing_else
     );
 }
 
+/// a leftover job VM that cannot be deleted skips its pool as a labelled container
+/// that remains does on the container backend, and the other pools start.
+#[tokio::test(flavor = "current_thread")]
+async fn a_leftover_job_vm_that_cannot_be_deleted_skips_its_pool_and_the_others_start() {
+    let rig = Rig::new();
+    let leftover = format!("marshal-job-alpha-1-{STAMP}");
+    rig.fake.seed(&[
+        (golden_name().as_str(), "stopped", "local"),
+        (&leftover, "stopped", "local"),
+    ]);
+    rig.fake.script("fail-delete", "");
+    let scratch = TempDir::new();
+    let board = Board::default();
+
+    let prepared = support::prepare_pools(&rig.backend, axmc_pools(&scratch), &*rig.log, &board)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        prepared
+            .iter()
+            .map(|pool| pool.name.as_str())
+            .collect::<Vec<_>>(),
+        ["bravo"]
+    );
+    let reason = format!(
+        "Job VMs that an earlier run left could not be deleted ({leftover}); entry startup \
+         refused. Delete each with tart delete, then start again."
+    );
+    assert!(
+        board
+            .fields()
+            .contains(&("pool", format!("alpha: skipped: {reason}"))),
+        "{:?}",
+        board.fields()
+    );
+    let lines = rig.log.lines();
+    assert!(
+        lines.iter().any(|line| line.starts_with("WARN: ")
+            && line.contains("is not started and gets no slots")
+            && line.ends_with(&reason)),
+        "{lines:?}"
+    );
+    assert!(rig.fake.vm_names().contains(&leftover));
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn a_slot_cycle_clones_the_newest_golden_vm_sets_it_boots_it_and_waits_for_the_agent() {
     let rig = Rig::new();

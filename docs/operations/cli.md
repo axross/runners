@@ -606,8 +606,11 @@ pools, and the runtime removes them, each by a forced stop and a deletion
 (`deletes_leftovers_unexported`). Nothing is exported from a leftover VM. The log
 says `Deleting job VM '<name>' left over from an earlier run.`; for a
 diagnostics-enabled pool, it also says that its diagnostic evidence is gone, in
-today's gap wording. Only the pool's own VMs are matched, so another pool's, a
-golden VM and a build VM are left alone.
+today's gap wording. A leftover that cannot be deleted skips its pool, as a labelled
+container that remains does on the container backend: the warning says the pool "is
+not started and gets no slots" and names the VMs, and the other pools start. Only the
+pool's own VMs are matched, so another pool's, a golden VM and a build VM are left
+alone.
 
 **Diagnostics.** A diagnostic container is recorded as retained when it starts, and
 the runtime finalises it, exporting before it removes the container, and releases

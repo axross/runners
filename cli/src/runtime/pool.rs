@@ -362,13 +362,16 @@ async fn clear_stale_containers<B: Backend>(
         .await
         .map_err(|error| error.to_string())?;
     let mut left = Vec::new();
+    let mut undeleted = Vec::new();
     for name in listing
         .names
         .iter()
         .filter(|name| backend.is_own_name(&pool.name, name))
     {
         if backend.deletes_leftovers_unexported() {
-            delete_leftover_host(backend, pool, name, log).await;
+            if !delete_leftover_host(backend, pool, name, log).await {
+                undeleted.push(name.clone());
+            }
             continue;
         }
         if listing.diagnostic.contains(name) {
@@ -389,6 +392,13 @@ async fn clear_stale_containers<B: Backend>(
             ));
         }
     }
+    if !undeleted.is_empty() {
+        return Err(format!(
+            "Job VMs that an earlier run left could not be deleted ({}); entry startup refused. \
+             Delete each with tart delete, then start again.",
+            undeleted.join(", ")
+        ));
+    }
     match &pool.diagnostic {
         Some(record) => {
             finalize_left(backend, log, record, &left).await;
@@ -401,19 +411,29 @@ async fn clear_stale_containers<B: Backend>(
 
 /// deletes a job host an earlier process left, without an export, because a host
 /// that outlived its process is not trusted with a pool's evidence; a diagnostics-
-/// enabled pool reports the gap that leaves.
-async fn delete_leftover_host<B: Backend>(backend: &B, pool: &PoolSpec, name: &str, log: &dyn Log) {
+/// enabled pool reports the gap that leaves; returns whether the host is gone, because
+/// a pool whose leftover remains is not started, as with a labelled container.
+async fn delete_leftover_host<B: Backend>(
+    backend: &B,
+    pool: &PoolSpec,
+    name: &str,
+    log: &dyn Log,
+) -> bool {
     log.warn(&format!(
         "Deleting job VM '{name}' left over from an earlier run."
     ));
     if let Some(record) = &pool.diagnostic {
         warn_discarded(log, record, name);
     }
-    if let Err(error) = backend
+    match backend
         .remove_containers(&[name.to_string()], STALE_REMOVE_BUDGET)
         .await
     {
-        log.warn(&format!("Failed to delete job VM '{name}': {error}"));
+        Ok(()) => true,
+        Err(error) => {
+            log.warn(&format!("Failed to delete job VM '{name}': {error}"));
+            false
+        }
     }
 }
 
