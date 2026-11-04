@@ -12,6 +12,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use marshal_cli::agent::machine::{EXECUTABLE_CHANGED, Launch, QUIT};
+use marshal_cli::instance::lifecycle::StopTimes;
 use marshal_cli::runtime::fake::Call;
 use serde_json::{Value, json};
 use support::agent::{ONE_POOL, Raw, Rig, TOKEN, TWO_POOLS};
@@ -688,6 +689,81 @@ async fn a_subscriber_is_told_of_a_configuration_a_refused_build_found_invalid()
             .await
             .expect("the subscriber was not told within a second");
             assert!(!told.configuration.problems.is_empty());
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+// tokens ---------------------------------------------------------------------------
+
+/// `token_set` and `token_remove` change the store, not the lifecycle, so they are
+/// answered in the state the caller finds the agent in.
+async fn assert_tokens_are_answered(conn: &support::agent::Conn, state: &str) {
+    assert_eq!(conn.status().await.agent.state, state);
+    conn.set_token("o/r", "fake-token-cccc-3333")
+        .await
+        .unwrap_or_else(|error| panic!("token_set while {state}: {error}"));
+    assert!(conn.status().await.pools[0].has_token, "while {state}");
+    conn.client
+        .token_remove("o/r")
+        .await
+        .unwrap_or_else(|error| panic!("token_remove while {state}: {error}"));
+    assert!(!conn.status().await.pools[0].has_token, "while {state}");
+    assert_eq!(conn.status().await.agent.state, state, "the state changed");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn tokens_are_set_and_removed_while_the_agent_resumes() {
+    for held in HELD {
+        let rig = resuming_rig(held);
+        let rig = &rig;
+        let (_, ()) = rig
+            .drive(Launch::Running, |conn| async move {
+                conn.until_state("resuming").await;
+                assert_tokens_are_answered(&conn, "resuming").await;
+                conn.ok("quit").await;
+            })
+            .await;
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn tokens_are_set_and_removed_while_the_agent_builds() {
+    let rig = Rig::new(ONE_POOL);
+    rig.store_token("o", "r", TOKEN);
+    rig.builder.hold.set(true);
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Stopped, |conn| async move {
+            conn.ok("build").await;
+            assert_tokens_are_answered(&conn, "building").await;
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn tokens_are_set_and_removed_while_the_agent_stops() {
+    let rig = running_rig();
+    rig.backend.state.borrow_mut().stop_hangs = true;
+    rig.times.set(StopTimes {
+        exit_deadline: Duration::from_secs(2),
+        ..StopTimes::default()
+    });
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            conn.until_runner_runs().await;
+            rig.mark_running();
+            // the stop hangs until the exit deadline; a connection answers one request
+            // at a time, so the calls are made on another
+            let other = conn.another().await;
+            let stop = async { conn.ok("stop_all").await };
+            let meanwhile = async {
+                other.until_state("stopping").await;
+                assert_tokens_are_answered(&other, "stopping").await;
+            };
+            tokio::join!(stop, meanwhile);
             conn.ok("quit").await;
         })
         .await;
