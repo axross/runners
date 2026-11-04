@@ -1490,8 +1490,8 @@ signing.
   notarized by Apple's notary service, and stapled. The `sign-macos` job does this
   on `macos-latest`, after the build and before the checksums, as
   [Signing the macOS Files](#signing-the-macos-files) describes. A release run is the
-  first place the signing runs, so the signed package is expected to pass Gatekeeper
-  until the Mac records that it does.
+  first place the signing runs and no Mac has yet assessed a signed package, so that
+  Gatekeeper accepts it is an expectation, not an observation.
 - **Windows.** Neither the binary nor the MSI is code-signed. Windows signing is
   deferred until a need arises, such as Smart App Control being On, so the MSI raises
   the prompts that [Installing](#installing) describes.
@@ -1678,20 +1678,19 @@ unsigned build set. `attest` keeps `id-token: write` and `attestations: write`
 alone. The kept uploads, the signed files, the notary log and `marshal-release-signed`,
 last 14 days and hold no secret.
 
-`sign-macos` is the one job that declares an Environment or reads a signing secret.
-It holds only `contents: read`, checks nothing out, and uses no action but
-`actions/download-artifact` and `actions/upload-artifact`. It runs no repository
-file and no package manager, and it fetches nothing: its steps are the job's own
-definition in `release.yaml`, which the maintainer's approval covers, and its only
-network use is the artifact transfer and Apple's timestamp, notary and ticket
-services. Each signing tool is called by its absolute system path, `/usr/bin/` for
-`security`, `codesign`, `pkgbuild`, `openssl`, `plutil`, `shasum` and `xcrun`, and
-`/usr/sbin/` for `pkgutil`, so nothing earlier on `PATH` can stand in for one. Its
-other commands are shell built-ins and macOS base utilities, such as `base64` and
-`mktemp`, called by name. The scripts read the two prefixes from `SYSTEM_BIN` and
-`SYSTEM_SBIN`, whose defaults are those literal paths and which only the stand-in
-test overrides; the shape check requires the defaults and rejects either name as an
-`env:` key anywhere. Its steps run in this order:
+`sign-macos` is the one job that declares the Environment or reads a signing secret.
+[Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
+owns what it may hold and run: `contents: read`, no checkout, no repository file, no
+package manager, no fetch, and no action but `actions/download-artifact` and
+`actions/upload-artifact`. Its steps are the job's own definition in `release.yaml`,
+and its only network use is the artifact transfer and Apple's timestamp, notary and
+ticket services. Each signing tool is called by its absolute system path, `/usr/bin/`
+for `security`, `codesign`, `pkgbuild`, `openssl`, `plutil`, `shasum` and `xcrun`, and
+`/usr/sbin/` for `pkgutil`, so nothing earlier on `PATH` can stand in for one. The
+scripts read the two prefixes from `SYSTEM_BIN` and `SYSTEM_SBIN`, whose defaults are
+those literal paths and which only the stand-in test overrides; the shape check
+requires the defaults and rejects either name as an `env:` key anywhere. Its steps run
+in this order:
 
 1. It downloads `marshal-release`, the build's set.
 2. It refuses, before importing anything, unless:
@@ -1753,9 +1752,11 @@ written with mode 0600 under the runner's temporary directory, and each line of 
 `.p8` is masked as well. The password arguments of `security` are the one exception for
 a credential to "never passed on a command line", because the tool has no
 non-interactive alternative and the runner is discarded after the job; the maintainer
-allowed it at the plan gate. The API key's ID and issuer ID also reach `notarytool` as
-arguments, which is not an exception for a credential, and the `.p8` key goes by a
-file path.
+allowed it at the plan gate. The approved design also passes the API key's ID and
+issuer ID to `notarytool` as the `--key-id` and `--issuer` arguments, and the `.p8`
+private key reaches it only as a file path. GitHub masks secret values in the log, not
+in a process listing. The maintainer decides whether those two arguments need a
+recorded exception.
 [Security](../conventions/security.md#nothing-identifying-or-secret-is-committed)
 records both.
 
@@ -1880,12 +1881,12 @@ codesign -d -r- /usr/local/bin/marshal
 - `pkgutil --check-signature` is expected to show a Developer ID Installer
   certificate of the maintainer's team, chained to Apple's root. An operator who wants
   the team checked compares the team ID it shows with the one this document records
-  once the first signed release has fixed it. Gatekeeper does not do that check: it is
-  expected to accept a package signed with any Developer ID and notarized, and to block
-  one that is unsigned, not notarized, or whose signature or notarization is revoked.
-  It assesses a file that carries the download mark (`com.apple.quarantine`), as a
-  browser download does, and a package fetched with `gh` or `curl` has none. This is
-  expected, not yet observed on a Mac.
+  once the first signed release has fixed it. Gatekeeper is not expected to do that
+  check, and it assesses only a file that carries the download mark, which a package
+  fetched with `gh` or `curl` lacks.
+  [Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
+  records what it is expected to block and accept. This is expected, not yet observed
+  on a Mac.
 - `spctl --assess --type install -vv` is expected to print `accepted` with
   `source=Notarized Developer ID`. One unanswered report says macOS 26.3 rejected a
   notarized, stapled package; if a genuine release shows that, it is a defect to
@@ -1903,9 +1904,12 @@ points:
 
 - **W1** adds its installer to the build legs and to the release set. That changes
   the five-file set, so the same change updates it across `release-build.yaml`,
-  `assemble-release.sh`, `sign-macos`'s file check, `assemble-signed`, `attest`,
-  `verify-release.sh` and its test, `.releaserc.json`, `check-release-shape.mjs`,
-  `test-sign-macos.sh` and `test-release-shape.sh`.
+  `assemble-release.sh` and `test-assemble-release.sh`, `sign-macos`'s file check,
+  `assemble-signed`, `attest`, `verify-release.sh` and `test-verify-release.sh`,
+  `.releaserc.json` and `test-sign-macos.sh`. The install-block suites and
+  `test-msi-standard-user.ps1` name the one installer they install, so they change
+  only if W1's installer replaces or renames it; `test-signed-pkg-refusals.sh` uses
+  one Windows file name only as a fixture for an unlisted file, and needs no change.
 - **M2** adds steps to `sign-macos` and `verify-macos` for the app and the disk image,
   and signs the bundled command line with the same identifier and team.
 - **W4** adds a job, or steps under the Environment, that sign the update archive.
@@ -1933,13 +1937,94 @@ any environment variable other than `PATH`, `BASH_ENV` and `ENV`.
 Each of these runs in `mise run check`, on Linux, with no signing identity and no
 secret:
 
-| Task                             | What it covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `mise run check:release-shape`   | Reads the `.yaml` and `.yml` workflows and fails unless the jobs, permissions, `needs` chain, guards and `sign-macos` rules above hold, including that `sign-macos`'s `pkgbuild` arguments match `build-pkg.sh`'s, that no job can continue past a failed signing step, and that no job but `sign-macos` in `release.yaml` reads a signing secret in any `.yaml` or `.yml` workflow, whether by `secrets.MACOS_*`, `secrets[...]`, `toJSON(secrets)` or `secrets: inherit`. It matches the status functions `always()`, `failure()`, `cancelled()` and `success()` whatever their case and inner spaces. For `sign-macos` it also fails on a `shell:` key on a step, a `defaults.run.shell` at workflow or job level, and an input to `actions/download-artifact` other than `name` and `path`, or to `actions/upload-artifact` other than `name`, `path`, `retention-days` and `if-no-files-found`. It reads the commands of `sign-macos`'s scripts, a `trap` body included, and fails on a quoted or expanded command word other than `"$SYSTEM_BIN/<tool>"` or `"$SYSTEM_SBIN/<tool>"`, a backtick, an arithmetic expansion `$(( … ))` that contains `$(` or a backtick, an unreadable `trap` operand, a `find` option outside `-mindepth`, `-maxdepth`, `-type`, `-name`, `-print` and `-print0`, `PATH` or `BASH_ENV` as an `env:` key at any level of `release.yaml`, an assignment of `PATH`, `BASH_ENV` or `ENV`, a `read`, `printf -v`, `declare`, `typeset`, `local`, `export`, `readonly`, `mapfile`, `readarray`, `getopts`, `for` or `select` at the start of a command that names one of the three, any `GITHUB_PATH`, and any `GITHUB_ENV` write but the identities step's one block of two `echo` lines. |
-| `mise run test:release-shape`    | Runs that check against the unchanged workflows, then against copies altered one change at a time, and expects each to fail.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `mise run test:sign-macos`       | Runs `sign-macos`'s `run:` scripts, extracted from `release.yaml`, against recording stand-ins of the macOS tools: each refusal, the flags, that the keychain and files are deleted after a pass and after a failure at each step, and that no secret or `.p8` line is printed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `mise run test:signed-pkg`       | Runs `test-signed-pkg.sh` against stand-ins and produces each of its refusals, including an unsigned file that `SHA256SUMS` does not list and a notary log of another submission.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `mise run test:assemble-release` | Runs `assemble-release.sh` against temporary directories: the four lines in order, and a refusal for another file set or a changed file.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Task                             | What it covers                                                                                                                                                                                                                                                                  |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mise run check:release-shape`   | Reads the `.yaml` and `.yml` workflows and the `sign-macos` scripts and fails unless the rules listed under this table hold.                                                                                                                                                    |
+| `mise run test:release-shape`    | Runs that check against the unchanged workflows, then against copies altered one change at a time, and expects each to fail.                                                                                                                                                    |
+| `mise run test:sign-macos`       | Runs `sign-macos`'s `run:` scripts, extracted from `release.yaml`, against recording stand-ins of the macOS tools: each refusal, the flags, that the keychain and files are deleted after a pass and after a failure at each step, and that no secret or `.p8` line is printed. |
+| `mise run test:signed-pkg`       | Runs `test-signed-pkg.sh` against stand-ins and produces each of its refusals, including an unsigned file that `SHA256SUMS` does not list and a notary log of another submission.                                                                                               |
+| `mise run test:assemble-release` | Runs `assemble-release.sh` against temporary directories: the four lines in order, and a refusal for another file set or a changed file.                                                                                                                                        |
+
+`mise run check:release-shape` enforces these rules. They apply to every `.yaml` and
+`.yml` workflow, unless a rule names a file or job. Each failure names its rule, and
+a workflow that cannot be read, a missing `release.yaml` or `release-build.yaml`, and a
+missing `build-pkg.sh` fail it too.
+
+- **The Environment.** Only `release.yaml`'s `sign-macos` declares an `environment`,
+  and only `release`. No step declares one.
+- **Triggers.** `release.yaml` is triggered by `workflow_dispatch` alone. A workflow
+  that `pull_request` or `pull_request_target` triggers calls only local workflows
+  (`./.github/workflows/...`), and none of them, directly or through another called
+  workflow, declares an Environment.
+- **The signing secrets.** No workflow but `release.yaml`'s `sign-macos` reads one,
+  whether by `secrets.MACOS_*`, `secrets[...]`, `toJSON(secrets)` or
+  `secrets: inherit`.
+- **The `sign-macos` job.** It holds exactly `contents: read`, declares
+  `environment: release`, and runs on `macos-latest`. No step sets `shell:`, and
+  neither the workflow nor the job sets `defaults.run.shell`.
+- **Its steps.** None checks out the repository. The only actions are
+  `actions/download-artifact` and `actions/upload-artifact`, each on a major tag. The
+  download takes only the inputs `name` and `path`, and the upload only `name`,
+  `path`, `retention-days` and `if-no-files-found`. No `run:` contains `${{ }}`, and
+  each begins with a `# sign-macos: <name>` marker line.
+- **Its commands.** Each command word, a `trap` body included, is a function the
+  script defines, a shell built-in or base utility on a fixed list, or a signing tool
+  at `"$SYSTEM_BIN/<tool>"` or `"$SYSTEM_SBIN/<tool>"`: `security`, `codesign`,
+  `pkgbuild`, `openssl`, `plutil`, `shasum` and `xcrun` under the first, `pkgutil` under
+  the second. A package manager, `curl` or `wget`, an interpreter, `source`, `eval` or
+  `exec`, a path into the repository, a signing tool called by its bare name, and any
+  other command fail. So do a quoted or expanded command word, a backtick, an
+  arithmetic expansion `$(( ... ))` that contains `$(` or a backtick, an unreadable
+  `trap` operand, a `find` option outside `-mindepth`, `-maxdepth`, `-type`, `-name`,
+  `-print` and `-print0`, and a reference to `.github/`, `GITHUB_WORKSPACE` or
+  `github.workspace`.
+- **The tool prefixes.** A script that uses `SYSTEM_BIN` or `SYSTEM_SBIN` has the line
+  `: "${SYSTEM_BIN:=/usr/bin}"` (`/usr/sbin` for `SYSTEM_SBIN`), gives it no other
+  default, and neither assigns nor exports it. No `env:` of any workflow, job or step
+  sets either name.
+- **The scripts' environment.** No script mentions `GITHUB_PATH`. A script mentions
+  `GITHUB_ENV` only in a block of one or more `echo "NAME=${variable}"` lines for
+  `APPLICATION_IDENTITY` and `INSTALLER_IDENTITY_NAME`, which is accepted in any
+  `sign-macos` script. No script assigns `PATH`, `BASH_ENV` or `ENV`, or starts a
+  `read`, `printf -v`, `declare`, `typeset`, `local`, `export`, `readonly`, `mapfile`,
+  `readarray`, `getopts`, `for` or `select` command that names one of the three. None
+  of the three is an `env:` key at any level of `release.yaml`.
+- **Status functions in `sign-macos`.** A step whose `if` uses `always()`,
+  `failure()`, `cancelled()` or `success()`, whatever the case and inner spaces, is
+  the clean-up step (marker `# sign-macos: cleanup`) or the `notary-log-macos` upload.
+  Each of those two exists exactly once and has `if: always()`.
+- **The check script.** The script marked `# sign-macos: check` lists in `bin_tools`
+  and `sbin_tools` every tool the job calls by `$SYSTEM_BIN` or `$SYSTEM_SBIN`, and
+  looks for `notarytool` and `stapler` with `xcrun --find`.
+- **The package.** `build-pkg.sh` sets an `identifier`, and every `identifier=` in
+  `sign-macos` equals it. The package script's staging lines (`mkdir -p`, `cp`,
+  `chmod`) equal `build-pkg.sh`'s, and its `pkgbuild` call passes `--sign` and
+  `--keychain` once each and otherwise the arguments `build-pkg.sh` passes.
+- **The new jobs.** `sign-macos`, `verify-macos` and `assemble-signed` each need
+  `plan` directly, carry
+  `if: github.ref == 'refs/heads/main' && needs.plan.outputs.version != ''`, and set
+  `timeout-minutes` to at most 60, 20 and 10. `verify-macos` and `assemble-signed`
+  hold exactly `contents: read` and declare no environment, and their checkouts set
+  `persist-credentials: false`.
+- **The chain.** Each job needs these directly: `sign-macos` needs `plan` and
+  `build`; `verify-macos` adds `sign-macos`; `assemble-signed` adds `verify-macos`;
+  `attest` needs `plan` and `assemble-signed`; `release` needs `plan` and `attest`.
+  `attest` holds exactly `id-token: write` and `attestations: write`. `attest` and
+  `release` each download exactly one artifact, `marshal-release-signed`, and no step
+  of `release` reads `needs.build`.
+- **No way past a failure.** No job or step of `release.yaml` sets
+  `continue-on-error`. No job-level `if` uses `always()`, `failure()` or
+  `cancelled()`, and no step outside `sign-macos` does. `success()` is matched only in
+  `sign-macos` steps, under the rule above; the job-level and other-job rules match
+  `always`, `failure` and `cancelled`.
+- **The dry run's tool check.** In `release-build.yaml`'s `build` job, the "Check The
+  Signing Tools" step runs on the macOS leg only, fails with `exit 1` when a tool is
+  missing, and has no `env:` key that contains `SECRET` or `MACOS_`. Its `bin_tools`
+  and `sbin_tools` list every tool that `sign-macos`'s and `verify-macos`'s scripts
+  and `test-signed-pkg.sh` call, and it looks for `notarytool` and `stapler` with
+  `xcrun --find`.
+- **The dry run's `assemble`.** Its checkouts set `persist-credentials: false`, a
+  script calls `assemble-release.sh`, and none writes `SHA256SUMS` itself.
 
 The stand-ins record calls and return canned answers, so these tests show the flow
 and the refusals, not that Apple accepts a signature. The signed package is checked
@@ -1976,11 +2061,13 @@ installer, so until a release with installers exists, install `v0.1.0` with the
 line too. If the first release with installers gets another version, a later change
 corrects the line.
 
-The installers and these blocks have run in CI against the dry run's installers, and
-have not yet run on axpc or the Mac. The dry run builds its pkg without signing it, so
-the signed pkg is checked only in the release run, by `verify-macos`, and on the Mac,
-and neither has happened. Every prompt below is described as expected, from the
-platform's documentation, not as observed. The maintainer's first install of a release
+CI runs these blocks against stand-ins in `mise run check` and in the `Install Blocks`
+job, and the `Install Blocks` job also runs them against the dry run's real installers
+([What the Install Tests Cover](#what-the-install-tests-cover)). They have not run on
+axpc or the Mac. The dry run builds its pkg without signing it, so the signed pkg is
+checked only in the release run, by `verify-macos`, and on the Mac, and neither has
+happened. Every prompt below is described as expected, from the platform's
+documentation, not as observed. The maintainer's first install of a release
 with installers on each host records what the prompts showed, and this document then
 states it.
 
