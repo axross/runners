@@ -107,6 +107,18 @@ set -- $(hashes "${work}/changed-windows")
 printf 'changed\n' >>"${work}/changed-windows/$windows"
 expect "a changed Windows binary" 1 "${windows} has SHA-256" "${work}/changed-windows" "$@"
 
+make_set "${work}/changed-msi"
+# shellcheck disable=SC2046 # the four hashes are separate arguments.
+set -- $(hashes "${work}/changed-msi")
+printf 'changed\n' >>"${work}/changed-msi/$windows_msi"
+expect "a changed Windows installer" 1 "${windows_msi} has SHA-256" "${work}/changed-msi" "$@"
+
+make_set "${work}/changed-macos"
+# shellcheck disable=SC2046 # the four hashes are separate arguments.
+set -- $(hashes "${work}/changed-macos")
+printf 'changed\n' >>"${work}/changed-macos/$macos"
+expect "a changed macOS binary" 1 "${macos} has SHA-256" "${work}/changed-macos" "$@"
+
 make_set "${work}/swapped"
 # shellcheck disable=SC2046 # the four hashes are separate arguments.
 set -- $(hashes "${work}/swapped")
