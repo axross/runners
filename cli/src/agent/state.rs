@@ -23,7 +23,6 @@ impl Reason {
     pub const NO_POOL_STARTED: &'static str = "no_pool_started";
     pub const RESTART_LIMIT: &'static str = "restart_limit";
     pub const IMAGE_BUILD_FAILED: &'static str = "image_build_failed";
-    pub const IMAGE_READY: &'static str = "image_ready";
 
     #[must_use]
     pub fn new(code: &'static str, message: impl Into<String>) -> Self {

@@ -36,6 +36,8 @@ pub struct AgentCore<'a, B, K, R> {
     pub tokens: &'a StoreTokens,
     pub log: &'a dyn Log,
     pub board: &'a Board,
+    /// set once the pools are admitted and prepared, or have been given up on.
+    pub admitted: &'a watch::Sender<bool>,
 }
 
 impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
@@ -126,6 +128,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
             () = wait_for_stop(&mut stop) => return Ok(()),
         };
         let (prepared, waiting) = prepared;
+        self.admitted.send_replace(true);
         let workers = RefCell::new(
             prepared
                 .iter()

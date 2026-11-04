@@ -129,6 +129,8 @@ pub struct Agent<'a, B, K, R, D> {
     exit: Cell<Option<&'static str>>,
     containers_removed: Cell<bool>,
     force: watch::Sender<bool>,
+    /// whether the pools of the latest start are admitted and prepared.
+    admitted: watch::Sender<bool>,
 }
 
 /// what the agent works with besides its settings.
@@ -169,6 +171,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             exit: Cell::new(None),
             containers_removed: Cell::new(true),
             force: watch::Sender::new(false),
+            admitted: watch::Sender::new(false),
         };
         agent.publish();
         agent
@@ -375,6 +378,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             tokens: self.tokens,
             log: self.log,
             board: &self.board,
+            admitted: &self.admitted,
         }
     }
 
@@ -469,7 +473,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                 let next = self.after_stop(Reason::by_you());
                 (next, json!({ "state": self.phase_name() }))
             }
-            Some(Reloaded::Run(plan)) => (Next::Run(plan), json!({ "state": "running" })),
+            Some(Reloaded::Run(plan)) => (Next::Run(plan), json!({ "state": "resuming" })),
             Some(Reloaded::Stopped(reason)) => {
                 self.log
                     .warn(&format!("The agent is stopped: {}.", reason.message));
@@ -504,7 +508,10 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
 
     async fn running(&self, plan: &Plan, requests: &mut Requests) -> Next {
         self.inner.borrow_mut().skips.clear();
-        self.set_phase(Phase::Running);
+        // the agent is resuming until the core has admitted and prepared the pools
+        self.admitted.send_replace(false);
+        let mut admitted = self.admitted.subscribe();
+        let mut resuming = true;
         self.backend
             .retained()
             .retain_unmanaged(|pool| plan.entries.iter().any(|entry| entry.name == pool));
@@ -519,6 +526,10 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                     return self.after_stop(Reason::by_you());
                 }
                 end = &mut cycle => return self.cycle_ended(end),
+                _ = admitted.wait_for(|admitted| *admitted), if resuming => {
+                    resuming = false;
+                    self.set_phase(Phase::Running);
+                }
                 _ = ticker.tick(), if self.watched() => self.publish(),
                 call = requests.recv() => {
                     let Some(Call { method, reply }) = call else {
@@ -531,7 +542,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                             let _ = reply.send(result);
                         }
                         Err(Method::StartAll) => {
-                            let _ = reply.send(Ok(json!({ "state": "running" })));
+                            let _ = reply.send(Ok(self.state_result()));
                         }
                         Err(Method::Build) => {
                             let _ = reply.send(refused(
@@ -739,6 +750,11 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             }
         };
         let started = SystemTime::now();
+        // a build that succeeds leaves the agent stopped for the reason it had
+        let before = match &self.inner.borrow().phase {
+            Phase::Stopped(reason) => reason.clone(),
+            _ => Reason::by_you(),
+        };
         self.inner.borrow_mut().build = Some(BuildInfo {
             started: millis(started),
             outcome: "building".to_string(),
@@ -795,7 +811,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                 },
             }
         };
-        let reason = self.build_ended(&image, outcome, cancelled).await;
+        let reason = self.build_ended(&image, outcome, cancelled, before).await;
         let next = self.after_stop(reason);
         for reply in waiting {
             let _ = reply.send(Ok(self.state_result()));
@@ -837,17 +853,14 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
         image: &str,
         outcome: Result<(), String>,
         cancelled: bool,
+        before: Reason,
     ) -> Reason {
         let finished = Some(millis(SystemTime::now()));
         let (word, message, reason) = match outcome {
             Ok(()) => (
                 "ready",
                 None,
-                if cancelled {
-                    Reason::by_you()
-                } else {
-                    Reason::new(Reason::IMAGE_READY, "the image is ready")
-                },
+                if cancelled { Reason::by_you() } else { before },
             ),
             Err(error) => {
                 let error = scrub_error_text(&error, "");

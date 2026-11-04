@@ -67,7 +67,7 @@ async fn stop_all_stops_the_runners_and_start_all_starts_them_again() {
             assert_eq!(conn.ok("stop_all").await["state"], "stopped");
 
             let answer = conn.ok("start_all").await;
-            assert_eq!(answer["state"], "running");
+            assert_eq!(answer["state"], "resuming");
             conn.until_runner_runs().await;
             // a start while running is answered and changes nothing
             assert_eq!(conn.ok("start_all").await["state"], "running");
@@ -258,8 +258,91 @@ async fn a_start_after_a_repair_runs_the_pools() {
             conn.until_state("stopped").await;
             rig.write_config(ONE_POOL);
             let answer = conn.ok("start_all").await;
-            assert_eq!(answer["state"], "running");
+            assert_eq!(answer["state"], "resuming");
             conn.until_runner_runs().await;
+            rig.mark_running();
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+// start_all names why it could not start ------------------------------------------
+
+#[tokio::test(flavor = "current_thread")]
+async fn start_all_answers_stopped_with_the_reason_when_it_cannot_load_or_use_the_image() {
+    let rig = Rig::new(ONE_POOL);
+    rig.store_token("o", "r", TOKEN);
+    rig.hold_jobs();
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Stopped, |conn| async move {
+            std::fs::remove_file(rig.root.path().join("config.json")).unwrap();
+            let answer = conn.ok("start_all").await;
+            assert_eq!(answer["state"], "stopped");
+            assert_eq!(answer["reason"]["code"], "no_configuration");
+
+            rig.write_config("{ not json");
+            let answer = conn.ok("start_all").await;
+            assert_eq!(answer["state"], "stopped");
+            assert_eq!(answer["reason"]["code"], "invalid_configuration");
+
+            rig.write_config(ONE_POOL);
+            rig.backend
+                .state
+                .borrow_mut()
+                .image_answers
+                .push_back(marshal_cli::image::check::ImageCheck::Missing);
+            let answer = conn.ok("start_all").await;
+            assert_eq!(answer["state"], "stopped");
+            assert_eq!(answer["reason"]["code"], "image_unusable");
+            assert_eq!(ran(rig), 0);
+
+            // all repaired: it resumes, and the snapshot says when it runs
+            let answer = conn.ok("start_all").await;
+            assert_eq!(answer["state"], "resuming");
+            conn.until_runner_runs().await;
+            rig.mark_running();
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn start_all_does_not_claim_running_for_pools_that_cannot_start() {
+    // every pool lacks a token: the answer is resuming, and the snapshot carries the
+    // outcome, never running
+    let rig = Rig::new(ONE_POOL);
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Stopped, |conn| async move {
+            let mut watcher = conn.another().await;
+            watcher.client.subscribe().await.unwrap();
+            let answer = conn.ok("start_all").await;
+            assert_eq!(answer["state"], "resuming");
+            let snapshot = conn.until_state("stopped").await;
+            assert_eq!(snapshot.agent.reason.unwrap().code, "no_pool_started");
+            while let marshal_cli::agent::Push::Event { snapshot, .. } = watcher.push().await {
+                assert_ne!(snapshot.agent.state, "running", "it never ran");
+                if snapshot.agent.state == "stopped" && snapshot.agent.reason.is_some() {
+                    break;
+                }
+            }
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_started_agent_is_running_once_its_pools_are_up() {
+    let rig = Rig::new(ONE_POOL);
+    rig.store_token("o", "r", TOKEN);
+    rig.hold_jobs();
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Stopped, |conn| async move {
+            conn.ok("start_all").await;
+            let snapshot = conn.until_runner_runs().await;
+            assert_eq!(snapshot.agent.state, "running");
             rig.mark_running();
             conn.ok("quit").await;
         })
@@ -285,7 +368,8 @@ async fn build_reports_building_with_its_start_and_ends_ready() {
             assert_eq!(conn.code("build", Value::Null).await, "busy");
             rig.builder.release.notify_one();
             let snapshot = conn.until_state("stopped").await;
-            assert_eq!(snapshot.agent.reason.unwrap().code, "image_ready");
+            // the outcome is in `build`; the reason the agent is stopped for is unchanged
+            assert_eq!(snapshot.agent.reason.unwrap().code, "by_you");
             let build = snapshot.agent.build.unwrap();
             assert_eq!(build.outcome, "ready");
             assert!(build.finished.is_some());
@@ -293,6 +377,32 @@ async fn build_reports_building_with_its_start_and_ends_ready() {
         })
         .await;
     assert_eq!(*rig.builder.images.borrow(), ["actions-runner:local"]);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_successful_build_keeps_the_reason_the_agent_was_stopped_for() {
+    let rig = Rig::new(ONE_POOL);
+    rig.backend
+        .state
+        .borrow_mut()
+        .image_answers
+        .push_back(marshal_cli::image::check::ImageCheck::Missing);
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            let snapshot = conn.until_state("stopped").await;
+            assert_eq!(snapshot.agent.reason.unwrap().code, "image_unusable");
+            conn.ok("build").await;
+            let snapshot = conn
+                .until("the build to end", |s| {
+                    s.agent.state == "stopped"
+                        && s.agent.build.as_ref().is_some_and(|b| b.outcome == "ready")
+                })
+                .await;
+            assert_eq!(snapshot.agent.reason.unwrap().code, "image_unusable");
+            conn.ok("quit").await;
+        })
+        .await;
 }
 
 #[tokio::test(flavor = "current_thread")]
