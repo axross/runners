@@ -603,11 +603,54 @@ built: its names, modes, and checks.
 - No request carries a configuration path for the instance to read, and no
   response carries a token or a JIT configuration. A resume names a path only so
   the instance can compare it with the one it started with.
+- The resident agent takes the same lock and opens the same channel with the same
+  access rules, so only its user reaches it, and it serves protocol version 2
+  there; [CLI](../operations/cli.md#the-agent) owns the protocol. A first line
+  that is not a `hello` is refused and the connection closed, so no version 1
+  request reaches the agent. A silent or stalled client cannot hold the agent:
+  every connection limit is a timer, and a client that stops reading is closed
+  after 5 s.
 - Only a debug build can move the lock, the channel, the log directory, or their
   roots, for the tests; a release build always uses the host's fixed locations,
   and a CI step checks in the release profile that it ignores the request. The
   `instance-helper` binary that the tests and CI run does nothing in a release
-  build.
+  build, including its mode that runs the agent.
+
+## The Agent Keeps Tokens in the Operating System's Store
+
+The resident agent reads each repository's token from the operating system's
+credential store, not from a file, and it receives a token from a client over its
+control channel. [CLI](../operations/cli.md#the-token-store) owns how the store is
+named and used.
+
+- On Windows a token is a generic credential in the user's Credential Manager,
+  named `app.axross.marshal:github.com/<owner>/<name>`, with **local** persistence.
+  The crate's default persistence is the enterprise one, which roams with the user's
+  profile and so would carry a repository's token to other machines of a domain
+  account; the store asks for the local one, and a test on Windows reads the
+  persistence back. Any process of the same user can read the credential, as any
+  can read a token file the user owns: the Credential Manager is not a boundary
+  against the user's other programs.
+- On macOS and Linux the agent has no store, so it skips every pool with "no token
+  store" rather than falling back to a file; it never reads `tokenPath`.
+- The `token_set` request is the first message in which a secret travels, from the
+  client to the agent. The token is held as a secret from the moment its line is
+  parsed, is masked in the log from then on, and is never repeated: not in the
+  response, an event, a snapshot, an error, or a log line. An error about a token
+  names its cause, such as an empty or too long token, and never the params. A
+  store failure names its kind and the platform's code, which hold no token. The
+  request is only as private as the channel: only the agent's user can send it.
+- A token longer than 1280 characters or empty is refused before it reaches the
+  store, so a client cannot fill the store with arbitrary data.
+
+Residual risks, accepted on a single-user host:
+
+- Another process of the same user that connects to the channel can set or remove
+  a token, stop the runners or quit the agent, as it can for `start`'s
+  commands.
+- The agent holds a token in memory for as long as a registration needs it, and a
+  JIT configuration a runtime-core panic's message carried would reach the log
+  unmasked, as for `start`.
 
 ## Tokens Stay Out of the Log, and Job Clients End With `start`
 
