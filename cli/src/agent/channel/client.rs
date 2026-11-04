@@ -37,6 +37,7 @@ pub const SILENCE_LIMIT: Duration = Duration::from_secs(45);
 
 /// why no connection was made.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ConnectError {
     /// nothing answers at the channel: it does not exist or refuses.
     NoAgent,
@@ -74,6 +75,7 @@ impl std::error::Error for ConnectError {}
 
 /// why a call got no result.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum CallError {
     /// the agent answered with an error.
     Agent(ErrorBody),
@@ -81,6 +83,9 @@ pub enum CallError {
     NotServed(String),
     /// the connection ended before the answer.
     Closed,
+    /// the agent answered, but not with what the method's result is, such as a
+    /// snapshot that cannot be read.
+    BadAnswer(String),
 }
 
 impl fmt::Display for CallError {
@@ -89,6 +94,7 @@ impl fmt::Display for CallError {
             Self::Agent(body) => write!(f, "{}: {}", body.code, body.message),
             Self::NotServed(method) => write!(f, "this agent does not serve {method}"),
             Self::Closed => f.write_str("the connection to the agent ended"),
+            Self::BadAnswer(what) => write!(f, "the agent's answer could not be read: {what}"),
         }
     }
 }
@@ -97,25 +103,23 @@ impl std::error::Error for CallError {}
 
 /// what the agent sends unasked.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum Push {
     /// the snapshot, whole; `seq` rises by one with each event of the connection.
-    Event {
-        seq: u64,
-        snapshot: Box<Snapshot>,
-    },
-    Heartbeat {
-        seq: u64,
-    },
+    #[non_exhaustive]
+    Event { seq: u64, snapshot: Box<Snapshot> },
+    #[non_exhaustive]
+    Heartbeat { seq: u64 },
     /// the agent is about to end, for this reason (an open set).
-    Ending {
-        reason: String,
-    },
+    #[non_exhaustive]
+    Ending { reason: String },
     /// the connection ended.
     Closed,
 }
 
 /// what the agent said about itself in `welcome`.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Welcome {
     pub version: u32,
     pub agent_version: String,
@@ -215,7 +219,7 @@ impl<W> Client<W> {
     /// the agent's snapshot now.
     pub async fn status(&self) -> Result<Snapshot, CallError> {
         let value = self.call("status", serde_json::Value::Null).await?;
-        serde_json::from_value(value).map_err(|_| CallError::Closed)
+        serde_json::from_value(value).map_err(|error| CallError::BadAnswer(error.to_string()))
     }
 
     /// subscribes to the `state` topic; the first push is its whole value.
@@ -810,5 +814,33 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(answer, Ok(serde_json::json!({"ok": true})));
+    }
+
+    #[tokio::test]
+    async fn a_status_that_is_not_a_snapshot_is_a_bad_answer_and_not_a_closed_connection() {
+        let (near, far) = duplex(4096);
+        tokio::spawn(async move {
+            let (read, mut write) = tokio::io::split(far);
+            let mut reader = BufReader::new(read);
+            let mut line = String::new();
+            reader.read_line(&mut line).await.unwrap();
+            write
+                .write_all(b"{\"type\":\"welcome\",\"version\":2,\"methods\":[\"status\"],\"topics\":[]}\n")
+                .await
+                .unwrap();
+            line.clear();
+            reader.read_line(&mut line).await.unwrap();
+            write
+                .write_all(b"{\"type\":\"response\",\"id\":1,\"result\":{\"pools\":5}}\n")
+                .await
+                .unwrap();
+            // the connection stays open
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        });
+        let (client, _pushes) = handshake(near, &ClientInfo::default()).await.unwrap();
+        assert!(matches!(
+            client.status().await,
+            Err(CallError::BadAnswer(_))
+        ));
     }
 }

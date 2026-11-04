@@ -158,7 +158,7 @@ async fn the_agent_ends_by_itself_when_its_executable_is_renamed() {
             std::fs::rename(&file, &renamed).unwrap();
             let mut ending = None;
             while ending.is_none() {
-                if let marshal_cli::agent::Push::Ending { reason } = conn.push().await {
+                if let marshal_cli::agent::Push::Ending { reason, .. } = conn.push().await {
                     ending = Some(reason);
                 }
             }

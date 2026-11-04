@@ -958,7 +958,10 @@ but never rename or remove one.
 
 A reader ignores a message type, a field and a topic it does not know, and calls only
 the methods `welcome` lists. The library's `Client` does so, refuses a `welcome` that is not version 2, and
-subscribes only to a topic `welcome` listed; `tests/agent_protocol.rs` shows it
+subscribes only to a topic `welcome` listed, and reports a result it cannot read as
+`BadAnswer`, not as a closed connection. Its wire, snapshot, `Push`, `CallError` and
+`ConnectError` types are `#[non_exhaustive]`, so a later slice can add a field or a
+variant without breaking a program that uses them; `tests/agent_protocol.rs` shows it
 against unknown methods, topics and fields.
 
 The agent answers one connection's requests in order and several connections at once.

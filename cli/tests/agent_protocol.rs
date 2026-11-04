@@ -142,7 +142,7 @@ async fn a_subscription_gets_the_snapshot_at_once_and_an_event_for_each_change()
             let mut watcher = conn.another().await;
             watcher.client.subscribe().await.unwrap();
             let first = watcher.push().await;
-            let Push::Event { seq, snapshot } = first else {
+            let Push::Event { seq, snapshot, .. } = first else {
                 panic!("not an event: {first:?}");
             };
             assert_eq!(seq, 1);
@@ -152,7 +152,7 @@ async fn a_subscription_gets_the_snapshot_at_once_and_an_event_for_each_change()
             conn.ok("start_all").await;
             let mut last = seq;
             loop {
-                let Push::Event { seq, snapshot } = watcher.push().await else {
+                let Push::Event { seq, snapshot, .. } = watcher.push().await else {
                     continue;
                 };
                 assert_eq!(seq, last + 1, "seq rises by one");
@@ -219,7 +219,7 @@ async fn a_quiet_subscription_gets_a_heartbeat() {
             let Push::Event { seq, .. } = watcher.push().await else {
                 panic!("the snapshot comes first");
             };
-            let Push::Heartbeat { seq: beat } = watcher.push().await else {
+            let Push::Heartbeat { seq: beat, .. } = watcher.push().await else {
                 panic!("a heartbeat follows a quiet while");
             };
             assert_eq!(beat, seq, "a heartbeat carries the last seq");
@@ -240,7 +240,7 @@ async fn ending_is_pushed_to_every_connection_before_the_agent_ends() {
             conn.ok("quit").await;
             loop {
                 match watcher.push().await {
-                    Push::Ending { reason } => {
+                    Push::Ending { reason, .. } => {
                         assert_eq!(reason, "quit");
                         break;
                     }

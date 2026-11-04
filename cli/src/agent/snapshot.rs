@@ -21,6 +21,7 @@ pub const MAX_SNAPSHOT_BYTES: usize = MAX_AGENT_MESSAGE_BYTES - ENVELOPE_BYTES;
 
 /// a reason a state is what it is; `code` is an open set and `message` is plain text.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Reason {
     #[serde(default)]
     pub code: String,
@@ -30,6 +31,7 @@ pub struct Reason {
 
 /// the latest build of the runner image.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct BuildInfo {
     /// milliseconds since the Unix epoch.
     #[serde(default)]
@@ -45,6 +47,7 @@ pub struct BuildInfo {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct AgentInfo {
     #[serde(default)]
     pub version: String,
@@ -66,6 +69,7 @@ pub struct AgentInfo {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct ConfigurationInfo {
     #[serde(default)]
     pub path: String,
@@ -76,6 +80,7 @@ pub struct ConfigurationInfo {
 
 /// a repository the configuration names, and whether the store has its token.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct RepositoryInfo {
     /// `owner/name` in lower case, the token store's key.
     #[serde(default)]
@@ -87,6 +92,7 @@ pub struct RepositoryInfo {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct RunnerInfo {
     /// counting from 1.
     #[serde(default)]
@@ -107,6 +113,7 @@ pub struct RunnerInfo {
 
 /// a runner's state as a reader sorts it; the agent may add states within version 2.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum RunnerState {
     Running,
     Registering,
@@ -146,6 +153,7 @@ impl RunnerInfo {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct DiagnosticContainer {
     #[serde(default)]
     pub name: String,
@@ -158,6 +166,7 @@ pub struct DiagnosticContainer {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct DiagnosticFinding {
     #[serde(default)]
     pub container: String,
@@ -172,6 +181,7 @@ pub struct DiagnosticFinding {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct DiagnosticsInfo {
     /// the bundles a pool's sink may hold.
     #[serde(default)]
@@ -193,6 +203,7 @@ pub struct DiagnosticsInfo {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct PoolInfo {
     #[serde(default)]
     pub name: String,
@@ -221,6 +232,7 @@ pub struct PoolInfo {
 
 /// one line of what an image check found, such as `image-contract`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct ImageLine {
     #[serde(default)]
     pub name: String,
@@ -230,6 +242,7 @@ pub struct ImageLine {
 
 /// a freshness finding as data, which the app words.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct ImageWarning {
     /// `not_built_by_marshal`, `packages_old`, `image_old`, `runner_old` or
     /// `runner_may_be_newer`.
@@ -244,6 +257,7 @@ pub struct ImageWarning {
 /// a freshness warning as a reader sorts it; the agent may add warnings within
 /// version 2, and a reader ignores one it does not know.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum WarningKind {
     NotBuiltByMarshal,
     PackagesOld,
@@ -269,6 +283,7 @@ impl ImageWarning {
 
 /// one image the agent keeps track of; today the runner image.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct ImageInfo {
     #[serde(default)]
     pub name: String,
@@ -290,6 +305,7 @@ impl ImageInfo {
 
 /// something a stop could not remove, until the next start does.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Leftover {
     /// what it is: today always `container`.
     #[serde(default)]
@@ -300,6 +316,7 @@ pub struct Leftover {
 
 /// what a snapshot left out to fit.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Omitted {
     /// runner rows, from the end.
     #[serde(default)]
@@ -322,6 +339,7 @@ pub struct Omitted {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Snapshot {
     #[serde(default)]
     pub agent: AgentInfo,

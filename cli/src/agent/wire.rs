@@ -41,6 +41,7 @@ pub const TOPICS: [&str; 1] = [TOPIC_STATE];
 /// the error codes of this slice; a later slice may add more, so a reader keeps a
 /// code it does not know as text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ErrorCode {
     Busy,
     UnsupportedProtocol,
@@ -71,6 +72,7 @@ impl ErrorCode {
 
 /// an error as it travels.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct ErrorBody {
     pub code: String,
     pub message: String,
@@ -86,6 +88,7 @@ pub struct ErrorBody {
 /// a token store failure as it travels; the kind is an open set (`needs_user`,
 /// `access_refused`, `other`), and neither field ever holds a token.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct StoreFault {
     pub kind: String,
     #[serde(default)]
@@ -115,8 +118,9 @@ impl ErrorBody {
     }
 }
 
-/// who the client is, for the log.
+/// who the client is: its name and version, which the agent reads and ignores today.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct ClientInfo {
     #[serde(default)]
     pub name: String,
@@ -128,6 +132,7 @@ pub struct ClientInfo {
 /// `token_set` hold a token.
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum ClientMessage {
     /// the first line: the versions the client speaks, and who it is.
     Hello {
@@ -164,6 +169,7 @@ impl fmt::Debug for ClientMessage {
 
 /// who the agent is.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct AgentVersion {
     #[serde(default)]
     pub version: String,
@@ -172,6 +178,7 @@ pub struct AgentVersion {
 /// what the agent sends, as a reader reads it.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum AgentMessage {
     Welcome {
         version: u32,
