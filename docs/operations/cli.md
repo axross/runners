@@ -1699,8 +1699,8 @@ The MSI is expected to install for your user only, with no administrator approva
 and Windows may show only its progress window, but this is not yet measured.
 <!-- measured: whether the MSI installs, and the check block's extraction runs, for a standard user without administrator rights -->
 
-The pkg is the only part of the procedure that needs the administrator password. It
-creates `/usr/local/bin` when it is absent. What it does to an existing
+Of the install steps, only the pkg needs the administrator password. It is expected
+to create `/usr/local/bin` when it is absent. What it does to an existing
 `/usr/local/bin`:
 <!-- measured: the owner and mode of /usr/local/bin before and after the pkg installs, on a runner where it exists -->
 
@@ -1894,7 +1894,8 @@ is this block, then an uninstall and an install again.
 Installing the MSI over a manual copy at the same path, without the block:
 <!-- measured: which binary is at the install path after the MSI installs over a manual copy without the migration block -->
 
-Installing the pkg over a manual copy at `~/.local/bin/marshal`, without the block:
+Installing the pkg beside a manual copy at `~/.local/bin/marshal`, without the block,
+when `~/.local/bin` comes before `/usr/local/bin` on `PATH`:
 <!-- measured: which binary command -v marshal prints after the pkg installs beside a manual copy with ~/.local/bin ahead of /usr/local/bin on PATH -->
 
 On macOS, in bash or zsh:
@@ -2079,13 +2080,16 @@ On Windows, in PowerShell 5.1 or 7:
 
 `v0.1.0` has no installer, so it is installed from a bare binary. If an installer is
 installed, uninstall it first with the uninstall block. On macOS, a remaining
-`/usr/local/bin/marshal` would come first on `PATH`, ahead of the directory you add
-for the bare binary, so remove it first. The procedure accepts a binary only when its
+`/usr/local/bin/marshal` comes first on `PATH` unless you add `~/.local/bin` ahead of
+`/usr/local/bin`, so remove it first. The blocks do not touch `PATH`: add
+`%LOCALAPPDATA%\Programs\marshal` to the user `Path` on Windows, or `~/.local/bin`
+in the shell's startup file on macOS, as the
+[Roll back to `v0.1.0`](#updating-repairing-uninstalling-and-rolling-back) bullet
+describes. The procedure accepts a binary only when its
 checksum matches `SHA256SUMS`, the tag's commit is on the default branch, and its
 attestation verifies against `release.yaml` run from main, at that commit. It needs
 `gh` 2.102 or later, signed in. The blocks below pin `version=0.1.0` and are the only
-ones that copy a binary into place; the operator adds the directory to the user's
-`PATH`.
+ones that copy a binary into place.
 
 Paste a block below whole into one shell. A check that fails prints its cause after
 `refused:` and ends the block there without closing the shell, so nothing after it
