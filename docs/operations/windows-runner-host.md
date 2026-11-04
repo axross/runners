@@ -46,11 +46,12 @@ Not yet verified on axpc, each for the reason given:
 
 - the MSI install, the migration block, the optional check block with its
   extraction, the uninstall block, and the prompts an unsigned MSI from a browser
-  download raises, which have run in CI against the release dry run's MSI and not
-  yet on axpc; the maintainer's first install of a release with installers records
-  them, and until then this document describes the prompts as expected;
+  download raises, which have not run on axpc. CI runs the blocks against the release
+  dry run's MSI in its `Install Blocks` job; the maintainer's first install of a
+  release with installers records the rest, and until then this document describes
+  the prompts as expected;
 - the bare-binary block's refusals, which were not run on axpc
-  ([#56](https://github.com/axross/runners/issues/56)) and run in CI against
+  ([#56](https://github.com/axross/runners/issues/56)); CI runs them against
   stand-ins;
 - the token-file access control step's result, whose `icacls` evidence was not
   collected;
@@ -161,8 +162,8 @@ steps to put it on `Path`. The install itself is verified on axpc: the block for
 [#56](https://github.com/axross/runners/issues/56#issuecomment-6511344317)), and
 `marshal --version` printed `marshal 0.1.0`
 ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511048211)). The
-MSI, the migration block, the check block, and the uninstall block have run in CI
-against the release dry run's MSI and not yet on axpc.
+MSI, the migration block, the check block, and the uninstall block have not run on
+axpc; CI runs them against the release dry run's MSI in its `Install Blocks` job.
 
 The same procedure updates `marshal` with a newer MSI and rolls it back by
 uninstalling and installing the older one; stop a running instance first. After an

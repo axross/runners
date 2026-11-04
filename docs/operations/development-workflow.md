@@ -520,8 +520,9 @@ Do these once, before the first dispatch:
    fails the run, and the jobs after it are skipped. Once it runs, read
    `sign-macos`'s log for the expiry warnings: it prints each certificate's subject,
    team and expiry date, and warns when one expires within 90 days. A warning means
-   renewing the certificates, as below, before the next release. A failure in `sign-macos`, `verify-macos` or `assemble-signed` stops the
-   run before any tag is pushed; fix it in a pull request and dispatch again.
+   renewing the certificates, as below, before the next release. A failure in
+   `sign-macos`, `verify-macos` or `assemble-signed` stops the run before any tag is
+   pushed; fix it in a pull request and dispatch again.
 5. After a green run, check that the release exists and carries exactly the two
    binaries, the MSI and the pkg, and `SHA256SUMS`:
 

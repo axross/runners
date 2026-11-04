@@ -181,10 +181,12 @@ Codex review uses its native priority label.
 - **Secrets stay out of logs and images.** A secret is never echoed, passed on
   a command line that a process listing exposes, written into an image layer
   (`ENV`, `ARG`, `COPY`), or left in a build cache. The one recorded exception for a
-  credential is `security`'s password arguments in `sign-macos`, and the notary key's
-  ID and issuer ID reach `notarytool` as arguments (see
-  [Security](docs/conventions/security.md#nothing-identifying-or-secret-is-committed)
-  for both).
+  credential is `security`'s password arguments in `sign-macos`. The notary key's ID
+  and issuer ID reach `notarytool` as `--key-id` and `--issuer` arguments and the
+  `.p8` key only as a file path; the maintainer decides whether those two arguments
+  need an exception, so any change to how the three reach `notarytool` is a finding
+  to raise (see
+  [Security](docs/conventions/security.md#nothing-identifying-or-secret-is-committed)).
 
 ## Language lenses
 
@@ -238,8 +240,8 @@ Apply the lens for each kind of file in the diff.
   beyond the clean-up and the notary-log upload; an attest or release job that reads
   the unsigned set or does not follow every signing step; a secret printed, or passed
   on a command line apart from `security`'s password arguments in `sign-macos`, the
-  one exception for a credential that Security records, and the notary key's ID and
-  issuer ID that `notarytool` takes as arguments; a change to the identifier
+  one exception for a credential that Security records; a change to how the notary
+  key's ID, issuer ID or `.p8` key reaches `notarytool`; a change to the identifier
   `app.axross.marshal`, the team pin, or the G2 intermediate's pin without its source and the record's update;
   and a signing job or step added without being added to `check-release-shape.mjs` and
   its test. A change that relaxes the record, or touches the signing job, needs the
