@@ -503,13 +503,20 @@ Do these once, before the first dispatch:
    `gh workflow run release.yaml --repo axross/runners --ref main`. A dispatch made
    while another release runs waits for it. The `release` concurrency group holds
    one waiting run, so a later dispatch cancels an earlier one that is still
-   waiting, and only the latest of them runs.
+   waiting, and only the latest of them runs. A run that waits at the `release`
+   Environment's approval (step 4) is expected to hold the group like a running one,
+   so a later dispatch waits behind it. GitHub's documentation on concurrency groups
+   and on reviewing deployments does not say so, and it has not been observed here.
+   Approve or reject a waiting run before dispatching again.
 3. When there is nothing to release, the plan job hands out no version, and the
    other jobs are skipped. The run is green and releases nothing.
 4. When there is something to release, the run builds, then waits at `sign-macos`
-   for your approval. Approve it, under the run's "Review deployments", only after
-   step 1's check passed for the commit the run is on. A run waits up to 30 days; a
-   rejected deployment fails the run, and the jobs after it are skipped. Once it
+   for your approval. Before approving it, under the run's "Review deployments",
+   repeat step 1's check with the run's commit SHA in place of `origin/main`, because
+   step 1 checked the tip of `origin/main` when you dispatched and a run can wait up
+   to 30 days. Approve only if every commit since the last `v*` tag, up to that SHA,
+   came from a merged pull request; otherwise reject the run. A rejected deployment
+   fails the run, and the jobs after it are skipped. Once it
    runs, read `sign-macos`'s log for the expiry warnings: it prints each
    certificate's subject, team and expiry date, and warns when one expires within 90
    days. A warning means renewing the certificates, as below, before the next
@@ -555,11 +562,16 @@ Do these once, before the first dispatch:
    been observed. That release is also the first run of `sign-macos` and
    `verify-macos`, so record their outcomes, the team ID, and the bare binary's
    designated requirement from `codesign -d -r-`. A later documentation change copies
-   the requirement into [CLI](./cli.md#the-signing-contracts).
+   the requirement into [CLI](./cli.md#the-signing-contracts). The real output
+   formats of `verify-macos`, `spctl` and `pkgutil` have not been observed, so a
+   refusal by `verify-macos`, or an `spctl` or `pkgutil` result that differs from the
+   expected one, is input for a follow-up fix pull request, not necessarily a defect
+   in the release.
 
 ### Renewing the Certificates
 
-The Developer ID certificates last one year, and renewing them is yearly work for the
+The Developer ID certificates are expected to last one year, which the maintainer
+confirms from the certificates' dates, and renewing them is yearly work for the
 maintainer, with the Account Holder, before they expire. `sign-macos` prints both
 expiry dates, warns within 90 days, and refuses an expired certificate, so a lapse
 stops signing and no release can be made until the certificates are renewed. Software
