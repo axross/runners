@@ -275,3 +275,42 @@ async fn a_pool_with_diagnostics_lists_its_containers_and_what_the_exports_found
         })
         .await;
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn quit_is_not_held_by_connections_that_never_read() {
+    let pools = 40;
+    let rig = Rig::new(&many_pools(pools, 16));
+    rig.store_many(pools);
+    rig.hold_jobs();
+    rig.limits.set(Limits {
+        coalesce: Duration::from_millis(10),
+        ..Limits::default()
+    });
+    let rig = &rig;
+    let (_, took) = rig
+        .drive(Launch::Running, |conn| async move {
+            conn.until("all runners up", |s| s.runners_up == 640).await;
+            let mut stalled = Vec::new();
+            for _ in 0..4 {
+                let mut raw = Raw::hello(&conn.roots).await;
+                raw.request(1, "subscribe", json!({"topic": "state"})).await;
+                stalled.push(raw);
+            }
+            for round in 0..60 {
+                if round % 2 == 0 {
+                    conn.client.token_remove("o/repository-0000").await.unwrap();
+                } else {
+                    conn.set_token("o/repository-0000", TOKEN).await.unwrap();
+                }
+                tokio::time::sleep(Duration::from_millis(15)).await;
+            }
+            rig.mark_running();
+            let started = std::time::Instant::now();
+            conn.ok("quit").await;
+            drop(stalled);
+            started.elapsed()
+        })
+        .await;
+    assert!(took < Duration::from_secs(2), "quit took {took:?}");
+    assert!(rig.lock_is_free());
+}
