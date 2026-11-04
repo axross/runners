@@ -355,9 +355,9 @@ record a change to either workflow, to the build call in
   blocks of [CLI](../operations/cli.md#installing-updating-and-rolling-back) with
   the real installers, so it installs and removes the dry run's own MSI and pkg on
   a runner that is discarded afterwards. On Windows it also creates a local user
-  outside the Administrators group and a scheduled task for it, and removes both;
-  it grants that user "Log on as a batch job" so the task can start, and does not
-  restore that policy because the runner is discarded.
+  outside the Administrators group, runs the check block and the install as that
+  user through a secondary logon with its profile loaded, and removes the user at
+  the end. Nothing changes a user right.
   It uses no secret, attests nothing, and adds no action beyond the `actions/*`
   already used. This job and the build legs upload their installer logs, from
   `msiexec /l*v` and `installer -dumplog`, as workflow artifacts kept for 14 days.

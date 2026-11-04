@@ -2857,8 +2857,8 @@ exercised only by `verify-macos` in a release run:
 
 macOS runs under zsh and the system `/bin/bash`; Windows runs under Windows
 PowerShell 5.1. On the Windows leg a standard local user without administrator
-rights then runs the check block and installs the MSI through a scheduled task, and
-the outcome is a `MEASURED:` line.
+rights then runs the check block and installs the MSI through a secondary logon,
+which is an interactive logon, and the outcome is a `MEASURED:` line.
 
 ## Dependencies
 

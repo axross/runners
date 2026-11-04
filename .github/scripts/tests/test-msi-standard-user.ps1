@@ -6,16 +6,18 @@
 .DESCRIPTION
     the hosted Windows runner runs elevated, so a plain step cannot show whether
     the documented check block or the MSI needs administrator rights. this script
-    creates a local user outside the Administrators group and runs a task as that
-    user with a limited run level, after granting that user the batch logon right
-    the task scheduler needs to start it. the task runs the documented check block from
+    creates a local user outside the Administrators group and starts a PowerShell
+    process as that user through a secondary logon (Start-Process -Credential),
+    which is an interactive logon with the user's profile loaded, as a person's
+    logon is. that process refuses to run as an administrator or without the
+    INTERACTIVE group in its token, runs the documented check block from
     docs/operations/cli.md against the dry run's real MSI, with only gh stubbed,
     then installs the MSI with msiexec /i, runs the installed binary, and runs the
     documented uninstall block. the outcome is printed on lines that start with
     MEASURED, and the script throws unless every step succeeded. it needs an
-    elevated shell to create the user and the task, and removes both at the end.
-    it refuses to run anywhere but a GitHub Actions runner, because it creates and
-    deletes a local user, a scheduled task and a folder under Public.
+    elevated shell to create the user, and removes the user at the end. it refuses
+    to run anywhere but a GitHub Actions runner, because it creates and deletes a
+    local user and a folder under Public.
 #>
 param(
     [Parameter(Mandatory = $true)][string]$ReleaseDirectory,
@@ -26,7 +28,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 if ($env:GITHUB_ACTIONS -ne 'true') {
-    [Console]::Error.WriteLine('error: this test creates and deletes a local user, a scheduled task and a folder under Public, so it runs only on a GitHub Actions runner (GITHUB_ACTIONS=true).')
+    [Console]::Error.WriteLine('error: this test creates and deletes a local user and a folder under Public, so it runs only on a GitHub Actions runner (GITHUB_ACTIONS=true).')
     exit 2
 }
 
@@ -37,10 +39,12 @@ if ($null -eq (Get-Command -Name jq -CommandType Application -ErrorAction Silent
 
 $ReleaseDirectory = (Resolve-Path -LiteralPath $ReleaseDirectory).Path
 $UserName = 'marshalstd'
-$TaskName = 'marshal-standard-user-test'
 $Staging = Join-Path $env:PUBLIC 'marshal-standard-user'
-$PolicyDirectory = Join-Path $(if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [System.IO.Path]::GetTempPath() }) 'marshal-standard-user-policy'
+$LogDirectory = Join-Path $env:RUNNER_TEMP 'install-block-logs'
 $MsiName = "marshal-$Version-windows-x64.msi"
+$InstallerAppId = '{000C101C-0000-0000-C000-000000000046}'
+$RunTimeoutMilliseconds = 8 * 60 * 1000
+$StatusDllInitFailed = -1073741502
 
 function Write-Measured {
     param([Parameter(Mandatory = $true)][string]$Text)
@@ -57,80 +61,6 @@ function Get-RandomPassword {
     return "Aa1!$body"
 }
 
-# runs secedit and returns its exit code and log text; a non-zero exit throws unless -AllowNonZeroExit is given.
-function Invoke-Secedit {
-    param([Parameter(Mandatory = $true)][string[]]$Arguments, [Parameter(Mandatory = $true)][string]$LogPath, [switch]$AllowNonZeroExit)
-    if (Test-Path -LiteralPath $LogPath) { Remove-Item -LiteralPath $LogPath -Force }
-    & secedit.exe @Arguments /log $LogPath | Out-Null
-    $exitCode = $LASTEXITCODE
-    $logText = if (Test-Path -LiteralPath $LogPath) { (Get-Content -LiteralPath $LogPath) -join "`n" } else { '' }
-    if ($exitCode -ne 0 -and -not $AllowNonZeroExit) { throw "secedit $($Arguments -join ' ') exited $exitCode; log: $logText" }
-    return [pscustomobject]@{ ExitCode = $exitCode; Log = $logText }
-}
-
-# the holders of one user right in an exported policy, as the entries of its line
-# (a SID with a leading *, or an account name); empty when the policy has no such line.
-function Get-RightHolder {
-    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Lines, [Parameter(Mandatory = $true)][string]$Right)
-    foreach ($line in $Lines) {
-        if ($line -match "^$Right\s*=\s*(.*)$") {
-            return @($Matches[1].Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' })
-        }
-    }
-    return @()
-}
-
-function Export-UserRight {
-    param([Parameter(Mandatory = $true)][string]$Directory, [Parameter(Mandatory = $true)][string]$Name)
-    $path = Join-Path $Directory "$Name.inf"
-    if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
-    $null = Invoke-Secedit -Arguments @('/export', '/cfg', $path, '/areas', 'USER_RIGHTS') -LogPath (Join-Path $Directory "$Name.log")
-    return $path
-}
-
-# adds the user to "Log on as a batch job" (SeBatchLogonRight) and proves it with a second export.
-# the right is held by Administrators by default, not by Users, and a task registered with a
-# user name and password logs on as a batch job, so without it the task is registered but never starts.
-# it only lets the test launch a process as the user; a person installing logs on interactively.
-function Grant-BatchLogonRight {
-    param([Parameter(Mandatory = $true)][string]$Sid, [Parameter(Mandatory = $true)][string]$Account, [Parameter(Mandatory = $true)][string]$Directory)
-    New-Item -ItemType Directory -Force -Path $Directory | Out-Null
-    $exported = Export-UserRight -Directory $Directory -Name 'before'
-    $lines = New-Object 'System.Collections.Generic.List[string]'
-    $lines.AddRange([string[]]@(Get-Content -LiteralPath $exported))
-    $entry = "*$Sid"
-    $right = -1
-    $section = -1
-    for ($index = 0; $index -lt $lines.Count; $index++) {
-        if ($right -lt 0 -and $lines[$index] -match '^SeBatchLogonRight\s*=') { $right = $index }
-        if ($section -lt 0 -and $lines[$index].Trim() -eq '[Privilege Rights]') { $section = $index }
-    }
-    if ($right -ge 0) {
-        $current = ($lines[$right] -replace '^SeBatchLogonRight\s*=\s*', '').Trim()
-        $lines[$right] = if ($current -eq '') { "SeBatchLogonRight = $entry" } else { "SeBatchLogonRight = $current,$entry" }
-    } else {
-        if ($section -lt 0) {
-            $lines.Add('[Privilege Rights]')
-            $section = $lines.Count - 1
-        }
-        $lines.Insert($section + 1, "SeBatchLogonRight = $entry")
-    }
-    $template = Join-Path $Directory 'grant.inf'
-    Set-Content -LiteralPath $template -Value $lines -Encoding Unicode
-    # secedit can exit non-zero on a warning about an exported entry it cannot map while the grant is applied,
-    # so the second export decides, not this exit code.
-    $configure = Invoke-Secedit -Arguments @('/configure', '/db', (Join-Path $Directory 'grant.sdb'), '/cfg', $template, '/areas', 'USER_RIGHTS') -LogPath (Join-Path $Directory 'grant.log') -AllowNonZeroExit
-    if ($configure.ExitCode -ne 0) { Write-Output "secedit /configure exited $($configure.ExitCode); log: $($configure.Log)" }
-
-    $after = @(Get-Content -LiteralPath (Export-UserRight -Directory $Directory -Name 'after'))
-    foreach ($name in 'SeBatchLogonRight', 'SeDenyBatchLogonRight') {
-        Write-Output "user right $name = $(@(Get-RightHolder -Lines $after -Right $name) -join ',')"
-    }
-    # an export lists a local account by its SID or, on some systems, by name, so either proves the grant.
-    $holders = @(Get-RightHolder -Lines $after -Right 'SeBatchLogonRight')
-    if (@($entry, $Account, "$env:COMPUTERNAME\$Account" | Where-Object { $holders -contains $_ }).Count -eq 0) { throw "SeBatchLogonRight does not hold $entry after the grant; secedit /configure exited $($configure.ExitCode); log: $($configure.Log)" }
-}
-
 # one best-effort diagnostic: a failure to gather it is printed and never replaces the failure being reported.
 function Write-Diagnostic {
     param([Parameter(Mandatory = $true)][string]$Title, [Parameter(Mandatory = $true)][scriptblock]$Gather, [object[]]$Arguments = @())
@@ -138,45 +68,180 @@ function Write-Diagnostic {
     try { Write-Output ((& $Gather @Arguments | Out-String).TrimEnd()) } catch { Write-Output "(not available: $($_.Exception.Message))" }
 }
 
-# the task, its principal and settings, and the scheduler and logon events since $Since. it prints
-# no password and no task XML; the principal and settings are read as properties.
-function Write-TaskDiagnostic {
-    param([Parameter(Mandatory = $true)][string]$Name, [Parameter(Mandatory = $true)][string]$Account, [Parameter(Mandatory = $true)][datetime]$Since)
-    Write-Output '== the standard user task diagnostics =='
-    Write-Diagnostic 'task info' -Arguments $Name -Gather {
-        param($task)
-        Get-ScheduledTaskInfo -TaskName $task | Format-List LastRunTime, LastTaskResult, NumberOfMissedRuns, NextRunTime
+function ConvertTo-Sddl {
+    param([Parameter(Mandatory = $true)][byte[]]$Bytes)
+    return ([wmiclass]'\\.\root\cimv2:Win32_SecurityDescriptorHelper').BinarySDToSDDL($Bytes).SDDL
+}
+
+# one binary security descriptor of a registry value as SDDL, or the reason there is none to show.
+function Get-ComSecurityDescriptor {
+    param([Parameter(Mandatory = $true)][string]$Path, [Parameter(Mandatory = $true)][string]$Name)
+    try {
+        $key = Get-Item -LiteralPath $Path -ErrorAction SilentlyContinue
+        if ($null -eq $key) { return "$Path $Name = (key absent)" }
+        $value = $key.GetValue($Name)
+        if ($null -eq $value) { return "$Path $Name = (not set)" }
+        return "$Path $Name = $(ConvertTo-Sddl -Bytes $value)"
+    } catch {
+        return "$Path $Name = (not readable: $($_.Exception.Message))"
     }
-    Write-Diagnostic 'task principal' -Arguments $Name -Gather {
-        param($task)
-        (Get-ScheduledTask -TaskName $task).Principal | Format-List UserId, LogonType, RunLevel
+}
+
+function Write-ComDiagnostic {
+    param([Parameter(Mandatory = $true)][datetime]$Since)
+    Write-Diagnostic 'DistributedCOM events' -Arguments $Since -Gather {
+        param($from)
+        $found = @(Get-WinEvent -FilterHashtable @{ LogName = 'System'; ProviderName = 'Microsoft-Windows-DistributedCOM'; StartTime = $from } -ErrorAction SilentlyContinue | Select-Object -First 30)
+        if ($found.Count -eq 0) { '(no DistributedCOM events)' } else { $found | Format-List TimeCreated, Id, Message }
     }
-    Write-Diagnostic 'task settings' -Arguments $Name -Gather {
-        param($task)
-        (Get-ScheduledTask -TaskName $task).Settings | Format-List DisallowStartIfOnBatteries, StopIfGoingOnBatteries, Enabled, ExecutionTimeLimit
+    Write-Diagnostic 'COM security descriptors as SDDL' -Arguments $InstallerAppId -Gather {
+        param($appId)
+        $ole = 'HKLM:\SOFTWARE\Microsoft\Ole'
+        $policy = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DCOM'
+        $installer = "HKLM:\SOFTWARE\Classes\AppID\$appId"
+        foreach ($name in 'DefaultLaunchPermission', 'DefaultAccessPermission', 'MachineLaunchRestriction', 'MachineAccessRestriction') { Get-ComSecurityDescriptor -Path $ole -Name $name }
+        foreach ($name in 'MachineLaunchRestriction', 'MachineAccessRestriction') { Get-ComSecurityDescriptor -Path $policy -Name $name }
+        foreach ($name in 'LaunchPermission', 'AccessPermission') { Get-ComSecurityDescriptor -Path $installer -Name $name }
     }
-    Write-Diagnostic 'Task Scheduler operational events for the task' -Arguments $Name, $Since -Gather {
-        param($task, $from)
-        $found = @(Get-WinEvent -FilterHashtable @{ LogName = 'Microsoft-Windows-TaskScheduler/Operational'; StartTime = $from } -ErrorAction SilentlyContinue |
-            Where-Object { $_.Message -like "*$task*" } | Select-Object -First 30)
-        if ($found.Count -eq 0) { '(no events; the log may be disabled)' } else { $found | Format-List TimeCreated, Id, Message }
+    Write-Diagnostic 'value names of the Windows Installer AppID key' -Arguments $InstallerAppId -Gather {
+        param($appId)
+        $key = Get-Item -LiteralPath "HKLM:\SOFTWARE\Classes\AppID\$appId" -ErrorAction SilentlyContinue
+        if ($null -eq $key) { '(key absent)' } else { $key.GetValueNames() -join ', ' }
     }
+    Write-Diagnostic 'security descriptor of the msiserver service' -Gather { & sc.exe sdshow msiserver }
+    Write-Diagnostic 'msiserver and seclogon services' -Gather { Get-Service -Name msiserver, seclogon | Format-Table Name, Status, StartType -AutoSize }
+}
+
+# prints on success too: it proves which logon type the run was measured with.
+function Write-LogonTypeDiagnostic {
+    param([Parameter(Mandatory = $true)][string]$Account, [Parameter(Mandatory = $true)][datetime]$Since)
+    Write-Diagnostic "Security events 4624 (logons) for $Account; LogonType 2 is interactive, 4 is batch" -Arguments $Account, $Since -Gather {
+        param($user, $from)
+        $events = @()
+        try {
+            $events = @(Get-WinEvent -FilterHashtable @{ LogName = 'Security'; Id = 4624; StartTime = $from } -ErrorAction Stop)
+        } catch {
+            if ($_.FullyQualifiedErrorId -notlike 'NoMatchingEventsFound*') { throw }
+        }
+        $lines = foreach ($entry in $events) {
+            $data = @{}
+            foreach ($item in ([xml]$entry.ToXml()).Event.EventData.Data) { $data[$item.Name] = $item.'#text' }
+            if ($data['TargetUserName'] -eq $user) {
+                '{0} LogonType={1} Process={2}' -f $entry.TimeCreated.ToString('s'), $data['LogonType'], [System.IO.Path]::GetFileName($data['ProcessName'])
+            }
+        }
+        if (@($lines).Count -eq 0) { '(no 4624 events for the user)' } else { $lines }
+    }
+}
+
+function Write-AncestryDiagnostic {
+    Write-Diagnostic 'ancestry of this process' -Gather {
+        $processId = $PID
+        for ($depth = 0; $depth -lt 8 -and $processId -gt 0; $depth++) {
+            $process = Get-CimInstance -ClassName Win32_Process -Filter "ProcessId = $processId"
+            if ($null -eq $process) { break }
+            $services = @(Get-CimInstance -ClassName Win32_Service -Filter "ProcessId = $processId" | ForEach-Object { $_.Name })
+            "$($process.Name) pid=$processId session=$($process.SessionId) services=$($services -join ',')"
+            $processId = $process.ParentProcessId
+        }
+    }
+    Write-Diagnostic 'quser' -Gather { & cmd.exe /c 'quser 2>&1' }
+}
+
+# everything worth reading after a failed run; each part is best effort.
+function Write-FailureDiagnostic {
+    param([Parameter(Mandatory = $true)][string]$Account, [Parameter(Mandatory = $true)][datetime]$Since)
+    Write-Output '== the standard user run diagnostics =='
+    Write-ComDiagnostic -Since $Since
     Write-Diagnostic "Security events 4625 (failed logons) for $Account" -Arguments $Account, $Since -Gather {
         param($user, $from)
         $found = @(Get-WinEvent -FilterHashtable @{ LogName = 'Security'; Id = 4625; StartTime = $from } -ErrorAction SilentlyContinue |
             Where-Object { $_.Message -like "*$user*" } | Select-Object -First 5)
         if ($found.Count -eq 0) { '(no events)' } else { $found | Format-List TimeCreated, Id, Message }
     }
+    Write-AncestryDiagnostic
 }
 
-# the task script. it runs as the standard user under Windows PowerShell 5.1,
-# writes every step to result.log, and ends with a line that starts with RESULT.
-$taskScript = @'
+# copies the installer logs out of the staging folder, which the cleanup deletes, to the directory the job uploads.
+function Save-InstallerLog {
+    param([Parameter(Mandatory = $true)][string]$Source, [Parameter(Mandatory = $true)][string]$Destination)
+    try {
+        foreach ($name in 'install.log', 'probe.log') {
+            $path = Join-Path $Source $name
+            if (-not (Test-Path -LiteralPath $path)) { continue }
+            New-Item -ItemType Directory -Force -Path $Destination | Out-Null
+            Copy-Item -LiteralPath $path -Destination (Join-Path $Destination "standard-user-$name") -Force
+        }
+    } catch {
+        Write-Output "(could not save the installer logs: $($_.Exception.Message))"
+    }
+}
+
+# the script the standard user runs, under Windows PowerShell 5.1.
+# it writes every step to result.log and ends with a line that starts with RESULT.
+$userScript = @'
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $log = Join-Path $here 'result.log'
 function Write-Step { param([string]$Text) Add-Content -LiteralPath $log -Value $Text }
+
+function Write-ProfileEnvironment {
+    param([string]$Heading)
+    Write-Step "$Heading; session id: $([System.Diagnostics.Process]::GetCurrentProcess().SessionId)"
+    foreach ($name in 'TEMP', 'TMP', 'LOCALAPPDATA', 'APPDATA', 'USERPROFILE') {
+        Write-Step "  $name=$([Environment]::GetEnvironmentVariable($name))"
+    }
+}
+
+function Invoke-ComMethod {
+    param($Target, [string]$Name, [string]$Kind = 'InvokeMethod', $Arguments = $null)
+    return $Target.GetType().InvokeMember($Name, $Kind, $null, $Target, $Arguments)
+}
+
+# after a failed check block: whether the installer service is needed to read the MSI, and what msiexec /a logs.
+function Write-InstallerProbe {
+    param([string]$Msi, [string]$Directory)
+    try {
+        $installer = New-Object -ComObject WindowsInstaller.Installer
+        $database = Invoke-ComMethod -Target $installer -Name 'OpenDatabase' -Arguments @($Msi, 0)
+        $view = Invoke-ComMethod -Target $database -Name 'OpenView' -Arguments @('SELECT `Value` FROM `Property` WHERE `Property`=''ProductVersion''')
+        $null = Invoke-ComMethod -Target $view -Name 'Execute'
+        $record = Invoke-ComMethod -Target $view -Name 'Fetch'
+        Write-Step "probe: ProductVersion read from the MSI file: $(Invoke-ComMethod -Target $record -Name 'StringData' -Kind 'GetProperty' -Arguments @(1))"
+    } catch {
+        Write-Step "probe: reading ProductVersion from the MSI file failed: $($_.Exception.Message)"
+    }
+    try {
+        $probeLog = Join-Path $Directory 'probe.log'
+        $arguments = @('/a', "`"$Msi`"", '/qn', "TARGETDIR=`"$(Join-Path $Directory 'probe')`"", '/l*v', "`"$probeLog`"")
+        $process = Start-Process -FilePath msiexec.exe -ArgumentList $arguments -Wait -PassThru -NoNewWindow
+        $null = $process.Handle
+        Write-Step "probe: msiexec /a exit code: $($process.ExitCode)"
+        if (Test-Path -LiteralPath $probeLog) {
+            Get-Content -LiteralPath $probeLog | Where-Object { $_ -match 'Error|Failed|System error|server|returning|1601|access' } |
+                Select-Object -First 40 | ForEach-Object { Write-Step "probe.log: $_" }
+        }
+    } catch {
+        Write-Step "probe: msiexec /a failed: $($_.Exception.Message)"
+    }
+}
+
 try {
+    Write-ProfileEnvironment -Heading 'environment as passed in'
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    # a logon sets these from the user's profile, and this launch passes the parent's.
+    $profileDirectory = [string](Get-ItemProperty -LiteralPath "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\$($identity.User.Value)").ProfileImagePath
+    $env:USERPROFILE = $profileDirectory
+    $env:LOCALAPPDATA = [Environment]::GetFolderPath('LocalApplicationData')
+    $env:APPDATA = [Environment]::GetFolderPath('ApplicationData')
+    $env:TEMP = Join-Path $env:LOCALAPPDATA 'Temp'
+    $env:TMP = $env:TEMP
+    Write-ProfileEnvironment -Heading 'environment from the user profile'
+    if (-not $env:LOCALAPPDATA.StartsWith($profileDirectory.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) {
+        throw "refused: LOCALAPPDATA ($env:LOCALAPPDATA) is not under the user's profile directory ($profileDirectory)"
+    }
+    New-Item -ItemType Directory -Force -Path $env:TEMP | Out-Null
+
     $version = (Get-Content -LiteralPath (Join-Path $here 'version.txt') -TotalCount 1).Trim()
     $script:Document = Join-Path $here 'cli.md'
     . (Join-Path $here 'install-block-helpers.ps1')
@@ -187,20 +252,30 @@ try {
         AnnotatedSha = '0123456789abcdef0123456789abcdef01234567'; CompareFail = $false
         Compare = 'identical'; AttestFail = $false
     }
-    $principal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = [Security.Principal.WindowsPrincipal]$identity
     Write-Step "user: $($principal.Identity.Name)"
     Write-Step "administrator: $($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))"
     Write-Step ((whoami /groups | Out-String).Trim())
-    if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'the task runs as an administrator' }
+    $interactiveSid = 'S-1-5-4'
+    if (@($identity.Groups | Where-Object { $_.Value -eq $interactiveSid }).Count -eq 0) {
+        throw "refused: this run is not an interactive logon (the token has no INTERACTIVE group, $interactiveSid), so it does not measure what the CLI document describes"
+    }
+    if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'the run is an administrator' }
 
     $msiName = "marshal-$version-windows-x64.msi"
     $msi = Join-Path $here $msiName
     $block = Get-InstallBlock -Document $script:Document -Id 'windows-check'
     $block = Edit-BlockLine -Block $block -Prefix '$version =' -Line "`$version = '$version'"
     $block = Edit-BlockLine -Block $block -Prefix '$file =' -Line "`$file = '$msi'"
-    $output = @(& ([scriptblock]::Create($block)) *>&1 | ForEach-Object { "$_" })
-    Write-Step "check block: $($output -join ' | ')"
-    if (-not ($output -join "`n").Contains('Passed:')) { throw 'the check block did not pass' }
+    try {
+        $output = @(& ([scriptblock]::Create($block)) *>&1 | ForEach-Object { "$_" })
+        Write-Step "check block: $($output -join ' | ')"
+        if (-not ($output -join "`n").Contains('Passed:')) { throw 'the check block did not pass' }
+    } catch {
+        $checkFailure = $_
+        Write-InstallerProbe -Msi $msi -Directory $here
+        throw $checkFailure
+    }
 
     $installDirectory = Join-Path $env:LOCALAPPDATA 'Programs\marshal'
     $installed = Join-Path $installDirectory 'marshal.exe'
@@ -237,7 +312,6 @@ try {
     $administrators = Get-LocalGroup -SID 'S-1-5-32-544'
     $members = @(Get-LocalGroupMember -Group $administrators | ForEach-Object { $_.Name })
     if (@($members | Where-Object { $_ -like "*\$UserName" }).Count -ne 0) { throw "$UserName is an administrator" }
-    Grant-BatchLogonRight -Sid (Get-LocalUser -Name $UserName).SID.Value -Account $UserName -Directory $PolicyDirectory
 
     if (Test-Path -LiteralPath $Staging) { Remove-Item -LiteralPath $Staging -Recurse -Force }
     New-Item -ItemType Directory -Force -Path $Staging | Out-Null
@@ -245,54 +319,51 @@ try {
     Copy-Item -LiteralPath $Document -Destination (Join-Path $Staging 'cli.md')
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'install-block-helpers.ps1') -Destination $Staging
     Set-Content -LiteralPath (Join-Path $Staging 'version.txt') -Value $Version
-    Set-Content -LiteralPath (Join-Path $Staging 'run.ps1') -Value $taskScript
+    $runScript = Join-Path $Staging 'run.ps1'
+    Set-Content -LiteralPath $runScript -Value $userScript
     & icacls.exe $Staging /grant "*S-1-5-32-545:(OI)(CI)M" | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "icacls exited $LASTEXITCODE" }
 
-    $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $Staging 'run.ps1')`""
-    # the defaults of a task registered without settings do not start it on battery power.
-    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
+    # a scheduled task logs on as a batch job, so its token has no INTERACTIVE group, and msiexec could not reach
+    # the Windows Installer service from it; a secondary logon is interactive, as a person's logon is.
+    $credential = New-Object System.Management.Automation.PSCredential("$env:COMPUTERNAME\$UserName", $secure)
     $testStart = Get-Date
-    # best effort: the operational log is off by default, and the diagnostics read it when the task does not start.
-    try { & wevtutil.exe sl Microsoft-Windows-TaskScheduler/Operational /e:true | Out-Null } catch { Write-Output "(could not enable the Task Scheduler operational log: $($_.Exception.Message))" }
-    $null = Register-ScheduledTask -TaskName $TaskName -Action $action -Settings $settings -User "$env:COMPUTERNAME\$UserName" -Password $password -RunLevel Limited
-    Start-ScheduledTask -TaskName $TaskName
+    $failure = $null
+    $exitCode = $null
+    $process = $null
+    try {
+        $process = Start-Process -FilePath powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$runScript`"" -Credential $credential -LoadUserProfile -WorkingDirectory $Staging -PassThru
+    } catch {
+        $failure = "the standard user process could not be started: $($_.Exception.Message)"
+    }
+    if ($null -ne $process) {
+        $null = $process.Handle
+        if ($process.WaitForExit($RunTimeoutMilliseconds)) {
+            $exitCode = $process.ExitCode
+        } else {
+            & taskkill.exe /F /T /PID $process.Id | Out-Null
+            $failure = 'the standard user process did not finish within 8 minutes and was killed'
+        }
+    }
+    if ($exitCode -eq $StatusDllInitFailed) { $failure = "the standard user process could not start (exit code $exitCode, STATUS_DLL_INIT_FAILED)" }
+
     $logPath = Join-Path $Staging 'result.log'
-    # a task that has not run yet is Ready too, with the last result 267011
-    # (SCHED_S_TASK_HAS_NOT_RUN), so the wait ends on the task's RESULT line, or on
-    # a task that is no longer running and has a result, such as one that never started the script.
-    # a task that is still in that state with no log after $startGrace seconds is not going to start.
-    $notRunYet = 267011
-    $startGrace = 90
-    $started = Get-Date
-    $deadline = $started.AddMinutes(8)
-    do {
-        Start-Sleep -Seconds 5
-        $state = (Get-ScheduledTask -TaskName $TaskName).State
-        $info = Get-ScheduledTaskInfo -TaskName $TaskName
-        $logText = if (Test-Path -LiteralPath $logPath) { (Get-Content -LiteralPath $logPath) -join "`n" } else { '' }
-        $finished = $logText -match '(?m)^RESULT:' -or ($state -ne 'Running' -and $info.LastTaskResult -ne $notRunYet)
-        $neverStarted = -not $finished -and $info.LastTaskResult -eq $notRunYet -and $state -ne 'Running' -and -not (Test-Path -LiteralPath $logPath) -and ((Get-Date) - $started).TotalSeconds -ge $startGrace
-    } while (-not $finished -and -not $neverStarted -and (Get-Date) -lt $deadline)
-    if ($neverStarted) {
-        Write-TaskDiagnostic -Name $TaskName -Account $UserName -Since $testStart
-        throw "the standard user task did not start within $startGrace seconds; task state: $state; last task result: $($info.LastTaskResult)"
-    }
-    if (-not $finished) {
-        Write-TaskDiagnostic -Name $TaskName -Account $UserName -Since $testStart
-        throw "the standard user task did not finish within 8 minutes; task state: $state; last task result: $($info.LastTaskResult); log: $logText"
-    }
+    $logText = if (Test-Path -LiteralPath $logPath) { (Get-Content -LiteralPath $logPath) -join "`n" } else { '' }
     Write-Output '== the standard user run =='
     Write-Output $logText
-    Write-Output "task state: $state; last task result: $($info.LastTaskResult)"
-    $ok = $logText.Contains('RESULT: ok')
-    Write-Measured "a standard local user without administrator rights ($UserName, run level Limited) $(if ($ok) { 'ran the check block, installed the MSI with msiexec /i, ran the installed binary, and ran the uninstall block' } else { 'did not complete the check block, the install, and the uninstall' }); task last result $($info.LastTaskResult)"
-    if (-not $ok) { throw 'the standard user run failed; the check block or the install needs more than a standard user, or the run could not be set up' }
+    Write-Output "process exit code: $exitCode"
+    Write-LogonTypeDiagnostic -Account $UserName -Since $testStart
+    $ok = ($null -eq $failure) -and $logText.Contains('RESULT: ok')
+    Write-Measured "a standard local user without administrator rights ($UserName, secondary logon with the interactive logon type, not elevated) $(if ($ok) { 'ran the check block, installed the MSI with msiexec /i, ran the installed binary, and ran the uninstall block' } else { 'did not complete the check block, the install, and the uninstall' }); process exit code $exitCode"
+    if ($null -eq $failure -and -not $ok) { $failure = 'the standard user run failed; the check block or the install needs more than a standard user, or the run could not be set up' }
+    if ($null -ne $failure) {
+        Write-FailureDiagnostic -Account $UserName -Since $testStart
+        throw $failure
+    }
 } finally {
-    if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) { Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false }
+    Save-InstallerLog -Source $Staging -Destination $LogDirectory
     if (Get-LocalUser -Name $UserName -ErrorAction SilentlyContinue) { Remove-LocalUser -Name $UserName }
     if (Test-Path -LiteralPath $Staging) { Remove-Item -LiteralPath $Staging -Recurse -Force -ErrorAction SilentlyContinue }
-    if (Test-Path -LiteralPath $PolicyDirectory) { Remove-Item -LiteralPath $PolicyDirectory -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
 # the CI shell wrapper exits with the last native exit code, which a stop that reported "no instance" leaves at 1.
