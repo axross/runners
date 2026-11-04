@@ -63,6 +63,7 @@ function Assert-That {
 }
 
 function Get-InstalledProduct {
+    if (-not (Test-Path -LiteralPath $UninstallRoot)) { return , @() }
     $products = @()
     foreach ($key in (Get-ChildItem -LiteralPath $UninstallRoot)) {
         $entry = Get-ItemProperty -LiteralPath $key.PSPath
@@ -267,7 +268,7 @@ try {
         else { $atPath = 'another file' }
     }
     $printed = if (Test-Path -LiteralPath $InstalledBinary) { (& $InstalledBinary --version 2>&1 | Out-String).Trim() } else { 'no file' }
-    Write-Measured "installing the MSI over a manual copy at the install path, without the migration block: msiexec exit code $code; the file at the install path is $atPath; marshal --version there prints '$printed'; products listed: $(@(Get-InstalledProduct).Count); the install directory is on the user PATH $((Get-InstallDirectoryPathEntry).Count) time(s)"
+    Write-Measured "installing the MSI over a manual copy at the install path, without the migration block: msiexec exit code $code; the file at the install path is $atPath; marshal --version there prints '$printed'; products listed: $((Get-InstalledProduct).Count); the install directory is on the user PATH $((Get-InstallDirectoryPathEntry).Count) time(s)"
     $result = Invoke-DocumentedBlock -Id 'windows-uninstall'
     Write-Measured "the uninstall block after that install: $(if ($null -eq $result.Failure) { 'passed' } else { $result.Failure }); the file at the install path afterwards: $(if (Test-Path -LiteralPath $InstalledBinary) { 'present' } else { 'absent' })"
     Write-Output 'All Windows install block checks passed.'

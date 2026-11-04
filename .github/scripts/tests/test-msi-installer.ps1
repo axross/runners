@@ -125,6 +125,7 @@ function Get-MsiProperty {
 }
 
 function Get-InstalledProduct {
+    if (-not (Test-Path -LiteralPath $UninstallRoot)) { return , @() }
     $products = @()
     foreach ($key in (Get-ChildItem -LiteralPath $UninstallRoot)) {
         $entry = Get-ItemProperty -LiteralPath $key.PSPath
@@ -152,7 +153,7 @@ function Get-UserPathEntry {
 
 function Get-InstallDirectoryPathEntry {
     $wanted = $InstallDirectory.TrimEnd('\')
-    return , @(Get-UserPathEntry | Where-Object { $_.Trim().TrimEnd('\') -ieq $wanted })
+    return , @((Get-UserPathEntry) | Where-Object { $_.Trim().TrimEnd('\') -ieq $wanted })
 }
 
 function Assert-Installed {
