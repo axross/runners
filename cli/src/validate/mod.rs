@@ -39,6 +39,7 @@ pub use problem::{Key, KeyPath, Kind, Location, Problem, Segment};
 pub use reader::Reader;
 pub use settings::SCHEMA_VERSION;
 use toml_reader::TomlReader;
+pub(crate) use toml_reader::path_text as toml_path_text;
 pub(crate) use toml_schema::key_name as toml_key_name;
 
 use fields::{Errors, Field};

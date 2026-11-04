@@ -239,7 +239,7 @@ fn table_at(path: &KeyPath) -> Option<Table> {
 }
 
 /// the path as `pool[0].labels`; the root has none.
-fn path_text(path: &KeyPath) -> String {
+pub(crate) fn path_text(path: &KeyPath) -> String {
     let mut text = String::new();
     for segment in path.segments() {
         match segment {

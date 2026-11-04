@@ -9,6 +9,7 @@ pub mod control;
 pub mod convert;
 pub mod de;
 pub mod diagnostics;
+pub mod edit;
 pub mod fold;
 pub mod image;
 pub mod instance;
