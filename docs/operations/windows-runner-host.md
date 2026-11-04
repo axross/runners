@@ -136,8 +136,7 @@ previous one, as [Rolling Back marshal](#rolling-back-marshal) describes; it sto
 running instance first. After an update, rebuild the image and start again, as
 [Updating the Runner](#updating-the-runner) describes. Nothing on the host needs a
 checkout of this repository: `build` uses the image definition embedded in the
-binary. The
-release binaries are not code-signed. On axpc the installed copy had no
+binary. The release binaries are not code-signed. On axpc the installed copy had no
 `Zone.Identifier`, so no Mark of the Web
 ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511048211)), and
 SmartScreen did not prompt at the install or at its first run from the terminal,
@@ -159,7 +158,8 @@ under **Settings, Developer settings, Fine-grained personal access tokens**:
 - **Permissions:** Administration, read and write, and nothing else.
 
 Save each token in a file on this machine, holding the raw token text, at the
-`tokenPath` of the repository's pool entries, and keep these files outside the checkout.
+`tokenPath` of the repository's pool entries, and keep these files outside any
+checkout of this repository.
 The token rules are in the Per-Repository Isolation on a Runner Host section of
 [Security](../conventions/security.md).
 
@@ -176,8 +176,8 @@ safe call reads it, so this step is the only thing that restricts the file. Run 
 for every configured token file at install, and for the new file at every token
 rotation. It resets the file's permissions to its folder's defaults, removes
 inherited permissions, then grants the host user read access, so an entry granted by
-hand to another account does not survive. Run it as the user who runs `marshal start`, with every token path
-listed:
+hand to another account does not survive. Run it as the user who runs
+`marshal start`, with every token path listed:
 
 ```powershell
 & {
@@ -204,11 +204,12 @@ collected there.
 
 ## The Host Configuration
 
-The configuration is a JSON file kept outside the checkout; every `marshal` command
-that reads it takes its path as `--config`. Start from
+The configuration is a JSON file kept outside any checkout of this repository;
+every `marshal` command that reads it takes its path as `--config`. Start from
 [`runner-host.example.json`](../../hosts/windows-docker-desktop/runner-host.example.json),
 and see the Host configuration section of the
-[host README](../../hosts/windows-docker-desktop/README.md) for every field. The rules that matter operationally:
+[host README](../../hosts/windows-docker-desktop/README.md) for every field. The
+rules that matter operationally:
 
 - **One entry per execution pool**, each with its own `name`, `slots`,
   `labels`, and `volumes`. Every entry uses the global `imageName`.
@@ -623,7 +624,8 @@ The sink is not exposed to the job as a bind mount or volume.
 
 Collect private evidence as follows:
 
-1. Pre-create a directory on a local Windows filesystem, outside the checkout.
+1. Pre-create a directory on a local Windows filesystem, outside any checkout of
+   this repository.
    Restrict its owner and all allowed access rules to the account that runs
    `marshal start`. `marshal` MUST NOT create the sink, relax permissions, or
    repair its access controls, and on Windows it does not check them, so this step
@@ -647,7 +649,7 @@ Collect private evidence as follows:
    private daemon/crash retention is separately wanted. Set it to `true` only
    with diagnostics enabled. Run `marshal validate`, then apply the change with
    `marshal restart` in an authorized quiet window. Validation rejects a sink
-   inside this project's checkout without Docker, GitHub or token reads, but does
+   inside a checkout of this repository without Docker, GitHub or token reads, but does
    not check that the sink exists, is private, or is writable.
 3. After a container stops, `marshal start` exports its evidence into a new
    `<name>-bundle-<32 hexadecimal digits>` directory in the sink, then removes the
@@ -999,22 +1001,27 @@ host on the first release has none, and a fault in it is fixed forward in a new
 release. Pick a quiet time, because the install stops the instance and a job in
 flight fails.
 
-1. Install the previous release with the Windows procedure in
+1. If the release you go back to may not finalise a diagnostic container as the
+   installed one does, recover the marked containers before replacing the binary:
+   run steps 1 to 3 of
+   [Recover before disabling diagnostics](#recover-before-disabling-diagnostics),
+   then `marshal stop`.
+2. Install the previous release with the Windows procedure in
    [CLI](./cli.md#installing-updating-and-rolling-back), setting its `version` to
    that release. It stops a running instance first and refuses to go on if the
    instance does not stop; see [Recovery](#recovery).
-2. Run `marshal validate --config C:\path\to\runner-host.json`. The previous
+3. Run `marshal validate --config C:\path\to\runner-host.json`. The previous
    release must accept the configuration file, and a field only the newer release
    knows is rejected, naming the field. Edit the file back before going on.
-3. Rebuild the image and start the pools, as
+4. Rebuild the image and start the pools, as
    [Building the Runner Image](#building-the-runner-image) describes. The build uses
    the image definition embedded in the installed release, so it gives back the
    image that release expects; an image of another contract keeps `start` from
    running jobs, as [Recovery](#recovery) says.
-4. Confirm `marshal --version` names the release you installed, and that the
+5. Confirm `marshal --version` names the release you installed, and that the
    [Health Checks](#health-checks) hold for GitHub and the machine.
 
 A diagnostic container that the stopped instance retained survives the install. The
 `start` of the installed release finalises it while its entry's diagnostics are on,
-and refuses the entry while they are off; see
-[Recover before disabling diagnostics](#recover-before-disabling-diagnostics).
+and refuses the entry while they are off; step 1 recovers it first when that
+release may not.
