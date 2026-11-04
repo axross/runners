@@ -244,37 +244,38 @@ registration, and the loop of one slot. `start` reaches it through the instance
 layer, and the tests also drive it through its seams. It reproduces the
 PowerShell supervisor, and where it differs the difference is listed here.
 
-| Module                                                   | Holds                                                                                                       |
-| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `affinity`                                               | The CPU offsets `validate` and the backend share, and the selection of a slot's CPUs                        |
-| `runtime::backend`                                       | The backend seam                                                                                            |
-| `runtime::select`                                        | The runtime a pool's operating system selects on its host                                                   |
-| `runtime::docker`, `runtime::docker_args`                | The container backend and the exact `docker` argument lists                                                 |
-| `runtime::tart`, `tart::args`, `tart::client`            | The `tart` client: the exact argument lists, and the bounded process wrapper                                |
-| `runtime::tart::list`, `tart::names`                     | The reader of `tart list --format json`, and the VM names, parsers and matchers                             |
-| `runtime::tart::backend`                                 | The Tart backend: the slot cycle's host steps, the probes, the job container, and the release               |
-| `tart::golden_check`, `tart::guest`                      | The golden VM check from VM names alone, and the commands run in a booted VM through the guest agent        |
-| `tart::hold`, `tart::teardown`, `vm_shim`                | The holder of a VM's `tart run`, the stop-and-delete within a budget, and the VM shim                       |
-| `golden`, `golden::pins`, `golden::key`, `golden::steps` | The golden VM's pins, the check of Docker's signing key, the launcher and the guest calls that provision it |
-| `macos::version`                                         | The tested Tart and Softnet versions, the readers of their `--version`, and the sorting                     |
-| `macos::softnet`                                         | Finding Softnet on `PATH` as Tart does, the judgment of its file, and its version read                      |
-| `macos::prerequisites`                                   | The host checks: Tart's version, then Softnet's file and version, each a pass, warning or refusal           |
-| `runtime::registration`, `token`, `scrub`, `secret`      | JIT registration, the token file, error text, and the type that hides a secret                              |
-| `runtime::clock`, `runtime::log`                         | The time source and the sink for the runtime's messages, each a seam the tests replace                      |
-| `runtime::name`                                          | Runner and container names, and the test for a pool's own                                                   |
-| `runtime::pool`                                          | Pools from a plan, and their preparation                                                                    |
-| `runtime::worker`                                        | The slot loop and its backoff                                                                               |
-| `runtime::retained`                                      | The diagnostic containers the backend retains, their records, and who finalises each                        |
-| `runtime::diagnostic`                                    | Finalising diagnostic containers at job end, in the container steps, and at startup                         |
-| `diagnostics`, `diagnostics::exporter`                   | The exporter child and the lines and exit codes it answers with                                             |
-| `diagnostics::transport`                                 | The transport seam through which the exporter reads a container's evidence                                  |
-| `diagnostics::sink`, `archive`, `identity`               | The sink checks and admission, the strict archive reader, and the identity readback                         |
-| `runtime::board`                                         | Each pool's and each slot's state, which `status` reports                                                   |
-| `macos::signals`, `macos::mac`                           | The signal-source seam and its real macOS source                                                            |
-| `macos::sleep`, `macos::network`, `macos::watch`         | The sleep judgment, the `route` and `arp` readers, and the primary network's judgment                       |
-| `macos::keep_awake`, `macos::probe`, `macos::reason`     | The `caffeinate` hold, the bounded system-program call, and the stop-reason texts                           |
-| `macos::fake`, `macos::scripted`                         | The in-process signal source for tests, and the one a debug build reads from a directory                    |
-| `runtime::fake`                                          | In-memory stand-ins for the seams, used by tests; a debug or test build only                                |
+| Module                                                   | Holds                                                                                                        |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `affinity`                                               | The CPU offsets `validate` and the backend share, and the selection of a slot's CPUs                         |
+| `runtime::backend`                                       | The backend seam                                                                                             |
+| `runtime::select`                                        | The runtime a pool's operating system selects on its host                                                    |
+| `runtime::docker`, `runtime::docker_args`                | The container backend and the exact `docker` argument lists                                                  |
+| `runtime::tart`, `tart::args`, `tart::client`            | The `tart` client: the exact argument lists, and the bounded process wrapper                                 |
+| `runtime::tart::list`, `tart::names`                     | The reader of `tart list --format json`, and the VM names, parsers and matchers                              |
+| `runtime::tart::backend`                                 | The Tart backend: the slot cycle's host steps, the probes, the job container, and the release                |
+| `tart::golden_check`, `tart::guest`                      | The golden VM check from VM names alone, and the commands run in a booted VM through the guest agent         |
+| `tart::hold`, `tart::teardown`, `vm_shim`                | The holder of a VM's `tart run`, the stop-and-delete within a budget, and the VM shim                        |
+| `golden`, `golden::pins`, `golden::key`, `golden::steps` | The golden VM's pins, the check of Docker's signing key, the launcher and the guest calls that provision it  |
+| `macos::version`                                         | The tested Tart and Softnet versions, the readers of their `--version`, and the sorting                      |
+| `macos::softnet`                                         | Finding Softnet on `PATH` as Tart does, the judgment of its file, and its version read                       |
+| `macos::prerequisites`                                   | The host checks: Tart's version, then Softnet's file and version, each a pass, warning or refusal            |
+| `runtime::registration`, `token`, `scrub`, `secret`      | JIT registration, the token file, error text, and the type that hides a secret                               |
+| `runtime::clock`, `runtime::log`                         | The time source and the sink for the runtime's messages, each a seam the tests replace                       |
+| `runtime::name`                                          | Runner and container names, and the test for a pool's own                                                    |
+| `runtime::pool`                                          | Pools from a plan, and their preparation                                                                     |
+| `runtime::worker`                                        | The slot loop and its backoff                                                                                |
+| `runtime::retained`                                      | The diagnostic containers the backend retains, their records, and who finalises each                         |
+| `runtime::diagnostic`                                    | Finalising diagnostic containers at job end, in the container steps, and at startup                          |
+| `diagnostics`, `diagnostics::exporter`                   | The exporter child and the lines and exit codes it answers with                                              |
+| `diagnostics::transport`                                 | The transport seam through which the exporter reads a container's evidence                                   |
+| `diagnostics::sink`, `archive`, `identity`               | The sink checks and admission, the strict archive reader, and the identity readback                          |
+| `runtime::board`                                         | Each pool's and each slot's state, which `status` reports                                                    |
+| `macos::signals`, `macos::mac`                           | The signal-source seam and its real macOS source                                                             |
+| `macos::sleep`, `macos::network`, `macos::watch`         | The sleep judgment, the `route` and `arp` readers, and the primary network's judgment                        |
+| `macos::keep_awake`, `macos::probe`, `macos::reason`     | The `caffeinate` hold, the bounded system-program call, and the stop-reason texts                            |
+| `macos::monitor`, `macos::gate`                          | The instance's signals on axmc: the watch, the keep-awake hold, and the gate that holds back the first clone |
+| `macos::fake`, `macos::scripted`                         | The in-process signal source for tests, and the one a debug build reads from a directory                     |
+| `runtime::fake`                                          | In-memory stand-ins for the seams, used by tests; a debug or test build only                                 |
 
 ### Backend
 
@@ -515,6 +516,8 @@ golden VM whose old runner asks for a rebuild.
    with the refusal's text. The versions in use are logged once, as
    `Using Tart <v> and Softnet <v>.`, and again when they change; each warning is
    logged once until it changes.
+   When the instance's signals have recorded no primary network, the preparation
+   then waits at the network gate before anything is cloned; a stop ends the wait.
 3. The newest golden VM that runs here is listed and cloned to
    `marshal-job-<pool>-<slot>-<yyyyMMddHHmmssfff>`. The name is recorded before the
    clone runs, so a clone that fails halfway is still deleted.
@@ -911,12 +914,14 @@ TLS paragraph above says.
 
 The axmc host stops every runner when the Mac sleeps or its primary network
 changes, and holds off idle sleep while it runs. `macos` holds what reads those
-signals; the instance does not call it yet. The seam is `SignalSource` in
-`macos::signals`, which the instance polls for four things:
+signals, and on axmc the instance polls it
+([Wiring](#wiring-the-signals-into-the-instance)). The seam is `SignalSource` in
+`macos::signals`, which the instance polls for five things:
 
 | Call                                                       | Answers                                                                   |
 | ---------------------------------------------------------- | ------------------------------------------------------------------------- |
 | `sleep_detected`, every 1 s                                | Whether the Mac slept, or its wall clock stepped, since the sample before |
+| `rearm_sleep`, at each start of a run                      | Forgets the clocks sampled so far, so the next sample sets a new baseline |
 | `read_network`, every 5 s                                  | A `NetworkReading`: the primary network, or `NoDefaultRoute`              |
 | `hold_keep_awake`, `poll_keep_awake`, `release_keep_awake` | Taking the hold, checking it and retrying a lost one, and ending it       |
 | `keep_awake_warning`                                       | The warning text while the hold is wanted and not held                    |
@@ -945,8 +950,10 @@ and `print_entry` in `arp.tproj/arp.c` write in Apple's `network_cmds`:
 - `route` prints `route to: default` first, then `interface: <name>` exactly once,
   and `gateway: <IPv4 address>` at most once. The gateway line is absent when the
   route leaves through a point-to-point interface, as a VPN's does, and the reading
-  then has no router and makes no `arp` call. A gateway that is not a routable IPv4
-  address, a second `interface:` or `gateway:` line, an interface name that is not
+  then has no router and makes no `arp` call. A gateway that is a link
+  (`link#<index>` of 1 to 9 digits) or a hardware address names the interface and no
+  router, and reads the same way: the interface holds the default route. A gateway
+  that is neither of those nor a routable IPv4 address, a second `interface:` or `gateway:` line, an interface name that is not
   1 to 15 letters and digits starting with a letter, or a failing exit code is
   refused. A refused table, a hung or missing `route`, and a table with no IPv4
   default route (`route: writing to routing socket: not in table`) are all
@@ -1003,6 +1010,10 @@ directory by branching on the build profile:
 | `MARSHAL_TEST_ARP`        | The `arp` program                                                            |
 | `MARSHAL_TEST_SIGNALS`    | The whole source, with a directory a test writes into while the process runs |
 
+A scripted source also runs the instance's cadence in a fiftieth of its time, so a
+process test sees a network check every 100 ms; the ratio of five samples to a check
+is the real one.
+
 The directory holds a `sleep` file, which the next sample reports once and removes;
 a `network` file, which is `none` or lines `interface=`, `router=` and `hardware=`;
 a `keep_awake_failure` file, whose text is the hold's failure while it exists; and
@@ -1014,7 +1025,54 @@ process group and terminals, and answers as a test scripts it, including a failu
 a hang and a flood. `macos_signals.rs` covers the pure judgments, and
 `macos_processes.rs` the readers, the bounds, the hold and the overrides. Not
 verified by them: the output of a real macOS `route` and `arp`, which the samples
-copy from Apple's source, and a real sleep; both wait for the first run on the Mac.
+copy from Apple's source (a VPN's `gateway: link#<index>` form included), and a real
+sleep; both wait for the first run on the Mac.
+
+#### Wiring the Signals into the Instance
+
+`instance::lifecycle::Monitor` is the instance's view of the signals; `Instance`
+takes one with `with_monitor`, and without one, as on axpc, it asks for nothing.
+`start` gives axmc a `macos::monitor::SignalMonitor` built on the `Signals` source
+for the process, which is the real `MacSignals` or, in a debug build, the scripted
+one.
+
+- **Keep-awake follows the state.** `set_state` takes the hold on entering running
+  and resuming, keeps it through stopping, and releases it on entering stopped and
+  when the instance ends. `build` neither holds it nor reacts to the signals. A
+  failed or lost hold warns once in the log, shows as a `warning` line in `status`,
+  and is retried every 10 s; `Keep-awake is held again.` is logged when it recovers.
+  The hold is checked every sample while running (inside the watch) and while
+  resuming or stopping (the monitor's `maintain`, which `serve` polls beside the
+  work it waits for).
+- **Each run begins afresh.** When the instance enters running, at the first run and
+  at every resume or restart, it calls `begin`: the sleep baseline is set again,
+  because nothing sampled the clocks while it was stopped and the time spent
+  stopped is no sleep, and the gate below is closed. The watch then reads the
+  primary network and builds a new `NetworkWatch`, so a record from before a stop
+  is never reused.
+- **The watch.** One future per run samples the clocks every second and checks the
+  network every fifth sample. A sleep, or two differing checks in a row, ends it
+  with a `StopReason`: `Slept`, whose text is
+  `the Mac slept, so every runner was stopped`, or `NetworkChanged`, whose text names
+  the old and the new interface (`none` when no interface holds the default route).
+  Dropping the future, as a stop does, ends the watch. The sleep is checked before
+  the network in each sample, so a wake that also changes the network stops with the
+  sleep reason.
+- **The stop.** The reason ends the instance's running as `stop` does: the core is
+  asked to stop, and the container steps and the release of every prepared job host
+  run in the 28 s stop sequence, with the state `stopping`. The instance then moves
+  to `stopped` with the reason, which `status` shows as `reason:` and the `start`
+  terminal as `The instance is stopped: <reason>.`. A `stop` that arrives during the
+  sequence ends the instance instead. The restart policy counts nothing, and only
+  `start` or `restart` resumes; nothing resumes on its own.
+- **No primary network.** `begin` closes the `NetworkGate` in `macos::gate`, and the
+  first reading opens it when a primary network is recorded. The Tart backend waits
+  at the gate in `prepare_job_host`, after the host prerequisites and before the
+  clone, so the slot cycle keeps its order and a slot that waits has cloned nothing.
+  Without a default route the gate stays closed until a network has held for two
+  checks, and `status` shows
+  `network: waiting for a network (no IPv4 default route)`. A stop ends the wait, as
+  it ends a preparation, and the gate is open for a backend that was given none.
 
 ## The Instance Layer
 
@@ -1069,6 +1127,17 @@ running instance refuses a resume too.
   refuses leaves the instance stopped with the refusal's message as its reason; the
   instance also checks them once before its first run, and a refusal there ends the
   instance, so `start` exits 1.
+- On axmc, a sleep and its wake, or a change of the primary network on two checks
+  in a row, stops every runner as `stop` does, runs the container steps and the
+  release of every job host, and leaves the instance stopped with the signal's
+  text as its reason: `the Mac slept, so every runner was stopped` or
+  `the primary network changed (<old interface> to <new interface>), so every runner was stopped`.
+  It names interfaces only. Only `start` or `restart` resumes it, and a resume
+  begins the signals afresh;
+  [Wiring the Signals into the Instance](#wiring-the-signals-into-the-instance) has
+  the rest.
+- On axmc the instance holds off idle sleep while it is running or resuming and
+  while it is stopping, and releases the hold on entering stopped.
 - A resume and a `restart` check the image after the file validates, before the
   instance answers. An image that cannot run jobs leaves the instance stopped,
   with a reason that names the image and says to run `marshal stop`, then
@@ -1416,7 +1485,10 @@ A fresh `start` does these in order:
    as [Names and the Slot Loop](#names-and-the-slot-loop) describes, and then runs
    every slot's loop until a stop. When the image cannot run jobs, the instance
    ends, and `start` exits 1, saying to run `marshal build --config <path>`, then
-   `marshal start --config <path>`. When no pool can start, `start` exits 1.
+   `marshal start --config <path>`. When no pool can start, `start` exits 1. On axmc
+   the instance also holds off idle sleep and watches the Mac's sleep and primary
+   network, as [Signal Source](#signal-source) describes, and a slot clones no VM
+   until a primary network is recorded.
 
 On Windows, `start --profile axmc` exits 1 before step 1 with
 `error: the axmc profile runs only on macOS`, because Tart exists only on macOS.
@@ -1435,7 +1507,8 @@ Unix shim's removal in `start` included, `MARSHAL_TEST_TART` names the `tart`
 client that `start` runs on axmc, and `MARSHAL_TEST_BUILD_DEFINITION` names
 a test definition that `build` builds instead of the embedded one. On axmc the
 tests also set `PATH` to find the fake `softnet`, as Tart does, and
-`MARSHAL_TEST_SOFTNET_OWNER_MODE` to judge its file. Only a debug
+`MARSHAL_TEST_SOFTNET_OWNER_MODE` to judge its file, and `MARSHAL_TEST_SIGNALS` to
+script the sleep, the primary network and the keep-awake hold. Only a debug
 build honours any of them: in the release profile `tests/base_address.rs` shows
 that the client stays `docker`, and `tests/build_definition.rs` that `build` keeps
 the embedded definition. The tests name the fake client rather than put it first on `PATH`,
@@ -1454,6 +1527,9 @@ configuration path, sends `resume <profile> <path>`, and waits up to 10 s:
   and `start` exits 1.
 - A stopped axmc instance whose host prerequisite refuses stays stopped with the
   refusal as its reason, and `start` exits 1.
+- A stopped axmc instance that a sleep or a network change stopped resumes like any
+  other: it reads its file, checks the prerequisites and the image, records the
+  primary network afresh, and `start` exits 0.
 - When nothing answers on this user's channel, `start` exits 1, saying that the
   lock is held by another OS user or by an instance of this user that is still
   starting or ending. The lock does not say which, and `start` never connects to
@@ -1471,8 +1547,11 @@ answer in time.
   line per slot, which is `registering` (the preparation of its job host and the CPU
   probe included), `backing off`, `held: <reason>`, or `running container <name>`;
   and the image lines under
-  [The Image Contract](#the-image-contract), then one `warning: <message>` line per
-  warning of the latest passing host prerequisite check, on axmc. Pools and slots
+  [The Image Contract](#the-image-contract), then, on axmc, a
+  `network: waiting for a network (no IPv4 default route)` line while no primary
+  network is recorded, a `warning: keep-awake is not held (...)` line while the hold
+  is wanted and not held, and one `warning: <message>` line per
+  warning of the latest passing host prerequisite check. Pools and slots
   are listed while the runtime core runs; the image and warning lines are listed on
   every call, as of the latest check. A `build` answers `state`, `image`, and `elapsed: <s> s`.
 - `restart` waits up to 35 s for the instance to run its container steps, read its
@@ -2105,6 +2184,18 @@ answer, which makes the slots wait; a newer patch, with its warnings in the log 
 its reason, the last resuming; and a refusal after `start` that holds a slot while
 another slot's job ends, and lets it boot again. `prerequisite_gate.rs` shows where
 the instance asks for the check, on the fake seams.
+
+`instance_signals.rs` wires the signals into the instance on the fake signal source,
+backend, core and clock: a wake that stops and deletes every VM, a primary network
+that differs on two checks (a VPN taking the default route, a lost route naming
+`none`) and on one check, the same network, a hardware address that is not read, a
+resume that arms the sleep baseline and records the network afresh, the gate that
+opens at the second check of a first network, and the keep-awake hold held through
+running and stopping, released at stopped, and retried after a failure.
+`axmc_signals.rs` runs the same as real processes with the scripted source: a wake and
+a network change stop the instance with their reasons, no VM is cloned and `status`
+waits for a network until one is there, a stop ends that wait, and the hold's state
+is read from the scripted source's file.
 
 `build_command.rs` runs `build` the same way, from an empty directory, with
 `fake-docker` keeping an image store: the one build's arguments, labels, temporary
