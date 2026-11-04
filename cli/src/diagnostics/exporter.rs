@@ -185,12 +185,16 @@ impl EntrySink for BundleSink {
 mod tests {
     use super::*;
 
-    /// a transport that reads no container: the bundle comes from what it yields.
-    struct Scripted;
+    /// a transport that reads no container: `identity` and `metrics` are what it
+    /// yields, and `None` is a failed read or a failed archive.
+    struct Scripted {
+        identity: Option<&'static str>,
+        metrics: Option<&'static [u8]>,
+    }
 
     impl EvidenceTransport for Scripted {
         async fn read_identity(&self, source: &str) -> Option<String> {
-            Some(format!("identity of {source}"))
+            self.identity.map(|text| format!("{text} of {source}"))
         }
 
         async fn copy_archive<S: EntrySink>(
@@ -199,15 +203,18 @@ mod tests {
             _raw_records: bool,
             mut sink: S,
         ) -> Option<()> {
+            let metrics = self.metrics?;
             sink.open(METRICS_FILE).await.ok()?;
-            sink.write(b"a=1\nfinal=observed\n".to_vec()).await.ok()?;
+            sink.write(metrics.to_vec()).await.ok()?;
             Some(())
         }
     }
 
-    #[tokio::test]
-    async fn an_export_writes_its_bundle_from_whatever_transport_it_is_given() {
-        let sink = std::env::temp_dir().join(format!("exporter-seam-{}", std::process::id()));
+    /// exports through `transport` into a sink of its own named `name`, and returns
+    /// the exit code, the bundle's sorted file names and the bundle.
+    async fn export_with(name: &str, transport: &Scripted) -> (u8, Vec<String>, PathBuf) {
+        let sink = std::env::temp_dir().join(format!("exporter-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&sink);
         std::fs::create_dir_all(&sink).unwrap();
         #[cfg(unix)]
         {
@@ -222,22 +229,76 @@ mod tests {
             checkout: None,
             deadline: std::time::Duration::from_secs(10),
         };
-        assert_eq!(export(&request, &Scripted).await, EXIT_COMPLETE);
-        let bundles: Vec<_> = std::fs::read_dir(&sink)
+        let code = export(&request, transport).await;
+        let mut bundles: Vec<_> = std::fs::read_dir(&sink)
             .unwrap()
             .map(|entry| entry.unwrap().path())
             .collect();
-        assert_eq!(bundles.len(), 1);
-        let mut files: Vec<_> = std::fs::read_dir(&bundles[0])
+        assert_eq!(bundles.len(), 1, "an export admits exactly one bundle");
+        let bundle = bundles.remove(0);
+        let mut files: Vec<_> = std::fs::read_dir(&bundle)
             .unwrap()
             .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
         files.sort();
+        (code, files, sink)
+    }
+
+    #[tokio::test]
+    async fn an_export_writes_its_bundle_from_whatever_transport_it_is_given() {
+        let transport = Scripted {
+            identity: Some("identity"),
+            metrics: Some(b"a=1\nfinal=observed\n"),
+        };
+        let (code, files, sink) = export_with("complete", &transport).await;
+        assert_eq!(code, EXIT_COMPLETE);
         assert_eq!(files, ["complete.txt", "identity.txt", "metrics.txt"]);
+        let bundle = std::fs::read_dir(&sink)
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
         assert_eq!(
-            std::fs::read_to_string(bundles[0].join("identity.txt")).unwrap(),
+            std::fs::read_to_string(bundle.join("identity.txt")).unwrap(),
             "identity of p-1-x"
         );
+        std::fs::remove_dir_all(sink).unwrap();
+    }
+
+    #[tokio::test]
+    async fn metrics_without_the_final_observation_are_a_gap_with_a_complete_bundle() {
+        let transport = Scripted {
+            identity: Some("identity"),
+            metrics: Some(b"a=1\n"),
+        };
+        let (code, files, sink) = export_with("gap", &transport).await;
+        assert_eq!(code, EXIT_GAP);
+        assert_eq!(files, ["complete.txt", "identity.txt", "metrics.txt"]);
+        std::fs::remove_dir_all(sink).unwrap();
+    }
+
+    #[tokio::test]
+    async fn an_identity_that_cannot_be_read_fails_the_export_without_a_completion_marker() {
+        let transport = Scripted {
+            identity: None,
+            metrics: Some(b"final=observed\n"),
+        };
+        let (code, files, sink) = export_with("no-identity", &transport).await;
+        assert_eq!(code, EXIT_FAILED);
+        assert!(files.is_empty(), "{files:?}");
+        std::fs::remove_dir_all(sink).unwrap();
+    }
+
+    #[tokio::test]
+    async fn an_archive_that_fails_fails_the_export_without_a_completion_marker() {
+        let transport = Scripted {
+            identity: Some("identity"),
+            metrics: None,
+        };
+        let (code, files, sink) = export_with("no-archive", &transport).await;
+        assert_eq!(code, EXIT_FAILED);
+        assert_eq!(files, ["identity.txt"]);
         std::fs::remove_dir_all(sink).unwrap();
     }
 

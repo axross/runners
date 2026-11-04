@@ -46,6 +46,7 @@ mod tests {
             Some(Runtime::TartVm)
         );
         assert_eq!(Runtime::of_pool(Profile::Axmc, Some(Os::Macos)), None);
+        assert_eq!(Runtime::of_pool(Profile::Axmc, None), None);
     }
 
     #[test]

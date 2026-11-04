@@ -119,6 +119,11 @@ fn the_axmc_profile_validates_and_then_refuses_to_run_its_vm_pools() {
 }
 
 #[test]
+fn an_axmc_configuration_of_linux_and_macos_pools_is_refused_whole_for_now() {
+    assert_axmc_start_refused("axmc-os-labels.json", None);
+}
+
+#[test]
 fn an_axmc_configuration_of_macos_pools_alone_is_refused_the_same_way() {
     assert_axmc_start_refused("axmc-defaults.json", Some(("\"linux\"", "\"macos\"")));
 }
