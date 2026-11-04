@@ -1042,6 +1042,43 @@ runner's are. Each tells the maintainer to bump the base pin and rebuild the
 golden macOS VM, because rebuilding alone does not update macOS. Nothing calls it
 yet: `status` shows no base age until the golden macOS VM does.
 
+### VM Names
+
+The `macos::name` module writes and reads the names of the macOS VMs Marshal
+makes, and `macos::linux_forms` holds the Linux forms that it must tell them
+from. Each form is read strictly: the whole name matches, nothing precedes or
+follows it, and case matters.
+
+| VM              | Form                                                                                   |
+| --------------- | -------------------------------------------------------------------------------------- |
+| Golden macOS VM | `marshal-golden-macos-g<golden VM version>-r<runner version>-<yyyyMMddHHmmss>`         |
+| macOS build VM  | `marshal-build-macos-<yyyyMMddHHmmssfff>`                                              |
+| Job VM, any OS  | `marshal-job-<pool>-<slot>-<yyyyMMddHHmmssfff>`                                        |
+| Linux golden VM | `marshal-golden-linux-g<golden VM version>-c<image contract version>-r<runner>-<time>` |
+| Linux build VM  | `marshal-build-linux-<yyyyMMddHHmmssfff>`                                              |
+
+- **The golden macOS VM version** is `GOLDEN_MACOS_VM_VERSION`, 1 for now. It goes
+  up whenever the base digest, the provisioning steps, or the launcher change. In
+  a name it is a positive integer without a leading zero, and the runner version
+  is three dot-separated numbers, as the runner record writes it.
+- **Times** are UTC. A golden VM's name carries its build time to the second and a
+  build VM's to the millisecond.
+- **The newest golden macOS VM** is the one with the latest build time in its
+  name, whatever its golden VM version, so a stale one is found and refused, not
+  missed. Names that are not golden macOS VMs' are ignored, so selection never
+  returns a Linux golden VM, and the Linux selection never returns a macOS one.
+- **A job VM's pool** is everything between `marshal-job-` and the last
+  `-<digits>-<17 digits>`, so a pool name may contain hyphens and may end in
+  `-<digits>`: `marshal-job-ci-2-1-<stamp>` is slot 1 of pool `ci-2`, and
+  `marshal-job-ci-2-<stamp>` is slot 2 of pool `ci`. Pool names are unique per
+  host, so a pool name identifies the pool whatever its OS.
+- **The Linux forms are a stand-in.** M1's Tart runtime owns them (#74), and its
+  code is not on `main` yet. `macos::linux_forms` writes them as M1's plan gives
+  them, and the integration with M1's runtime replaces it.
+
+No command writes or reads these names yet: the macOS runtime and `build` do not
+exist.
+
 ## Running a Host
 
 `start` runs the host's pools in the foreground through the instance layer and the

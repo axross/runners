@@ -12,6 +12,7 @@ pub mod fold;
 pub mod image;
 pub mod instance;
 pub mod json;
+pub mod macos;
 #[cfg(unix)]
 pub mod private;
 pub mod profile;

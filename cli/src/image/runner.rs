@@ -93,8 +93,7 @@ fn parse_override(requested: &str) -> Result<DeclaredRunner, String> {
 
 /// whether `text` is a runner version: three dot-separated decimal numbers of at
 /// most nine digits, none with a leading zero.
-#[cfg(any(debug_assertions, test))]
-fn is_version(text: &str) -> bool {
+pub(crate) fn is_version(text: &str) -> bool {
     let parts: Vec<&str> = text.split('.').collect();
     parts.len() == 3
         && parts.iter().all(|part| {
