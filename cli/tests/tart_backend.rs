@@ -331,6 +331,52 @@ async fn a_leftover_job_vm_that_cannot_be_deleted_skips_its_pool_and_the_others_
     assert!(rig.fake.vm_names().contains(&leftover));
 }
 
+/// the leftover VM of a diagnostics-enabled pool that cannot be deleted still reports
+/// the gap that discarding its evidence leaves, and the pool is skipped.
+#[tokio::test(flavor = "current_thread")]
+async fn a_leftover_diagnostic_job_vm_that_cannot_be_deleted_reports_its_gap_and_skips_its_pool() {
+    let rig = Rig::new();
+    let leftover = format!("marshal-job-bravo-1-{STAMP}");
+    rig.fake.seed(&[
+        (golden_name().as_str(), "stopped", "local"),
+        (&leftover, "stopped", "local"),
+    ]);
+    rig.fake.script("fail-delete", "");
+    let scratch = TempDir::new();
+    let board = Board::default();
+
+    let prepared = support::prepare_pools(&rig.backend, axmc_pools(&scratch), &*rig.log, &board)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        prepared
+            .iter()
+            .map(|pool| pool.name.as_str())
+            .collect::<Vec<_>>(),
+        ["alpha"]
+    );
+    let reason = format!(
+        "Job VMs that an earlier run left could not be deleted ({leftover}); entry startup \
+         refused. Delete each with tart delete, then start again."
+    );
+    assert!(
+        board
+            .fields()
+            .contains(&("pool", format!("bravo: skipped: {reason}"))),
+        "{:?}",
+        board.fields()
+    );
+    let lines = rig.log.lines();
+    assert!(
+        lines.contains(&format!(
+            "WARN: Diagnostic gap in pool bravo, job VM {leftover}: private export unavailable, incomplete, unsafe or over budget; prior evidence retained."
+        )),
+        "{lines:?}"
+    );
+    assert!(rig.fake.vm_names().contains(&leftover));
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn a_slot_cycle_clones_the_newest_golden_vm_sets_it_boots_it_and_waits_for_the_agent() {
     let rig = Rig::new();
