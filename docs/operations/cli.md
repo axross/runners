@@ -167,12 +167,12 @@ Otherwise the errors come in the order the checks find them:
    `name`, `cpus`, `memoryGb`, on axmc `diskGb`, then `diagnostics` and
    `diagnosticRawRecords` when they are not booleans, `diagnosticDirectory`, and last
    `diagnosticRawRecords: requires diagnostics`.
-4. The cross-entry checks, among the entries that join them as Cross-entry checks
-   under [Behaviour That Is Easy to Miss](#behaviour-that-is-easy-to-miss) states.
-   For each entry after the first, in file order, against each earlier entry in
-   file order: a colliding `name`, then for the same
-   repository a different token file or an ambiguous routing label, or for another
-   repository a reused token file.
+4. The cross-entry checks, among the entries that join them, as the Cross-entry
+   checks bullet under
+   [Behaviour That Is Easy to Miss](#behaviour-that-is-easy-to-miss) states. For
+   each entry after the first, in file order, against each earlier entry in file
+   order: a colliding `name`, then for the same repository a different token file
+   or an ambiguous routing label, or for another repository a reused token file.
 5. On axmc, the budget checks, over the same entries as step 4.
 
 The exit code is 1 and standard output is empty whenever there is an error. A valid
