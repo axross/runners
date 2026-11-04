@@ -137,6 +137,21 @@ summary on standard output is the same with or without a checkout. The rule appl
 both profiles but can only bite where the profile's path form matches the
 operating system: axpc on Windows, axmc on Linux and macOS.
 
+For the agent the checkout is found from the sink itself. The agent's configuration
+lives outside any checkout, so the checkout above the file would never exist: the
+agent compares each `diagnosticDirectory` with the first directory at or above that
+directory that holds both `.git` and `cli/Cargo.toml`, found the same way, lexically
+and without resolving a link, and with the same per-profile case rule. It also applies
+the checkout above its configuration file where one exists. A sink at or under either
+is a configuration problem, `repositories[n].diagnosticDirectory: must be outside the
+checkout`, in the snapshot, and the agent stops for `invalid_configuration`. The agent
+looks from a sink only when the path is one of the host it runs on, so a Windows path
+read on another host is not compared. Because the sink's own place was examined, the
+agent writes no note that the rule was skipped. `start`, `validate` and `build` are
+unchanged: their checkout stays the one above the configuration file.
+`tests/checkout_rule_agent.rs` covers a sink inside a checkout, outside one, a sibling
+prefix, case, and the unchanged rule of `start`.
+
 Known limitation: the axmc comparison is case-sensitive, while macOS's default APFS
 volume is case-insensitive. A `diagnosticDirectory` that differs from the checkout
 only in case therefore passes the rule even though it names the same directory. The
@@ -855,7 +870,7 @@ cancelled leaves the agent stopped by you (`by_you`), whatever it was stopped fo
 before, since the build read the configuration again and the snapshot's problems
 and pools are those of that read. Its outcome, `ready`, is only in `agent.build`,
 and the refreshed image entry is in `images`: "stopped with the image ready", in
-the plan's table of states, is that outcome and not a reason. A build that fails
+the state table above, is that outcome and not a reason. A build that fails
 stops the agent for `image_build_failed`, and a cancelled one is stopped by you.
 The app's rule to restart the agent when the last state it heard was stopped by you
 is unchanged. A `start_all` answers

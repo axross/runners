@@ -720,6 +720,13 @@ how a bundle is written.
   the repository's files. The CLI refuses a sink that fails its checks and never
   creates, repairs, or relaxes one; the checks and the modes a bundle is written
   with are under Sink checks in [CLI](../operations/cli.md#diagnostics).
+- For `start` the checkout is the one above the configuration file; the agent's
+  configuration lives outside any checkout, so the agent finds the checkout from
+  the sink itself, the first directory at or above it that holds both `.git` and
+  `cli/Cargo.toml`, and refuses a sink at or under it, with the same lexical,
+  link-free comparison and the per-profile case rule ([The Checkout
+  Rule](../operations/cli.md#the-checkout-rule)). A sink the agent could not look at
+  from its own place, such as a path of another host, is not compared.
 - On Windows the CLI does not check the sink's owner or access rules, because no
   safe call reads them; a bundle inherits the sink's rules. The operator's ACL step
   in

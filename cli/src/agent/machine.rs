@@ -14,7 +14,7 @@ use serde_json::json;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::time::{Instant, MissedTickBehavior, interval, sleep_until, timeout};
 
-use crate::command::{LoadError, checkout_rule_note, load_plan};
+use crate::command::{LoadError, load_plan_under};
 use crate::instance::lifecycle::{CatchPanic, CoreFailure, Ending, StopTimes};
 use crate::instance::restart::{RestartPolicy, Verdict};
 use crate::instance::steps::{self, Steps};
@@ -320,10 +320,9 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
     /// could not be read.
     fn read_configuration(&self) -> Result<Plan, Reason> {
         let path = &self.settings.config_path;
-        let loaded = load_plan(path, Profile::Axpc);
-        if loaded.checkout_rule_skipped {
-            self.log.info(&checkout_rule_note(path));
-        }
+        // the configuration lives outside any checkout, so the rule is applied from each
+        // diagnostic directory's own place
+        let loaded = load_plan_under(path, Profile::Axpc, true);
         match loaded.outcome {
             Ok(plan) => {
                 {
