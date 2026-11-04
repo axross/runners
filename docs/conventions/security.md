@@ -657,10 +657,17 @@ named and used.
   is accepted on a single-user host, and the tiny window in which a process ID is
   reused between the connection and the check.
 - A token longer than 1280 UTF-16 code units or empty is refused before it reaches the
-  store, so a client cannot fill the store with arbitrary data.
+  store, so each token's size is bounded. The repository is not limited to the
+  configuration's: `token_set` accepts any well-formed `owner/name`, because a token
+  may be entered while the configuration is invalid.
 
 Residual risks, accepted on a single-user host:
 
+- A same-user client can create store entries for any well-formed repository name,
+  one token of at most 1280 units each, and the agent never removes one it did not
+  hear of. The agent's in-memory record of which repositories have a token also gains
+  an entry for each new name a `token_set` or `token_remove` names, until the next
+  configuration read replaces it; each key is bounded by the form of `owner/name`.
 - Another process of the same user that connects to the channel can set or remove
   a token, stop the runners or quit the agent, as it can for `start`'s
   commands.

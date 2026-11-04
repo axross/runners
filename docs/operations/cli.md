@@ -827,7 +827,7 @@ transition is answered at once, never queued behind it. It starts `running` or
 | Method         | Answer                                                                                                                                                                    |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `status`       | The snapshot, in any state                                                                                                                                                |
-| `start_all`    | Stopped: reads the configuration again, checks the image, and answers `resuming` at once, or `stopped` with the reason it could not. Running: the state it is in          |
+| `start_all`    | Stopped: reads the configuration again and checks the image, then answers `resuming`, or `stopped` with the reason it could not. Running: the state it is in              |
 | `stop_all`     | Running: runs the stop sequence (the same grace, budget and exit deadline of 28 s as `stop`) and answers `stopped` when it is done. Stopped: `stopped`                    |
 | `build`        | Stopped: answers `building` with the start time once the build began, and the snapshot tells the rest. Running: `refused`. A configuration that cannot be used: `refused` |
 | `quit`         | Runs the stop sequence if runners run, cancels a build, answers `quitting`, and ends the agent; the lock is free within a second of the answer                            |
@@ -861,6 +861,13 @@ snapshot, as the reason of the `stopped` state:
 | `no_pool_started`       | No pool could start, such as every pool without a token                      |
 | `restart_limit`         | The runtime core failed too often, under the same restart policy `start` has |
 | `image_build_failed`    | A `build` failed; the build's message is in the snapshot                     |
+
+The answer to a `start_all` follows the configuration read and the image check; it
+is not sent first. The check is one `docker image inspect` and, when that fails, one
+`docker image ls`, which share a bound of 4 s (the image check budget), so the answer
+comes within about that time and the pools are admitted after it. A client that
+needs a sooner answer bounds its own call and watches the `state` topic for the
+rest.
 
 After a `build` that succeeds the agent checks the image once more, as part of the
 build's own outcome: the check refreshes the snapshot's `images` entry with the new
