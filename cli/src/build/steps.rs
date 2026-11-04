@@ -78,8 +78,19 @@ async fn forward_lines<R: AsyncRead + Unpin>(
         if tail.len() == BUILD_TAIL_LINES {
             tail.pop_front();
         }
-        tail.push_back(log.masks().apply(line.trim()));
+        tail.push_back(cut_line(&log.masks().apply(line.trim())));
     }
+}
+
+/// cuts a line kept for the error to [`BUILD_TAIL_LINE_CHARS`] characters, after its
+/// masks were applied, so no part of a masked value survives the cut.
+fn cut_line(line: &str) -> String {
+    let mut chars = line.chars();
+    let mut kept: String = chars.by_ref().take(BUILD_TAIL_LINE_CHARS).collect();
+    if chars.next().is_some() {
+        kept.push_str("...");
+    }
+    kept
 }
 
 /// where the output of `docker build` goes.
@@ -97,6 +108,10 @@ const BUILD_LINE_BYTES: u64 = 8 * 1024;
 
 /// the last lines of a failed build's output the error carries.
 const BUILD_TAIL_LINES: usize = 5;
+
+/// the longest each of those lines is kept, so the five of them and the message
+/// before them fit the error's 500 characters, and the newest line is not the one cut.
+const BUILD_TAIL_LINE_CHARS: usize = 70;
 
 struct Output {
     succeeded: bool,
@@ -518,6 +533,19 @@ impl Steps<'_> {
             ),
         }
         self.log.info(&format!("{} is the new image.", self.image));
+    }
+}
+
+#[cfg(test)]
+mod cut_tests {
+    use super::*;
+
+    #[test]
+    fn a_line_is_cut_by_characters_and_a_short_one_is_kept() {
+        let exact = "é".repeat(BUILD_TAIL_LINE_CHARS);
+        assert_eq!(cut_line(&exact), exact);
+        let longer = "é".repeat(BUILD_TAIL_LINE_CHARS + 1);
+        assert_eq!(cut_line(&longer), format!("{exact}..."));
     }
 }
 

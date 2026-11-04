@@ -108,6 +108,34 @@ async fn the_log_continues_in_a_new_file_and_ten_are_kept() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn a_failed_build_with_long_lines_still_carries_its_last_line() {
+    let host = Host::new();
+    put_config(&host);
+    host.script("build_fails", "");
+    let output: String = (1..=7)
+        .map(|n| format!("line {n} {}\n", "x".repeat(300)))
+        .collect();
+    host.script("build_stderr", &output);
+    let stub = stub();
+    let agent = AgentProcess::spawn(&host, &stub.address, &["--stopped"]);
+    let conn = Conn::open(&agent.roots).await;
+    conn.ok("build").await;
+    let snapshot = conn.until_state("stopped").await;
+    let message = snapshot.agent.reason.unwrap().message;
+    // the last five lines are kept, the newest among them, each cut on its own
+    assert!(message.contains("line 7 "), "{message}");
+    assert!(message.contains("line 4 "), "{message}");
+    assert!(!message.contains("line 2 "), "{message}");
+    let build_message = snapshot.agent.build.unwrap().message.unwrap();
+    assert!(build_message.contains("line 7 "), "{build_message}");
+    // the whole error fits what the text is cut to, so nothing of it is cut
+    assert!(build_message.chars().count() <= 500, "{build_message}");
+    conn.ok("quit").await;
+    let (code, _) = agent.finish(Duration::from_secs(30)).await;
+    assert_eq!(code, Some(0));
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn a_build_logs_its_output_masked_and_a_failure_carries_the_last_lines() {
     let host = Host::new();
     put_config(&host);
