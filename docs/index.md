@@ -25,7 +25,9 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   repository runs its own jobs on GitHub-hosted runners only, the cache-poisoning
   threat model for shared runner storage, per-repository isolation on a runner
   host, the release record for the CLI's dispatch-only release workflow, the accepted
-  LAN-egress risk, what is never committed, and why the review
+  LAN-egress risk, the axmc Linux runtime's per-job VM, CPU placement in it, Softnet
+  and its SUID check, the accepted host-facing surface, and the pinned Tart, Softnet,
+  and golden VM base, what is never committed, and why the review
   gate admits one bot identity by login.
 - [conventions/documentation.md](./conventions/documentation.md) - which
   document a change to each runner surface invalidates, and what the
@@ -47,11 +49,11 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   recovery, health checks, rebuilding and updating, recovery, and rolling back to
   the PowerShell supervisor.
 - [operations/macos-runner-host.md](./operations/macos-runner-host.md) -
-  running Linux runners in Tart VMs on the Mac, the axmc host: installing Tart
-  and Softnet at the tested versions, setting up Softnet's SUID bit, the
-  signed-in session, the golden VM contract, and the sections that building,
-  running, sleep and network changes, removing a pool's VMs and verification
-  status will fill in.
+  running Linux runners in Tart VMs on the Mac, the axmc host, with the CLI: installing
+  Tart and Softnet at the tested versions, setting up Softnet's SUID bit, the
+  signed-in session, the golden VM contract, building the golden VM, running the
+  host, sleep, wake and network changes, removing the VMs of a pool no longer
+  configured, and the verification status.
 - [operations/cli.md](./operations/cli.md) - the CLI under `cli/`: what `validate`
   accepts and prints for the axpc and axmc host profiles, how it stays equal to the
   PowerShell validator, the shared fixtures and the parity test, the runtime layer
@@ -69,8 +71,8 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
 
 ## Glossary
 
-- [glossary.md](./glossary.md) - runner, image, host, CLI, agent-host, and
-  change-loop vocabulary.
+- [glossary.md](./glossary.md) - runner, image, host, CLI, golden VM, job VM,
+  Softnet, agent-host, and change-loop vocabulary.
 
 For what this project is, how to start it, and the commands it has, see
 [`README.md`](../README.md). [`AGENTS.md`](../AGENTS.md) is the working agreement
