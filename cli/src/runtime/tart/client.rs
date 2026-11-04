@@ -38,6 +38,10 @@ pub const TART_PROGRAM: &str = "tart";
 pub const TEST_TART_VARIABLE: &str = "MARSHAL_TEST_TART";
 const READ_CHUNK_BYTES: usize = 8 * 1024;
 
+/// how long the readers of a held process's output get to reach its end after the
+/// process has ended.
+pub(crate) const READ_TAIL: Duration = Duration::from_secs(1);
+
 /// resolves the client to run: a release build always returns [`TART_PROGRAM`], so a
 /// release binary cannot be made to run another program, and a debug build runs
 /// `requested` for the tests.
@@ -173,15 +177,15 @@ impl Captured {
 }
 
 #[derive(Debug, Default, Clone)]
-struct Cut {
+pub(crate) struct Cut {
     bytes: Vec<u8>,
     truncated: bool,
 }
 
-type Sink = Arc<Mutex<Cut>>;
+pub(crate) type Sink = Arc<Mutex<Cut>>;
 
 /// reads to the end, keeping the first [`MAX_OUTPUT_BYTES`] and dropping the rest.
-async fn drain<R: AsyncRead + Unpin>(mut reader: R, sink: Sink) {
+pub(crate) async fn drain<R: AsyncRead + Unpin>(mut reader: R, sink: Sink) {
     let mut chunk = [0_u8; READ_CHUNK_BYTES];
     loop {
         let read = match reader.read(&mut chunk).await {
@@ -202,7 +206,7 @@ fn snapshot(sink: &Sink) -> Cut {
     sink.lock().unwrap_or_else(PoisonError::into_inner).clone()
 }
 
-fn captured(code: Option<i32>, stdout: &Sink, stderr: &Sink) -> Captured {
+pub(crate) fn captured(code: Option<i32>, stdout: &Sink, stderr: &Sink) -> Captured {
     let (stdout, stderr) = (snapshot(stdout), snapshot(stderr));
     Captured {
         code,
@@ -284,9 +288,17 @@ impl RunningVm {
         self.child.id()
     }
 
-    /// waits for the client to end.
+    /// waits for the client to end, and then for its output to be read to the end,
+    /// for at most [`READ_TAIL`] longer, so a client that failed at once has its
+    /// error in [`output`](Self::output).
     pub async fn wait(&mut self) -> io::Result<ExitStatus> {
-        self.child.wait().await
+        let status = self.child.wait().await;
+        for mut reader in std::mem::take(&mut self.readers) {
+            if tokio::time::timeout(READ_TAIL, &mut reader).await.is_err() {
+                reader.abort();
+            }
+        }
+        status
     }
 
     /// the client's status if it has ended.
@@ -464,13 +476,40 @@ impl TartClient {
         self.capture(&arguments, input, budget).await
     }
 
+    /// the configuration the client runs with.
+    #[must_use]
+    pub fn config(&self) -> &TartConfig {
+        &self.config
+    }
+
+    /// the command that starts `tart run` for the local VM `name`, headless and on
+    /// Softnet: the client's environment and process group, standard input null, and
+    /// its output piped.
+    pub fn run_command(&self, name: &str) -> Result<Command, TartError> {
+        let mut command = self.command(&run_arguments(operand(name)?));
+        command.stdin(Stdio::null());
+        Ok(command)
+    }
+
+    /// starts `tart exec -i` of `command` in the running VM `name` with its standard
+    /// input, output and error piped, for a command that outlives a bounded call; the
+    /// caller writes the input and closes it, reads the output, and the client is
+    /// killed when the returned child is dropped, which ends the command in the VM.
+    pub fn spawn_exec(&self, name: &str, command: &[String]) -> Result<Child, TartError> {
+        let arguments = exec_arguments(operand(name)?, true, command);
+        let mut command = self.command(&arguments);
+        command.stdin(Stdio::piped());
+        command.spawn().map_err(TartError::Unavailable)
+    }
+
     /// starts `tart run` for the local VM `name`, headless and on Softnet; the call
     /// lasts as long as the VM, so it has no budget, and the client is killed when
     /// the returned value is dropped.
     pub fn spawn_run(&self, name: &str) -> Result<RunningVm, TartError> {
-        let mut command = self.command(&run_arguments(operand(name)?));
-        command.stdin(Stdio::null());
-        let mut child = command.spawn().map_err(TartError::Unavailable)?;
+        let mut child = self
+            .run_command(name)?
+            .spawn()
+            .map_err(TartError::Unavailable)?;
         let (stdout, stderr) = (Sink::default(), Sink::default());
         let mut readers = Vec::new();
         if let Some(stream) = child.stdout.take() {

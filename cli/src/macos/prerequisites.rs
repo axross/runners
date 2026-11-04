@@ -65,7 +65,7 @@ fn refuse(cause: Cause, message: String) -> Check {
     Check::Refuse(Refusal { cause, message })
 }
 
-fn section_of_document(title: &str) -> String {
+pub(crate) fn section_of_document(title: &str) -> String {
     format!("the \"{title}\" section of the {HOST_DOCUMENT} document")
 }
 

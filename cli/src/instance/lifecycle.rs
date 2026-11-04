@@ -782,6 +782,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
                         "Releasing the job host of {} slot {} failed: {error}",
                         host.pool, host.slot
                     ));
+                    self.containers_removed.set(false);
                 }
             })
             .collect();

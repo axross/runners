@@ -50,6 +50,18 @@ fn warn_gap(log: &dyn Log, record: &DiagnosticRecord, name: &str, text: &str) {
     ));
 }
 
+/// logs the gap left by a job VM that is deleted without its export, because a
+/// forced stop, a crash, or the next start found it: the evidence in it is lost, and
+/// the pool's earlier bundles stand.
+pub fn warn_discarded(log: &dyn Log, record: &DiagnosticRecord, vm: &str) {
+    if let Some(text) = gap_text(ExportOutcome::Failed) {
+        log.warn(&format!(
+            "Diagnostic gap in pool {}, job VM {vm}: {text}",
+            record.pool
+        ));
+    }
+}
+
 /// logs what a finalisation did that needs the operator's eye.
 pub fn report(log: &dyn Log, record: &DiagnosticRecord, name: &str, finalized: &Finalized) {
     if finalized.kept {

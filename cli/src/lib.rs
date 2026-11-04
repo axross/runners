@@ -23,3 +23,5 @@ pub mod shim;
 pub mod start;
 pub mod summary;
 pub mod validate;
+#[cfg(unix)]
+pub mod vm_shim;

@@ -201,9 +201,20 @@ pub struct DockerBackend<C> {
 /// removes a container from the running set when its run ends, a dropped future
 /// included; a panic leaves the name until a removal succeeds, so whatever supervises
 /// the code can still read and remove the container.
-struct RunningGuard<'a> {
+pub(crate) struct RunningGuard<'a> {
     set: &'a RefCell<BTreeSet<String>>,
     name: String,
+}
+
+impl<'a> RunningGuard<'a> {
+    /// records `name` as running until the guard drops.
+    pub(crate) fn enter(set: &'a RefCell<BTreeSet<String>>, name: &str) -> Self {
+        set.borrow_mut().insert(name.to_string());
+        Self {
+            set,
+            name: name.to_string(),
+        }
+    }
 }
 
 impl Drop for RunningGuard<'_> {
@@ -580,7 +591,7 @@ async fn end_client(child: &mut Child, limit: Duration) {
 /// forwards each line a container prints to the log until its stream ends; a line
 /// longer than [`MAX_LINE_BYTES`] goes in pieces, each cut where it splits no masked
 /// secret.
-async fn forward_lines<R: AsyncRead + Unpin>(stream: Option<R>, log: &dyn Log) {
+pub(crate) async fn forward_lines<R: AsyncRead + Unpin>(stream: Option<R>, log: &dyn Log) {
     let Some(stream) = stream else {
         return;
     };
@@ -796,13 +807,10 @@ impl<C: Clock> Backend for DockerBackend<C> {
             .diagnostic
             .as_ref()
             .map(|record| self.retained.started(&spec.name, record));
-        let _running = spec.diagnostic.is_none().then(|| {
-            self.running.borrow_mut().insert(spec.name.clone());
-            RunningGuard {
-                set: &self.running,
-                name: spec.name.clone(),
-            }
-        });
+        let _running = spec
+            .diagnostic
+            .is_none()
+            .then(|| RunningGuard::enter(&self.running, &spec.name));
         let (stdout, stderr) = (child.stdout.take(), child.stderr.take());
         let log = &*self.log;
         let (_, _, status) = tokio::join!(

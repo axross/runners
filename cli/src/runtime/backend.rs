@@ -10,6 +10,7 @@ use tokio::time::Instant;
 use crate::image::check::ImageCheck;
 use crate::validate::PlannedVolume;
 
+use super::name::is_own_container_name;
 use super::retained::Retained;
 use super::secret::Secret;
 
@@ -232,9 +233,23 @@ pub trait Backend {
     /// never a mismatch.
     fn check_image(&self, image: &str) -> impl Future<Output = ImageCheck>;
 
+    /// whether `candidate` is one of `pool`'s own leftovers by the name form the
+    /// backend gives its containers, or its hosts.
+    fn is_own_name(&self, pool: &str, candidate: &str) -> bool {
+        is_own_container_name(pool, candidate)
+    }
+
+    /// whether what a pool leaves behind is a job host that holds no evidence worth
+    /// a refusal: preparing the pool deletes each leftover through
+    /// [`remove_containers`](Backend::remove_containers) and never exports it, and
+    /// reports the evidence a diagnostics-enabled pool loses by that.
+    fn deletes_leftovers_unexported(&self) -> bool {
+        false
+    }
+
     /// lists the containers whose names contain `pool` and a hyphen, which Docker's
     /// filter matches anywhere in a name, and those carrying the diagnostics label;
-    /// callers keep only the names `is_own_container_name` accepts.
+    /// callers keep only the names [`is_own_name`](Backend::is_own_name) accepts.
     fn list_pool_containers(
         &self,
         pool: &str,

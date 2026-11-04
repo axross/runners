@@ -13,9 +13,9 @@ use crate::validate::{Entry, Plan, PlannedVolume, format_cpu_count};
 
 use super::backend::{Backend, DiagnosticRecord, HostRequest, JobHost, Mount, StopRequest};
 use super::board::{Board, PoolState};
-use super::diagnostic::{STOP_GRACE, STOP_WITHIN, finalize_claimed, gap_text};
+use super::diagnostic::{STOP_GRACE, STOP_WITHIN, finalize_claimed, gap_text, warn_discarded};
 use super::log::Log;
-use super::name::{cpu_probe_name, is_own_container_name};
+use super::name::cpu_probe_name;
 use super::token::read_token;
 
 const STALE_REMOVE_BUDGET: Duration = Duration::from_secs(120);
@@ -335,8 +335,12 @@ async fn clear_stale_containers<B: Backend>(
     for name in listing
         .names
         .iter()
-        .filter(|name| is_own_container_name(&pool.name, name))
+        .filter(|name| backend.is_own_name(&pool.name, name))
     {
+        if backend.deletes_leftovers_unexported() {
+            delete_leftover_host(backend, pool, name, log).await;
+            continue;
+        }
         if listing.diagnostic.contains(name) {
             if !backend.retained().contains(name) {
                 left.push(name.clone());
@@ -362,6 +366,24 @@ async fn clear_stale_containers<B: Backend>(
             Ok(())
         }
         None => refuse_left(backend, log, pool, left).await,
+    }
+}
+
+/// deletes a job host an earlier process left, without an export, because a host
+/// that outlived its process is not trusted with a pool's evidence; a diagnostics-
+/// enabled pool reports the gap that leaves.
+async fn delete_leftover_host<B: Backend>(backend: &B, pool: &PoolSpec, name: &str, log: &dyn Log) {
+    log.warn(&format!(
+        "Deleting job VM '{name}' left over from an earlier run."
+    ));
+    if let Some(record) = &pool.diagnostic {
+        warn_discarded(log, record, name);
+    }
+    if let Err(error) = backend
+        .remove_containers(&[name.to_string()], STALE_REMOVE_BUDGET)
+        .await
+    {
+        log.warn(&format!("Failed to delete job VM '{name}': {error}"));
     }
 }
 
