@@ -89,8 +89,7 @@ pub fn image_remove_arguments(reference: &str) -> Vec<String> {
     strings(&["image", "rm", reference])
 }
 
-/// removes the dangling images that carry the image label, as the PowerShell
-/// rebuild script does.
+/// removes the dangling images that carry the image label.
 #[must_use]
 pub fn prune_arguments() -> Vec<String> {
     strings(&[

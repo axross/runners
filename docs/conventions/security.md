@@ -9,7 +9,7 @@ input validation or the OWASP-style concerns the installed `application-security
 capability owns.
 
 The runner image under [`images/actions-runner/`](../../images/actions-runner) and
-the Windows host scripts under
+the host configuration under
 [`hosts/windows-docker-desktop/`](../../hosts/windows-docker-desktop) exist and are
 reviewed against the sections on runner trust and shared storage below. The
 agent-host configuration this repository is also for does not exist yet; those
@@ -518,10 +518,9 @@ later host:
   the token file's access control list, because no safe call reads it, so the
   restriction rests on the operator: the explicit step under Restricting a Token
   File in [Windows Runner Host](../operations/windows-runner-host.md#restricting-a-token-file)
-  restricts each file at install and at every rotation, and the rollback's Task
-  Scheduler setup does the same. That step's effect is not yet verified on axpc
-  ([#56](https://github.com/axross/runners/issues/56)): its `icacls` evidence was
-  not collected there.
+  restricts each file at install and at every rotation. That step's effect is not
+  yet verified on axpc ([#56](https://github.com/axross/runners/issues/56)): its
+  `icacls` evidence was not collected there.
 - Multiple execution pools for one repository MUST use the same token file;
   entries for different repositories MUST NOT share it. Extra pools do not expand
   the token's repository authority.
@@ -663,13 +662,12 @@ how a bundle is written.
   creates, repairs, or relaxes one; the checks and the modes a bundle is written
   with are under Sink checks in [CLI](../operations/cli.md#diagnostics).
 - On Windows the CLI does not check the sink's owner or access rules, because no
-  safe call reads them; a bundle inherits the sink's rules. The PowerShell exporter
-  of the rollback path checks them, but on a host that runs the CLI the operator's
-  ACL step in
+  safe call reads them; a bundle inherits the sink's rules. The operator's ACL step
+  in
   [Windows Runner Host](../operations/windows-runner-host.md#collecting-private-diagnostics)
-  is the only protection. A sink
-  whose rules admit another user would expose the evidence to that user. This is
-  accepted on a single-user host, with the ACL step kept in the procedure.
+  is the only protection on a host that runs the CLI. A sink whose rules admit
+  another user would expose the evidence to that user. This is accepted on a
+  single-user host, with the ACL step kept in the procedure.
 - The sink is never mounted into a job. The container's evidence leaves it only
   through the identity allowlist, which never reads the environment, and an archive
   reader that accepts only the collector's regular files, by name, within fixed

@@ -141,7 +141,7 @@ fn final_observed(metrics: &Path) -> Option<bool> {
         .read_to_end(&mut bytes)
         .ok()?;
     Some(bytes.split(|byte| *byte == b'\n').any(|line| {
-        // ignoring case, as PowerShell's -notmatch does
+        // ignoring case, as the smoke export's -notmatch does
         line.strip_suffix(b"\r")
             .unwrap_or(line)
             .eq_ignore_ascii_case(FINAL_OBSERVED.as_bytes())
@@ -346,9 +346,9 @@ mod tests {
     }
 
     #[test]
-    fn the_completion_marker_is_the_powershell_text() {
+    fn the_completion_marker_is_the_smoke_export_marker() {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../hosts/windows-docker-desktop/diagnostic-export.ps1");
+            .join("../images/actions-runner/tests/smoke-diagnostic-export.ps1");
         let source = std::fs::read_to_string(path).unwrap();
         assert!(source.contains(&format!("'complete.txt'), '{COMPLETE_TEXT}'")));
         assert!(source.contains("'(?m)^final=observed\\r?$'"));

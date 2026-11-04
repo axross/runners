@@ -64,8 +64,7 @@
     "contains": [
       "Host configuration is not valid JSON: keys with different casing"
     ],
-    "lacks": [],
-    "powershell": "reject"
+    "lacks": []
   },
   "rust/raw/comment.json": {
     "profile": "axpc",
@@ -73,8 +72,7 @@
     "contains": [
       "Host configuration is not valid JSON: expected a property name in double quotes"
     ],
-    "lacks": [],
-    "powershell": "accept"
+    "lacks": []
   },
   "rust/raw/empty-key.json": {
     "profile": "axpc",
@@ -82,22 +80,19 @@
     "contains": [
       "Host configuration is not valid JSON: a property name must not be empty"
     ],
-    "lacks": [],
-    "powershell": "reject"
+    "lacks": []
   },
   "rust/raw/empty.json": {
     "profile": "axpc",
     "outcome": "reject",
     "contains": ["configuration: must be an object"],
-    "lacks": [],
-    "powershell": "reject"
+    "lacks": []
   },
   "rust/raw/invalid-json.json": {
     "profile": "axpc",
     "outcome": "reject",
     "contains": ["Host configuration is not valid JSON:"],
-    "lacks": [],
-    "powershell": "reject"
+    "lacks": []
   },
   "rust/raw/invalid-utf8.json": {
     "profile": "axpc",
@@ -105,8 +100,7 @@
     "contains": [
       "Host configuration is not valid JSON: the file is not valid UTF-8"
     ],
-    "lacks": [],
-    "powershell": "accept"
+    "lacks": []
   },
   "rust/raw/leading-zero-integer.json": {
     "profile": "axpc",
@@ -114,8 +108,7 @@
     "contains": [
       "Host configuration is not valid JSON: a number must not have leading zeros"
     ],
-    "lacks": [],
-    "powershell": "accept"
+    "lacks": []
   },
   "rust/raw/lone-surrogate-escape.json": {
     "profile": "axpc",
@@ -123,50 +116,43 @@
     "contains": [
       "Host configuration is not valid JSON: a high surrogate must be followed by a low surrogate escape"
     ],
-    "lacks": [],
-    "powershell": "accept"
+    "lacks": []
   },
   "rust/raw/null-entry.json": {
     "profile": "axpc",
     "outcome": "reject",
     "contains": ["repositories[0]: must be an object"],
-    "lacks": [],
-    "powershell": "reject"
+    "lacks": []
   },
   "rust/raw/root-array.json": {
     "profile": "axpc",
     "outcome": "reject",
     "contains": ["configuration: must be an object"],
-    "lacks": [],
-    "powershell": "accept"
+    "lacks": []
   },
   "rust/raw/root-empty-array.json": {
     "profile": "axpc",
     "outcome": "reject",
     "contains": ["configuration: must be an object"],
-    "lacks": [],
-    "powershell": "reject"
+    "lacks": []
   },
   "rust/raw/root-null.json": {
     "profile": "axpc",
     "outcome": "reject",
     "contains": ["configuration: must be an object"],
-    "lacks": [],
-    "powershell": "reject"
+    "lacks": []
   },
   "rust/raw/root-scalar.json": {
     "profile": "axpc",
     "outcome": "reject",
     "contains": ["configuration: must be an object"],
-    "lacks": [],
-    "powershell": "reject"
+    "lacks": []
   },
   "rust/raw/single-quoted-string.json": {
     "profile": "axpc",
     "outcome": "reject",
     "contains": ["Host configuration is not valid JSON: unexpected character"],
-    "lacks": [],
-    "powershell": "accept"
+    "lacks": []
   },
   "rust/raw/token-path-canonically-equivalent.json": {
     "profile": "axpc",
@@ -174,8 +160,7 @@
     "contains": [
       "repositories[1].tokenPath: pools for the same repository must use the same token file as repositories[0]"
     ],
-    "lacks": [],
-    "powershell": "skip"
+    "lacks": []
   },
   "rust/raw/token-path-ignorable-character.json": {
     "profile": "axpc",
@@ -183,8 +168,7 @@
     "contains": [
       "repositories[1].tokenPath: pools for the same repository must use the same token file as repositories[0]"
     ],
-    "lacks": [],
-    "powershell": "skip"
+    "lacks": []
   },
   "rust/raw/trailing-comma.json": {
     "profile": "axpc",
@@ -192,8 +176,7 @@
     "contains": [
       "Host configuration is not valid JSON: expected a property name in double quotes"
     ],
-    "lacks": [],
-    "powershell": "accept"
+    "lacks": []
   },
   "rust/raw/unquoted-property-name.json": {
     "profile": "axpc",
@@ -201,8 +184,7 @@
     "contains": [
       "Host configuration is not valid JSON: expected a property name in double quotes"
     ],
-    "lacks": [],
-    "powershell": "accept"
+    "lacks": []
   },
   "rust/rejected/axmc-budget-errors-come-last.json": {
     "profile": "axmc",

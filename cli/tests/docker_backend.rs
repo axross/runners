@@ -144,11 +144,11 @@ fn job_call(
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn the_example_configuration_runs_the_powershell_contract() {
+async fn the_example_configuration_runs_the_run_contract() {
     let scratch = TempDir::new();
     let fake = Fake::new();
     let pools = example_pools(&scratch);
-    // the PowerShell golden inventory: six CPUs, so the five positions wrap.
+    // the golden inventory: six CPUs, so the five positions wrap.
     fake.script("probe_cpus", "2,5-6,11,14-15");
     fake.script("run_exit", "1");
 
@@ -390,7 +390,7 @@ async fn a_held_container_client_runs_in_its_own_process_group() {
 }
 
 /// the diagnostic variant of the run contract, written out here independently of
-/// the code under test from the PowerShell supervisor's `docker-commands.ps1`.
+/// the code under test.
 fn diagnostic_job_call(name: &str, raw_records: bool) -> Vec<String> {
     let mut call = words(&format!(
         "run --pull never --name {name} --label runners.diagnostic-lifecycle=1 --cpus 1 --cpuset-cpus 0 --memory 1g --memory-swap 1g -e ACTIONS_RUNNER_INPUT_JITCONFIG img:tag bash -c"
@@ -405,7 +405,7 @@ fn diagnostic_job_call(name: &str, raw_records: bool) -> Vec<String> {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn a_diagnostic_container_runs_the_powershell_variant_and_stays_retained_after_it_ends() {
+async fn a_diagnostic_container_runs_the_diagnostic_variant_and_stays_retained_after_it_ends() {
     for raw_records in [false, true] {
         let fake = Fake::new();
         let name = "d-1-20240305060708009";

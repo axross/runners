@@ -41,12 +41,6 @@ depends = ["rust:require"]
 dir = "cli"
 run = "cargo fetch --locked"
 
-[tasks."build:rust"]
-description = "Build the CLI's debug binary, which the parity test runs"
-depends = ["rust:require", "fetch:rust"]
-dir = "cli"
-run = "cargo build --locked"
-
 [tasks."format:rust"]
 description = "Rewrite the CLI's Rust files with rustfmt"
 depends = ["rust:require"]
@@ -76,11 +70,6 @@ description = "Check the CLI's crates for banned or duplicate versions, unreview
 depends = ["rust:require", "fetch:rust"]
 dir = "cli"
 run = "cargo deny --locked check bans licenses sources"
-
-[tasks."test:parity"]
-description = "Check the Rust validator against the PowerShell one on the shared fixtures, after its self-test"
-depends = ["build:rust"]
-run = "pwsh -NoProfile -NonInteractive -File tests/host-configuration/parity.ps1"
 
 [tasks.format]
 description = "Rewrite Markdown, JSON, YAML, and TypeScript files with Prettier, and Rust files with rustfmt"
@@ -264,10 +253,6 @@ console.log(`skills-lock.json and .claude/skills/ agree (${locked.length} skills
 '
 '''
 
-[tasks."test:host"]
-description = "Check the Windows host configuration validation against its fixtures and the example"
-run = "pwsh -NoProfile -NonInteractive -File hosts/windows-docker-desktop/tests/test-host-configuration.ps1"
-
 [tasks."test:set-release-version"]
 description = "Check the script that writes the release version into the CLI's Cargo.toml and Cargo.lock"
 run = "bash .github/scripts/tests/test-set-release-version.sh"
@@ -277,7 +262,7 @@ description = "Check the release gate that semantic-release runs before it tags 
 run = "bash .github/scripts/tests/test-verify-release.sh"
 
 [tasks.check]
-description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, host test, release script tests, Rust tests, Rust dependency check, parity test"
+description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, release script tests, Rust tests, Rust dependency check"
 depends = [
   "format:check",
   "lint",
@@ -285,10 +270,8 @@ depends = [
   "check:docs",
   "check:skills",
   "check:amp",
-  "test:host",
   "test:set-release-version",
   "test:verify-release",
   "test:rust",
   "deny:rust",
-  "test:parity",
 ]

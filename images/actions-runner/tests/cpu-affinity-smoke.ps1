@@ -1,7 +1,7 @@
 #Requires -Version 7.0
 param([Parameter(Mandatory)][string]$ImageName)
 $ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot '../../../hosts/windows-docker-desktop/docker-commands.ps1')
+. (Join-Path $PSScriptRoot 'smoke-docker-commands.ps1')
 $prefix = 'cpu-smoke-' + [Guid]::NewGuid().ToString('N')
 $names = New-Object System.Collections.Generic.List[string]
 $probe = "$prefix-cpu-probe-1"

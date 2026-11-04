@@ -1,5 +1,5 @@
 //! CPU placement: `validate`'s summary and the backend agree on the offsets, and the
-//! selection reproduces the PowerShell golden case of `test-cpu-affinity.ps1`.
+//! selection reproduces the golden case.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -13,8 +13,8 @@ use marshal_cli::runtime::pool::pools_from_plan;
 use marshal_cli::summary::plan_summary;
 use marshal_cli::validate::validate;
 
-/// the configuration the PowerShell test builds from `split-pools.json`: two slots
-/// of 1.5 CPUs, then one slot of a hair over 1 CPU, whose affinity count is 2.
+/// two slots of 1.5 CPUs, then one slot of a hair over 1 CPU, whose affinity count
+/// is 2.
 const CONFIG: &str = r#"{
   "imageName": "actions-runner:synthetic",
   "repositories": [
@@ -62,7 +62,7 @@ fn validate_and_the_backend_compute_the_same_counts_and_offsets() {
 }
 
 #[test]
-fn the_selection_reproduces_the_powershell_golden_case() {
+fn the_selection_reproduces_the_golden_case() {
     let plan = validate(CONFIG.as_bytes(), Profile::Axpc, None)
         .outcome
         .unwrap();
