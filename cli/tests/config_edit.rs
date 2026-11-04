@@ -1089,15 +1089,20 @@ fn several_edits_are_one_write() {
 #[test]
 fn the_start_up_clean_up_removes_what_an_interrupted_write_left_and_nothing_else() {
     let config = Config::new(SAMPLE);
-    let leftover = config
+    let leftover = config.dir.write(
+        "config.toml.0123456789abcdef0123456789abcdef.tmp",
+        b"half a fi",
+    );
+    let other = config.dir.write("config.toml.old.tmp", b"mine");
+    let short = config
         .dir
-        .write("config.toml.0123456789abcdef.tmp", b"half a fi");
-    let other = config.dir.write("config.toml.bak", b"mine");
+        .write("config.toml.0123456789abcdef.tmp", b"mine");
     let cleanup = remove_leftover_temporary_files(config.dir.path()).unwrap();
     assert_eq!(cleanup.removed, std::slice::from_ref(&leftover));
     assert!(cleanup.failed.is_empty());
     assert!(!leftover.exists());
     assert_eq!(fs::read(other).unwrap(), b"mine");
+    assert_eq!(fs::read(short).unwrap(), b"mine");
     assert_eq!(config.read(), SAMPLE);
 }
 

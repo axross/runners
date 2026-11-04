@@ -16,6 +16,9 @@ pub const CONFIG_FILE_NAME: &str = "config.toml";
 
 const TEMPORARY_SUFFIX: &str = ".tmp";
 
+/// the number of hexadecimal digits in the random part of a temporary file's name.
+const RANDOM_DIGITS: usize = 32;
+
 const NAME_ATTEMPTS: usize = 8;
 
 /// replaces `path` with `contents` if it still holds `expected`.
@@ -117,7 +120,7 @@ fn create_temporary(target: &Path) -> io::Result<(Temporary, File)> {
     }
     let mut last = io::Error::from(io::ErrorKind::AlreadyExists);
     for _ in 0..NAME_ATTEMPTS {
-        let path = folder.join(format!("{name}.{}{TEMPORARY_SUFFIX}", random_id()));
+        let path = folder.join(temporary_name(name, &random_id()));
         match options.open(&path) {
             Ok(file) => {
                 return Ok((
@@ -135,7 +138,13 @@ fn create_temporary(target: &Path) -> io::Result<(Temporary, File)> {
     Err(last)
 }
 
-/// 32 hexadecimal digits that differ for every call.
+/// the name of a temporary file for `file_name`: the one place the format is written.
+fn temporary_name(file_name: &str, random: &str) -> String {
+    format!("{file_name}.{random}{TEMPORARY_SUFFIX}")
+}
+
+/// two 16-digit parts, [`RANDOM_DIGITS`] lower-case hexadecimal digits that differ for
+/// every call.
 fn random_id() -> String {
     static COUNTER: AtomicU32 = AtomicU32::new(0);
     (0..2)
@@ -157,7 +166,8 @@ pub struct Cleanup {
     pub failed: Vec<(PathBuf, io::ErrorKind)>,
 }
 
-/// removes the files in `folder` named `config.toml.<anything>.tmp`, which an
+/// removes the files in `folder` named like the temporary files of a write,
+/// `config.toml.` and 32 lower-case hexadecimal digits and `.tmp`, which an
 /// interrupted write leaves behind, and nothing else. only regular files go, not
 /// links or folders. it is for a start, before anything writes: it cannot tell a
 /// leftover from the temporary file of a write in progress.
@@ -179,11 +189,20 @@ pub fn remove_leftover_temporary_files(folder: &Path) -> io::Result<Cleanup> {
     Ok(cleanup)
 }
 
+/// whether `name` is a temporary file name of the configuration file, as
+/// [`temporary_name`] makes it from [`random_id`] and nothing else.
 fn is_temporary_name(name: &str) -> bool {
-    name.strip_prefix(CONFIG_FILE_NAME)
+    let Some(random) = name
+        .strip_prefix(CONFIG_FILE_NAME)
         .and_then(|rest| rest.strip_prefix('.'))
         .and_then(|rest| rest.strip_suffix(TEMPORARY_SUFFIX))
-        .is_some_and(|random| !random.is_empty())
+    else {
+        return false;
+    };
+    random.len() == RANDOM_DIGITS
+        && random
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 #[cfg(test)]
@@ -213,26 +232,46 @@ mod tests {
         fs::metadata(path).unwrap().permissions()
     }
 
+    fn leftover_name(number: u128) -> String {
+        temporary_name(CONFIG_FILE_NAME, &format!("{number:032x}"))
+    }
+
     #[test]
-    fn a_name_is_a_leftover_when_it_has_the_pattern_and_something_between() {
-        for name in [
-            "config.toml.0123.tmp",
-            "config.toml.a.b.tmp",
-            "config.toml.tmp.tmp",
-        ] {
-            assert!(is_temporary_name(name), "{name}");
+    fn the_names_the_writer_makes_are_the_names_the_clean_up_matches() {
+        assert_eq!(random_id().len(), RANDOM_DIGITS);
+        for _ in 0..16 {
+            let name = temporary_name(CONFIG_FILE_NAME, &random_id());
+            assert!(is_temporary_name(&name), "{name}");
         }
+        assert_eq!(
+            leftover_name(0xab),
+            "config.toml.000000000000000000000000000000ab.tmp"
+        );
+    }
+
+    #[test]
+    fn only_the_exact_name_a_write_makes_is_a_leftover() {
+        let hex = "0123456789abcdef0123456789abcdef";
+        assert!(is_temporary_name(&format!("config.toml.{hex}.tmp")));
         for name in [
-            "config.toml",
-            "config.toml.tmp",
-            "config.toml..tmp",
-            "config.toml.0123.tmp.bak",
-            "config.toml.0123",
-            "config.json.0123.tmp",
-            "xconfig.toml.0123.tmp",
-            "config.toml0123.tmp",
+            "config.toml.old.tmp".to_string(),
+            "config.toml..tmp".to_string(),
+            "config.toml.tmp".to_string(),
+            "config.toml".to_string(),
+            "config.toml.a.b.tmp".to_string(),
+            "config.toml.tmp.tmp".to_string(),
+            format!("config.toml.{}.tmp", hex.to_uppercase()),
+            format!("config.toml.{}.tmp", &hex[1..]),
+            format!("config.toml.{hex}0.tmp"),
+            format!("config.toml.{}g.tmp", &hex[1..]),
+            format!("config.toml.{hex}.tmp.bak"),
+            format!("config.toml.{hex}"),
+            format!("config.json.{hex}.tmp"),
+            format!("xconfig.toml.{hex}.tmp"),
+            format!("config.toml{hex}.tmp"),
+            format!(".config.toml.{hex}.tmp"),
         ] {
-            assert!(!is_temporary_name(name), "{name}");
+            assert!(!is_temporary_name(&name), "{name}");
         }
     }
 
@@ -334,20 +373,24 @@ mod tests {
     #[test]
     fn the_clean_up_removes_only_the_matching_regular_files() {
         let dir = scratch("cleanup");
-        let leftovers = ["config.toml.0001.tmp", "config.toml.0002.tmp"];
+        let leftovers = [leftover_name(1), leftover_name(2)];
         let others = [
             "config.toml",
             "config.json",
             "config.toml.bak",
             "config.toml.tmp",
+            "config.toml.old.tmp",
+            "config.toml.0001.tmp",
+            "config.toml.0123456789ABCDEF0123456789ABCDEF.tmp",
             "notes.tmp",
-            "other.toml.0001.tmp",
+            "other.toml.0123456789abcdef0123456789abcdef.tmp",
         ];
-        for name in leftovers.iter().chain(&others) {
+        for name in leftovers.iter().map(String::as_str).chain(others) {
             fs::write(dir.join(name), name.as_bytes()).unwrap();
         }
-        fs::create_dir(dir.join("config.toml.0003.tmp")).unwrap();
-        fs::write(dir.join("config.toml.0003.tmp").join("inside"), b"x").unwrap();
+        let folder = leftover_name(3);
+        fs::create_dir(dir.join(&folder)).unwrap();
+        fs::write(dir.join(&folder).join("inside"), b"x").unwrap();
 
         let cleanup = remove_leftover_temporary_files(&dir).unwrap();
 
@@ -360,10 +403,10 @@ mod tests {
         assert_eq!(removed, leftovers);
         assert!(cleanup.failed.is_empty());
         let mut remaining: Vec<String> = others.iter().map(ToString::to_string).collect();
-        remaining.push("config.toml.0003.tmp".to_string());
+        remaining.push(folder.clone());
         remaining.sort();
         assert_eq!(names(&dir), remaining);
-        assert!(dir.join("config.toml.0003.tmp").join("inside").exists());
+        assert!(dir.join(&folder).join("inside").exists());
     }
 
     #[test]
@@ -377,9 +420,10 @@ mod tests {
     fn the_clean_up_leaves_a_link_alone() {
         let dir = scratch("cleanup-link");
         fs::write(dir.join("target"), b"x").unwrap();
-        std::os::unix::fs::symlink(dir.join("target"), dir.join("config.toml.0001.tmp")).unwrap();
+        let link = dir.join(leftover_name(1));
+        std::os::unix::fs::symlink(dir.join("target"), &link).unwrap();
         let cleanup = remove_leftover_temporary_files(&dir).unwrap();
         assert!(cleanup.removed.is_empty());
-        assert!(dir.join("config.toml.0001.tmp").symlink_metadata().is_ok());
+        assert!(link.symlink_metadata().is_ok());
     }
 }
