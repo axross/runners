@@ -58,7 +58,9 @@ pub struct BuildRequest<'a> {
 /// runs `build` and returns its exit code; Docker is reached only after the lock,
 /// validation and the tag check.
 pub fn build(request: &BuildRequest<'_>, err: &mut dyn Write) -> u8 {
-    if let Some(refusal) = axmc_host_refusal(request.profile, cfg!(windows)) {
+    if cfg!(windows)
+        && let Some(refusal) = request.profile.refusal_on_windows()
+    {
         return print_error(err, &refusal);
     }
     let roots = match Roots::resolve(request.test_root) {
@@ -176,12 +178,6 @@ pub fn build(request: &BuildRequest<'_>, err: &mut dyn Write) -> u8 {
         Ok(()) => EXIT_OK,
         Err(error) => print_error(err, &error),
     }
-}
-
-/// why `build --profile axmc` cannot run on this host before it calls any engine: the
-/// axmc profile runs only on macOS, and Windows can never run it.
-fn axmc_host_refusal(profile: Profile, windows: bool) -> Option<&'static str> {
-    (profile == Profile::Axmc && windows).then_some("the axmc profile runs only on macOS")
 }
 
 /// holds the build VM under the VM shim, which is this program run again, so a CLI that
@@ -324,21 +320,5 @@ impl Build<'_> {
                     .with("state", state)
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn only_the_axmc_profile_on_windows_is_refused_before_an_engine_is_called() {
-        assert_eq!(
-            axmc_host_refusal(Profile::Axmc, true),
-            Some("the axmc profile runs only on macOS")
-        );
-        assert_eq!(axmc_host_refusal(Profile::Axmc, false), None);
-        assert_eq!(axmc_host_refusal(Profile::Axpc, true), None);
-        assert_eq!(axmc_host_refusal(Profile::Axpc, false), None);
     }
 }

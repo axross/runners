@@ -189,4 +189,11 @@ mod tests {
             Some("the axmc profile runs only on macOS")
         );
     }
+
+    #[test]
+    fn start_and_build_both_refuse_through_it() {
+        for command in [include_str!("start.rs"), include_str!("build/mod.rs")] {
+            assert!(command.contains("profile.refusal_on_windows()"));
+        }
+    }
 }
