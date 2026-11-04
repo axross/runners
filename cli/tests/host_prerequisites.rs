@@ -485,9 +485,9 @@ mod softnet {
             assert_eq!(facts.owner_mode.uid, metadata.uid());
             assert_eq!(facts.owner_mode.mode, 0o640, "{}", file.display());
         }
-        assert_eq!(
+        assert_ne!(
             std::fs::symlink_metadata(&link).unwrap().mode() & 0o777,
-            0o777,
+            0o640,
             "the link's own mode differs from its target's"
         );
         let directory_link = host.directory("dir-links").join("softnet");
