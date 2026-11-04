@@ -1012,8 +1012,8 @@ event with the warning text, and `warning` returns the text until the hold is ba
 running, so a `caffeinate` that keeps ending warns once, not at every retry.
 
 **Overrides.** A debug build reads these variables, and a release build ignores
-every one, which `tests/macos_processes.rs` shows for the programs and the
-directory by branching on the build profile:
+every one, which `tests/release_overrides.rs` shows in the release profile for the
+programs and the directory:
 
 | Variable                  | Replaces                                                                     |
 | ------------------------- | ---------------------------------------------------------------------------- |
@@ -1035,7 +1035,7 @@ The tests run the real code against the `fake-macos` helper, one program that pl
 `caffeinate`, `route` and `arp` by their arguments, records every call's arguments,
 process group and terminals, and answers as a test scripts it, including a failure,
 a hang and a flood. `macos_signals.rs` covers the pure judgments, and
-`macos_processes.rs` the readers, the bounds, the hold and the overrides. Not
+`macos_processes.rs` the readers, the bounds, the hold and the scripted source. Not
 verified by them: the output of a real macOS `route` and `arp`, which the samples
 copy from Apple's source (a VPN's `gateway: link#<index>` form included), and a real
 sleep; both wait for the first run on the Mac.
@@ -1535,8 +1535,10 @@ tests also set `PATH` to find the fake `softnet`, as Tart does, and
 `MARSHAL_TEST_SOFTNET_OWNER_MODE` to judge its file, and `MARSHAL_TEST_SIGNALS` to
 script the sleep, the primary network and the keep-awake hold. Only a debug
 build honours any of them: in the release profile `tests/base_address.rs` shows
-that the client stays `docker`, and `tests/build_definition.rs` that `build` keeps
-the embedded definition. The tests name the fake client rather than put it first on `PATH`,
+that the client stays `docker`, `tests/build_definition.rs` that `build` keeps
+the embedded definition, and `tests/release_overrides.rs` that the client stays
+`tart`, the `route`, `arp` and `caffeinate` programs stay the system's, the
+signals are not read from a directory, and Softnet's file is judged as it is. The tests name the fake client rather than put it first on `PATH`,
 because Windows searches the program's directory and the system directories before
 `PATH`, so a real `docker.exe` in `System32` would win.
 
@@ -2324,8 +2326,9 @@ The `rust` job in
 [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) runs format check,
 clippy, and tests on Linux, Windows, and macOS; the axpc checkout-rule cases that
 need drive-letter paths run only on Windows. Four more steps run on Linux only: the
-base-address, instance-roots, and build-definition tests again with `--release` and
-`MARSHAL_EXPECT_RELEASE=1`, which makes each fail if built in the wrong profile;
+base-address, instance-roots, build-definition, and release-overrides tests again
+with `--release` and `MARSHAL_EXPECT_RELEASE=1`, which makes each fail if built in
+the wrong profile;
 `docker build --target base` of
 [`images/actions-runner`](../../images/actions-runner), tagged and never pushed;
 the `real_docker` test with `--ignored`, pointed at that tag by
@@ -2393,9 +2396,9 @@ no cross-compilation, in one leg that:
 1. fails unless `rustc`'s host target is the one in the table, so a change of
    runner image fails the build instead of shipping the wrong architecture;
 2. writes the version with `set-release-version.sh`;
-3. runs the base-address, instance-roots, and build-definition tests with
-   `--release` and `MARSHAL_EXPECT_RELEASE=1`, the same tests the Linux `rust` job
-   runs, on the target itself;
+3. runs the base-address, instance-roots, build-definition, and release-overrides
+   tests with `--release` and `MARSHAL_EXPECT_RELEASE=1`, the same tests the Linux
+   `rust` job runs, on the target itself;
 4. builds `cargo build --locked --release --bin marshal`;
 5. fails unless the binary's `--version` prints `marshal <version>`, with the
    version its caller passed;

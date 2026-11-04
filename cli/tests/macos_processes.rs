@@ -9,7 +9,7 @@
 
 mod support;
 
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsString;
 use std::net::Ipv4Addr;
 use std::time::{Duration, Instant};
 
@@ -20,10 +20,8 @@ use marshal_cli::macos::mac::MacSignals;
 use marshal_cli::macos::network::{
     ARP_PROGRAM, HardwareAddress, NetworkReading, NetworkTools, PrimaryNetwork, ROUTE_PROGRAM,
 };
-use marshal_cli::macos::probe::{
-    MAX_OUTPUT_BYTES, PROBE_BUDGET, ProbeError, resolve_program, run_bounded,
-};
-use marshal_cli::macos::signals::{SignalSource, Signals, resolve_scripted_directory};
+use marshal_cli::macos::probe::{MAX_OUTPUT_BYTES, PROBE_BUDGET, ProbeError, run_bounded};
+use marshal_cli::macos::signals::{SignalSource, Signals};
 use support::macos::{ARP_ROUTER, FAKE_MACOS, Fake, ROUTE_WIFI};
 
 const WIFI_HARDWARE: [u8; 6] = [0xa4, 0x83, 0xe7, 1, 2, 3];
@@ -453,40 +451,6 @@ fn a_release_build_runs_the_system_programs_by_absolute_path() {
     assert_eq!(tools.route, ROUTE_PROGRAM);
     assert_eq!(tools.arp, ARP_PROGRAM);
     assert_eq!(KeepAwakeConfig::default().program, CAFFEINATE_PROGRAM);
-}
-
-#[test]
-fn the_program_overrides_name_the_program_in_a_debug_build_only() {
-    let fake = OsStr::new("/tmp/fake-macos");
-    for release in [ROUTE_PROGRAM, ARP_PROGRAM, CAFFEINATE_PROGRAM] {
-        let resolved = resolve_program(Some(fake), release);
-        if cfg!(debug_assertions) {
-            assert_eq!(resolved, fake);
-        } else {
-            assert_eq!(resolved, release);
-        }
-        assert_eq!(resolve_program(None, release), release);
-    }
-}
-
-#[test]
-fn the_signal_directory_override_is_read_in_a_debug_build_only() {
-    let directory = OsStr::new("/tmp/signals");
-    let resolved = resolve_scripted_directory(Some(directory));
-    if cfg!(debug_assertions) {
-        assert_eq!(
-            resolved.as_deref(),
-            Some(std::path::Path::new("/tmp/signals"))
-        );
-    } else {
-        assert_eq!(resolved, None);
-    }
-    assert_eq!(resolve_scripted_directory(None), None);
-    assert_eq!(
-        Signals::from_scripted_directory(Some(directory)).is_scripted(),
-        cfg!(debug_assertions)
-    );
-    assert!(!Signals::from_scripted_directory(None).is_scripted());
 }
 
 #[cfg(debug_assertions)]

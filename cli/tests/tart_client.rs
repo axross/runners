@@ -9,7 +9,7 @@
 
 mod support;
 
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsString;
 use std::process::Command;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -21,7 +21,7 @@ use marshal_cli::runtime::tart::args::{
     run_arguments, set_arguments, stop_arguments,
 };
 use marshal_cli::runtime::tart::client::{
-    TART_PROGRAM, TEST_TART_VARIABLE, program_from_environment, resolve_program,
+    TART_PROGRAM, TEST_TART_VARIABLE, program_from_environment,
 };
 use marshal_cli::runtime::tart::list::{MAX_ENTRIES, parse_vm_list};
 use marshal_cli::runtime::tart::names::{
@@ -584,18 +584,6 @@ async fn a_name_tart_would_read_as_an_option_and_a_pull_not_by_digest_are_never_
         Err(TartError::Refused(_))
     ));
     assert!(fake.invocations().is_empty());
-}
-
-#[test]
-fn the_override_names_the_client_in_a_debug_build_only() {
-    let fake = OsStr::new("/tmp/fake-tart");
-    let resolved = resolve_program(Some(fake));
-    if cfg!(debug_assertions) {
-        assert_eq!(resolved, fake);
-    } else {
-        assert_eq!(resolved, TART_PROGRAM);
-    }
-    assert_eq!(resolve_program(None), TART_PROGRAM);
 }
 
 #[test]
