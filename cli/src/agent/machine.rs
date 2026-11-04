@@ -319,6 +319,14 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
     /// reads the configuration again into the agent's record; the reason is why it
     /// could not be read.
     fn read_configuration(&self) -> Result<Plan, Reason> {
+        let result = self.read_configuration_file();
+        // the read replaced what the snapshot shows, so subscribers are told now, even
+        // when what follows refuses the request that asked for it
+        self.publish();
+        result
+    }
+
+    fn read_configuration_file(&self) -> Result<Plan, Reason> {
         let path = &self.settings.config_path;
         // the configuration lives outside any checkout, so the rule is applied from each
         // diagnostic directory's own place

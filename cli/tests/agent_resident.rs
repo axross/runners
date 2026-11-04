@@ -661,6 +661,38 @@ async fn build_is_refused_while_the_runners_run_and_without_a_usable_configurati
     assert!(rig.builder.images.borrow().is_empty());
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn a_subscriber_is_told_of_a_configuration_a_refused_build_found_invalid() {
+    let rig = running_rig();
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Stopped, |mut conn| async move {
+            conn.client.subscribe().await.unwrap();
+            let first = conn.push().await;
+            let marshal_cli::agent::Push::Event { snapshot, .. } = first else {
+                panic!("the first push was not an event");
+            };
+            assert!(snapshot.configuration.problems.is_empty());
+            // the file is made invalid, and the first thing to read it is a refused build
+            rig.write_config("{ not json");
+            assert_eq!(conn.code("build", Value::Null).await, "refused");
+            let told = tokio::time::timeout(Duration::from_secs(1), async {
+                loop {
+                    if let marshal_cli::agent::Push::Event { snapshot, .. } = conn.push().await
+                        && !snapshot.configuration.problems.is_empty()
+                    {
+                        return snapshot;
+                    }
+                }
+            })
+            .await
+            .expect("the subscriber was not told within a second");
+            assert!(!told.configuration.problems.is_empty());
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
 // pools ----------------------------------------------------------------------------
 
 #[tokio::test(flavor = "current_thread")]
