@@ -203,10 +203,17 @@ async fn no_shim_holds_the_instance_lock() {
 
     drop(lock);
     let next = fs::File::open(&lock_path).unwrap();
-    assert!(
-        next.try_lock().is_ok(),
-        "the CLI's lock is free while its shim lives"
-    );
+    // a child that another test thread forks while the lock file is open shares its
+    // open file description, and so the lock, until that child execs; the shim lives
+    // on, so a lock still held after the budget is the shim's
+    let released = Instant::now();
+    while let Err(blocked) = next.try_lock() {
+        assert!(
+            released.elapsed() < Duration::from_secs(5),
+            "the CLI's lock is free while its shim lives: {blocked}"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
     drop(held);
     let closed = Instant::now();
     while !fake.vm_names().is_empty() {
