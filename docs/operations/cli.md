@@ -1669,7 +1669,13 @@ describes.
    that the file is uncommon or could be harmful, choose to keep it.
 2. Optionally, and recommended, run the [check block](#checking-the-download) on
    the downloaded file before opening it.
-3. When updating, stop the running instance first with `marshal stop`.
+3. Before opening the installer, do what applies:
+   - When updating, stop the running instance first with `marshal stop`.
+   - If this host has a manual install from `v0.1.0`, which is
+     `~/.local/bin/marshal` on macOS or a `marshal.exe` copied by hand to
+     `%LOCALAPPDATA%\Programs\marshal` on Windows, run the
+     [migration block](#migrating-from-a-manual-install). It stops the instance
+     itself.
 4. Open the downloaded file.
    - On Windows, if SmartScreen shows "Windows protected your PC", choose "More
      info", then "Run anyway". If another security warning names the file, choose
