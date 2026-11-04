@@ -1104,8 +1104,8 @@ failed call and an answer the reader does not know.
   name and the configured pools already decide is never asked about.
 - **Unreadable counts** because over-counting only makes a job wait, while
   under-counting could exceed the licence. A job VM of an unconfigured pool counts
-  in any state when its operating system is unreadable, and is named in the log
-  and in `status`, where the maintainer sees it and deletes it.
+  in any state when its operating system is unreadable. It is among the leftover
+  job VMs that the log and `status` are to name, so the maintainer can delete it.
 - **A job VM of a configured Linux pool is presumed Linux.** Only an explicit
   macOS answer counts it, as a VM left from before the pool's `os` changed. An
   answer of Linux, or an unreadable one, in any state, does not, so a `tart get`
