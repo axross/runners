@@ -762,11 +762,6 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             }
         };
         let started = SystemTime::now();
-        // a build that succeeds leaves the agent stopped for the reason it had
-        let before = match &self.inner.borrow().phase {
-            Phase::Stopped(reason) => reason.clone(),
-            _ => Reason::by_you(),
-        };
         self.inner.borrow_mut().build = Some(BuildInfo {
             started: millis(started),
             outcome: "building".to_string(),
@@ -823,7 +818,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                 },
             }
         };
-        let reason = self.build_ended(&image, outcome, cancelled, before).await;
+        let reason = self.build_ended(&image, outcome, cancelled).await;
         let next = self.after_stop(reason);
         for reply in waiting {
             let _ = reply.send(Ok(self.state_result()));
@@ -865,15 +860,10 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
         image: &str,
         outcome: Result<(), String>,
         cancelled: bool,
-        before: Reason,
     ) -> Reason {
         let finished = Some(millis(SystemTime::now()));
         let (word, message, reason) = match outcome {
-            Ok(()) => (
-                "ready",
-                None,
-                if cancelled { Reason::by_you() } else { before },
-            ),
+            Ok(()) => ("ready", None, Reason::by_you()),
             Err(error) => {
                 let error = scrub_error_text(&error, "");
                 if cancelled {

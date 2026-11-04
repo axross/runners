@@ -496,8 +496,22 @@ async fn build_reports_building_with_its_start_and_ends_ready() {
     assert_eq!(*rig.builder.images.borrow(), ["actions-runner:local"]);
 }
 
+/// what a successful build leaves, whatever the agent was stopped for before it.
+fn assert_stopped_by_you_with_a_ready_image(snapshot: &marshal_cli::agent::snapshot::Snapshot) {
+    let reason = snapshot.agent.reason.as_ref().unwrap();
+    assert_eq!(reason.code, "by_you", "{snapshot:#?}");
+    assert_eq!(reason.message, "stopped by you");
+    assert_eq!(snapshot.agent.build.as_ref().unwrap().outcome, "ready");
+    assert!(
+        snapshot.configuration.problems.is_empty(),
+        "a problem of an earlier read remains: {snapshot:#?}"
+    );
+    assert_eq!(snapshot.pools.len(), 1, "{snapshot:#?}");
+    assert_eq!(snapshot.images[0].name, "actions-runner:local");
+}
+
 #[tokio::test(flavor = "current_thread")]
-async fn a_successful_build_keeps_the_reason_the_agent_was_stopped_for() {
+async fn a_successful_build_after_a_missing_image_leaves_the_agent_stopped_by_you() {
     let rig = Rig::new(ONE_POOL);
     rig.backend
         .state
@@ -516,7 +530,55 @@ async fn a_successful_build_keeps_the_reason_the_agent_was_stopped_for() {
                         && s.agent.build.as_ref().is_some_and(|b| b.outcome == "ready")
                 })
                 .await;
-            assert_eq!(snapshot.agent.reason.unwrap().code, "image_unusable");
+            assert_stopped_by_you_with_a_ready_image(&snapshot);
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_successful_build_after_an_invalid_configuration_is_fixed_leaves_it_stopped_by_you() {
+    let rig = Rig::new("{ not json");
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            let snapshot = conn.until_state("stopped").await;
+            assert_eq!(
+                snapshot.agent.reason.as_ref().unwrap().code,
+                "invalid_configuration"
+            );
+            assert!(!snapshot.configuration.problems.is_empty());
+            rig.write_config(ONE_POOL);
+            conn.ok("build").await;
+            let snapshot = conn
+                .until("the build to end", |s| {
+                    s.agent.state == "stopped"
+                        && s.agent.build.as_ref().is_some_and(|b| b.outcome == "ready")
+                })
+                .await;
+            assert_stopped_by_you_with_a_ready_image(&snapshot);
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_successful_build_after_no_pool_could_start_leaves_the_agent_stopped_by_you() {
+    // no token is stored, so no pool can start
+    let rig = Rig::new(ONE_POOL);
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            let snapshot = conn.until_state("stopped").await;
+            assert_eq!(snapshot.agent.reason.unwrap().code, "no_pool_started");
+            conn.ok("build").await;
+            let snapshot = conn
+                .until("the build to end", |s| {
+                    s.agent.state == "stopped"
+                        && s.agent.build.as_ref().is_some_and(|b| b.outcome == "ready")
+                })
+                .await;
+            assert_stopped_by_you_with_a_ready_image(&snapshot);
             conn.ok("quit").await;
         })
         .await;

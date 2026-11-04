@@ -850,8 +850,15 @@ snapshot, as the reason of the `stopped` state:
 After a `build` that succeeds the agent checks the image once more, as part of the
 build's own outcome: the check refreshes the snapshot's `images` entry with the new
 image's labels and warnings, and it does not change the `outcome`, which is the
-build's. A `build` that succeeds changes no reason: the agent is stopped for the reason it
-had before, and the outcome is only in `agent.build`. A `start_all` answers
+build's. A `build` that succeeds and is not
+cancelled leaves the agent stopped by you (`by_you`), whatever it was stopped for
+before, since the build read the configuration again and the snapshot's problems
+and pools are those of that read. Its outcome, `ready`, is only in `agent.build`,
+and the refreshed image entry is in `images`: "stopped with the image ready", in
+the plan's table of states, is that outcome and not a reason. A build that fails
+stops the agent for `image_build_failed`, and a cancelled one is stopped by you.
+The app's rule to restart the agent when the last state it heard was stopped by you
+is unchanged. A `start_all` answers
 `resuming`, which stays true until the pools are admitted: the snapshot's `state`
 becomes `running` once they are, or `stopped` with one of the reasons above when
 they could not be.
