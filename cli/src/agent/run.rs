@@ -77,8 +77,17 @@ where
         channel.address()
     ));
     let (changed, executable) = watch::channel(false);
+    let watched = resident.executable.as_deref().and_then(|path| {
+        let watched = Executable::at(path);
+        if watched.is_none() {
+            resident.log.warn(&format!(
+                "The agent cannot watch {} for a change, so it will not end when it is replaced.",
+                path.display()
+            ));
+        }
+        watched
+    });
     let watcher = tokio::spawn(async move {
-        let watched = resident.executable.as_deref().and_then(Executable::at);
         Executable::wait_for_change(watched, CHECK_EVERY).await;
         changed.send_replace(true);
     });
