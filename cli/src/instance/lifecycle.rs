@@ -740,6 +740,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
             times: self.times,
             force: &self.force,
             containers_removed: &self.containers_removed,
+            left: None,
         }
     }
 }

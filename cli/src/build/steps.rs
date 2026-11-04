@@ -78,6 +78,8 @@ enum Retag {
 /// one build of `image` from `context`.
 pub struct Steps<'a> {
     pub program: OsString,
+    /// variables added to every client's environment.
+    pub environment: Vec<(OsString, OsString)>,
     pub image: &'a str,
     /// the archive streamed to `docker build -`.
     pub context: Vec<u8>,
@@ -223,7 +225,7 @@ impl Steps<'_> {
 
     /// runs a client to its end and returns what it printed.
     async fn output_of(&self, arguments: &[String]) -> Result<Output, String> {
-        let mut command = client_command(&self.program, &[], arguments);
+        let mut command = client_command(&self.program, &self.environment, arguments);
         command.stdout(Stdio::piped()).stderr(Stdio::piped());
         let child = command
             .spawn()
@@ -280,7 +282,11 @@ impl Steps<'_> {
     /// runs the one `docker build`, streaming the context to its standard input and
     /// its output to the terminal.
     async fn build_image(&self, temporary: &str, built: u64) -> Result<(), String> {
-        let mut command = client_command(&self.program, &[], &build_arguments(temporary, built));
+        let mut command = client_command(
+            &self.program,
+            &self.environment,
+            &build_arguments(temporary, built),
+        );
         command
             .stdin(Stdio::piped())
             .stdout(Stdio::inherit())
@@ -347,7 +353,11 @@ impl Steps<'_> {
     /// does not, or the tag stalls for the command budget, the configured name's
     /// build-time label says whether it committed.
     async fn retag(&self, temporary: &str, built: u64) -> Retag {
-        let mut command = client_command(&self.program, &[], &tag_arguments(temporary, self.image));
+        let mut command = client_command(
+            &self.program,
+            &self.environment,
+            &tag_arguments(temporary, self.image),
+        );
         command.stdout(Stdio::piped()).stderr(Stdio::piped());
         let child = match command.spawn() {
             Ok(child) => child,
@@ -503,6 +513,7 @@ mod tests {
     ) -> Result<(), String> {
         let steps = Steps {
             program: dir.join("docker").into_os_string(),
+            environment: Vec::new(),
             image: IMAGE,
             context: Vec::new(),
             log,

@@ -4,7 +4,7 @@
 //! so is a `start` during it; see `docs/operations/cli.md`.
 
 mod arguments;
-mod steps;
+pub(crate) mod steps;
 
 use std::ffi::{OsStr, OsString};
 use std::io::Write;
@@ -152,6 +152,7 @@ impl Build<'_> {
         let (stop, stop_receiver) = watch::channel(None);
         let steps = Steps {
             program: self.program.clone(),
+            environment: Vec::new(),
             image: self.image,
             context,
             log: self.log,

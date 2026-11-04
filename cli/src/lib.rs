@@ -2,6 +2,7 @@
 //! `docs/operations/cli.md`.
 
 pub mod affinity;
+pub mod agent;
 pub mod build;
 pub mod checkout;
 pub mod command;

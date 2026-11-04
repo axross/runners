@@ -1,0 +1,499 @@
+//! one connection of protocol version 2, as the agent serves it: the handshake, the
+//! requests answered in order, the subscription's coalesced events and heartbeats,
+//! and the `ending` message; every limit is a timer on the agent's own runtime, so a
+//! silent or stalled client holds no thread, on any operating system.
+
+use std::future::pending;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
+
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::sync::{mpsc, oneshot, watch};
+use tokio::task::JoinHandle;
+use tokio::time::{Instant, sleep_until, timeout};
+
+use super::api::{ApiResult, Call, Parsed, parse};
+use super::snapshot::Snapshot;
+use super::wire::{
+    AgentVersion, ClientMessage, ErrorBody, ErrorCode, MAX_AGENT_MESSAGE_BYTES,
+    MAX_CLIENT_MESSAGE_BYTES, METHODS, ServerMessage, TOPIC_STATE, TOPICS, VERSION,
+};
+
+/// the time and count limits of the channel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Limits {
+    /// a connection that has not completed its handshake by then is closed.
+    pub handshake: Duration,
+    /// a connection with no subscription and no request pending that has sent
+    /// nothing for this long is closed.
+    pub idle: Duration,
+    /// a message that cannot be written in this long closes its connection.
+    pub write: Duration,
+    /// a subscribed connection gets a heartbeat after this long without an event.
+    pub heartbeat: Duration,
+    /// a subscribed connection gets at most one event per this.
+    pub coalesce: Duration,
+    /// connections open at once.
+    pub connections: usize,
+    /// connections that hold a subscription.
+    pub subscriptions: usize,
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        Self {
+            handshake: Duration::from_secs(5),
+            idle: Duration::from_secs(60),
+            write: Duration::from_secs(5),
+            heartbeat: Duration::from_secs(15),
+            coalesce: Duration::from_millis(250),
+            connections: 16,
+            subscriptions: 4,
+        }
+    }
+}
+
+/// the connections open now, and those that hold a subscription.
+#[derive(Debug, Default)]
+pub struct Counts {
+    open: AtomicUsize,
+    refused: AtomicUsize,
+    subscribed: AtomicUsize,
+}
+
+/// how a new connection is treated.
+#[derive(Debug)]
+pub enum Admission {
+    /// served, until the guard drops.
+    Open(Slot),
+    /// beyond the limit: it gets `busy` when its first line arrives.
+    Busy(Slot),
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Kind {
+    Open,
+    Refused,
+}
+
+/// a place among the open connections, or among those waiting for `busy`.
+#[derive(Debug)]
+pub struct Slot {
+    counts: Arc<Counts>,
+    kind: Kind,
+}
+
+impl Drop for Slot {
+    fn drop(&mut self) {
+        match self.kind {
+            Kind::Open => &self.counts.open,
+            Kind::Refused => &self.counts.refused,
+        }
+        .fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// a place among the subscriptions.
+struct Subscribed(Arc<Counts>);
+
+impl Drop for Subscribed {
+    fn drop(&mut self) {
+        self.0.subscribed.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+impl Counts {
+    /// places a new connection, or `None` when even the ones waiting for `busy` are
+    /// at the limit, and the connection is closed unanswered.
+    #[must_use]
+    pub fn admit(self: &Arc<Self>, limits: &Limits) -> Option<Admission> {
+        if self.open.fetch_add(1, Ordering::SeqCst) < limits.connections {
+            return Some(Admission::Open(Slot {
+                counts: Arc::clone(self),
+                kind: Kind::Open,
+            }));
+        }
+        self.open.fetch_sub(1, Ordering::SeqCst);
+        if self.refused.fetch_add(1, Ordering::SeqCst) < limits.connections {
+            return Some(Admission::Busy(Slot {
+                counts: Arc::clone(self),
+                kind: Kind::Refused,
+            }));
+        }
+        self.refused.fetch_sub(1, Ordering::SeqCst);
+        None
+    }
+
+    /// the number of connections open now.
+    #[must_use]
+    pub fn open(&self) -> usize {
+        self.open.load(Ordering::SeqCst)
+    }
+
+    /// the number of connections open or waiting to be told `busy`.
+    #[must_use]
+    pub fn all(&self) -> usize {
+        self.open() + self.refused.load(Ordering::SeqCst)
+    }
+
+    fn subscribe(self: &Arc<Self>, limits: &Limits) -> Option<Subscribed> {
+        if self.subscribed.fetch_add(1, Ordering::SeqCst) < limits.subscriptions {
+            Some(Subscribed(Arc::clone(self)))
+        } else {
+            self.subscribed.fetch_sub(1, Ordering::SeqCst);
+            None
+        }
+    }
+}
+
+/// what every connection shares with the agent.
+pub struct Shared {
+    pub calls: mpsc::UnboundedSender<Call>,
+    pub snapshots: watch::Receiver<Arc<Snapshot>>,
+    /// set to the reason when the agent is about to end.
+    pub ending: watch::Receiver<Option<String>>,
+    pub limits: Limits,
+    pub counts: Arc<Counts>,
+    pub agent_version: String,
+}
+
+enum Read {
+    Line(Vec<u8>),
+    /// the line did not end within the client's limit.
+    TooLong,
+    Closed,
+}
+
+/// stops its task when dropped.
+struct Reader(JoinHandle<()>);
+
+impl Drop for Reader {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+/// reads the client's lines on a task of its own, so waiting for a line never
+/// splits one, and holds the next line back until the previous one is taken.
+fn read_lines<R: AsyncRead + Unpin + Send + 'static>(read: R) -> (mpsc::Receiver<Read>, Reader) {
+    let (sender, lines) = mpsc::channel(1);
+    let task = tokio::spawn(async move {
+        let mut reader = BufReader::new(read);
+        loop {
+            let mut line = Vec::new();
+            let mut limited = (&mut reader).take(MAX_CLIENT_MESSAGE_BYTES as u64);
+            let read = match limited.read_until(b'\n', &mut line).await {
+                Ok(count) if count > 0 && line.last() == Some(&b'\n') => Read::Line(line),
+                Ok(count) if count >= MAX_CLIENT_MESSAGE_BYTES => Read::TooLong,
+                _ => Read::Closed,
+            };
+            let last = !matches!(read, Read::Line(_));
+            if sender.send(read).await.is_err() || last {
+                return;
+            }
+        }
+    });
+    (lines, Reader(task))
+}
+
+/// writes a message in at most `within`; false when it was not written, and the
+/// connection ends.
+async fn write<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    message: &ServerMessage<'_>,
+    within: Duration,
+) -> bool {
+    let line = message.line();
+    if line.len() > MAX_AGENT_MESSAGE_BYTES {
+        return false;
+    }
+    let written = async {
+        writer.write_all(&line).await?;
+        writer.flush().await
+    };
+    timeout(within, written)
+        .await
+        .is_ok_and(|outcome| outcome.is_ok())
+}
+
+struct Subscription {
+    snapshots: watch::Receiver<Arc<Snapshot>>,
+    seq: u64,
+    /// when the latest event or heartbeat was written.
+    last_push: Instant,
+    /// when the next event is due, once the snapshot changed.
+    due: Option<Instant>,
+    _slot: Subscribed,
+}
+
+/// the answer to a request still with the agent.
+type Pending = Option<(u64, oneshot::Receiver<ApiResult>)>;
+
+async fn answered(pending: &mut Pending) -> Result<ApiResult, oneshot::error::RecvError> {
+    match pending {
+        Some((_, answer)) => answer.await,
+        None => std::future::pending().await,
+    }
+}
+
+async fn changed(subscription: &mut Option<Subscription>) {
+    if let Some(subscription) = subscription
+        && subscription.snapshots.changed().await.is_ok()
+    {
+        subscription.snapshots.borrow_and_update();
+        return;
+    }
+    pending::<()>().await;
+}
+
+async fn at(deadline: Option<Instant>) {
+    match deadline {
+        Some(deadline) => sleep_until(deadline).await,
+        None => pending().await,
+    }
+}
+
+fn error(code: ErrorCode, message: &str) -> ErrorBody {
+    ErrorBody::new(code, message)
+}
+
+/// serves one connection until it ends, for any reason.
+pub async fn serve<S>(stream: S, shared: Arc<Shared>, admission: Admission)
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
+    let limits = shared.limits;
+    let (read, mut writer) = tokio::io::split(stream);
+    let (mut lines, _reader) = read_lines(read);
+    let first = match timeout(limits.handshake, lines.recv()).await {
+        Ok(Some(Read::Line(line))) => line,
+        _ => return,
+    };
+    let _slot = match admission {
+        Admission::Busy(slot) => {
+            let body = error(
+                ErrorCode::Busy,
+                "the agent has the most connections it serves; try again later",
+            );
+            write(
+                &mut writer,
+                &ServerMessage::Error { error: &body },
+                limits.write,
+            )
+            .await;
+            drop(slot);
+            return;
+        }
+        Admission::Open(slot) => slot,
+    };
+    let welcomed = match serde_json::from_slice::<ClientMessage>(&first) {
+        Ok(ClientMessage::Hello { versions, .. }) => versions.contains(&VERSION),
+        _ => false,
+    };
+    if !welcomed {
+        let body = ErrorBody::unsupported_protocol();
+        write(
+            &mut writer,
+            &ServerMessage::Error { error: &body },
+            limits.write,
+        )
+        .await;
+        return;
+    }
+    let welcome = ServerMessage::Welcome {
+        version: VERSION,
+        agent: AgentVersion {
+            version: shared.agent_version.clone(),
+        },
+        methods: &METHODS,
+        topics: &TOPICS,
+    };
+    if !write(&mut writer, &welcome, limits.write).await {
+        return;
+    }
+    Session {
+        shared: &shared,
+        writer,
+        lines,
+        subscription: None,
+        pending: None,
+        last_received: Instant::now(),
+    }
+    .run()
+    .await;
+}
+
+struct Session<'a, W> {
+    shared: &'a Shared,
+    writer: W,
+    lines: mpsc::Receiver<Read>,
+    subscription: Option<Subscription>,
+    pending: Pending,
+    last_received: Instant,
+}
+
+impl<W: AsyncWrite + Unpin> Session<'_, W> {
+    async fn send(&mut self, message: &ServerMessage<'_>) -> bool {
+        write(&mut self.writer, message, self.shared.limits.write).await
+    }
+
+    async fn run(mut self) {
+        let limits = self.shared.limits;
+        let mut ending = self.shared.ending.clone();
+        loop {
+            let reason = ending.borrow_and_update().clone();
+            if let Some(reason) = reason {
+                self.send(&ServerMessage::Ending { reason: &reason }).await;
+                return;
+            }
+            let idle = (self.subscription.is_none() && self.pending.is_none())
+                .then(|| self.last_received + limits.idle);
+            let heartbeat = self
+                .subscription
+                .as_ref()
+                .map(|subscription| subscription.last_push + limits.heartbeat);
+            let due = self
+                .subscription
+                .as_ref()
+                .and_then(|subscription| subscription.due);
+            let proceed = tokio::select! {
+                biased;
+                _ = ending.changed() => true,
+                answer = answered(&mut self.pending) => self.respond(answer).await,
+                () = changed(&mut self.subscription) => {
+                    self.schedule_event();
+                    true
+                }
+                () = at(due) => self.push_event().await,
+                () = at(heartbeat) => self.push_heartbeat().await,
+                () = at(idle) => false,
+                line = self.lines.recv(), if self.pending.is_none() => match line {
+                    Some(Read::Line(line)) => {
+                        self.last_received = Instant::now();
+                        self.handle(&line).await
+                    }
+                    _ => false,
+                },
+            };
+            if !proceed {
+                return;
+            }
+        }
+    }
+
+    fn schedule_event(&mut self) {
+        let coalesce = self.shared.limits.coalesce;
+        if let Some(subscription) = &mut self.subscription
+            && subscription.due.is_none()
+        {
+            subscription.due = Some((subscription.last_push + coalesce).max(Instant::now()));
+        }
+    }
+
+    async fn push_event(&mut self) -> bool {
+        let Some(subscription) = &mut self.subscription else {
+            return true;
+        };
+        subscription.due = None;
+        subscription.seq += 1;
+        subscription.last_push = Instant::now();
+        let snapshot = Arc::clone(&subscription.snapshots.borrow_and_update());
+        let seq = subscription.seq;
+        self.send(&ServerMessage::Event {
+            topic: TOPIC_STATE,
+            seq,
+            value: &snapshot,
+        })
+        .await
+    }
+
+    async fn push_heartbeat(&mut self) -> bool {
+        let Some(subscription) = &mut self.subscription else {
+            return true;
+        };
+        subscription.last_push = Instant::now();
+        let seq = subscription.seq;
+        self.send(&ServerMessage::Heartbeat { seq }).await
+    }
+
+    async fn respond(&mut self, answer: Result<ApiResult, oneshot::error::RecvError>) -> bool {
+        let Some((id, _)) = self.pending.take() else {
+            return true;
+        };
+        let answer = answer.unwrap_or_else(|_| {
+            Err(super::api::ApiError::new(
+                ErrorCode::Refused,
+                "the agent is ending",
+            ))
+        });
+        self.answer(id, &answer).await
+    }
+
+    async fn answer(&mut self, id: u64, answer: &ApiResult) -> bool {
+        let body = answer.as_ref().err().map(super::api::ApiError::body);
+        self.send(&ServerMessage::Response {
+            id,
+            result: answer.as_ref().ok(),
+            error: body.as_ref(),
+        })
+        .await
+    }
+
+    async fn handle(&mut self, line: &[u8]) -> bool {
+        let Ok(ClientMessage::Request { id, method, params }) =
+            serde_json::from_slice::<ClientMessage>(line)
+        else {
+            let body = error(ErrorCode::InvalidRequest, "the message is not a request");
+            return self.send(&ServerMessage::Error { error: &body }).await;
+        };
+        match parse(&method, params) {
+            Err(refusal) => self.answer(id, &Err(refusal)).await,
+            Ok(Parsed::Subscribe) => {
+                let answer = self.subscribe();
+                let sent = self.answer(id, &answer).await;
+                self.schedule_event();
+                sent
+            }
+            Ok(Parsed::Call(method)) => {
+                let (reply, answer) = oneshot::channel();
+                if self.shared.calls.send(Call { method, reply }).is_err() {
+                    let gone = Err(super::api::ApiError::new(
+                        ErrorCode::Refused,
+                        "the agent is ending",
+                    ));
+                    return self.answer(id, &gone).await;
+                }
+                self.pending = Some((id, answer));
+                true
+            }
+        }
+    }
+
+    fn subscribe(&mut self) -> ApiResult {
+        if self.subscription.is_none() {
+            let limits = &self.shared.limits;
+            let Some(slot) = self.shared.counts.subscribe(limits) else {
+                return Err(super::api::ApiError::new(
+                    ErrorCode::SubscriptionLimit,
+                    format!(
+                        "the agent serves {} subscriptions at once",
+                        limits.subscriptions
+                    ),
+                ));
+            };
+            let mut snapshots = self.shared.snapshots.clone();
+            snapshots.borrow_and_update();
+            self.subscription = Some(Subscription {
+                snapshots,
+                seq: 0,
+                last_push: Instant::now()
+                    .checked_sub(limits.coalesce)
+                    .unwrap_or_else(Instant::now),
+                due: None,
+                _slot: slot,
+            });
+        }
+        Ok(serde_json::json!({ "topic": TOPIC_STATE }))
+    }
+}

@@ -142,11 +142,11 @@ pub(crate) struct RawLog {
 /// creates a new log file in `directory`, created private when missing, and removes
 /// the oldest files beyond the newest 10; on macOS a directory or file that is not
 /// private is an error.
-pub(crate) fn create_log_file(directory: &Path) -> Result<RawLog, LogFileError> {
+pub(crate) fn create_log_file(directory: &Path, time: SystemTime) -> Result<RawLog, LogFileError> {
     prepare_directory(directory)?;
     let path = directory.join(format!(
         "{FILE_PREFIX}{}-{}{FILE_SUFFIX}",
-        stamp(SystemTime::now()),
+        stamp(time),
         std::process::id()
     ));
     let file = create_private(&path)?;
@@ -159,7 +159,7 @@ pub(crate) fn create_log_file(directory: &Path) -> Result<RawLog, LogFileError> 
 
 /// opens a new log file in `directory` that stops at 10 MiB; see [`create_log_file`].
 pub fn open_log_file(directory: &Path) -> Result<OpenedLog, LogFileError> {
-    let raw = create_log_file(directory)?;
+    let raw = create_log_file(directory, SystemTime::now())?;
     Ok(OpenedLog {
         path: raw.path,
         file: Capped::new(raw.file),

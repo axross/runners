@@ -43,8 +43,9 @@ pub struct PoolLedger {
 
 /// a finalisation that needs the operator's eye, kept until the container is
 /// removed after a complete export.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Finding {
+    pub pool: String,
     pub export: ExportOutcome,
     pub removed: bool,
     pub kept: bool,
@@ -294,6 +295,7 @@ impl Retained {
             findings.insert(
                 name.to_string(),
                 Finding {
+                    pool: record.pool.clone(),
                     export: finalized.export,
                     removed: finalized.removed,
                     kept: finalized.kept,
@@ -314,7 +316,7 @@ impl Retained {
         self.findings
             .borrow()
             .iter()
-            .map(|(name, finding)| (name.clone(), *finding))
+            .map(|(name, finding)| (name.clone(), finding.clone()))
             .collect()
     }
 

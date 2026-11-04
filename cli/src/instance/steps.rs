@@ -3,7 +3,7 @@
 //! beside the finalisation of the diagnostic containers; `docs/operations/cli.md`
 //! has the times.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 
 use tokio::sync::watch;
 
@@ -22,6 +22,9 @@ pub struct Steps<'a, B> {
     pub force: &'a watch::Sender<bool>,
     /// cleared when a removal fails, and kept cleared.
     pub containers_removed: &'a Cell<bool>,
+    /// where the names of containers whose removal failed are kept, when anyone
+    /// shows them.
+    pub left: Option<&'a RefCell<Vec<String>>>,
 }
 
 /// stops and removes `containers`, and finalises the diagnostic containers on their
@@ -68,5 +71,8 @@ async fn ordinary_steps<B: Backend>(steps: &Steps<'_, B>, containers: Vec<String
             .log
             .warn(&format!("Removing the containers failed: {error}"));
         steps.containers_removed.set(false);
+        if let Some(left) = steps.left {
+            left.borrow_mut().extend(containers);
+        }
     }
 }
