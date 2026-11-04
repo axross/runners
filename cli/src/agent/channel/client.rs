@@ -21,8 +21,8 @@ use crate::instance::roots::Roots;
 
 use super::super::snapshot::Snapshot;
 use super::super::wire::{
-    AgentMessage, ClientInfo, ClientMessage, ErrorBody, MAX_AGENT_MESSAGE_BYTES, TOPIC_STATE,
-    VERSION,
+    AgentMessage, ClientInfo, ClientMessage, ErrorBody, MAX_AGENT_MESSAGE_BYTES,
+    MAX_CLIENT_MESSAGE_BYTES, TOPIC_STATE, VERSION,
 };
 
 /// a client gives up connecting after this long and reads it as no agent.
@@ -86,6 +86,8 @@ pub enum CallError {
     /// the agent answered, but not with what the method's result is, such as a
     /// snapshot that cannot be read.
     BadAnswer(String),
+    /// the request is longer than the agent reads, so it was not written.
+    TooLong,
 }
 
 impl fmt::Display for CallError {
@@ -95,6 +97,10 @@ impl fmt::Display for CallError {
             Self::NotServed(method) => write!(f, "this agent does not serve {method}"),
             Self::Closed => f.write_str("the connection to the agent ended"),
             Self::BadAnswer(what) => write!(f, "the agent's answer could not be read: {what}"),
+            Self::TooLong => write!(
+                f,
+                "the request is longer than the {MAX_CLIENT_MESSAGE_BYTES} bytes the agent reads"
+            ),
         }
     }
 }
@@ -192,6 +198,10 @@ impl<W> Client<W> {
         };
         let mut line = serde_json::to_vec(&message).map_err(|_| CallError::Closed)?;
         line.push(b'\n');
+        // refused before anything is written, so the connection stays as it was
+        if line.len() > MAX_CLIENT_MESSAGE_BYTES {
+            return Err(CallError::TooLong);
+        }
         let (reply, answer) = oneshot::channel();
         {
             // checked under the lock the connection's end clears the answers with, so a
@@ -611,6 +621,84 @@ mod tests {
         );
         drop(client);
         assert_eq!(agent.await.unwrap(), "", "nothing was sent");
+    }
+
+    /// an agent that answers each request line with an empty result, and gives back
+    /// the lines it read once the client is dropped.
+    fn answering_agent(far: tokio::io::DuplexStream) -> tokio::task::JoinHandle<Vec<String>> {
+        tokio::spawn(async move {
+            let (read, mut write) = tokio::io::split(far);
+            let mut reader = BufReader::new(read);
+            let mut hello = String::new();
+            reader.read_line(&mut hello).await.unwrap();
+            write
+                .write_all(b"{\"type\":\"welcome\",\"version\":2,\"methods\":[\"status\",\"token_set\"],\"topics\":[]}\n")
+                .await
+                .unwrap();
+            let mut seen = Vec::new();
+            loop {
+                let mut line = String::new();
+                if reader.read_line(&mut line).await.unwrap() == 0 {
+                    return seen;
+                }
+                let request: serde_json::Value = serde_json::from_str(&line).unwrap();
+                let id = request["id"].as_u64().unwrap();
+                seen.push(line);
+                write
+                    .write_all(
+                        format!("{{\"type\":\"response\",\"id\":{id},\"result\":{{}}}}\n")
+                            .as_bytes(),
+                    )
+                    .await
+                    .unwrap();
+            }
+        })
+    }
+
+    /// `token_set` params that make the request line exactly `length` bytes with its
+    /// line break.
+    fn params_for_a_line_of(length: usize) -> serde_json::Value {
+        let line_with = |pad: usize| {
+            let message = ClientMessage::Request {
+                id: 1,
+                method: "token_set".to_string(),
+                params: serde_json::json!({ "token": "x".repeat(pad) }),
+            };
+            serde_json::to_vec(&message).unwrap().len() + 1
+        };
+        let pad = length - line_with(0);
+        serde_json::json!({ "token": "x".repeat(pad) })
+    }
+
+    #[tokio::test]
+    async fn a_request_longer_than_the_agent_reads_is_refused_before_it_is_written() {
+        let (near, far) = duplex(64 * 1024);
+        let agent = answering_agent(far);
+        let (client, _pushes) = handshake(near, &ClientInfo::default()).await.unwrap();
+        let too_long = params_for_a_line_of(MAX_CLIENT_MESSAGE_BYTES + 1);
+        assert_eq!(
+            client.call("token_set", too_long).await,
+            Err(CallError::TooLong)
+        );
+        // the connection is as it was: a request after it is answered, and one of the
+        // longest the agent reads is sent
+        assert_eq!(
+            client.call("status", serde_json::Value::Null).await,
+            Ok(serde_json::json!({}))
+        );
+        let longest = params_for_a_line_of(MAX_CLIENT_MESSAGE_BYTES);
+        assert_eq!(
+            client.call("token_set", longest).await,
+            Ok(serde_json::json!({}))
+        );
+        drop(client);
+        let seen = agent.await.unwrap();
+        assert_eq!(
+            seen.len(),
+            2,
+            "only the status and the longest were written"
+        );
+        assert_eq!(seen[1].len(), MAX_CLIENT_MESSAGE_BYTES);
     }
 
     #[tokio::test]
