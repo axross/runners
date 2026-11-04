@@ -220,3 +220,58 @@ async fn no_token_and_no_jit_configuration_reaches_a_snapshot_a_response_or_a_lo
             .all(|jit| jit == JIT)
     );
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_pool_with_diagnostics_lists_its_containers_and_what_the_exports_found() {
+    let rig = Rig::new(ONE_POOL);
+    // the fake engine never touches the sink, so a Windows path is as good here as any
+    let sink = r"C:\\diag";
+    rig.write_config(&ONE_POOL.replace(
+        r#""volumes":[]}"#,
+        &format!(r#""volumes":[],"diagnostics":true,"diagnosticDirectory":"{sink}"}}"#),
+    ));
+    rig.store_token("o", "r", TOKEN);
+    rig.hold_jobs();
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            conn.until_runner_runs().await;
+            let running = conn.status().await;
+            let diagnostics = running.pools[0]
+                .diagnostics
+                .clone()
+                .expect("diagnostics on");
+            assert!(diagnostics.limit > 0);
+            assert_eq!(diagnostics.containers.len(), 1, "{diagnostics:#?}");
+            assert_eq!(diagnostics.containers[0].state, "running");
+            assert!(!diagnostics.containers[0].bundle);
+            // a job ends while the agent runs: its bundle is admitted
+            rig.end_jobs().await;
+            let after = conn
+                .until("a bundle", |s| {
+                    s.pools[0]
+                        .diagnostics
+                        .as_ref()
+                        .is_some_and(|d| d.in_sink == Some(1))
+                })
+                .await;
+            assert_eq!(after.pools[0].diagnostics.as_ref().unwrap().written, 1);
+            // a stop exports what is left; an export with a gap is a finding, and a clean
+            // one is none
+            rig.backend
+                .state
+                .borrow_mut()
+                .export_results
+                .push_back(marshal_cli::runtime::backend::ExportOutcome::Gap);
+            rig.mark_running();
+            conn.ok("stop_all").await;
+            let stopped = conn.status().await;
+            let diagnostics = stopped.pools[0].diagnostics.clone().unwrap();
+            assert!(!diagnostics.findings.is_empty(), "{diagnostics:#?}");
+            assert_eq!(diagnostics.findings[0].export, "gap");
+            assert!(diagnostics.findings[0].removed);
+            assert!(diagnostics.manual_recovery.is_empty());
+            conn.ok("quit").await;
+        })
+        .await;
+}

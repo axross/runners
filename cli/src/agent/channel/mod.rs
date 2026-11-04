@@ -58,7 +58,35 @@ impl AgentChannel {
         snapshots: watch::Receiver<Arc<Snapshot>>,
         limits: Limits,
     ) -> Result<Self, ChannelError> {
-        let listener = Listener::open(roots)?;
+        Self::start(Listener::open(roots)?, calls, snapshots, limits)
+    }
+
+    /// like [`open`](Self::open), but accepts only peers whose user ID is `peer_uid`,
+    /// to show that a peer of another user is turned away; a debug build only.
+    #[cfg(all(unix, debug_assertions))]
+    #[doc(hidden)]
+    pub fn open_for_peer(
+        _lock: &InstanceLock,
+        roots: &Roots,
+        calls: mpsc::UnboundedSender<Call>,
+        snapshots: watch::Receiver<Arc<Snapshot>>,
+        limits: Limits,
+        peer_uid: u32,
+    ) -> Result<Self, ChannelError> {
+        Self::start(
+            Listener::open_accepting(roots, peer_uid)?,
+            calls,
+            snapshots,
+            limits,
+        )
+    }
+
+    fn start(
+        listener: Listener,
+        calls: mpsc::UnboundedSender<Call>,
+        snapshots: watch::Receiver<Arc<Snapshot>>,
+        limits: Limits,
+    ) -> Result<Self, ChannelError> {
         let address = listener.address();
         let (ending, ending_receiver) = watch::channel(None);
         let counts = Arc::new(Counts::default());
@@ -95,12 +123,15 @@ impl AgentChannel {
     /// waits up to `within` for the connections to end, so the message reaches a
     /// client that reads; a connection that has not ended then is dropped, so a
     /// client that never reads cannot hold the agent.
-    pub async fn close(self, reason: &str, within: Duration) {
+    pub async fn close(mut self, reason: &str, within: Duration) {
         self.ending.send_replace(Some(reason.to_string()));
         let deadline = tokio::time::Instant::now() + within;
         while self.counts.all() > 0 && tokio::time::Instant::now() < deadline {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
+        // the listener goes with its task, and the socket file with the listener
+        self.accepting.abort();
+        let _ = (&mut self.accepting).await;
     }
 }
 

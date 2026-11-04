@@ -28,7 +28,7 @@ use marshal_cli::instance::lock::InstanceLock;
 use marshal_cli::instance::roots::Roots;
 use marshal_cli::runtime::fake::{Call, FakeBackend, FakeClock, FakeRegistrar, MemoryLog};
 use marshal_cli::runtime::log::Log;
-use marshal_cli::token_store::{MemoryTokenStore, RepositoryKey};
+use marshal_cli::token_store::{MemoryTokenStore, RepositoryKey, TokenStore};
 use serde_json::{Value, json};
 use tokio::io::WriteHalf;
 use tokio::sync::{Notify, mpsc, watch};
@@ -88,11 +88,34 @@ impl ImageBuilder for FakeBuilder {
     }
 }
 
+/// the fake clock with a real pause in each sleep, so a backoff loop that the fake
+/// time would spin through lets the script and the channel run.
+pub struct PacedClock(pub FakeClock);
+
+impl std::ops::Deref for PacedClock {
+    type Target = FakeClock;
+
+    fn deref(&self) -> &FakeClock {
+        &self.0
+    }
+}
+
+impl marshal_cli::runtime::clock::Clock for PacedClock {
+    fn now(&self) -> std::time::SystemTime {
+        self.0.now()
+    }
+
+    async fn sleep(&self, duration: Duration) {
+        self.0.sleep(duration).await;
+        tokio::time::sleep(Duration::from_millis(2)).await;
+    }
+}
+
 pub struct Rig {
     pub root: TempDir,
     pub roots: Roots,
     pub backend: FakeBackend,
-    pub clock: Rc<FakeClock>,
+    pub clock: Rc<PacedClock>,
     pub registrar: FakeRegistrar,
     pub builder: FakeBuilder,
     pub store: Arc<MemoryTokenStore>,
@@ -101,6 +124,8 @@ pub struct Rig {
     pub times: Cell<StopTimes>,
     /// the file the agent watches, when a test asks for it.
     pub executable: RefCell<Option<PathBuf>>,
+    /// the agent has no token store, as on a host without one.
+    pub no_store: Cell<bool>,
     lock: RefCell<Option<InstanceLock>>,
 }
 
@@ -121,7 +146,7 @@ impl Rig {
             root,
             roots,
             backend: FakeBackend::default(),
-            clock: Rc::new(FakeClock::at(START)),
+            clock: Rc::new(PacedClock(FakeClock::at(START))),
             registrar,
             builder: FakeBuilder::default(),
             store,
@@ -129,6 +154,7 @@ impl Rig {
             limits: Cell::new(Limits::default()),
             times: Cell::new(StopTimes::default()),
             executable: RefCell::new(None),
+            no_store: Cell::new(false),
             lock: RefCell::new(Some(lock)),
         }
     }
@@ -136,7 +162,6 @@ impl Rig {
     /// stores `token` for the repository `owner/name`.
     pub fn store_token(&self, owner: &str, name: &str, token: &str) {
         use marshal_cli::runtime::secret::Secret;
-        use marshal_cli::token_store::TokenStore;
         self.store
             .set(
                 &RepositoryKey::of(owner, name),
@@ -191,7 +216,7 @@ impl Rig {
             clock: &self.clock,
             registrar: &self.registrar,
             builder: &self.builder,
-            store: Some(self.store.clone()),
+            store: (!self.no_store.get()).then(|| self.store.clone() as Arc<dyn TokenStore>),
             log: &self.log,
             roots: &self.roots,
             lock: &lock,
@@ -453,5 +478,110 @@ impl Rig {
         for n in 0..pools {
             self.store_token("o", &format!("repository-{n:04}"), TOKEN);
         }
+    }
+}
+
+impl Rig {
+    /// ends every job container the fake engine holds, as jobs that finish, without
+    /// stopping the agent; each runner then registers again.
+    pub async fn end_jobs(&self) {
+        use marshal_cli::runtime::backend::{Backend, StopRequest};
+        self.backend
+            .stop_containers(&StopRequest {
+                names: Vec::new(),
+                grace: Duration::ZERO,
+                budget: Duration::from_secs(1),
+            })
+            .await
+            .unwrap();
+    }
+
+    /// the tokens the registrations so far were made with, in order.
+    pub fn registered_with(&self) -> Vec<String> {
+        self.registrar
+            .seen
+            .borrow()
+            .iter()
+            .map(|seen| seen.token.clone())
+            .collect()
+    }
+}
+
+impl Conn {
+    /// polls until `ready` holds, for at most 20 s.
+    pub async fn eventually(&self, what: &str, ready: impl Fn() -> bool) {
+        let started = Instant::now();
+        while !ready() {
+            assert!(
+                started.elapsed() < Duration::from_secs(20),
+                "never saw {what}"
+            );
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    }
+}
+
+pub const HELPER: &str = env!("CARGO_BIN_EXE_instance-helper");
+
+/// the resident agent as a process of the helper, on the fake `docker` and a GitHub stub.
+pub struct AgentProcess {
+    child: std::process::Child,
+    pub roots: Roots,
+}
+
+impl AgentProcess {
+    /// starts the agent under `state`, with `extra` arguments after the usual ones.
+    pub fn spawn(host: &super::host::Host, github: &str, extra: &[&str]) -> Self {
+        let state = host.state();
+        let child = std::process::Command::new(HELPER)
+            .args(["agent", "--root"])
+            .arg(&state)
+            .args([
+                "--github-api",
+                github,
+                "--docker",
+                super::docker::FAKE_DOCKER,
+            ])
+            .arg("--docker-dir")
+            .arg(host.docker())
+            .args(extra)
+            .current_dir(host.root.path())
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        Self {
+            child,
+            roots: Roots::for_tests(&state),
+        }
+    }
+
+    /// waits up to `within` for the process to end, and returns its exit code and what
+    /// it wrote to standard error.
+    pub async fn finish(mut self, within: Duration) -> (Option<i32>, String) {
+        let started = Instant::now();
+        let status = loop {
+            if let Some(status) = self.child.try_wait().unwrap() {
+                break status;
+            }
+            assert!(
+                started.elapsed() < within,
+                "the agent did not end in {within:?}"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        };
+        let mut text = String::new();
+        if let Some(mut stderr) = self.child.stderr.take() {
+            std::io::Read::read_to_string(&mut stderr, &mut text).unwrap();
+        }
+        (status.code(), text)
+    }
+}
+
+impl Drop for AgentProcess {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }

@@ -27,6 +27,11 @@ impl Listener {
     pub fn open(roots: &Roots) -> Result<Self, ChannelError> {
         let uid = private::current_uid()
             .map_err(|error| ChannelError::Io(format!("finding the user: {error}")))?;
+        Self::open_accepting(roots, uid)
+    }
+
+    /// opens the socket for the peers whose user ID is `uid`.
+    pub fn open_accepting(roots: &Roots, uid: u32) -> Result<Self, ChannelError> {
         let (listener, socket) = bind_private(roots)?;
         Ok(Self {
             listener,
