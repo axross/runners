@@ -561,9 +561,11 @@ Do these once, before the first dispatch:
    `spctl` is expected to print `accepted` with `source=Notarized Developer ID`, and
    `pkgutil` a Developer ID Installer certificate chained to Apple's root; neither has
    been observed. That release is also the first run of `sign-macos` and
-   `verify-macos`, so record their outcomes, the team ID, and the bare binary's
-   designated requirement from `codesign -d -r-`. A later documentation change copies
-   the requirement into [CLI](./cli.md#the-signing-contracts). The real output
+   `verify-macos`, so record their outcomes, the team ID, which form of the
+   designated requirement `verify-macos` matched (its `MEASURED:` line names form A or
+   form B), and the bare binary's requirement from `codesign -d -r-`. A later
+   documentation change copies the form and the requirement into
+   [CLI](./cli.md#the-signing-contracts). The real output
    formats of `verify-macos`, `spctl` and `pkgutil` have not been observed, so a
    refusal by `verify-macos`, or an `spctl` or `pkgutil` result that differs from the
    expected one, is input for a follow-up fix pull request, not necessarily a defect

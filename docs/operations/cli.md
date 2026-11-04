@@ -1775,8 +1775,9 @@ that holds no signing identity. It takes the team ID and the notary submission I
 - the binary in the signed package is byte-identical to the signed bare binary;
 - the bare binary verifies with `codesign --verify --strict`, is signed by a Developer
   ID Application certificate of the team, carries the hardened runtime and a
-  timestamp, and its designated requirement is exactly the default one for the
-  identifier and the team, compared as a set of clauses;
+  timestamp, and its designated requirement is one of the two known default forms for
+  the identifier and the team ([The Signing Contracts](#the-signing-contracts) names
+  them), nothing else being accepted;
 - the package's signature is a Developer ID Installer chain of the team to Apple's
   root, `stapler validate` passes, and `spctl --assess --type install` accepts it;
 - the notary log's `jobId`, read with `plutil`, equals the submission ID `sign-macos`
@@ -1784,8 +1785,9 @@ that holds no signing identity. It takes the team ID and the notary submission I
   binary's CDHash.
 
 It then installs the signed package with `installer -pkg`, runs `codesign --verify` and
-`--version` on the installed file, and removes it. It prints `MEASURED:` lines for the
-designated requirement and for `spctl`'s answer. That is the first time the signed
+`--version` on the installed file, and removes it. It prints `MEASURED:` lines for
+which form of the designated requirement matched, the requirement itself, and
+`spctl`'s answer. That is the first time the signed
 package is checked, and it happens in the release run: a dry run cannot sign, and the
 signed package has not been opened on a Mac.
 
@@ -1820,17 +1822,32 @@ The contracts F0 owns are these:
   and M2 rely on, so a change goes through a roadmap revision.
 - **The designated requirement** is the default one for a Developer ID signature: this
   identifier, `anchor apple generic`, the Developer ID intermediate and leaf markers,
-  and `certificate leaf[subject.OU]` equal to the team ID. TN3127 shows it for an app:
-  `anchor apple generic and identifier "<id>" and (… certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = <team>)`.
-  Keychain items that trust it are expected to keep trusting later releases signed
-  under the same identifier and team, including after a certificate renewal; that is
+  and `certificate leaf[subject.OU]` equal to the team ID. Two forms of it are known,
+  and `verify-macos` accepts exactly these, after it drops `/* … */` comments,
+  collapses whitespace and unquotes the team ID:
+  - **Form A**, the expected one, is the plain `codesign` default: the conjunction of
+    `anchor apple generic`, `identifier "<id>"`,
+    `certificate 1[field.1.2.840.113635.100.6.2.6]`,
+    `certificate leaf[field.1.2.840.113635.100.6.1.13]` and
+    `certificate leaf[subject.OU] = <team>`, in any order, compared as a set of
+    clauses. It is inferred, not yet observed, because TN3127 says plain `codesign`
+    applies a different default from Xcode's and does not print it.
+  - **Form B** is the requirement Xcode writes for Developer ID code, from TN3127,
+    compared as a whole string:
+    `anchor apple generic and identifier "<id>" and (certificate leaf[field.1.2.840.113635.100.6.1.9] or certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = <team>)`.
+
+  The script prints a `MEASURED:` line naming the form that matched, then the
+  requirement, so the first signed release records which one it was. Keychain items
+  that trust the requirement are expected to keep trusting later releases signed under
+  the same identifier and team, including after a certificate renewal; that is
   inferred, not observed. After the first signed release, a later change records the
-  team ID and the exact requirement printed for the bare binary here, as the text
-  that K2 and M2 consume.
+  team ID, the form that matched, and the exact requirement printed for the bare
+  binary here, as the text that K2 and M2 consume.
+
 - **The team** is pinned by the Environment variable `MACOS_TEAM_ID`. `sign-macos`
   refuses a certificate of another team, and `verify-macos` refuses a designated
-  requirement other than the one built from the identifier and the team ID that
-  `sign-macos` output after checking it.
+  requirement that is neither form A nor form B above, each built from the identifier
+  and the team ID that `sign-macos` output after checking it.
 - **The Environment** is named `release`. The maintainer creates it and its secrets,
   and agents never change them or read the settings:
   - deployment branches: selected branches, `main` only, no tags;
@@ -1927,10 +1944,14 @@ shape check guards against mistakes. A pull request can edit it, so it is not th
 control against a hostile one: what keeps pull requests away from the Environment is
 the maintainer's branch rule and that `release.yaml` runs only on a dispatch. It reads
 the commands a signing script runs, but not what they are told to do, so these can
-still run code it does not see: the programs of `awk` and `sed`, the tests inside
-`[[ ]]`, an option or variable name built at run time, such as `find "$option"`,
-`read -r "$name"` and `printf -v "$name"`, an assignment through `${PATH:=...}`, and
-any environment variable other than `PATH`, `BASH_ENV` and `ENV`.
+still run code it does not see: the programs of `awk` and `sed`, the operands of a
+`[[ ]]` test, of which it reads only the command substitutions, an option or variable
+name built at run time, such as `find "$option"`, `read -r "$name"` and
+`printf -v "$name"`, an assignment through `${PATH:=...}`, and any environment variable
+other than `PATH`, `BASH_ENV` and `ENV`. It also does not see a write to `SHA256SUMS`
+in `release-build.yaml`'s `assemble` job other than by a redirection, `tee`, `cp` or
+`mv`, or a step condition in `attest` or `release` that skips a step, such as
+`if: false`.
 
 ### What the Signing Tests Cover
 
@@ -1973,11 +1994,14 @@ missing `build-pkg.sh` fail it too.
   `pkgbuild`, `openssl`, `plutil`, `shasum` and `xcrun` under the first, `pkgutil` under
   the second. A package manager, `curl` or `wget`, an interpreter, `source`, `eval` or
   `exec`, a path into the repository, a signing tool called by its bare name, and any
-  other command fail. So do a quoted or expanded command word, a backtick, an
-  arithmetic expansion `$(( ... ))` that contains `$(` or a backtick, an unreadable
+  other command fail. So do a quoted or expanded command word, a bare command
+  substitution where a command word would stand (one attached to a word, as in
+  `x=$(...)`, is read as that word's value), a backtick, an arithmetic expansion
+  `$(( ... ))` that contains `$(` or a backtick, an unreadable
   `trap` operand, a `find` option outside `-mindepth`, `-maxdepth`, `-type`, `-name`,
   `-print` and `-print0`, and a reference to `.github/`, `GITHUB_WORKSPACE` or
-  `github.workspace`.
+  `github.workspace`. The command substitutions inside a `[[ ]]` test are read as
+  commands too; the rest of the test is not.
 - **The tool prefixes.** A script that uses `SYSTEM_BIN` or `SYSTEM_SBIN` has the line
   `: "${SYSTEM_BIN:=/usr/bin}"` (`/usr/sbin` for `SYSTEM_SBIN`), gives it no other
   default, and neither assigns nor exports it. No `env:` of any workflow, job or step
@@ -1989,10 +2013,11 @@ missing `build-pkg.sh` fail it too.
   `read`, `printf -v`, `declare`, `typeset`, `local`, `export`, `readonly`, `mapfile`,
   `readarray`, `getopts`, `for` or `select` command that names one of the three. None
   of the three is an `env:` key at any level of `release.yaml`.
-- **Status functions in `sign-macos`.** A step whose `if` uses `always()`,
-  `failure()`, `cancelled()` or `success()`, whatever the case and inner spaces, is
-  the clean-up step (marker `# sign-macos: cleanup`) or the `notary-log-macos` upload.
-  Each of those two exists exactly once and has `if: always()`.
+- **Step conditions in `sign-macos`.** A step with any `if` is the clean-up step
+  (marker `# sign-macos: cleanup`) or the `notary-log-macos` upload, so a condition
+  such as `if: false` or `if: success()` is refused as well as the status functions
+  `always()`, `failure()` and `cancelled()`, whatever their case and inner spaces. Each
+  of those two steps exists exactly once and has `if: always()`.
 - **The check script.** The script marked `# sign-macos: check` lists in `bin_tools`
   and `sbin_tools` every tool the job calls by `$SYSTEM_BIN` or `$SYSTEM_SBIN`, and
   looks for `notarytool` and `stapler` with `xcrun --find`.
@@ -2003,9 +2028,11 @@ missing `build-pkg.sh` fail it too.
 - **The new jobs.** `sign-macos`, `verify-macos` and `assemble-signed` each need
   `plan` directly, carry
   `if: github.ref == 'refs/heads/main' && needs.plan.outputs.version != ''`, and set
-  `timeout-minutes` to at most 60, 20 and 10. `verify-macos` and `assemble-signed`
-  hold exactly `contents: read` and declare no environment, and their checkouts set
-  `persist-credentials: false`.
+  `timeout-minutes` to at most 60, 20 and 10. `verify-macos` runs on `macos-latest`
+  and `assemble-signed` on `ubuntu-latest`, and both hold exactly `contents: read` and
+  declare no environment; their checkouts set `persist-credentials: false`, and no
+  step of either carries an `if`. `attest` and `release` carry exactly the same
+  `if` as the new jobs.
 - **The chain.** Each job needs these directly: `sign-macos` needs `plan` and
   `build`; `verify-macos` adds `sign-macos`; `assemble-signed` adds `verify-macos`;
   `attest` needs `plan` and `assemble-signed`; `release` needs `plan` and `attest`.
@@ -2014,9 +2041,10 @@ missing `build-pkg.sh` fail it too.
   of `release` reads `needs.build`.
 - **No way past a failure.** No job or step of `release.yaml` sets
   `continue-on-error`. No job-level `if` uses `always()`, `failure()` or
-  `cancelled()`, and no step outside `sign-macos` does. `success()` is matched only in
-  `sign-macos` steps, under the rule above; the job-level and other-job rules match
-  `always`, `failure` and `cancelled`.
+  `cancelled()`, and neither does a step of any job but `sign-macos`, whose step
+  conditions are the rule above. A step of `verify-macos` or `assemble-signed` carries
+  no `if` at all. A step condition of `attest` or `release` that skips a step, such as
+  `if: false`, is not seen.
 - **The dry run's tool check.** In `release-build.yaml`'s `build` job, the "Check The
   Signing Tools" step runs on the macOS leg only, fails with `exit 1` when a tool is
   missing, and has no `env:` key that contains `SECRET` or `MACOS_`. Its `bin_tools`
@@ -2024,7 +2052,9 @@ missing `build-pkg.sh` fail it too.
   and `test-signed-pkg.sh` call, and it looks for `notarytool` and `stapler` with
   `xcrun --find`.
 - **The dry run's `assemble`.** Its checkouts set `persist-credentials: false`, a
-  script calls `assemble-release.sh`, and none writes `SHA256SUMS` itself.
+  script calls `assemble-release.sh`, and none writes `SHA256SUMS` itself, which means a
+  `>` or `>>` redirection to it, `tee`, or `cp` or `mv` with it as the destination;
+  reading it, as `cat` or `sha256sum -c` does, is not a write.
 
 The stand-ins record calls and return canned answers, so these tests show the flow
 and the refusals, not that Apple accepts a signature. The signed package is checked

@@ -236,8 +236,10 @@ Apply the lens for each kind of file in the diff.
   `actions/upload-artifact`, a package manager, a fetch, a file from the repository,
   or a `${{ }}` inside `run:`, or calling a signing tool by anything but its system path; a
   signing step that a later job can pass without, such as `continue-on-error`, a
-  job-level `always()`, `!cancelled()` or `failure()`, or a step-level `always()`
-  beyond the clean-up and the notary-log upload; an attest or release job that reads
+  job-level `always()`, `!cancelled()` or `failure()`, a step condition in
+  `sign-macos` beyond the `if: always()` of the clean-up and the notary-log upload, a
+  step condition in `verify-macos` or `assemble-signed`, or one in `attest` or
+  `release` that skips a step, which the shape check does not see; an attest or release job that reads
   the unsigned set or does not follow every signing step; a secret printed, or passed
   on a command line apart from `security`'s password arguments in `sign-macos`, the
   one exception for a credential that Security records; a change to how the notary
