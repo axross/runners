@@ -1729,7 +1729,7 @@ needs `plan` directly:
 
 Every signing step comes before `release`, so a signing, notarization or
 verification failure stops the run before any tag is pushed. The jobs and their
-`needs` chain are the contract that W1, W4 and M2, other children of roadmap
+`needs` chain are the contract that W1, W4, M2 and M4, other children of roadmap
 [#72](https://github.com/axross/runners/issues/72), extend
 ([Extending the Release Workflows](#extending-the-release-workflows); [The Signing
 Contracts](#the-signing-contracts) says what each of them is), and
@@ -1877,7 +1877,7 @@ pull request fixes it.
 
 ### The Signing Contracts
 
-F0 owns these. W1, W4, K2, M2 and M4 consume them. Each is a child of roadmap
+F0 owns these. W1, W4, M2 and M4 consume them. Each is a child of roadmap
 [#72](https://github.com/axross/runners/issues/72), as F0 is:
 
 - **F0**, "Installers and release signing", is the child this section describes.
@@ -1885,16 +1885,16 @@ F0 owns these. W1, W4, K2, M2 and M4 consume them. Each is a child of roadmap
   replaces the release's files. Its app's bundle identifier is the identifier
   below, because the app and its agent are one code object. W1 owns that use.
 - **W4**, "Automatic updates, on Windows", signs the update archive. The archive's
-  signature is W4's contract. W4 signs it under that contract, and adds that job or
-  those steps under the rules in
-  [Extending the Release Workflows](#extending-the-release-workflows).
-- **K2**, "Tokens in the operating system's store", has Keychain items that trust the
-  signed Marshal executable, the carrier named below.
+  signature is W4's contract. W4 makes it in W4's own update-signing job, under the
+  rules in [Extending the Release Workflows](#extending-the-release-workflows). M4
+  may also sign the Mac's update archive there.
 - **M2**, "Mac app", signs the Mac app with the same identifier and team, and
   notarizes and staples its disk image, in F0's signing job. The commands and the
-  layout are M2's.
+  layout are M2's. M2 also holds the Keychain store. Its Keychain items trust the
+  signed Marshal executable, the carrier named below, and must be created by F0's
+  stable Developer ID identity.
 - **M4**, "Mac app: login, power, updates and telemetry", updates the installed Mac
-  app. Its updates keep K2's Keychain tokens working only while the identifier and the
+  app. Its updates keep M2's Keychain tokens working only while the identifier and the
   team stay the same.
 
 The contracts F0 owns are these:
@@ -1902,12 +1902,12 @@ The contracts F0 owns are these:
 - **The identifier** is `app.axross.marshal`, and it never changes. One code object
   carries it: the `marshal` binary until W1's installer pull request, and from M2 on
   the Mac app bundle's signature, through its main executable. F0 proposes that from
-  M2 on `verify-macos` reads the designated requirement from the signed app, and K2's
-  trust matches it. F0 also asks M2's plan to compare, at M2's first release, the
+  M2 on `verify-macos` reads the designated requirement from the signed app, and M2's
+  Keychain trust matches it. F0 also asks M2's plan to compare, at M2's first release, the
   app's requirement with the one recorded for `marshal`, and to record any difference.
   M2's plan accepts or answers both. The package's own identifier is the same
   string. On Windows nothing is signed, so the identifier binds only the Mac. Changing
-  the identifier or the team breaks the Keychain trust that K2 and M2 rely on, so a
+  the identifier or the team breaks the Keychain trust that M2 relies on, so a
   change goes through a roadmap revision.
 - **The designated requirement** is the default one for a Developer ID signature: this
   identifier, `anchor apple generic`, the Developer ID intermediate and leaf markers,
@@ -1931,7 +1931,7 @@ The contracts F0 owns are these:
   the same identifier and team, including after a certificate renewal; that is
   inferred, not observed. After the first signed release, a later change records the
   team ID, the form that matched, and the exact requirement printed for the bare
-  binary here, as the text that K2 and M2 consume.
+  binary here, as the text that M2 consumes.
 
 - **The team** is pinned by the Environment variable `MACOS_TEAM_ID`. `sign-macos`
   refuses a certificate of another team, and `verify-macos` refuses a designated
@@ -2005,8 +2005,8 @@ codesign -d -r- /usr/local/bin/marshal
 
 ### Extending the Release Workflows
 
-The release workflows' structure is F0's, and W1, W4 and M2 extend them at these
-points:
+The release workflows' structure is F0's, and W1, W4, M2 and M4 extend them at
+these points:
 
 - **W1** adds its installer to the build legs and to the release set. That changes
   the five-file set, so the same change updates it across `release-build.yaml`,
@@ -2022,15 +2022,23 @@ points:
 - **M2** adds steps to `sign-macos` and `verify-macos` that sign the Mac app with the
   same identifier and team, and notarize and staple its disk image. The commands and
   the layout are M2's.
-- **W4** adds a job, or steps under the Environment, that sign the update archive. The
-  archive's signature is W4's contract.
+- **W4** adds its own update-signing job, which the roadmap adopted, to sign the
+  update archive. The archive's signature is W4's contract.
+- **M4** may sign the Mac's update archive in W4's update-signing job.
 
-Every extension keeps these rules:
+Every extension keeps these five rules:
 
 - only signing jobs declare the Environment;
 - a signing job holds `contents: read` and runs no repository code;
 - checksums and attestation follow every signing step;
-- no pull-request run reaches the Environment.
+- no pull-request run reaches the Environment;
+- F0's and M2's signing jobs use only operating-system signing tools.
+
+W4's update-signing job is the one exception. It runs `tauri-cli`'s `signer sign`. A
+tool job without the Environment builds that binary with `--locked` from a crate
+archive whose SHA-256 must equal one committed in the repository. The signing job
+checks the binary against the tool job's output before running it. F0's later
+revision sets how the job sits beside F0's jobs.
 
 An extension adds its jobs or steps to `check-release-shape.mjs` and its test in its
 own pull request, under REVIEW.md's release lens and the maintainer's review. The

@@ -346,7 +346,12 @@ record a change to either workflow, to the build call in
   - **Extensions** by later work add their signing jobs or steps to the shape check
     and keep these rules: only signing jobs declare the Environment, a signing job
     holds `contents: read` and runs no repository code, checksums and attestation
-    follow every signing step, and no pull-request run reaches the Environment.
+    follow every signing step, no pull-request run reaches the Environment, and
+    F0's and M2's signing jobs use only operating-system signing tools. W4's
+    update-signing job is the one exception: it runs `tauri-cli`'s `signer sign`,
+    built with `--locked` in a job without the Environment from a crate archive
+    whose SHA-256 equals one committed in the repository, and checked against that
+    job's output before it runs.
     [CLI](../operations/cli.md#extending-the-release-workflows) names the points.
 - **The documented install blocks run against the dry run's installers on hosted
   runners.** The `Install Blocks` job in
