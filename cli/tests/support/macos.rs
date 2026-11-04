@@ -135,9 +135,6 @@ pub fn invocations(dir: &Path) -> Vec<Invocation> {
         let Ok(argv) = fs::read(stem.with_extension("argv")) else {
             break;
         };
-        if argv.is_empty() {
-            break;
-        }
         let text = String::from_utf8(argv).unwrap();
         let environment = fs::read_to_string(stem.with_extension("env")).unwrap();
         let flag = |name: &str| {

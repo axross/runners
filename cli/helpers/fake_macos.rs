@@ -64,14 +64,13 @@ fn run() -> Result<u8, String> {
 fn record(dir: &Path, arguments: &[String]) -> Result<fs::File, String> {
     for number in 0..100_000 {
         let stem = dir.join(format!("inv-{number:06}"));
-        let argv = stem.with_extension("argv");
-        let created = fs::OpenOptions::new()
+        let claimed = fs::OpenOptions::new()
             .write(true)
             .create_new(true)
-            .open(&argv);
-        let Ok(mut file) = created else {
+            .open(stem.with_extension("claim"));
+        if claimed.is_err() {
             continue;
-        };
+        }
         let alive =
             fs::File::create(stem.with_extension("alive")).map_err(|error| error.to_string())?;
         alive.lock().map_err(|error| error.to_string())?;
@@ -80,13 +79,18 @@ fn record(dir: &Path, arguments: &[String]) -> Result<fs::File, String> {
         record_process_group(&stem);
         fs::write(stem.with_extension("env"), environment_lines())
             .map_err(|error| error.to_string())?;
-        // the arguments come last, so a call a test can name already holds its
-        // lock and has written the rest
-        file.write_all(arguments.join("\0").as_bytes())
-            .map_err(|error| error.to_string())?;
+        publish_arguments(&stem, arguments)?;
         return Ok(alive);
     }
     Err("no invocation number".to_string())
+}
+
+/// renames the arguments into place as `.argv`, so a call a test can name already
+/// holds its lock and has written the rest; a reader never sees them half written.
+fn publish_arguments(stem: &Path, arguments: &[String]) -> Result<(), String> {
+    let pending = stem.with_extension("argv.tmp");
+    fs::write(&pending, arguments.join("\0")).map_err(|error| error.to_string())?;
+    fs::rename(&pending, stem.with_extension("argv")).map_err(|error| error.to_string())
 }
 
 fn environment_lines() -> String {
