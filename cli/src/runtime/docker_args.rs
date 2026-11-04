@@ -1,7 +1,7 @@
-//! the exact `docker` argument lists of the run contract, the PowerShell supervisor's
-//! own from `hosts/windows-docker-desktop/docker-commands.ps1` and its helper
-//! functions, except the stop call (see `docs/operations/cli.md`); the tests hold only
-//! the launcher guard and the probe's reader script equal to that file.
+//! the exact `docker` argument lists of the run contract, except the stop call (see
+//! `docs/operations/cli.md`); the tests hold the launcher guard, the probe's reader
+//! script, the identity and copy commands equal to the image smoke tests' helpers in
+//! `images/actions-runner/tests/`.
 
 use super::backend::{ContainerSpec, Mount};
 use crate::image::check::labels_format;
@@ -338,25 +338,25 @@ mod tests {
         assert_eq!(arguments.last().map(String::as_str), Some(RUN_COMMAND));
     }
 
-    /// the text of docker-commands.ps1, which holds the launcher guard and the probe's
-    /// reader script.
-    fn powershell_source() -> String {
+    /// the text of smoke-docker-commands.ps1, which holds the launcher guard and the
+    /// probe's reader script.
+    fn smoke_commands_source() -> String {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../hosts/windows-docker-desktop/docker-commands.ps1");
+            .join("../images/actions-runner/tests/smoke-docker-commands.ps1");
         std::fs::read_to_string(path).unwrap().replace("\r\n", "\n")
     }
 
     #[test]
-    fn the_guard_script_is_the_powershell_guard_byte_for_byte() {
-        let source = powershell_source();
+    fn the_guard_script_is_the_smoke_guard_byte_for_byte() {
+        let source = smoke_commands_source();
         let start = source.find("@'\nset -eu\n").unwrap() + "@'\n".len();
         let end = start + source[start..].find("\n'@").unwrap();
         assert_eq!(guard_script(), &source[start..end]);
     }
 
     #[test]
-    fn the_probe_reader_is_the_powershell_reader() {
-        let source = powershell_source();
+    fn the_probe_reader_is_the_smoke_reader() {
+        let source = smoke_commands_source();
         let marker = "$reader = '";
         let start = source.find(marker).unwrap() + marker.len();
         let end = start + source[start..].find('\'').unwrap();
@@ -389,20 +389,20 @@ mod tests {
         }
     }
 
-    /// `diagnostic-export.ps1`, where the PowerShell exporter reads the identity and
+    /// smoke-diagnostic-export.ps1, where the smoke export reads the identity and
     /// copies the collector's directory.
-    fn powershell_export_source() -> String {
+    fn smoke_export_source() -> String {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../hosts/windows-docker-desktop/diagnostic-export.ps1");
+            .join("../images/actions-runner/tests/smoke-diagnostic-export.ps1");
         std::fs::read_to_string(path).unwrap().replace("\r\n", "\n")
     }
 
     #[test]
-    fn the_identity_and_the_copy_are_the_powershell_exporters() {
-        let source = powershell_export_source();
+    fn the_identity_and_the_copy_are_the_smoke_exports() {
+        let source = smoke_export_source();
         assert!(
             source.contains(&format!("$format = '{IDENTITY_FORMAT}'")),
-            "the identity allowlist differs from diagnostic-export.ps1"
+            "the identity allowlist differs from smoke-diagnostic-export.ps1"
         );
         assert!(source.contains("@('inspect', '--format', $format, $Name)"));
         assert!(source.contains(&format!("@('cp', \"${{Name}}:{DIAGNOSTIC_SOURCE}\", '-')")));

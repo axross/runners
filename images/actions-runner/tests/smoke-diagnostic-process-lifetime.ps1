@@ -1,4 +1,5 @@
 #Requires -Version 5.1
+# smoke-test helper, not a host script: the Windows lifetime boundary the other smoke helpers' Docker clients and exporter run in.
 $ErrorActionPreference = 'Stop'
 
 # compiles the built-in Windows lifetime boundary before container work begins.

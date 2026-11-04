@@ -421,8 +421,8 @@ pub(crate) fn checkout_rule_note(config: &Path) -> String {
     )
 }
 
-/// returns the problems as the PowerShell validator prints them: a header naming the
-/// file, then one line each.
+/// returns the problems as the validator prints them: a header naming the file, then
+/// one line each.
 #[must_use]
 pub fn invalid_message(config: &Path, errors: &[String]) -> String {
     let mut message = format!("Invalid host configuration ({}):", config.display());

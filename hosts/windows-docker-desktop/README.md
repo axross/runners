@@ -1,52 +1,27 @@
 # Windows with Docker Desktop
 
-PowerShell scripts that run ephemeral GitHub Actions runners for several
-repositories from one Windows machine with Docker Desktop. A supervisor reads a
-machine-local host configuration, and for each target repository keeps its slots
+The host configuration for running ephemeral GitHub Actions runners for several
+repositories from one Windows machine with Docker Desktop. The CLI, `marshal`, reads
+a machine-local host configuration, and for each target repository keeps its slots
 filled with single-job containers built from
 [`images/actions-runner/`](../../images/actions-runner/README.md).
 
-The axpc host does not run these scripts. It runs its pools with the CLI,
-`marshal`, and [Windows Runner Host](../../docs/operations/windows-runner-host.md)
-owns that operator procedure: prerequisites, tokens, health checks, and recovery.
-The scripts and their scheduled tasks stay only as the way back if the CLI
-misbehaves, until they are removed; that document's
-[Rolling Back to the PowerShell Supervisor](../../docs/operations/windows-runner-host.md#rolling-back-to-the-powershell-supervisor)
-section is the only procedure that runs them. On a host that still runs the
-supervisor, first stop it and remove its tasks as that document's
-[Returning to the CLI](../../docs/operations/windows-runner-host.md#returning-to-the-cli)
-describes; never run `marshal start` or `marshal build` while either task is
-registered. The example configuration and the shared fixtures serve both.
-
-| File                              | Purpose                                                                                                     |
-| --------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `supervisor.ps1`                  | Runs every repository's slots; `-ValidateOnly` checks a configuration and prints its plan                   |
-| `rebuild-image.ps1`               | Builds the image from this checkout under the configured image name                                         |
-| `register-scheduled-tasks.ps1`    | Registers the supervisor and weekly rebuild tasks and restricts the token files                             |
-| `runner-host.example.json`        | An example host configuration with two repositories, using obviously fake names                             |
-| `host-configuration.ps1`          | Reads and validates a configuration, and builds a slot job's arguments from it; shared by the scripts above |
-| `docker-commands.ps1`             | Runs the Docker client and builds job container arguments; shared by the supervisor and its slot jobs       |
-| `diagnostic-export.ps1`           | Exports bounded private evidence before diagnostic-container removal, without changing runner outcomes      |
-| `diagnostic-process-lifetime.ps1` | Initializes the Windows Job Object lifetime boundary before enabled container work                          |
-| `export-runner-diagnostics.ps1`   | Private export worker; isolates storage I/O so the supervisor can enforce its deadline                      |
-| `tests/`                          | The validation test and the other host tests, run by `mise run test:host`; the fixtures are shared          |
-
-The scripts target Windows PowerShell 5.1, which the scheduled tasks use, and are
-written to run on PowerShell 7 as well. CI runs the configuration test under both;
-the rest is unverified on 5.1, as the What Was Verified of the PowerShell Path
-section of
-[Windows Runner Host](../../docs/operations/windows-runner-host.md#what-was-verified-of-the-powershell-path)
-records.
-Their files are ASCII-only.
+[Windows Runner Host](../../docs/operations/windows-runner-host.md) owns the
+operator procedure for the axpc host: prerequisites, installing `marshal`, tokens,
+health checks, recovery, and rolling back. [CLI](../../docs/operations/cli.md) owns
+what each `marshal` command does and what `marshal validate` accepts. This
+directory holds `runner-host.example.json`, an example host configuration with two
+repositories, using obviously fake names, and this reference for every field of the
+configuration.
 
 ## Host configuration
 
-A JSON file kept outside the repository; every script takes its path as
-`-ConfigPath`. Copy `runner-host.example.json` and replace every value.
+A JSON file kept outside the repository; every `marshal` command that reads it takes
+its path as `--config`. Copy `runner-host.example.json` and replace every value.
 
 | Field                                 | Meaning                                                                                                                                                   |
 | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `imageName`                           | The local image tag every entry uses; `rebuild-image.ps1` builds it from the maintained Dockerfile                                                        |
+| `imageName`                           | The local image tag every entry uses; `marshal build` builds it from the image definition embedded in the binary                                          |
 | `repositories[].owner`, `repository`  | The target repository. Multiple entries can form separate execution pools                                                                                 |
 | `repositories[].slots`                | How many jobs run at once in this entry's pool, 1 to 16; set 1 for a dedicated serialized pool                                                            |
 | `repositories[].tokenPath`            | An absolute Windows path (drive letter or UNC) to the file holding this repository's token, re-read on every registration                                 |
@@ -59,7 +34,7 @@ A JSON file kept outside the repository; every script takes its path as
 | `repositories[].diagnosticDirectory`  | Required with diagnostics, invalid without them; absolute local Windows directory, outside the checkout, pre-created and private to the operator          |
 | `repositories[].diagnosticRawRecords` | Optional boolean, false by default; separate opt-in for private daemon/crash records, invalid when true without diagnostics                               |
 
-An invalid configuration stops the script before it touches Docker, with one line
+An invalid configuration stops `marshal` before it touches Docker, with one line
 per problem naming the field. A field not listed above is rejected as unknown, not
 ignored, so a misspelled `label` cannot silently drop `labels`. The isolation rules the validation enforces, such
 as what a registration carries and which names collide, are in the Per-Repository Isolation on a Runner Host
@@ -70,30 +45,22 @@ explicitly to an existing general entry's custom-label list to preserve its
 registration, as the example does. Missing or empty lists keep the default.
 The image, resource limits, slots, mounts, and diagnostic settings do not change.
 
-## Commands
-
-These run only during a rollback, from an elevated PowerShell prompt for the
-registration and any prompt for the rest. Before the first command, follow the
-Allowing the Scripts to Run part of the
-[rollback section](../../docs/operations/windows-runner-host.md#rolling-back-to-the-powershell-supervisor).
+## Checking a configuration
 
 ```powershell
-.\supervisor.ps1 -ConfigPath C:\path\to\runner-host.json -ValidateOnly
-.\rebuild-image.ps1 -ConfigPath C:\path\to\runner-host.json
-.\register-scheduled-tasks.ps1 -ConfigPath C:\path\to\runner-host.json
-.\supervisor.ps1 -ConfigPath C:\path\to\runner-host.json
+marshal validate --config C:\path\to\runner-host.json --profile axpc
 ```
 
-`-ValidateOnly` prints each repository's registration labels, name, container
-name pattern, CPU and memory limits, and volume names, plus the global image, without calling Docker or
-GitHub, and exits 1 on an invalid configuration.
+The command prints each repository's registration labels, name, container name
+pattern, CPU and memory limits, and volume names, plus the global image, without
+calling Docker or GitHub, and exits 1 on an invalid configuration.
 Quota and planned affinity cardinality are separate; actual CPU IDs require
 runtime discovery. There is no CPU-ID, workload-role, or affinity opt-in field.
-Every ordinary and diagnostic job now has affinity, distributed across measured
+Every ordinary and diagnostic job has affinity, distributed across measured
 Docker-visible IDs in entry/slot order. Slot counts and consumer build flags do
 not change. Affinity reserves nothing and guarantees neither compiler worker
-counts nor an OOM remedy. Allocation, enforcement, rollback, and separately
-authorized Desktop/WSL verification are in
+counts nor an OOM remedy. Allocation, enforcement, and separately authorized
+Desktop/WSL verification are in
 [Windows Runner Host](../../docs/operations/windows-runner-host.md#automatic-cpu-affinity).
 It also prints the two diagnostic opt-ins, not the private evidence path.
 Validation checks types and normalized Windows checkout exclusion without opening
@@ -103,41 +70,16 @@ startup retains it and refuses that entry until explicit private recovery/cleanu
 The opt-in procedure and retention limits are in
 [Windows Runner Host](../../docs/operations/windows-runner-host.md).
 
-## Tests
+## Fixtures
 
-```bash
-mise run test:host
-```
-
-runs [`tests/test-host-configuration.ps1`](./tests/test-host-configuration.ps1).
 The fixtures live in [`tests/host-configuration/`](../../tests/host-configuration)
-at the repository root, shared with the Rust CLI's validator, and one
-`expectations.json` there records the outcome and the strings each must give; the
-test fails on a fixture without an expectation and on an expectation without a
-fixture. Each fixture in `shared/rejected/` breaks one rule and must be rejected
-with a message naming its field; each in `shared/accepted/` sits on the edge of a
-rule (no volumes, a UNC token path, the maximum slot count, the limit bounds) and
-must be accepted; the example must be accepted with distinct names and volume
-names. The test skips `shared/pwsh7/`, whose fixtures Windows PowerShell 5.1 may
-judge differently, below PowerShell 7, and ignores `rust/`, which holds the macOS
-profile and Rust-only fixtures. [CLI](../../docs/operations/cli.md) describes the
-set and the parity test that compares the two validators.
-The split-pool fixture checks label defaults and replacement, isolated same-repository
-storage, a one-slot dedicated pool, and rejection of cross-route labels or
-incorrect token sharing. The test also builds a job container's `docker run` arguments, checks the limit
-flags, and checks that a slot job's positional arguments line up with its worker
-script block's parameters. It also checks the pattern that recognizes an entry's
-stale containers. It never calls Docker or GitHub. CI also runs it under Windows
-PowerShell 5.1 on a GitHub-hosted Windows runner.
-It includes [`tests/test-cpu-affinity.ps1`](./tests/test-cpu-affinity.ps1), covering
-fractional quotas, sparse/distributed selections, capacity and malformed-output
-rejection, bounded native probe clients, scoped cleanup, and registration refusal
-before discovery succeeds. Effective Docker enforcement needs the real-daemon
-image smoke, not these synthetic tests.
-It includes [`tests/test-diagnostics.ps1`](./tests/test-diagnostics.ps1), covering
-per-entry opt-in, tar path/type/size rejection, private sinks, partial-bundle
-quotas, stuck stop subprocesses, immutable rollback markers, queued deadlines,
-single-owner completion, runner retry/result preservation, exporter descendants
-and Windows owner-death containment. Real image
-export is exercised by the image's existing smoke command, which also needs
-PowerShell 7 on its Linux test host; Docker Desktop remains a separate check.
+at the repository root, and one `expectations.json` there records the outcome and the
+strings each must give. The CLI's tests read them, and
+[CLI](../../docs/operations/cli.md#fixtures-and-tests) describes the set. Each
+fixture in `shared/rejected/` breaks one rule and must be rejected with a message
+naming its field; each in `shared/accepted/` sits on the edge of a rule (no volumes,
+a UNC token path, the maximum slot count, the limit bounds) and must be accepted;
+the example must be accepted with distinct names and volume names. The split-pool
+fixture checks label defaults and replacement, isolated same-repository storage, a
+one-slot dedicated pool, and rejection of cross-route labels or incorrect token
+sharing. The fixture tests never call Docker or GitHub.

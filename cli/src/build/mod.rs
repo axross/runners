@@ -73,7 +73,7 @@ pub fn build(request: &BuildRequest<'_>, err: &mut dyn Write) -> u8 {
     if request.profile == Profile::Axmc {
         return print_error(
             err,
-            &"the configuration is valid, but axmc's runner image is a golden VM, and the golden VM build comes in Phase 6",
+            &"the configuration is valid, but this version of marshal cannot build axmc's golden VM yet",
         );
     }
     let Some(image) = plan.image_name else {

@@ -1,10 +1,10 @@
 name: Merge Checks
 
 # the repository's own CI: the gates behind mise run check, the CLI tests on
-# Linux, Windows, and macOS, the image build, the host test under Windows
-# PowerShell 5.1, the release dry run, and the documented install blocks against
-# the dry run's installers. GitHub-hosted runners only, because this repository is
-# public; see docs/conventions/security.md.
+# Linux, Windows, and macOS, the image build, the release dry run, and the
+# documented install blocks against the dry run's installers. GitHub-hosted
+# runners only, because this repository is public; see
+# docs/conventions/security.md.
 
 on:
   pull_request:
@@ -46,9 +46,8 @@ jobs:
       - name: Run Checks
         run: mise run check
 
-  # the parity test needs PowerShell 7 and the pinned mise tools, so it runs in
-  # the check job. no cache action: a cache would be a trust boundary for a job
-  # that builds code, and the build is small.
+  # no cache action: a cache would be a trust boundary for a job that builds
+  # code, and the build is small.
   rust:
     name: Test CLI On ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -223,22 +222,3 @@ jobs:
       # modified by an earlier job.
       - name: Smoke Test Runner Image
         run: bash images/actions-runner/tests/smoke-test.sh actions-runner:ci
-
-  # the host scripts target the Windows PowerShell 5.1 that the scheduled tasks
-  # use, which the check job's PowerShell 7 does not cover. this runs only the
-  # configuration test; Docker Desktop, Task Scheduler, and icacls are not
-  # exercised here.
-  host-windows:
-    name: Test Host Scripts On Windows PowerShell 5.1
-    runs-on: windows-latest
-    timeout-minutes: 15
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - name: Run Host Configuration Test
-        shell: powershell
-        run: |
-          $PSVersionTable.PSVersion.ToString()
-          powershell.exe -NoProfile -ExecutionPolicy Bypass -File hosts/windows-docker-desktop/tests/test-host-configuration.ps1

@@ -249,8 +249,9 @@ Apply the lens for each kind of file in the diff.
   its test. A change that relaxes the record, or touches the signing job, needs the
   maintainer's review.
 - **Rust.** The CLI under `cli/` has no `unsafe` and no panic on an input path
-  (`unwrap`, `expect`, `panic!`, indexing); it collects every error in the
-  PowerShell validator's order rather than returning the first. A new crate has an
+  (`unwrap`, `expect`, `panic!`, indexing); it collects every error in the order
+  [CLI](docs/operations/cli.md) states under Validation Rules rather than returning
+  the first. A new crate has an
   entry in [CLI](docs/operations/cli.md) and passes `cli/deny.toml`. A new
   procedural-macro crate, such as one a derive feature brings, is flagged for the
   maintainer's review, and so is a new duplicate-version skip. No token or JIT
@@ -258,8 +259,8 @@ Apply the lens for each kind of file in the diff.
   line, or a control-channel response; a new log line or response that could carry
   one unmasked is a finding (see
   [Security](docs/conventions/security.md#tokens-stay-out-of-the-log-and-job-clients-end-with-start)).
-  A change to a rule on the shared fixtures changes both
-  validators or declares a divergence. Give `file:line` evidence as in the other
+  A change to a validation rule changes the shared fixtures
+  and their expectations in the same change. Give `file:line` evidence as in the other
   lenses.
 - **Diagnostics.** A labelled diagnostic container is removed only by a
   finalisation, which tries its export while its clock allows and uses its recorded
@@ -324,9 +325,9 @@ mechanical defect named below:
   structural findings are excluded; documentation accuracy and ownership are
   not.
 - Rust formatting (`mise run format:check`), clippy (`mise run lint:rust`), the
-  CLI's tests (`mise run test:rust`), its licence, source, and duplicate checks
-  (`mise run deny:rust`), and the parity test (`mise run test:parity`). The
-  advisory check runs in its own workflow and is not required.
+  CLI's tests (`mise run test:rust`), and its licence, source, and duplicate checks
+  (`mise run deny:rust`). The advisory check runs in its own workflow and is not
+  required.
 - The agreement of `skills-lock.json` with `.claude/skills/`
   (`mise run check:skills`). Whether an installed copy matches its upstream
   source is not checked in CI and remains reportable.

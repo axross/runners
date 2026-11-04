@@ -5,20 +5,19 @@ Windows machine with Docker Desktop, with the CLI, `marshal`, from an unconfigur
 machine to a healthy host: prerequisites, installing `marshal`, the
 per-repository token and its file's access control, the host configuration,
 building the image, running and stopping the pools, health checks, rebuilding and
-updating, network access, and recovery. It ends with the way back to the PowerShell
-supervisor, which stays in the repository as a rollback path until Phase 4c of the
-roadmap removes it. It covers the machine and the container that run a job; what a
-job installs and builds is each consumer repository's own concern. The files are
-under [`images/actions-runner/`](../../images/actions-runner/README.md) and, for the
-rollback, [`hosts/windows-docker-desktop/`](../../hosts/windows-docker-desktop/README.md).
+updating, network access, recovery, and rolling back to the previous `marshal`
+release. It covers the machine and the container that run a job; what a job
+installs and builds is each consumer repository's own concern. The image is
+defined under [`images/actions-runner/`](../../images/actions-runner/README.md),
+and the example host configuration, with the reference for every field, is under
+[`hosts/windows-docker-desktop/`](../../hosts/windows-docker-desktop/README.md).
 [CLI](./cli.md) owns what each `marshal` command does, and the trust rules the host
 is reviewed against are in [Security](../conventions/security.md).
 
 **Verification status.** CI builds the image and runs a smoke test on it for every
-pull request, runs the configuration validation under PowerShell 7 and under
-Windows PowerShell 5.1, and runs the CLI's tests on GitHub-hosted Linux, Windows,
-and macOS runners; [CLI](./cli.md) says what each covers. The configuration
-fixtures are shared by both validators and live in
+pull request, and runs the CLI's tests on GitHub-hosted Linux, Windows, and macOS
+runners; [CLI](./cli.md) says what each covers. The CLI's tests check the
+configuration rules against the fixtures in
 [`tests/host-configuration/`](../../tests/host-configuration). The steps below that
 use Docker Desktop, `icacls`, and a released `marshal` on a real machine are
 described from the CLI's specification and the tools' documentation, and most were
@@ -53,6 +52,8 @@ Not yet verified on axpc, each for the reason given:
 - the bare-binary block's refusals, which were not run on axpc
   ([#56](https://github.com/axross/runners/issues/56)); CI runs them against
   stand-ins;
+- rolling back to a previous `marshal` release, which no host has done because only
+  one release exists;
 - the token-file access control step's result, whose `icacls` evidence was not
   collected;
 - Ctrl+Break in the `start` window, which could not be tested;
@@ -82,12 +83,6 @@ Not yet verified on axpc, each for the reason given:
   back to `v0.1.0`.
 - **Windows PowerShell 5.1** (shipped with Windows) or PowerShell 7, for the inline
   access control steps and the install procedure.
-- **No PowerShell supervisor or its scheduled tasks.** A host that still runs them
-  stops them first; see [Installing marshal](#installing-marshal).
-- **A checkout of this repository**, until Phase 4c, in a stable location, because
-  [the rollback](#rolling-back-to-the-powershell-supervisor) runs its scripts and
-  their scheduled tasks run them from there. Nothing else uses it: the CLI needs no
-  checkout, and `build` uses the image definition embedded in the binary.
 
 ## Installing Docker Desktop
 
@@ -130,12 +125,6 @@ and so does `runs-on: self-hosted`.
 
 ## Installing marshal
 
-On a host that still runs the PowerShell supervisor, first stop it and remove its
-tasks as [Returning to the CLI](#returning-to-the-cli) describes. Never run
-`marshal start` or `marshal build` while either task is registered: `start`'s stale
-cleanup removes the supervisor's job containers, and the scripts do not take the
-CLI's instance lock.
-
 Install `marshal` from a release by opening its MSI, with the Windows procedure in
 [CLI](./cli.md#installing-updating-and-rolling-back), never by building it on the
 host. Download `marshal-<version>-windows-x64.msi` from the release page and, if you
@@ -166,13 +155,15 @@ MSI, the migration block, the check block, and the uninstall block have not run 
 axpc; CI runs them against the release dry run's MSI in its `Install Blocks` job.
 
 The same procedure updates `marshal` with a newer MSI and rolls it back by
-uninstalling and installing the older one; stop a running instance first. After an
-update, rebuild the image and start again, as
-[Updating the Runner](#updating-the-runner) describes. The MSI is not code-signed,
-so SmartScreen may show "Windows protected your PC" for a browser download, which
-you pass with "More info", then "Run anyway", and Smart App Control, when On, may
-block it; both are expected, not yet observed. On axpc, a binary fetched with
-`gh release download` had no `Zone.Identifier`, so no Mark of the Web
+uninstalling and installing the older one, as [Rolling Back marshal](#rolling-back-marshal)
+describes; stop a running instance first. After an update, rebuild the image and
+start again, as [Updating the Runner](#updating-the-runner) describes. Nothing on
+the host needs a checkout of this repository: `build` uses the image definition
+embedded in the binary. The MSI is not code-signed, so SmartScreen may show
+"Windows protected your PC" for a browser download, which you pass with "More
+info", then "Run anyway", and Smart App Control, when On, may block it; both are
+expected, not yet observed. On axpc, a binary fetched with `gh release download`
+had no `Zone.Identifier`, so no Mark of the Web
 ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511048211)), and
 SmartScreen did not prompt at the install or at its first run from the terminal,
 with "Check apps and files" On and Smart App Control Off
@@ -192,7 +183,8 @@ under **Settings, Developer settings, Fine-grained personal access tokens**:
 - **Permissions:** Administration, read and write, and nothing else.
 
 Save each token in a file on this machine, holding the raw token text, at the
-`tokenPath` of the repository's pool entries, and keep these files outside the checkout.
+`tokenPath` of the repository's pool entries, and keep these files outside any
+checkout of this repository.
 The token rules are in the Per-Repository Isolation on a Runner Host section of
 [Security](../conventions/security.md).
 
@@ -207,11 +199,10 @@ not edit the file in place.
 The CLI does not check a token file's access control list on Windows, because no
 safe call reads it, so this step is the only thing that restricts the file. Run it
 for every configured token file at install, and for the new file at every token
-rotation. It does what the rollback's `register-scheduled-tasks.ps1` does: it resets
-the file's permissions to its folder's defaults, removes inherited permissions, then
-grants the host user read access, so an entry granted by hand to another account
-does not survive. Run it as the user who runs `marshal start`, with every token path
-listed:
+rotation. It resets the file's permissions to its folder's defaults, removes
+inherited permissions, then grants the host user read access, so an entry granted by
+hand to another account does not survive. Run it as the user who runs
+`marshal start`, with every token path listed:
 
 ```powershell
 & {
@@ -238,11 +229,12 @@ collected there.
 
 ## The Host Configuration
 
-The configuration is a JSON file kept outside the checkout; every `marshal` command
-that reads it takes its path as `--config`. Start from
+The configuration is a JSON file kept outside any checkout of this repository;
+every `marshal` command that reads it takes its path as `--config`. Start from
 [`runner-host.example.json`](../../hosts/windows-docker-desktop/runner-host.example.json),
 and see the Host configuration section of the
-[host README](../../hosts/windows-docker-desktop/README.md) for every field. The rules that matter operationally:
+[host README](../../hosts/windows-docker-desktop/README.md) for every field. The
+rules that matter operationally:
 
 - **One entry per execution pool**, each with its own `name`, `slots`,
   `labels`, and `volumes`. Every entry uses the global `imageName`.
@@ -426,21 +418,10 @@ and image identities, settings/readbacks, gaps, and observed throughput/pressure
 there. Do not publish tokens, full inspect output, or raw private diagnostics.
 
 There is no JSON switch to disable affinity, and every `marshal` release applies
-it. Going back to placement without affinity means the PowerShell path under
-[Rolling Back to the PowerShell Supervisor](#rolling-back-to-the-powershell-supervisor),
-with the saved pre-affinity host scripts and their compatible configuration and
-image, in its own authorized maintenance window. Stop job admission and drain work,
-stop the instance with `marshal stop`, and recover marked diagnostic containers
-before replacing scripts or images. In that section's steps, this case replaces
-step 3's checkout of the default branch and step 4's rebuild with restoring the
-saved scripts and image; still allow the scripts to run as step 3 says. Do not
-rebuild during the rollback: right after step 5, run
-`Disable-ScheduledTask -TaskName actions-runner-weekly-rebuild`, and keep the task
-disabled until the readback below is confirmed. Validate offline, and only then
-start the supervisor. Confirm the restored source/image
-identities and requested/effective CPU sets and quotas before resuming admission
-and re-enabling the weekly rebuild task; an empty requested cpuset is not an empty effective set. Restore no WSL allocation
-or Windows process-affinity setting: this feature changes neither. A failed runtime
+it, so there is no supported way back to placement without affinity. The
+PowerShell scripts that once offered one remain only in this repository's history,
+unsupported, and a fault in affinity is fixed forward in a new release. The feature
+changes no WSL allocation and no Windows process-affinity setting. A failed runtime
 readback blocks rollout, not independent pool work.
 
 ## Moving to the New Configuration Format
@@ -449,16 +430,7 @@ A host whose configuration still has `hostPrefix` or a per-entry `prefix` is
 rejected, naming the field. To move it:
 
 1. Note the `hostPrefix`, and each entry's prefix, `<hostPrefix>-<owner>-<repository>`
-   in lowercase unless the entry set `prefix`. Stop the host. A host still on the
-   PowerShell supervisor of that time stops it with Ctrl+C in its window, then ends
-   and removes the `<hostPrefix>-supervisor` and `<hostPrefix>-weekly-rebuild`
-   tasks:
-
-   ```powershell
-   Unregister-ScheduledTask -TaskName <hostPrefix>-supervisor -Confirm:$false
-   Unregister-ScheduledTask -TaskName <hostPrefix>-weekly-rebuild -Confirm:$false
-   ```
-
+   in lowercase unless the entry set `prefix`. Stop the host with `marshal stop`.
 2. Rewrite the file: give every entry a `name`, and delete `hostPrefix` and every
    `prefix`. An entry whose `name` equals its previous prefix, which is possible
    only when the prefix is a valid `name`, keeps its volumes; any other `name`
@@ -501,9 +473,8 @@ a newer runner needs a newer release; see [Updating the Runner](#updating-the-ru
 The cache is ignored so that the operating system packages are installed again and
 pick up their updates. The build goes to a temporary tag, and only a successful
 build is tagged as the configured name; a failed build leaves the previous image in
-place. After a successful build `build` removes the earlier images it or the
-PowerShell rebuild script built that the new build left untagged: the prune is
-limited to images carrying the label `com.github.axross.runners.image=actions-runner`,
+place. After a successful build `build` removes the earlier images it built that the new
+build left untagged: the prune is limited to images carrying the label `com.github.axross.runners.image=actions-runner`,
 so it does not touch other dangling images or images built by hand. It does not
 reclaim installation stages, build caches, or tagged rollback images. A failed prune
 is a warning, not a failed build. [CLI](./cli.md#build) gives every step and its
@@ -657,8 +628,9 @@ non-zero delays the next attempt, doubling from 5 seconds to a 300-second ceilin
 a container that ran a job to completion is replaced at once. When the part of
 `start` that runs the pools fails as a whole, it is started again after 10 s, 30 s,
 and 60 s; a fourth failure within 10 minutes stops the instance, with the restart
-limit as its reason in `marshal status`. [CLI](./cli.md#the-runtime-layer) lists
-where this differs from the PowerShell supervisor.
+limit as its reason in `marshal status`. [CLI](./cli.md#names-and-the-slot-loop)
+gives the slot loop and its backoff, and [CLI](./cli.md#instance-state) the
+restarts.
 
 ## Collecting private diagnostics
 
@@ -670,7 +642,8 @@ The sink is not exposed to the job as a bind mount or volume.
 
 Collect private evidence as follows:
 
-1. Pre-create a directory on a local Windows filesystem, outside the checkout.
+1. Pre-create a directory on a local Windows filesystem, outside any checkout of
+   this repository.
    Restrict its owner and all allowed access rules to the account that runs
    `marshal start`. `marshal` MUST NOT create the sink, relax permissions, or
    repair its access controls, and on Windows it does not check them, so this step
@@ -694,7 +667,7 @@ Collect private evidence as follows:
    private daemon/crash retention is separately wanted. Set it to `true` only
    with diagnostics enabled. Run `marshal validate`, then apply the change with
    `marshal restart` in an authorized quiet window. Validation rejects a sink
-   inside this project's checkout without Docker, GitHub or token reads, but does
+   inside a checkout of this repository without Docker, GitHub or token reads, but does
    not check that the sink exists, is private, or is writable.
 3. After a container stops, `marshal start` exports its evidence into a new
    `<name>-bundle-<32 hexadecimal digits>` directory in the sink, then removes the
@@ -814,9 +787,7 @@ Recover them with the CLI alone, after separate host authorization:
    labelled container with `docker rm -f <name>`, never with a prune, and start
    again.
 
-This procedure is source guidance, not authorization to operate a host. The
-PowerShell supervisor's own recovery, which the rollback needs, is under
-[Recovering Diagnostic Containers With PowerShell](#recovering-diagnostic-containers-with-powershell).
+This procedure is source guidance, not authorization to operate a host.
 
 The CLI's diagnostic tests run on Linux, macOS, and Windows hosted runners, and
 CI's image smoke command exercises the image's lifecycle and export with synthetic
@@ -923,8 +894,8 @@ log (at start, a resume, or a restart) or `marshal status` shows a build-age
 warning: from 7 days
 `` the image is <d> days old and should be rebuilt with `marshal build` ``, and from
 21 days a warning that its operating-system packages are that old. An image that
-`marshal build` did not build, such as one from the PowerShell rebuild script, has
-an unknown build age and a warning that says so. At a quiet time:
+`marshal build` did not build, such as one built by CI or by hand, has an unknown
+build age and a warning that says so. At a quiet time:
 
 ```powershell
 marshal stop
@@ -1039,211 +1010,35 @@ Hub. No inbound port is needed.
   continue their own registration loops, but a shared-token problem can affect
   every pool for that repository.
 
-## Rolling Back to the PowerShell Supervisor
+## Rolling Back marshal
 
-This section exists only until Phase 4c of the roadmap removes the PowerShell
-scripts under
-[`hosts/windows-docker-desktop/`](../../hosts/windows-docker-desktop/README.md). It
-is the way back if `marshal` misbehaves, and it is the only part of this procedure
-that runs those scripts. The PowerShell path is not exercised while the host runs
-`marshal`; [What Was Verified of the PowerShell Path](#what-was-verified-of-the-powershell-path)
-says what is known of it.
+Roll back when a `marshal` release misbehaves on the host. Rolling back means
+installing the previous release: it needs an earlier release to go back to, so a
+host on the first release has none, and a fault in it is fixed forward in a new
+release. Pick a quiet time, because the install stops the instance and a job in
+flight fails.
 
-Never run `marshal start` or `marshal build` while the supervisor or its rebuild
-task is registered. `start`'s stale cleanup removes the supervisor's job
-containers, and the scripts do not take the CLI's instance lock, so a `build` and
-the rebuild task could replace the same image at once.
+1. If the release you go back to may not finalise a diagnostic container as the
+   installed one does, recover the marked containers before replacing the binary:
+   run steps 1 to 3 of
+   [Recover before disabling diagnostics](#recover-before-disabling-diagnostics),
+   then `marshal stop`.
+2. Install the previous release with the Windows procedure in
+   [CLI](./cli.md#installing-updating-and-rolling-back), setting its `version` to
+   that release. It stops a running instance first and refuses to go on if the
+   instance does not stop; see [Recovery](#recovery).
+3. Run `marshal validate --config C:\path\to\runner-host.json`. The previous
+   release must accept the configuration file, and a field only the newer release
+   knows is rejected, naming the field. Edit the file back before going on.
+4. Rebuild the image and start the pools, as
+   [Building the Runner Image](#building-the-runner-image) describes. The build uses
+   the image definition embedded in the installed release, so it gives back the
+   image that release expects; an image of another contract keeps `start` from
+   running jobs, as [Recovery](#recovery) says.
+5. Confirm `marshal --version` names the release you installed, and that the
+   [Health Checks](#health-checks) hold for GitHub and the machine.
 
-1. At a quiet time, stop the CLI with `marshal stop`. It exits 0 once the instance
-   has stopped. It prints `No instance is running.` and exits 1 when there is none;
-   that is fine here. Any other exit 1 means the instance still holds its lock: see
-   [Recovery](#recovery), and do not go on until it has stopped.
-2. List the labelled containers with
-   `docker ps -a --filter "label=runners.diagnostic-lifecycle=1" --format "{{.Names}}"`.
-   If a diagnostics-enabled entry left any, recover them first: with `marshal`,
-   through steps 1 to 3 of
-   [Recover before disabling diagnostics](#recover-before-disabling-diagnostics)
-   followed by `marshal stop`, or with
-   [the PowerShell procedure](#recovering-diagnostic-containers-with-powershell).
-3. Put the checkout on the default branch, then, in a PowerShell window, follow
-   [Allowing the Scripts to Run](#allowing-the-scripts-to-run).
-4. From `hosts\windows-docker-desktop\` in the checkout, build the image from the
-   checkout's definition:
-
-   ```powershell
-   .\rebuild-image.ps1 -ConfigPath C:\path\to\runner-host.json
-   ```
-
-5. From an elevated prompt, register the tasks, which also restricts every
-   configured token file, as
-   [Registering the Scheduled Tasks](#registering-the-scheduled-tasks) describes.
-6. Start the supervisor with `Start-ScheduledTask -TaskName actions-runner-supervisor`,
-   or sign out and in. `Get-ScheduledTask actions-runner-supervisor | Select State`
-   then reports `Running`, and the Health Checks above hold for GitHub and the
-   machine.
-
-### Allowing the Scripts to Run
-
-Windows PowerShell 5.1's default execution policy refuses local script files, so
-the `.\` commands in this section fail until the prompt allows them. In each
-PowerShell window you run them from, including the elevated one, run this once
-before the first command:
-
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-```
-
-It lasts only for that window and changes no machine or user setting. The
-scheduled tasks pass `-ExecutionPolicy Bypass` to their own processes, so they
-need nothing from you.
-
-### Registering the Scheduled Tasks
-
-From an elevated PowerShell prompt, once the token files exist and the image has
-been built:
-
-```powershell
-.\register-scheduled-tasks.ps1 -ConfigPath C:\path\to\runner-host.json
-```
-
-This registers two tasks for the signed-in user, with fixed names:
-
-- **`actions-runner-supervisor`** runs `supervisor.ps1` at sign-in and is set to
-  restart if it fails, as a backstop for the supervisor process exiting. Whether
-  Task Scheduler restarts a task that ends with a non-zero exit code is not
-  verified on a real host.
-- **`actions-runner-weekly-rebuild`** runs `rebuild-image.ps1` weekly, Sunday 03:00
-  by default, with `docker build --pull --no-cache` from the checkout's Dockerfile,
-  and runs a missed rebuild when the machine is next available.
-
-Both run as the current user at the limited run level, never elevated. Both point
-at the checkout and the configuration file, so moving either breaks them until the
-script runs again. The script also restricts every configured token file to that
-user, exactly as [Restricting a Token File](#restricting-a-token-file) does. Run it
-again after editing the configuration, replacing a token file, or moving the
-checkout. The supervisor validates with
-`.\supervisor.ps1 -ConfigPath C:\path\to\runner-host.json -ValidateOnly`, which
-prints the same summary as `marshal validate`, and reads the configuration only when
-it starts.
-
-### The Supervisor's Recovery
-
-The supervisor runs each entry's slots as background jobs, with the cycle under
-[How a Container Picks Up a Job](#how-a-container-picks-up-a-job); a slot job that
-dies is restarted after its own backoff, which starts over once a job has run for
-ten minutes. [CLI](./cli.md#the-runtime-layer) lists where `marshal` differs.
-
-- **A container left by an unclean stop** (a forced stop of the supervisor task, a
-  crash, a restart mid-job) is handled by the next supervisor start, as `start`
-  does: ordinary leftovers are removed, and labelled ones are exported and removed
-  while the entry's diagnostics are on. With them off, the supervisor gives them a
-  bounded stop, refuses to delete or export them, warns, and gives that entry no
-  slots until the recovery below.
-- **Docker Desktop restarts mid-job:** the supervisor process keeps running and
-  resumes by itself when Docker is back, with no task restart.
-- **Stopping the supervisor:** Ctrl+C in its window is the clean path: it
-  `docker stop`s the current containers, then stops every slot's job. Ending the
-  task in Task Scheduler, or a shutdown, skips it and leaves running containers to
-  finish or to be removed at the next start; a job in flight fails either way.
-- **One pool's entry will not start:** the same causes as with `start` skip that
-  entry, and the supervisor exits 1 only when no entry can start. Fix the cause and
-  restart the supervisor task in an authorized quiet window; an entry skipped at
-  start is not retried while the supervisor runs.
-- **A rejected configuration:** the supervisor prints every offending field and
-  exits before starting anything; fix the file and run it with `-ValidateOnly`
-  first.
-
-### Recovering Diagnostic Containers With PowerShell
-
-The supervisor's exporter takes a named mutex that `marshal` does not take, so stop
-any CLI instance with `marshal stop` before this export, and do not run
-`marshal start` until step 4 is done. Disable the supervisor task before private
-recovery or changing the opt-in. Do not start another runner against the retained
-evidence. After separate host authorization, recover one marked container at a
-time:
-
-1. Keep the supervisor task disabled. Match the candidate's name to the entry's
-   `<name>-<index>-<timestamp>` pattern and confirm its immutable label with
-   `docker ps -a --filter "name=<name>-" --filter "label=runners.diagnostic-lifecycle=1" --format "{{.Names}}"`.
-   Never dump configuration or registration values.
-2. Pre-create/recheck the private sink as above, and resolve its quota by
-   privately archiving prior bundles if needed. From the host scripts directory,
-   under the supervisor account, use the same bounded lifetime boundary. Replace
-   the placeholders and set raw collection only by explicit choice:
-
-   ```powershell
-   . .\diagnostic-export.ps1
-   Initialize-DiagnosticProcessContainment
-   $container = '<name>-<index>-<timestamp>'
-   $entryName = '<name>'
-   $sink = 'C:\path\to\private-evidence'
-   $clock = [Diagnostics.Stopwatch]::StartNew()
-   if (-not (Invoke-BoundedDiagnosticStop -Names @($container) -Clock $clock)) { throw 'Stop unconfirmed; retain container and investigate privately.' }
-   Invoke-BoundedDiagnosticExport -Name $container -EntryName $entryName -Directory $sink -RawRecords $false -Clock $clock
-   if (-not (Invoke-BoundedContainerRemoval -Name $container -Clock $clock)) { throw 'Removal unconfirmed; keep task disabled.' }
-   ```
-
-3. A failed export in this explicit procedure retains the container. Review
-   partial bundles privately and resolve the gap before retrying; do not bypass
-   containment or copy the complete filesystem/logs. If choosing to abandon
-   evidence, explicitly remove only the identified container with
-   `Invoke-BoundedContainerRemoval` and a fresh stopwatch, never an unbounded prune.
-4. Verify no marked containers remain for that entry. Set `diagnostics` to
-   `false`, remove `diagnosticDirectory` and `diagnosticRawRecords`, validate the
-   configuration, and only then authorize/re-enable the supervisor task.
-
-This procedure is source guidance, not authorization to operate a host. The
-exporter runs storage work in a separate PowerShell process inside a Windows Job
-Object, within an 18 s export deadline and a 24 s removal deadline, and assigns its
-new bundle to the supervisor account; it never repairs the sink's owner or rules.
-
-### Returning to the CLI
-
-To move a host from the PowerShell supervisor to `marshal`, the first time or after
-a rollback, stop the PowerShell host in this order:
-
-1. Disable both tasks, so neither the sign-in trigger nor the restart-on-failure
-   starts the supervisor again:
-
-   ```powershell
-   Disable-ScheduledTask -TaskName actions-runner-supervisor
-   Disable-ScheduledTask -TaskName actions-runner-weekly-rebuild
-   ```
-
-2. Wait until `Get-ScheduledTask actions-runner-weekly-rebuild | Select State` no
-   longer reports `Running`, so no rebuild is under way.
-3. Stop the supervisor with Ctrl+C in its window.
-4. If an entry has diagnostics on, list the labelled containers and recover any
-   that remain with
-   [the PowerShell procedure](#recovering-diagnostic-containers-with-powershell).
-5. Remove both tasks:
-
-   ```powershell
-   Unregister-ScheduledTask -TaskName actions-runner-supervisor -Confirm:$false
-   Unregister-ScheduledTask -TaskName actions-runner-weekly-rebuild -Confirm:$false
-   ```
-
-Afterwards `Get-ScheduledTask -TaskName 'actions-runner-*'` finds no task, no
-`powershell.exe` process runs `supervisor.ps1`, and `docker ps -a` lists no job
-container of the configured entries. Then continue from
-[Installing marshal](#installing-marshal): restrict the token files, validate,
-build, and start.
-
-### What Was Verified of the PowerShell Path
-
-CI runs the configuration validation test under PowerShell 7 and under Windows
-PowerShell 5.1 (`windows-latest`), and the host tests under PowerShell 7. The
-supervisor's runtime paths were exercised once, in the authoring session, on
-PowerShell 7 on Linux, with a stub `docker` executable and a stub HTTP endpoint
-standing in for GitHub; that harness is not committed, so nothing re-runs it. The
-paths it covered are the registration request and its error reporting, the
-environment hand-off to the container, stale-container cleanup, a slot's backoff, a
-dead slot job's restart backoff, skipping an entry that cannot start, and the
-shutdown stop. That run was made before entry names and container limits were
-added, so the worker start-up and the stale-container cleanup as they are now are
-covered only by the unit tests and by the check of the slot job's argument order.
-Windows PowerShell 5.1 running the supervisor, Task Scheduler, and `icacls` are
-described from the tools' documentation, not recorded as observed here. The same
-holds for the container limits: a test checks the `docker run` arguments, and what
-Docker Desktop enforces and `docker inspect` reports is described from Docker's
-documentation.
+A diagnostic container that the stopped instance retained survives the install. The
+`start` of the installed release finalises it while its entry's diagnostics are on,
+and refuses the entry while they are off; step 1 recovers it first when that
+release may not.

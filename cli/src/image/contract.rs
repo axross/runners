@@ -13,8 +13,7 @@ pub const RUNNER_VERSION_LABEL: &str = "com.github.axross.runners.runner-version
 /// the runner release's date, as `YYYY-MM-DD`, read as 00:00 UTC.
 pub const RUNNER_RELEASED_LABEL: &str = "com.github.axross.runners.runner-released";
 
-/// the label `build`, and the PowerShell rebuild script, give every image they
-/// build; both prune dangling images by it.
+/// the label `build` gives every image it builds, and prunes dangling images by.
 pub const IMAGE_LABEL: &str = "com.github.axross.runners.image";
 
 /// the value of [`IMAGE_LABEL`].
@@ -253,9 +252,9 @@ mod tests {
     }
 
     #[test]
-    fn the_diagnostic_variant_is_the_powershell_one() {
+    fn the_diagnostic_variant_is_the_smoke_one() {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../hosts/windows-docker-desktop/docker-commands.ps1");
+            .join("../images/actions-runner/tests/smoke-docker-commands.ps1");
         let source = std::fs::read_to_string(path).unwrap().replace("\r\n", "\n");
         for fragment in [
             "if ($DiagnosticRawRecords) { $mode = ' raw-run' }",
@@ -268,7 +267,7 @@ mod tests {
         ] {
             assert!(
                 source.contains(fragment),
-                "docker-commands.ps1 lost: {fragment}"
+                "smoke-docker-commands.ps1 lost: {fragment}"
             );
         }
     }

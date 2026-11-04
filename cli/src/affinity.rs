@@ -1,6 +1,5 @@
 //! where each slot's CPUs start, shared by the plan summary and the backend, and which
-//! allowed CPUs it takes, as the PowerShell supervisor's `Select-CpuAffinity` does;
-//! see `docs/operations/cli.md`.
+//! allowed CPUs it takes; see `docs/operations/cli.md`.
 
 use std::fmt;
 
@@ -180,12 +179,12 @@ fn canonical(sorted: &[i32]) -> String {
 mod tests {
     use super::*;
 
-    /// the inventory and the offsets 0, 2, 4, 6 and 5 of the PowerShell golden case
-    /// in `test-cpu-affinity.ps1`, whose last two offsets overcommit.
+    /// the inventory and the offsets 0, 2, 4, 6 and 5 of the golden case, whose last
+    /// two offsets overcommit.
     const INVENTORY: &str = "2,5-6,11,14-15";
 
     #[test]
-    fn the_powershell_golden_case_selects_the_same_sets() {
+    fn the_golden_case_selects_these_sets() {
         let sets: Vec<String> = [0, 2, 4, 6, 5]
             .iter()
             .map(|offset| select_cpus(INVENTORY, 2, *offset).unwrap())
@@ -194,7 +193,7 @@ mod tests {
     }
 
     #[test]
-    fn the_powershell_rejected_inventories_are_rejected() {
+    fn the_rejected_inventories_are_rejected() {
         for inventory in [
             "",
             "0,0",
@@ -213,8 +212,8 @@ mod tests {
 
     #[test]
     fn the_syntax_of_the_whole_list_is_judged_before_ranges_and_order() {
-        // PowerShell matches the whole list against one pattern first, so each of
-        // these is an invalid list there, not an unrepresentable or misordered one.
+        // the whole list is matched against one pattern first, so each of these is
+        // an invalid list, not an unrepresentable or misordered one.
         for list in ["2,1,x", "2147483648,x", "4-2,x", "x,2147483648", "2,1,"] {
             assert_eq!(
                 select_cpus(list, 1, 0),

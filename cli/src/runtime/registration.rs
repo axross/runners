@@ -1,7 +1,6 @@
-//! just-in-time runner registration with GitHub, the PowerShell supervisor's request
-//! plus a `User-Agent`, no redirect, and time and size limits; the token travels in
-//! a header marked sensitive and is replaced by `<token>` in every error text, as
-//! `docs/operations/cli.md` describes.
+//! just-in-time runner registration with GitHub, with a `User-Agent`, no redirect,
+//! and time and size limits; the token travels in a header marked sensitive and is
+//! replaced by `<token>` in every error text, as `docs/operations/cli.md` describes.
 
 use std::fmt;
 use std::future::Future;

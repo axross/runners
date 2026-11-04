@@ -90,18 +90,16 @@ mod tests {
     }
 
     #[test]
-    fn simple_folding_differs_from_powershell_eq_on_declared_pairs() {
-        // PowerShell 7 on Linux compares these as different, while simple case folding
-        // equates each with its partner; docs/operations/cli.md declares them as
-        // divergences.
+    fn simple_folding_equates_the_declared_pairs() {
+        // simple case folding equates each of these with its partner;
+        // docs/operations/cli.md states the rule.
         assert!(eq_folded("\u{17f}", "s"));
         assert!(eq_folded("\u{17f}", "S"));
         assert!(eq_folded("\u{345}", "\u{3b9}"));
         assert!(eq_folded("\u{345}", "\u{399}"));
         assert!(eq_folded("\u{1e9b}", "\u{1e61}"));
         assert!(eq_folded("\u{1e9b}", "\u{1e60}"));
-        // the Kelvin sign folds to k here; PowerShell's answer follows the
-        // platform's globalization data.
+        // the Kelvin sign folds to k.
         assert!(eq_folded("\u{212a}", "k"));
         assert!(eq_folded("\u{212a}", "K"));
     }

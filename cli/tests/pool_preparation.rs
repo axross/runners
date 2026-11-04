@@ -306,7 +306,7 @@ async fn a_labelled_container_is_never_removed_and_refuses_the_pool() {
     assert!(lines.contains(
         "repositories[0] (o/alpha) is not started and gets no slots: Marked diagnostic containers remain after disabling; entry startup refused."
     ));
-    // the evidence got one bounded stop, as the PowerShell supervisor gives it
+    // the evidence got one bounded stop
     assert!(state.calls.contains(&Call::StopContainers(StopRequest {
         names: vec![evidence.clone()],
         grace: Duration::from_secs(10),
