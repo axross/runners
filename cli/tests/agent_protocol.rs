@@ -300,8 +300,9 @@ async fn the_seventeenth_connection_is_told_it_is_busy() {
             }
             // the first is `conn`, so sixteen are open
             let mut seventeenth = Raw::open(&conn.roots).await;
+            // the agent answers busy and closes without reading the hello
             seventeenth
-                .send(&json!({"type":"hello","versions":[2]}))
+                .send_until_cut_off(&json!({"type":"hello","versions":[2]}))
                 .await;
             let error = seventeenth.next().await.unwrap();
             assert_eq!(error["error"]["code"], "busy", "{error}");
@@ -429,12 +430,13 @@ async fn a_client_line_over_16_kib_without_a_line_break_closes_the_connection() 
 
             // as the first line
             let mut first = Raw::open(&conn.roots).await;
-            first.send_bytes(&long).await;
+            // the agent closes after 16 KiB, so the rest of the write may be cut off
+            first.send_bytes_until_cut_off(&long).await;
             assert!(first.closed_within(Duration::from_secs(5)).await);
 
             // and after the handshake
             let mut later = Raw::hello(&conn.roots).await;
-            later.send_bytes(&long).await;
+            later.send_bytes_until_cut_off(&long).await;
             assert!(later.closed_within(Duration::from_secs(5)).await);
 
             // a line of exactly 16 KiB with its line break is read as a line
@@ -446,6 +448,27 @@ async fn a_client_line_over_16_kib_without_a_line_break_closes_the_connection() 
                 exact.next().await.unwrap()["error"]["code"],
                 "invalid_request"
             );
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+/// the condition a small send buffer makes of the 16 KiB test on macOS, made without
+/// one: the agent has closed the connection before the rest of the write is made.
+#[cfg(unix)]
+#[tokio::test(flavor = "current_thread")]
+async fn a_write_after_the_agent_closed_the_connection_is_cut_off_and_not_a_failure() {
+    let rig = Rig::new(ONE_POOL);
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Stopped, |conn| async move {
+            let mut raw = Raw::open(&conn.roots).await;
+            assert!(
+                raw.send_bytes_until_cut_off(&vec![b'x'; 16 * 1024]).await,
+                "the agent had not closed yet"
+            );
+            assert!(raw.closed_within(Duration::from_secs(5)).await);
+            assert!(!raw.send_bytes_until_cut_off(b"x").await);
             conn.ok("quit").await;
         })
         .await;

@@ -404,6 +404,31 @@ impl Raw {
         self.writer.flush().await.unwrap();
     }
 
+    /// writes `bytes` as they are, for a peer that may close before it has read them
+    /// all: a write the peer cut off, which is `BrokenPipe` or `ConnectionReset` (and
+    /// on Windows the pipe's own closed codes), is not an error. Returns whether all
+    /// of it was written. Any other error fails the test; a write that must succeed
+    /// uses `send_bytes`.
+    pub async fn send_bytes_until_cut_off(&mut self, bytes: &[u8]) -> bool {
+        use tokio::io::AsyncWriteExt;
+        let written = match self.writer.write_all(bytes).await {
+            Ok(()) => self.writer.flush().await,
+            Err(error) => Err(error),
+        };
+        match written {
+            Ok(()) => true,
+            Err(error) if is_cut_off(&error) => false,
+            Err(error) => panic!("the write failed other than by being cut off: {error:?}"),
+        }
+    }
+
+    /// `send` for a peer that may have closed already; see `send_bytes_until_cut_off`.
+    pub async fn send_until_cut_off(&mut self, message: &Value) -> bool {
+        let mut line = message.to_string().into_bytes();
+        line.push(b'\n');
+        self.send_bytes_until_cut_off(&line).await
+    }
+
     pub async fn send(&mut self, message: &Value) {
         self.send_text(&message.to_string()).await;
     }
@@ -459,6 +484,21 @@ impl Raw {
             }
         }
     }
+}
+
+/// whether a write failed because the peer closed the connection: `BrokenPipe` or
+/// `ConnectionReset`, which a socket and, as Rust maps them, a pipe report; on
+/// Windows also the codes of a pipe whose server has closed (109, 232 and 233), in
+/// case a version of Rust leaves one unmapped.
+fn is_cut_off(error: &std::io::Error) -> bool {
+    use std::io::ErrorKind;
+    if matches!(
+        error.kind(),
+        ErrorKind::BrokenPipe | ErrorKind::ConnectionReset
+    ) {
+        return true;
+    }
+    cfg!(windows) && matches!(error.raw_os_error(), Some(109 | 232 | 233))
 }
 
 /// the runtime's worker and blocking-pool threads of this process, where `/proc`
