@@ -20,8 +20,8 @@
     Language="1033"
     InstallerVersion="500"
     Compressed="yes"
-    Description="marshal, from github.com/axross/runners"
   >
+    <SummaryInformation Description="marshal, from github.com/axross/runners" />
     <MajorUpgrade
       DowngradeErrorMessage="A newer version of marshal is already installed."
       AllowSameVersionUpgrades="yes"
@@ -44,7 +44,8 @@
 
   <Fragment>
     <ComponentGroup Id="MarshalComponents" Directory="INSTALLFOLDER">
-      <Component Id="MarshalExecutable">
+      <!-- the component Guid never changes, like the UpgradeCode. -->
+      <Component Id="MarshalExecutable" Guid="EE33286A-2CA3-4A0B-A273-FC580EFD27CB">
         <File Id="MarshalExe" Name="marshal.exe" Source="$(MarshalBinary)" />
         <!-- a per-user component needs a registry key path under HKCU. -->
         <RegistryKey Root="HKCU" Key="Software\axross\marshal" ForceDeleteOnUninstall="yes">
