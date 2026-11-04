@@ -11,8 +11,12 @@
 // it guards against mistakes: a pull request can edit it, so it is no control
 // against a hostile one. what keeps pull requests away from the Environment is
 // the maintainer's branch rule and the fact that release.yaml runs only on
-// dispatch. a later signing job or step (W4, M2) is added to this check in its
-// own pull request, under REVIEW.md's release lens.
+// dispatch. it reads the commands a signing script runs, a trap's body
+// included, but not what its commands are told to do: the programs of awk and
+// sed, the tests inside `[[ ]]`, an option name built at run time, a custom
+// `shell:`, and any environment variable other than PATH and BASH_ENV can
+// still run code it does not see. a later signing job or step (W4, M2) is
+// added to this check in its own pull request, under REVIEW.md's release lens.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -126,6 +130,12 @@ const SHELL_KEYWORDS = new Set([
   "{",
   "time",
 ]);
+// the identities step hands the two names the later steps need on through
+// GITHUB_ENV, in one block of `echo "NAME=${variable}"` lines.
+const EXPORTED = ["APPLICATION_IDENTITY", "INSTALLER_IDENTITY_NAME"];
+const EXPORT_BLOCK = new RegExp(
+  `\\{\\n(?:[ \\t]*echo "(?:${EXPORTED.join("|")})=\\$\\{[a-z_]+\\}"\\n)+[ \\t]*\\} >>"\\$GITHUB_ENV"`,
+);
 const GUARD_CONTEXT = "every new job";
 const LIMITS = { "sign-macos": 60, "verify-macos": 20, "assemble-signed": 10 };
 
@@ -299,10 +309,16 @@ function codeLines(script) {
 }
 
 const TOOL_PATH = /^\$\{?SYSTEM_S?BIN\}?\/[A-Za-z0-9_]+$/;
+// the character that stands for one character of a blanked string. no command
+// or option is spelled with it.
+const BLANK = "\u0001";
+// a quoted string that starts with `-` could be an option, so it is kept.
+const OPTION_LIKE = /^-[^\s"'`()\\]*$/;
 
 // the script with the text of every quoted string blanked, so that a `;` or a
 // tool's name inside a message is not read as a command. a `$(...)` inside a
-// string is kept, and so is a string that is only a tool's path.
+// string is kept, and so is a string that is only a tool's path or that could
+// be an option, which find's arguments are checked for.
 function skeleton(script) {
   const source = script.replace(/\\\n/g, " ");
   function scan(start, closer) {
@@ -311,26 +327,32 @@ function skeleton(script) {
     while (i < source.length) {
       const char = source[i];
       if (closer && char === ")") return [out, i + 1];
-      if (char === "\\") {
-        out += "xx";
+      if (char === "`") {
+        throw new Error("a backtick command substitution");
+      } else if (char === "\\") {
+        out += BLANK + BLANK;
         i += 2;
       } else if (char === "'") {
         const end = source.indexOf("'", i + 1);
         if (end === -1) throw new Error("an unterminated single quote");
-        out += `'${"x".repeat(end - i - 1)}'`;
+        const raw = source.slice(i + 1, end);
+        out += `'${OPTION_LIKE.test(raw) ? raw : BLANK.repeat(end - i - 1)}'`;
         i = end + 1;
       } else if (char === "$" && source[i + 1] === "'") {
         let j = i + 2;
         while (j < source.length && source[j] !== "'")
           j += source[j] === "\\" ? 2 : 1;
-        out += `$'${"x".repeat(j - i - 2)}'`;
+        const raw = source.slice(i + 2, j);
+        out += `$'${OPTION_LIKE.test(raw) ? raw : BLANK.repeat(j - i - 2)}'`;
         i = j + 1;
       } else if (char === '"') {
         let j = i + 1;
         let inner = "";
         while (j < source.length && source[j] !== '"') {
-          if (source[j] === "\\") {
-            inner += "xx";
+          if (source[j] === "`") {
+            throw new Error("a backtick command substitution");
+          } else if (source[j] === "\\") {
+            inner += BLANK + BLANK;
             j += 2;
           } else if (
             source[j] === "$" &&
@@ -341,13 +363,13 @@ function skeleton(script) {
             inner += `$(${sub})`;
             j = next;
           } else {
-            inner += "x";
+            inner += BLANK;
             j += 1;
           }
         }
         if (j >= source.length) throw new Error("an unterminated double quote");
         const raw = source.slice(i + 1, j);
-        out += `"${TOOL_PATH.test(raw) ? raw : inner}"`;
+        out += `"${TOOL_PATH.test(raw) || OPTION_LIKE.test(raw) ? raw : inner}"`;
         i = j + 1;
       } else if (source.startsWith("$((", i)) {
         const end = source.indexOf("))", i);
@@ -370,10 +392,46 @@ function skeleton(script) {
   return scan(0, null)[0];
 }
 
-// every word a script uses as a command, and the functions it defines.
+// the options of find that the job may use. -exec, -execdir, -ok and -okdir
+// run a command, and a quoted option name is read as the option it spells.
+const FIND_OPTIONS = new Set([
+  "-mindepth",
+  "-maxdepth",
+  "-type",
+  "-name",
+  "-print",
+  "-print0",
+]);
+const TRAP_OPERANDS = new Set(["-", "-p", "-l"]);
+const quotedWholly = /^(["'])[^"']*\1$/;
+const openingRemnant = new RegExp(`^["']${BLANK}*$`);
+const closingRemnant = new RegExp(`^${BLANK}*["']$`);
+
+// the bodies of the `trap '...' SIGNAL` commands of a script, as commands to
+// read, and the operands of a trap that are neither a quoted body nor `-`.
+function trapOperands(script) {
+  const code = script
+    .replace(/\\\n/g, " ")
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith("#"))
+    .join("\n");
+  const pattern =
+    /(?:^|[;&|({]|\b(?:then|do|else)\b)[ \t]*trap[ \t]+(?:--[ \t]+)?(?:'([^']*)'|"((?:[^"\\]|\\.)*)"|([^\s;&|()'"]+))/gm;
+  const bodies = [];
+  const bare = [];
+  for (const match of code.matchAll(pattern)) {
+    if (match[3] !== undefined) bare.push(match[3]);
+    else bodies.push(match[1] ?? match[2]);
+  }
+  return { bodies, bare };
+}
+
+// every word a script uses as a command, the functions it defines, and the
+// commands it uses in a way this check will not read (`refused`).
 function commandWords(script) {
   let flat = skeleton(script);
   const functions = new Set();
+  const refused = [];
   flat = flat.replace(/\[\[ .*? \]\]/g, "[[ ]]");
   flat = flat.replace(/^[ \t]*([A-Za-z_]\w*)\(\)[ \t]*\{/gm, (_, name) => {
     functions.add(name);
@@ -383,8 +441,10 @@ function commandWords(script) {
     .replace(/[0-9]*[<>]+&[0-9-]+/g, " ")
     .replace(/[0-9]*(?:<<<|<<|>>|>|<)/g, " ");
   const words = [];
-  for (const segment of flat.split(/\$\(|[;&|()\n]/)) {
-    const tokens = segment.trim().split(/\s+/).filter(Boolean);
+  const parts = flat.split(/(\$\(|[;&|()\n])/);
+  for (let part = 0; part < parts.length; part += 2) {
+    const terminator = parts[part + 1];
+    const tokens = parts[part].trim().split(/\s+/).filter(Boolean);
     let index = 0;
     for (;;) {
       const token = tokens[index];
@@ -400,17 +460,50 @@ function commandWords(script) {
       }
     }
     const word = tokens[index];
-    if (
-      word === undefined ||
-      word === "for" ||
-      word === "}" ||
-      /^["']?x*["']?$/.test(word)
-    )
-      continue;
+    if (word === undefined || word === "for" || word === "}") continue;
     if (["fi", "done", "esac", "in"].includes(word)) continue;
+    if (quotedWholly.test(word)) {
+      // a quoted word is a command only as a tool's path.
+      if (TOOL_PATH.test(word.slice(1, -1))) words.push(word);
+      else refused.push("runs a quoted or expanded word as a command");
+      continue;
+    }
+    if (openingRemnant.test(word) || closingRemnant.test(word)) {
+      // the rest of a string around a `$(...)`. at the start of a command, one
+      // that opens a string is a quoted substitution used as the command.
+      if (terminator === "$(" && openingRemnant.test(word)) {
+        refused.push("runs a quoted command substitution as a command");
+      }
+      continue;
+    }
     words.push(word);
+    if (word === "find") {
+      for (const token of tokens.slice(index + 1)) {
+        const option = token.replace(/["']/g, "");
+        if (option.startsWith("-") && !FIND_OPTIONS.has(option)) {
+          refused.push(
+            `runs find with ${option}; only ${[...FIND_OPTIONS].join(", ")} are allowed`,
+          );
+        }
+      }
+    }
   }
-  return { words, functions };
+  // a trap's body runs as commands later.
+  const { bodies, bare } = trapOperands(script);
+  for (const body of bodies) {
+    const inner = commandWords(body);
+    words.push(...inner.words);
+    refused.push(...inner.refused);
+    for (const name of inner.functions) functions.add(name);
+  }
+  for (const operand of bare) {
+    if (!TRAP_OPERANDS.has(operand) && !functions.has(operand)) {
+      refused.push(
+        `sets a trap to ${operand}, which is neither a quoted command nor a function of the script`,
+      );
+    }
+  }
+  return { words, functions, refused };
 }
 
 function usedTools(script, variable) {
@@ -509,6 +602,30 @@ function checkSigningJob() {
       );
     }
 
+    // the environment the script's commands run in.
+    const code = codeLines(script).join("\n");
+    if (/\bGITHUB_PATH\b/.test(code)) {
+      problem(
+        `${where}: the script of step "${label}" refers to GITHUB_PATH, which could change where the tools are found`,
+      );
+    }
+    if (EXPORT_BLOCK.test(code)) {
+      // the one block that sets the two names the later steps read.
+      if (code.replace(EXPORT_BLOCK, "").includes("GITHUB_ENV"))
+        problem(
+          `${where}: the script of step "${label}" writes GITHUB_ENV outside its block of ${EXPORTED.join(" and ")}`,
+        );
+    } else if (/\bGITHUB_ENV\b/.test(code)) {
+      problem(
+        `${where}: the script of step "${label}" refers to GITHUB_ENV other than to set ${EXPORTED.join(" and ")}`,
+      );
+    }
+    for (const match of code.matchAll(
+      /(?<![A-Za-z0-9_])(PATH|BASH_ENV|ENV)\+?=/g,
+    )) {
+      problem(`${where}: the script of step "${label}" assigns ${match[1]}`);
+    }
+
     // commands.
     let analysis;
     try {
@@ -519,9 +636,13 @@ function checkSigningJob() {
       );
       continue;
     }
+    for (const message of analysis.refused) {
+      problem(`${where}: step "${label}" ${message}`);
+    }
     for (const word of analysis.words) {
       const bare = word.replaceAll('"', "");
-      if (/^\$\{?SYSTEM_S?BIN\}?\//.test(bare)) continue;
+      if (TOOL_PATH.test(bare) && (word === bare || word === `"${bare}"`))
+        continue;
       if (analysis.functions.has(bare) || ALLOWED_COMMANDS.has(bare)) continue;
       if (PACKAGE_MANAGERS.includes(bare)) {
         problem(`${where}: step "${label}" runs the package manager ${bare}`);
@@ -977,6 +1098,16 @@ for (const [file, doc] of Object.entries(workflows)) {
   for (const path of keyPaths(doc, /^SYSTEM_S?BIN$/)) {
     problem(
       `${file}: ${path} sets SYSTEM_BIN or SYSTEM_SBIN; only the stand-in test may`,
+    );
+  }
+}
+
+// no environment of release.yaml, which sign-macos runs in, may set where
+// commands are found or a file the shell runs first.
+if (release) {
+  for (const path of keyPaths(release, /^(PATH|BASH_ENV)$/)) {
+    problem(
+      `release.yaml: ${path} sets PATH or BASH_ENV; the signing job's tools are called by path and nothing may change what its shell runs`,
     );
   }
 }

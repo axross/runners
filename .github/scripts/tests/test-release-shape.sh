@@ -3,11 +3,12 @@
 # (it must pass) and then with one change at a time (each must fail, and name the
 # cause). every change is one the release record forbids: the signing job's
 # permissions, an action it uses, a checkout, a `${{ }}` inside run, a package
-# manager or fetch or repository file, a tool called by name, the stand-in
-# prefixes, pkgbuild's arguments; an Environment in another job, in a `.yml`
-# workflow, or reachable from a pull request; a signing secret read outside
-# sign-macos; a signing job without its guard or its place in the chain; and
-# a way past a failed job. a change the test cannot find in the files fails the
+# manager or fetch or repository file, a tool called by name, a command that is
+# quoted, expanded, run by a trap or by find, or found through PATH, BASH_ENV,
+# GITHUB_PATH or GITHUB_ENV, the stand-in prefixes, pkgbuild's arguments; an
+# Environment in another job, in a `.yml` workflow, or reachable from a pull
+# request; a signing secret read outside sign-macos; a signing job without its
+# guard or its place in the chain; and a way past a failed job. a change the test cannot find in the files fails the
 # test, so it cannot go stale and pass.
 # shellcheck disable=SC2016,SC1003 # the texts the changes find and replace are literal, not expansions.
 set -euo pipefail
@@ -173,6 +174,68 @@ expect_fail "a sign-macos script the check cannot analyse" "cannot be analysed" 
   "$release" "$import_echo" $'          echo "an unterminated string\n'"$import_echo"
 expect_fail "sign-macos without the xcrun lookups" "the check script does not look for notarytool with xcrun --find" \
   "$release" 'for tool in notarytool stapler; do' 'for tool in stapler; do'
+
+echo "-- sign-macos: ways past the command analysis --"
+# a quoted or expanded word is a command only as "$SYSTEM_BIN/<tool>".
+expect_fail "sign-macos running a quoted command word" "runs a quoted or expanded word as a command" \
+  "$release" "$import_echo" $'          "npm" ci\n'"$import_echo"
+expect_fail "sign-macos running a single-quoted command word" "runs a quoted or expanded word as a command" \
+  "$release" "$import_echo" $'          \'npm\' ci\n'"$import_echo"
+expect_fail "sign-macos running a command held in a variable" "runs a quoted or expanded word as a command" \
+  "$release" "$import_echo" $'          "$cmd" ci\n'"$import_echo"
+expect_fail "sign-macos running an unquoted command held in a variable" "which is neither a shell built-in" \
+  "$release" "$import_echo" $'          $cmd ci\n'"$import_echo"
+expect_fail "sign-macos running the output of a command as the command" "runs a quoted command substitution as a command" \
+  "$release" "$import_echo" $'          "$(printf npm)" ci\n'"$import_echo"
+expect_fail "sign-macos running a tool through a path that leaves the system directory" "which is neither a shell built-in" \
+  "$release" "$import_echo" $'          $SYSTEM_BIN/../../tmp/tool\n'"$import_echo"
+expect_fail "sign-macos running a quoted tool through a path that leaves the system directory" "runs a quoted or expanded word as a command" \
+  "$release" "$import_echo" $'          "$SYSTEM_BIN/../../tmp/tool"\n'"$import_echo"
+expect_fail "sign-macos using a backtick substitution" "cannot be analysed: a backtick command substitution" \
+  "$release" "$import_echo" $'          echo `npm ci`\n'"$import_echo"
+# the body of a trap runs as commands.
+expect_fail "sign-macos with a trap that runs a package manager" "runs the package manager npm" \
+  "$release" $'          trap \'rm -f "$key_file"\' EXIT' $'          trap \'npm ci\' EXIT'
+expect_fail "sign-macos with a double-quoted trap that calls a tool by name" "calls security by name" \
+  "$release" $'          trap \'rm -f "$key_file"\' EXIT' $'          trap "security delete-keychain x" EXIT'
+expect_fail "sign-macos with a trap whose body is a variable" "which is neither a shell built-in" \
+  "$release" $'          trap \'rm -f "$key_file"\' EXIT' $'          trap "$handler" EXIT'
+expect_fail "sign-macos with a trap that names no function of the script" "sets a trap to handler" \
+  "$release" $'          trap \'rm -f "$key_file"\' EXIT' $'          trap handler EXIT'
+# find may list files, not run commands.
+expect_fail "sign-macos with find -exec" "runs find with -exec" \
+  "$release" $'find unsigned -mindepth 1 -maxdepth 1 |' $'find unsigned -mindepth 1 -maxdepth 1 -exec npm ci {} \';\' |'
+expect_fail "sign-macos with find -execdir" "runs find with -execdir" \
+  "$release" $'find unsigned -mindepth 1 -maxdepth 1 |' $'find unsigned -mindepth 1 -maxdepth 1 -execdir npm ci {} \';\' |'
+expect_fail "sign-macos with find -exec quoted" "runs find with -exec" \
+  "$release" $'find unsigned -mindepth 1 -maxdepth 1 |' $'find unsigned -mindepth 1 -maxdepth 1 "-exec" npm ci {} \';\' |'
+expect_fail "sign-macos with find -exec spelled in two quoted parts" "runs find with -e" \
+  "$release" $'find unsigned -mindepth 1 -maxdepth 1 |' $'find unsigned -mindepth 1 -maxdepth 1 -e"xec" npm ci {} \';\' |'
+expect_fail "sign-macos with find -delete" "runs find with -delete" \
+  "$release" $'find unsigned -mindepth 1 -maxdepth 1 |' $'find unsigned -mindepth 1 -maxdepth 1 -delete |'
+# nothing may change where commands are found, or what the shell runs first.
+expect_fail "a step of sign-macos that sets PATH in its env" "sets PATH or BASH_ENV" \
+  "$release" $'        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n        run: |\n          # sign-macos: sign' $'        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n          PATH: /tmp/fake\n        run: |\n          # sign-macos: sign'
+expect_fail "a step of sign-macos that sets BASH_ENV in its env" "sets PATH or BASH_ENV" \
+  "$release" $'        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n        run: |\n          # sign-macos: sign' $'        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n          BASH_ENV: /tmp/fake.sh\n        run: |\n          # sign-macos: sign'
+expect_fail "sign-macos that sets PATH in its env" "sets PATH or BASH_ENV" \
+  "$release" $'    timeout-minutes: 60\n    environment: release' $'    timeout-minutes: 60\n    env:\n      PATH: /tmp/fake\n    environment: release'
+expect_fail "sign-macos that sets BASH_ENV in its env" "sets PATH or BASH_ENV" \
+  "$release" $'    timeout-minutes: 60\n    environment: release' $'    timeout-minutes: 60\n    env:\n      BASH_ENV: /tmp/fake.sh\n    environment: release'
+expect_fail "a workflow that sets PATH in its env" "sets PATH or BASH_ENV" \
+  "$release" $'permissions:\n  contents: read\n' $'permissions:\n  contents: read\n\nenv:\n  PATH: /tmp/fake\n'
+expect_fail "a script that assigns PATH" "assigns PATH" \
+  "$release" "$import_echo" $'          PATH="/tmp/fake:${PATH}"\n'"$import_echo"
+expect_fail "a script that exports BASH_ENV" "assigns BASH_ENV" \
+  "$release" "$import_echo" $'          export BASH_ENV=/tmp/fake.sh\n'"$import_echo"
+expect_fail "a script that writes to GITHUB_PATH" "refers to GITHUB_PATH" \
+  "$release" "$import_echo" $'          echo "/tmp/fake" >>"$GITHUB_PATH"\n'"$import_echo"
+expect_fail "a script that writes PATH to GITHUB_ENV" "refers to GITHUB_ENV other than" \
+  "$release" "$import_echo" $'          echo "PATH=/tmp/fake" >>"$GITHUB_ENV"\n'"$import_echo"
+expect_fail "the identities step that writes a third name to GITHUB_ENV" "refers to GITHUB_ENV other than" \
+  "$release" $'            echo "INSTALLER_IDENTITY_NAME=${installer_name}"\n' $'            echo "INSTALLER_IDENTITY_NAME=${installer_name}"\n            echo "PATH=${installer_name}"\n'
+expect_fail "the identities step that writes to GITHUB_ENV again" "writes GITHUB_ENV outside its block" \
+  "$release" $'          echo "team_id=${MACOS_TEAM_ID}" >>"$GITHUB_OUTPUT"' $'          echo "PATH=/tmp/fake" >>"$GITHUB_ENV"\n          echo "team_id=${MACOS_TEAM_ID}" >>"$GITHUB_OUTPUT"'
 
 echo "-- sign-macos: the stand-in prefixes --"
 expect_fail "a prefix default other than /usr/bin" "uses SYSTEM_BIN without the line" \
