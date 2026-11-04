@@ -88,6 +88,7 @@ mod tests {
     use super::super::dockerfile::{
         base_reference, final_stage_labels, local_copy_sources, reference_tag,
     };
+    use super::super::runner::{RUNNER_RELEASES, RunnerRelease};
     use super::*;
     use crate::runtime::backend::{ContainerSpec, DiagnosticRecord, Mount};
     use crate::runtime::docker_args::{
@@ -96,10 +97,6 @@ mod tests {
         volume_chown_arguments,
     };
     use crate::validate::PlannedVolume;
-
-    /// each pinned runner release with its date from the `actions/runner` release
-    /// page; a runner bump adds its row.
-    const RUNNER_RELEASES: &[(&str, &str)] = &[("2.337.0", "2026-08-26")];
 
     /// each contract version with the fingerprint of the run contract it was
     /// approved for; a change to the run contract bumps the version and adds a row,
@@ -152,12 +149,12 @@ mod tests {
     }
 
     /// why the declared runner labels disagree with the base image's tag or the
-    /// release table.
+    /// runner record.
     fn release_problems(
         base_tag: Option<&str>,
         version: Option<&str>,
         released: Option<&str>,
-        table: &[(&str, &str)],
+        table: &[RunnerRelease],
     ) -> Vec<String> {
         let mut problems = Vec::new();
         if version != base_tag {
@@ -165,12 +162,13 @@ mod tests {
                 "the {RUNNER_VERSION_LABEL} label is {version:?}, but the base image's tag is {base_tag:?}"
             ));
         }
-        match table.iter().find(|(known, _)| Some(*known) == version) {
+        match table.iter().find(|known| Some(known.version) == version) {
             None => problems.push(format!(
-                "runner {version:?} has no row in RUNNER_RELEASES; add its date from the actions/runner release page"
+                "runner {version:?} has no entry in RUNNER_RELEASES; add its release date and osx-arm64 SHA-256 from the actions/runner release page"
             )),
-            Some((_, date)) if Some(*date) != released => problems.push(format!(
-                "the {RUNNER_RELEASED_LABEL} label is {released:?}, but runner {version:?} was released on {date}"
+            Some(known) if Some(known.released) != released => problems.push(format!(
+                "the {RUNNER_RELEASED_LABEL} label is {released:?}, but runner {version:?} was released on {}",
+                known.released
             )),
             Some(_) => {}
         }
@@ -191,7 +189,11 @@ mod tests {
 
     #[test]
     fn a_runner_bump_without_its_labels_or_its_release_row_is_a_problem() {
-        let table = &[("2.337.0", "2026-08-26")];
+        let table = &[RunnerRelease {
+            version: "2.337.0",
+            released: "2026-08-26",
+            osx_arm64_sha256: "",
+        }];
         let date = Some("2026-08-26");
         assert!(release_problems(Some("2.337.0"), Some("2.337.0"), date, table).is_empty());
         assert_eq!(
@@ -200,7 +202,7 @@ mod tests {
         );
         let unknown = release_problems(Some("2.338.0"), Some("2.338.0"), date, table);
         assert_eq!(unknown.len(), 1);
-        assert!(unknown[0].contains("no row"), "{unknown:?}");
+        assert!(unknown[0].contains("no entry"), "{unknown:?}");
         let wrong = release_problems(Some("2.337.0"), Some("2.337.0"), Some("2026-08-27"), table);
         assert!(wrong[0].contains("was released on 2026-08-26"), "{wrong:?}");
         assert_eq!(

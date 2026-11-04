@@ -764,6 +764,7 @@ before any pool runs and before each job.
 | `image::definition` | The image definition embedded in the binary, and the debug-only test definition          |
 | `image::archive`    | The build context: a ustar archive of the definition, written by the CLI itself          |
 | `image::check`      | The image check's format and outcomes, the refusal, the freshness warnings, and `status` |
+| `image::runner`     | The runner record: each declared runner version's release date and osx-arm64 SHA-256     |
 
 ### Labels
 
@@ -795,10 +796,12 @@ Unit tests in `cli/src/image/contract.rs` keep the declaration honest:
   the version they were approved for. Changing any of them without raising the
   contract version fails, and the failure names the row to add with the new
   version.
-- `RUNNER_RELEASES` holds each runner version's release date. The declared runner
-  version must equal the base image's tag, have a row, and declare the row's date.
-  A Dependabot runner bump stays red until both labels and the row are updated by
-  hand; see
+- `RUNNER_RELEASES` in `cli/src/image/runner.rs` is the runner record: each
+  declared runner version's release date and the SHA-256 of its osx-arm64 archive.
+  The declared runner version, `DECLARED_RUNNER_VERSION`, must equal the base
+  image's tag and the `runner-version` label, have an entry, and declare the
+  entry's date. A Dependabot runner bump stays red until both labels, the declared
+  version, and the entry are updated by hand; see
   [Development Workflow](./development-workflow.md#bumping-the-runner).
 - The embedded set must be exactly the Dockerfile and every file it copies, and
   `cli/tests/build-definition/Dockerfile` must start from the same base and declare
@@ -874,9 +877,10 @@ when the image is missing or its labels are missing or malformed.
 ## macOS VM Pools
 
 An axmc pool with `os: "macos"` runs its jobs in macOS virtual machines. This
-section states what `validate` accepts for such a pool. The macOS VM runtime is not
+section states what `validate` accepts for such a pool, and the runner record that
+the golden macOS VM will use. The macOS VM runtime is not
 implemented yet, so `start` and `build` still refuse axmc, as Runtime Seam says.
-Every rule here applies to a pool with `os: "macos"` under the axmc profile only;
+The pool rules apply to a pool with `os: "macos"` under the axmc profile only;
 axpc and axmc Linux pools accept what they accepted before.
 
 ### Defaults and Minimums
@@ -969,6 +973,49 @@ These fixtures pin the new rules, and each default, minimum, and message has one
 `macos` for the macOS-pools-alone refusal. That configuration now fails the disk
 minimum, so the test reads `accepted/axmc-macos-defaults.json` instead.
 
+### The Runner Record
+
+`RUNNER_RELEASES` in `cli/src/image/runner.rs` holds, for each runner version the
+CLI has declared, the release date and the SHA-256 of
+`actions-runner-osx-arm64-<version>.tar.gz`, both taken from the
+[actions/runner releases](https://github.com/actions/runner/releases) page. The
+Linux image's freshness check reads its release date from the image's label, and
+a unit test requires the label to equal the record's date. The macOS golden VM's
+build will take the digest from the record, and its `status` the date.
+`DECLARED_RUNNER_VERSION` is the version that both install. One runner bump moves
+the Linux image and the macOS golden VM together, and it stays red until its
+entry is complete; [Development
+Workflow](./development-workflow.md#bumping-the-runner) lists the edits.
+
+The tests in `image::runner` fail with a message that names what is missing:
+
+- the declared version must equal the `runner-version` label of the Linux image's
+  Dockerfile;
+- the declared version must have an entry, which names the date and the archive
+  to look up when it has none;
+- every entry must have a release date that is a real `YYYY-MM-DD` day and a
+  SHA-256 of 64 lowercase hexadecimal digits, and no version may be listed twice.
+
+`MARSHAL_TEST_RUNNER` declares another runner for the tests and for the Mac
+verification of a golden macOS VM whose runner is behind. `declared_runner` in
+`image::runner` reads it:
+
+- **The format** is `<version>=<sha256>`: a version of three dot-separated
+  decimal numbers, each of at most nine digits and none with a leading zero, then
+  an equals sign, then 64 lowercase hexadecimal digits. Anything else, such as
+  an empty value, a missing part, uppercase digits, whitespace, or a second `=`,
+  is refused with a message that names the format and not the value.
+- **A debug build** declares that version and digest in place of the record's. The
+  record has no date for a version it does not hold, so the runner age of such a
+  golden VM shows `unknown`.
+- **A release build** ignores the variable, malformed or not, and declares the
+  record's entry for `DECLARED_RUNNER_VERSION`, so a release binary cannot be made
+  to install a runner the record does not hold. `tests/base_address.rs` shows both
+  halves, and CI runs it again in the release profile.
+
+No command reads the variable yet, because the macOS golden VM's build does not
+exist; `declared_runner` takes the value from its caller, and the tests pin it.
+
 ## Running a Host
 
 `start` runs the host's pools in the foreground through the instance layer and the
@@ -1014,12 +1061,15 @@ runs the container backend with Unix containment, which serves the tests, not an
 operated host. `MARSHAL_TEST_ROOT` moves the lock, the channel, and the log
 directory, `MARSHAL_TEST_GITHUB_API` moves the GitHub base address,
 `MARSHAL_TEST_DOCKER` names the `docker` client that `start` and `build` run, the
-Unix shim's removal in `start` included, and `MARSHAL_TEST_BUILD_DEFINITION` names
-a test definition that `build` builds instead of the embedded one. Only a debug
-build honours any of them: in the release profile `tests/base_address.rs` shows
-that the client stays `docker`, and `tests/build_definition.rs` that `build` keeps
-the embedded definition. The tests name the fake client rather than put it first on `PATH`,
-because Windows searches the program's directory and the system directories before
+Unix shim's removal in `start` included, `MARSHAL_TEST_BUILD_DEFINITION` names
+a test definition that `build` builds instead of the embedded one, and
+`MARSHAL_TEST_RUNNER` declares another runner version and its osx-arm64 SHA-256
+in place of the runner record's, as `<version>=<sha256>`; [The Runner
+Record](#the-runner-record) says how it is read. Only a debug build
+honours any of them: in the release profile `tests/base_address.rs` shows
+that the client stays `docker` and that the declared runner stays the record's, and
+`tests/build_definition.rs` that `build` keeps the embedded definition. The tests
+name the fake client rather than put it first on `PATH`, because Windows searches the program's directory and the system directories before
 `PATH`, so a real `docker.exe` in `System32` would win.
 
 A `start` that finds the lock held changes nothing. It canonicalises its

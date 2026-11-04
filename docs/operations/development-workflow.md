@@ -357,17 +357,23 @@ amend, reset away, or force-push published history as conflict recovery.
 
 Dependabot's `docker` entry proposes a new runner base for
 [`images/actions-runner/Dockerfile`](../../images/actions-runner/Dockerfile), and
-its pull request stays red until three edits are made by hand on its branch, which
-the contract tests in `cli/src/image/contract.rs` ask for by name:
+its pull request stays red until five edits are made by hand on its branch, which
+the tests in `cli/src/image/contract.rs` and `cli/src/image/runner.rs` ask for by
+name:
 
-1. Add the new version's row to `RUNNER_RELEASES` in `cli/src/image/contract.rs`,
+1. Add the new version's entry to `RUNNER_RELEASES` in `cli/src/image/runner.rs`,
    with its release date from the
    [actions/runner releases](https://github.com/actions/runner/releases) page,
    never recalled.
-2. Set the `com.github.axross.runners.runner-version` and
+2. In the same entry, record the SHA-256 of
+   `actions-runner-osx-arm64-<version>.tar.gz`, copied from that release's notes,
+   never recalled. It is the digest the macOS golden VM's build checks the
+   downloaded archive against.
+3. Set `DECLARED_RUNNER_VERSION` in the same file to the new version.
+4. Set the `com.github.axross.runners.runner-version` and
    `com.github.axross.runners.runner-released` labels in the Dockerfile to the new
    version and that date.
-3. Set the `FROM` line and the two labels of
+5. Set the `FROM` line and the two labels of
    [`cli/tests/build-definition/Dockerfile`](../../cli/tests/build-definition/Dockerfile)
    to the same base and values.
 

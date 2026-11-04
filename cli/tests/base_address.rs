@@ -1,6 +1,7 @@
-//! the GitHub base address and the `docker` client move only in a debug build; a
-//! release build ignores either request, so a release binary cannot send a token
-//! anywhere but GitHub or run another program as its `docker` client.
+//! the GitHub base address, the `docker` client and the declared runner move only in
+//! a debug build; a release build ignores each request, so a release binary cannot
+//! send a token anywhere but GitHub, run another program as its `docker` client, or
+//! install a runner its record does not hold.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -10,6 +11,7 @@
 
 use std::ffi::OsStr;
 
+use marshal_cli::image::runner::{DECLARED_RUNNER_VERSION, declared_runner, release};
 use marshal_cli::runtime::docker::{DOCKER_PROGRAM, resolve_program};
 use marshal_cli::runtime::registration::{
     GITHUB_API, GitHubRegistrar, HttpLimits, resolve_base_url,
@@ -76,4 +78,36 @@ fn the_docker_override_names_the_client_in_a_debug_build_only() {
         assert_eq!(resolved, DOCKER_PROGRAM);
     }
     assert_eq!(resolve_program(None), DOCKER_PROGRAM);
+}
+
+const OTHER_RUNNER_DIGEST: &str =
+    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+#[test]
+fn the_runner_override_declares_another_runner_in_a_debug_build_only() {
+    let recorded = release(DECLARED_RUNNER_VERSION).unwrap();
+    let requested = format!("2.300.1={OTHER_RUNNER_DIGEST}");
+    let resolved = declared_runner(Some(&requested)).unwrap();
+    if cfg!(debug_assertions) {
+        assert_eq!(resolved.version, "2.300.1");
+        assert_eq!(resolved.osx_arm64_sha256, OTHER_RUNNER_DIGEST);
+    } else {
+        assert_eq!(resolved.version, recorded.version);
+        assert_eq!(resolved.osx_arm64_sha256, recorded.osx_arm64_sha256);
+    }
+    let unrequested = declared_runner(None).unwrap();
+    assert_eq!(unrequested.version, recorded.version);
+    assert_eq!(unrequested.osx_arm64_sha256, recorded.osx_arm64_sha256);
+}
+
+#[test]
+fn a_release_build_ignores_a_malformed_runner_override_a_debug_build_refuses() {
+    for requested in ["", "2.300.1", "2.300.1=abc", "evil"] {
+        let resolved = declared_runner(Some(requested));
+        if cfg!(debug_assertions) {
+            assert!(resolved.is_err(), "{requested}");
+        } else {
+            assert_eq!(resolved.unwrap(), declared_runner(None).unwrap());
+        }
+    }
 }

@@ -177,7 +177,7 @@ fn runner_release(labels: &ImageLabels) -> Option<(&str, u64)> {
 }
 
 /// the start of a `YYYY-MM-DD` day in UTC, in Unix seconds, from 1970 on.
-fn date_seconds(text: &str) -> Option<u64> {
+pub(crate) fn date_seconds(text: &str) -> Option<u64> {
     let mut parts = text.split('-');
     let (Some(year), Some(month), Some(day), None) =
         (parts.next(), parts.next(), parts.next(), parts.next())

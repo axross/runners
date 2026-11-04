@@ -8,3 +8,4 @@ pub mod contract;
 pub mod definition;
 #[cfg(test)]
 mod dockerfile;
+pub mod runner;
