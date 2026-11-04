@@ -109,6 +109,20 @@ async fn a_client_meets_unknown_methods_topics_and_fields_without_harm() {
             raw.request(4, "status", Value::Null).await;
             assert_eq!(raw.answer().await["id"], 4);
 
+            // a request that is malformed but names its id is answered under that id
+            raw.send_text(r#"{"type":"request","id":9,"method":5}"#)
+                .await;
+            let answer = raw.answer().await;
+            assert_eq!(answer["type"], "response", "{answer}");
+            assert_eq!(answer["id"], 9);
+            assert_eq!(answer["error"]["code"], "invalid_request");
+            // with no id that can be read, the error answers no request
+            raw.send_text(r#"{"type":"request","id":"nine","method":"status"}"#)
+                .await;
+            let answer = raw.answer().await;
+            assert_eq!(answer["type"], "error", "{answer}");
+            assert_eq!(answer["error"]["code"], "invalid_request");
+
             // a request with bad params is invalid, not unknown
             raw.request(5, "token_set", json!({"repository": 5})).await;
             assert_eq!(raw.answer().await["error"]["code"], "invalid_request");

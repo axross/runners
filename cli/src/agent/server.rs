@@ -332,6 +332,15 @@ fn error(code: ErrorCode, message: &str) -> ErrorBody {
     ErrorBody::new(code, message)
 }
 
+/// the `id` of a line that says it is a request and has an `id` that is an unsigned
+/// integer, however else it is malformed.
+fn readable_request_id(line: &[u8]) -> Option<u64> {
+    let value: serde_json::Value = serde_json::from_slice(line).ok()?;
+    (value.get("type")?.as_str()? == "request")
+        .then(|| value.get("id")?.as_u64())
+        .flatten()
+}
+
 /// serves one connection until it ends, for any reason.
 pub async fn serve<R, W>(read: R, writer: W, shared: Arc<Shared>, admission: Admission)
 where
@@ -560,7 +569,21 @@ impl<W: AsyncWrite + Abandon + Unpin> Session<'_, W> {
             serde_json::from_slice::<ClientMessage>(line)
         else {
             let body = error(ErrorCode::InvalidRequest, "the message is not a request");
-            return self.send(&ServerMessage::Error { error: &body }).await;
+            // a request that is malformed but names its id is answered under that id,
+            // so the client that waits for it is not left waiting
+            return match readable_request_id(line) {
+                Some(id) => {
+                    self.answer(
+                        id,
+                        &Err(super::api::ApiError::new(
+                            ErrorCode::InvalidRequest,
+                            "the request is malformed",
+                        )),
+                    )
+                    .await
+                }
+                None => self.send(&ServerMessage::Error { error: &body }).await,
+            };
         };
         match parse(&method, params) {
             Err(refusal) => self.answer(id, &Err(refusal)).await,
