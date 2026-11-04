@@ -63,8 +63,6 @@ fn the_build_runs_its_calls_in_order_and_commits_by_renaming() {
                 "list ",
                 &format!("pull {BASE_REFERENCE}"),
                 &format!("clone {BASE_REFERENCE} marshal-build-linux-"),
-                "run ",
-                "exec ask",
                 "exec marshal-prepare",
                 "exec marshal-fetch-key",
                 "exec marshal-list-key",
@@ -82,6 +80,22 @@ fn the_build_runs_its_calls_in_order_and_commits_by_renaming() {
                 &format!("delete {}", old_golden()),
             ],
         );
+        // the held `tart run` and the first guest-agent probe are spawned back to back, so
+        // which fake process claims its number first is the scheduler's choice
+        let first = |prefix: &str| {
+            calls
+                .iter()
+                .position(|call| call.starts_with(prefix))
+                .unwrap_or_else(|| panic!("no call starting {prefix:?}; the calls: {calls:#?}"))
+        };
+        let (cloned, prepared) = (first("clone "), first("exec marshal-prepare"));
+        for boot in ["run ", "exec ask"] {
+            let at = first(boot);
+            assert!(
+                cloned < at && at < prepared,
+                "{boot:?} at {at} is not between the clone at {cloned} and the preparation at {prepared}; the calls: {calls:#?}"
+            );
+        }
         let build_vm = build_vm_of(&rig);
         assert!(parse_build_vm_name(&build_vm).is_some(), "{build_vm}");
         let renamed = rig.calls_starting("rename ");
