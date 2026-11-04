@@ -246,7 +246,9 @@ jobs:
           if-no-files-found: error
 
   # the hashes are handed over as job outputs, apart from the artifacts, so a file
-  # that changed between the build and here fails the check.
+  # that changed between the build and here fails the check. assemble-release.sh
+  # compares them and writes SHA256SUMS, as release.yaml's assemble-signed job
+  # does for the signed set.
   assemble:
     name: Assemble The Release Files
     needs: build
@@ -255,6 +257,10 @@ jobs:
     outputs:
       artifact: marshal-release
     steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - name: Download The Windows Files
         uses: actions/download-artifact@v8
         with:
@@ -266,53 +272,17 @@ jobs:
           name: marshal-macos-arm64
           path: dist
       - name: Check The Hashes And Write SHA256SUMS
-        id: files
-        working-directory: dist
         env:
           VERSION: ${{ inputs.version }}
           WINDOWS_SHA256: ${{ needs.build.outputs.windows_x64_sha256 }}
           WINDOWS_MSI_SHA256: ${{ needs.build.outputs.windows_x64_msi_sha256 }}
           MACOS_SHA256: ${{ needs.build.outputs.macos_arm64_sha256 }}
           MACOS_PKG_SHA256: ${{ needs.build.outputs.macos_arm64_pkg_sha256 }}
-        run: |
-          windows="marshal-${VERSION}-windows-x64.exe"
-          windows_msi="marshal-${VERSION}-windows-x64.msi"
-          macos="marshal-${VERSION}-macos-arm64"
-          macos_pkg="marshal-${VERSION}-macos-arm64.pkg"
-          expected="$(printf '%s\n' "$macos" "$macos_pkg" "$windows" "$windows_msi" | LC_ALL=C sort)"
-          present="$(find . -mindepth 1 -maxdepth 1 -printf '%P\n' | LC_ALL=C sort)"
-          if [[ "$present" != "$expected" ]]; then
-            echo "error: the downloaded files are not exactly ${macos}, ${macos_pkg}, ${windows} and ${windows_msi}:" >&2
-            echo "$present" >&2
-            exit 1
-          fi
-          for hash in "$WINDOWS_SHA256" "$WINDOWS_MSI_SHA256" "$MACOS_SHA256" "$MACOS_PKG_SHA256"; do
-            if [[ ! "$hash" =~ ^[0-9a-f]{64}$ ]]; then
-              echo "error: a build leg handed over '${hash}', which is not a SHA-256" >&2
-              exit 1
-            fi
-          done
-          printf '%s  %s\n' \
-            "$MACOS_SHA256" "$macos" \
-            "$MACOS_PKG_SHA256" "$macos_pkg" \
-            "$WINDOWS_SHA256" "$windows" \
-            "$WINDOWS_MSI_SHA256" "$windows_msi" > SHA256SUMS
-          sha256sum --check --strict SHA256SUMS
-          cat SHA256SUMS
-          {
-            echo "windows=${windows}"
-            echo "windows_msi=${windows_msi}"
-            echo "macos=${macos}"
-            echo "macos_pkg=${macos_pkg}"
-          } >> "$GITHUB_OUTPUT"
+        run: bash .github/scripts/assemble-release.sh "$VERSION" dist "$WINDOWS_SHA256" "$WINDOWS_MSI_SHA256" "$MACOS_SHA256" "$MACOS_PKG_SHA256"
+      # dist holds exactly the four files and SHA256SUMS, which the script checked.
       - name: Upload The Release Files
         uses: actions/upload-artifact@v7
         with:
           name: marshal-release
-          path: |
-            dist/${{ steps.files.outputs.windows }}
-            dist/${{ steps.files.outputs.windows_msi }}
-            dist/${{ steps.files.outputs.macos }}
-            dist/${{ steps.files.outputs.macos_pkg }}
-            dist/SHA256SUMS
+          path: dist
           if-no-files-found: error
