@@ -1752,16 +1752,12 @@ steps run with `if: always()`, and no other step in the job may.
 
 No secret is printed. Secret values reach the scripts only through `env:` and files
 written with mode 0600 under the runner's temporary directory, and each line of the
-`.p8` is masked as well. The password arguments of `security` are the one exception for
-a credential to "never passed on a command line", because the tool has no
-non-interactive alternative and the runner is discarded after the job; the maintainer
-allowed it at the plan gate. The approved design also passes the API key's ID and
-issuer ID to `notarytool` as the `--key-id` and `--issuer` arguments, and the `.p8`
-private key reaches it only as a file path. GitHub masks secret values in the log, not
-in a process listing. The maintainer decides whether those two arguments need a
-recorded exception.
+`.p8` is masked as well. Two exceptions to "never passed on a command
+line" are recorded, the password arguments of `security` and the `--key-id` and
+`--issuer` arguments of `notarytool`, and the `.p8` private key reaches `notarytool`
+only as a file path.
 [Security](../conventions/security.md#nothing-identifying-or-secret-is-committed)
-records both.
+records both and the reasons.
 
 `verify-macos` runs
 [`test-signed-pkg.sh`](../../.github/scripts/tests/test-signed-pkg.sh) on a runner

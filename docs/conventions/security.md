@@ -1000,14 +1000,18 @@ maintainer. `sign-macos` reads six Environment secrets of the `release` Environm
 `MACOS_NOTARY_KEY_P8`, `MACOS_NOTARY_KEY_ID` and `MACOS_NOTARY_ISSUER_ID`, and one
 Environment variable that is not secret, `MACOS_TEAM_ID`; the maintainer creates
 them, and no value is committed. A secret value is never echoed, passed on a command
-line, or written into an image layer or build cache. The one exception for a
-credential is the password arguments of `security` in `sign-macos`, which have no
-non-interactive alternative and whose runner is discarded after the job; the
-maintainer allowed it at the plan gate. The approved design also passes the API
-key's ID and issuer ID to `notarytool` as the `--key-id` and `--issuer` arguments,
-and the `.p8` private key reaches it only as a file path. GitHub masks secret values
-in the log, not in a process listing. The maintainer decides whether those two
-arguments need a recorded exception.
+line, or written into an image layer or build cache. Two exceptions for a
+credential on a command line are recorded, both in `sign-macos`. The password
+arguments of `security` were allowed at the plan gate. The `--key-id` and `--issuer`
+arguments of `notarytool`, which carry the API key's ID and issuer ID, were allowed
+by the maintainer on 2026-11-04 PST. Neither tool has a non-interactive alternative:
+`security` has none for its password, and `notarytool` and its `store-credentials`
+command take the IDs only as arguments or through a keychain profile that is itself
+created from those arguments, with no documented environment variable or
+configuration file. The runner is discarded after the job, and a request is
+authenticated by a token signed with the `.p8` private key, which reaches `notarytool`
+only as a file path. GitHub masks secret values in the
+log, not in a process listing.
 
 ## The Review Gate Admits One Bot Identity by Login, Not Association
 

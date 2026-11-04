@@ -180,12 +180,11 @@ Codex review uses its native priority label.
   directory without a stated need are findings.
 - **Secrets stay out of logs and images.** A secret is never echoed, passed on
   a command line that a process listing exposes, written into an image layer
-  (`ENV`, `ARG`, `COPY`), or left in a build cache. The one recorded exception for a
-  credential is `security`'s password arguments in `sign-macos`. The notary key's ID
-  and issuer ID reach `notarytool` as `--key-id` and `--issuer` arguments and the
-  `.p8` key only as a file path; the maintainer decides whether those two arguments
-  need an exception, so any change to how the three reach `notarytool` is a finding
-  to raise (see
+  (`ENV`, `ARG`, `COPY`), or left in a build cache. Two exceptions for a
+  credential are recorded, both in `sign-macos`: `security`'s password arguments, and
+  `notarytool`'s `--key-id` and `--issuer` arguments for the notary key's ID and issuer
+  ID. The `.p8` key reaches `notarytool` only as a file path. Any other change to how
+  the key's ID, issuer ID or `.p8` reaches `notarytool` is a finding to raise (see
   [Security](docs/conventions/security.md#nothing-identifying-or-secret-is-committed)).
 
 ## Language lenses
@@ -241,8 +240,9 @@ Apply the lens for each kind of file in the diff.
   step condition in `verify-macos` or `assemble-signed`, or one in `attest` or
   `release` that skips a step, which the shape check does not see; an attest or release job that reads
   the unsigned set or does not follow every signing step; a secret printed, or passed
-  on a command line apart from `security`'s password arguments in `sign-macos`, the
-  one exception for a credential that Security records; a change to how the notary
+  on a command line apart from `security`'s password arguments and `notarytool`'s
+  `--key-id` and `--issuer` arguments in `sign-macos`, the two exceptions for a
+  credential that Security records; a change to how the notary
   key's ID, issuer ID or `.p8` key reaches `notarytool`; a change to the identifier
   `app.axross.marshal`, the team pin, or the G2 intermediate's pin without its source and the record's update;
   and a signing job or step added without being added to `check-release-shape.mjs` and
