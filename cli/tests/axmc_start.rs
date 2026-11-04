@@ -405,3 +405,47 @@ fn a_refusal_after_start_holds_the_slot_while_another_slots_job_finishes_and_it_
         "a hold is a warning"
     );
 }
+
+/// plan criterion: a VM that ignores the graceful stop is stopped forcibly and
+/// deleted by the 30 s deadline.
+#[test]
+fn a_vm_that_ignores_the_graceful_stop_is_stopped_forcibly_and_deleted_within_30_seconds() {
+    let host = holding_host(&[linux("linuxone", 1)]);
+    let stub = github();
+    let started = host.start(&stub.address);
+    let status = host.wait_for_status("the job", RUNNING_WITHIN, running(1));
+    let job = running_jobs(&status).remove(0);
+    host.wait_for_containers(&[&job], RUNNING_WITHIN);
+    host.tart_script("stop_ignored", "");
+    let vm = host
+        .vm_names()
+        .into_iter()
+        .find(|name| name.starts_with("marshal-job-linuxone-1-"))
+        .expect("the job VM exists");
+
+    let requested = Instant::now();
+    let stop = host.client(&["stop"]);
+    assert_eq!(stop.status.code(), Some(0), "{:?}", texts(&stop));
+    let finished = started.finish(Duration::from_secs(30));
+
+    assert!(
+        requested.elapsed() < Duration::from_secs(30),
+        "the instance ended in {:?}",
+        requested.elapsed()
+    );
+    assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
+    assert_eq!(host.vm_names().len(), 1, "the job VM {vm} was deleted");
+    let stops: Vec<Vec<String>> = host
+        .tart_calls()
+        .into_iter()
+        .filter(|call| call.first().map(String::as_str) == Some("stop") && call.contains(&vm))
+        .collect();
+    assert!(
+        stops.iter().any(|call| call.ends_with(&["0".to_string()])),
+        "the VM was stopped forcibly: {stops:?}"
+    );
+    assert!(
+        stops.iter().any(|call| !call.ends_with(&["0".to_string()])),
+        "a graceful stop was tried first: {stops:?}"
+    );
+}
