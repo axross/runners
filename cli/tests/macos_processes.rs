@@ -95,6 +95,25 @@ async fn a_default_route_without_a_gateway_is_read_without_asking_arp() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn a_default_route_through_a_link_gateway_is_the_interface_without_a_router_and_asks_no_arp()
+{
+    let fake = Fake::new();
+    fake.script(
+        "route_stdout",
+        "   route to: default\ndestination: default\n       mask: default\n    gateway: link#17\n  interface: utun4\n      flags: <UP,GATEWAY,DONE,STATIC,GLOBAL>\n",
+    );
+    assert_eq!(
+        fake.tools().read().await,
+        NetworkReading::Primary(PrimaryNetwork {
+            interface: "utun4".to_string(),
+            router: None,
+            hardware: None,
+        })
+    );
+    assert_eq!(fake.invocations().len(), 1, "arp was asked");
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn a_routing_table_that_cannot_be_read_is_no_default_route() {
     type Script<'a> = &'a dyn Fn(&Fake);
     let missing_entry = |fake: &Fake| {

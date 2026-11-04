@@ -156,6 +156,27 @@ destination: default
 }
 
 #[test]
+fn a_route_whose_gateway_is_a_link_leaves_through_that_interface_without_a_router() {
+    // carry-over from the signal seam: a point-to-point route can print `link#<index>`
+    // or a hardware address as its gateway, and such a route still holds the default
+    let vpn = |gateway: &str| {
+        format!(
+            "   route to: default\ndestination: default\n       mask: default\n    gateway: {gateway}\n  interface: utun4\n      flags: <UP,GATEWAY,DONE,STATIC,GLOBAL>\n"
+        )
+    };
+    for gateway in ["link#17", "link#1", "a4:83:e7:1:2:3"] {
+        assert_eq!(
+            parse_route(&vpn(gateway)),
+            Some(RouteEntry {
+                interface: "utun4".to_string(),
+                gateway: None,
+            }),
+            "{gateway}"
+        );
+    }
+}
+
+#[test]
 fn route_output_in_any_other_form_is_refused() {
     let with = |old: &str, new: &str| ROUTE_WIFI.replacen(old, new, 1);
     let refused = [
@@ -164,7 +185,10 @@ fn route_output_in_any_other_form_is_refused() {
         "   route to: default\n".to_string(),
         with("route to: default", "route to: 8.8.8.8"),
         with("gateway: 192.168.1.1", "gateway: fe80::1%en0"),
-        with("gateway: 192.168.1.1", "gateway: link#17"),
+        with("gateway: 192.168.1.1", "gateway: link#"),
+        with("gateway: 192.168.1.1", "gateway: link#x"),
+        with("gateway: 192.168.1.1", "gateway: link#17 extra"),
+        with("gateway: 192.168.1.1", "gateway: link#1234567890"),
         with("gateway: 192.168.1.1", "gateway: 0.0.0.0"),
         with("gateway: 192.168.1.1", "gateway: 192.168.001.001"),
         with("gateway: 192.168.1.1", "gateway: 192.168.1.1 extra"),

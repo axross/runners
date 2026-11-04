@@ -107,10 +107,21 @@ fn is_interface_name(name: &str) -> bool {
         && characters.all(|c| c.is_ascii_alphanumeric())
 }
 
+/// whether a gateway names the interface itself rather than a router: `link#<index>`,
+/// or a hardware address.
+fn is_link_gateway(text: &str) -> bool {
+    let link_index = text.strip_prefix("link#").is_some_and(|index| {
+        (1..=9).contains(&index.len()) && index.bytes().all(|b| b.is_ascii_digit())
+    });
+    link_index || parse_hardware_address(text).is_some()
+}
+
 /// the interface and gateway of `route -n get default`. The first line must be
 /// `route to: default`; `interface:` must appear once and name an interface;
 /// `gateway:` appears once at most, as a routable IPv4 address, and is absent from a
-/// route that leaves through a point-to-point interface. Any other form is refused.
+/// route that leaves through a point-to-point interface. A route whose gateway is a
+/// link, as `link#17`, or a hardware address leaves through that interface without a
+/// router, like a point-to-point route. Any other form is refused.
 #[must_use]
 pub fn parse_route(output: &str) -> Option<RouteEntry> {
     let mut lines = output.lines();
@@ -135,6 +146,7 @@ pub fn parse_route(output: &str) -> Option<RouteEntry> {
     let interface = interface.filter(|name| is_interface_name(name))?;
     let gateway = match gateway {
         None => None,
+        Some(text) if is_link_gateway(text) => None,
         Some(text) => Some(
             Ipv4Addr::from_str(text)
                 .ok()
