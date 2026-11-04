@@ -513,11 +513,11 @@ Residual risks, accepted:
   refuses unless it prints the version's `--version`, so an older genuine installer
   under a newer version's name is refused by an operator who runs the check. The
   bare-binary blocks make the same check of the downloaded binary before they
-  replace the installed one, and refuse without touching the install path. The
-  check block's refusals have run in CI against stand-ins and the dry run's
-  installers, and the bare-binary blocks' refusals against stand-ins. Neither has
-  yet run on axpc or the Mac ([#56](https://github.com/axross/runners/issues/56));
-  the refusal checks of the bare-binary block were not run on axpc.
+  replace the installed one, and refuse without touching the install path. CI runs
+  the check block's refusals against stand-ins and the dry run's installers, and the
+  bare-binary blocks' refusals against stand-ins. Neither has run on axpc or the
+  Mac ([#56](https://github.com/axross/runners/issues/56)); the refusal checks of the
+  bare-binary block were not run on axpc.
 - **A green run can release nothing.** If main moves after the dispatch, the
   release job logs that the local branch is behind the remote one and ends without
   a tag or a release, after the binaries are attested.
@@ -565,10 +565,12 @@ Residual risks, accepted:
   pkg fetched with `gh` or `curl` has no mark. Gatekeeper is also expected to accept
   a pkg signed with any Developer ID and notarized, so it does not tie the pkg to the
   maintainer's team. That is a residual risk: until the CLI document records the team
-  ID after the first signed release, nothing ties a downloaded package to the
-  maintainer's team, and the optional check block does not check the team either. An
-  operator who wants the team checked reads `pkgutil --check-signature` and compares
-  the team ID once it is recorded. All of this is expected, not yet observed on a
+  ID after the first signed release, nothing in the install procedure compares a
+  downloaded package's team with the maintainer's. An operator who runs the optional
+  check block verifies the attestation, which ties the file to `release.yaml`'s build
+  on `main`, the build that signed it; the attestation does not tie the file to the
+  team. An operator who wants the team checked reads `pkgutil --check-signature` and
+  compares the team ID once it is recorded. All of this is expected, not yet observed on a
   Mac, and no control is added for it here. The genuine installers carry neither a
   script nor a custom action that runs code, and the build tests that they do not.
 - **On axpc, code running as the operator can read what the operator can**,
@@ -1000,10 +1002,12 @@ Environment variable that is not secret, `MACOS_TEAM_ID`; the maintainer creates
 them, and no value is committed. A secret value is never echoed, passed on a command
 line, or written into an image layer or build cache. The one exception for a
 credential is the password arguments of `security` in `sign-macos`, which have no
-non-interactive alternative and whose runner is discarded after the job. The API
-key's ID and issuer ID also reach `notarytool` as arguments, but they identify the
-key and are not credentials, and they are stored as secrets so that GitHub masks
-them in the log; the `.p8` key itself goes by a file path.
+non-interactive alternative and whose runner is discarded after the job; the
+maintainer allowed it at the plan gate. The approved design also passes the API
+key's ID and issuer ID to `notarytool` as the `--key-id` and `--issuer` arguments,
+and the `.p8` private key reaches it only as a file path. GitHub masks secret values
+in the log, not in a process listing. The maintainer decides whether those two
+arguments need a recorded exception.
 
 ## The Review Gate Admits One Bot Identity by Login, Not Association
 
