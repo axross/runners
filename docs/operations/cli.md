@@ -90,6 +90,8 @@ On `axmc`, `os` is `linux` or `macos`, `diskGb` is the per-VM disk cap, and
 even as `null`, because VM pools keep no volumes. The axmc fields are provisional:
 later phases may extend them but MUST NOT change what this phase accepts without a
 recorded migration.
+A macOS pool's `slots`, `cpus`, `memoryGb`, and `diskGb` are optional and have
+minimums; [macOS VM Pools](#macos-vm-pools) states them.
 
 ### New Rules
 
@@ -199,6 +201,8 @@ configuration prints its summary on standard output, with lines ending in `\n`:
   its members, `os`, and `diskGb`. A field read directly reports `null` as its own
   type error: `cpus`, `memoryGb`, `labels`, `diagnostics`, and
   `diagnosticRawRecords`.
+  A macOS pool reads `slots`, `memoryGb`, and `diskGb` the second way too; see
+  [macOS VM Pools](#macos-vm-pools).
 - **Names.** Known fields are found case-insensitively; the unknown-field check is
   case-sensitive, so `"Owner"` gives only `Owner: unknown field`.
 - **Patterns.** A pattern matches the whole value, so a trailing newline does not
@@ -866,6 +870,104 @@ the warnings nor an unknown age block a start.
 
 `image-built` and `runner` read `unknown` before the first check Docker answers, and
 when the image is missing or its labels are missing or malformed.
+
+## macOS VM Pools
+
+An axmc pool with `os: "macos"` runs its jobs in macOS virtual machines. This
+section states what `validate` accepts for such a pool. The macOS VM runtime is not
+implemented yet, so `start` and `build` still refuse axmc, as Runtime Seam says.
+Every rule here applies to a pool with `os: "macos"` under the axmc profile only;
+axpc and axmc Linux pools accept what they accepted before.
+
+### Defaults and Minimums
+
+A macOS pool needs no size or count field, and each field it sets replaces its
+default.
+
+| Field         | macOS pool                        | Linux pool on axmc   |
+| ------------- | --------------------------------- | -------------------- |
+| `slots`       | Optional, default 1               | Required, as before  |
+| `cpus`        | Default 4, at least 2             | Default 2, as before |
+| `memoryGb`    | Default 8, at least 4             | Default 8, as before |
+| `diskGb`      | Optional, default 50, at least 50 | Required, as before  |
+| `diagnostics` | `true` is rejected                | Accepted, as before  |
+
+The minimums are the golden macOS VM's: its disk is 50 GB, and the base needs at
+least 2 vCPUs and 4 GB of memory. Their messages, with `i` the pool's index as in
+the other axmc messages:
+
+| Rule                    | Path and message                                                                                         |
+| ----------------------- | -------------------------------------------------------------------------------------------------------- |
+| `cpus` below 2          | `repositories[i].cpus: must be at least 2 on a macOS pool`                                               |
+| `memoryGb` below 4      | `repositories[i].memoryGb: must be at least 4 on a macOS pool`                                           |
+| `diskGb` below 50       | `repositories[i].diskGb: must be at least 50 on a macOS pool, the golden macOS VM's disk size`           |
+| `diagnostics` is `true` | `repositories[i].diagnostics: not supported on a macOS pool, because macOS VM pools have no diagnostics` |
+
+Each message comes at its field's own place in an entry's errors. The
+`diagnostics` one follows the boolean type errors of `diagnostics` and
+`diagnosticRawRecords` and comes before the `diagnosticDirectory` errors, which
+still apply as for any pool.
+
+- **Absent and `null`.** Only an absent field takes its default. A `null`
+  `slots` or `diskGb` is a type error, `must be an integer from 1 to <max>`, as a
+  `null` `cpus` or `memoryGb` is, and is not reported as missing.
+- **The minimum is a rule, not a type error.** A value below its minimum is
+  recorded as an error, and the pool still joins the cross-entry and budget
+  checks, so one run reports a pool's size and its VM count together. The `cpus`
+  minimum compares after the rounding at nine decimals that the limit itself gets.
+- **The two-VM rule counts defaults.** A pool without `slots` counts one VM toward
+  `budget: macOS pools total N VMs (the sum of their slots), above the limit of 2`,
+  so three macOS pools without `slots` are rejected.
+- **The budgets use the resolved values.** The CPU, memory, and disk sums include
+  the defaults, so a macOS pool without `cpus` uses 4 CPUs of the budget.
+
+The disk reserve that the disk budget will count for the golden macOS VM is not
+part of this rule set yet.
+
+### Migration
+
+The macOS rules change what axmc accepts, so they are a recorded migration of the
+fixtures under [`tests/host-configuration/rust/`](../../tests/host-configuration/rust).
+No axpc fixture changes, and no `shared/` fixture changes. `axmc-defaults.json` and
+`axmc-diagnostics.json` describe Linux pools, so their outcomes and totals stay.
+`axmc-budget-at-limit.json` already sets every macOS value at or above its minimum,
+so it stays too.
+
+Each existing fixture whose macOS pool had `"diskGb": 40` now has 50, because 40
+is below the macOS minimum and each fixture was written to test something else:
+
+| Fixture                                                        | Change                                                                                                                                                      |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `accepted/axmc-os-labels.json`                                 | The macOS pool's `diskGb` 40 to 50; it stays accepted, and its labels are what it pins                                                                      |
+| `accepted/axmc-shared-label-different-os.json`                 | The same; it stays accepted with `macOS VMs: 1 of 2`                                                                                                        |
+| `rejected/axmc-label-linux-on-macos.json`                      | The same, so the label error stays the only error                                                                                                           |
+| `rejected/axmc-label-own-platform.json`                        | The same, so the two label errors stay the only errors                                                                                                      |
+| `rejected/axmc-label-x64.json`                                 | The same, so the label error stays the only error                                                                                                           |
+| `rejected/axmc-different-os-shared-label-different-token.json` | The same, so the token error stays the only error                                                                                                           |
+| `rejected/axmc-three-macos-vms.json`                           | Both pools' `diskGb` 40 to 50, and `budget.cpus` 8 to 12, because three default macOS slots of 4 CPUs total 12; the VM-limit error stays the only error     |
+| `rejected/axmc-budget-errors-come-last.json`                   | The first pool's `diskGb` 40 to 50 and `budget.cpus` 8 to 12, for the same reason; the disk total in the last error is 1100 GB (2 × 50 + 1000), not 1080 GB |
+
+These fixtures pin the new rules, and each default, minimum, and message has one:
+
+| Fixture                                            | Pins                                                                                             |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `accepted/axmc-macos-defaults.json`                | A pool with only its required fields gets 1 slot, 4 CPUs, 8 GB of memory, and 50 GB of disk      |
+| `accepted/axmc-macos-values-replace-defaults.json` | Each value a pool sets replaces its default                                                      |
+| `accepted/axmc-macos-minimums.json`                | Each minimum is inclusive: 2 CPUs, 4 GB, 50 GB                                                   |
+| `accepted/axmc-macos-two-default-slots.json`       | Two pools without `slots` total two VMs and are accepted                                         |
+| `accepted/axmc-macos-diagnostics-false.json`       | `diagnostics: false` is accepted on a macOS pool                                                 |
+| `rejected/axmc-macos-three-default-slots.json`     | Three pools without `slots` total three VMs and are rejected                                     |
+| `rejected/axmc-macos-cpus-below-minimum.json`      | The `cpus` message                                                                               |
+| `rejected/axmc-macos-memory-below-minimum.json`    | The `memoryGb` message                                                                           |
+| `rejected/axmc-macos-disk-below-minimum.json`      | The `diskGb` message                                                                             |
+| `rejected/axmc-macos-diagnostics.json`             | The `diagnostics` message, with no other error                                                   |
+| `rejected/axmc-macos-errors-in-field-order.json`   | The four messages together, in an entry's field order, at the index of a pool after a Linux pool |
+| `rejected/axmc-macos-slots-null.json`              | A `null` `slots` is a type error, not a default and not a missing field                          |
+| `rejected/axmc-linux-slots-missing.json`           | A Linux pool still requires `slots`, beside a macOS pool that needs none                         |
+
+`cli/tests/start_command.rs` used `axmc-defaults.json` with its `os` replaced by
+`macos` for the macOS-pools-alone refusal. That configuration now fails the disk
+minimum, so the test reads `accepted/axmc-macos-defaults.json` instead.
 
 ## Running a Host
 

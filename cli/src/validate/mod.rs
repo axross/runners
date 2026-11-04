@@ -9,6 +9,7 @@ mod entry;
 mod fields;
 mod labels;
 mod limits;
+mod macos_pool;
 mod paths;
 pub(crate) mod patterns;
 mod plan;
