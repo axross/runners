@@ -11,14 +11,19 @@
 
 mod support;
 
-use std::fs;
 use std::io::Read;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
+#[cfg(debug_assertions)]
+use marshal_cli::instance::lock::InstanceLock;
+#[cfg(debug_assertions)]
+use marshal_cli::instance::roots::Roots;
 use marshal_cli::runtime::tart::{HeldVm, VmLauncher};
 use marshal_cli::vm_shim::{DIAGNOSTIC_POOL_OPTION, VM_SHIM_COMMAND, cleanup_budget};
 use support::BINARY;
+#[cfg(debug_assertions)]
+use support::TempDir;
 use support::tart::{FAKE_TART, Fake};
 
 const JOB_VM: &str = "marshal-job-example-repo-one-2-20240305060708009";
@@ -186,13 +191,14 @@ fn a_tart_run_that_ends_by_itself_is_relayed_and_nothing_is_deleted() {
     );
 }
 
+#[cfg(debug_assertions)]
 #[tokio::test(flavor = "current_thread")]
 async fn no_shim_holds_the_instance_lock() {
     let fake = Fake::new();
     fake.seed(&[(JOB_VM, "stopped", "local")]);
-    let lock_path = fake.dir.path().join("instance.lock");
-    let lock = fs::File::create(&lock_path).unwrap();
-    lock.lock().unwrap();
+    let root = TempDir::new();
+    let roots = Roots::for_tests(root.path());
+    let lock = InstanceLock::acquire(&roots).unwrap();
 
     let held = HeldVm::start(&fake.client, &VmLauncher::Shim(BINARY.into()), JOB_VM).unwrap();
     let started = Instant::now();
@@ -202,18 +208,23 @@ async fn no_shim_holds_the_instance_lock() {
     }
 
     drop(lock);
-    let next = fs::File::open(&lock_path).unwrap();
     // a child that another test thread forks while the lock file is open shares its
     // open file description, and so the lock, until that child execs; the shim lives
     // on, so a lock still held after the budget is the shim's
     let released = Instant::now();
-    while let Err(blocked) = next.try_lock() {
-        assert!(
-            released.elapsed() < Duration::from_secs(5),
-            "the CLI's lock is free while its shim lives: {blocked}"
-        );
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
+    let next = loop {
+        match InstanceLock::acquire(&roots) {
+            Ok(next) => break next,
+            Err(blocked) => {
+                assert!(
+                    released.elapsed() < Duration::from_secs(5),
+                    "the CLI's lock is free while its shim lives: {blocked}"
+                );
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        }
+    };
+    drop(next);
     drop(held);
     let closed = Instant::now();
     while !fake.vm_names().is_empty() {
