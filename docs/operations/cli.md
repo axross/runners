@@ -639,8 +639,9 @@ would be killed and kept; a `start` that ends while it still holds the VM, whose
 [VM shim](#the-vm-shim) deletes it when the liveness pipe closes; and the next
 `start`, which deletes a leftover. The shim also deletes a VM that the CLI's release
 could not delete before `start` exited; for a diagnostic VM the export was attempted
-in the stop sequence before that release, so this is not a fourth case. Each reports
-the loss with today's gap wording,
+in the stop sequence before that release, so this is not a fourth case, but the shim
+cannot tell that the export succeeded, so its gap line can name evidence that stands
+in the sink. Each reports the loss with today's gap wording,
 `Diagnostic gap in pool <pool>, job VM <vm>: <text>`, or, for a forced stop,
 `container <name>` in place of the VM. A forced stop keeps the container names in
 its result, so `start` exits 1 as for a kept container and its last line says that

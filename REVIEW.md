@@ -287,16 +287,15 @@ Apply the lens for each kind of file in the diff.
   the backend already retains with a later plan's settings, is a finding. A
   diagnostic VM on axmc is deleted without an export by design in exactly three
   cases: a second SIGINT, a `start` that ends while it still holds the VM (the VM
-  shim), and a leftover at the next `start`, each reporting the diagnostic gap. A fourth export-less deletion
-  of a VM, or any of the three that reports no gap, is a finding (see
-  [CLI](docs/operations/cli.md#tart-backend), the paragraph "Evidence a VM
-  loses"). The sink checks refuse and never create, repair,
-  or relax, and a new log line, warning, or channel answer names only the pool,
-  the container, and the gap, never bundle contents. The exporter child and each
-  of its `docker` clients end by their deadline and with `start`; a new wait in
-  that path that has no bound, or that polls for liveness instead of a closed pipe
-  or a process handle, is a finding (see
-  [CLI](docs/operations/cli.md#diagnostics) and
+  shim), and a leftover at the next `start`, each reporting the diagnostic gap. A
+  fourth export-less deletion of a VM, or any of the three that reports no gap, is a
+  finding (see [CLI](docs/operations/cli.md#tart-backend), the paragraph "Evidence a
+  VM loses"). The sink checks refuse and never create, repair, or relax, and a new
+  log line, warning, or channel answer names only the pool, the container, and the
+  gap, never bundle contents. The exporter child and each of its `docker` clients
+  end by their deadline and with `start`; a new wait in that path that has no bound,
+  or that polls for liveness instead of a closed pipe or a process handle, is a
+  finding (see [CLI](docs/operations/cli.md#diagnostics) and
   [Security](docs/conventions/security.md#diagnostic-evidence-stays-private)).
 - **Image contract.** A change to the run contract, which is the argument lists,
   the launcher, and the labels the CLI reads, or to what the runner image must
