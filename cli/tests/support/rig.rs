@@ -22,6 +22,7 @@ use marshal_cli::runtime::fake::MemoryLog;
 use marshal_cli::runtime::tart::names::{GoldenVmName, job_vm_name};
 use marshal_cli::runtime::tart::{TartBackend, TartTimings, VmLauncher};
 
+use super::BINARY;
 use super::docker::{FAKE_DOCKER, Invocation as DockerInvocation, invocations as docker_calls};
 use super::softnet::Host as SoftnetHost;
 use super::tart::{Fake, Invocation};
@@ -85,6 +86,7 @@ pub fn request() -> HostRequest {
         vcpus: 4,
         memory_gb: 16,
         disk_gb: Some(60),
+        diagnostic: false,
     }
 }
 
@@ -98,6 +100,8 @@ pub struct Setup {
     pub softnet: bool,
     /// the `tart` program, the fake unless this names another.
     pub tart: Option<String>,
+    /// the program the backend runs as its exporter child.
+    pub exporter: Option<PathBuf>,
 }
 
 impl Default for Setup {
@@ -111,6 +115,7 @@ impl Default for Setup {
             },
             softnet: true,
             tart: None,
+            exporter: None,
         }
     }
 }
@@ -151,6 +156,14 @@ impl Rig {
         })
     }
 
+    /// a host whose backend runs this CLI as its exporter child, as `start` does.
+    pub fn exporting() -> Self {
+        Self::build(&Setup {
+            exporter: Some(BINARY.into()),
+            ..Setup::default()
+        })
+    }
+
     /// a host whose `tart` is this program.
     pub fn with_tart_program(program: &str) -> Self {
         Self::build(&Setup {
@@ -185,7 +198,8 @@ impl Rig {
             TestClock,
             log.clone(),
         )
-        .with_softnet_owner_mode(setup.owner_mode);
+        .with_softnet_owner_mode(setup.owner_mode)
+        .with_exporter(setup.exporter.clone(), None);
         Self {
             fake,
             softnet,

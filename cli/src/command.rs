@@ -146,6 +146,7 @@ fn command() -> Command {
         Command::new(crate::vm_shim::VM_SHIM_COMMAND)
             .hide(true)
             .arg(Arg::new("name").long("name").required(true))
+            .arg(Arg::new("diagnostic-pool").long("diagnostic-pool"))
             .arg(
                 Arg::new("client")
                     .required(true)
@@ -205,7 +206,8 @@ fn run_vm_shim(matches: &ArgMatches) -> ExitCode {
     ) else {
         return ExitCode::from(EXIT_USAGE);
     };
-    crate::vm_shim::run(name, program)
+    let pool = matches.get_one::<String>("diagnostic-pool");
+    crate::vm_shim::run(name, program, pool.map(String::as_str))
 }
 
 #[cfg(unix)]

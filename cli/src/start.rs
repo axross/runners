@@ -246,7 +246,8 @@ async fn run_instance(parts: Parts<'_>, plan: crate::validate::Plan) -> u8 {
                 TartTimings::default(),
                 SystemClock,
                 parts.log.clone(),
-            );
+            )
+            .with_exporter(parts.exporter.clone(), parts.checkout.clone());
             serve_instance(&backend, parts, plan, server, requests, sender).await
         }
     }
@@ -323,11 +324,19 @@ async fn serve_instance<B: Backend>(
         }
     };
     if !ended.kept.is_empty() {
-        log.warn(&format!(
-            "The instance has stopped and kept the diagnostic containers {}; the next start \
-             with their pools' diagnostics on exports and removes them.",
-            ended.kept.join(", ")
-        ));
+        if backend.deletes_leftovers_unexported() {
+            log.warn(&format!(
+                "The instance has stopped without exporting the diagnostic containers {}; \
+                 their job VMs are deleted without an export, so their evidence is lost.",
+                ended.kept.join(", ")
+            ));
+        } else {
+            log.warn(&format!(
+                "The instance has stopped and kept the diagnostic containers {}; the next start \
+                 with their pools' diagnostics on exports and removes them.",
+                ended.kept.join(", ")
+            ));
+        }
         return EXIT_FAILED;
     }
     code

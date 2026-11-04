@@ -182,6 +182,8 @@ pub struct HostRequest {
     pub memory_gb: u32,
     /// the disk of a host that has one of its own.
     pub disk_gb: Option<u32>,
+    /// the slot's pool has diagnostics on, so the host may come to hold evidence.
+    pub diagnostic: bool,
 }
 
 /// how preparing a job host went.
@@ -252,10 +254,12 @@ pub trait Backend {
         is_own_container_name(pool, candidate)
     }
 
-    /// whether what a pool leaves behind is a job host that holds no evidence worth
-    /// a refusal: preparing the pool deletes each leftover through
-    /// [`remove_containers`](Backend::remove_containers) and never exports it, and
-    /// reports the evidence a diagnostics-enabled pool loses by that.
+    /// whether a diagnostic container's evidence lives in a job host that is deleted
+    /// without an export when the host is not trusted with it: preparing a pool
+    /// deletes each leftover through [`remove_containers`](Backend::remove_containers)
+    /// and a forced stop deletes the hosts of the containers it would otherwise end
+    /// and keep, and each reports the evidence a diagnostics-enabled pool loses by
+    /// that.
     fn deletes_leftovers_unexported(&self) -> bool {
         false
     }
@@ -297,14 +301,23 @@ pub trait Backend {
 
     /// gets rid of the slot's host within `budget`. The worker calls it once after
     /// every [`prepare_job_host`](Backend::prepare_job_host), whatever that
-    /// returned, and before any backoff; the stop sequence calls it again for each
-    /// host still prepared. So it does nothing for a host that is not prepared, and
-    /// may run twice at once for one host.
+    /// returned, and before any backoff, unless a stop has ended the worker while the
+    /// host [awaits finalisation](Backend::host_awaits_finalisation); the stop
+    /// sequence calls it again for each host still prepared. So it does nothing for a
+    /// host that is not prepared, and may run twice at once for one host.
     fn release_job_host(
         &self,
         host: &JobHost,
         budget: Duration,
     ) -> impl Future<Output = Result<(), BackendError>>;
+
+    /// whether the host still holds a diagnostic container's evidence that a
+    /// finalisation has not removed. A worker that a stop has ended leaves such a host
+    /// to the stop sequence, which exports it, deletes it with the container's
+    /// removal and releases whatever remains.
+    fn host_awaits_finalisation(&self, _host: &JobHost) -> bool {
+        false
+    }
 
     /// the hosts prepared and not yet released.
     fn prepared_hosts(&self) -> Vec<JobHost>;

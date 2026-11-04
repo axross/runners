@@ -9,11 +9,16 @@ use std::io::Write;
 use std::process::ExitCode;
 use std::time::Duration;
 
+use crate::runtime::diagnostic::discarded_gap;
+use crate::runtime::log::{Log, StderrLog};
 use crate::runtime::tart::{RunningVm, TartClient, TartConfig};
 use crate::shim::{CANNOT_RUN, exit_code, input_closed};
 
 /// the hidden subcommand that runs the VM shim.
 pub const VM_SHIM_COMMAND: &str = "vm-shim";
+
+/// the option that names the diagnostics-enabled pool whose job VM the shim holds.
+pub const DIAGNOSTIC_POOL_OPTION: &str = "--diagnostic-pool";
 
 /// the grace the graceful stop gives a VM that is asked to shut down.
 pub const STOP_GRACE: Duration = Duration::from_secs(5);
@@ -42,9 +47,11 @@ pub fn cleanup_budget() -> Duration {
 }
 
 /// runs the shim for the VM `vm`, whose `tart run` is started with the `tart`
-/// client `program`; the `PATH` is this process's, as the CLI gave it.
+/// client `program`; the `PATH` is this process's, as the CLI gave it. A VM of a
+/// diagnostics-enabled pool, named by `diagnostic_pool`, that the shim deletes
+/// because the CLI is gone loses whatever evidence it holds, which the shim reports.
 #[must_use]
-pub fn run(vm: &str, program: &OsStr) -> ExitCode {
+pub fn run(vm: &str, program: &OsStr, diagnostic_pool: Option<&str>) -> ExitCode {
     let runtime = match crate::start::single_threaded_runtime() {
         Ok(runtime) => runtime,
         Err(error) => {
@@ -56,10 +63,10 @@ pub fn run(vm: &str, program: &OsStr) -> ExitCode {
         program: program.to_os_string(),
         ..TartConfig::default()
     });
-    runtime.block_on(supervise(&client, vm))
+    runtime.block_on(supervise(&client, vm, diagnostic_pool))
 }
 
-async fn supervise(client: &TartClient, vm: &str) -> ExitCode {
+async fn supervise(client: &TartClient, vm: &str, diagnostic_pool: Option<&str>) -> ExitCode {
     let mut running = match client.spawn_run(vm) {
         Ok(running) => running,
         Err(error) => {
@@ -90,6 +97,9 @@ async fn supervise(client: &TartClient, vm: &str) -> ExitCode {
         _ => {
             let deleted = clean_up(client, vm).await;
             let _ = running.kill().await;
+            if let (true, Some(pool)) = (deleted, diagnostic_pool) {
+                report_discarded(pool, vm);
+            }
             ExitCode::from(if deleted { CLI_GONE } else { DELETION_FAILED })
         }
     }
@@ -104,6 +114,15 @@ fn relay_output(running: &RunningVm, code: Option<i32>) {
     let _ = writeln!(out, "{}", output.stderr);
     let _ = writeln!(out, "{}", output.stdout);
     let _ = out.flush();
+}
+
+/// writes the gap a deletion without an export leaves, to the standard error the CLI
+/// gave the shim, which is the terminal it ran in. A VM the CLI deleted itself is
+/// already gone, so the shim's deletion fails and nothing is reported then.
+fn report_discarded(pool: &str, vm: &str) {
+    if let Some(text) = discarded_gap(pool, vm) {
+        StderrLog::default().warn(&text);
+    }
 }
 
 /// stops the VM gracefully, then forcibly when that failed, and deletes it, each call

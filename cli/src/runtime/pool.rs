@@ -263,6 +263,7 @@ impl SlotSpec {
             vcpus: self.cpu_count,
             memory_gb: self.memory_gb,
             disk_gb: self.disk_gb,
+            diagnostic: self.diagnostic.is_some(),
         }
     }
 }

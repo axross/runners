@@ -50,15 +50,19 @@ fn warn_gap(log: &dyn Log, record: &DiagnosticRecord, name: &str, text: &str) {
     ));
 }
 
-/// logs the gap left by a job VM that is deleted without its export, because a
-/// forced stop, a crash, or the next start found it: the evidence in it is lost, and
-/// the pool's earlier bundles stand.
+/// the gap left by a job VM that is deleted without its export, because a forced
+/// stop, a crash, or the next start found it: the evidence in it is lost, and the
+/// pool's earlier bundles stand.
+#[must_use]
+pub fn discarded_gap(pool: &str, vm: &str) -> Option<String> {
+    gap_text(ExportOutcome::Failed)
+        .map(|text| format!("Diagnostic gap in pool {pool}, job VM {vm}: {text}"))
+}
+
+/// logs [`discarded_gap`].
 pub fn warn_discarded(log: &dyn Log, record: &DiagnosticRecord, vm: &str) {
-    if let Some(text) = gap_text(ExportOutcome::Failed) {
-        log.warn(&format!(
-            "Diagnostic gap in pool {}, job VM {vm}: {text}",
-            record.pool
-        ));
+    if let Some(text) = discarded_gap(&record.pool, vm) {
+        log.warn(&text);
     }
 }
 
@@ -267,7 +271,8 @@ async fn finalize_once_released<B: Backend>(
 /// started at `start`: it finalises every retained container nobody holds, waits
 /// for those another path is finalising and finalises any it left retained; a
 /// forced stop, at any point, ends every retained container with `docker kill`
-/// within `kill_budget` and keeps it.
+/// within `kill_budget` and keeps it, or, for a backend whose hosts hold the
+/// evidence, only reports the evidence the release of the hosts then loses.
 pub async fn container_steps<B: Backend>(
     backend: &B,
     log: &dyn Log,
@@ -296,6 +301,21 @@ pub async fn container_steps<B: Backend>(
     }
     let names = retained.names();
     if names.is_empty() {
+        return;
+    }
+    if backend.deletes_leftovers_unexported() {
+        // the host that holds the evidence is deleted when the hosts are released
+        for name in &names {
+            log.warn(&format!(
+                "Forced stop: the job VM of diagnostic container {name} is deleted \
+                 without its export."
+            ));
+            if let Some(record) = retained.record(name)
+                && let Some(text) = gap_text(ExportOutcome::Failed)
+            {
+                warn_gap(log, &record, name, text);
+            }
+        }
         return;
     }
     for name in &names {

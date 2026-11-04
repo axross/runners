@@ -141,6 +141,7 @@ async fn a_slot_cycle_checks_the_image_then_prepares_probes_registers_runs_and_r
                 vcpus: 2,
                 memory_gb: 16,
                 disk_gb: None,
+                diagnostic: false,
             }),
             HostCall::Release(host(), RELEASE_WITHIN),
             HostCall::Prepare(HostRequest {
@@ -148,6 +149,7 @@ async fn a_slot_cycle_checks_the_image_then_prepares_probes_registers_runs_and_r
                 vcpus: 2,
                 memory_gb: 16,
                 disk_gb: None,
+                diagnostic: false,
             }),
             HostCall::Release(host(), Duration::ZERO),
         ],

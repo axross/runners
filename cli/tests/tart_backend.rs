@@ -1052,8 +1052,8 @@ async fn releasing_a_vm_whose_container_runs_ends_the_job_with_the_vm() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn a_diagnostic_container_is_retained_exported_before_the_vm_is_deleted_and_the_gap_reported()
-{
+async fn a_diagnostic_container_is_retained_until_a_finalisation_deletes_its_vm_and_a_missing_exporter_is_a_gap()
+ {
     let rig = Rig::new();
     prepared(&rig).await;
     let record = DiagnosticRecord {
@@ -1082,9 +1082,19 @@ async fn a_diagnostic_container_is_retained_exported_before_the_vm_is_deleted_an
         "a retained container is not a running one"
     );
 
+    assert!(
+        rig.backend.host_awaits_finalisation(&host()),
+        "its VM holds the evidence"
+    );
+
     finalize_at_job_end(&rig.backend, &*rig.log, &name, tokio::time::Instant::now()).await;
     assert!(!rig.backend.retained().contains(&name));
-    assert!(!rig.containers().contains(&name), "removed in the VM");
+    assert!(!rig.backend.host_awaits_finalisation(&host()));
+    assert_eq!(
+        rig.fake.vm_names(),
+        [golden_name()],
+        "the removal of a diagnostic container is the deletion of its VM"
+    );
     assert!(
         rig.log.lines().contains(&format!(
             "WARN: Diagnostic gap in pool {POOL}, container {name}: private export unavailable, incomplete, unsafe or over budget; prior evidence retained."
@@ -1098,16 +1108,18 @@ async fn a_diagnostic_container_is_retained_exported_before_the_vm_is_deleted_an
         .await
         .unwrap();
     let calls = rig.tart_calls();
-    let vm = job_vm();
-    let remove = calls
-        .iter()
-        .position(|call| call.contains(&"rm".to_string()) && call.contains(&name))
-        .unwrap();
-    let delete = calls
-        .iter()
-        .position(|call| *call == ["delete", &vm])
-        .unwrap();
-    assert!(remove < delete, "the container goes before the VM does");
+    assert!(
+        calls.iter().all(|call| !call.contains(&"rm".to_string())),
+        "no `docker rm` runs in a VM that is deleted: {calls:?}"
+    );
+    assert_eq!(
+        calls
+            .iter()
+            .filter(|call| **call == ["delete", &job_vm()])
+            .count(),
+        1,
+        "the VM is deleted once, whoever asks"
+    );
 }
 
 #[tokio::test(flavor = "current_thread")]

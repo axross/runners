@@ -157,6 +157,10 @@ impl<B: Backend, K: Clock, R: Registrar> Context<'_, B, K, R> {
             )),
             Some(HostPreparation::Held(reason)) => Attempt::Held(reason),
         };
+        if stopped(stop) && self.backend.host_awaits_finalisation(&request.host) {
+            // the stop sequence exports the host's evidence first, then releases it
+            return attempt;
+        }
         let budget = if stopped(stop) {
             self.backend.release_budget()
         } else {

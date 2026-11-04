@@ -5,21 +5,24 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
 
 use tokio::io::AsyncWriteExt;
+use tokio::process::Command;
 use tokio::time::Instant;
 
 use crate::affinity::select_cpus;
+use crate::diagnostics::ExportRequest;
 use crate::image::check::{IMAGE_CHECK_BUDGET, ImageCheck};
 use crate::macos::prerequisites::{
     Cause, Check, VERSION_BUDGET, check_softnet, check_softnet_with, check_tart,
 };
 use crate::macos::softnet::OwnerMode;
 use crate::runtime::backend::{
-    Backend, BackendError, ContainerSpec, CpuRequest, DiagnosticRecord, Exported, HostPreparation,
-    HostRequest, JobHost, PoolContainers, RELEASE_WITHIN, StopRequest,
+    Backend, BackendError, ContainerSpec, CpuRequest, DiagnosticRecord, ExportOutcome, Exported,
+    HostPreparation, HostRequest, JobHost, PoolContainers, RELEASE_WITHIN, StopRequest,
 };
 use crate::runtime::clock::Clock;
 use crate::runtime::diagnostic::join_all;
@@ -28,6 +31,7 @@ use crate::runtime::docker_args::{
     RUN_COMMAND, info_arguments, job_run_arguments, kill_arguments, probe_run_arguments,
     remove_arguments, stop_arguments,
 };
+use crate::runtime::exports::Exports;
 use crate::runtime::log::Log;
 use crate::runtime::name::{slot_of_container_name, slot_of_probe_name};
 use crate::runtime::retained::Retained;
@@ -133,6 +137,7 @@ pub struct TartBackend<C> {
     containers: RefCell<BTreeMap<String, String>>,
     running: RefCell<BTreeSet<String>>,
     retained: Retained,
+    exports: Exports,
     in_use: RefCell<InUse>,
     /// the owner and mode a test gives Softnet's file; the environment's override
     /// applies when it is unset.
@@ -165,9 +170,19 @@ impl<C: Clock> TartBackend<C> {
             containers: RefCell::new(BTreeMap::new()),
             running: RefCell::new(BTreeSet::new()),
             retained: Retained::default(),
+            exports: Exports::new(None, None),
             in_use: RefCell::new(InUse::default()),
             softnet_owner_mode: None,
         }
+    }
+
+    /// runs the exporter child as `exporter`, this CLI, and keeps every sink outside
+    /// `checkout`; without an exporter, every export fails and a finalisation still
+    /// deletes its VM.
+    #[must_use]
+    pub fn with_exporter(mut self, exporter: Option<PathBuf>, checkout: Option<PathBuf>) -> Self {
+        self.exports = Exports::new(exporter, checkout);
+        self
     }
 
     /// judges Softnet's file as if it had this owner and mode, in a debug build only,
@@ -313,7 +328,12 @@ impl<C: Clock> TartBackend<C> {
             .set_resources(&vm, vcpus, request.memory_gb, disk_gb)
             .await
             .map_err(|error| BackendError::new(text_of(&error)))?;
-        let held = HeldVm::start(&self.client, &self.launcher, &vm)
+        let started = if request.diagnostic {
+            HeldVm::start_diagnostic(&self.client, &self.launcher, &vm, &request.host.pool)
+        } else {
+            HeldVm::start(&self.client, &self.launcher, &vm)
+        };
+        let held = started
             .map(Rc::new)
             .map_err(|error| boot_failure(&vm, &BootEnd::NoAnswer(text_of(&error))))?;
         host.hold.replace(Some(held.clone()));
@@ -405,11 +425,101 @@ impl<C: Clock> TartBackend<C> {
         Ok(())
     }
 
+    /// deletes the VM of the host that `hosts` holds under `key` and forgets the host,
+    /// within `budget`; a host another release has already deleted is left alone.
+    async fn release_host(
+        &self,
+        key: &(String, u32),
+        entry: &Rc<Host>,
+        budget: Duration,
+    ) -> Result<(), BackendError> {
+        let release = async {
+            let _turn = entry.release.lock().await;
+            if entry.released.get() {
+                return Ok(());
+            }
+            self.delete_host_vm(entry, budget).await?;
+            entry.released.set(true);
+            let mut hosts = self.hosts.borrow_mut();
+            if hosts
+                .get(key)
+                .is_some_and(|current| Rc::ptr_eq(current, entry))
+            {
+                hosts.remove(key);
+            }
+            Ok(())
+        };
+        tokio::time::timeout(budget, release)
+            .await
+            .unwrap_or_else(|_| {
+                Err(BackendError::new(format!(
+                    "releasing the job VM of {} slot {} did not finish within {} s",
+                    key.0,
+                    key.1,
+                    budget.as_secs()
+                )))
+            })
+    }
+
+    /// whether the VM of `host` runs a diagnostic container that no finalisation has
+    /// removed yet, whose evidence the VM's deletion would lose.
+    fn holds_evidence(&self, host: &JobHost) -> bool {
+        let Some(vm) = self
+            .host(&host.pool, host.slot)
+            .and_then(|entry| entry.vm())
+        else {
+            return false;
+        };
+        self.containers
+            .borrow()
+            .iter()
+            .any(|(name, container_vm)| *container_vm == vm && self.retained.contains(name))
+    }
+
+    /// deletes the VM of the retained diagnostic container `name`, as a finalisation
+    /// removes a container; a container whose VM is already gone has nothing left to
+    /// delete.
+    async fn delete_evidence_host(&self, name: &str, budget: Duration) -> Result<(), BackendError> {
+        let Some(vm) = self.vm_of_container(name) else {
+            return Ok(());
+        };
+        let found = self
+            .hosts
+            .borrow()
+            .iter()
+            .find(|(_, host)| host.vm().as_deref() == Some(vm.as_str()))
+            .map(|(key, host)| (key.clone(), host.clone()));
+        let Some((key, host)) = found else {
+            return Ok(());
+        };
+        self.release_host(&key, &host, budget).await
+    }
+
+    /// the command that runs the exporter child for `request` with this backend's
+    /// `tart` as its client, in the environment and with the `PATH` every `tart`
+    /// call here gets.
+    fn exporter(&self, request: &ExportRequest) -> Option<Command> {
+        let config = self.client.config();
+        let mut command = self.exports.command(request, &config.program)?;
+        for (name, value) in &config.environment {
+            command.env(name, value);
+        }
+        match &config.path {
+            Some(path) => command.env("PATH", path),
+            None => command.env_remove("PATH"),
+        };
+        Some(command)
+    }
+
     /// removes one name `remove_containers` was given: a leftover job VM, deleted at
-    /// once, or a container, removed in its VM.
+    /// once, a retained diagnostic container, whose VM is deleted, or a container,
+    /// removed in its VM.
     async fn remove_one(&self, name: &str, budget: Duration) -> Result<(), BackendError> {
         if parse_job_vm_name(name).is_some() {
             return tear_down(&self.client, name, Stop::Forced, budget).await;
+        }
+        if self.retained.contains(name) {
+            return self.delete_evidence_host(name, budget).await;
         }
         let Some(vm) = self.vm_of_container(name) else {
             return Ok(());
@@ -603,32 +713,11 @@ impl<C: Clock> Backend for TartBackend<C> {
         let Some(entry) = self.hosts.borrow().get(&key).cloned() else {
             return Ok(());
         };
-        let release = async {
-            let _turn = entry.release.lock().await;
-            if entry.released.get() {
-                return Ok(());
-            }
-            self.delete_host_vm(&entry, budget).await?;
-            entry.released.set(true);
-            let mut hosts = self.hosts.borrow_mut();
-            if hosts
-                .get(&key)
-                .is_some_and(|current| Rc::ptr_eq(current, &entry))
-            {
-                hosts.remove(&key);
-            }
-            Ok(())
-        };
-        tokio::time::timeout(budget, release)
-            .await
-            .unwrap_or_else(|_| {
-                Err(BackendError::new(format!(
-                    "releasing the job VM of {} slot {} did not finish within {} s",
-                    host.pool,
-                    host.slot,
-                    budget.as_secs()
-                )))
-            })
+        self.release_host(&key, &entry, budget).await
+    }
+
+    fn host_awaits_finalisation(&self, host: &JobHost) -> bool {
+        self.holds_evidence(host)
     }
 
     fn prepared_hosts(&self) -> Vec<JobHost> {
@@ -732,19 +821,36 @@ impl<C: Clock> Backend for TartBackend<C> {
         &self.retained
     }
 
-    /// reports a failed export: a VM's evidence is exported through the guest agent
-    /// by a transport this backend does not have yet, so a finalisation removes the
-    /// container and warns of the gap, as for any export that fails.
+    /// exports the container's evidence from its VM into its record's sink by
+    /// `deadline`, once the pool and sink's admission lock is free: the exporter child
+    /// reads it with `tart exec <vm> docker inspect` and `docker cp`. A container
+    /// whose VM is gone, or that cannot take the lock by then, fails the export.
     async fn export_diagnostic(
         &self,
-        _name: &str,
-        _record: &DiagnosticRecord,
-        _deadline: Instant,
+        name: &str,
+        record: &DiagnosticRecord,
+        deadline: Instant,
     ) -> Exported {
-        Exported::FAILED
+        let Some(vm) = self.vm_of_container(name) else {
+            return Exported::FAILED;
+        };
+        let lock = self.exports.admission(record);
+        let Ok(admission) = tokio::time::timeout_at(deadline, lock.lock()).await else {
+            return Exported::FAILED;
+        };
+        let request = self
+            .exports
+            .request(record, Some(name.to_string()), Some(vm), deadline);
+        let command = self.exporter(&request);
+        self.exports.run(command, deadline, Some(admission)).await
     }
 
-    async fn count_bundles(&self, _record: &DiagnosticRecord, _deadline: Instant) -> Option<u32> {
-        None
+    async fn count_bundles(&self, record: &DiagnosticRecord, deadline: Instant) -> Option<u32> {
+        let request = self.exports.request(record, None, None, deadline);
+        let command = self.exporter(&request);
+        let counted = self.exports.run(command, deadline, None).await;
+        counted
+            .bundles
+            .filter(|_| counted.outcome == ExportOutcome::Complete)
     }
 }
