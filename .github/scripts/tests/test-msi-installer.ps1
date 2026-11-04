@@ -33,7 +33,9 @@ $InstallDirectory = Join-Path $env:LOCALAPPDATA 'Programs\marshal'
 $InstalledBinary = Join-Path $InstallDirectory 'marshal.exe'
 $LogsDirectory = Join-Path $env:LOCALAPPDATA 'marshal\logs'
 $LogsMarker = Join-Path $LogsDirectory 'installer-test.marker'
-$UninstallRoot = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall'
+$HkcuUninstallRoot = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall'
+$HklmUninstallRoot = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall'
+$MsiContextName = @{ 1 = 'user-managed'; 2 = 'user-unmanaged'; 4 = 'machine' }
 $BuildScript = Join-Path (Split-Path -Parent $PSScriptRoot) 'build-msi.ps1'
 
 function Write-Measured {
@@ -124,14 +126,47 @@ function Get-MsiProperty {
     return $rows[0][0]
 }
 
+# the Windows Installer keeps a product's registration in its own store, which its
+# API reads in every install context; a per-user MSI product has no HKCU Uninstall
+# key to look for. the context values are msiInstallContextUserManaged 1,
+# UserUnmanaged 2 and Machine 4, and ProductsEx takes (product code, user SID,
+# contexts); empty strings mean every product of the current user, and 7 means all
+# three contexts.
 function Get-InstalledProduct {
-    if (-not (Test-Path -LiteralPath $UninstallRoot)) { return , @() }
+    $installer = New-Object -ComObject WindowsInstaller.Installer
+    $listed = Invoke-ComMethod -Target $installer -Name 'ProductsEx' -Kind 'GetProperty' -Arguments @('', '', 7)
     $products = @()
-    foreach ($key in (Get-ChildItem -LiteralPath $UninstallRoot)) {
-        $entry = Get-ItemProperty -LiteralPath $key.PSPath
-        if ($entry.PSObject.Properties['DisplayName'] -and $entry.DisplayName -eq 'marshal') { $products += $entry }
+    foreach ($item in $listed) {
+        try {
+            $name = [string](Invoke-ComMethod -Target $item -Name 'InstallProperty' -Kind 'GetProperty' -Arguments @('ProductName'))
+        } catch {
+            # a product that cannot report a name is not marshal.
+            continue
+        }
+        if ($name -ne 'marshal') { continue }
+        $context = [int](Invoke-ComMethod -Target $item -Name 'Context' -Kind 'GetProperty')
+        $contextName = 'unknown'
+        if ($MsiContextName.ContainsKey($context)) { $contextName = $MsiContextName[$context] }
+        $products += [pscustomobject]@{
+            ProductCode = [string](Invoke-ComMethod -Target $item -Name 'ProductCode' -Kind 'GetProperty')
+            Name = $name
+            Version = [string](Invoke-ComMethod -Target $item -Name 'InstallProperty' -Kind 'GetProperty' -Arguments @('VersionString'))
+            Publisher = [string](Invoke-ComMethod -Target $item -Name 'InstallProperty' -Kind 'GetProperty' -Arguments @('Publisher'))
+            Context = $context
+            ContextName = $contextName
+        }
     }
     return , $products
+}
+
+# counts the Uninstall entries under the root whose DisplayName is marshal; a root
+# that does not exist holds none.
+function Get-UninstallEntryCount {
+    param([Parameter(Mandatory = $true)][string]$Root)
+    if (-not (Test-Path -LiteralPath $Root)) { return 0 }
+    $entries = @(Get-ChildItem -LiteralPath $Root | Get-ItemProperty |
+            Where-Object { $_.PSObject.Properties['DisplayName'] -and $_.DisplayName -eq 'marshal' })
+    return $entries.Count
 }
 
 function Get-RelatedProductCode {
@@ -163,7 +198,7 @@ function Assert-Installed {
     Assert-That ((Get-InstallDirectoryPathEntry).Count -eq 1) "$Label - the user PATH holds the install directory once"
     $products = Get-InstalledProduct
     Assert-That ($products.Count -eq 1) "$Label - one product is listed as marshal"
-    Assert-That ($products[0].DisplayVersion -eq $Version) "$Label - the listed version is $Version"
+    Assert-That ($products[0].Version -eq $Version) "$Label - the listed version is $Version"
     Assert-That ((Get-RelatedProductCode).Count -eq 1) "$Label - one product holds the upgrade code"
 }
 
@@ -202,8 +237,8 @@ function Assert-ExitCode {
 
 function Uninstall-InstalledProduct {
     foreach ($product in (Get-InstalledProduct)) {
-        $result = Invoke-Msi -Arguments @('/x', $product.PSChildName) -LogName "cleanup-$($product.PSChildName.Trim('{}'))"
-        if ($result.ExitCode -ne 0) { Write-Warning "Removing $($product.PSChildName) exited $($result.ExitCode)." }
+        $result = Invoke-Msi -Arguments @('/x', $product.ProductCode) -LogName "cleanup-$($product.ProductCode.Trim('{}'))"
+        if ($result.ExitCode -ne 0) { Write-Warning "Removing $($product.ProductCode) exited $($result.ExitCode)." }
     }
 }
 
@@ -236,6 +271,11 @@ try {
 
     $result = Install-Msi -Path $ReleaseMsi -LogName 'release-install'
     Assert-ExitCode -Result $result -Label 'the release MSI installs'
+    # measured before the assertions, so a run that fails them still shows where Windows registered the product.
+    Write-Measured "Uninstall entries named marshal under HKCU: $(Get-UninstallEntryCount -Root $HkcuUninstallRoot)"
+    Write-Measured "Uninstall entries named marshal under HKLM: $(Get-UninstallEntryCount -Root $HklmUninstallRoot)"
+    $registered = @(Get-InstalledProduct | ForEach-Object { "$($_.ProductCode) in context $($_.Context) ($($_.ContextName))" })
+    Write-Measured "Windows Installer ProductsEx products named marshal: $($registered.Count)$(if ($registered.Count -gt 0) { ': ' + ($registered -join '; ') })"
     Assert-Installed -Hash $binaryHash -Version $InstallerVersion -Label 'the release MSI'
     $product = (Get-InstalledProduct)[0]
     Assert-That ($product.Publisher -eq 'axross') 'the listed publisher is axross'
@@ -243,12 +283,11 @@ try {
     Assert-That ($LASTEXITCODE -eq 0) 'the installed binary exits 0 for --version'
     Assert-That ($printed -eq "marshal $ReleaseVersion") "the installed binary prints 'marshal $ReleaseVersion'"
     Write-Measured "the user PATH entry the MSI wrote: $((Get-InstallDirectoryPathEntry)[0])"
-    Write-Measured "the Uninstall key: DisplayName $($product.DisplayName), Publisher $($product.Publisher), DisplayVersion $($product.DisplayVersion), key $($product.PSChildName)"
+    Write-Measured "the Windows Installer listing: ProductName $($product.Name), Publisher $($product.Publisher), VersionString $($product.Version), product code $($product.ProductCode), context $($product.Context) ($($product.ContextName))"
     $elevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
     Write-Measured "this run is elevated: $elevated, so it shows nothing about a UAC prompt"
-    $machineWide = @(Get-ChildItem -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall' | Get-ItemProperty |
-            Where-Object { $_.PSObject.Properties['DisplayName'] -and $_.DisplayName -eq 'marshal' })
-    Assert-That ($machineWide.Count -eq 0) 'the product is installed for the user, not the machine'
+    Assert-That ((Get-UninstallEntryCount -Root $HklmUninstallRoot) -eq 0) 'the product has no machine-wide Uninstall entry'
+    Assert-That ($product.Context -eq 2) "the product is installed for the user, not the machine: its context is $($product.Context), $($product.ContextName)"
 
     $result = Uninstall-Msi -Path $ReleaseMsi -LogName 'release-uninstall'
     Assert-ExitCode -Result $result -Label 'the release MSI uninstalls'
@@ -371,7 +410,7 @@ try {
     elseif ($installedHash -eq 'absent') { $installedIs = 'absent' }
     Write-Measured "upgrade while marshal.exe runs from the install path: msiexec exit code $($result.ExitCode)"
     Write-Measured "after that upgrade the file at the install path is $installedIs; the program is still running: $(-not $waiting.HasExited)"
-    Write-Measured "after that upgrade the listed versions are: $(((Get-InstalledProduct) | ForEach-Object { $_.DisplayVersion }) -join ', ')"
+    Write-Measured "after that upgrade the listed versions are: $(((Get-InstalledProduct) | ForEach-Object { $_.Version }) -join ', ')"
     Write-Measured "after that upgrade the files in the install directory are: $(((Get-ChildItem -LiteralPath $InstallDirectory -Force -ErrorAction SilentlyContinue) | ForEach-Object { $_.Name }) -join ', ')"
     Write-Measured "after that upgrade PendingFileRenameOperations names marshal in $($pendingForMarshal.Count) entries: $($pendingForMarshal -join ' ; ')"
     $restartLines = @(Select-String -LiteralPath $result.Log -Pattern 'FilesInUse|Restart Manager|RmSession|reboot|ReplacedInUseFiles' | Select-Object -First 8 | ForEach-Object { $_.Line.Trim() })

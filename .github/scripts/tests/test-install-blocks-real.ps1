@@ -35,7 +35,7 @@ $GenuineBinary = Join-Path $ReleaseDirectory $BareName
 $InstallDirectory = Join-Path $env:LOCALAPPDATA 'Programs\marshal'
 $InstalledBinary = Join-Path $InstallDirectory 'marshal.exe'
 $LogsDirectory = Join-Path $env:LOCALAPPDATA 'marshal\logs'
-$UninstallRoot = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall'
+$MsiContextName = @{ 1 = 'user-managed'; 2 = 'user-unmanaged'; 4 = 'machine' }
 $Work = Join-Path ([IO.Path]::GetTempPath()) ('marshal-install-blocks-real-' + [Guid]::NewGuid().ToString('N'))
 $script:Calls = New-Object System.Collections.Generic.List[string]
 $script:Scenario = @{
@@ -62,12 +62,40 @@ function Assert-That {
     Write-Output "ok   $Message"
 }
 
+function Invoke-ComMethod {
+    param([Parameter(Mandatory = $true)]$Target, [Parameter(Mandatory = $true)][string]$Name, [string]$Kind = 'InvokeMethod', $Arguments = $null)
+    return $Target.GetType().InvokeMember($Name, $Kind, $null, $Target, $Arguments)
+}
+
+# the Windows Installer keeps a product's registration in its own store, which its
+# API reads in every install context; a per-user MSI product has no HKCU Uninstall
+# key to look for. the context values are msiInstallContextUserManaged 1,
+# UserUnmanaged 2 and Machine 4, and ProductsEx takes (product code, user SID,
+# contexts); empty strings mean every product of the current user, and 7 means all
+# three contexts.
 function Get-InstalledProduct {
-    if (-not (Test-Path -LiteralPath $UninstallRoot)) { return , @() }
+    $installer = New-Object -ComObject WindowsInstaller.Installer
+    $listed = Invoke-ComMethod -Target $installer -Name 'ProductsEx' -Kind 'GetProperty' -Arguments @('', '', 7)
     $products = @()
-    foreach ($key in (Get-ChildItem -LiteralPath $UninstallRoot)) {
-        $entry = Get-ItemProperty -LiteralPath $key.PSPath
-        if ($entry.PSObject.Properties['DisplayName'] -and $entry.DisplayName -eq 'marshal') { $products += $entry }
+    foreach ($item in $listed) {
+        try {
+            $name = [string](Invoke-ComMethod -Target $item -Name 'InstallProperty' -Kind 'GetProperty' -Arguments @('ProductName'))
+        } catch {
+            # a product that cannot report a name is not marshal.
+            continue
+        }
+        if ($name -ne 'marshal') { continue }
+        $context = [int](Invoke-ComMethod -Target $item -Name 'Context' -Kind 'GetProperty')
+        $contextName = 'unknown'
+        if ($MsiContextName.ContainsKey($context)) { $contextName = $MsiContextName[$context] }
+        $products += [pscustomobject]@{
+            ProductCode = [string](Invoke-ComMethod -Target $item -Name 'ProductCode' -Kind 'GetProperty')
+            Name = $name
+            Version = [string](Invoke-ComMethod -Target $item -Name 'InstallProperty' -Kind 'GetProperty' -Arguments @('VersionString'))
+            Publisher = [string](Invoke-ComMethod -Target $item -Name 'InstallProperty' -Kind 'GetProperty' -Arguments @('Publisher'))
+            Context = $context
+            ContextName = $contextName
+        }
     }
     return , $products
 }
@@ -275,7 +303,7 @@ try {
 } finally {
     if ($cleanupArmed) {
         foreach ($product in (Get-InstalledProduct)) {
-            $null = Invoke-Msi -Arguments @('/x', $product.PSChildName) -LogName "cleanup-$($product.PSChildName.Trim('{}'))"
+            $null = Invoke-Msi -Arguments @('/x', $product.ProductCode) -LogName "cleanup-$($product.ProductCode.Trim('{}'))"
         }
         if (Test-Path -LiteralPath $InstallDirectory) { Remove-Item -LiteralPath $InstallDirectory -Recurse -Force -ErrorAction SilentlyContinue }
         $key = Get-UserPathKey
