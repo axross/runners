@@ -346,10 +346,11 @@ fn describe(words: &[String]) -> String {
     words.join(" ")
 }
 
-/// the stack of the thread a test's build runs on. The debug build needs a little under
-/// 2 MiB with the golden future boxed, as the command boxes it, and about 3.5 MiB
-/// without; this is twice the first, so a regrowth of the poll depth fails a test
-/// here before it fails the command on the main thread's 8 MiB.
+/// the stack of the thread a test's build runs on. The debug build needs a little
+/// under 2 MiB on Linux with the golden future boxed, and about 3.5 MiB without it,
+/// which also fits in 4 MiB, so this is not a test of the production boxing. It
+/// guards the boxed future's growth: a test fails once that need passes about twice
+/// its measured size, before the command fails on the main thread's 8 MiB.
 const STACK_BYTES: usize = 4 * 1024 * 1024;
 
 /// runs a test's future on a thread of [`STACK_BYTES`], which is larger than a test
