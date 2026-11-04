@@ -216,7 +216,7 @@ async fn a_leftover_job_vm_whose_os_is_unreadable_counts_in_every_state_and_is_n
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn a_running_vm_reported_running_while_it_stops_counts() {
+async fn a_vm_listed_as_running_counts_when_it_is_reported_as_macos() {
     let tart = FakeTart::with(&[("someone-elses", VmState::Running)]);
     tart.reports("someone-elses", GuestOs::Macos);
     assert_eq!(count(&tart).await.total(), 1);
@@ -497,7 +497,7 @@ async fn a_place_is_free_below_two_and_not_at_two() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn a_failed_deletion_keeps_the_vm_counting_until_a_later_attempt_deletes_it() {
+async fn a_vm_still_in_the_list_keeps_counting_and_stops_counting_once_it_is_gone() {
     let (first, second) = (job("mac", 1), job("mac", 2));
     let tart = FakeTart::with(&[(&first, VmState::Stopped), (&second, VmState::Running)]);
     *tart.failing_deletes.borrow_mut() = 2;
@@ -525,12 +525,8 @@ enum Turn {
     SawTwo,
 }
 
-/// a slot's "count, then clone", under `lock` when it has one.
-async fn take_a_place(tart: &FakeTart, lock: Option<&PlaceLock>, slot: u32) -> Turn {
-    let _held = match lock {
-        Some(lock) => Some(lock.take().await),
-        None => None,
-    };
+/// a slot's "count, then clone".
+async fn count_then_clone(tart: &FakeTart, slot: u32) -> Turn {
     let counted = count(tart).await;
     if !counted.has_free_place() {
         assert_eq!(counted.total(), 2);
@@ -538,6 +534,14 @@ async fn take_a_place(tart: &FakeTart, lock: Option<&PlaceLock>, slot: u32) -> T
     }
     tart.clone_vm(&job("mac", slot)).await;
     Turn::Cloned
+}
+
+/// a slot's turn at the last place, under `lock` when it has one.
+async fn take_a_place(tart: &FakeTart, lock: Option<&PlaceLock>, slot: u32) -> Turn {
+    match lock {
+        Some(lock) => lock.hold(count_then_clone(tart, slot)).await,
+        None => count_then_clone(tart, slot).await,
+    }
 }
 
 fn one_place_left() -> FakeTart {

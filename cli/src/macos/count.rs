@@ -73,25 +73,6 @@ pub enum Reason {
     UnreadableOs,
 }
 
-impl Reason {
-    /// the reason as the log and `status` word it.
-    #[must_use]
-    pub fn describe(self) -> &'static str {
-        match self {
-            Self::ConfiguredMacosJob => "a job VM of a configured macOS pool",
-            Self::MacosBuild => "a macOS build VM",
-            Self::LeftoverJobReportedMacos => {
-                "a leftover job VM of a pool that is no longer configured, reported as macOS"
-            }
-            Self::LinuxPoolJobReportedMacos => {
-                "a job VM of a configured Linux pool, reported as macOS"
-            }
-            Self::ReportedMacos => "a running or suspended VM reported as macOS",
-            Self::UnreadableOs => "a VM whose operating system is unreadable",
-        }
-    }
-}
-
 /// a VM that counts, and why.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CountedVm {

@@ -879,7 +879,8 @@ when the image is missing or its labels are missing or malformed.
 
 An axmc pool with `os: "macos"` runs its jobs in macOS virtual machines. This
 section states what `validate` accepts for such a pool, and the runner and base
-records that the golden macOS VM will use. The macOS VM runtime is not
+records that the golden macOS VM will use, the names of the macOS VMs, and the
+count of macOS VMs against the host's limit. The macOS VM runtime is not
 implemented yet, so `start` and `build` still refuse axmc, as Runtime Seam says.
 The pool rules apply to a pool with `os: "macos"` under the axmc profile only;
 axpc and axmc Linux pools accept what they accepted before.
@@ -1049,13 +1050,13 @@ makes, and `macos::linux_forms` holds the Linux forms that it must tell them
 from. Each form is read strictly: the whole name matches, nothing precedes or
 follows it, and case matters.
 
-| VM              | Form                                                                                   |
-| --------------- | -------------------------------------------------------------------------------------- |
-| Golden macOS VM | `marshal-golden-macos-g<golden VM version>-r<runner version>-<yyyyMMddHHmmss>`         |
-| macOS build VM  | `marshal-build-macos-<yyyyMMddHHmmssfff>`                                              |
-| Job VM, any OS  | `marshal-job-<pool>-<slot>-<yyyyMMddHHmmssfff>`                                        |
-| Linux golden VM | `marshal-golden-linux-g<golden VM version>-c<image contract version>-r<runner>-<time>` |
-| Linux build VM  | `marshal-build-linux-<yyyyMMddHHmmssfff>`                                              |
+| VM              | Form                                                                                                     |
+| --------------- | -------------------------------------------------------------------------------------------------------- |
+| Golden macOS VM | `marshal-golden-macos-g<golden VM version>-r<runner version>-<yyyyMMddHHmmss>`                           |
+| macOS build VM  | `marshal-build-macos-<yyyyMMddHHmmssfff>`                                                                |
+| Job VM, any OS  | `marshal-job-<pool>-<slot>-<yyyyMMddHHmmssfff>`                                                          |
+| Linux golden VM | `marshal-golden-linux-g<golden VM version>-c<image contract version>-r<runner version>-<yyyyMMddHHmmss>` |
+| Linux build VM  | `marshal-build-linux-<yyyyMMddHHmmssfff>`                                                                |
 
 - **The golden macOS VM version** is `GOLDEN_MACOS_VM_VERSION`, 1 for now. It goes
   up whenever the base digest, the provisioning steps, or the launcher change. In
@@ -1077,12 +1078,13 @@ follows it, and case matters.
   them, and the integration with M1's runtime replaces it.
 
 No command writes or reads these names yet: the macOS runtime and `build` do not
-exist.
+exist. `cli/tests/macos_names.rs` pins the forms, the strict reading, the golden VM
+selection, and that neither OS's forms or selection match the other's.
 
 ### The Two-VM Count
 
-Apple's licence allows two additional macOS VMs on a Mac, so the macOS runtime
-counts them before it creates one. `macos::count` is that count as pure logic: it
+Apple's licence allows two additional macOS VMs on a Mac, so the macOS runtime is
+to count them before it creates one. `macos::count` is that count as pure logic: it
 takes Tart's VM list once (each VM's name and state, running, suspended, or
 stopped, where a stopping VM is still running), the configured pools with their
 operating systems, and an OS lookup that stands in for `tart get`, and calls no
@@ -1114,14 +1116,16 @@ failed call and an answer the reader does not know.
   it counts until a later attempt deletes it.
 - **The output** is the VMs that count, each with its reason; the total; whether a
   place is free, below `MAX_MACOS_VMS`; and the counted job VMs of unconfigured
-  pools, by name, for the log and `status`, because `start` deletes only the
+  pools, by name, for the log and `status`, because `start` is to delete only the
   leftovers of configured pools.
 
-`macos::place::PlaceLock` is the lock a slot holds from its count until its clone
-is listed, one per instance and shared by the macOS slots, so two slots never take
-the last place together: the second counts after the first's VM exists, and sees
+`macos::place::PlaceLock` is the lock for taking a place, one per instance and
+shared by the macOS slots. A slot gives its `hold` the whole "count, then clone"
+step, so the lock stays held until the clone is listed and cannot be released
+between the two. The second slot then counts after the first's VM exists, and sees
 two. Neither the count nor the lock is wired into `start`, `build`, or `status`
-yet; that waits for the macOS runtime.
+yet; that waits for the macOS runtime. `cli/tests/macos_vm_count.rs` runs every
+row of the table and the race of slots over a fake Tart.
 
 ## Running a Host
 

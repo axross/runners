@@ -24,6 +24,10 @@ fn later(seconds: u64) -> SystemTime {
     pinned() + Duration::from_secs(seconds)
 }
 
+fn golden(version: u32, runner: &str, built: SystemTime) -> GoldenMacosName {
+    GoldenMacosName::at(version, runner, built).expect("a valid golden name")
+}
+
 const GOLDEN: &str = "marshal-golden-macos-g1-r2.337.0-20240305060708";
 const BUILD: &str = "marshal-build-macos-20240305060708009";
 
@@ -34,14 +38,34 @@ fn the_golden_macos_vm_version_starts_at_one() {
 
 #[test]
 fn a_golden_macos_name_is_formatted_and_read_back() {
-    let name = GoldenMacosName::at(GOLDEN_MACOS_VM_VERSION, "2.337.0", pinned());
+    let name = golden(GOLDEN_MACOS_VM_VERSION, "2.337.0", pinned());
     assert_eq!(name.to_string(), GOLDEN);
     assert_eq!(GoldenMacosName::parse(GOLDEN), Some(name));
     let parsed = GoldenMacosName::parse("marshal-golden-macos-g12-r10.0.15-20991231235959")
         .expect("a two-digit version");
-    assert_eq!(parsed.version, 12);
-    assert_eq!(parsed.runner_version, "10.0.15");
-    assert_eq!(parsed.built, "20991231235959");
+    assert_eq!(parsed.version(), 12);
+    assert_eq!(parsed.runner_version(), "10.0.15");
+    assert_eq!(parsed.built(), "20991231235959");
+}
+
+#[test]
+fn a_golden_macos_name_is_only_made_from_a_version_and_a_runner_that_read_back() {
+    assert_eq!(GoldenMacosName::at(0, "2.337.0", pinned()), None);
+    for runner in [
+        "",
+        "2.337",
+        "2.337.0.1",
+        "2.037.0",
+        "v2.337.0",
+        "2.337.x",
+        "2.337.0-rc1",
+    ] {
+        assert_eq!(GoldenMacosName::at(1, runner, pinned()), None, "{runner}");
+    }
+    for (version, runner) in [(1, "2.337.0"), (u32::MAX, "999999999.0.10")] {
+        let made = golden(version, runner, pinned());
+        assert_eq!(GoldenMacosName::parse(&made.to_string()), Some(made));
+    }
 }
 
 #[test]
@@ -138,9 +162,9 @@ fn a_macos_build_name_is_read_strictly() {
 
 #[test]
 fn the_newest_golden_macos_vm_is_chosen_by_build_time() {
-    let old = GoldenMacosName::at(1, "2.337.0", pinned()).to_string();
-    let new = GoldenMacosName::at(1, "2.337.0", later(1)).to_string();
-    let newest = GoldenMacosName::at(1, "2.337.0", later(3_600)).to_string();
+    let old = golden(1, "2.337.0", pinned()).to_string();
+    let new = golden(1, "2.337.0", later(1)).to_string();
+    let newest = golden(1, "2.337.0", later(3_600)).to_string();
     for order in [
         [&old, &new, &newest],
         [&newest, &old, &new],
@@ -149,14 +173,14 @@ fn the_newest_golden_macos_vm_is_chosen_by_build_time() {
         let (name, parts) =
             newest_golden(order.iter().map(|name| name.as_str())).expect("a golden VM");
         assert_eq!(name, newest);
-        assert_eq!(parts.built, "20240305070708");
+        assert_eq!(parts.built(), "20240305070708");
     }
 }
 
 #[test]
 fn the_newest_golden_macos_vm_is_found_whatever_its_version_and_among_other_names() {
-    let stale = GoldenMacosName::at(GOLDEN_MACOS_VM_VERSION + 1, "2.338.0", later(10)).to_string();
-    let older = GoldenMacosName::at(GOLDEN_MACOS_VM_VERSION, "2.337.0", pinned()).to_string();
+    let stale = golden(GOLDEN_MACOS_VM_VERSION + 1, "2.338.0", later(10)).to_string();
+    let older = golden(GOLDEN_MACOS_VM_VERSION, "2.337.0", pinned()).to_string();
     let names = [
         "marshal-job-pool-1-20240305060708009",
         &older,
@@ -167,7 +191,7 @@ fn the_newest_golden_macos_vm_is_found_whatever_its_version_and_among_other_name
     ];
     let (name, parts) = newest_golden(names).expect("a golden VM");
     assert_eq!(name, stale);
-    assert_eq!(parts.version, GOLDEN_MACOS_VM_VERSION + 1);
+    assert_eq!(parts.version(), GOLDEN_MACOS_VM_VERSION + 1);
     assert_eq!(newest_golden(["ubuntu", BUILD]), None);
     assert_eq!(newest_golden([]), None);
 }
@@ -236,7 +260,7 @@ fn a_job_name_is_read_strictly() {
 
 #[test]
 fn no_name_form_of_one_os_matches_the_others() {
-    let macos_golden = GoldenMacosName::at(1, "2.337.0", pinned()).to_string();
+    let macos_golden = golden(1, "2.337.0", pinned()).to_string();
     let macos_build = build_name(pinned());
     let linux_golden = linux_forms::golden_name(1, 1, "2.337.0", pinned());
     let linux_build = linux_forms::build_name(pinned());
@@ -265,9 +289,9 @@ fn no_name_form_of_one_os_matches_the_others() {
 
 #[test]
 fn the_macos_selection_never_picks_a_linux_golden_vm_and_the_reverse() {
-    let macos_old = GoldenMacosName::at(1, "2.337.0", pinned()).to_string();
+    let macos_old = golden(1, "2.337.0", pinned()).to_string();
     let linux_new = linux_forms::golden_name(1, 1, "2.337.0", later(86_400));
-    let macos_new = GoldenMacosName::at(1, "2.337.0", later(172_800)).to_string();
+    let macos_new = golden(1, "2.337.0", later(172_800)).to_string();
     let linux_old = linux_forms::golden_name(1, 1, "2.337.0", pinned());
     let all = [
         macos_old.as_str(),

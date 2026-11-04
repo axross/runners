@@ -18,24 +18,46 @@ const JOB_PREFIX: &str = "marshal-job-";
 pub(super) const DIGITS_IN_SECOND_STAMP: usize = 14;
 
 /// what a golden macOS VM's name records, so `start` and `status` read it from
-/// Tart's list without booting the VM.
+/// Tart's list without booting the VM. A value always writes a name that
+/// [`GoldenMacosName::parse`] reads back.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GoldenMacosName {
-    pub version: u32,
-    pub runner_version: String,
-    /// the build time as `yyyyMMddHHmmss` in UTC.
-    pub built: String,
+    version: u32,
+    runner_version: String,
+    built: String,
 }
 
 impl GoldenMacosName {
-    /// the name of a golden macOS VM built at `built`.
+    /// the name of a golden macOS VM built at `built`; none when `version` is 0 or
+    /// `runner_version` is not three dot-separated numbers.
     #[must_use]
-    pub fn at(version: u32, runner_version: &str, built: SystemTime) -> Self {
-        Self {
+    pub fn at(version: u32, runner_version: &str, built: SystemTime) -> Option<Self> {
+        if version == 0 || !is_version(runner_version) {
+            return None;
+        }
+        Some(Self {
             version,
             runner_version: runner_version.to_string(),
             built: second_stamp(built),
-        }
+        })
+    }
+
+    /// the golden VM version.
+    #[must_use]
+    pub fn version(&self) -> u32 {
+        self.version
+    }
+
+    /// the runner version the golden VM holds.
+    #[must_use]
+    pub fn runner_version(&self) -> &str {
+        &self.runner_version
+    }
+
+    /// the build time as `yyyyMMddHHmmss` in UTC.
+    #[must_use]
+    pub fn built(&self) -> &str {
+        &self.built
     }
 
     /// reads a golden macOS VM's name: `marshal-golden-macos-g<golden VM
@@ -100,6 +122,8 @@ pub fn newest_golden<'a>(
 
 /// a job VM's name, `marshal-job-<pool>-<slot>-<yyyyMMddHHmmssfff>`, split into its
 /// parts.
+///
+/// TODO(#74): use M1's job VM name parser once its Tart runtime is on main.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct JobName<'a> {
     pub pool: &'a str,

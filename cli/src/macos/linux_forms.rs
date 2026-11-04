@@ -1,7 +1,7 @@
-//! the Linux VM name forms that M1's Tart runtime (#74, plan revision 1) defines,
-//! written here as a stand-in so the macOS names and the VM count can tell a macOS
-//! VM from a Linux one before that code is on `main`. The integration with M1's
-//! runtime replaces this module with M1's own forms; nothing else here is M1's.
+//! the Linux VM name forms: a Linux golden VM and a Linux build VM, and the test for
+//! each.
+//!
+//! TODO(#74): replace with M1's name forms once its Tart runtime is on main.
 
 use std::time::SystemTime;
 
