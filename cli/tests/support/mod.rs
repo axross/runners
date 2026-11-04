@@ -8,6 +8,8 @@
     clippy::indexing_slicing
 )]
 
+#[cfg(unix)]
+pub mod axmc;
 pub mod docker;
 pub mod host;
 pub mod instance;

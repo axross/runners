@@ -233,6 +233,19 @@ pub trait Backend {
     /// never a mismatch.
     fn check_image(&self, image: &str) -> impl Future<Output = ImageCheck>;
 
+    /// checks the host prerequisites once before anything is started, and returns the
+    /// refusal's message when one refuses. A prerequisite that does not answer is
+    /// waited for later, never refused here. Only `start` and a resume call it.
+    fn check_prerequisites(&self) -> impl Future<Output = Result<(), String>> {
+        async { Ok(()) }
+    }
+
+    /// the warnings of the last prerequisite check that passed, such as a newer
+    /// patch than the tested version, which `status` shows.
+    fn prerequisite_warnings(&self) -> Vec<String> {
+        Vec::new()
+    }
+
     /// whether `candidate` is one of `pool`'s own leftovers by the name form the
     /// backend gives its containers, or its hosts.
     fn is_own_name(&self, pool: &str, candidate: &str) -> bool {

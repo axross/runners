@@ -1,7 +1,8 @@
 //! the Tart backend and the `tart` client library under it: exact argument lists, a
 //! bounded process wrapper, VM names and the reader of Tart's listing, the golden VM
 //! check, the guest agent, the process that holds a VM's `tart run`, and the teardown
-//! of a VM within a budget. No `start` or `build` command calls it yet.
+//! of a VM within a budget. `start` runs the axmc Linux pools with it; no `build` command
+//! calls it yet.
 
 pub mod args;
 pub mod backend;

@@ -94,6 +94,9 @@ pub enum StopReason {
     /// the configured image's contract is not this CLI's, or the image is missing;
     /// the text says which and how to rebuild it.
     Image(String),
+    /// a host prerequisite refused at a restart or a resume; the text is the
+    /// refusal, which names the host document's section.
+    Prerequisite(String),
 }
 
 impl fmt::Display for StopReason {
@@ -108,7 +111,7 @@ impl fmt::Display for StopReason {
                 super::restart::DELAYS.len() + 1,
                 WINDOW.as_secs() / 60
             ),
-            Self::Image(reason) => f.write_str(reason),
+            Self::Image(reason) | Self::Prerequisite(reason) => f.write_str(reason),
         }
     }
 }
@@ -149,6 +152,9 @@ pub enum Ending {
     /// the instance, at a later run it stops it, and it is never counted as a
     /// failure.
     ImageRefused,
+    /// a host prerequisite refused before the first run of the core, so the instance
+    /// ended without starting anything.
+    PrerequisiteRefused,
 }
 
 /// how the runtime core ended when no stop was asked for.
@@ -179,6 +185,13 @@ pub trait Core {
     /// the image cannot run jobs, or `Ok` when it can or Docker could not say, since
     /// the next run checks again.
     fn check_image(&self, plan: &Plan) -> impl Future<Output = Result<(), String>>;
+
+    /// checks the host prerequisites of the pools `plan` runs once, without waiting for
+    /// anything; returns the refusal's message, or `Ok` when they pass or nothing in
+    /// `plan` needs them. A core without prerequisites passes.
+    fn check_prerequisites(&self, _plan: &Plan) -> impl Future<Output = Result<(), String>> {
+        async { Ok(()) }
+    }
 
     /// what the core is doing now, as `status` fields.
     fn report(&self) -> Vec<(&'static str, String)>;
@@ -230,6 +243,7 @@ enum CycleEnd {
 enum Reloaded {
     Run(Plan),
     Invalid(Vec<String>),
+    PrerequisiteRefused(String),
     ImageRefused(String),
 }
 
@@ -368,7 +382,16 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
     /// every request that reaches `requests`; when the channel closes while the
     /// instance is stopped, nothing can resume it, so it ends.
     pub async fn run(&self, plan: Plan, requests: &mut Requests) -> Ended {
-        let mut next = Next::Run(plan);
+        let checking = self.core.check_prerequisites(&plan);
+        let mut next = match self.serve(requests, true, checking).await {
+            None => Next::Exit,
+            Some(Ok(())) => Next::Run(plan),
+            Some(Err(refusal)) => {
+                self.log.warn(&format!("The instance ends: {refusal}"));
+                self.ending.set(Ending::PrerequisiteRefused);
+                Next::Exit
+            }
+        };
         loop {
             next = match next {
                 Next::Run(plan) => self.running(&plan, requests).await,
@@ -614,7 +637,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
     }
 
     /// reads and validates the instance's own configuration again, clears the core's
-    /// failure count, checks its image, and answers `reply`.
+    /// failure count, checks the host prerequisites and the image, and answers `reply`.
     async fn resume(&self, requests: &mut Requests, reply: oneshot::Sender<Response>) -> Next {
         self.policy.borrow_mut().clear();
         self.set_state(State::Resuming);
@@ -624,6 +647,9 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
                 Ok(plan) => plan,
                 Err(problems) => return Reloaded::Invalid(problems),
             };
+            if let Err(refusal) = self.core.check_prerequisites(&plan).await {
+                return Reloaded::PrerequisiteRefused(refusal);
+            }
             match self.core.check_image(&plan).await {
                 Ok(()) => Reloaded::Run(plan),
                 Err(refusal) => Reloaded::ImageRefused(refusal),
@@ -641,6 +667,9 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
             Some(Reloaded::Invalid(problems)) => self.stay_stopped(
                 StopReason::InvalidConfiguration(scrub_error_text(&problems.join("; "), "")),
             ),
+            Some(Reloaded::PrerequisiteRefused(refusal)) => {
+                self.stay_stopped(StopReason::Prerequisite(refusal))
+            }
             Some(Reloaded::ImageRefused(refusal)) => self.stay_stopped(self.image_reason(&refusal)),
         };
         let _ = reply.send(response);
@@ -737,7 +766,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
                     self.container_steps(failure.containers).await;
                     return CycleEnd::NothingToRun;
                 }
-                Ending::NothingToRun | Ending::Ordinary => {}
+                Ending::NothingToRun | Ending::Ordinary | Ending::PrerequisiteRefused => {}
             }
             self.log
                 .warn(&format!("The runtime core failed: {message}"));

@@ -17,7 +17,9 @@ use marshal_cli::runtime::backend::{Backend, BackendError, DiagnosticRecord, Sto
 use marshal_cli::runtime::board::Board;
 use marshal_cli::runtime::fake::{Call, FakeBackend, FakeContainer, MemoryLog};
 use marshal_cli::runtime::log::Log;
-use marshal_cli::runtime::pool::{NoPoolStartable, PoolSpec, pools_from_plan};
+use marshal_cli::runtime::pool::{
+    NoPoolStartable, PoolSpec, pools_from_plan, skip_warning, skipped_pools,
+};
 use marshal_cli::validate::{Plan, validate};
 use support::{TempDir, prepare_pools, write_token_file};
 
@@ -403,9 +405,24 @@ fn axmc_plan(image: &str, second_os: &str) -> Plan {
 }
 
 #[test]
-fn a_plan_with_a_macos_pool_is_not_a_vm_plan() {
+fn an_axmc_macos_pool_is_skipped_and_gets_no_vm_pool() {
     let plan = axmc_plan("", "macos");
-    assert!(pools_from_plan(&plan).is_err());
+    assert_eq!(skipped_pools(&plan), ["bravo"]);
+    let names: Vec<_> = pools_from_plan(&plan)
+        .unwrap()
+        .into_iter()
+        .map(|pool| pool.name)
+        .collect();
+    assert_eq!(names, ["alpha"]);
+    assert_eq!(
+        skip_warning("bravo"),
+        "Skipping pool bravo: macOS VM pools are not supported yet"
+    );
+}
+
+#[test]
+fn an_axmc_plan_of_linux_pools_skips_none() {
+    assert!(skipped_pools(&axmc_plan("", "linux")).is_empty());
 }
 
 #[test]

@@ -16,6 +16,7 @@ use super::board::{Board, PoolState};
 use super::diagnostic::{STOP_GRACE, STOP_WITHIN, finalize_claimed, gap_text, warn_discarded};
 use super::log::Log;
 use super::name::cpu_probe_name;
+use super::select::Runtime;
 use super::token::read_token;
 
 const STALE_REMOVE_BUDGET: Duration = Duration::from_secs(120);
@@ -89,8 +90,33 @@ pub fn image_name(plan: &Plan) -> &str {
     plan.image_name.as_deref().unwrap_or(DEFAULT_IMAGE_NAME)
 }
 
-/// turns a valid axpc plan, or an axmc plan of Linux pools, into pools, in the
-/// plan's order, and fails for a plan with any other pool.
+/// why `start` skips an axmc macOS pool.
+pub const MACOS_POOL_SKIPPED: &str = "macOS VM pools are not supported yet";
+
+/// what `start` says when every pool of the configuration is skipped.
+pub const NO_POOL_CAN_START: &str =
+    "No pool can start, because macOS VM pools are not supported yet";
+
+/// the names of the pools of `plan` that have no runtime on its host: on axmc, the
+/// macOS pools, until M3. An axpc plan skips none.
+#[must_use]
+pub fn skipped_pools(plan: &Plan) -> Vec<&str> {
+    plan.entries
+        .iter()
+        .filter(|entry| Runtime::of_pool(plan.profile, entry.os).is_none())
+        .map(|entry| entry.name.as_str())
+        .collect()
+}
+
+/// the warning `start` logs for a skipped pool.
+#[must_use]
+pub fn skip_warning(pool: &str) -> String {
+    format!("Skipping pool {pool}: {MACOS_POOL_SKIPPED}")
+}
+
+/// turns a valid axpc plan, or the Linux pools of an axmc plan, into pools, in the
+/// plan's order; an axmc macOS pool gets none (see [`skipped_pools`]), so a plan of
+/// macOS pools alone gives no pool.
 pub fn pools_from_plan(plan: &Plan) -> Result<Vec<PoolSpec>, PlanError> {
     match plan.profile {
         Profile::Axpc => {
@@ -106,16 +132,12 @@ pub fn pools_from_plan(plan: &Plan) -> Result<Vec<PoolSpec>, PlanError> {
                 .map(|(index, entry)| pool_from_entry(plan, index, entry, image))
                 .collect())
         }
-        Profile::Axmc => {
-            if plan.entries.iter().any(|entry| entry.os != Some(Os::Linux)) {
-                return Err(PlanError("the VM runtime runs Linux pools only"));
-            }
-            Ok(plan
-                .entries
-                .iter()
-                .map(|entry| vm_pool_from_entry(entry, image_name(plan)))
-                .collect())
-        }
+        Profile::Axmc => Ok(plan
+            .entries
+            .iter()
+            .filter(|entry| entry.os == Some(Os::Linux))
+            .map(|entry| vm_pool_from_entry(entry, image_name(plan)))
+            .collect()),
     }
 }
 

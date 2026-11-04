@@ -188,13 +188,6 @@ impl<C: Clock> TartBackend<C> {
         self
     }
 
-    /// the warnings of the last prerequisite check that passed, such as a newer
-    /// patch of Tart or Softnet than the tested one, for `status`.
-    #[must_use]
-    pub fn prerequisite_warnings(&self) -> Vec<String> {
-        self.in_use.borrow().warnings.clone()
-    }
-
     /// the name of the VM a prepared host runs on, once it has one.
     #[must_use]
     pub fn host_vm(&self, host: &JobHost) -> Option<String> {
@@ -238,6 +231,16 @@ impl<C: Clock> TartBackend<C> {
         )))
     }
 
+    /// the Softnet check, judging its file as a test says when it names an owner and
+    /// mode.
+    async fn check_softnet_once(&self) -> Check {
+        let path = self.client.config().path.as_deref();
+        match self.softnet_owner_mode {
+            Some(owner_mode) => check_softnet_with(path, Some(owner_mode), VERSION_BUDGET).await,
+            None => check_softnet(path).await,
+        }
+    }
+
     /// the Tart and Softnet checks before a boot: `None` when both pass, else the
     /// reason that holds the slot. A Tart that is missing or does not answer is waited
     /// for here, as the core waits for Docker.
@@ -258,12 +261,7 @@ impl<C: Clock> TartBackend<C> {
                 },
             }
         };
-        let path = self.client.config().path.as_deref();
-        let checked = match self.softnet_owner_mode {
-            Some(owner_mode) => check_softnet_with(path, Some(owner_mode), VERSION_BUDGET).await,
-            None => check_softnet(path).await,
-        };
-        let softnet = match checked {
+        let softnet = match self.check_softnet_once().await {
             Check::Pass { version } => (version, None),
             Check::Warn { version, message } => (version, Some(message)),
             Check::Refuse(refusal) => return Some(refusal.message),
@@ -436,14 +434,30 @@ impl<C: Clock> TartBackend<C> {
         let Some(vm) = self.vm_of_container(name) else {
             return Ok(());
         };
-        self.guest_docker_checked(
-            &vm,
-            &remove_arguments(&[name.to_string()]),
-            budget,
-            "Failed to remove containers",
-        )
-        .await
-        .map(drop)
+        let removed = self
+            .guest_docker_checked(
+                &vm,
+                &remove_arguments(&[name.to_string()]),
+                budget,
+                "Failed to remove containers",
+            )
+            .await
+            .map(drop);
+        // the container's worker releases its VM as soon as the container ends, and
+        // the VM takes the container with it
+        if removed.is_err() && self.vm_is_released_or_releasing(&vm) {
+            return Ok(());
+        }
+        removed
+    }
+
+    /// whether the host that runs on `vm` is gone, or its release has begun.
+    fn vm_is_released_or_releasing(&self, vm: &str) -> bool {
+        let hosts = self.hosts.borrow();
+        hosts
+            .values()
+            .find(|host| host.vm().as_deref() == Some(vm))
+            .is_none_or(|host| host.released.get() || host.release.try_lock().is_err())
     }
 
     /// the containers of `names` that run in a VM, grouped by VM.
@@ -517,6 +531,31 @@ impl<C: Clock> Backend for TartBackend<C> {
                 budget.as_secs()
             )),
         }
+    }
+
+    /// refuses a `tart` or `softnet` that is missing, a version that does not run and a
+    /// Softnet that is not set up or does not answer; a `tart` that does not answer is
+    /// not refused, because the slots wait for it.
+    async fn check_prerequisites(&self) -> Result<(), String> {
+        let tart = match check_tart(&self.client).await {
+            Check::Pass { version } => Some((version, None)),
+            Check::Warn { version, message } => Some((version, Some(message))),
+            Check::Refuse(refusal) if refusal.cause == Cause::NotAnswering => None,
+            Check::Refuse(refusal) => return Err(refusal.message),
+        };
+        let softnet = match self.check_softnet_once().await {
+            Check::Pass { version } => (version, None),
+            Check::Warn { version, message } => (version, Some(message)),
+            Check::Refuse(refusal) => return Err(refusal.message),
+        };
+        if let Some((tart, warning)) = tart {
+            self.note_in_use(&tart, &softnet.0, warning.into_iter().chain(softnet.1));
+        }
+        Ok(())
+    }
+
+    fn prerequisite_warnings(&self) -> Vec<String> {
+        self.in_use.borrow().warnings.clone()
     }
 
     fn is_own_name(&self, pool: &str, candidate: &str) -> bool {

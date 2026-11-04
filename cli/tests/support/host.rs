@@ -313,7 +313,7 @@ pub struct Finished {
 }
 
 impl Started {
-    fn spawn(mut command: Command) -> Self {
+    pub fn spawn(mut command: Command) -> Self {
         let mut child = command.spawn().unwrap();
         let stdout = Collector::spawn(child.stdout.take().unwrap());
         let stderr = Collector::spawn(child.stderr.take().unwrap());
