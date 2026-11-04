@@ -12,6 +12,7 @@ pub mod docker;
 pub mod host;
 pub mod instance;
 pub mod stub;
+pub mod tart;
 
 use std::fs;
 use std::path::{Path, PathBuf};

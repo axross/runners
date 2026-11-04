@@ -19,5 +19,6 @@ pub mod retained;
 pub mod scrub;
 pub mod secret;
 pub mod select;
+pub mod tart;
 pub mod token;
 pub mod worker;

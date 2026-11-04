@@ -4,6 +4,7 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub(crate) const DIGITS_IN_STAMP: usize = 17;
+pub(crate) const DIGITS_IN_SECONDS_STAMP: usize = 14;
 const LATEST_UNIX_MILLIS: u64 = 253_402_300_799_999;
 const MILLIS_PER_DAY: u64 = 86_400_000;
 
@@ -36,6 +37,37 @@ pub fn format_stamp(unix_millis: u64) -> String {
         in_day / 1000 % 60,
         in_day % 1000
     )
+}
+
+/// reads a `yyyyMMddHHmmssfff` stamp, or a `yyyyMMddHHmmss` stamp as its whole
+/// second, as milliseconds since the Unix epoch; `None` for any other text, a date
+/// that does not exist, or a year before 1970.
+#[must_use]
+pub fn parse_stamp(text: &str) -> Option<u64> {
+    let seconds_only = text.len() == DIGITS_IN_SECONDS_STAMP;
+    if !(seconds_only || text.len() == DIGITS_IN_STAMP)
+        || !text.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return None;
+    }
+    let field = |from: usize, to: usize| -> Option<u64> { text.get(from..to)?.parse().ok() };
+    let (year, month, day) = (field(0, 4)?, field(4, 6)?, field(6, 8)?);
+    let (hour, minute, second) = (field(8, 10)?, field(10, 12)?, field(12, 14)?);
+    let milli = if seconds_only { 0 } else { field(14, 17)? };
+    if year < 1970
+        || !(1..=12).contains(&month)
+        || day == 0
+        || hour > 23
+        || minute > 59
+        || second > 59
+    {
+        return None;
+    }
+    let days = days_from_civil(year, month, day);
+    if civil_from_days(days) != (year, month, day) {
+        return None;
+    }
+    Some((((days * 24 + hour) * 60 + minute) * 60 + second) * 1000 + milli)
 }
 
 /// converts days since 1970-01-01 to a proleptic Gregorian date, by Howard
@@ -125,6 +157,40 @@ mod tests {
         ] {
             assert_eq!(format_stamp(millis), stamp, "{millis}");
             assert_eq!(stamp.len(), DIGITS_IN_STAMP);
+        }
+    }
+
+    #[test]
+    fn a_stamp_reads_back_as_its_milliseconds_and_a_short_one_as_its_second() {
+        for millis in [0, 1_709_618_828_009, 4_107_542_399_999, 951_782_400_000] {
+            assert_eq!(parse_stamp(&format_stamp(millis)), Some(millis));
+        }
+        assert_eq!(
+            parse_stamp("20240305060708"),
+            Some(1_709_618_828_000),
+            "a stamp without milliseconds"
+        );
+    }
+
+    #[test]
+    fn a_stamp_that_names_no_instant_does_not_read() {
+        for text in [
+            "",
+            "2024030506070800",
+            "202403050607080091",
+            "20240230060708009",
+            "20240305240000000",
+            "20240305066000000",
+            "20240305060760000",
+            "20241305060708009",
+            "20240005060708009",
+            "20240300060708009",
+            "19691231235959999",
+            "2024030506070800x",
+            "+2024030506070800",
+            "20240305060708 09",
+        ] {
+            assert_eq!(parse_stamp(text), None, "{text:?}");
         }
     }
 

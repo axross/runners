@@ -250,6 +250,8 @@ PowerShell supervisor, and where it differs the difference is listed here.
 | `runtime::backend`                                  | The backend seam                                                                       |
 | `runtime::select`                                   | The runtime a pool's operating system selects on its host                              |
 | `runtime::docker`, `runtime::docker_args`           | The container backend and the exact `docker` argument lists                            |
+| `runtime::tart`, `tart::args`, `tart::client`       | The `tart` client: the exact argument lists, and the bounded process wrapper           |
+| `runtime::tart::list`, `tart::names`                | The reader of `tart list --format json`, and the VM names, parsers and matchers        |
 | `runtime::registration`, `token`, `scrub`, `secret` | JIT registration, the token file, error text, and the type that hides a secret         |
 | `runtime::clock`, `runtime::log`                    | The time source and the sink for the runtime's messages, each a seam the tests replace |
 | `runtime::name`                                     | Runner and container names, and the test for a pool's own                              |
