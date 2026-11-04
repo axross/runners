@@ -393,18 +393,11 @@ and image identities, settings/readbacks, gaps, and observed throughput/pressure
 there. Do not publish tokens, full inspect output, or raw private diagnostics.
 
 There is no JSON switch to disable affinity, and every `marshal` release applies
-it. Going back to placement without affinity means installing an earlier release
-that lacks it, if one exists, as [Rolling Back marshal](#rolling-back-marshal)
-describes, with the saved compatible configuration and image, in its own authorized
-maintenance window. Stop job admission and drain work, stop the instance with
-`marshal stop`, and recover marked diagnostic containers before replacing the
-binary or the image. Do not rebuild until the intended release is installed.
-Validate the configuration with that release, and only then start the pools.
-Confirm the restored release and image identities and requested/effective CPU sets
-and quotas before resuming admission; an empty requested cpuset is not an empty
-effective set. Restore no WSL allocation or Windows process-affinity setting: this
-feature changes neither. A failed runtime readback blocks rollout, not independent
-pool work.
+it, so there is no supported way back to placement without affinity. The
+PowerShell scripts that once offered one remain only in this repository's history,
+unsupported, and a fault in affinity is fixed forward in a new release. The feature
+changes no WSL allocation and no Windows process-affinity setting. A failed runtime
+readback blocks rollout, not independent pool work.
 
 ## Moving to the New Configuration Format
 
