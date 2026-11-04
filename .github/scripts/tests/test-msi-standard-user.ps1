@@ -57,14 +57,15 @@ function Get-RandomPassword {
     return "Aa1!$body"
 }
 
+# runs secedit and returns its exit code and log text; a non-zero exit throws unless -AllowNonZeroExit is given.
 function Invoke-Secedit {
-    param([Parameter(Mandatory = $true)][string[]]$Arguments, [Parameter(Mandatory = $true)][string]$LogPath)
+    param([Parameter(Mandatory = $true)][string[]]$Arguments, [Parameter(Mandatory = $true)][string]$LogPath, [switch]$AllowNonZeroExit)
     if (Test-Path -LiteralPath $LogPath) { Remove-Item -LiteralPath $LogPath -Force }
     & secedit.exe @Arguments /log $LogPath | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        $logText = if (Test-Path -LiteralPath $LogPath) { (Get-Content -LiteralPath $LogPath) -join "`n" } else { '' }
-        throw "secedit $($Arguments -join ' ') exited $LASTEXITCODE; log: $logText"
-    }
+    $exitCode = $LASTEXITCODE
+    $logText = if (Test-Path -LiteralPath $LogPath) { (Get-Content -LiteralPath $LogPath) -join "`n" } else { '' }
+    if ($exitCode -ne 0 -and -not $AllowNonZeroExit) { throw "secedit $($Arguments -join ' ') exited $exitCode; log: $logText" }
+    return [pscustomobject]@{ ExitCode = $exitCode; Log = $logText }
 }
 
 # the holders of one user right in an exported policy, as the entries of its line
@@ -83,7 +84,7 @@ function Export-UserRight {
     param([Parameter(Mandatory = $true)][string]$Directory, [Parameter(Mandatory = $true)][string]$Name)
     $path = Join-Path $Directory "$Name.inf"
     if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
-    Invoke-Secedit -Arguments @('/export', '/cfg', $path, '/areas', 'USER_RIGHTS') -LogPath (Join-Path $Directory "$Name.log")
+    $null = Invoke-Secedit -Arguments @('/export', '/cfg', $path, '/areas', 'USER_RIGHTS') -LogPath (Join-Path $Directory "$Name.log")
     return $path
 }
 
@@ -116,7 +117,10 @@ function Grant-BatchLogonRight {
     }
     $template = Join-Path $Directory 'grant.inf'
     Set-Content -LiteralPath $template -Value $lines -Encoding Unicode
-    Invoke-Secedit -Arguments @('/configure', '/db', (Join-Path $Directory 'grant.sdb'), '/cfg', $template, '/areas', 'USER_RIGHTS') -LogPath (Join-Path $Directory 'grant.log')
+    # secedit can exit non-zero on a warning about an exported entry it cannot map while the grant is applied,
+    # so the second export decides, not this exit code.
+    $configure = Invoke-Secedit -Arguments @('/configure', '/db', (Join-Path $Directory 'grant.sdb'), '/cfg', $template, '/areas', 'USER_RIGHTS') -LogPath (Join-Path $Directory 'grant.log') -AllowNonZeroExit
+    if ($configure.ExitCode -ne 0) { Write-Output "secedit /configure exited $($configure.ExitCode); log: $($configure.Log)" }
 
     $after = @(Get-Content -LiteralPath (Export-UserRight -Directory $Directory -Name 'after'))
     foreach ($name in 'SeBatchLogonRight', 'SeDenyBatchLogonRight') {
@@ -124,7 +128,7 @@ function Grant-BatchLogonRight {
     }
     # an export lists a local account by its SID or, on some systems, by name, so either proves the grant.
     $holders = @(Get-RightHolder -Lines $after -Right 'SeBatchLogonRight')
-    if (@($entry, $Account, "$env:COMPUTERNAME\$Account" | Where-Object { $holders -contains $_ }).Count -eq 0) { throw "SeBatchLogonRight does not hold $entry after the grant" }
+    if (@($entry, $Account, "$env:COMPUTERNAME\$Account" | Where-Object { $holders -contains $_ }).Count -eq 0) { throw "SeBatchLogonRight does not hold $entry after the grant; secedit /configure exited $($configure.ExitCode); log: $($configure.Log)" }
 }
 
 # one best-effort diagnostic: a failure to gather it is printed and never replaces the failure being reported.
