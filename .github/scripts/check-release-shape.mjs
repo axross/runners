@@ -137,8 +137,9 @@ function read(path) {
 
 const workflowDirectory = join(root, ".github", "workflows");
 const workflows = {};
+// GitHub runs a workflow file with either extension.
 for (const file of readdirSync(workflowDirectory)
-  .filter((name) => name.endsWith(".yaml"))
+  .filter((name) => /\.ya?ml$/.test(name))
   .sort()) {
   try {
     workflows[file] = readWorkflow(join(workflowDirectory, file));

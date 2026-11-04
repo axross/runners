@@ -4,8 +4,8 @@
 # cause). every change is one the release record forbids: the signing job's
 # permissions, an action it uses, a checkout, a `${{ }}` inside run, a package
 # manager or fetch or repository file, a tool called by name, the stand-in
-# prefixes, pkgbuild's arguments; an Environment in another job or reachable from
-# a pull request; a signing job without its guard or its place in the chain; and
+# prefixes, pkgbuild's arguments; an Environment in another job, in a `.yml`
+# workflow, or reachable from a pull request; a signing job without its guard or its place in the chain; and
 # a way past a failed job. a change the test cannot find in the files fails the
 # test, so it cannot go stale and pass.
 # shellcheck disable=SC2016,SC1003 # the texts the changes find and replace are literal, not expansions.
@@ -67,6 +67,25 @@ expect_fail() {
     }
     shift 3
   done
+  output="$(node "$check" "$root" 2>&1)" || status=$?
+  if [[ $status -ne 1 ]]; then
+    echo "FAIL ${name}: exit ${status}, expected 1: ${output}" >&2
+    failures=$((failures + 1))
+  elif [[ "$output" != *"$want"* ]]; then
+    echo "FAIL ${name}: the output does not hold '${want}': ${output}" >&2
+    failures=$((failures + 1))
+  else
+    echo "ok   ${name}"
+  fi
+}
+
+# expect_fail_new_file <name> <text the output must hold> <file under the root> <content>: adds a file the
+# unchanged workflows do not have.
+expect_fail_new_file() {
+  local name="$1" want="$2" root output status=0
+  root="${work}/case-${name//[^a-zA-Z0-9]/-}"
+  cp -r "$pristine" "$root"
+  printf '%s' "$4" >"${root}/$3"
   output="$(node "$check" "$root" 2>&1)" || status=$?
   if [[ $status -ne 1 ]]; then
     echo "FAIL ${name}: exit ${status}, expected 1: ${output}" >&2
@@ -217,6 +236,10 @@ expect_fail "an Environment in merge-checks.yaml" "merge-checks.yaml: job" \
   "$merge_checks" $'jobs:\n' $'jobs:\n  sneaky:\n    runs-on: ubuntu-latest\n    environment: release\n    steps:\n      - run: echo hi\n'
 expect_fail "an Environment in a step" "a step of job" \
   "$release" $'      - name: Download The Notary Log\n' $'      - name: Download The Notary Log\n        environment: release\n'
+expect_fail_new_file "an Environment in a .yml workflow that pull requests trigger" "extra.yml: job sneaky declares an environment" \
+  .github/workflows/extra.yml $'name: Extra\non:\n  pull_request:\njobs:\n  sneaky:\n    runs-on: ubuntu-latest\n    environment: release\n    steps:\n      - run: echo hi\n'
+expect_fail_new_file "a .yml pull request workflow that calls release.yaml" "extra.yml: a pull request triggers job sneaky" \
+  .github/workflows/extra.yml $'name: Extra\non:\n  pull_request:\njobs:\n  sneaky:\n    uses: ./.github/workflows/release.yaml\n'
 expect_fail "a pull request workflow that calls a workflow it cannot be checked against" "which this check cannot follow" \
   "$merge_checks" $'jobs:\n' $'jobs:\n  sneaky:\n    uses: someone/else/.github/workflows/sign.yaml@main\n'
 expect_fail "a pull request workflow that calls release.yaml" "a workflow that declares an environment" \
