@@ -11,6 +11,7 @@
 pub mod docker;
 pub mod host;
 pub mod instance;
+pub mod macos;
 pub mod softnet;
 pub mod stub;
 pub mod tart;

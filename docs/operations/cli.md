@@ -244,29 +244,33 @@ registration, and the loop of one slot. `start` reaches it through the instance
 layer, and the tests also drive it through its seams. It reproduces the
 PowerShell supervisor, and where it differs the difference is listed here.
 
-| Module                                              | Holds                                                                                             |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `affinity`                                          | The CPU offsets `validate` and the backend share, and the selection of a slot's CPUs              |
-| `runtime::backend`                                  | The backend seam                                                                                  |
-| `runtime::select`                                   | The runtime a pool's operating system selects on its host                                         |
-| `runtime::docker`, `runtime::docker_args`           | The container backend and the exact `docker` argument lists                                       |
-| `runtime::tart`, `tart::args`, `tart::client`       | The `tart` client: the exact argument lists, and the bounded process wrapper                      |
-| `runtime::tart::list`, `tart::names`                | The reader of `tart list --format json`, and the VM names, parsers and matchers                   |
-| `macos::version`                                    | The tested Tart and Softnet versions, the readers of their `--version`, and the sorting           |
-| `macos::softnet`                                    | Finding Softnet on `PATH` as Tart does, the judgment of its file, and its version read            |
-| `macos::prerequisites`                              | The host checks: Tart's version, then Softnet's file and version, each a pass, warning or refusal |
-| `runtime::registration`, `token`, `scrub`, `secret` | JIT registration, the token file, error text, and the type that hides a secret                    |
-| `runtime::clock`, `runtime::log`                    | The time source and the sink for the runtime's messages, each a seam the tests replace            |
-| `runtime::name`                                     | Runner and container names, and the test for a pool's own                                         |
-| `runtime::pool`                                     | Pools from a plan, and their preparation                                                          |
-| `runtime::worker`                                   | The slot loop and its backoff                                                                     |
-| `runtime::retained`                                 | The diagnostic containers the backend retains, their records, and who finalises each              |
-| `runtime::diagnostic`                               | Finalising diagnostic containers at job end, in the container steps, and at startup               |
-| `diagnostics`, `diagnostics::exporter`              | The exporter child and the lines and exit codes it answers with                                   |
-| `diagnostics::transport`                            | The transport seam through which the exporter reads a container's evidence                        |
-| `diagnostics::sink`, `archive`, `identity`          | The sink checks and admission, the strict archive reader, and the identity readback               |
-| `runtime::board`                                    | Each pool's and each slot's state, which `status` reports                                         |
-| `runtime::fake`                                     | In-memory stand-ins for the seams, used by tests; a debug or test build only                      |
+| Module                                               | Holds                                                                                             |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `affinity`                                           | The CPU offsets `validate` and the backend share, and the selection of a slot's CPUs              |
+| `runtime::backend`                                   | The backend seam                                                                                  |
+| `runtime::select`                                    | The runtime a pool's operating system selects on its host                                         |
+| `runtime::docker`, `runtime::docker_args`            | The container backend and the exact `docker` argument lists                                       |
+| `runtime::tart`, `tart::args`, `tart::client`        | The `tart` client: the exact argument lists, and the bounded process wrapper                      |
+| `runtime::tart::list`, `tart::names`                 | The reader of `tart list --format json`, and the VM names, parsers and matchers                   |
+| `macos::version`                                     | The tested Tart and Softnet versions, the readers of their `--version`, and the sorting           |
+| `macos::softnet`                                     | Finding Softnet on `PATH` as Tart does, the judgment of its file, and its version read            |
+| `macos::prerequisites`                               | The host checks: Tart's version, then Softnet's file and version, each a pass, warning or refusal |
+| `runtime::registration`, `token`, `scrub`, `secret`  | JIT registration, the token file, error text, and the type that hides a secret                    |
+| `runtime::clock`, `runtime::log`                     | The time source and the sink for the runtime's messages, each a seam the tests replace            |
+| `runtime::name`                                      | Runner and container names, and the test for a pool's own                                         |
+| `runtime::pool`                                      | Pools from a plan, and their preparation                                                          |
+| `runtime::worker`                                    | The slot loop and its backoff                                                                     |
+| `runtime::retained`                                  | The diagnostic containers the backend retains, their records, and who finalises each              |
+| `runtime::diagnostic`                                | Finalising diagnostic containers at job end, in the container steps, and at startup               |
+| `diagnostics`, `diagnostics::exporter`               | The exporter child and the lines and exit codes it answers with                                   |
+| `diagnostics::transport`                             | The transport seam through which the exporter reads a container's evidence                        |
+| `diagnostics::sink`, `archive`, `identity`           | The sink checks and admission, the strict archive reader, and the identity readback               |
+| `runtime::board`                                     | Each pool's and each slot's state, which `status` reports                                         |
+| `macos::signals`, `macos::mac`                       | The signal-source seam and its real macOS source                                                  |
+| `macos::sleep`, `macos::network`, `macos::watch`     | The sleep judgment, the `route` and `arp` readers, and the primary network's judgment             |
+| `macos::keep_awake`, `macos::probe`, `macos::reason` | The `caffeinate` hold, the bounded system-program call, and the stop-reason texts                 |
+| `macos::fake`, `macos::scripted`                     | The in-process signal source for tests, and the one a debug build reads from a directory          |
+| `runtime::fake`                                      | In-memory stand-ins for the seams, used by tests; a debug or test build only                      |
 
 ### Backend
 
@@ -631,6 +635,115 @@ Docker daemon outside that CI step, the TLS handshake with GitHub, and Windows a
 macOS runtime behaviour beyond what the hosted runners show. The handshake and a
 real registration are verified on axpc instead, on the maintainer's report, as the
 TLS paragraph above says.
+
+### Signal Source
+
+The axmc host stops every runner when the Mac sleeps or its primary network
+changes, and holds off idle sleep while it runs. `macos` holds what reads those
+signals; the instance does not call it yet. The seam is `SignalSource` in
+`macos::signals`, which the instance polls for four things:
+
+| Call                                                       | Answers                                                                   |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `sleep_detected`, every 1 s                                | Whether the Mac slept, or its wall clock stepped, since the sample before |
+| `read_network`, every 5 s                                  | A `NetworkReading`: the primary network, or `NoDefaultRoute`              |
+| `hold_keep_awake`, `poll_keep_awake`, `release_keep_awake` | Taking the hold, checking it and retrying a lost one, and ending it       |
+| `keep_awake_warning`                                       | The warning text while the hold is wanted and not held                    |
+
+`MacSignals` is the real source. `FakeSignals` in `macos::fake` is the in-process
+source the tests of the code above it use, a debug or test build only.
+
+**Sleep.** Each sample holds the wall clock and an `Instant`. On macOS the
+standard library reads `Instant` from `CLOCK_UPTIME_RAW`
+(`library/std/src/sys/time/unix.rs` in the pinned toolchain's source), which does
+not advance while the Mac sleeps, so the wall clock moves ahead of it by the length
+of the sleep. `slept_between` judges two samples: a gap between the two clocks'
+movements, in either direction, of more than 3 s is a sleep, and exactly 3 s is
+not. A wall-clock step of that size is judged the same way, which errs on the safe
+side. A sleep shorter than the gap goes unseen. The first sample of a
+`SleepDetector` only sets its baseline.
+
+**Primary network.** `route -n get default` gives the interface and the router, and
+`arp -n <router>` the router's hardware address. Each call is bounded to 2 s, runs
+in its own process group with standard input null, and has its standard output
+capped at 64 KiB; more than that is refused. A release build runs `/sbin/route`,
+`/usr/sbin/arp` and `/usr/bin/caffeinate` by absolute path. The readers accept only
+the forms macOS prints, which are the ones `print_getmsg` in `route.tproj/route.c`
+and `print_entry` in `arp.tproj/arp.c` write in Apple's `network_cmds`:
+
+- `route` prints `route to: default` first, then `interface: <name>` exactly once,
+  and `gateway: <IPv4 address>` at most once. The gateway line is absent when the
+  route leaves through a point-to-point interface, as a VPN's does, and the reading
+  then has no router and makes no `arp` call. A gateway that is not a routable IPv4
+  address, a second `interface:` or `gateway:` line, an interface name that is not
+  1 to 15 letters and digits starting with a letter, or a failing exit code is
+  refused. A refused table, a hung or missing `route`, and a table with no IPv4
+  default route (`route: writing to routing socket: not in table`) are all
+  `NoDefaultRoute`.
+- `arp -n <router>` prints one line per entry,
+  `? (<router>) at <address> on <interface> [ifscope] [permanent] [published (proxy only)] [<type>]`.
+  The address is six lowercase hexadecimal bytes of one or two digits each, as `%x`
+  writes them (`0:a:95:1:2:3`). A line of another form refuses the whole answer;
+  `(incomplete)` and `-- no entry` give no address; entries on other interfaces are
+  ignored; entries on the route's interface that disagree give no address. An
+  address that cannot be read leaves the reading with the router and no hardware
+  address.
+
+`NetworkWatch` in `macos::watch` is the pure judgment over the readings, built from
+the first reading at start or resume:
+
+- A primary network at the first reading is recorded at once. With none, the watch
+  waits, and records a network only when it has held, as the same interface and
+  router, on two checks in a row.
+- A reading is the same network as the record when the interface and the router are
+  equal and the hardware addresses are equal, or either is unread. A hardware
+  address that was unread at the record is added to it the first time it is read.
+- A reading that differs from the record counts, and one that matches resets the
+  count. Two differing checks in a row are a change, even if the two differ from
+  each other. The change names the record's interface and the latest reading's
+  interface, or `none` when the latest has no default route. A watch that has
+  reported a change keeps reporting it, and a resume builds a new one.
+- Joining another network, a VPN that takes the default route switched on or off,
+  and losing the default route for two checks are changes. Roaming between access
+  points behind the same router is not.
+
+`macos::reason` builds the two texts `status` and the `start` terminal show:
+`the Mac slept, so every runner was stopped` and
+`the primary network changed (<old interface> to <new interface>), so every runner was stopped`.
+They name interfaces and never network names or addresses.
+
+**Keep-awake.** `KeepAwake` runs `caffeinate -i -w <this process's ID>` as a child
+with standard input and output null, in its own process group; `-w` ends it when
+this process ends, however it ends. `hold` takes it, `release` ends it, and `poll`
+checks it. A `caffeinate` that cannot start, or ends early, gives one `Warned`
+event with the warning text, and `warning` returns the text until the hold is back.
+`poll` retries a lost hold 10 s after the failure (`RETRY_INTERVAL`), and reports
+`Recovered` at the first check after a retry that finds its `caffeinate` still
+running, so a `caffeinate` that keeps ending warns once, not at every retry.
+
+**Overrides.** A debug build reads these variables, and a release build ignores
+every one, which `tests/macos_processes.rs` shows for the programs and the
+directory by branching on the build profile:
+
+| Variable                  | Replaces                                                                     |
+| ------------------------- | ---------------------------------------------------------------------------- |
+| `MARSHAL_TEST_CAFFEINATE` | The `caffeinate` program                                                     |
+| `MARSHAL_TEST_ROUTE`      | The `route` program                                                          |
+| `MARSHAL_TEST_ARP`        | The `arp` program                                                            |
+| `MARSHAL_TEST_SIGNALS`    | The whole source, with a directory a test writes into while the process runs |
+
+The directory holds a `sleep` file, which the next sample reports once and removes;
+a `network` file, which is `none` or lines `interface=`, `router=` and `hardware=`;
+a `keep_awake_failure` file, whose text is the hold's failure while it exists; and
+the file `keep_awake`, which the source writes as `held`, `warning` or `released`.
+
+The tests run the real code against the `fake-macos` helper, one program that plays
+`caffeinate`, `route` and `arp` by their arguments, records every call's arguments,
+process group and terminals, and answers as a test scripts it, including a failure,
+a hang and a flood. `macos_signals.rs` covers the pure judgments, and
+`macos_processes.rs` the readers, the bounds, the hold and the overrides. Not
+verified by them: the output of a real macOS `route` and `arp`, which the samples
+copy from Apple's source, and a real sleep; both wait for the first run on the Mac.
 
 ## The Instance Layer
 
