@@ -992,13 +992,13 @@ answer already given, such as `quit`'s, is written before the `ending`.
 The limits are timers on the agent's own runtime on every operating system, so a
 silent or stalled client holds no thread:
 
-| Limit         | Value                                                                                |
-| ------------- | ------------------------------------------------------------------------------------ |
-| Connections   | 16; a 17th is told `busy` and closed                                                 |
-| Subscriptions | 4; a 5th is told `subscription_limit` and the connection stays                       |
-| Handshake     | 5 s from connect to `hello`                                                          |
-| Idle          | 60 s without a message, for a connection with no subscription and no request pending |
-| Write         | 5 s for one message, or the connection is closed                                     |
+| Limit         | Value                                                                                                                |
+| ------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Connections   | 16; a 17th is told `busy` and closed; beyond 32 connections open or waiting for `busy`, one is closed with no answer |
+| Subscriptions | 4; a 5th is told `subscription_limit` and the connection stays                                                       |
+| Handshake     | 5 s from connect to `hello`                                                                                          |
+| Idle          | 60 s without a message, for a connection with no subscription and no request pending                                 |
+| Write         | 5 s for one message, or the connection is closed                                                                     |
 
 On Windows the pipe is created as the first instance of the name with the descriptor
 `D:P(A;;GA;;;<user SID>)` and with remote clients rejected, as for `start`, but it
