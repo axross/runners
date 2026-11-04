@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 use tokio::sync::{Notify, watch};
 
-use super::backend::DiagnosticRecord;
+use super::backend::{DiagnosticRecord, ExportOutcome, Finalized};
 
 #[derive(Debug, Clone)]
 struct RetainedEntry {
@@ -24,6 +24,41 @@ pub struct Retained {
     /// the labelled containers of pools with diagnostics off, by pool: no record,
     /// left to the manual recovery.
     unmanaged: RefCell<BTreeMap<String, Vec<String>>>,
+    ledger: RefCell<BTreeMap<String, PoolLedger>>,
+    findings: RefCell<BTreeMap<String, Finding>>,
+}
+
+/// the most findings kept, so a host that keeps failing cannot grow the record.
+const MAX_FINDINGS: usize = 100;
+
+/// what a pool's finalisations have written in this process's life.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PoolLedger {
+    /// bundles admitted into the pool's sink by this process.
+    pub written: u32,
+    /// the pool's bundles in its sink as the latest export counted them, or `None`
+    /// before one did.
+    pub bundles: Option<u32>,
+}
+
+/// a finalisation that needs the operator's eye, kept until the container is
+/// removed after a complete export.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Finding {
+    pub export: ExportOutcome,
+    pub removed: bool,
+    pub kept: bool,
+}
+
+/// a retained container as the agent shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RetainedView {
+    pub name: String,
+    pub pool: String,
+    pub bundle_admitted: bool,
+    pub finalising: bool,
+    /// its job still runs.
+    pub running: bool,
 }
 
 impl Default for Retained {
@@ -33,6 +68,8 @@ impl Default for Retained {
             released: Notify::new(),
             forced: watch::Sender::new(false),
             unmanaged: RefCell::new(BTreeMap::new()),
+            ledger: RefCell::new(BTreeMap::new()),
+            findings: RefCell::new(BTreeMap::new()),
         }
     }
 }
@@ -228,6 +265,73 @@ impl Retained {
     #[must_use]
     pub fn forced(&self) -> watch::Receiver<bool> {
         self.forced.subscribe()
+    }
+
+    /// records what a finalisation of `name` did, for the agent's snapshot.
+    pub fn note(&self, record: &DiagnosticRecord, name: &str, finalized: &Finalized) {
+        {
+            let mut ledger = self.ledger.borrow_mut();
+            let pool = ledger.entry(record.pool.clone()).or_default();
+            if matches!(
+                finalized.export,
+                ExportOutcome::Complete | ExportOutcome::Gap
+            ) {
+                pool.written += 1;
+            }
+            if finalized.bundles.is_some() {
+                pool.bundles = finalized.bundles;
+            }
+        }
+        let clean = matches!(
+            finalized.export,
+            ExportOutcome::Complete | ExportOutcome::AlreadyExported
+        ) && finalized.removed
+            && !finalized.kept;
+        let mut findings = self.findings.borrow_mut();
+        if clean {
+            findings.remove(name);
+        } else if findings.contains_key(name) || findings.len() < MAX_FINDINGS {
+            findings.insert(
+                name.to_string(),
+                Finding {
+                    export: finalized.export,
+                    removed: finalized.removed,
+                    kept: finalized.kept,
+                },
+            );
+        }
+    }
+
+    /// the pool's finalisation record.
+    #[must_use]
+    pub fn ledger(&self, pool: &str) -> PoolLedger {
+        self.ledger.borrow().get(pool).copied().unwrap_or_default()
+    }
+
+    /// the finalisations that need the operator's eye, by container.
+    #[must_use]
+    pub fn findings(&self) -> Vec<(String, Finding)> {
+        self.findings
+            .borrow()
+            .iter()
+            .map(|(name, finding)| (name.clone(), *finding))
+            .collect()
+    }
+
+    /// every retained container as the agent shows it.
+    #[must_use]
+    pub fn views(&self) -> Vec<RetainedView> {
+        self.entries
+            .borrow()
+            .iter()
+            .map(|(name, entry)| RetainedView {
+                name: name.clone(),
+                pool: entry.record.pool.clone(),
+                bundle_admitted: entry.bundle_admitted,
+                finalising: entry.finalising,
+                running: entry.run_awaited,
+            })
+            .collect()
     }
 
     /// records the labelled containers a pool with diagnostics off left, replacing

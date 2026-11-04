@@ -15,9 +15,9 @@ use crate::runtime::log::{Log, Masks};
 use crate::runtime::name::stamp;
 
 /// the size at which a log file stops, its last line included.
-const MAX_FILE_BYTES: u64 = 10 * 1024 * 1024;
+pub(crate) const MAX_FILE_BYTES: u64 = 10 * 1024 * 1024;
 
-const KEPT_FILES: usize = 10;
+pub(crate) const KEPT_FILES: usize = 10;
 
 const FULL_LINE: &str = "The log file reached 10 MiB, so nothing more is written to it.\n";
 
@@ -132,10 +132,17 @@ pub struct OpenedLog {
     pub pruning_failed: Option<String>,
 }
 
-/// opens a new log file in `directory`, created private when missing, and removes
+/// a new log file, not yet capped.
+pub(crate) struct RawLog {
+    pub path: PathBuf,
+    pub file: File,
+    pub pruning_failed: Option<String>,
+}
+
+/// creates a new log file in `directory`, created private when missing, and removes
 /// the oldest files beyond the newest 10; on macOS a directory or file that is not
 /// private is an error.
-pub fn open_log_file(directory: &Path) -> Result<OpenedLog, LogFileError> {
+pub(crate) fn create_log_file(directory: &Path) -> Result<RawLog, LogFileError> {
     prepare_directory(directory)?;
     let path = directory.join(format!(
         "{FILE_PREFIX}{}-{}{FILE_SUFFIX}",
@@ -143,10 +150,20 @@ pub fn open_log_file(directory: &Path) -> Result<OpenedLog, LogFileError> {
         std::process::id()
     ));
     let file = create_private(&path)?;
-    Ok(OpenedLog {
+    Ok(RawLog {
         path,
-        file: Capped::new(file),
+        file,
         pruning_failed: prune(directory).err(),
+    })
+}
+
+/// opens a new log file in `directory` that stops at 10 MiB; see [`create_log_file`].
+pub fn open_log_file(directory: &Path) -> Result<OpenedLog, LogFileError> {
+    let raw = create_log_file(directory)?;
+    Ok(OpenedLog {
+        path: raw.path,
+        file: Capped::new(raw.file),
+        pruning_failed: raw.pruning_failed,
     })
 }
 

@@ -15,7 +15,7 @@ use std::time::Duration;
 use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::profile::Profile;
-use crate::runtime::backend::{Backend, DiagnosticRecord, StopRequest};
+use crate::runtime::backend::{Backend, DiagnosticRecord};
 use crate::runtime::clock::Clock;
 use crate::runtime::diagnostic::{self, Flushed};
 use crate::runtime::log::Log;
@@ -26,6 +26,7 @@ use crate::validate::Plan;
 
 use super::protocol::{Incoming, Request, Response};
 use super::restart::{RestartPolicy, Verdict, WINDOW};
+use super::steps;
 
 /// the times of the stop sequence, each counted from the step's own start except
 /// the last.
@@ -205,7 +206,7 @@ enum Reloaded {
 
 /// polls the core, turning a panic into an error carrying its message, so a
 /// panicking core is a failure rather than the end of the process.
-struct CatchPanic<F>(Pin<Box<F>>);
+pub(crate) struct CatchPanic<F>(pub(crate) Pin<Box<F>>);
 
 impl<F: Future> Future for CatchPanic<F> {
     type Output = Result<F::Output, String>;
@@ -729,46 +730,16 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
     }
 
     async fn container_steps(&self, containers: Vec<String>) {
-        let start = tokio::time::Instant::now();
-        tokio::join!(
-            self.ordinary_steps(containers),
-            diagnostic::container_steps(self.backend, self.log, start, self.times.remove_budget)
-        );
+        steps::container_steps(&self.steps(), containers).await;
     }
 
-    /// stops the containers in one call, and removes whatever remains in another; a
-    /// forced removal abandons the stop or skips it, and a failed removal is
-    /// remembered until the instance ends.
-    async fn ordinary_steps(&self, containers: Vec<String>) {
-        if containers.is_empty() {
-            return;
-        }
-        let request = StopRequest {
-            names: containers.clone(),
-            grace: self.times.grace,
-            budget: self.times.stop_budget,
-        };
-        let mut force = self.force.subscribe();
-        tokio::select! {
-            biased;
-            _ = force.wait_for(|forced| *forced) => {
-                self.log.warn("Forced removal: the grace period is skipped.");
-            }
-            stopped = self.backend.stop_containers(&request) => {
-                if let Err(error) = stopped {
-                    self.log
-                        .warn(&format!("Stopping the containers failed: {error}"));
-                }
-            }
-        }
-        if let Err(error) = self
-            .backend
-            .remove_containers(&containers, self.times.remove_budget)
-            .await
-        {
-            self.log
-                .warn(&format!("Removing the containers failed: {error}"));
-            self.containers_removed.set(false);
+    fn steps(&self) -> steps::Steps<'_, B> {
+        steps::Steps {
+            backend: self.backend,
+            log: self.log,
+            times: self.times,
+            force: &self.force,
+            containers_removed: &self.containers_removed,
         }
     }
 }
