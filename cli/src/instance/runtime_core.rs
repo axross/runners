@@ -55,7 +55,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar> RuntimeCore<'a, B, K, R> {
         pools: Vec<PoolSpec>,
         image: &str,
     ) -> Result<Vec<PoolSpec>, CoreFailure> {
-        let admitted = admit_pools(pools, self.log, &self.board);
+        let admitted = admit_pools(pools, self.backend.engine_name(), self.log, &self.board);
         if admitted.is_empty() {
             return Err(failure(NoPoolStartable.to_string(), Ending::NothingToRun));
         }

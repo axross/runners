@@ -188,7 +188,7 @@ pub async fn prepare_pools<B: marshal_cli::runtime::backend::Backend>(
 ) -> Result<Vec<marshal_cli::runtime::pool::PoolSpec>, marshal_cli::runtime::pool::NoPoolStartable>
 {
     use marshal_cli::runtime::pool::{NoPoolStartable, admit_pools, prepare_admitted};
-    let admitted = admit_pools(pools, log, board);
+    let admitted = admit_pools(pools, backend.engine_name(), log, board);
     if admitted.is_empty() {
         return Err(NoPoolStartable);
     }

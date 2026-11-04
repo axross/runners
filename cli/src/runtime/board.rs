@@ -11,7 +11,8 @@ use crate::image::check::{ImageCheck, status_fields};
 /// where a pool is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PoolState {
-    WaitingForDocker,
+    /// waiting for the backend's engine, named as `engine_name` gives it, to answer.
+    WaitingForEngine(&'static str),
     /// its stale containers are being removed and its volumes prepared.
     Preparing,
     Running,
@@ -21,7 +22,7 @@ pub enum PoolState {
 impl fmt::Display for PoolState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::WaitingForDocker => f.write_str("waiting for Docker"),
+            Self::WaitingForEngine(engine) => write!(f, "waiting for {engine}"),
             Self::Preparing => f.write_str("preparing"),
             Self::Running => f.write_str("running"),
             Self::Skipped(reason) => write!(f, "skipped: {reason}"),
@@ -155,7 +156,7 @@ mod tests {
     #[test]
     fn each_pool_and_slot_keeps_its_place_and_its_latest_state() {
         let board = Board::default();
-        board.set_pool("alpha", PoolState::WaitingForDocker);
+        board.set_pool("alpha", PoolState::WaitingForEngine("Docker"));
         board.set_pool("beta", PoolState::Skipped("no token".to_string()));
         board.set_slot("alpha slot 1", SlotState::Registering);
         board.set_pool("alpha", PoolState::Running);
@@ -178,8 +179,12 @@ mod tests {
     #[test]
     fn the_states_read_as_status_prints_them() {
         assert_eq!(
-            PoolState::WaitingForDocker.to_string(),
+            PoolState::WaitingForEngine("Docker").to_string(),
             "waiting for Docker"
+        );
+        assert_eq!(
+            PoolState::WaitingForEngine("Tart").to_string(),
+            "waiting for Tart"
         );
         assert_eq!(PoolState::Preparing.to_string(), "preparing");
         assert_eq!(SlotState::BackingOff.to_string(), "backing off");

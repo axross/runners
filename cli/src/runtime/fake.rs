@@ -175,6 +175,10 @@ impl Backend for FakeBackend {
         self.run_command.unwrap_or("/home/runner/run.sh")
     }
 
+    fn engine_name(&self) -> &'static str {
+        "Docker"
+    }
+
     fn engine_poll_interval(&self) -> Duration {
         self.engine_poll_interval.unwrap_or(Duration::from_secs(5))
     }

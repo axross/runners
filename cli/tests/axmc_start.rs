@@ -261,6 +261,24 @@ fn a_tart_that_does_not_answer_at_start_makes_the_slots_wait_and_they_boot_once_
 }
 
 #[test]
+fn a_pool_waits_for_tart_in_status_until_tart_lists_the_golden_vm() {
+    let host = holding_host(&[linux("linuxone", 1)]);
+    host.tart_script("fail-list", "");
+    let stub = github();
+    let started = host.start(&stub.address);
+    let status = host.wait_for_status("the pool waiting", RUNNING_WITHIN, |status| {
+        status.contains("pool: linuxone: waiting for Tart")
+    });
+    assert!(!status.contains("Docker"), "{status}");
+
+    host.remove_tart_script("fail-list");
+    let status = host.wait_for_status("the job", RUNNING_WITHIN, running(1));
+    assert!(status.contains("pool: linuxone: running"), "{status}");
+    let finished = stop_and_finish(&host, started);
+    assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
+}
+
+#[test]
 fn a_newer_patch_of_tart_and_softnet_runs_with_the_warnings_in_the_log_and_in_status() {
     let host = holding_host(&[linux("linuxone", 1)]);
     host.tart_script("version_output", "2.41.2\n");

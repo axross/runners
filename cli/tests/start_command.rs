@@ -310,6 +310,20 @@ fn stop_on_an_instance_with_no_container_gets_its_answer_and_exits_0() {
 }
 
 #[test]
+fn a_pool_waits_for_docker_in_status_until_docker_answers() {
+    let host = Host::new();
+    host.script("info_failures", "1000");
+    let stub = Stub::start(vec![Reply::status("500 Internal Server Error", "no")]);
+    let started = host.start(&stub);
+    let status = host.wait_for_status(": waiting for Docker", RUNNING_WITHIN);
+    assert!(!status.contains("Tart"), "{status}");
+    let stop = host.client(&["stop"]);
+    assert_eq!(stop.status.code(), Some(0), "{:?}", texts(&stop));
+    let finished = started.finish(Duration::from_secs(5));
+    assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
+}
+
+#[test]
 fn a_start_right_after_a_successful_stop_finds_the_lock_free() {
     let host = Host::new();
     let stub = Stub::start(vec![registered()]);

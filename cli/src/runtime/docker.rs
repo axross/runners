@@ -514,6 +514,10 @@ impl<C: Clock> Backend for DockerBackend<C> {
         RUN_COMMAND
     }
 
+    fn engine_name(&self) -> &'static str {
+        "Docker"
+    }
+
     fn engine_poll_interval(&self) -> Duration {
         DOCKER_POLL_INTERVAL
     }

@@ -1568,7 +1568,8 @@ answer in time.
 
 - `status` waits up to 5 s and prints one `name: value` line per field: `state`;
   `reason`, when stopped; `config`; `profile`; one `pool` line per pool, which is
-  `waiting for Docker`, `preparing`, `running`, or `skipped: <reason>`; one `slot`
+  `waiting for Docker` (`waiting for Tart` on axmc), `preparing`, `running`, or
+  `skipped: <reason>`; one `slot`
   line per slot, which is `registering` (the preparation of its job host and the CPU
   probe included), `backing off`, `held: <reason>`, or `running container <name>`;
   and the image lines under

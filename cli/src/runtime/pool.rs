@@ -288,18 +288,23 @@ fn skip(log: &dyn Log, board: &Board, pool: &PoolSpec, reason: &str) {
     board.set_pool(&pool.name, PoolState::Skipped(reason.to_string()));
 }
 
-/// the first step of preparing the pools, needing no Docker: returns the pools
-/// whose token file reads, skipping the others with a warning; every token read is
-/// masked in `log`.
+/// the first step of preparing the pools, needing no engine: returns the pools
+/// whose token file reads, skipping the others with a warning, and shows them as
+/// waiting for `engine`; every token read is masked in `log`.
 #[must_use]
-pub fn admit_pools(pools: Vec<PoolSpec>, log: &dyn Log, board: &Board) -> Vec<PoolSpec> {
+pub fn admit_pools(
+    pools: Vec<PoolSpec>,
+    engine: &'static str,
+    log: &dyn Log,
+    board: &Board,
+) -> Vec<PoolSpec> {
     let mut admitted = Vec::new();
     for pool in pools {
         match read_token(&pool.token_path) {
             Err(error) => skip(log, board, &pool, &format!("{}: {error}.", pool.path)),
             Ok(token) => {
                 log.mask(&token);
-                board.set_pool(&pool.name, PoolState::WaitingForDocker);
+                board.set_pool(&pool.name, PoolState::WaitingForEngine(engine));
                 admitted.push(pool);
             }
         }
@@ -307,7 +312,7 @@ pub fn admit_pools(pools: Vec<PoolSpec>, log: &dyn Log, board: &Board) -> Vec<Po
     admitted
 }
 
-/// the second step, once Docker answers: removes each admitted pool's stale
+/// the second step, once the engine answers: removes each admitted pool's stale
 /// containers, prepares its volumes, and returns the pools that can run; a pool whose
 /// stale containers cannot be listed, whose labelled one remains, or whose volumes
 /// cannot be prepared is skipped with a warning, and it fails when none is left.

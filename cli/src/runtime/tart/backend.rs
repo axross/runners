@@ -583,6 +583,10 @@ impl<C: Clock> Backend for TartBackend<C> {
         RUN_COMMAND
     }
 
+    fn engine_name(&self) -> &'static str {
+        "Tart"
+    }
+
     fn engine_poll_interval(&self) -> Duration {
         self.timings.tart_poll
     }

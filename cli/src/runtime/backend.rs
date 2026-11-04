@@ -222,6 +222,9 @@ pub trait Backend {
     /// the command a job container runs after the launcher verifies its CPUs.
     fn run_command(&self) -> &str;
 
+    /// what the engine is called where `status` says a pool waits for it.
+    fn engine_name(&self) -> &'static str;
+
     /// how long the core waits between checks while the engine does not answer.
     fn engine_poll_interval(&self) -> Duration;
 
