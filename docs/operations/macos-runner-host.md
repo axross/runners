@@ -133,10 +133,11 @@ defines it, in `runtime::tart`, `golden` and `build::golden`.
   - A golden VM is
     `marshal-golden-linux-g<golden VM version>-c<image contract version>-r<runner version>-<yyyyMMddHHmmss>`.
   - A build VM is `marshal-build-linux-<yyyyMMddHHmmssfff>`.
-  - Only `build` creates and deletes golden and build VMs. Cleanup at `start` matches
-    only the job VMs of configured pools by this exact form, so it never matches a
-    golden VM, a build VM, a VM of a pool that is no longer configured, or a VM
-    `marshal` does not own.
+  - Only `build` creates golden and build VMs and deletes golden VMs, and only `build`
+    and a build VM's own shim delete a build VM. Cleanup at `start` matches only the
+    job VMs of configured pools by this exact form, so it never matches a golden VM,
+    a build VM, a VM of a pool that is no longer configured, or a VM `marshal` does
+    not own.
 - **The golden VM version** is a number in the CLI (`runtime::tart::names`),
   starting at 1. It goes up whenever the base digest, the provisioning steps, the
   launcher or the Docker Engine versions change.

@@ -834,8 +834,8 @@ Tart's default network would reach the LAN, the host and other VMs.
   that job.
 - The filtering rests on a reading of Softnet's source, which already contradicts
   Tart's documentation about host access. The host run therefore probes targets
-  that answer from the Mac, and a VM that reaches any of them stops M1 before its
-  pull request is marked ready, so a plan revision can choose a fallback
+  that answer from the Mac, and a VM that reaches any of them stops the work until
+  the maintainer decides a fallback
   ([#74](https://github.com/axross/runners/issues/74)).
 
 ## The Accepted Host-Facing Surface of a Job VM

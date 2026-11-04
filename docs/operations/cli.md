@@ -708,7 +708,11 @@ it, and a test shows the lock free while a shim lives.
 
 - When `tart run` ends while the pipe is open, the shim relays what Tart printed, its
   standard error and then its standard output, to its own standard output, and exits
-  with Tart's code. It deletes nothing, so the VM is kept for the next start.
+  with Tart's code. It deletes nothing, because the CLI is still there and deletes the
+  VM itself: a job VM when its slot releases it, and a build VM when the build fails
+  (one that shut down cleanly is renamed to the golden name instead). A VM the CLI could
+  not delete is left to the next `start`, for a job VM, or the next `build`, for a build
+  VM.
 - When the pipe closes, the shim stops the VM (`stop --timeout 5` within 8 s, then
   `stop --timeout 0` within 3 s when that fails), deletes it within 4 s, and exits 0.
   It exits 1 when the deletion fails or the 15 s run out. A shim started for a
@@ -2053,8 +2057,11 @@ console close can leave one too. The next `build` removes it.
 | 1    | A refused, invalid, or failed `build`, Docker not answering, or an uncommitted abort |
 | 2    | A usage error                                                                        |
 
-On axmc, exit 0 means the golden VM holds the new image, and exit 1 a refused, failed or
-stopped build that left the golden VM as it was.
+On axmc, exit 0 means the golden VM holds the new image. Exit 1 is a refused, failed or
+stopped build. It deletes its build VM and keeps the previous golden VM, with two
+exceptions: at the exit deadline the build VM is left to its shim or the next build, and
+when the commit is unknown the rename may have made a new golden VM. Stop and failure in
+[The Golden VM Build](#the-golden-vm-build) describes both.
 
 #### The Golden VM Build
 

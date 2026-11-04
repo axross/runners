@@ -203,11 +203,13 @@ uses its native priority label.
   instead. An unbounded read of any other guest call, or a parse that trusts its
   shape, is a finding.
 - **Deletion on every failure path.** Every exit from a slot's cycle after the
-  clone, and from a build after its build VM exists, deletes that VM: an error, a
-  failed probe, a boot failure, a stop, an interrupt and a timeout. A new early
-  return, `?` or `break` between the clone and the deletion is checked for it. The
-  shim deletes the VM when the liveness pipe closes, and no shim or other child
-  inherits the instance lock.
+  clone, and from a build until its rename, deletes that VM within a budget: an
+  error, a failed probe, a boot failure, a stop, an interrupt and a timeout. After
+  the rename the build VM is the golden VM and is not deleted. A new early return,
+  `?` or `break` between the clone and the deletion is checked for it. The shim
+  deletes the VM when the liveness pipe closes, which covers a CLI that ended at the
+  exit deadline or died, and a VM neither deleted is left to the next `start` or
+  `build`. No shim or other child inherits the instance lock.
 - **The Softnet check and rules on every boot.** Every `tart run` follows a Softnet
   file check and a version check, and carries the two Softnet rules from
   [Security](docs/conventions/security.md#softnet-confines-a-job-vms-network) and no
@@ -219,8 +221,9 @@ uses its native priority label.
   carries no `--dir` and no `--rosetta`. Every Tart call sets `TART_NO_AUTO_PRUNE`,
   gets `marshal`'s `PATH`, and has a standard output that is not a terminal.
 - **Names and cleanup stay exact.** Cleanup at `start` matches only the job VMs of
-  configured pools by their name form, and only `build` deletes golden and build
-  VMs. A looser match could delete a VM `marshal` does not own.
+  configured pools by their name form, so it never deletes a golden VM or a build
+  VM. Only `build` deletes golden VMs, and only `build` and a build VM's own shim
+  delete a build VM. A looser match could delete a VM `marshal` does not own.
 - **Pins hold.** The base image is pinned by digest, the current pin is never on
   the retired list, Docker Engine comes from Docker's apt repository at pinned
   versions after the signing key's fingerprint is checked, and the tested Tart and
