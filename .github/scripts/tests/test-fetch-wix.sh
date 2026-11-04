@@ -95,8 +95,10 @@ status=0
 FAKE_PACKAGE_TEXT="$package_text" DOTNET_RECORD="${work}/accepted" \
   PATH="${work}/bin:$PATH" bash "${work}/fetch-wix-edited.sh" "${work}/tools" >"${work}/accepted.out" 2>&1 || status=$?
 check "a package with the pinned SHA-256 is installed" test "$status" -eq 0
+pinned_version="$(sed -n 's/^version="\(.*\)"$/\1/p' "$script")"
+check "the committed version is X.Y.Z" grep -q -E '^[0-9]+\.[0-9]+\.[0-9]+$' <<<"$pinned_version"
 check "dotnet installs the pinned version into the tool directory" \
-  grep -q -F "tool install wix --version 7.0.1 --tool-path ${work}/tools --configfile " "${work}/accepted.args"
+  grep -q -F "tool install wix --version ${pinned_version} --tool-path ${work}/tools --configfile " "${work}/accepted.args"
 check "the tool directory exists after an accepted package" test -e "${work}/tools/wix"
 check "the NuGet.Config clears every source" grep -q '<clear />' "${work}/accepted.config"
 check "the NuGet.Config lists one source" count_is 1 grep -c '<add ' "${work}/accepted.config"

@@ -664,15 +664,15 @@ for tool in notarytool stapler; do
   run_case "xcrun cannot find ${tool}" fail "xcrun cannot find ${tool}" none
 done
 
-echo "-- refusals after the keychain exists --"
 reset_case
 mutate_script="02-keychain.sh"
 mutate_expression='s/^g2_sha256="f/g2_sha256="0/'
-run_case "an embedded intermediate whose SHA-256 differs from the pin (the pin changed)" fail "not the pinned" some
+run_case "an embedded intermediate whose SHA-256 differs from the pin (the pin changed)" fail "not the pinned" none
 reset_case
 mutate_script="02-keychain.sh"
 mutate_expression='s/^g2_base64="MIIEPj/g2_base64="MIIEPk/'
-run_case "an embedded intermediate whose SHA-256 differs from the pin (the certificate changed)" fail "not the pinned" some
+run_case "an embedded intermediate whose SHA-256 differs from the pin (the certificate changed)" fail "not the pinned" none
+echo "-- refusals after the keychain exists --"
 reset_case
 s_application_p12=$'\n'
 run_case "an Application secret that decodes to nothing" fail "application.p12 is empty after decoding its secret" some
