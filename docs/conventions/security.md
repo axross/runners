@@ -357,7 +357,10 @@ record a change to either workflow, to the build call in
   a runner that is discarded afterwards. On Windows it also creates a local user
   outside the Administrators group, runs the check block and the install as that
   user through a secondary logon with its profile loaded, and removes the user at
-  the end. Nothing changes a user right.
+  the end. Nothing changes a user right. The test sets the Windows Installer
+  policy `DisableMSI` to 0 for the run, because the GitHub-hosted Windows Server
+  image blocks a non-elevated per-user install, and restores it at the end. The
+  runner is discarded after the job either way.
   It uses no secret, attests nothing, and adds no action beyond the `actions/*`
   already used. This job and the build legs upload their installer logs, from
   `msiexec /l*v` and `installer -dumplog`, as workflow artifacts kept for 14 days.

@@ -2888,7 +2888,10 @@ exercised only by `verify-macos` in a release run:
 macOS runs under zsh and the system `/bin/bash`; Windows runs under Windows
 PowerShell 5.1. On the Windows leg a standard local user without administrator
 rights then runs the check block and installs the MSI through a secondary logon,
-which is an interactive logon, and the outcome is a `MEASURED:` line.
+which is an interactive logon, and the outcome is a `MEASURED:` line. The test
+sets the Windows Installer policy `DisableMSI` to 0 for that run, because the
+GitHub-hosted Windows Server image blocks a non-elevated per-user install, and
+restores it at the end.
 
 ## Dependencies
 

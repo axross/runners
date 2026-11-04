@@ -14,8 +14,11 @@
     docs/operations/cli.md against the dry run's real MSI, with only gh stubbed,
     then installs the MSI with msiexec /i, runs the installed binary, and runs the
     documented uninstall block. the outcome is printed on lines that start with
-    MEASURED, and the script throws unless every step succeeded. it needs an
-    elevated shell to create the user, and removes the user at the end. it refuses
+    MEASURED, and the script throws unless every step succeeded. the hosted
+    Windows Server image blocks a non-elevated per-user install (msiexec exits
+    1625), so the script prints the Windows Installer policy as found, sets the
+    DisableMSI policy value to 0 for the run, and restores it at the end. it needs
+    an elevated shell to create the user, and removes the user at the end. it refuses
     to run anywhere but a GitHub Actions runner, because it creates and deletes a
     local user and a folder under Public.
 #>
@@ -43,6 +46,8 @@ $Staging = Join-Path $env:PUBLIC 'marshal-standard-user'
 $LogDirectory = Join-Path $env:RUNNER_TEMP 'install-block-logs'
 $MsiName = "marshal-$Version-windows-x64.msi"
 $InstallerAppId = '{000C101C-0000-0000-C000-000000000046}'
+$InstallerPolicyPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer'
+$UserInstallerPolicyPath = 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\Installer'
 $RunTimeoutMilliseconds = 8 * 60 * 1000
 $StatusDllInitFailed = -1073741502
 
@@ -177,6 +182,61 @@ function Save-InstallerLog {
     }
 }
 
+# every value under one policy key, or the fact that the key is absent.
+function Get-PolicyKeyReport {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $key = Get-Item -LiteralPath $Path -ErrorAction SilentlyContinue
+    if ($null -eq $key) { return "$Path (key absent)" }
+    $names = @($key.GetValueNames())
+    if ($names.Count -eq 0) { return "$Path (key present, no values)" }
+    foreach ($name in $names) {
+        $shown = if ($name -eq '') { '(default)' } else { $name }
+        "$Path $shown = $($key.GetValue($name, $null, 'DoNotExpandEnvironmentNames')) ($($key.GetValueKind($name)))"
+    }
+}
+
+# the state of the DisableMSI policy value: Presence is 'absent key', 'absent value' or 'value'.
+function Get-InstallerPolicyState {
+    $key = Get-Item -LiteralPath $InstallerPolicyPath -ErrorAction SilentlyContinue
+    if ($null -eq $key) { return [pscustomobject]@{ Presence = 'absent key'; Data = $null; Kind = $null } }
+    $data = $key.GetValue('DisableMSI', $null, 'DoNotExpandEnvironmentNames')
+    if ($null -eq $data) { return [pscustomobject]@{ Presence = 'absent value'; Data = $null; Kind = $null } }
+    return [pscustomobject]@{ Presence = 'value'; Data = $data; Kind = [string]$key.GetValueKind('DisableMSI') }
+}
+
+function Format-InstallerPolicyState {
+    param([Parameter(Mandatory = $true)]$State)
+    if ($State.Presence -ne 'value') { return $State.Presence }
+    if ($State.Kind -eq 'DWord') { return "$($State.Data)" }
+    return "$($State.Data) ($($State.Kind))"
+}
+
+# the hosted Windows Server image blocks a non-elevated per-user install unless DisableMSI is 0.
+function Enable-InstallerPolicy {
+    $null = New-Item -Path $InstallerPolicyPath -Force
+    $null = New-ItemProperty -LiteralPath $InstallerPolicyPath -Name 'DisableMSI' -PropertyType DWord -Value 0 -Force
+}
+
+# puts the recorded state back: the old data and type, no value, or no key when this script created it.
+function Restore-InstallerPolicy {
+    param([Parameter(Mandatory = $true)]$Before)
+    if ($Before.Presence -eq 'value') {
+        $null = New-ItemProperty -LiteralPath $InstallerPolicyPath -Name 'DisableMSI' -PropertyType $Before.Kind -Value $Before.Data -Force
+    } elseif (Test-Path -LiteralPath $InstallerPolicyPath) {
+        Remove-ItemProperty -LiteralPath $InstallerPolicyPath -Name 'DisableMSI' -ErrorAction SilentlyContinue
+        if ($Before.Presence -eq 'absent key') {
+            $key = Get-Item -LiteralPath $InstallerPolicyPath
+            if ($key.ValueCount -eq 0 -and $key.SubKeyCount -eq 0) { Remove-Item -LiteralPath $InstallerPolicyPath }
+        }
+    }
+    $after = Get-InstallerPolicyState
+    $wanted = Format-InstallerPolicyState -State $Before
+    $found = Format-InstallerPolicyState -State $after
+    Write-Output "restored the Windows Installer policy DisableMSI to: $found (before the run: $wanted)"
+    $keyKept = $Before.Presence -eq 'absent key' -and $after.Presence -eq 'absent value'
+    if ($found -ne $wanted -and -not $keyKept) { throw "DisableMSI reads $found after the restore, not $wanted" }
+}
+
 # the script the standard user runs, under Windows PowerShell 5.1.
 # it writes every step to result.log and ends with a line that starts with RESULT.
 $userScript = @'
@@ -304,6 +364,10 @@ $password = Get-RandomPassword
 $secure = New-Object System.Security.SecureString
 foreach ($character in $password.ToCharArray()) { $secure.AppendChar($character) }
 $secure.MakeReadOnly()
+$policyBefore = $null
+$policyTouched = $false
+$runFailure = $null
+$restoreFailure = $null
 try {
     if (Get-LocalUser -Name $UserName -ErrorAction SilentlyContinue) { Remove-LocalUser -Name $UserName }
     $null = New-LocalUser -Name $UserName -Password $secure -AccountNeverExpires -PasswordNeverExpires -Description 'standard user for the marshal install test'
@@ -326,6 +390,14 @@ try {
 
     # a scheduled task logs on as a batch job, so its token has no INTERACTIVE group, and msiexec could not reach
     # the Windows Installer service from it; a secondary logon is interactive, as a person's logon is.
+    Write-Output '== the Windows Installer policy as found =='
+    Write-Diagnostic "values under $InstallerPolicyPath" -Arguments $InstallerPolicyPath -Gather { param($path) Get-PolicyKeyReport -Path $path }
+    Write-Diagnostic "values under $UserInstallerPolicyPath of $env:USERNAME" -Arguments $UserInstallerPolicyPath -Gather { param($path) Get-PolicyKeyReport -Path $path }
+    $policyBefore = Get-InstallerPolicyState
+    Write-Measured "Windows Installer policy DisableMSI before the standard user run: $(Format-InstallerPolicyState -State $policyBefore); set to 0 for the run (enabled for all applications, as Microsoft documents for Windows client versions with no policy); restored afterwards"
+    $policyTouched = $true
+    Enable-InstallerPolicy
+
     $credential = New-Object System.Management.Automation.PSCredential("$env:COMPUTERNAME\$UserName", $secure)
     $testStart = Get-Date
     $failure = $null
@@ -354,16 +426,32 @@ try {
     Write-Output "process exit code: $exitCode"
     Write-LogonTypeDiagnostic -Account $UserName -Since $testStart
     $ok = ($null -eq $failure) -and $logText.Contains('RESULT: ok')
-    Write-Measured "a standard local user without administrator rights ($UserName, secondary logon with the interactive logon type, not elevated) $(if ($ok) { 'ran the check block, installed the MSI with msiexec /i, ran the installed binary, and ran the uninstall block' } else { 'did not complete the check block, the install, and the uninstall' }); process exit code $exitCode"
+    Write-Measured "a standard local user without administrator rights ($UserName, secondary logon with the interactive logon type, not elevated, with DisableMSI set to 0) $(if ($ok) { 'ran the check block, installed the MSI with msiexec /i, ran the installed binary, and ran the uninstall block' } else { 'did not complete the check block, the install, and the uninstall' }); process exit code $exitCode"
     if ($null -eq $failure -and -not $ok) { $failure = 'the standard user run failed; the check block or the install needs more than a standard user, or the run could not be set up' }
     if ($null -ne $failure) {
         Write-FailureDiagnostic -Account $UserName -Since $testStart
         throw $failure
     }
+} catch {
+    $runFailure = $_
+    throw
 } finally {
+    if ($policyTouched) {
+        try {
+            Restore-InstallerPolicy -Before $policyBefore
+        } catch {
+            $restoreFailure = $_
+            Write-Output "could not restore the Windows Installer policy DisableMSI: $($_.Exception.Message)"
+        }
+    }
     Save-InstallerLog -Source $Staging -Destination $LogDirectory
     if (Get-LocalUser -Name $UserName -ErrorAction SilentlyContinue) { Remove-LocalUser -Name $UserName }
     if (Test-Path -LiteralPath $Staging) { Remove-Item -LiteralPath $Staging -Recurse -Force -ErrorAction SilentlyContinue }
+    # a throw here replaces the failure in flight, so the message carries both.
+    if ($null -ne $restoreFailure) {
+        $original = if ($null -ne $runFailure) { "; the run had failed first: $($runFailure.Exception.Message)" } else { '' }
+        throw "the Windows Installer policy DisableMSI was not restored: $($restoreFailure.Exception.Message)$original"
+    }
 }
 
 # the CI shell wrapper exits with the last native exit code, which a stop that reported "no instance" leaves at 1.
