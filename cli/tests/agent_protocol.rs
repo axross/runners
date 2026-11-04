@@ -356,7 +356,7 @@ async fn a_connection_that_stops_reading_is_closed_and_costs_no_thread() {
     let rig = &rig;
     let (_, (before, during)) = rig
         .drive(Launch::Stopped, |conn| async move {
-            let before = support::agent::threads();
+            let before = support::agent::runtime_threads();
             let mut stalled = Vec::new();
             for _ in 0..8 {
                 let mut raw = Raw::hello(&conn.roots).await;
@@ -372,7 +372,7 @@ async fn a_connection_that_stops_reading_is_closed_and_costs_no_thread() {
                 }
                 tokio::time::sleep(Duration::from_millis(15)).await;
             }
-            let during = support::agent::threads();
+            let during = support::agent::runtime_threads();
             // the agent still answers every other connection
             conn.status().await;
             conn.ok("quit").await;
@@ -381,10 +381,42 @@ async fn a_connection_that_stops_reading_is_closed_and_costs_no_thread() {
         })
         .await;
     if let (Some(before), Some(during)) = (before, during) {
-        assert!(
-            during <= before,
-            "{} threads are held for stalled readers",
-            during - before
+        assert_eq!(
+            (before, during),
+            (0, 0),
+            "threads are held for stalled readers"
         );
     }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_client_line_over_16_kib_without_a_line_break_closes_the_connection() {
+    let rig = Rig::new(ONE_POOL);
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Stopped, |conn| async move {
+            let long = vec![b'x'; 16 * 1024 + 1];
+
+            // as the first line
+            let mut first = Raw::open(&conn.roots).await;
+            first.send_bytes(&long).await;
+            assert!(first.closed_within(Duration::from_secs(5)).await);
+
+            // and after the handshake
+            let mut later = Raw::hello(&conn.roots).await;
+            later.send_bytes(&long).await;
+            assert!(later.closed_within(Duration::from_secs(5)).await);
+
+            // a line of exactly 16 KiB with its line break is read as a line
+            let mut exact = Raw::hello(&conn.roots).await;
+            let mut line = vec![b'x'; 16 * 1024 - 1];
+            line.push(b'\n');
+            exact.send_bytes(&line).await;
+            assert_eq!(
+                exact.next().await.unwrap()["error"]["code"],
+                "invalid_request"
+            );
+            conn.ok("quit").await;
+        })
+        .await;
 }

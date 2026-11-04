@@ -389,6 +389,13 @@ impl Raw {
         self.writer.flush().await.unwrap();
     }
 
+    /// writes `bytes` as they are, with no line break.
+    pub async fn send_bytes(&mut self, bytes: &[u8]) {
+        use tokio::io::AsyncWriteExt;
+        self.writer.write_all(bytes).await.unwrap();
+        self.writer.flush().await.unwrap();
+    }
+
     pub async fn send(&mut self, message: &Value) {
         self.send_text(&message.to_string()).await;
     }
@@ -446,13 +453,20 @@ impl Raw {
     }
 }
 
-/// the threads of this process, where `/proc` says (Linux).
-pub fn threads() -> Option<usize> {
-    let status = std::fs::read_to_string("/proc/self/status").ok()?;
-    status
-        .lines()
-        .find_map(|line| line.strip_prefix("Threads:"))
-        .and_then(|count| count.trim().parse().ok())
+/// the runtime's worker and blocking-pool threads of this process, where `/proc`
+/// says (Linux); the test harness's own threads are not counted, and a current-thread
+/// runtime has none of these, so a thread an agent spawned per connection would show.
+pub fn runtime_threads() -> Option<usize> {
+    let tasks = std::fs::read_dir("/proc/self/task").ok()?;
+    let mut count = 0;
+    for task in tasks {
+        let name = std::fs::read_to_string(task.ok()?.path().join("comm")).ok()?;
+        // the kernel keeps 15 characters of a thread's name
+        if name.starts_with("tokio-runtime-w") {
+            count += 1;
+        }
+    }
+    Some(count)
 }
 
 /// a configuration of `pools` pools of `slots` slots each, one repository apiece,

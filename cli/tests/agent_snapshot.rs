@@ -133,7 +133,7 @@ async fn a_connection_whose_reader_stalls_on_big_events_is_closed_by_the_write_t
     let (_, (before, during, closed)) = rig
         .drive(Launch::Running, |conn| async move {
             conn.until("all runners up", |s| s.runners_up == 640).await;
-            let before = support::agent::threads();
+            let before = support::agent::runtime_threads();
             let mut stalled = Vec::new();
             for _ in 0..4 {
                 let mut raw = Raw::hello(&conn.roots).await;
@@ -149,7 +149,7 @@ async fn a_connection_whose_reader_stalls_on_big_events_is_closed_by_the_write_t
                 }
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
-            let during = support::agent::threads();
+            let during = support::agent::runtime_threads();
             conn.status().await;
             // after the write timer, the agent has dropped them: reading drains to the end
             let mut closed = 0;
@@ -165,11 +165,7 @@ async fn a_connection_whose_reader_stalls_on_big_events_is_closed_by_the_write_t
         .await;
     assert_eq!(closed, 4, "every stalled connection was closed");
     if let (Some(before), Some(during)) = (before, during) {
-        assert!(
-            during <= before,
-            "{} threads held for stalled readers",
-            during - before
-        );
+        assert_eq!((before, during), (0, 0), "threads held for stalled readers");
     }
 }
 

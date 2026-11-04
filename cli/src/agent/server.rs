@@ -510,3 +510,20 @@ impl<W: AsyncWrite + Unpin> Session<'_, W> {
         Ok(serde_json::json!({ "topic": TOPIC_STATE }))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_default_limits_are_the_documented_ones() {
+        let limits = Limits::default();
+        assert_eq!(limits.handshake, Duration::from_secs(5));
+        assert_eq!(limits.idle, Duration::from_secs(60));
+        assert_eq!(limits.write, Duration::from_secs(5));
+        assert_eq!(limits.heartbeat, Duration::from_secs(15));
+        assert_eq!(limits.coalesce, Duration::from_millis(250));
+        assert_eq!(limits.connections, 16);
+        assert_eq!(limits.subscriptions, 4);
+    }
+}
