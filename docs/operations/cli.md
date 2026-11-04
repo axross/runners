@@ -2047,7 +2047,9 @@ does these in order:
    gives it 60 s, within 90 s, then the wait for `tart run` to end, then
    `tart rename` to the golden name,
    `marshal-golden-linux-g<golden VM version>-c<image contract version>-r<runner version>-<yyyyMMddHHmmss>`
-   with the build time. **The rename is the commit.**
+   with the build time: the time taken just before the in-VM `docker build`, the same
+   value as the temporary tag's and the `built` label's, not the start of the build.
+   **The rename is the commit.**
 8. **After the commit.** It deletes every other golden VM, whatever its versions, and
    removes from Tart's cache each image named in `golden::pins::RETIRED_BASE_PINS`, with
    `tart delete`; the current pin is never deleted, and the list never holds it. A

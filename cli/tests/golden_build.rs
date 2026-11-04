@@ -16,9 +16,11 @@ use std::time::{Duration, Instant};
 
 use marshal_cli::golden::pins::{BASE_REFERENCE, DOCKER_KEY_FINGERPRINT, RETIRED_BASE_PINS};
 use marshal_cli::golden::steps::LAUNCHER;
+use marshal_cli::image::contract::BUILT_LABEL;
 use marshal_cli::image::contract::CONTRACT_VERSION;
+use marshal_cli::runtime::tart::VmLauncher;
 use marshal_cli::runtime::tart::names::{GoldenVmName, parse_build_vm_name};
-use support::golden::{IMAGE, REAL_LISTING, Rig, big_stack, old_golden};
+use support::golden::{IMAGE, OLD_BUILT_SECONDS, REAL_LISTING, Rig, big_stack, old_golden};
 use support::host::{send_signal, texts};
 
 const LEFTOVER: &str = "marshal-build-linux-20240101000000000";
@@ -299,6 +301,21 @@ fn a_failed_boot_deletes_the_build_vm_and_keeps_the_old_golden_vm() {
 }
 
 #[test]
+fn a_shim_that_cannot_be_started_is_a_start_failure_not_an_unanswered_agent() {
+    big_stack(|| async {
+        let rig = fails(
+            |rig| rig.launcher = VmLauncher::Shim("/nonexistent/marshal-test-shim".into()),
+            "boot failure: tart run for the build VM",
+        )
+        .await;
+        let error = rig.run().await.unwrap_err();
+        assert!(error.contains("could not be started"), "{error}");
+        assert!(!error.contains("did not answer"), "{error}");
+        assert!(rig.position("exec ").is_none(), "{:?}", rig.calls());
+    });
+}
+
+#[test]
 fn a_failed_image_build_deletes_the_build_vm_and_keeps_the_old_golden_vm() {
     big_stack(|| async {
         fails(
@@ -456,6 +473,146 @@ fn a_stop_after_the_rename_keeps_the_new_golden_vm_and_ends_the_cleanup() {
             "{:?}",
             rig.log.lines()
         );
+    });
+}
+
+/// runs the build with a `tart rename` that hangs, calls `while_hanging` with the golden
+/// name the rename was given, then stops the build, and returns how the build ended.
+async fn stopped_during_a_hanging_rename(
+    rig: &Rig,
+    while_hanging: impl FnOnce(&Rig, &str),
+) -> Result<(), String> {
+    rig.fake.script("hang-rename", "");
+    let (stop, receiver) = tokio::sync::watch::channel(None);
+    let stopper = async {
+        rig.wait_for_call("rename ", Duration::from_secs(10)).await;
+        let target = rig.calls_starting("rename ")[0]
+            .split(' ')
+            .nth(2)
+            .unwrap()
+            .to_string();
+        while_hanging(rig, &target);
+        stop.send_replace(Some(tokio::time::Instant::now()));
+    };
+    let (outcome, ()) = tokio::join!(rig.run_until(receiver), stopper);
+    outcome
+}
+
+#[test]
+fn a_stop_during_a_rename_that_did_not_take_effect_deletes_the_build_vm_and_keeps_the_old_golden_vm()
+ {
+    big_stack(|| async {
+        let rig = Rig::new();
+        let error = stopped_during_a_hanging_rename(&rig, |_, _| {})
+            .await
+            .unwrap_err();
+        assert!(error.contains("the build was stopped"), "{error}");
+        assert_eq!(rig.build_vms(), Vec::<String>::new());
+        assert_eq!(rig.golden_vms(), [old_golden()]);
+    });
+}
+
+#[test]
+fn a_stop_during_a_rename_that_took_effect_keeps_the_new_golden_vm() {
+    big_stack(|| async {
+        let rig = Rig::new();
+        stopped_during_a_hanging_rename(&rig, |rig, golden| {
+            rig.fake.seed(&[
+                (&old_golden(), "stopped", "local"),
+                (golden, "stopped", "local"),
+            ]);
+        })
+        .await
+        .unwrap();
+        let golden = rig.golden_vms();
+        assert_eq!(golden.len(), 2, "{golden:?}");
+        assert_eq!(rig.build_vms(), Vec::<String>::new());
+    });
+}
+
+#[test]
+fn a_stop_during_a_rename_with_no_listing_is_a_commit_unknown_that_keeps_the_build_vm() {
+    big_stack(|| async {
+        let rig = Rig::new();
+        let error = stopped_during_a_hanging_rename(&rig, |rig, _| {
+            rig.fake.script("fail-list", "listing went wrong");
+        })
+        .await
+        .unwrap_err();
+        assert!(error.starts_with("commit unknown:"), "{error}");
+        assert_eq!(rig.build_vms().len(), 1, "{:?}", rig.build_vms());
+    });
+}
+
+#[test]
+fn the_rename_client_has_ended_before_the_listing_that_decides_the_commit() {
+    big_stack(|| async {
+        let rig = Rig::new();
+        rig.fake.script("hang-rename", "");
+        let (stop, receiver) = tokio::sync::watch::channel(None);
+        let stopper = async {
+            rig.wait_for_call("rename ", Duration::from_secs(10)).await;
+            let rename = rig.position("rename ").unwrap();
+            let listings = rig.calls_starting("list ").len();
+            rig.fake.script("hang-list", "");
+            stop.send_replace(Some(tokio::time::Instant::now()));
+            while rig.calls_starting("list ").len() == listings {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            rig.fake.ended_within(rename, Duration::from_secs(2))
+        };
+        let (outcome, rename_ended) = tokio::join!(rig.run_until(receiver), stopper);
+        assert!(
+            rename_ended,
+            "the rename was still running during the listing"
+        );
+        assert!(outcome.unwrap_err().starts_with("commit unknown:"));
+    });
+}
+
+/// the first `docker build` the fake engine in the VMs received, its `built` label.
+fn built_label_of(rig: &Rig) -> u64 {
+    let directory = rig.fake.dir.path().join("docker");
+    let mut number = 0;
+    while let Ok(arguments) =
+        std::fs::read_to_string(directory.join(format!("inv-{number:06}.argv")))
+    {
+        let words: Vec<&str> = arguments.split('\0').collect();
+        if words.first() == Some(&"build") {
+            let prefix = format!("{BUILT_LABEL}=");
+            return words
+                .iter()
+                .find_map(|word| word.strip_prefix(&prefix))
+                .unwrap()
+                .parse()
+                .unwrap();
+        }
+        number += 1;
+    }
+    panic!("the engine received no docker build");
+}
+
+#[test]
+fn the_golden_vm_is_stamped_with_the_time_of_the_image_build_not_of_the_start() {
+    big_stack(|| async {
+        let mut rig = Rig::new();
+        rig.timings.engine_wait = Duration::from_secs(20);
+        // the engine does not answer for about 2.5 s, as a slow provisioning does
+        rig.docker_script("info_failures", "50");
+        let started = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        rig.run().await.unwrap();
+        let built = built_label_of(&rig);
+        assert!(built >= started + 2, "{built} {started}");
+        let golden = rig
+            .golden_vms()
+            .into_iter()
+            .map(|name| GoldenVmName::parse(&name).unwrap())
+            .find(|golden| golden.built_seconds != OLD_BUILT_SECONDS)
+            .unwrap();
+        assert_eq!(golden.built_seconds, built);
     });
 }
 

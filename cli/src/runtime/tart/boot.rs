@@ -31,6 +31,8 @@ pub struct AgentWait {
 /// why the wait for a VM's guest agent ended without an answer.
 #[derive(Debug)]
 pub enum BootEnd {
+    /// `tart run` could not be started at all, the text saying why.
+    NotStarted(String),
     /// `tart run` ended first.
     Ended(Captured),
     /// the deadline came, and the last question's error is the text.
@@ -64,11 +66,17 @@ pub async fn wait_for_agent<C: Clock>(
     }
 }
 
-/// the text of a boot that failed; `kind` is [`JOB_VM`] or [`BUILD_VM`]. A locked
-/// login keychain is the documented cause, so it names the host document's section.
+/// the text of a boot that failed; `kind` is [`JOB_VM`] or [`BUILD_VM`]. A boot that
+/// started and failed names the host document's section, because a locked login
+/// keychain is the documented cause.
 #[must_use]
 pub fn boot_failure_text(kind: &str, vm: &str, end: &BootEnd) -> String {
     let cause = match end {
+        BootEnd::NotStarted(text) => {
+            return format!(
+                "boot failure: tart run for the {kind} {vm} could not be started ({text})"
+            );
+        }
         BootEnd::Ended(ended) => {
             let code = ended.code.map_or_else(
                 || "no exit code".to_string(),

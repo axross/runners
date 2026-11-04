@@ -192,9 +192,9 @@ impl GoldenBuild<'_> {
         .await?;
         self.boot(session, &vm).await?;
         self.provision(&vm).await?;
-        self.build_runner_image(&vm, now).await?;
+        let built = self.build_runner_image(&vm).await?;
         self.shut_down(session, &vm).await?;
-        let golden = GoldenVmName::current(now)
+        let golden = GoldenVmName::current(built)
             .ok_or_else(|| Abort::Failed("the image definition declares no runner version".into()))?
             .to_string();
         self.commit(session, &vm, &golden).await?;
@@ -276,7 +276,7 @@ impl GoldenBuild<'_> {
             Abort::Failed(boot_failure_text(
                 BUILD_VM,
                 vm,
-                &BootEnd::NoAnswer(text_of(&error)),
+                &BootEnd::NotStarted(text_of(&error)),
             ))
         })?;
         let held = session.held.insert(held);
@@ -362,9 +362,12 @@ impl GoldenBuild<'_> {
 
     /// builds the runner image under the temporary tag as axpc does, checks its contract
     /// label, and only then tags it as the configured name. The VM is new, so there are
-    /// no earlier temporary tags to remove and no old images to prune.
-    async fn build_runner_image(&self, vm: &str, now: SystemTime) -> Result<(), Abort> {
+    /// no earlier temporary tags to remove and no old images to prune. Returns the time
+    /// taken just before the build, which the temporary tag and the `built` label carry
+    /// and the golden VM's name must carry too, so its freshness counts from the image.
+    async fn build_runner_image(&self, vm: &str) -> Result<SystemTime, Abort> {
         self.guard(self.wait_for_engine(vm)).await?;
+        let now = SystemTime::now();
         let temporary = temporary_tag(self.image, now);
         self.log.info(&format!(
             "Building {} in the build VM under the temporary tag {temporary}.",
@@ -396,12 +399,12 @@ impl GoldenBuild<'_> {
             })
             .await;
         match removed {
-            Ok(_) => Ok(()),
+            Ok(_) => Ok(now),
             Err(Abort::Failed(reason)) => {
                 self.log.warn(&format!(
                     "The temporary tag {temporary} could not be removed ({reason})."
                 ));
-                Ok(())
+                Ok(now)
             }
             Err(other) => Err(other),
         }
@@ -522,14 +525,16 @@ impl GoldenBuild<'_> {
         self.log
             .info(&format!("Renaming the build VM {vm} to {golden}."));
         let timings = self.timings;
-        let mut rename = pin!(self.client.rename(vm, golden));
-        let finished = tokio::select! {
-            biased;
-            done = &mut rename => Some(done),
-            at = self.stopped() => {
-                tokio::time::timeout_at(at + timings.commit_grace_after_stop, &mut rename)
-                    .await
-                    .ok()
+        let finished = {
+            let mut rename = pin!(self.client.rename(vm, golden));
+            tokio::select! {
+                biased;
+                done = &mut rename => Some(done),
+                at = self.stopped() => {
+                    tokio::time::timeout_at(at + timings.commit_grace_after_stop, &mut rename)
+                        .await
+                        .ok()
+                }
             }
         };
         match finished {
@@ -546,6 +551,7 @@ impl GoldenBuild<'_> {
     }
 
     /// after a rename cut short, whether the golden name exists says if it committed.
+    /// The `tart rename` client has ended by now, so the listing is not racing it.
     async fn decide_commit(
         &self,
         session: &mut Session,
