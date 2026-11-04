@@ -893,7 +893,10 @@ keeps its reason in the snapshot, listed `stopped`.
 
 The agent ends by itself when the file it started from is moved, renamed, replaced
 or deleted, so it never goes on running a program that is no longer the installed
-one. It looks once a second and ends within 5 s, after the same stop sequence as
+one. It tells the file by its size, its times and its identity on the volume (device
+and inode on Unix; volume serial number and file index on Windows, read through a
+handle opened for no access with every share mode, so neither the running program nor
+an installer is blocked). It looks once a second and ends within 5 s, after the same stop sequence as
 `quit`; the `ending` message names the reason `executable_changed`, where a `quit`
 names `quit`. The agent does not handle a sign-out or a shutdown: it gets no event
 for them, as `start` gets none on Windows, and the next agent removes what they left.
