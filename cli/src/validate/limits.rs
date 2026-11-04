@@ -3,6 +3,7 @@
 use crate::json::Value;
 
 use super::fields::Errors;
+use super::problem::{KeyPath, Kind};
 
 pub const DEFAULT_CPUS: f64 = 2.0;
 pub const MAX_CPUS: f64 = 64.0;
@@ -28,43 +29,39 @@ pub fn bounded_integer(value: &Value, max: u32) -> Option<u32> {
         .filter(|n| (1..=max).contains(n))
 }
 
-/// reads an integer field with [`bounded_integer`], recording `<path>: must be an
-/// integer from 1 to <max>` when it is not one.
+/// reads an integer field with [`bounded_integer`], recording that it must be an
+/// integer from 1 to `max` when it is not one.
 pub fn read_bounded_integer(
     value: &Value,
-    path: &str,
+    path: &KeyPath,
     max: u32,
     errors: &mut Errors,
 ) -> Option<u32> {
     let integer = bounded_integer(value, max);
     if integer.is_none() {
-        errors.add(format!("{path}: must be an integer from 1 to {max}"));
+        errors.add(path.clone(), Kind::MustBeIntegerUpTo(max));
     }
     integer
 }
 
 /// reads a CPU count above 0 and at most 64 and large enough that its text form is
 /// not 0, which Docker reads as no limit, recording why it is unusable.
-pub fn cpu_count(value: &Value, path: &str, errors: &mut Errors) -> Option<f64> {
+pub fn cpu_count(value: &Value, path: &KeyPath, errors: &mut Errors) -> Option<f64> {
     let Value::Number(number) = value else {
-        errors.add(format!("{path}: {RANGE_PROBLEM}"));
+        errors.add(path.clone(), Kind::CpuCountOutOfRange);
         return None;
     };
     let cpus = number.as_f64();
     if cpus.is_nan() || cpus <= 0.0 || cpus > MAX_CPUS {
-        errors.add(format!("{path}: {RANGE_PROBLEM}"));
+        errors.add(path.clone(), Kind::CpuCountOutOfRange);
         return None;
     }
     if nanos(cpus) == 0 {
-        errors.add(format!(
-            "{path}: {RANGE_PROBLEM}, and large enough not to be written as 0, which Docker reads as no limit"
-        ));
+        errors.add(path.clone(), Kind::CpuCountRoundsToZero);
         return None;
     }
     Some(cpus)
 }
-
-const RANGE_PROBLEM: &str = "must be a number greater than 0 and at most 64";
 
 /// returns the CPU count in billionths, rounded half away from zero at nine decimals
 /// on its 15 significant digits, which differs from Rust's own rounding.

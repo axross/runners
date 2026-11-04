@@ -15,13 +15,17 @@ pub struct Plan {
 /// one target repository's pool.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Entry {
-    /// where the entry sits in the file, such as `repositories[0]`.
+    /// the entry's position among the file's entries, counting from 0.
+    pub index: usize,
+    /// where the entry sits in the file, in the reader's path form, such as
+    /// `repositories[0]`.
     pub path: String,
     pub owner: String,
     pub repository: String,
     pub name: String,
     pub slots: u32,
-    pub token_path: String,
+    /// the token file's path, for a format that has one.
+    pub token_path: Option<String>,
     pub labels: Vec<String>,
     pub cpus: f64,
     pub memory_gb: u32,

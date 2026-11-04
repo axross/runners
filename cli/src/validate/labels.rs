@@ -8,23 +8,26 @@ use crate::profile::{Os, Profile};
 
 use super::fields::{Errors, Field};
 use super::patterns;
+use super::problem::{Key, KeyPath, Kind};
 
 /// returns the registration labels: the platform labels followed by the entry's own,
 /// or the platform labels and the routing label when the field is absent or empty;
 /// `None` after recording why a present list is unusable.
 pub fn registration_labels(
     field: &Field,
-    path: &str,
+    entry_path: &KeyPath,
+    routing_label: &str,
     profile: Profile,
     os: Option<Os>,
     errors: &mut Errors,
 ) -> Option<Vec<String>> {
+    let path = entry_path.key(Key::Labels);
     let platform = profile.platform_labels(os);
     let defaults = || -> Vec<String> {
         platform
             .iter()
             .copied()
-            .chain([profile.routing_label()])
+            .chain([routing_label])
             .map(str::to_string)
             .collect()
     };
@@ -32,7 +35,7 @@ pub fn registration_labels(
         return Some(defaults());
     };
     let Value::Array(items) = value else {
-        errors.add(format!("{path}.labels: must be a list of labels"));
+        errors.add(path, Kind::MustBe("a list of labels"));
         return None;
     };
     if items.is_empty() {
@@ -46,19 +49,17 @@ pub fn registration_labels(
         match item {
             Value::String(label) if patterns::is_label(label) => {
                 if let Some(problem) = platform_problem(label, profile, os) {
-                    errors.add(format!("{path}.labels: {problem}"));
+                    errors.add(path.clone(), problem);
                     valid = false;
                 } else if seen.contains(&fold::lowercase(label)) {
-                    errors.add(format!("{path}.labels: duplicate label '{label}'"));
+                    errors.add(path.clone(), Kind::DuplicateLabel(label.clone()));
                     valid = false;
                 } else {
                     labels.push(label.clone());
                 }
             }
             _ => {
-                errors.add(format!(
-                    "{path}.labels: each label must be a string of letters, digits and . _ : / - starting with a letter or digit"
-                ));
+                errors.add(path.clone(), Kind::LabelShape);
                 valid = false;
             }
         }
@@ -78,24 +79,20 @@ pub fn registration_labels(
 
 /// says why a label that matches the label pattern is a platform label the pool
 /// must not list, or `None` when it is an ordinary label.
-fn platform_problem(label: &str, profile: Profile, os: Option<Os>) -> Option<String> {
+fn platform_problem(label: &str, profile: Profile, os: Option<Os>) -> Option<Kind> {
     let is = |candidates: &[&str]| {
         candidates
             .iter()
             .any(|candidate| fold::eq_ascii(candidate, label))
     };
     if is(profile.platform_labels(os)) {
-        return Some(format!(
-            "'{label}' is always added, so list only non-platform labels"
-        ));
+        return Some(Kind::PlatformLabel(label.to_string()));
     }
     if !is(profile.foreign_platform_labels()) {
         return None;
     }
-    Some(match os {
-        Some(os) => format!(
-            "'{label}' is a platform label that a {os} pool on {profile} cannot provide, so list only non-platform labels"
-        ),
-        None => format!("'{label}' is a platform label, so list only non-platform labels"),
+    Some(Kind::ForeignPlatformLabel {
+        label: label.to_string(),
+        os,
     })
 }

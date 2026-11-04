@@ -7,11 +7,14 @@
 mod budget;
 mod entry;
 mod fields;
+mod json_reader;
 mod labels;
 mod limits;
 mod paths;
 pub(crate) mod patterns;
 mod plan;
+mod problem;
+mod reader;
 mod uniqueness;
 mod volumes;
 
@@ -23,9 +26,12 @@ use crate::json::{self, Value};
 use crate::profile::Profile;
 
 pub use budget::{MAX_MACOS_VMS, Usage, usage};
+pub use json_reader::JsonReader;
 pub use limits::{format_cpu_count, format_nanos};
 pub use paths::is_inside_checkout;
 pub use plan::{Budget, Entry, Plan, PlannedVolume};
+pub use problem::{Key, KeyPath, Kind, Location, Problem, Segment};
+pub use reader::Reader;
 
 use fields::{Errors, Field};
 
@@ -61,6 +67,7 @@ struct RootFields {
 
 struct Context<'a> {
     profile: Profile,
+    reader: &'a dyn Reader,
     checkout: Option<&'a Path>,
     errors: Errors,
     checkout_rule_skipped: bool,
@@ -70,6 +77,17 @@ struct Context<'a> {
 /// that private directories must lie outside, when one is known.
 #[must_use]
 pub fn validate(bytes: &[u8], profile: Profile, checkout: Option<&Path>) -> Validation {
+    validate_with(bytes, profile, &JsonReader::new(profile), checkout)
+}
+
+/// validates JSON bytes under the rules the reader supplies; the problems are worded
+/// by the reader.
+fn validate_with(
+    bytes: &[u8],
+    profile: Profile,
+    reader: &dyn Reader,
+    checkout: Option<&Path>,
+) -> Validation {
     let root = match json::parse(bytes) {
         Ok(root) => root,
         Err(error) => {
@@ -81,13 +99,14 @@ pub fn validate(bytes: &[u8], profile: Profile, checkout: Option<&Path>) -> Vali
     };
     let mut cx = Context {
         profile,
+        reader,
         checkout,
         errors: Errors::default(),
         checkout_rule_skipped: false,
     };
     let outcome = match read_root(&root, &mut cx) {
         Some(plan) => Ok(plan),
-        None => Err(Failure::Invalid(cx.errors.into_vec())),
+        None => Err(Failure::Invalid(cx.errors.render(reader))),
     };
     Validation {
         outcome,
@@ -99,7 +118,7 @@ fn read_root(root: &Value, cx: &mut Context) -> Option<Plan> {
     let profile = cx.profile;
     let root = fields::read_object::<RootFields>(
         root,
-        "configuration",
+        &KeyPath::root(),
         profile.root_fields(),
         &mut cx.errors,
     )?;
@@ -127,20 +146,21 @@ fn read_root(root: &Value, cx: &mut Context) -> Option<Plan> {
 /// reads the image name: required on axpc, optional on axmc, where its use is
 /// undecided, and checked the same way where present.
 fn read_image_name(image_name: &Field, cx: &mut Context) -> Option<String> {
+    let path = KeyPath::root().key(Key::ImageName);
     let expectation = "a local Docker image name with a tag, such as name:tag";
     if cx.profile == Profile::Axmc {
         return match image_name.get() {
             None => None,
             Some(Value::String(name)) if patterns::is_image_name(name) => Some(name.clone()),
             Some(_) => {
-                cx.errors.add(format!("imageName: must be {expectation}"));
+                cx.errors.add(path, Kind::MustBe(expectation));
                 None
             }
         };
     }
     fields::string(
         image_name,
-        "imageName",
+        &path,
         &mut cx.errors,
         patterns::is_image_name,
         expectation,
@@ -149,20 +169,20 @@ fn read_image_name(image_name: &Field, cx: &mut Context) -> Option<String> {
 }
 
 fn read_repositories(repositories: &Field, cx: &mut Context) -> Vec<Entry> {
+    let path = KeyPath::root().key(Key::Repositories);
     let mut entries = Vec::new();
-    let Some(value) = fields::required(repositories, "repositories", &mut cx.errors) else {
+    let Some(value) = fields::required(repositories, &path, &mut cx.errors) else {
         return entries;
     };
     let Value::Array(nodes) = value else {
-        cx.errors.add("repositories: must be a list");
+        cx.errors.add(path, Kind::MustBe("a list"));
         return entries;
     };
     if nodes.is_empty() {
-        cx.errors
-            .add("repositories: must list at least one repository");
+        cx.errors.add(path, Kind::NoRepositories);
     }
     for (index, node) in nodes.iter().enumerate() {
-        if let Some(entry) = entry::read_entry(node, &format!("repositories[{index}]"), cx) {
+        if let Some(entry) = entry::read_entry(node, index, cx) {
             entries.push(entry);
         }
     }
@@ -177,6 +197,7 @@ mod tests {
     use serde::de::{self, Visitor};
 
     use crate::de::{Deserializer, Error};
+    use crate::profile::Os;
 
     use super::*;
 
@@ -270,6 +291,106 @@ mod tests {
         reads_any_value::<entry::EntryFields>();
         reads_any_value::<budget::BudgetFields>();
         reads_any_value::<volumes::VolumeFields>();
+    }
+
+    /// a reader with another format's answers, to show the rule set takes them from
+    /// the reader and leaves the wording to it.
+    struct OtherFormat;
+
+    impl Reader for OtherFormat {
+        fn routing_label(&self) -> &str {
+            "custom"
+        }
+
+        fn may_omit_os_and_volumes(&self) -> bool {
+            true
+        }
+
+        fn applies_token_path_rules(&self) -> bool {
+            false
+        }
+
+        fn entry_path(&self, index: usize) -> String {
+            format!("pool[{index}]")
+        }
+
+        fn locate(&self, path: &KeyPath, _kind: &Kind) -> Option<Location> {
+            Some(Location {
+                line: path.segments().len(),
+            })
+        }
+
+        fn render(&self, problem: &Problem) -> String {
+            let line = problem.location.map_or(0, |location| location.line);
+            format!("line {line}: {:?}", problem.kind)
+        }
+    }
+
+    fn validate_other_format(text: &str, profile: Profile) -> Validation {
+        validate_with(text.as_bytes(), profile, &OtherFormat, None)
+    }
+
+    #[test]
+    fn a_reader_decides_the_routing_label_and_what_a_pool_may_omit() {
+        let axpc = validate_other_format(
+            r#"{ "imageName": "image:tag", "repositories": [
+                { "owner": "o", "repository": "r", "name": "a", "slots": 1 }] }"#,
+            Profile::Axpc,
+        );
+        let plan = axpc.outcome.unwrap();
+        let entry = plan.entries.first().unwrap();
+        assert!(entry.volumes.is_empty());
+        assert_eq!(entry.token_path, None);
+        assert_eq!(entry.path, "pool[0]");
+        assert_eq!(entry.labels.last().map(String::as_str), Some("custom"));
+
+        let axmc = validate_other_format(
+            r#"{ "budget": { "cpus": 4, "memoryGb": 8, "diskGb": 40 }, "repositories": [
+                { "owner": "o", "repository": "r", "name": "a", "slots": 1, "diskGb": 40 }] }"#,
+            Profile::Axmc,
+        );
+        let plan = axmc.outcome.unwrap();
+        assert_eq!(plan.entries.first().unwrap().os, Some(Os::Linux));
+    }
+
+    #[test]
+    fn pools_of_a_reader_without_token_paths_share_a_token_file_freely() {
+        let found = validate_other_format(
+            r#"{ "imageName": "image:tag", "repositories": [
+                { "owner": "o", "repository": "r", "name": "a", "slots": 1 },
+                { "owner": "o", "repository": "r", "name": "b", "slots": 1, "labels": ["x"] },
+                { "owner": "o", "repository": "s", "name": "c", "slots": 1 }] }"#,
+            Profile::Axpc,
+        );
+        assert!(found.outcome.is_ok());
+    }
+
+    #[test]
+    fn a_reader_words_and_places_the_problems_the_rule_set_records() {
+        let found = validate_other_format(
+            r#"{ "imageName": "image:tag", "repositories": [
+                { "owner": "o", "repository": "r", "name": "a", "slots": 0 },
+                { "owner": "o", "repository": "r", "name": "a", "slots": 1 }] }"#,
+            Profile::Axpc,
+        );
+        let Err(Failure::Invalid(lines)) = found.outcome else {
+            panic!("expected a rejected configuration");
+        };
+        assert_eq!(lines, ["line 3: MustBeIntegerUpTo(16)"]);
+
+        let found = validate_other_format(
+            r#"{ "imageName": "image:tag", "repositories": [
+                { "owner": "o", "repository": "r", "name": "a", "slots": 1 },
+                { "owner": "o", "repository": "s", "name": "a", "slots": 1 }] }"#,
+            Profile::Axpc,
+        );
+        let Err(Failure::Invalid(lines)) = found.outcome else {
+            panic!("expected a rejected configuration");
+        };
+        assert_eq!(
+            lines,
+            ["line 3: NameCollision { name: \"a\", other_name: \"a\", other: 0 }"]
+        );
     }
 
     #[test]

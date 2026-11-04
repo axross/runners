@@ -7,6 +7,7 @@ use crate::profile::Os;
 use super::fields::{self, Errors, Field};
 use super::limits::{self, MAX_BUDGET_MEMORY_GB, MAX_DISK_GB};
 use super::plan::{Budget, Entry};
+use super::problem::{Key, KeyPath, Kind};
 
 pub(super) const BUDGET_FIELDS: [&str; 3] = ["cpus", "memoryGb", "diskGb"];
 
@@ -26,18 +27,20 @@ pub const MAX_MACOS_VMS: u32 = 2;
 
 /// reads the root `budget` object, or records why it is unusable.
 pub fn read_budget(budget: &Field, errors: &mut Errors) -> Option<Budget> {
-    let value = fields::required(budget, "budget", errors)?;
-    let node = fields::read_object::<BudgetFields>(value, "budget", &BUDGET_FIELDS, errors)?;
+    let path = KeyPath::root().key(Key::Budget);
+    let value = fields::required(budget, &path, errors)?;
+    let node = fields::read_object::<BudgetFields>(value, &path, &BUDGET_FIELDS, errors)?;
 
-    let cpus = fields::required(&node.cpus, "budget.cpus", errors)
-        .and_then(|value| limits::cpu_count(value, "budget.cpus", errors));
-    let memory_gb =
-        fields::required(&node.memory_gb, "budget.memoryGb", errors).and_then(|value| {
-            limits::read_bounded_integer(value, "budget.memoryGb", MAX_BUDGET_MEMORY_GB, errors)
-        });
-    let disk_gb = fields::required(&node.disk_gb, "budget.diskGb", errors).and_then(|value| {
-        limits::read_bounded_integer(value, "budget.diskGb", MAX_DISK_GB, errors)
+    let cpus_path = path.key(Key::Cpus);
+    let memory_path = path.key(Key::MemoryGb);
+    let disk_path = path.key(Key::DiskGb);
+    let cpus = fields::required(&node.cpus, &cpus_path, errors)
+        .and_then(|value| limits::cpu_count(value, &cpus_path, errors));
+    let memory_gb = fields::required(&node.memory_gb, &memory_path, errors).and_then(|value| {
+        limits::read_bounded_integer(value, &memory_path, MAX_BUDGET_MEMORY_GB, errors)
     });
+    let disk_gb = fields::required(&node.disk_gb, &disk_path, errors)
+        .and_then(|value| limits::read_bounded_integer(value, &disk_path, MAX_DISK_GB, errors));
     Some(Budget {
         cpus: cpus?,
         memory_gb: memory_gb?,
@@ -74,37 +77,50 @@ pub fn usage(entries: &[Entry]) -> Usage {
     total
 }
 
-/// records each limit the pools together exceed, at path `budget`; the macOS limit
-/// is fixed by the host, so it is checked even when the budget itself is unusable.
+/// records each limit the pools together exceed, at the budget's path; the macOS
+/// limit is fixed by the host, so it is checked even when the budget itself is
+/// unusable.
 pub fn check_budget(entries: &[Entry], budget: Option<&Budget>, errors: &mut Errors) {
+    let path = KeyPath::root().key(Key::Budget);
     let used = usage(entries);
     if used.macos_vms > MAX_MACOS_VMS {
-        errors.add(format!(
-            "budget: macOS pools total {} VMs (the sum of their slots), above the limit of {MAX_MACOS_VMS}",
-            used.macos_vms
-        ));
+        errors.add(
+            path.clone(),
+            Kind::MacosVmsOverLimit {
+                total: used.macos_vms,
+                limit: MAX_MACOS_VMS,
+            },
+        );
     }
     let Some(budget) = budget else {
         return;
     };
     let budget_nanos = limits::nanos(budget.cpus);
     if used.cpu_nanos > budget_nanos {
-        errors.add(format!(
-            "budget: pools total {} CPUs (the sum of slots times cpus), above the budget of {}",
-            limits::format_nanos(used.cpu_nanos),
-            limits::format_nanos(budget_nanos)
-        ));
+        errors.add(
+            path.clone(),
+            Kind::CpuBudgetExceeded {
+                total_nanos: used.cpu_nanos,
+                budget_nanos,
+            },
+        );
     }
     if used.memory_gb > u64::from(budget.memory_gb) {
-        errors.add(format!(
-            "budget: pools total {} GB of memory (the sum of slots times memoryGb), above the budget of {} GB",
-            used.memory_gb, budget.memory_gb
-        ));
+        errors.add(
+            path.clone(),
+            Kind::MemoryBudgetExceeded {
+                total: used.memory_gb,
+                budget: budget.memory_gb,
+            },
+        );
     }
     if used.disk_gb > u64::from(budget.disk_gb) {
-        errors.add(format!(
-            "budget: pools total {} GB of disk (the sum of slots times diskGb), above the budget of {} GB",
-            used.disk_gb, budget.disk_gb
-        ));
+        errors.add(
+            path,
+            Kind::DiskBudgetExceeded {
+                total: used.disk_gb,
+                budget: budget.disk_gb,
+            },
+        );
     }
 }

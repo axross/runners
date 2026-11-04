@@ -32,7 +32,9 @@ fn axpc_summary(plan: &Plan) -> Vec<String> {
         lines.push(format!("Repository {}/{}", entry.owner, entry.repository));
         lines.push(format!("  slots:             {}", entry.slots));
         lines.push(format!("  labels:            {}", entry.labels.join(", ")));
-        lines.push(format!("  token file:        {}", entry.token_path));
+        if let Some(token_path) = &entry.token_path {
+            lines.push(format!("  token file:        {token_path}"));
+        }
         lines.push(format!("  name:              {}", entry.name));
         lines.push(format!(
             "  containers:        {}-<index>-<timestamp>",
@@ -83,7 +85,9 @@ fn axmc_summary(plan: &Plan) -> Vec<String> {
         }
         lines.push(format!("  slots:             {}", entry.slots));
         lines.push(format!("  labels:            {}", entry.labels.join(", ")));
-        lines.push(format!("  token file:        {}", entry.token_path));
+        if let Some(token_path) = &entry.token_path {
+            lines.push(format!("  token file:        {token_path}"));
+        }
         lines.push(format!("  name:              {}", entry.name));
         lines.push(format!(
             "  cpus:              {}",

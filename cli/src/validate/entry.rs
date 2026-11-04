@@ -13,6 +13,7 @@ use super::limits::{self, DEFAULT_CPUS, DEFAULT_MEMORY_GB, MAX_DISK_GB, MAX_MEMO
 use super::paths;
 use super::patterns;
 use super::plan::{Entry, PlannedVolume};
+use super::problem::{Key, KeyPath, Kind};
 use super::volumes::volume_definitions;
 
 const MAX_NAME_LENGTH: usize = 64;
@@ -57,63 +58,60 @@ pub(super) struct EntryFields {
     disk_gb: Field,
 }
 
-/// returns the entry, or `None` after recording every problem; an entry with a bad
-/// diagnostic field is still returned, so it takes part in the cross-entry checks.
-pub fn read_entry(value: &Value, path: &str, cx: &mut Context) -> Option<Entry> {
+/// returns the entry at `index` in the file, or `None` after recording every problem;
+/// an entry with a bad diagnostic field is still returned, so it takes part in the
+/// cross-entry checks.
+pub fn read_entry(value: &Value, index: usize, cx: &mut Context) -> Option<Entry> {
     let profile = cx.profile;
+    let reader = cx.reader;
+    let path = KeyPath::root().key(Key::Repositories).index(index);
     let node =
-        fields::read_object::<EntryFields>(value, path, profile.entry_fields(), &mut cx.errors)?;
+        fields::read_object::<EntryFields>(value, &path, profile.entry_fields(), &mut cx.errors)?;
 
     let owner = fields::string(
         &node.owner,
-        &format!("{path}.owner"),
+        &path.key(Key::Owner),
         &mut cx.errors,
         patterns::is_owner,
         "a GitHub owner name (letters, digits and hyphens)",
     );
     let repository = fields::string(
         &node.repository,
-        &format!("{path}.repository"),
+        &path.key(Key::Repository),
         &mut cx.errors,
         patterns::is_repository,
         "a GitHub repository name (letters, digits and . _ -)",
     );
-    let token_path = match profile {
-        Profile::Axpc => fields::string(
-            &node.token_path,
-            &format!("{path}.tokenPath"),
-            &mut cx.errors,
-            patterns::is_windows_token_path,
-            "an absolute Windows path, such as C:\\path\\to\\file or \\\\server\\share\\file",
-        ),
-        Profile::Axmc => fields::string(
-            &node.token_path,
-            &format!("{path}.tokenPath"),
-            &mut cx.errors,
-            paths::is_absolute_posix,
-            POSIX_PATH,
-        ),
-    };
-    let os = read_os(&node.os, path, profile, &mut cx.errors);
-    let labels = registration_labels(&node.labels, path, profile, os, &mut cx.errors);
-    let volumes = read_volumes(&node, path, profile, &mut cx.errors);
-    let slots =
-        fields::required(&node.slots, &format!("{path}.slots"), &mut cx.errors).and_then(|value| {
-            limits::read_bounded_integer(value, &format!("{path}.slots"), MAX_SLOTS, &mut cx.errors)
-        });
-    let name = read_name(&node.name, path, &mut cx.errors);
-    let cpus = read_cpus(&node.cpus, path, &mut cx.errors);
-    let memory_gb = read_memory(&node.memory_gb, path, &mut cx.errors);
+    let token_path = read_token_path(&node.token_path, &path, cx);
+    let os = read_os(&node.os, &path, cx);
+    let labels = registration_labels(
+        &node.labels,
+        &path,
+        reader.routing_label(),
+        profile,
+        os,
+        &mut cx.errors,
+    );
+    let volumes = read_volumes(&node, &path, cx);
+    let slots_path = path.key(Key::Slots);
+    let slots = fields::required(&node.slots, &slots_path, &mut cx.errors).and_then(|value| {
+        limits::read_bounded_integer(value, &slots_path, MAX_SLOTS, &mut cx.errors)
+    });
+    let name = read_name(&node.name, &path, &mut cx.errors);
+    let cpus = read_cpus(&node.cpus, &path, &mut cx.errors);
+    let memory_gb = read_memory(&node.memory_gb, &path, &mut cx.errors);
     let disk_gb = match profile {
         Profile::Axpc => Some(None),
-        Profile::Axmc => read_disk(&node.disk_gb, path, &mut cx.errors).map(Some),
+        Profile::Axmc => read_disk(&node.disk_gb, &path, &mut cx.errors).map(Some),
     };
-    let (diagnostics, raw_records) = read_diagnostic_flags(&node, path, &mut cx.errors);
+    let (diagnostics, raw_records) = read_diagnostic_flags(&node, &path, &mut cx.errors);
     let diagnostic_directory =
-        read_diagnostic_directory(&node.diagnostic_directory, path, diagnostics, cx);
+        read_diagnostic_directory(&node.diagnostic_directory, &path, diagnostics, cx);
     if raw_records && !diagnostics {
-        cx.errors
-            .add(format!("{path}.diagnosticRawRecords: requires diagnostics"));
+        cx.errors.add(
+            path.key(Key::DiagnosticRawRecords),
+            Kind::RequiresDiagnostics,
+        );
     }
 
     let os_usable = profile == Profile::Axpc || os.is_some();
@@ -130,12 +128,13 @@ pub fn read_entry(value: &Value, path: &str, cx: &mut Context) -> Option<Entry> 
         return None;
     }
     Some(Entry {
-        path: path.to_string(),
+        index,
+        path: reader.entry_path(index),
         owner: owner.to_string(),
         repository: repository.to_string(),
         name: name.clone(),
         slots,
-        token_path: token_path.to_string(),
+        token_path: token_path.map(str::to_string),
         labels,
         cpus,
         memory_gb,
@@ -154,18 +153,52 @@ pub fn read_entry(value: &Value, path: &str, cx: &mut Context) -> Option<Entry> 
     })
 }
 
-fn read_os(field: &Field, path: &str, profile: Profile, errors: &mut Errors) -> Option<Os> {
-    if profile != Profile::Axmc {
+/// reads the token path where the reader's format has one; the outer `None` is a
+/// problem recorded, the inner one a format without token paths.
+fn read_token_path<'a>(
+    field: &'a Field,
+    path: &KeyPath,
+    cx: &mut Context,
+) -> Option<Option<&'a str>> {
+    if !cx.reader.applies_token_path_rules() {
+        return Some(None);
+    }
+    let field_path = path.key(Key::TokenPath);
+    match cx.profile {
+        Profile::Axpc => fields::string(
+            field,
+            &field_path,
+            &mut cx.errors,
+            patterns::is_windows_token_path,
+            "an absolute Windows path, such as C:\\path\\to\\file or \\\\server\\share\\file",
+        ),
+        Profile::Axmc => fields::string(
+            field,
+            &field_path,
+            &mut cx.errors,
+            paths::is_absolute_posix,
+            POSIX_PATH,
+        ),
+    }
+    .map(Some)
+}
+
+fn read_os(field: &Field, path: &KeyPath, cx: &mut Context) -> Option<Os> {
+    if cx.profile != Profile::Axmc {
         return None;
     }
-    let field_path = format!("{path}.os");
-    let value = fields::required(field, &field_path, errors)?;
+    if cx.reader.may_omit_os_and_volumes() && field.get().is_none() {
+        return Some(Os::Linux);
+    }
+    let field_path = path.key(Key::Os);
+    let value = fields::required(field, &field_path, &mut cx.errors)?;
     let os = match value {
         Value::String(text) => Os::from_name(text),
         _ => None,
     };
     if os.is_none() {
-        errors.add(format!("{field_path}: must be \"linux\" or \"macos\""));
+        cx.errors
+            .add(field_path, Kind::MustBe("\"linux\" or \"macos\""));
     }
     os
 }
@@ -174,25 +207,28 @@ fn read_os(field: &Field, path: &str, profile: Profile, errors: &mut Errors) -> 
 /// rejected there, whatever it holds.
 fn read_volumes(
     node: &EntryFields,
-    path: &str,
-    profile: Profile,
-    errors: &mut Errors,
+    path: &KeyPath,
+    cx: &mut Context,
 ) -> Option<Vec<super::volumes::Volume>> {
-    match profile {
-        Profile::Axpc => volume_definitions(&node.volumes, path, errors),
+    match cx.profile {
+        Profile::Axpc => volume_definitions(
+            &node.volumes,
+            path,
+            cx.reader.may_omit_os_and_volumes(),
+            &mut cx.errors,
+        ),
         Profile::Axmc => {
             if node.volumes.get().is_some() {
-                errors.add(format!(
-                    "{path}.volumes: not supported on axmc, because VM pools keep no volumes"
-                ));
+                cx.errors
+                    .add(path.key(Key::Volumes), Kind::VolumesUnsupported);
             }
             Some(Vec::new())
         }
     }
 }
 
-fn read_name(name: &Field, path: &str, errors: &mut Errors) -> Option<String> {
-    let field = format!("{path}.name");
+fn read_name(name: &Field, path: &KeyPath, errors: &mut Errors) -> Option<String> {
+    let field = path.key(Key::Name);
     let name = fields::string(
         name,
         &field,
@@ -201,46 +237,49 @@ fn read_name(name: &Field, path: &str, errors: &mut Errors) -> Option<String> {
         "lowercase letters, digits and hyphens, starting with a letter or digit",
     )?;
     if name.len() > MAX_NAME_LENGTH {
-        errors.add(format!(
-            "{field}: name is {} characters, at most {MAX_NAME_LENGTH} are allowed because it starts every runner name",
-            name.len()
-        ));
+        errors.add(
+            field,
+            Kind::NameTooLong {
+                length: name.len(),
+                max: MAX_NAME_LENGTH,
+            },
+        );
         return None;
     }
     Some(name.to_string())
 }
 
-fn read_cpus(cpus: &Field, path: &str, errors: &mut Errors) -> Option<f64> {
+fn read_cpus(cpus: &Field, path: &KeyPath, errors: &mut Errors) -> Option<f64> {
     match cpus.get() {
         None => Some(DEFAULT_CPUS),
-        Some(value) => limits::cpu_count(value, &format!("{path}.cpus"), errors),
+        Some(value) => limits::cpu_count(value, &path.key(Key::Cpus), errors),
     }
 }
 
-fn read_memory(memory_gb: &Field, path: &str, errors: &mut Errors) -> Option<u32> {
+fn read_memory(memory_gb: &Field, path: &KeyPath, errors: &mut Errors) -> Option<u32> {
     let Some(value) = memory_gb.get() else {
         return Some(DEFAULT_MEMORY_GB);
     };
-    limits::read_bounded_integer(value, &format!("{path}.memoryGb"), MAX_MEMORY_GB, errors)
+    limits::read_bounded_integer(value, &path.key(Key::MemoryGb), MAX_MEMORY_GB, errors)
 }
 
-fn read_disk(disk_gb: &Field, path: &str, errors: &mut Errors) -> Option<u32> {
-    let field = format!("{path}.diskGb");
+fn read_disk(disk_gb: &Field, path: &KeyPath, errors: &mut Errors) -> Option<u32> {
+    let field = path.key(Key::DiskGb);
     let value = fields::required(disk_gb, &field, errors)?;
     limits::read_bounded_integer(value, &field, MAX_DISK_GB, errors)
 }
 
 /// returns the two diagnostic switches, each false when absent or not a boolean.
-fn read_diagnostic_flags(node: &EntryFields, path: &str, errors: &mut Errors) -> (bool, bool) {
+fn read_diagnostic_flags(node: &EntryFields, path: &KeyPath, errors: &mut Errors) -> (bool, bool) {
     let mut flags = [false, false];
     for (flag, (field, setting)) in flags.iter_mut().zip([
-        (&node.diagnostics, "diagnostics"),
-        (&node.diagnostic_raw_records, "diagnosticRawRecords"),
+        (&node.diagnostics, Key::Diagnostics),
+        (&node.diagnostic_raw_records, Key::DiagnosticRawRecords),
     ]) {
         match field.get() {
             None => {}
             Some(Value::Bool(enabled)) => *flag = *enabled,
-            Some(_) => errors.add(format!("{path}.{setting}: must be a boolean")),
+            Some(_) => errors.add(path.key(setting), Kind::MustBe("a boolean")),
         }
     }
     (flags[0], flags[1])
@@ -249,18 +288,18 @@ fn read_diagnostic_flags(node: &EntryFields, path: &str, errors: &mut Errors) ->
 /// returns the directory of a diagnostics-enabled entry, when it is valid.
 fn read_diagnostic_directory(
     directory: &Field,
-    path: &str,
+    path: &KeyPath,
     diagnostics: bool,
     cx: &mut Context,
 ) -> Option<String> {
-    let field = format!("{path}.diagnosticDirectory");
+    let field = path.key(Key::DiagnosticDirectory);
     if !diagnostics {
         if directory.get().is_some() {
-            cx.errors.add(format!("{field}: requires diagnostics"));
+            cx.errors.add(field, Kind::RequiresDiagnostics);
         }
         return None;
     }
-    let (accepts, expectation): (fn(&str) -> bool, &str) = match cx.profile {
+    let (accepts, expectation): (fn(&str) -> bool, &'static str) = match cx.profile {
         Profile::Axpc => (
             patterns::is_windows_directory,
             "an absolute local Windows directory outside the checkout",
@@ -272,14 +311,12 @@ fn read_diagnostic_directory(
     };
     let directory = fields::string(directory, &field, &mut cx.errors, accepts, expectation)?;
     if cx.profile == Profile::Axpc && paths::has_windows_dot_component(directory) {
-        cx.errors
-            .add(format!("{field}: must not contain dot path components"));
+        cx.errors.add(field.clone(), Kind::DotPathComponents);
     }
     match cx.checkout {
         Some(checkout) => {
             if paths::is_inside_checkout(directory, checkout, cx.profile) {
-                cx.errors
-                    .add(format!("{field}: must be outside the checkout"));
+                cx.errors.add(field, Kind::InsideCheckout);
             }
         }
         None => cx.checkout_rule_skipped = true,

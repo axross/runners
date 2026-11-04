@@ -77,19 +77,18 @@ impl fmt::Display for PlanError {
 impl std::error::Error for PlanError {}
 
 /// turns a valid axpc plan into pools, in the plan's order, and fails for any other
-/// profile.
+/// profile or for an entry without a token file.
 pub fn pools_from_plan(plan: &Plan) -> Result<Vec<PoolSpec>, PlanError> {
     let (Profile::Axpc, Some(image)) = (plan.profile, plan.image_name.as_ref()) else {
         return Err(PlanError(
             "the container backend runs the axpc profile only",
         ));
     };
-    Ok(plan
-        .entries
+    plan.entries
         .iter()
         .enumerate()
         .map(|(index, entry)| pool_from_entry(plan, index, entry, image))
-        .collect())
+        .collect()
 }
 
 /// the settings of a diagnostics-enabled entry's evidence.
@@ -111,14 +110,22 @@ pub fn diagnostic_records(plan: &Plan) -> Vec<DiagnosticRecord> {
     plan.entries.iter().filter_map(diagnostic_record).collect()
 }
 
-fn pool_from_entry(plan: &Plan, index: usize, entry: &Entry, image: &str) -> PoolSpec {
-    PoolSpec {
+fn pool_from_entry(
+    plan: &Plan,
+    index: usize,
+    entry: &Entry,
+    image: &str,
+) -> Result<PoolSpec, PlanError> {
+    let token_path = entry.token_path.as_ref().ok_or(PlanError(
+        "the container backend reads each pool's token file, and an entry has none",
+    ))?;
+    Ok(PoolSpec {
         path: entry.path.clone(),
         name: entry.name.clone(),
         owner: entry.owner.clone(),
         repository: entry.repository.clone(),
         slots: entry.slots,
-        token_path: PathBuf::from(&entry.token_path),
+        token_path: PathBuf::from(token_path),
         labels: entry.labels.clone(),
         cpus: format_cpu_count(entry.cpus),
         cpu_count: affinity_count(entry),
@@ -130,7 +137,7 @@ fn pool_from_entry(plan: &Plan, index: usize, entry: &Entry, image: &str) -> Poo
         slot_offsets: (1..=entry.slots)
             .map(|slot| slot_offset(&plan.entries, index, slot))
             .collect(),
-    }
+    })
 }
 
 impl PoolSpec {
