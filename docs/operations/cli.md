@@ -94,16 +94,16 @@ On `axmc`, `os` is `linux` or `macos`, `diskGb` is the per-VM disk cap, and
 `budget` holds `cpus`, `memoryGb`, and `diskGb`. A VM has whole vCPUs, so `cpus`
 is an integer from 1 to 64 on `axmc`, while axpc keeps its fractional CPU counts.
 `volumes` is rejected on an entry even as `null`, because VM pools keep no volumes.
-The axmc fields are provisional: later phases may extend them but MUST NOT change
-what this phase accepts without a recorded migration, which [Migrations](#migrations)
-holds.
+A change to what these fields accept MUST come with a recorded migration, which
+[Migrations](#migrations) holds.
 
 ### New Rules
 
 These rules exist on `axmc` only. Their messages follow the `<path>: <problem>`
-form, and each is pinned by a fixture under
-[`tests/host-configuration/rust/`](../../tests/host-configuration/rust). A later
-phase MUST NOT change the text without a recorded migration.
+form. A fixture under
+[`tests/host-configuration/rust/`](../../tests/host-configuration/rust) pins each
+rule except `diskGb` below 20 on a Linux pool, which a unit test pins instead. A
+change to the text MUST come with a recorded migration.
 
 | Rule                                                  | Path and message                                                                                                                                                                    |
 | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -135,12 +135,13 @@ A change to what `axmc` accepts is recorded here with each old and new rule, its
 message, and the fixture that shows it. A configuration that validated before the
 change may be rejected now; the last column says how to change it.
 
-| Rule                          | Old                                                                                          | New                                                                                                                                               | Fixture                                                                                                                                                                                                                                                              | To migrate                                                              |
-| ----------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `cpus` of a pool              | A number above 0 and at most 64, fractions allowed                                           | An integer from 1 to 64: `repositories[i].cpus: must be an integer from 1 to 64`                                                                  | [`axmc-fractional-cpus.json`](../../tests/host-configuration/rust/rejected/axmc-fractional-cpus.json), accepted before and rejected now                                                                                                                              | Round each fractional `cpus` to a whole vCPU count, at least 1          |
-| `budget.cpus`                 | A number above 0 and at most 64, fractions allowed                                           | An integer from 1 to 64: `budget.cpus: must be an integer from 1 to 64`                                                                           | [`axmc-budget-members.json`](../../tests/host-configuration/rust/rejected/axmc-budget-members.json), message changed; `axmc-fractional-cpus.json`                                                                                                                    | Round `budget.cpus` to a whole number that covers the pools             |
-| `diskGb` of a Linux pool      | Any integer from 1 to 16384                                                                  | At least 20: `repositories[i].diskGb: must be at least 20 on a Linux pool, the golden VM's disk size`                                             | Tested by `a_linux_pool_needs_the_golden_vms_disk_but_a_macos_pool_does_not` in `cli/tests/validate.rs`; no fixture                                                                                                                                                  | Raise a Linux pool's `diskGb` to 20 or more; a macOS pool is unchanged  |
-| Disk budget with a Linux pool | `budget: pools total N GB of disk (the sum of slots times diskGb), above the budget of M GB` | `budget: pools total N GB of disk (the sum of slots times diskGb, plus 40 GB for the golden VM and Tart's image cache), above the budget of M GB` | [`axmc-disk-over-budget.json`](../../tests/host-configuration/rust/rejected/axmc-disk-over-budget.json), message and total; [`axmc-budget-at-limit.json`](../../tests/host-configuration/rust/accepted/axmc-budget-at-limit.json), whose budget rose from 150 to 190 | Raise `budget.diskGb` by 40 GB, or lower the pools' `diskGb` or `slots` |
+| Rule                          | Old                                                                                          | New                                                                                                                                                               | Fixture                                                                                                                                                                                                                                                              | To migrate                                                              |
+| ----------------------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `cpus` of a pool              | A number above 0 and at most 64, fractions allowed                                           | An integer from 1 to 64: `repositories[i].cpus: must be an integer from 1 to 64`                                                                                  | [`axmc-fractional-cpus.json`](../../tests/host-configuration/rust/rejected/axmc-fractional-cpus.json), accepted before and rejected now                                                                                                                              | Round each fractional `cpus` to a whole vCPU count, at least 1          |
+| `budget.cpus`                 | A number above 0 and at most 64, fractions allowed                                           | An integer from 1 to 64: `budget.cpus: must be an integer from 1 to 64`                                                                                           | [`axmc-budget-members.json`](../../tests/host-configuration/rust/rejected/axmc-budget-members.json), message changed; `axmc-fractional-cpus.json`                                                                                                                    | Round `budget.cpus` to a whole number that covers the pools             |
+| `diskGb` of a Linux pool      | Any integer from 1 to 16384                                                                  | At least 20: `repositories[i].diskGb: must be at least 20 on a Linux pool, the golden VM's disk size`                                                             | Tested by `a_linux_pool_needs_the_golden_vms_disk_but_a_macos_pool_does_not` in `cli/tests/validate.rs`; no fixture                                                                                                                                                  | Raise a Linux pool's `diskGb` to 20 or more; a macOS pool is unchanged  |
+| `imageName` of axmc           | Optional and validated as on axpc, with its use undecided                                    | Optional and validated as before; an absent name is `actions-runner:local`, and the name is the image that `build` makes inside the golden VM and every pool runs | [`axmc-image-name.json`](../../tests/host-configuration/rust/accepted/axmc-image-name.json), accepted before and now; nothing is accepted or rejected differently                                                                                                    | None; a configuration that validated still validates                    |
+| Disk budget with a Linux pool | `budget: pools total N GB of disk (the sum of slots times diskGb), above the budget of M GB` | `budget: pools total N GB of disk (the sum of slots times diskGb, plus 40 GB for the golden VM and Tart's image cache), above the budget of M GB`                 | [`axmc-disk-over-budget.json`](../../tests/host-configuration/rust/rejected/axmc-disk-over-budget.json), message and total; [`axmc-budget-at-limit.json`](../../tests/host-configuration/rust/accepted/axmc-budget-at-limit.json), whose budget rose from 150 to 190 | Raise `budget.diskGb` by 40 GB, or lower the pools' `diskGb` or `slots` |
 
 ### Labels
 
@@ -555,7 +556,9 @@ and in no log line. The launcher reads it from standard input, exports it, and
 `exec`s `docker`. Standard output and error are forwarded to the log line by line
 and masked, as for the container backend. A volume is refused in a VM
 (`volumes are not supported in virtual machines`), and `validate` already refuses
-one on axmc. The text a guest command returns to the backend is cut at 64 KiB.
+one on axmc. The text a guest command returns to the backend is cut at 64 KiB; the
+one exception is the diagnostics archive, which the Diagnostics paragraph below
+streams through the strict archive reader and the bundle limits instead.
 
 **Which user runs it.** `tart exec` reaches the guest agent,
 [cirruslabs/tart-guest-agent](https://github.com/cirruslabs/tart-guest-agent) at
@@ -629,6 +632,13 @@ leftover. Each reports the loss with today's gap wording,
 `container <name>` in place of the VM. A forced stop keeps the container names in
 its result, so `start` exits 1 as for a kept container and its last line says that
 the job VMs were deleted without an export.
+
+Every VM of a diagnostics-enabled pool that is deleted in these cases is reported as
+a diagnostic gap, whether or not a job ran in it, because the CLI cannot tell a VM
+that holds evidence from an idle one without booting it. The next `start` reports a
+leftover before it deletes it (`delete_leftover_host`), so a leftover whose deletion
+then fails is still reported, and the VM shim reports a VM only once it has deleted
+it, and none that was already gone.
 
 ### The VM Shim
 
@@ -757,8 +767,8 @@ input it takes, from scripts embedded in the binary. The calls run in this order
 1. upgrade the Ubuntu packages and install `ca-certificates`, `curl` and `gnupg`;
 2. download Docker's key to `/etc/apt/keyrings/docker.asc`;
 3. list the key with `gpg --show-keys --with-colons`;
-4. install the apt source and the four packages at their pinned versions, and hold
-   them;
+4. install the apt source and the four packages at their pinned versions, hold
+   them, and add `admin` to the `docker` group (`install-docker.sh`);
 5. install the launcher, owned by root, mode 0755;
 6. lock the `admin` password and mask `ssh.service` and `ssh.socket`.
 
