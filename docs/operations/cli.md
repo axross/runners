@@ -223,6 +223,7 @@ PowerShell supervisor, and where it differs the difference is listed here.
 | --------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | `affinity`                                          | The CPU offsets `validate` and the backend share, and the selection of a slot's CPUs   |
 | `runtime::backend`                                  | The backend seam                                                                       |
+| `runtime::select`                                   | The runtime a pool's operating system selects on its host                              |
 | `runtime::docker`, `runtime::docker_args`           | The container backend and the exact `docker` argument lists                            |
 | `runtime::registration`, `token`, `scrub`, `secret` | JIT registration, the token file, error text, and the type that hides a secret         |
 | `runtime::clock`, `runtime::log`                    | The time source and the sink for the runtime's messages, each a seam the tests replace |
@@ -232,6 +233,7 @@ PowerShell supervisor, and where it differs the difference is listed here.
 | `runtime::retained`                                 | The diagnostic containers the backend retains, their records, and who finalises each   |
 | `runtime::diagnostic`                               | Finalising diagnostic containers at job end, in the container steps, and at startup    |
 | `diagnostics`, `diagnostics::exporter`              | The exporter child and the lines and exit codes it answers with                        |
+| `diagnostics::transport`                            | The transport seam through which the exporter reads a container's evidence             |
 | `diagnostics::sink`, `archive`, `identity`          | The sink checks and admission, the strict archive reader, and the identity readback    |
 | `runtime::board`                                    | Each pool's and each slot's state, which `status` reports                              |
 | `runtime::fake`                                     | In-memory stand-ins for the seams, used by tests; a debug or test build only           |
@@ -316,6 +318,58 @@ bytes after the cut waiting for the next piece; see [The Log](#the-log).
 The output of any other client is read within its budget, and when it becomes error
 text it is joined onto one line and cut to 500 characters followed by `...`, as a
 registration error is.
+
+### Runtime Seam
+
+A pool's operating system, on the host that runs it, selects its runtime. The
+selection is `Runtime::of_pool` in `runtime::select`:
+
+| Host | Pool               | Runtime                                                          |
+| ---- | ------------------ | ---------------------------------------------------------------- |
+| axpc | every pool (Linux) | The Docker Desktop container runtime, the backend above          |
+| axmc | `os: "linux"`      | The VM runtime, a Tart VM per job; selected, but not implemented |
+| axmc | `os: "macos"`      | None                                                             |
+
+The backend above is the Docker Desktop runtime. The runtime core drives the
+containers through the backend seam, apart from two values it takes from the Docker
+modules: the engine poll interval from `runtime::docker` and the run command from
+`runtime::docker_args`. `start` and the shim construct the Docker backend
+directly. No code implements the VM runtime yet, so a
+configuration that selects it, or selects none for a pool, is validated and then
+refused:
+
+- `start --profile axmc` exits 1 after taking the lock and validating, before it
+  opens a log file or calls an engine. It prints:
+
+  ```text
+  error: the configuration is valid, but this version of marshal cannot run axmc's VM pools yet
+  ```
+
+- `build --profile axmc` exits 1 after the same lock and validation, and prints:
+
+  ```text
+  error: the configuration is valid, but this version of marshal cannot build axmc's golden VM yet
+  ```
+
+Both refusals print on standard error, as every `start` and `build` error before
+the log opens. axpc is unaffected: its commands, messages, exit codes, and the run
+contract keep their text.
+
+The diagnostics export reads a retained container's evidence through the
+`EvidenceTransport` seam in `diagnostics::transport`: the allowlisted identity
+text, and the evidence archive, which the strict archive reader writes into the
+bundle. The exporter child's admission, bundle files, limits, exit codes, and
+deadline do not depend on the transport. Its first transport, `DockerCopy`, runs
+`docker inspect` and `docker cp` as [Backend](#backend) lists them.
+
+A unit test in `runtime::select` pins the table. `start_command.rs` and
+`build_command.rs` pin the two refusal texts and their exit code, and
+`start_command.rs` also refuses a configuration of Linux and macOS pools and one of
+macOS pools alone. Unit tests in `diagnostics::exporter` write a complete bundle, a
+gap, and the failed bundles of an unreadable identity and a failed archive through a
+scripted transport, and the
+diagnostics tests listed under [Diagnostics](#diagnostics) run the exporter through
+`DockerCopy` with unchanged expectations.
 
 ### CPU Placement
 
@@ -802,7 +856,8 @@ A fresh `start` does these in order:
    to resume instead, as below.
 2. It validates the configuration as `validate` does. An invalid one prints every
    error and exits 1, and nothing is written. With `--profile axmc` a valid
-   configuration still exits 1, because the VM backend comes in Phase 6.
+   configuration still exits 1, with the refusal that [Runtime Seam](#runtime-seam)
+   gives.
 3. It opens its log file and logs the plan summary.
 4. It contains its children, builds the HTTPS client, and opens the control
    channel. A failure of any of them, including a TLS setup failure, exits 1.
@@ -1154,9 +1209,9 @@ these in order:
    nothing, naming the instance's state when this user's channel answers within
    5 s, and otherwise giving `start`'s message for a lock held elsewhere.
 2. It validates the configuration as `validate` does; an invalid one exits 1.
-   `--profile axmc` exits 1 after validation, because axmc's image is a golden VM,
-   which comes in Phase 6. An image name given by digest is refused, because it
-   cannot be tagged. It prints the name it builds.
+   `--profile axmc` exits 1 after validation with the refusal that
+   [Runtime Seam](#runtime-seam) gives. An image name given by digest is refused,
+   because it cannot be tagged. It prints the name it builds.
 3. It contains its children as `start` does on Windows, and opens the control
    channel. While it builds, `status` answers `state: building`, `image: <name>`,
    and `elapsed: <s> s`; a `start`, a resume, `restart`, and `diagnostics` are refused, naming

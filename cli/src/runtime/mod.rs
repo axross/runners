@@ -18,5 +18,6 @@ pub mod registration;
 pub mod retained;
 pub mod scrub;
 pub mod secret;
+pub mod select;
 pub mod token;
 pub mod worker;

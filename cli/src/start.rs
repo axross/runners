@@ -27,6 +27,7 @@ use crate::runtime::clock::SystemClock;
 use crate::runtime::docker::{DockerBackend, DockerConfig, JobLauncher, resolve_program};
 use crate::runtime::log::Log;
 use crate::runtime::registration::{GitHubRegistrar, HttpLimits};
+use crate::runtime::select::Runtime;
 use crate::summary::plan_summary;
 
 const RESUME_ANSWER_WITHIN: Duration = Duration::from_secs(10);
@@ -44,6 +45,11 @@ pub(crate) const ANSWERS_WITHIN: Duration = Duration::from_millis(500);
 /// user's channel does not answer.
 pub(crate) const LOCK_HELD_ELSEWHERE: &str = "the instance lock is held, by another OS user or by an instance of this user \
      that is still starting or ending; the lock does not say which";
+
+/// what `start` says when a pool's runtime is not implemented, which on axmc is every
+/// pool.
+const VM_POOLS_REFUSED: &str =
+    "the configuration is valid, but this version of marshal cannot run axmc's VM pools yet";
 
 /// what `start` was given.
 pub struct StartRequest<'a> {
@@ -80,11 +86,12 @@ pub fn start(request: &StartRequest<'_>, err: &mut dyn Write) -> u8 {
             return EXIT_FAILED;
         }
     };
-    if request.profile == Profile::Axmc {
-        return print_error(
-            err,
-            &"the configuration is valid, but axmc runs its pools in a VM, and the VM backend comes in Phase 6",
-        );
+    if !plan
+        .entries
+        .iter()
+        .all(|entry| Runtime::of_pool(plan.profile, entry.os).is_some_and(Runtime::is_implemented))
+    {
+        return print_error(err, &VM_POOLS_REFUSED);
     }
     let (canonical, config_path) = match fs::canonicalize(request.config).and_then(|canonical| {
         std::path::absolute(request.config).map(|absolute| (canonical, absolute))

@@ -83,12 +83,22 @@ fn an_invalid_configuration_exits_1_and_changes_nothing() {
     assert!(host.log_files().is_empty(), "no log file before validation");
 }
 
-#[test]
-fn the_axmc_profile_validates_and_then_exits_1_naming_phase_6() {
+const AXMC_START_REFUSAL: &str =
+    "the configuration is valid, but this version of marshal cannot run axmc's VM pools yet";
+
+/// runs `start --profile axmc` on the accepted `fixture` with `replace` applied to its
+/// text, and checks that it refused with exit code 1 before reaching any engine.
+fn assert_axmc_start_refused(fixture: &str, replace: Option<(&str, &str)>) {
     let host = Host::new();
-    let fixture =
-        repository_root().join("tests/host-configuration/rust/accepted/axmc-defaults.json");
-    let config = host.root.write("axmc.json", &fs::read(fixture).unwrap());
+    let path = repository_root()
+        .join("tests/host-configuration/rust/accepted")
+        .join(fixture);
+    let mut text = fs::read_to_string(path).unwrap();
+    if let Some((from, to)) = replace {
+        assert!(text.contains(from), "{from} is not in {fixture}");
+        text = text.replace(from, to);
+    }
+    let config = host.root.write("axmc.json", text.as_bytes());
     let output = host
         .command(&["start", "--profile", "axmc", "--config"])
         .arg(&config)
@@ -96,8 +106,27 @@ fn the_axmc_profile_validates_and_then_exits_1_naming_phase_6() {
         .unwrap();
     let (_, stderr) = texts(&output);
     assert_eq!(output.status.code(), Some(1), "{stderr}");
-    assert!(stderr.contains("Phase 6"), "{stderr}");
+    assert_eq!(stderr.trim_end(), format!("error: {AXMC_START_REFUSAL}"));
     assert!(host.invocations().is_empty());
+    assert!(
+        host.log_files().is_empty(),
+        "no log file before the refusal"
+    );
+}
+
+#[test]
+fn the_axmc_profile_validates_and_then_refuses_to_run_its_vm_pools() {
+    assert_axmc_start_refused("axmc-defaults.json", None);
+}
+
+#[test]
+fn an_axmc_configuration_of_linux_and_macos_pools_is_refused_whole_for_now() {
+    assert_axmc_start_refused("axmc-os-labels.json", None);
+}
+
+#[test]
+fn an_axmc_configuration_of_macos_pools_alone_is_refused_the_same_way() {
+    assert_axmc_start_refused("axmc-defaults.json", Some(("\"linux\"", "\"macos\"")));
 }
 
 #[test]
