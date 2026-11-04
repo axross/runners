@@ -1,10 +1,11 @@
 name: Release Build
 
 # builds the CLI's release binaries for Windows x64 and macOS arm64 at the
-# version its caller passes, with SHA256SUMS in one artifact. merge-checks.yaml
-# calls it as a dry run and release.yaml for a release; it has no publish or
-# attest step. see docs/conventions/security.md, which also says why only the
-# callers declare `concurrency`.
+# version its caller passes, packs each into an unsigned installer (an MSI and a
+# pkg), tests the installers, and puts the four files and SHA256SUMS in one
+# artifact. merge-checks.yaml calls it as a dry run and release.yaml for a
+# release; it has no publish or attest step. see docs/conventions/security.md,
+# which also says why only the callers declare `concurrency`.
 
 on:
   workflow_call:
@@ -15,7 +16,7 @@ on:
         type: string
     outputs:
       artifact:
-        description: The artifact holding the two binaries and SHA256SUMS
+        description: The artifact holding the two binaries, their two installers, and SHA256SUMS
         value: ${{ jobs.assemble.outputs.artifact }}
 
 permissions:
@@ -25,7 +26,7 @@ jobs:
   build:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -34,17 +35,23 @@ jobs:
             target: windows-x64
             host: x86_64-pc-windows-msvc
             suffix: .exe
+            installer-suffix: .msi
             sha256-output: windows_x64_sha256
+            installer-sha256-output: windows_x64_msi_sha256
           - os: macos-latest
             target: macos-arm64
             host: aarch64-apple-darwin
             suffix: ""
+            installer-suffix: .pkg
             sha256-output: macos_arm64_sha256
+            installer-sha256-output: macos_arm64_pkg_sha256
     # a matrix leg sets only its own hash output, so the two legs do not overwrite
     # each other's.
     outputs:
       windows_x64_sha256: ${{ steps.hash.outputs.windows_x64_sha256 }}
+      windows_x64_msi_sha256: ${{ steps.hash.outputs.windows_x64_msi_sha256 }}
       macos_arm64_sha256: ${{ steps.hash.outputs.macos_arm64_sha256 }}
+      macos_arm64_pkg_sha256: ${{ steps.hash.outputs.macos_arm64_pkg_sha256 }}
     defaults:
       run:
         shell: bash
@@ -74,6 +81,18 @@ jobs:
         env:
           VERSION: ${{ inputs.version }}
         run: bash ../.github/scripts/set-release-version.sh "$VERSION"
+      # the installers carry the release's X.Y.Z, or 0.0.0 for a dry run. a version
+      # beyond the MSI limits, or in another prerelease form, fails here before
+      # anything compiles. the substitution is assigned first so its failure fails
+      # the step.
+      - name: Map The Installer Version
+        id: installer-version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          installer_version="$(bash ../.github/scripts/installer-version.sh "$VERSION")"
+          echo "version=${installer_version}" >> "$GITHUB_OUTPUT"
+          echo "The installers carry version ${installer_version}."
       # MARSHAL_EXPECT_RELEASE makes each test fail if it was built in the wrong
       # profile.
       - name: Test That A Release Build Ignores The Debug-Only Overrides
@@ -98,6 +117,7 @@ jobs:
       - name: Name The Binary For The Release
         id: asset
         env:
+          INSTALLER_SUFFIX: ${{ matrix.installer-suffix }}
           SUFFIX: ${{ matrix.suffix }}
           TARGET: ${{ matrix.target }}
           VERSION: ${{ inputs.version }}
@@ -106,6 +126,7 @@ jobs:
           mkdir ../dist
           cp "target/release/marshal${SUFFIX}" "../dist/${asset}"
           echo "name=${asset}" >> "$GITHUB_OUTPUT"
+          echo "installer=marshal-${VERSION}-${TARGET}${INSTALLER_SUFFIX}" >> "$GITHUB_OUTPUT"
       # the binary links the C runtime statically (cli/.cargo/config.toml), so a host
       # without the Visual C++ redistributable runs it. vswhere finds dumpbin in the
       # MSVC tools. the check fails unless dumpbin listed KERNEL32.dll, so a run
@@ -128,36 +149,154 @@ jobs:
           $runtime = @($report -match 'vcruntime')
           if ($runtime.Count -gt 0) { throw "The binary imports a vcruntime DLL: $($runtime -join ', ')" }
           Write-Host 'The binary imports no vcruntime DLL.'
+      # WiX is the one tool fetched at build time. the script refuses it unless
+      # its SHA-256 matches the pin and installs it from that package alone; see
+      # docs/conventions/security.md.
+      - name: Fetch WiX
+        if: runner.os == 'Windows'
+        env:
+          WIX_DIRECTORY: ${{ runner.temp }}\wix
+        run: bash ../.github/scripts/fetch-wix.sh "$WIX_DIRECTORY"
+      - name: Build The MSI
+        if: runner.os == 'Windows'
+        shell: powershell
+        env:
+          INSTALLER: ${{ steps.asset.outputs.installer }}
+          INSTALLER_VERSION: ${{ steps.installer-version.outputs.version }}
+          ASSET: ${{ steps.asset.outputs.name }}
+          WIX_DIRECTORY: ${{ runner.temp }}\wix
+        run: |
+          $dist = (Resolve-Path ..\dist).Path
+          ..\.github\scripts\build-msi.ps1 -Binary (Join-Path $dist $env:ASSET) -Version $env:INSTALLER_VERSION -Output (Join-Path $dist $env:INSTALLER) -WixDirectory $env:WIX_DIRECTORY
+      - name: Build The Package
+        if: runner.os == 'macOS'
+        env:
+          INSTALLER: ${{ steps.asset.outputs.installer }}
+          INSTALLER_VERSION: ${{ steps.installer-version.outputs.version }}
+          ASSET: ${{ steps.asset.outputs.name }}
+        run: bash ../.github/scripts/build-pkg.sh "../dist/${ASSET}" "$INSTALLER_VERSION" "../dist/${INSTALLER}"
+      # the tests install and remove packages on the runner with the real tools, and
+      # build their own throwaway installers at fixed test versions; only the files
+      # in dist are uploaded. each measured outcome is a MEASURED line in the log.
+      - name: Test The MSI
+        if: runner.os == 'Windows'
+        timeout-minutes: 15
+        shell: powershell
+        env:
+          INSTALLER: ${{ steps.asset.outputs.installer }}
+          INSTALLER_VERSION: ${{ steps.installer-version.outputs.version }}
+          ASSET: ${{ steps.asset.outputs.name }}
+          VERSION: ${{ inputs.version }}
+          WIX_DIRECTORY: ${{ runner.temp }}\wix
+        run: |
+          $dist = (Resolve-Path ..\dist).Path
+          ..\.github\scripts\tests\test-msi-installer.ps1 -Binary (Join-Path $dist $env:ASSET) -ReleaseMsi (Join-Path $dist $env:INSTALLER) -ReleaseVersion $env:VERSION -InstallerVersion $env:INSTALLER_VERSION -WixDirectory $env:WIX_DIRECTORY -LogDirectory (Join-Path $env:RUNNER_TEMP 'installer-logs')
+      - name: Test The Package
+        if: runner.os == 'macOS'
+        timeout-minutes: 10
+        env:
+          INSTALLER: ${{ steps.asset.outputs.installer }}
+          INSTALLER_VERSION: ${{ steps.installer-version.outputs.version }}
+          ASSET: ${{ steps.asset.outputs.name }}
+          VERSION: ${{ inputs.version }}
+        run: bash ../.github/scripts/tests/test-pkg-installer.sh "${PWD}/../dist/${ASSET}" "${PWD}/../dist/${INSTALLER}" "$VERSION" "$INSTALLER_VERSION" "${RUNNER_TEMP}/installer-logs"
+      # holds no secret. release.yaml's sign-macos and verify-macos call these tools
+      # by absolute path, and a tool that moves on a new runner image should fail a
+      # pull request here instead of a release. the lists must name every tool those
+      # jobs and test-signed-pkg.sh call; check-release-shape.mjs compares them.
+      # base64 and shasum are run, since their flags are what the jobs rely on.
+      - name: Check The Signing Tools
+        if: runner.os == 'macOS'
+        run: |
+          bin_tools="security codesign pkgbuild openssl plutil shasum xcrun lsbom sudo"
+          sbin_tools="pkgutil spctl installer"
+          found=""
+          missing=""
+          for tool in $bin_tools; do
+            if [[ -x "/usr/bin/${tool}" ]]; then
+              found="${found} ${tool}=/usr/bin/${tool}"
+            else
+              missing="${missing} /usr/bin/${tool}"
+            fi
+          done
+          for tool in $sbin_tools; do
+            if [[ -x "/usr/sbin/${tool}" ]]; then
+              found="${found} ${tool}=/usr/sbin/${tool}"
+            else
+              missing="${missing} /usr/sbin/${tool}"
+            fi
+          done
+          for tool in notarytool stapler; do
+            path="$(/usr/bin/xcrun --find "$tool" 2>/dev/null)" || path=""
+            if [[ -n "$path" ]]; then
+              found="${found} ${tool}=${path}"
+            else
+              missing="${missing} xcrun:${tool}"
+            fi
+          done
+          base64_path="$(command -v base64)" || base64_path=""
+          if [[ -n "$base64_path" && "$(printf 'dGVzdA==' | base64 --decode)" == "test" ]]; then
+            found="${found} base64=${base64_path}"
+          else
+            missing="${missing} base64:--decode"
+          fi
+          if [[ "$(/usr/bin/shasum -a 256 </dev/null)" != e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855* ]]; then
+            missing="${missing} shasum:-a-256"
+          fi
+          echo "MEASURED: signing tools:${found}"
+          if [[ -n "$missing" ]]; then
+            echo "error: the signing jobs call tools that are missing or do not behave as they rely on:${missing}" >&2
+            exit 1
+          fi
+      - name: Upload The Installer Test Logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: installer-test-logs-${{ matrix.target }}
+          path: ${{ runner.temp }}/installer-logs
+          retention-days: 14
+          overwrite: true
       # sha256sum where the runner has it, as Git Bash on Windows does, and shasum
       # on macOS, which may lack sha256sum.
-      - name: Hash The Binary
+      - name: Hash The Binary And The Installer
         id: hash
         working-directory: dist
         env:
           ASSET: ${{ steps.asset.outputs.name }}
           HASH_OUTPUT: ${{ matrix.sha256-output }}
+          INSTALLER: ${{ steps.asset.outputs.installer }}
+          INSTALLER_HASH_OUTPUT: ${{ matrix.installer-sha256-output }}
         run: |
-          if command -v sha256sum >/dev/null 2>&1; then
-            line="$(sha256sum "$ASSET")"
-          else
-            line="$(shasum -a 256 "$ASSET")"
-          fi
-          hash="${line%% *}"
-          if [[ ! "$hash" =~ ^[0-9a-f]{64}$ ]]; then
-            echo "error: '${line}' does not start with a SHA-256" >&2
-            exit 1
-          fi
-          echo "${HASH_OUTPUT}=${hash}" >> "$GITHUB_OUTPUT"
-          echo "${hash}  ${ASSET}"
-      - name: Upload The Binary
+          hash_file() {
+            local line hash
+            if command -v sha256sum >/dev/null 2>&1; then
+              line="$(sha256sum "$1")"
+            else
+              line="$(shasum -a 256 "$1")"
+            fi
+            hash="${line%% *}"
+            if [[ ! "$hash" =~ ^[0-9a-f]{64}$ ]]; then
+              echo "error: '${line}' does not start with a SHA-256" >&2
+              exit 1
+            fi
+            echo "${2}=${hash}" >> "$GITHUB_OUTPUT"
+            echo "${hash}  ${1}"
+          }
+          hash_file "$ASSET" "$HASH_OUTPUT"
+          hash_file "$INSTALLER" "$INSTALLER_HASH_OUTPUT"
+      - name: Upload The Binary And The Installer
         uses: actions/upload-artifact@v7
         with:
           name: marshal-${{ matrix.target }}
-          path: dist/${{ steps.asset.outputs.name }}
+          path: |
+            dist/${{ steps.asset.outputs.name }}
+            dist/${{ steps.asset.outputs.installer }}
           if-no-files-found: error
 
   # the hashes are handed over as job outputs, apart from the artifacts, so a file
-  # that changed between the build and here fails the check.
+  # that changed between the build and here fails the check. assemble-release.sh
+  # compares them and writes SHA256SUMS, as release.yaml's assemble-signed job
+  # does for the signed set.
   assemble:
     name: Assemble The Release Files
     needs: build
@@ -166,52 +305,32 @@ jobs:
     outputs:
       artifact: marshal-release
     steps:
-      - name: Download The Windows Binary
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Download The Windows Files
         uses: actions/download-artifact@v8
         with:
           name: marshal-windows-x64
           path: dist
-      - name: Download The macOS Binary
+      - name: Download The macOS Files
         uses: actions/download-artifact@v8
         with:
           name: marshal-macos-arm64
           path: dist
       - name: Check The Hashes And Write SHA256SUMS
-        id: files
-        working-directory: dist
         env:
           VERSION: ${{ inputs.version }}
           WINDOWS_SHA256: ${{ needs.build.outputs.windows_x64_sha256 }}
+          WINDOWS_MSI_SHA256: ${{ needs.build.outputs.windows_x64_msi_sha256 }}
           MACOS_SHA256: ${{ needs.build.outputs.macos_arm64_sha256 }}
-        run: |
-          windows="marshal-${VERSION}-windows-x64.exe"
-          macos="marshal-${VERSION}-macos-arm64"
-          expected="$(printf '%s\n' "$macos" "$windows" | LC_ALL=C sort)"
-          present="$(find . -mindepth 1 -maxdepth 1 -printf '%P\n' | LC_ALL=C sort)"
-          if [[ "$present" != "$expected" ]]; then
-            echo "error: the downloaded files are not exactly ${macos} and ${windows}:" >&2
-            echo "$present" >&2
-            exit 1
-          fi
-          for hash in "$WINDOWS_SHA256" "$MACOS_SHA256"; do
-            if [[ ! "$hash" =~ ^[0-9a-f]{64}$ ]]; then
-              echo "error: a build leg handed over '${hash}', which is not a SHA-256" >&2
-              exit 1
-            fi
-          done
-          printf '%s  %s\n' "$MACOS_SHA256" "$macos" "$WINDOWS_SHA256" "$windows" > SHA256SUMS
-          sha256sum --check --strict SHA256SUMS
-          cat SHA256SUMS
-          {
-            echo "windows=${windows}"
-            echo "macos=${macos}"
-          } >> "$GITHUB_OUTPUT"
+          MACOS_PKG_SHA256: ${{ needs.build.outputs.macos_arm64_pkg_sha256 }}
+        run: bash .github/scripts/assemble-release.sh "$VERSION" dist "$WINDOWS_SHA256" "$WINDOWS_MSI_SHA256" "$MACOS_SHA256" "$MACOS_PKG_SHA256"
+      # dist holds exactly the four files and SHA256SUMS, which the script checked.
       - name: Upload The Release Files
         uses: actions/upload-artifact@v7
         with:
           name: marshal-release
-          path: |
-            dist/${{ steps.files.outputs.windows }}
-            dist/${{ steps.files.outputs.macos }}
-            dist/SHA256SUMS
+          path: dist
           if-no-files-found: error
