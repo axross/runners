@@ -640,7 +640,7 @@ named and used.
   names its cause, such as an empty or too long token, and never the params. A
   store failure names its kind and the platform's code, which hold no token. The
   request is only as private as the channel: only the agent's user can send it.
-- A token longer than 1280 characters or empty is refused before it reaches the
+- A token longer than 1280 UTF-16 code units or empty is refused before it reaches the
   store, so a client cannot fill the store with arbitrary data.
 
 Residual risks, accepted on a single-user host:

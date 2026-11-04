@@ -17,9 +17,9 @@ use crate::validate::patterns::{is_owner, is_repository};
 pub use keyring::{Classified, EntryName, KeyringTokenStore, Naming};
 pub use memory::MemoryTokenStore;
 
-/// the most characters a token may have: the Credential Manager keeps a password in
-/// 2560 bytes of UTF-16.
-pub const MAX_TOKEN_CHARS: usize = 1280;
+/// the most UTF-16 code units a token may have, so an accepted token always fits the
+/// 2560 bytes the Credential Manager keeps a password in.
+pub const MAX_TOKEN_UTF16_UNITS: usize = 1280;
 
 /// a repository as the store names it: `owner/name` in lower case, the way the
 /// configuration's checks compare an owner and a repository.
@@ -175,7 +175,10 @@ impl fmt::Display for TokenRefusal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Empty => f.write_str("the token is empty"),
-            Self::TooLong => write!(f, "the token is longer than {MAX_TOKEN_CHARS} characters"),
+            Self::TooLong => write!(
+                f,
+                "the token is longer than {MAX_TOKEN_UTF16_UNITS} UTF-16 code units"
+            ),
         }
     }
 }
@@ -183,12 +186,12 @@ impl fmt::Display for TokenRefusal {
 impl std::error::Error for TokenRefusal {}
 
 /// the token as the store keeps it: white space around it removed, then refused when
-/// it is empty or longer than [`MAX_TOKEN_CHARS`].
+/// it is empty or longer than [`MAX_TOKEN_UTF16_UNITS`].
 pub fn accepted_token(text: &str) -> Result<Secret, TokenRefusal> {
     let token = text.trim();
     if token.is_empty() {
         Err(TokenRefusal::Empty)
-    } else if token.chars().count() > MAX_TOKEN_CHARS {
+    } else if token.encode_utf16().count() > MAX_TOKEN_UTF16_UNITS {
         Err(TokenRefusal::TooLong)
     } else {
         Ok(Secret::new(token.to_string()))
@@ -239,13 +242,20 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_or_oversize_token_is_refused_and_the_limit_counts_characters() {
+    fn an_empty_or_oversize_token_is_refused_and_the_limit_counts_utf16_units() {
         assert_eq!(accepted_token(" \t ").unwrap_err(), TokenRefusal::Empty);
-        assert!(accepted_token(&"a".repeat(MAX_TOKEN_CHARS)).is_ok());
+        assert!(accepted_token(&"a".repeat(MAX_TOKEN_UTF16_UNITS)).is_ok());
         assert_eq!(
-            accepted_token(&"a".repeat(MAX_TOKEN_CHARS + 1)).unwrap_err(),
+            accepted_token(&"a".repeat(MAX_TOKEN_UTF16_UNITS + 1)).unwrap_err(),
             TokenRefusal::TooLong
         );
-        assert!(accepted_token(&"é".repeat(MAX_TOKEN_CHARS)).is_ok());
+        assert!(accepted_token(&"é".repeat(MAX_TOKEN_UTF16_UNITS)).is_ok());
+        // a character outside the basic plane takes two units
+        let pairs = MAX_TOKEN_UTF16_UNITS / 2;
+        assert!(accepted_token(&"😀".repeat(pairs)).is_ok());
+        assert_eq!(
+            accepted_token(&"😀".repeat(pairs + 1)).unwrap_err(),
+            TokenRefusal::TooLong
+        );
     }
 }

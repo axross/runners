@@ -854,7 +854,8 @@ log.
 `token_store` is the one place the agent keeps a repository's token. The interface
 names no operating system: `get`, `set` and `remove` by a repository key, which is
 `owner/name` in lower case, so `Axross/Runners` and `axross/runners` are one token.
-A token is trimmed, then refused when it is empty or longer than 1280 characters.
+A token is trimmed, then refused when it is empty or longer than 1280 UTF-16 code units, which
+keeps it inside the Credential Manager's 2560 bytes.
 
 - **Windows.** The Credential Manager of the current user, through
   `windows-native-keyring-store`, as one generic credential per repository named
