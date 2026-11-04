@@ -247,6 +247,18 @@ async fn changed(subscription: &mut Option<Subscription>) {
     pending::<()>().await;
 }
 
+/// the reason the agent is ending, once it is; never, when the agent drops it unset.
+async fn ending_reason(ending: &mut watch::Receiver<Option<String>>) -> String {
+    loop {
+        if let Some(reason) = ending.borrow_and_update().clone() {
+            return reason;
+        }
+        if ending.changed().await.is_err() {
+            pending::<()>().await;
+        }
+    }
+}
+
 async fn at(deadline: Option<Instant>) {
     match deadline {
         Some(deadline) => sleep_until(deadline).await,
@@ -266,9 +278,16 @@ where
     let limits = shared.limits;
     let (read, mut writer) = tokio::io::split(stream);
     let (mut lines, _reader) = read_lines(read);
-    let first = match timeout(limits.handshake, lines.recv()).await {
-        Ok(Some(Read::Line(line))) => line,
-        _ => return,
+    let mut ending = shared.ending.clone();
+    let first = tokio::select! {
+        first = timeout(limits.handshake, lines.recv()) => match first {
+            Ok(Some(Read::Line(line))) => line,
+            _ => return,
+        },
+        reason = ending_reason(&mut ending) => {
+            write(&mut writer, &ServerMessage::Ending { reason: &reason }, limits.write).await;
+            return;
+        }
     };
     let _slot = match admission {
         Admission::Busy(slot) => {
