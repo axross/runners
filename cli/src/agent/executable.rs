@@ -18,22 +18,63 @@ struct Identity {
     file: (u64, u64),
     #[cfg(windows)]
     created: u64,
+    /// the volume serial number and the file index, which a file keeps until it is
+    /// deleted and no other file on the volume has at the same time, as a device and
+    /// an inode do; the times alone can match for a file written again at once.
+    #[cfg(windows)]
+    file: (u32, u64),
+}
+
+/// the volume serial number and file index of the file at `path`, read through a
+/// handle opened for no access at all, with every share mode, so neither the running
+/// program nor an installer replacing it is blocked.
+#[cfg(windows)]
+fn file_id(path: &Path) -> std::io::Result<(u32, u64)> {
+    use winsafe::{self as w, co};
+    let failed = |call: &str, error: &dyn std::fmt::Display| {
+        std::io::Error::other(format!("{call} failed: {error}"))
+    };
+    let name = path
+        .to_str()
+        .ok_or_else(|| std::io::Error::other("the path is not UTF-8"))?;
+    let (file, _) = w::HFILE::CreateFile(
+        name,
+        co::GENERIC::default(),
+        Some(co::FILE_SHARE::READ | co::FILE_SHARE::WRITE | co::FILE_SHARE::DELETE),
+        None,
+        co::DISPOSITION::OPEN_EXISTING,
+        co::FILE_ATTRIBUTE::NORMAL,
+        None,
+        None,
+        None,
+    )
+    .map_err(|error| failed("CreateFile", &error))?;
+    let information = file
+        .GetFileInformationByHandle()
+        .map_err(|error| failed("GetFileInformationByHandle", &error))?;
+    Ok((information.dwVolumeSerialNumber, information.nFileIndex()))
 }
 
 impl Identity {
-    fn of(metadata: &Metadata) -> Self {
+    /// the identity of the file at `path`, whose metadata is `metadata`; `None` when
+    /// it cannot be read.
+    fn of(path: &Path, metadata: &Metadata) -> Option<Self> {
         #[cfg(unix)]
         use std::os::unix::fs::MetadataExt;
         #[cfg(windows)]
         use std::os::windows::fs::MetadataExt;
-        Self {
+        #[cfg(not(windows))]
+        let _ = path;
+        Some(Self {
             len: metadata.len(),
             modified: metadata.modified().ok(),
             #[cfg(unix)]
             file: (metadata.dev(), metadata.ino()),
             #[cfg(windows)]
             created: metadata.creation_time(),
-        }
+            #[cfg(windows)]
+            file: file_id(path).ok()?,
+        })
     }
 }
 
@@ -62,17 +103,20 @@ impl Executable {
         let metadata = std::fs::metadata(path).ok()?;
         Some(Self {
             path: path.to_path_buf(),
-            identity: Identity::of(&metadata),
+            identity: Identity::of(path, &metadata)?,
         })
     }
 
     /// what the path holds now compared with the file the agent started from.
     #[must_use]
     pub fn look(&self) -> Look {
-        match std::fs::metadata(&self.path) {
-            Ok(now) if Identity::of(&now) == self.identity => Look::Same,
-            Ok(_) => Look::Replaced,
-            Err(_) => Look::Unreadable,
+        let Ok(now) = std::fs::metadata(&self.path) else {
+            return Look::Unreadable;
+        };
+        match Identity::of(&self.path, &now) {
+            Some(now) if now == self.identity => Look::Same,
+            Some(_) => Look::Replaced,
+            None => Look::Unreadable,
         }
     }
 
