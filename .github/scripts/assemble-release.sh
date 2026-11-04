@@ -67,6 +67,8 @@ printf '%s  %s\n' \
   "$macos_pkg_sha256" "$macos_pkg" \
   "$windows_sha256" "$windows" \
   "$windows_msi_sha256" "$windows_msi" >"${directory}/SHA256SUMS"
-(cd "$directory" && sha256sum --check --strict SHA256SUMS) \
-  || refuse "SHA256SUMS does not match the files it was just written from"
+if ! (cd "$directory" && sha256sum --check --strict SHA256SUMS); then
+  rm -f "${directory}/SHA256SUMS"
+  refuse "SHA256SUMS does not match the files it was just written from"
+fi
 cat "${directory}/SHA256SUMS"

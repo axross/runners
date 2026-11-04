@@ -118,6 +118,23 @@ set -- $(hashes "${work}/bad-hash")
 expect "a hash that is not a SHA-256" 1 "is not a SHA-256" "${work}/bad-hash" "$1" "$2" "$3" "not-a-hash"
 expect "an empty hash" 1 "is not a SHA-256" "${work}/bad-hash" "$1" "$2" "" "$4"
 
+# a sha256sum that rejects the file the script just wrote.
+mkdir -p "${work}/rejecting"
+real_sha256sum="$(command -v sha256sum)"
+cat >"${work}/rejecting/sha256sum" <<REJECTING
+#!/usr/bin/env bash
+if [[ "\${1:-}" == --check ]]; then
+  echo "sha256sum: SHA256SUMS: no properly formatted checksum lines found" >&2
+  exit 1
+fi
+exec "${real_sha256sum}" "\$@"
+REJECTING
+chmod +x "${work}/rejecting/sha256sum"
+make_set "${work}/unchecked"
+# shellcheck disable=SC2046 # the four hashes are separate arguments.
+set -- $(hashes "${work}/unchecked")
+PATH="${work}/rejecting:${PATH}" expect "a SHA256SUMS that sha256sum --check rejects" 1 "does not match the files it was just written from" "${work}/unchecked" "$@"
+
 make_set "${work}/missing"
 # shellcheck disable=SC2046 # the four hashes are separate arguments.
 set -- $(hashes "${work}/missing")
