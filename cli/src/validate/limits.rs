@@ -7,6 +7,8 @@ use super::fields::Errors;
 pub const DEFAULT_CPUS: f64 = 2.0;
 pub const MAX_CPUS: f64 = 64.0;
 pub const MAX_VM_CPUS: u32 = 64;
+/// the disk of the base image `golden::pins::BASE_REFERENCE` pins, which the golden
+/// VM keeps; the pin holds no constant for it, so this is the one place it is stated.
 pub const MIN_LINUX_DISK_GB: u32 = 20;
 pub const DEFAULT_MEMORY_GB: u32 = 8;
 pub const MAX_MEMORY_GB: u32 = 256;

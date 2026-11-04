@@ -2,6 +2,7 @@
 # reads the jit configuration from standard input into the docker client's
 # environment and runs docker with this script's arguments, so the value never
 # appears in an argument list; it is not echoed, logged or written to a file.
+# POSIX sh has no pipefail, and this script has no pipeline for it to cover.
 set -eu
 
 limit=65536

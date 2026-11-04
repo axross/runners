@@ -142,18 +142,21 @@ impl Rig {
         &self,
         stop: tokio::sync::watch::Receiver<Option<tokio::time::Instant>>,
     ) -> Result<(), String> {
-        GoldenBuild {
-            client: self.fake.client.clone(),
-            launcher: self.launcher.clone(),
-            image: IMAGE,
-            context: b"the build context".to_vec(),
-            log: &self.log,
-            timings: self.timings,
-            retired: &self.retired,
-            softnet_owner_mode: Some(self.owner_mode),
-            stop,
-        }
-        .run()
+        // boxed as the command boxes it, so the test's own future stays small
+        Box::pin(
+            GoldenBuild {
+                client: self.fake.client.clone(),
+                launcher: self.launcher.clone(),
+                image: IMAGE,
+                context: b"the build context".to_vec(),
+                log: &self.log,
+                timings: self.timings,
+                retired: &self.retired,
+                softnet_owner_mode: Some(self.owner_mode),
+                stop,
+            }
+            .run(),
+        )
         .await
     }
 
@@ -343,16 +346,21 @@ fn describe(words: &[String]) -> String {
     words.join(" ")
 }
 
-/// runs a test's future on a thread with a large stack: a debug build's futures for
-/// the whole build poll in deeper frames than a test thread's 2 MiB allows, while the
-/// command runs on the main thread's 8 MiB, as the process tests show.
+/// the stack of the thread a test's build runs on. The debug build needs a little under
+/// 2 MiB with the golden future boxed, as the command boxes it, and about 3.5 MiB
+/// without; this is twice the first, so a regrowth of the poll depth fails a test
+/// here before it fails the command on the main thread's 8 MiB.
+const STACK_BYTES: usize = 4 * 1024 * 1024;
+
+/// runs a test's future on a thread of [`STACK_BYTES`], which is larger than a test
+/// thread's 2 MiB, whose stack a debug build's polling of the whole build exhausts.
 pub fn big_stack<F, Fut>(make: F)
 where
     F: FnOnce() -> Fut + Send + 'static,
     Fut: std::future::Future<Output = ()>,
 {
     let thread = std::thread::Builder::new()
-        .stack_size(64 * 1024 * 1024)
+        .stack_size(STACK_BYTES)
         .spawn(move || {
             tokio::runtime::Builder::new_current_thread()
                 .enable_all()

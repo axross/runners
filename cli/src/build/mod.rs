@@ -157,20 +157,24 @@ pub fn build(request: &BuildRequest<'_>, err: &mut dyn Write) -> u8 {
                 ..TartConfig::default()
             });
             let (image, log) = (&image, &log);
-            runtime.block_on(build.run(|stop| async move {
-                GoldenBuild {
-                    client,
-                    launcher,
-                    image,
-                    context,
-                    log,
-                    timings: GoldenTimings::default(),
-                    retired: RETIRED_BASE_PINS,
-                    softnet_owner_mode: None,
-                    stop,
-                }
-                .run()
-                .await
+            // boxed: the whole golden build is a large future, which `block_on` would
+            // otherwise hold on the main thread's stack
+            runtime.block_on(build.run(|stop| {
+                Box::pin(async move {
+                    GoldenBuild {
+                        client,
+                        launcher,
+                        image,
+                        context,
+                        log,
+                        timings: GoldenTimings::default(),
+                        retired: RETIRED_BASE_PINS,
+                        softnet_owner_mode: None,
+                        stop,
+                    }
+                    .run()
+                    .await
+                })
             }))
         }
     };
