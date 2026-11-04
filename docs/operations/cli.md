@@ -331,8 +331,9 @@ selection is `Runtime::of_pool` in `runtime::select`:
 | axmc | `os: "macos"`      | None                                                             |
 
 The backend above is the Docker Desktop runtime. The runtime core drives the
-containers through the backend seam, apart from the engine poll interval it shares
-with `runtime::docker`, and `start` and the shim construct the Docker backend
+containers through the backend seam, apart from two values it takes from the Docker
+modules: the engine poll interval from `runtime::docker` and the run command from
+`runtime::docker_args`. `start` and the shim construct the Docker backend
 directly. No code implements the VM runtime yet, so a
 configuration that selects it, or selects none for a pool, is validated and then
 refused:
