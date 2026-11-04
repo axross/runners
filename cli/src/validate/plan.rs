@@ -10,6 +10,27 @@ pub struct Plan {
     pub entries: Vec<Entry>,
     /// the host-wide limits of an axmc configuration.
     pub budget: Option<Budget>,
+    /// what a file with settings of its own carries; JSON has none.
+    pub settings: Option<Settings>,
+}
+
+/// the settings a file carries beyond the host's rules.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Settings {
+    pub schema_version: u32,
+    /// the label a pool without labels carries besides the platform's.
+    pub routing_label: String,
+    pub lifecycle: Lifecycle,
+}
+
+/// the `[lifecycle]` table: each value is kept as the file gives it, and an absent
+/// one stays unset.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Lifecycle {
+    pub start_at_login: Option<bool>,
+    pub start_runners_on_launch: Option<bool>,
+    pub keep_awake: Option<bool>,
+    pub resume_after_stop: Option<bool>,
 }
 
 /// one target repository's pool.
@@ -35,7 +56,8 @@ pub struct Entry {
     /// it; `None` when diagnostics are off.
     pub diagnostic_directory: Option<String>,
     pub diagnostic_raw_records: bool,
-    /// the OS of an axmc pool's virtual machines.
+    /// the OS of an axmc pool's virtual machines; a JSON axpc pool has none, and a TOML
+    /// one on Windows has Linux, the only one it runs.
     pub os: Option<Os>,
     /// the per-VM disk cap of an axmc pool.
     pub disk_gb: Option<u32>,

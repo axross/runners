@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde::de::{self, DeserializeOwned, Visitor};
 
 use crate::de::Deserializer;
-use crate::json::{Object, Value};
+use crate::json::Value;
 
 use super::problem::{KeyPath, Kind, Problem};
 use super::reader::Reader;
@@ -116,7 +116,7 @@ pub fn string<'a>(
 ) -> Option<&'a str> {
     let value = required(field, path, errors)?;
     match value {
-        Value::String(text) if accepts(text) => Some(text),
+        Value::String(text) => accepted_text(text, path, errors, accepts, expectation),
         _ => {
             errors.add(path.clone(), Kind::MustBe(expectation));
             None
@@ -124,34 +124,42 @@ pub fn string<'a>(
     }
 }
 
+/// returns the text when `accepts` passes it, or records that it is not what
+/// `expectation` describes.
+pub fn accepted_text<'a>(
+    text: &'a str,
+    path: &KeyPath,
+    errors: &mut Errors,
+    accepts: fn(&str) -> bool,
+    expectation: &'static str,
+) -> Option<&'a str> {
+    if accepts(text) {
+        return Some(text);
+    }
+    errors.add(path.clone(), Kind::MustBe(expectation));
+    None
+}
+
 /// reads an object's members into `T`, or records that the node is not an object;
-/// the members `allowed` does not list are recorded first, in document order.
+/// the members the reader does not define are recorded first, in document order.
 pub fn read_object<T: DeserializeOwned>(
     value: &Value,
     path: &KeyPath,
-    allowed: &[&str],
+    reader: &dyn Reader,
     errors: &mut Errors,
 ) -> Option<T> {
     let Value::Object(object) = value else {
         errors.add(path.clone(), Kind::MustBe("an object"));
         return None;
     };
-    unknown_fields(object, allowed, path, errors);
+    for name in reader.undefined_keys(object, path) {
+        errors.add(path.clone(), Kind::UnknownField(name));
+    }
     match T::deserialize(Deserializer::new(value).ignoring_field_case()) {
         Ok(fields) => Some(fields),
         Err(error) => {
             errors.add(path.clone(), Kind::Unreadable(error.to_string()));
             None
-        }
-    }
-}
-
-/// records every member of the node that `allowed` does not list; the comparison is
-/// case-sensitive, so `Owner` is unknown even though the read finds it.
-fn unknown_fields(node: &Object, allowed: &[&str], path: &KeyPath, errors: &mut Errors) {
-    for (name, _) in node.iter() {
-        if !allowed.contains(&name) {
-            errors.add(path.clone(), Kind::UnknownField(name.to_string()));
         }
     }
 }

@@ -9,6 +9,7 @@ use crate::json::Value;
 use super::fields::{self, Errors, Field};
 use super::patterns;
 use super::problem::{Key, KeyPath, Kind};
+use super::reader::Reader;
 
 pub(super) const VOLUME_FIELDS: [&str; 2] = ["suffix", "mountPath"];
 
@@ -28,14 +29,14 @@ pub struct Volume {
 }
 
 /// returns the volume definitions, or `None` after recording every problem; a
-/// pool that lists none has none when `may_omit` allows it.
+/// pool that lists none has none when the reader allows it.
 pub fn volume_definitions(
     volumes: &Field,
     path: &KeyPath,
-    may_omit: bool,
+    reader: &dyn Reader,
     errors: &mut Errors,
 ) -> Option<Vec<Volume>> {
-    if may_omit && volumes.get().is_none() {
+    if reader.may_omit_os_and_volumes() && volumes.get().is_none() {
         return Some(Vec::new());
     }
     let field = path.key(Key::Volumes);
@@ -50,8 +51,7 @@ pub fn volume_definitions(
     let mut valid = true;
     for (index, item) in items.iter().enumerate() {
         let item_path = field.index(index);
-        let Some(volume) =
-            fields::read_object::<VolumeFields>(item, &item_path, &VOLUME_FIELDS, errors)
+        let Some(volume) = fields::read_object::<VolumeFields>(item, &item_path, reader, errors)
         else {
             valid = false;
             continue;

@@ -14,7 +14,7 @@ pub enum Runtime {
 
 impl Runtime {
     /// the runtime of a pool of `os` on the `profile` host, or `None` when the host
-    /// has none for it. An axpc pool has no `os`.
+    /// has none for it. An axpc pool's `os` does not choose its runtime.
     #[must_use]
     pub fn of_pool(profile: Profile, os: Option<Os>) -> Option<Self> {
         match (profile, os) {

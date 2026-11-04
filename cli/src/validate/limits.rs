@@ -5,6 +5,9 @@ use crate::json::Value;
 use super::fields::Errors;
 use super::problem::{KeyPath, Kind};
 
+/// says what a CPU count may be, after the path.
+pub const CPU_RANGE: &str = "must be a number greater than 0 and at most 64";
+
 pub const DEFAULT_CPUS: f64 = 2.0;
 pub const MAX_CPUS: f64 = 64.0;
 pub const DEFAULT_MEMORY_GB: u32 = 8;

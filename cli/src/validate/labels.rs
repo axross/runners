@@ -12,11 +12,12 @@ use super::problem::{Key, KeyPath, Kind};
 
 /// returns the registration labels: the platform labels followed by the entry's own,
 /// or the platform labels and the routing label when the field is absent or empty;
-/// `None` after recording why a present list is unusable.
+/// `None` after recording why a present list is unusable. a file whose routing label
+/// is unusable gives none, so its pools carry only the platform labels.
 pub fn registration_labels(
     field: &Field,
     entry_path: &KeyPath,
-    routing_label: &str,
+    routing_label: Option<&str>,
     profile: Profile,
     os: Option<Os>,
     errors: &mut Errors,
@@ -27,7 +28,7 @@ pub fn registration_labels(
         platform
             .iter()
             .copied()
-            .chain([routing_label])
+            .chain(routing_label)
             .map(str::to_string)
             .collect()
     };

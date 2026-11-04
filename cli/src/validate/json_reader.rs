@@ -1,13 +1,14 @@
 //! the JSON reader's side of validation: today's rules for each host, and the path form
 //! and wording that the shared fixtures pin.
 
+use crate::json::Object;
 use crate::profile::Profile;
 
-use super::limits::format_nanos;
+use super::budget::BUDGET_FIELDS;
+use super::limits::{CPU_RANGE, format_nanos};
 use super::problem::{Key, KeyPath, Kind, Location, Problem, Segment};
 use super::reader::Reader;
-
-const CPU_RANGE: &str = "must be a number greater than 0 and at most 64";
+use super::volumes::VOLUME_FIELDS;
 
 /// reads a host configuration written as JSON for one host profile.
 #[derive(Debug, Clone, Copy)]
@@ -22,12 +23,38 @@ impl JsonReader {
     }
 }
 
+impl JsonReader {
+    /// the keys the profile defines for the object at `path`.
+    fn defined_keys(&self, path: &KeyPath) -> &'static [&'static str] {
+        match path.segments() {
+            [] => self.profile.root_fields(),
+            [Segment::Key(Key::Repositories), Segment::Index(_)] => self.profile.entry_fields(),
+            [Segment::Key(Key::Budget)] => &BUDGET_FIELDS,
+            [
+                Segment::Key(Key::Repositories),
+                Segment::Index(_),
+                Segment::Key(Key::Volumes),
+                Segment::Index(_),
+            ] => &VOLUME_FIELDS,
+            _ => &[],
+        }
+    }
+}
+
 impl Reader for JsonReader {
-    fn routing_label(&self) -> &str {
-        self.profile.routing_label()
+    fn routing_label(&self) -> Option<&str> {
+        Some(self.profile.routing_label())
     }
 
     fn may_omit_os_and_volumes(&self) -> bool {
+        false
+    }
+
+    fn windows_pool_has_os(&self) -> bool {
+        false
+    }
+
+    fn joins_owner_and_repository(&self) -> bool {
         false
     }
 
@@ -37,6 +64,15 @@ impl Reader for JsonReader {
 
     fn entry_path(&self, index: usize) -> String {
         path_text(&KeyPath::root().key(Key::Repositories).index(index))
+    }
+
+    fn undefined_keys(&self, node: &Object, path: &KeyPath) -> Vec<String> {
+        let allowed = self.defined_keys(path);
+        node.iter()
+            .map(|(name, _)| name)
+            .filter(|name| !allowed.contains(name))
+            .map(str::to_string)
+            .collect()
     }
 
     fn locate(&self, _path: &KeyPath, _kind: &Kind) -> Option<Location> {
@@ -77,6 +113,10 @@ impl Reader for JsonReader {
             Kind::VolumesUnsupported => {
                 format!("{path}: not supported on {profile}, because VM pools keep no volumes")
             }
+            Kind::OsUnsupported(os) => {
+                format!("{path}: a {os} pool is not supported on {profile}")
+            }
+            Kind::NewerSchemaVersion => format!("{path}: written by a newer version"),
             Kind::MountPathHasDotDot => format!("{path}: must not contain '..'"),
             Kind::DuplicateSuffix(suffix) => format!("{path}: duplicate suffix '{suffix}'"),
             Kind::DuplicateMountPath(mount_path) => {
@@ -134,8 +174,10 @@ impl Reader for JsonReader {
     }
 }
 
-/// the key as the JSON file spells it.
-fn key_name(key: Key) -> &'static str {
+/// the key as the JSON file spells it, which is also the name the shared tree gives it
+/// whatever the format; the keys only a file with settings has are spelled the same
+/// way, though no JSON file has them.
+pub(super) fn key_name(key: Key) -> &'static str {
     match key {
         Key::ImageName => "imageName",
         Key::Repositories => "repositories",
@@ -156,6 +198,13 @@ fn key_name(key: Key) -> &'static str {
         Key::DiskGb => "diskGb",
         Key::Suffix => "suffix",
         Key::MountPath => "mountPath",
+        Key::SchemaVersion => "schemaVersion",
+        Key::RoutingLabel => "routingLabel",
+        Key::Lifecycle => "lifecycle",
+        Key::StartAtLogin => "startAtLogin",
+        Key::StartRunnersOnLaunch => "startRunnersOnLaunch",
+        Key::KeepAwake => "keepAwake",
+        Key::ResumeAfterStop => "resumeAfterStop",
     }
 }
 
@@ -186,7 +235,11 @@ mod tests {
 
     #[test]
     fn every_key_is_spelled_as_one_of_the_schemas_json_names() {
-        let mut spelled: Vec<&str> = Key::ALL.iter().map(|key| key_name(*key)).collect();
+        let mut spelled: Vec<&str> = Key::ALL
+            .iter()
+            .filter(|key| !key.is_file_setting())
+            .map(|key| key_name(*key))
+            .collect();
         let mut defined: Vec<&str> = [Profile::Axpc, Profile::Axmc]
             .iter()
             .flat_map(|profile| {

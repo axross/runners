@@ -61,33 +61,24 @@ pub(super) struct EntryFields {
 /// returns the entry at `index` in the file, or `None` after recording every problem;
 /// an entry with a bad diagnostic field is still returned, so it takes part in the
 /// cross-entry checks.
-pub fn read_entry(value: &Value, index: usize, cx: &mut Context) -> Option<Entry> {
+pub fn read_entry(
+    value: &Value,
+    index: usize,
+    routing_label: Option<&str>,
+    cx: &mut Context,
+) -> Option<Entry> {
     let profile = cx.profile;
     let reader = cx.reader;
     let path = KeyPath::root().key(Key::Repositories).index(index);
-    let node =
-        fields::read_object::<EntryFields>(value, &path, profile.entry_fields(), &mut cx.errors)?;
+    let node = fields::read_object::<EntryFields>(value, &path, reader, &mut cx.errors)?;
 
-    let owner = fields::string(
-        &node.owner,
-        &path.key(Key::Owner),
-        &mut cx.errors,
-        patterns::is_owner,
-        "a GitHub owner name (letters, digits and hyphens)",
-    );
-    let repository = fields::string(
-        &node.repository,
-        &path.key(Key::Repository),
-        &mut cx.errors,
-        patterns::is_repository,
-        "a GitHub repository name (letters, digits and . _ -)",
-    );
+    let (owner, repository) = read_owner_and_repository(&node, &path, cx);
     let token_path = read_token_path(&node.token_path, &path, cx);
     let os = read_os(&node.os, &path, cx);
     let labels = registration_labels(
         &node.labels,
         &path,
-        reader.routing_label(),
+        routing_label,
         profile,
         os,
         &mut cx.errors,
@@ -114,7 +105,7 @@ pub fn read_entry(value: &Value, index: usize, cx: &mut Context) -> Option<Entry
         );
     }
 
-    let os_usable = profile == Profile::Axpc || os.is_some();
+    let os_usable = !has_os(cx) || os.is_some();
     let (Some(owner), Some(repository), Some(token_path), Some(labels), Some(volumes), Some(slots)) =
         (owner, repository, token_path, labels, volumes, slots)
     else {
@@ -183,8 +174,75 @@ fn read_token_path<'a>(
     .map(Some)
 }
 
+/// reads the owner and the repository name, from the two keys of a format that has
+/// them or from the one `owner/name` key of a format that joins them.
+fn read_owner_and_repository<'a>(
+    node: &'a EntryFields,
+    path: &KeyPath,
+    cx: &mut Context,
+) -> (Option<&'a str>, Option<&'a str>) {
+    let owner_path = path.key(Key::Owner);
+    let repository_path = path.key(Key::Repository);
+    let (owner_expectation, repository_expectation) = (
+        "a GitHub owner name (letters, digits and hyphens)",
+        "a GitHub repository name (letters, digits and . _ -)",
+    );
+    if !cx.reader.joins_owner_and_repository() {
+        let owner = fields::string(
+            &node.owner,
+            &owner_path,
+            &mut cx.errors,
+            patterns::is_owner,
+            owner_expectation,
+        );
+        let repository = fields::string(
+            &node.repository,
+            &repository_path,
+            &mut cx.errors,
+            patterns::is_repository,
+            repository_expectation,
+        );
+        return (owner, repository);
+    }
+    let Some(value) = fields::required(&node.repository, &repository_path, &mut cx.errors) else {
+        return (None, None);
+    };
+    let parts = match value {
+        Value::String(text) => text.split_once('/').filter(|(owner, repository)| {
+            !owner.is_empty() && !repository.is_empty() && !repository.contains('/')
+        }),
+        _ => None,
+    };
+    let Some((owner, repository)) = parts else {
+        cx.errors
+            .add(repository_path, Kind::MustBe("\"owner/name\""));
+        return (None, None);
+    };
+    (
+        fields::accepted_text(
+            owner,
+            &owner_path,
+            &mut cx.errors,
+            patterns::is_owner,
+            owner_expectation,
+        ),
+        fields::accepted_text(
+            repository,
+            &repository_path,
+            &mut cx.errors,
+            patterns::is_repository,
+            repository_expectation,
+        ),
+    )
+}
+
+/// whether the pool has an `os` under this host and format.
+fn has_os(cx: &Context) -> bool {
+    cx.profile == Profile::Axmc || cx.reader.windows_pool_has_os()
+}
+
 fn read_os(field: &Field, path: &KeyPath, cx: &mut Context) -> Option<Os> {
-    if cx.profile != Profile::Axmc {
+    if !has_os(cx) {
         return None;
     }
     if cx.reader.may_omit_os_and_volumes() && field.get().is_none() {
@@ -199,6 +257,9 @@ fn read_os(field: &Field, path: &KeyPath, cx: &mut Context) -> Option<Os> {
     if os.is_none() {
         cx.errors
             .add(field_path, Kind::MustBe("\"linux\" or \"macos\""));
+    } else if cx.profile == Profile::Axpc && os == Some(Os::Macos) {
+        cx.errors.add(field_path, Kind::OsUnsupported(Os::Macos));
+        return None;
     }
     os
 }
@@ -211,12 +272,7 @@ fn read_volumes(
     cx: &mut Context,
 ) -> Option<Vec<super::volumes::Volume>> {
     match cx.profile {
-        Profile::Axpc => volume_definitions(
-            &node.volumes,
-            path,
-            cx.reader.may_omit_os_and_volumes(),
-            &mut cx.errors,
-        ),
+        Profile::Axpc => volume_definitions(&node.volumes, path, cx.reader, &mut cx.errors),
         Profile::Axmc => {
             if node.volumes.get().is_some() {
                 cx.errors

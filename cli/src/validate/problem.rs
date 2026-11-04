@@ -27,10 +27,18 @@ pub enum Key {
     DiskGb,
     Suffix,
     MountPath,
+    /// the keys below exist only in a format whose file carries settings of its own.
+    SchemaVersion,
+    RoutingLabel,
+    Lifecycle,
+    StartAtLogin,
+    StartRunnersOnLaunch,
+    KeepAwake,
+    ResumeAfterStop,
 }
 
 impl Key {
-    pub const ALL: [Self; 19] = [
+    pub const ALL: [Self; 26] = [
         Self::ImageName,
         Self::Repositories,
         Self::Budget,
@@ -50,7 +58,29 @@ impl Key {
         Self::DiskGb,
         Self::Suffix,
         Self::MountPath,
+        Self::SchemaVersion,
+        Self::RoutingLabel,
+        Self::Lifecycle,
+        Self::StartAtLogin,
+        Self::StartRunnersOnLaunch,
+        Self::KeepAwake,
+        Self::ResumeAfterStop,
     ];
+
+    /// whether only a format with file settings has the key, which JSON does not.
+    #[must_use]
+    pub fn is_file_setting(self) -> bool {
+        matches!(
+            self,
+            Self::SchemaVersion
+                | Self::RoutingLabel
+                | Self::Lifecycle
+                | Self::StartAtLogin
+                | Self::StartRunnersOnLaunch
+                | Self::KeepAwake
+                | Self::ResumeAfterStop
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -127,6 +157,10 @@ pub enum Kind {
     },
     DuplicateLabel(String),
     VolumesUnsupported,
+    /// a pool whose operating system the host cannot run.
+    OsUnsupported(Os),
+    /// the file declares a schema version this program does not know.
+    NewerSchemaVersion,
     MountPathHasDotDot,
     DuplicateSuffix(String),
     DuplicateMountPath(String),

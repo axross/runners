@@ -1,0 +1,8 @@
+schema_version = "one"
+routing_label = true
+image_name = 3
+lifecycle = 4
+pool = [
+  { name = 1, repository = 2, runners = "3", labels = 4, os = 5, cpus = "6", memory_gb = "7", diagnostics = 8, diagnostic_directory = 9, diagnostic_raw_records = 10, volumes = 11 },
+  { name = "beta", repository = "octo/hello", runners = 1, volumes = [12, { suffix = 13, mount_path = 14 }], labels = [15, "gpu"] },
+]

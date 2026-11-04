@@ -1,0 +1,9 @@
+schema_version = 1
+routing_label = "axpc"
+image_name = "example-image:tag"
+
+[[pool]]
+name = "alpha"
+Name = "other"
+repository = "octo/hello"
+runners = 1

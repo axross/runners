@@ -1,0 +1,880 @@
+{
+  "accepted/macos-dotted-budget.toml": {
+    "profile": "axmc",
+    "outcome": "accept",
+    "problems": [],
+    "contains": [
+      "schema_version: 1",
+      "routing_label: axmc",
+      "lifecycle: start_at_login=unset start_runners_on_launch=unset keep_awake=unset resume_after_stop=unset",
+      "budget: cpus=4 memory_gb=16 disk_gb=100",
+      "pool[0]: name=alpha repository=octo/hello runners=1 os=linux cpus=2 memory_gb=8 disk_gb=40 labels=[self-hosted, linux, ARM64, axmc] volumes=[] diagnostics=false diagnostic_directory=none raw_records=false token_path=none"
+    ],
+    "lacks": []
+  },
+  "accepted/macos-full.toml": {
+    "profile": "axmc",
+    "outcome": "accept",
+    "problems": [],
+    "contains": [
+      "schema_version: 1",
+      "routing_label: axmc",
+      "lifecycle: start_at_login=unset start_runners_on_launch=unset keep_awake=true resume_after_stop=unset",
+      "image_name: example-image:tag",
+      "budget: cpus=8 memory_gb=32 disk_gb=150",
+      "pool[0]: name=alpha repository=octo/hello runners=1 os=macos cpus=4 memory_gb=16 disk_gb=60 labels=[self-hosted, macOS, ARM64, axmc] volumes=[] diagnostics=false diagnostic_directory=none raw_records=false token_path=none",
+      "pool[1]: name=beta repository=octo/hello runners=2 os=linux cpus=2 memory_gb=8 disk_gb=40 labels=[self-hosted, linux, ARM64, linux-vm] volumes=[] diagnostics=false diagnostic_directory=none raw_records=false token_path=none"
+    ],
+    "lacks": []
+  },
+  "accepted/macos-minimal.toml": {
+    "profile": "axmc",
+    "outcome": "accept",
+    "problems": [],
+    "contains": [
+      "schema_version: 1",
+      "routing_label: axmc",
+      "lifecycle: start_at_login=unset start_runners_on_launch=unset keep_awake=unset resume_after_stop=unset",
+      "budget: cpus=4 memory_gb=16 disk_gb=100",
+      "pool[0]: name=alpha repository=octo/hello runners=1 os=linux cpus=2 memory_gb=8 disk_gb=40 labels=[self-hosted, linux, ARM64, axmc] volumes=[] diagnostics=false diagnostic_directory=none raw_records=false token_path=none"
+    ],
+    "lacks": []
+  },
+  "accepted/windows-empty-lifecycle.toml": {
+    "profile": "axpc",
+    "outcome": "accept",
+    "problems": [],
+    "contains": [
+      "schema_version: 1",
+      "routing_label: axpc",
+      "lifecycle: start_at_login=unset start_runners_on_launch=unset keep_awake=unset resume_after_stop=unset",
+      "image_name: example-image:tag",
+      "pool[0]: name=alpha repository=octo/hello runners=1 os=linux cpus=2 memory_gb=8 disk_gb=none labels=[self-hosted, linux, x64, axpc] volumes=[] diagnostics=false diagnostic_directory=none raw_records=false token_path=none"
+    ],
+    "lacks": []
+  },
+  "accepted/windows-full.toml": {
+    "profile": "axpc",
+    "outcome": "accept",
+    "problems": [],
+    "contains": [
+      "schema_version: 1",
+      "routing_label: build-hosts",
+      "lifecycle: start_at_login=true start_runners_on_launch=false keep_awake=true resume_after_stop=false",
+      "image_name: example-image:tag",
+      "pool[0]: name=alpha repository=octo/hello runners=2 os=linux cpus=1.5 memory_gb=12 disk_gb=none labels=[self-hosted, linux, x64, build-hosts] volumes=[alpha-cache:/home/runner/.cache, alpha-tools:/opt/hostedtoolcache] diagnostics=true diagnostic_directory=C:\\diagnostics\\alpha raw_records=true token_path=none",
+      "pool[1]: name=beta repository=octo/hello runners=1 os=linux cpus=2 memory_gb=8 disk_gb=none labels=[self-hosted, linux, x64, gpu] volumes=[] diagnostics=false diagnostic_directory=none raw_records=false token_path=none"
+    ],
+    "lacks": []
+  },
+  "accepted/windows-lifecycle-partly-set.toml": {
+    "profile": "axpc",
+    "outcome": "accept",
+    "problems": [],
+    "contains": [
+      "schema_version: 1",
+      "routing_label: axpc",
+      "lifecycle: start_at_login=unset start_runners_on_launch=unset keep_awake=false resume_after_stop=unset",
+      "image_name: example-image:tag",
+      "pool[0]: name=alpha repository=octo/hello runners=1 os=linux cpus=2 memory_gb=8 disk_gb=none labels=[self-hosted, linux, x64, axpc] volumes=[] diagnostics=false diagnostic_directory=none raw_records=false token_path=none"
+    ],
+    "lacks": []
+  },
+  "accepted/windows-minimal.toml": {
+    "profile": "axpc",
+    "outcome": "accept",
+    "problems": [],
+    "contains": [
+      "schema_version: 1",
+      "routing_label: axpc",
+      "lifecycle: start_at_login=unset start_runners_on_launch=unset keep_awake=unset resume_after_stop=unset",
+      "image_name: example-image:tag",
+      "pool[0]: name=alpha repository=octo/hello runners=1 os=linux cpus=2 memory_gb=8 disk_gb=none labels=[self-hosted, linux, x64, axpc] volumes=[] diagnostics=false diagnostic_directory=none raw_records=false token_path=none"
+    ],
+    "lacks": []
+  },
+  "accepted/windows-other-toml-forms.toml": {
+    "profile": "axpc",
+    "outcome": "accept",
+    "problems": [],
+    "contains": [
+      "schema_version: 1",
+      "routing_label: axpc",
+      "lifecycle: start_at_login=unset start_runners_on_launch=unset keep_awake=unset resume_after_stop=unset",
+      "image_name: example-image:tag",
+      "pool[0]: name=alpha repository=octo/hello runners=2 os=linux cpus=2 memory_gb=8 disk_gb=none labels=[self-hosted, linux, x64, axpc] volumes=[] diagnostics=false diagnostic_directory=none raw_records=false token_path=none",
+      "pool[1]: name=beta repository=octo/other runners=1 os=linux cpus=2 memory_gb=8 disk_gb=none labels=[self-hosted, linux, x64, axpc] volumes=[beta-cache:/cache] diagnostics=false diagnostic_directory=none raw_records=false token_path=none"
+    ],
+    "lacks": []
+  },
+  "rejected/empty.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 1: schema_version: required key is missing",
+      "line 1: routing_label: required key is missing",
+      "line 1: image_name: required key is missing",
+      "line 1: pool: required key is missing"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/key-wrong-case-beside-the-right-key.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 7: pool[0].Name: unknown key"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/key-wrong-case-in-pool.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 6: pool[0].Name: unknown key",
+      "line 8: pool[0].Runners: unknown key",
+      "line 9: pool[0].MEMORY_GB: unknown key",
+      "line 5: pool[0].runners: required key is missing",
+      "line 5: pool[0].name: required key is missing"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/lifecycle-after-the-top-level-keys.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 3: image_name: must be a local Docker image name with a tag, such as name:tag",
+      "line 6: lifecycle.keep_awake: must be a boolean",
+      "line 11: pool[0].runners: must be an integer from 1 to 16"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/lifecycle-not-a-table.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 4: lifecycle: must be a table"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/lifecycle-unknown-key.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 7: lifecycle.start_at_logon: unknown key"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/lifecycle-wrong-case.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 6: lifecycle.Keep_Awake: unknown key",
+      "line 7: lifecycle.startAtLogin: unknown key"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/lifecycle-wrong-type.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 6: lifecycle.start_at_login: must be a boolean",
+      "line 7: lifecycle.start_runners_on_launch: must be a boolean",
+      "line 9: lifecycle.resume_after_stop: must be a boolean"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/macos-budget-members-missing.toml": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "problems": [
+      "line 5: budget.cpus: must be a number greater than 0 and at most 64",
+      "line 4: budget.memory_gb: required key is missing",
+      "line 4: budget.disk_gb: required key is missing"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/macos-budget-missing.toml": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "problems": ["line 1: budget: required key is missing"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/macos-budget-totals-dotted-key.toml": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "problems": [
+      "line 3: budget: pools total 2 CPUs (the sum of runners times cpus), above the budget of 1",
+      "line 3: budget: pools total 2 GB of memory (the sum of runners times memory_gb), above the budget of 1 GB",
+      "line 3: budget: pools total 2 GB of disk (the sum of runners times disk_gb), above the budget of 1 GB"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/macos-budget-totals.toml": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "problems": [
+      "line 4: budget: macOS pools total 3 VMs (the sum of their runners), above the limit of 2",
+      "line 4: budget: pools total 12 CPUs (the sum of runners times cpus), above the budget of 4",
+      "line 4: budget: pools total 48 GB of memory (the sum of runners times memory_gb), above the budget of 16 GB",
+      "line 4: budget: pools total 180 GB of disk (the sum of runners times disk_gb), above the budget of 100 GB"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/macos-disk-gb-missing.toml": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "problems": ["line 9: pool[0].disk_gb: required key is missing"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/macos-os-invalid.toml": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "problems": ["line 14: pool[0].os: must be \"linux\" or \"macos\""],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/macos-platform-label-of-the-other-os.toml": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "problems": [
+      "line 15: pool[0].labels: 'macOS' is a platform label that a linux pool on macOS cannot provide, so list only non-platform labels",
+      "line 15: pool[0].labels: 'ARM64' is always added, so list only non-platform labels"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/macos-volumes.toml": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "problems": [
+      "line 15: pool[0].volumes: not supported on macOS, because VM pools keep no volumes"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/missing-keys-name-the-table-header.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 5: pool[0].runners: required key is missing",
+      "line 5: pool[0].name: required key is missing",
+      "line 8: pool[1].repository: required key is missing",
+      "line 17: pool[2].volumes[0].mount_path: required key is missing"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/missing-pool-key-at-root-line-one.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 1: pool: required key is missing"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/order-schema-then-top-level-then-lifecycle-then-pools.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 4: schema_version: must be the integer 1",
+      "line 3: extra: unknown key",
+      "line 5: routing_label: 'linux' is a platform label, so use a label that is not one",
+      "line 6: image_name: must be a local Docker image name with a tag, such as name:tag",
+      "line 9: lifecycle.other: unknown key",
+      "line 10: lifecycle.keep_awake: must be a boolean",
+      "line 13: pool[0].unexpected: unknown key",
+      "line 18: pool[0].os: a macos pool is not supported on Windows",
+      "line 17: pool[0].labels: 'linux' is always added, so list only non-platform labels",
+      "line 17: pool[0].labels: duplicate label 'GPU'",
+      "line 17: pool[0].labels: each label must be a string of letters, digits and . _ : / - starting with a letter or digit",
+      "line 17: pool[0].labels: each label must be a string of letters, digits and . _ : / - starting with a letter or digit",
+      "line 28: pool[0].volumes[0].extra: unknown key",
+      "line 27: pool[0].volumes[0].mount_path: must not contain '..'",
+      "line 31: pool[0].volumes[1].suffix: must be lowercase letters, digits and hyphens, starting with a letter or digit",
+      "line 32: pool[0].volumes[1].mount_path: must not contain '..'",
+      "line 16: pool[0].runners: must be an integer from 1 to 16",
+      "line 14: pool[0].name: must be lowercase letters, digits and hyphens, starting with a letter or digit",
+      "line 19: pool[0].cpus: must be a number greater than 0 and at most 64",
+      "line 20: pool[0].memory_gb: must be an integer from 1 to 256",
+      "line 21: pool[0].diagnostics: must be a boolean",
+      "line 22: pool[0].diagnostic_directory: requires diagnostics",
+      "line 23: pool[0].diagnostic_raw_records: requires diagnostics",
+      "line 39: pool[2].name: name 'beta' collides with 'beta' at pool[1]; set a distinct name on one pool"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/pool-labels-in-toml-names.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 9: pool[0].labels: 'self-hosted' is always added, so list only non-platform labels",
+      "line 9: pool[0].labels: duplicate label 'GPU'",
+      "line 9: pool[0].labels: each label must be a string of letters, digits and . _ : / - starting with a letter or digit",
+      "line 9: pool[0].labels: each label must be a string of letters, digits and . _ : / - starting with a letter or digit"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/pool-list-empty.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 4: pool: must list at least one pool"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/pool-rules-in-toml-names.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 8: pool[0].runners: must be an integer from 1 to 16",
+      "line 6: pool[0].name: name is 78 characters, at most 64 are allowed because it starts every runner name",
+      "line 9: pool[0].cpus: must be a number greater than 0 and at most 64",
+      "line 10: pool[0].memory_gb: must be an integer from 1 to 256",
+      "line 11: pool[0].diagnostic_directory: requires diagnostics",
+      "line 12: pool[0].diagnostic_raw_records: requires diagnostics",
+      "line 18: pool[1].cpus: must be a number greater than 0 and at most 64, and large enough not to be written as 0, which Docker reads as no limit",
+      "line 20: pool[1].diagnostic_directory: must not contain dot path components"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/pool-volumes-in-toml-names.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 11: pool[0].volumes[0].suffix: must be lowercase letters, digits and hyphens, starting with a letter or digit",
+      "line 12: pool[0].volumes[0].mount_path: must be an absolute container path of letters, digits and . _ / -",
+      "line 16: pool[0].volumes[1].mount_path: must not contain '..'",
+      "line 19: pool[0].volumes[2].suffix: must be lowercase letters, digits and hyphens, starting with a letter or digit"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/pools-clash-names.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 10: pool[1].name: name 'alpha-two' collides with 'alpha' at pool[0]; set a distinct name on one pool"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/pools-clash-routing.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 11: pool[1].labels: ambiguous same-repository routing; labels 'FAST' also appear at pool[0]"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/repository-bad-name.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 7: pool[0].repository: must be a GitHub repository name (letters, digits and . _ -)"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/repository-bad-owner.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 7: pool[0].repository: must be a GitHub owner name (letters, digits and hyphens)"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/repository-empty-name.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 7: pool[0].repository: must be \"owner/name\""],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/repository-empty-owner.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 7: pool[0].repository: must be \"owner/name\""],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/repository-no-slash.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 7: pool[0].repository: must be \"owner/name\""],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/repository-not-a-string.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 7: pool[0].repository: must be \"owner/name\""],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/repository-only-a-slash.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 7: pool[0].repository: must be \"owner/name\""],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/repository-two-slashes.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 7: pool[0].repository: must be \"owner/name\""],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/routing-label-bad-pattern.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 2: routing_label: must be a string of letters, digits and . _ : / - starting with a letter or digit"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/routing-label-empty.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 2: routing_label: must be a string of letters, digits and . _ : / - starting with a letter or digit"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/routing-label-missing.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 1: routing_label: required key is missing"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/routing-label-not-a-string.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 2: routing_label: must be a string of letters, digits and . _ : / - starting with a letter or digit"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/routing-label-other-hosts-platform-label.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 2: routing_label: 'arm64' is a platform label, so use a label that is not one"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/routing-label-platform-label.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 2: routing_label: 'Linux' is a platform label, so use a label that is not one"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/routing-label-shared-by-pools.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 10: pool[1].labels: ambiguous same-repository routing; labels 'build' also appear at pool[0]"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/routing-label-wrong-case.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 2: routingLabel: unknown key",
+      "line 3: Routing_Label: unknown key",
+      "line 1: routing_label: required key is missing"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/schema-version-float.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 1: schema_version: must be the integer 1"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/schema-version-missing.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 1: schema_version: required key is missing"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/schema-version-negative.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 1: schema_version: must be the integer 1"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/schema-version-newer-far.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 1: schema_version: this file was written by a newer Marshal"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/schema-version-newer.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 3: schema_version: this file was written by a newer Marshal"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/schema-version-string.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 1: schema_version: must be the integer 1"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/schema-version-wrong-case.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 1: schema_version: required key is missing",
+      "line 1: Schema_Version: unknown key"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/schema-version-zero.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 1: schema_version: must be the integer 1"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/syntax-bare-token.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 2, column 17: syntax error: string values must be quoted, expected literal string"
+    ],
+    "contains": [],
+    "lacks": ["ghp_", "0123456789abcdefghij"]
+  },
+  "rejected/syntax-duplicate-key.toml": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "problems": ["line 3, column 1: syntax error: duplicate key"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/syntax-duplicate-pool-key.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 9, column 1: syntax error: duplicate key"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/syntax-duplicate-table.toml": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "problems": ["line 7, column 2: syntax error: duplicate key"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/syntax-inline-tables-too-deep.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 3, column 405: syntax error: cannot recurse further; max recursion depth met"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/syntax-integer-out-of-range.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 8, column 11: syntax error: integer number overflowed"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/syntax-invalid-escape.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 2, column 59: syntax error: missing escaped value, expected `b`, `e`, `f`, `n`, `r`, `\\`, `\"`, `x`, `u`, `U`"
+    ],
+    "contains": [],
+    "lacks": ["ghp_", "0123456789abcdefghij"]
+  },
+  "rejected/syntax-key-with-no-value.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 3, column 11: syntax error: key with no value, expected `=`"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/syntax-missing-value.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 2, column 16: syntax error: string values must be quoted, expected literal string"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/syntax-nesting-too-deep.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 9, column 90: syntax error: cannot recurse further; max recursion depth met"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/syntax-pool-table-and-array.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 7, column 2: syntax error: duplicate key"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/syntax-table-never-closed.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 3, column 7: syntax error: unclosed array table, expected `]]`"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/syntax-token-as-line.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 3, column 41: syntax error: key with no value, expected `=`"
+    ],
+    "contains": [],
+    "lacks": ["ghp_", "0123456789abcdefghij"]
+  },
+  "rejected/syntax-unterminated-string.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 3, column 55: syntax error: invalid basic string, expected `\"`"
+    ],
+    "contains": [],
+    "lacks": ["ghp_", "0123456789abcdefghij"]
+  },
+  "rejected/token-shaped-key.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 9: pool[0].token: unknown key"],
+    "contains": [],
+    "lacks": ["ghp_", "0123456789abcdefghij"]
+  },
+  "rejected/undefined-key-in-budget.toml": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "problems": ["line 8: budget.vms: unknown key"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/undefined-key-in-pool.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 9: pool[0].slots: unknown key",
+      "line 10: pool[0].memoryGb: unknown key",
+      "line 11: pool[0].owner: unknown key"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/undefined-key-in-volume.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 13: pool[0].volumes[0].size_gb: unknown key"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/undefined-key-nested-table.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 5: unknown_table: unknown key",
+      "line 13: pool[0].unknown_child: unknown key"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/undefined-key-token-path.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 9: pool[0].token_path: unknown key"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/undefined-key-top-level.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 4: image: unknown key",
+      "line 5: repositories: unknown key"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/windows-budget-table.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 5: budget: unknown key"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/windows-disk-gb.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 9: pool[0].disk_gb: unknown key"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/windows-image-name-missing.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 1: image_name: required key is missing"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/windows-os-macos.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 9: pool[0].os: a macos pool is not supported on Windows"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/windows-os-unknown.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 9: pool[0].os: must be \"linux\" or \"macos\""],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/wrong-type-budget.toml": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "problems": ["line 3: budget: must be a table"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/wrong-type-date-and-time.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 3: image_name: must be a local Docker image name with a tag, such as name:tag",
+      "line 7: pool[0].repository: must be \"owner/name\"",
+      "line 9: pool[0].labels: must be an array of labels",
+      "line 8: pool[0].runners: must be an integer from 1 to 16",
+      "line 6: pool[0].name: must be lowercase letters, digits and hyphens, starting with a letter or digit"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/wrong-type-every-key.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 1: schema_version: must be the integer 1",
+      "line 2: routing_label: must be a string of letters, digits and . _ : / - starting with a letter or digit",
+      "line 3: image_name: must be a local Docker image name with a tag, such as name:tag",
+      "line 4: lifecycle: must be a table",
+      "line 6: pool[0].repository: must be \"owner/name\"",
+      "line 6: pool[0].os: must be \"linux\" or \"macos\"",
+      "line 6: pool[0].labels: must be an array of labels",
+      "line 6: pool[0].volumes: must be an array of tables",
+      "line 6: pool[0].runners: must be an integer from 1 to 16",
+      "line 6: pool[0].name: must be lowercase letters, digits and hyphens, starting with a letter or digit",
+      "line 6: pool[0].cpus: must be a number greater than 0 and at most 64",
+      "line 6: pool[0].memory_gb: must be an integer from 1 to 256",
+      "line 6: pool[0].diagnostics: must be a boolean",
+      "line 6: pool[0].diagnostic_raw_records: must be a boolean",
+      "line 6: pool[0].diagnostic_directory: requires diagnostics",
+      "line 7: pool[1].labels: each label must be a string of letters, digits and . _ : / - starting with a letter or digit",
+      "line 7: pool[1].volumes[0]: must be a table",
+      "line 7: pool[1].volumes[1].suffix: must be lowercase letters, digits and hyphens, starting with a letter or digit",
+      "line 7: pool[1].volumes[1].mount_path: must be an absolute container path of letters, digits and . _ / -"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/wrong-type-float-for-integer.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 8: pool[0].runners: must be an integer from 1 to 16",
+      "line 10: pool[0].cpus: must be a number greater than 0 and at most 64",
+      "line 9: pool[0].memory_gb: must be an integer from 1 to 256"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/wrong-type-pool-is-a-table.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 5: pool: must be an array of tables"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/wrong-type-pool-is-not-an-array.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 4: pool: must be an array of tables"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/wrong-type-pool-item-is-not-a-table.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 4: pool[0]: must be a table",
+      "line 4: pool[1]: must be a table"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/wrong-type-token-shaped-value.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 12: pool[0].labels: must be an array of labels",
+      "line 8: pool[0].runners: must be an integer from 1 to 16",
+      "line 9: pool[0].cpus: must be a number greater than 0 and at most 64",
+      "line 10: pool[0].memory_gb: must be an integer from 1 to 256",
+      "line 11: pool[0].diagnostics: must be a boolean"
+    ],
+    "contains": [],
+    "lacks": ["ghp_", "0123456789abcdefghij"]
+  }
+}

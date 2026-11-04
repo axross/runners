@@ -8,6 +8,7 @@ use super::fields::{self, Errors, Field};
 use super::limits::{self, MAX_BUDGET_MEMORY_GB, MAX_DISK_GB};
 use super::plan::{Budget, Entry};
 use super::problem::{Key, KeyPath, Kind};
+use super::reader::Reader;
 
 pub(super) const BUDGET_FIELDS: [&str; 3] = ["cpus", "memoryGb", "diskGb"];
 
@@ -26,10 +27,10 @@ pub(super) struct BudgetFields {
 pub const MAX_MACOS_VMS: u32 = 2;
 
 /// reads the root `budget` object, or records why it is unusable.
-pub fn read_budget(budget: &Field, errors: &mut Errors) -> Option<Budget> {
+pub fn read_budget(budget: &Field, reader: &dyn Reader, errors: &mut Errors) -> Option<Budget> {
     let path = KeyPath::root().key(Key::Budget);
     let value = fields::required(budget, &path, errors)?;
-    let node = fields::read_object::<BudgetFields>(value, &path, &BUDGET_FIELDS, errors)?;
+    let node = fields::read_object::<BudgetFields>(value, &path, reader, errors)?;
 
     let cpus_path = path.key(Key::Cpus);
     let memory_path = path.key(Key::MemoryGb);

@@ -15,6 +15,10 @@ pub(crate) mod patterns;
 mod plan;
 mod problem;
 mod reader;
+mod settings;
+mod toml_document;
+mod toml_reader;
+mod toml_schema;
 mod uniqueness;
 mod volumes;
 
@@ -29,9 +33,11 @@ pub use budget::{MAX_MACOS_VMS, Usage, usage};
 pub use json_reader::JsonReader;
 pub use limits::{format_cpu_count, format_nanos};
 pub use paths::is_inside_checkout;
-pub use plan::{Budget, Entry, Plan, PlannedVolume};
+pub use plan::{Budget, Entry, Lifecycle, Plan, PlannedVolume, Settings};
 pub use problem::{Key, KeyPath, Kind, Location, Problem, Segment};
 pub use reader::Reader;
+pub use settings::SCHEMA_VERSION;
+use toml_reader::TomlReader;
 
 use fields::{Errors, Field};
 
@@ -53,10 +59,15 @@ pub struct Validation {
     pub checkout_rule_skipped: bool,
 }
 
-/// the members of the configuration's root, named for both profiles.
+/// the members of the configuration's root, named for both profiles and for a file
+/// with settings of its own.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RootFields {
+    #[serde(default)]
+    routing_label: Field,
+    #[serde(default)]
+    lifecycle: Field,
     #[serde(default)]
     image_name: Field,
     #[serde(default)]
@@ -80,6 +91,26 @@ pub fn validate(bytes: &[u8], profile: Profile, checkout: Option<&Path>) -> Vali
     validate_with(bytes, profile, &JsonReader::new(profile), checkout)
 }
 
+/// validates TOML bytes for a host: the file is read into the tree the JSON reader
+/// gives, and the same rules check it. the problems are worded in the file's own
+/// names, and a syntax error, a file over the size limit or one that is not UTF-8 is
+/// the only problem, as `Failure::Unreadable` carries it.
+#[must_use]
+pub fn validate_toml(bytes: &[u8], profile: Profile, checkout: Option<&Path>) -> Validation {
+    match toml_document::read(bytes) {
+        Ok(document) => validate_tree(
+            &document.tree,
+            profile,
+            &TomlReader::new(profile, &document),
+            checkout,
+        ),
+        Err(problem) => Validation {
+            outcome: Err(Failure::Unreadable(problem)),
+            checkout_rule_skipped: false,
+        },
+    }
+}
+
 /// validates JSON bytes under the rules the reader supplies; the problems are worded
 /// by the reader.
 fn validate_with(
@@ -88,15 +119,21 @@ fn validate_with(
     reader: &dyn Reader,
     checkout: Option<&Path>,
 ) -> Validation {
-    let root = match json::parse(bytes) {
-        Ok(root) => root,
-        Err(error) => {
-            return Validation {
-                outcome: Err(Failure::Unreadable(error.to_string())),
-                checkout_rule_skipped: false,
-            };
-        }
-    };
+    match json::parse(bytes) {
+        Ok(root) => validate_tree(&root, profile, reader, checkout),
+        Err(error) => Validation {
+            outcome: Err(Failure::Unreadable(error.to_string())),
+            checkout_rule_skipped: false,
+        },
+    }
+}
+
+fn validate_tree(
+    root: &Value,
+    profile: Profile,
+    reader: &dyn Reader,
+    checkout: Option<&Path>,
+) -> Validation {
     let mut cx = Context {
         profile,
         reader,
@@ -104,7 +141,7 @@ fn validate_with(
         errors: Errors::default(),
         checkout_rule_skipped: false,
     };
-    let outcome = match read_root(&root, &mut cx) {
+    let outcome = match read_root(root, &mut cx) {
         Some(plan) => Ok(plan),
         None => Err(Failure::Invalid(cx.errors.render(reader))),
     };
@@ -116,30 +153,50 @@ fn validate_with(
 
 fn read_root(root: &Value, cx: &mut Context) -> Option<Plan> {
     let profile = cx.profile;
-    let root = fields::read_object::<RootFields>(
-        root,
-        &KeyPath::root(),
-        profile.root_fields(),
-        &mut cx.errors,
-    )?;
+    let reader = cx.reader;
+    let has_settings = reader.routing_label().is_none();
+    if has_settings
+        && settings::check_schema_version(root, &mut cx.errors) == settings::Schema::Newer
+    {
+        return None;
+    }
+    let root = fields::read_object::<RootFields>(root, &KeyPath::root(), reader, &mut cx.errors)?;
 
+    let routing_label = match reader.routing_label() {
+        Some(label) => Some(label.to_string()),
+        None => settings::read_routing_label(&root.routing_label, &mut cx.errors),
+    };
     let image_name = read_image_name(&root.image_name, cx);
     let budget = match profile {
         Profile::Axpc => None,
-        Profile::Axmc => budget::read_budget(&root.budget, &mut cx.errors),
+        Profile::Axmc => budget::read_budget(&root.budget, reader, &mut cx.errors),
     };
-    let entries = read_repositories(&root.repositories, cx);
+    let lifecycle = if has_settings {
+        settings::read_lifecycle(&root.lifecycle, reader, &mut cx.errors)
+    } else {
+        None
+    };
+    let entries = read_repositories(&root.repositories, routing_label.as_deref(), cx);
     if profile == Profile::Axmc {
         budget::check_budget(&entries, budget.as_ref(), &mut cx.errors);
     }
     if !cx.errors.is_empty() {
         return None;
     }
+    let settings = match (has_settings, routing_label, lifecycle) {
+        (true, Some(routing_label), Some(lifecycle)) => Some(Settings {
+            schema_version: SCHEMA_VERSION,
+            routing_label,
+            lifecycle,
+        }),
+        _ => None,
+    };
     Some(Plan {
         profile,
         image_name,
         entries,
         budget,
+        settings,
     })
 }
 
@@ -168,7 +225,11 @@ fn read_image_name(image_name: &Field, cx: &mut Context) -> Option<String> {
     .map(str::to_string)
 }
 
-fn read_repositories(repositories: &Field, cx: &mut Context) -> Vec<Entry> {
+fn read_repositories(
+    repositories: &Field,
+    routing_label: Option<&str>,
+    cx: &mut Context,
+) -> Vec<Entry> {
     let path = KeyPath::root().key(Key::Repositories);
     let mut entries = Vec::new();
     let Some(value) = fields::required(repositories, &path, &mut cx.errors) else {
@@ -182,7 +243,7 @@ fn read_repositories(repositories: &Field, cx: &mut Context) -> Vec<Entry> {
         cx.errors.add(path, Kind::NoRepositories);
     }
     for (index, node) in nodes.iter().enumerate() {
-        if let Some(entry) = entry::read_entry(node, index, cx) {
+        if let Some(entry) = entry::read_entry(node, index, routing_label, cx) {
             entries.push(entry);
         }
     }
@@ -197,6 +258,7 @@ mod tests {
     use serde::de::{self, Visitor};
 
     use crate::de::{Deserializer, Error};
+    use crate::json::Object;
     use crate::profile::Os;
 
     use super::*;
@@ -249,9 +311,16 @@ mod tests {
 
     #[test]
     fn each_derived_type_names_the_union_of_both_profiles_fields() {
+        let mut root = union(Profile::Axpc.root_fields(), Profile::Axmc.root_fields());
+        root.extend(["lifecycle", "routingLabel"].map(String::from));
+        root.sort();
+        assert_eq!(field_names::<RootFields>(), root);
         assert_eq!(
-            field_names::<RootFields>(),
-            union(Profile::Axpc.root_fields(), Profile::Axmc.root_fields())
+            field_names::<settings::LifecycleFields>(),
+            union(
+                &["keepAwake", "resumeAfterStop"],
+                &["startAtLogin", "startRunnersOnLaunch"]
+            )
         );
         assert_eq!(
             field_names::<entry::EntryFields>(),
@@ -288,6 +357,7 @@ mod tests {
     #[test]
     fn every_derived_field_is_a_wrapper_that_reads_any_value() {
         reads_any_value::<RootFields>();
+        reads_any_value::<settings::LifecycleFields>();
         reads_any_value::<entry::EntryFields>();
         reads_any_value::<budget::BudgetFields>();
         reads_any_value::<volumes::VolumeFields>();
@@ -298,12 +368,20 @@ mod tests {
     struct OtherFormat;
 
     impl Reader for OtherFormat {
-        fn routing_label(&self) -> &str {
-            "custom"
+        fn routing_label(&self) -> Option<&str> {
+            Some("custom")
         }
 
         fn may_omit_os_and_volumes(&self) -> bool {
             true
+        }
+
+        fn windows_pool_has_os(&self) -> bool {
+            false
+        }
+
+        fn joins_owner_and_repository(&self) -> bool {
+            false
         }
 
         fn applies_token_path_rules(&self) -> bool {
@@ -312,6 +390,10 @@ mod tests {
 
         fn entry_path(&self, index: usize) -> String {
             format!("pool[{index}]")
+        }
+
+        fn undefined_keys(&self, _node: &Object, _path: &KeyPath) -> Vec<String> {
+            Vec::new()
         }
 
         fn locate(&self, path: &KeyPath, _kind: &Kind) -> Option<Location> {
