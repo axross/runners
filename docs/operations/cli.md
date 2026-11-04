@@ -1666,11 +1666,11 @@ an update.
 Three jobs of `release.yaml` sit between `build` and `attest`. The maintainer's
 approval of the first one is the decision to sign.
 
-| Job               | Needs                                         | Runs on, timeout            | Permissions      | Environment | What it holds                                                                                                                                                                                       |
-| ----------------- | --------------------------------------------- | --------------------------- | ---------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sign-macos`      | `plan`, `build`                               | `macos-latest`, 60 minutes  | `contents: read` | `release`   | The six signing secrets and `MACOS_TEAM_ID`. Downloads `marshal-release`; uploads `marshal-macos-arm64-signed` and `notary-log-macos`. It checks nothing out.                                       |
-| `verify-macos`    | `plan`, `build`, `sign-macos`                 | `macos-latest`, 20 minutes  | `contents: read` | none        | No secret and no signing identity. Checks out the repository with `persist-credentials: false`, downloads three artifacts, and runs `test-signed-pkg.sh` with the team ID that `sign-macos` output. |
-| `assemble-signed` | `plan`, `build`, `sign-macos`, `verify-macos` | `ubuntu-latest`, 10 minutes | `contents: read` | none        | Checks out the repository with `persist-credentials: false`, runs `assemble-release.sh`, and uploads `marshal-release-signed`.                                                                      |
+| Job               | Needs                                         | Runs on, timeout            | Permissions      | Environment | What it holds                                                                                                                                                                                                                    |
+| ----------------- | --------------------------------------------- | --------------------------- | ---------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sign-macos`      | `plan`, `build`                               | `macos-latest`, 60 minutes  | `contents: read` | `release`   | The six signing secrets and `MACOS_TEAM_ID`. Downloads `marshal-release`; uploads `marshal-macos-arm64-signed` and `notary-log-macos`. It checks nothing out.                                                                    |
+| `verify-macos`    | `plan`, `build`, `sign-macos`                 | `macos-latest`, 20 minutes  | `contents: read` | none        | No secret and no signing identity. Checks out the repository with `persist-credentials: false`, downloads three artifacts, and runs `test-signed-pkg.sh` with the team ID and the notary submission ID that `sign-macos` output. |
+| `assemble-signed` | `plan`, `build`, `sign-macos`, `verify-macos` | `ubuntu-latest`, 10 minutes | `contents: read` | none        | Checks out the repository with `persist-credentials: false`, runs `assemble-release.sh`, and uploads `marshal-release-signed`.                                                                                                   |
 
 `attest` then needs `plan` and `assemble-signed`, and `release` needs `plan` and
 `attest`. Both read `marshal-release-signed`, and `marshal-release` stays the
@@ -1712,10 +1712,12 @@ test overrides; the shape check requires the defaults and rejects either name as
    to the job and to the pin.
 4. It lists the keychain's identities and refuses unless there is exactly one valid
    Developer ID Application identity and exactly one valid Developer ID Installer
-   identity. For each it prints the certificate's subject, team and expiry date. It
-   refuses a certificate whose team differs from `MACOS_TEAM_ID` and an expired one,
-   and it warns with a workflow warning annotation when a certificate expires within
-   90 days.
+   identity. For each it prints the subject, team and expiry date of the certificate
+   whose SHA-1 hash equals the selected identity's, found with
+   `security find-certificate -a -Z -c <name>`. It refuses unless the name matches
+   exactly one certificate, because `pkgbuild` signs by name. It refuses a certificate
+   whose team differs from `MACOS_TEAM_ID` and an expired one, and it warns with a
+   workflow warning annotation when a certificate expires within 90 days.
 5. It signs a copy of the binary with the Application identity, selected by its SHA-1
    hash, `--options runtime`, `--timestamp` and `--identifier app.axross.marshal`. The
    signature replaces the linker's ad-hoc one. It then runs
@@ -1725,7 +1727,9 @@ test overrides; the shape check requires the defaults and rejects either name as
    [`build-pkg.sh`](../../.github/scripts/build-pkg.sh)'s, because the job runs no
    repository file, and `--sign` and `--keychain` are the only additions. `pkgbuild`
    takes the Installer identity by its common name, the one form its manual gives, and
-   `codesign` takes the Application identity by hash. The shape check fails if the
+   `codesign` takes the Application identity by hash. The name cannot be another
+   identity's: step 4 has shown that the temporary keychain holds one certificate of
+   that name, and `--keychain` keeps `pkgbuild` to that keychain. The shape check fails if the
    two argument lists differ, and `verify-macos` compares the signed package with the
    unsigned one.
 7. It notarizes the package with
@@ -1758,8 +1762,11 @@ records it.
 
 `verify-macos` runs
 [`test-signed-pkg.sh`](../../.github/scripts/tests/test-signed-pkg.sh) on a runner
-that holds no signing identity. The script refuses unless:
+that holds no signing identity. It takes the team ID and the notary submission ID that
+`sign-macos` output, the latter through `env: SUBMISSION_ID`. The script refuses unless:
 
+- the unsigned binary and package each match their single line in the unsigned set's
+  `SHA256SUMS`;
 - the signed package's identifier, version and install location equal the unsigned
   one's, and the identifier is `app.axross.marshal`;
 - the two bills of materials list the same paths with the same owner and mode, which
@@ -1772,7 +1779,9 @@ that holds no signing identity. The script refuses unless:
   identifier and the team, compared as a set of clauses;
 - the package's signature is a Developer ID Installer chain of the team to Apple's
   root, `stapler validate` passes, and `spctl --assess --type install` accepts it;
-- the notary log lists the bare binary's CDHash.
+- the notary log's `jobId`, read with `plutil`, equals the submission ID `sign-macos`
+  output, ignoring case, so the log is of that submission, and it lists the bare
+  binary's CDHash.
 
 It then installs the signed package with `installer -pkg`, runs `codesign --verify` and
 `--version` on the installed file, and removes it. It prints `MEASURED:` lines for the
@@ -1910,20 +1919,24 @@ An extension adds its jobs or steps to `check-release-shape.mjs` and its test in
 own pull request, under REVIEW.md's release lens and the maintainer's review. The
 shape check guards against mistakes. A pull request can edit it, so it is not the
 control against a hostile one: what keeps pull requests away from the Environment is
-the maintainer's branch rule and that `release.yaml` runs only on a dispatch.
+the maintainer's branch rule and that `release.yaml` runs only on a dispatch. It reads
+the commands a signing script runs, but not what they are told to do, so these can
+still run code it does not see: the programs of `awk` and `sed`, the tests inside
+`[[ ]]`, an option name built at run time, a custom `shell:`, and any environment
+variable other than `PATH` and `BASH_ENV`.
 
 ### What the Signing Tests Cover
 
 Each of these runs in `mise run check`, on Linux, with no signing identity and no
 secret:
 
-| Task                             | What it covers                                                                                                                                                                                                                                                                  |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mise run check:release-shape`   | Reads the workflows and fails unless the jobs, permissions, `needs` chain, guards and `sign-macos` rules above hold, including that `sign-macos`'s `pkgbuild` arguments match `build-pkg.sh`'s and that no job can continue past a failed signing step.                         |
-| `mise run test:release-shape`    | Runs that check against the unchanged workflows, then against copies altered one change at a time, and expects each to fail.                                                                                                                                                    |
-| `mise run test:sign-macos`       | Runs `sign-macos`'s `run:` scripts, extracted from `release.yaml`, against recording stand-ins of the macOS tools: each refusal, the flags, that the keychain and files are deleted after a pass and after a failure at each step, and that no secret or `.p8` line is printed. |
-| `mise run test:signed-pkg`       | Runs `test-signed-pkg.sh` against stand-ins and produces each of its refusals.                                                                                                                                                                                                  |
-| `mise run test:assemble-release` | Runs `assemble-release.sh` against temporary directories: the four lines in order, and a refusal for another file set or a changed file.                                                                                                                                        |
+| Task                             | What it covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `mise run check:release-shape`   | Reads the `.yaml` and `.yml` workflows and fails unless the jobs, permissions, `needs` chain, guards and `sign-macos` rules above hold, including that `sign-macos`'s `pkgbuild` arguments match `build-pkg.sh`'s, that no job can continue past a failed signing step, and that no job but `sign-macos` reads a signing secret, whether by `secrets.MACOS_*`, `secrets[...]`, `toJSON(secrets)` or `secrets: inherit`. It reads the commands of `sign-macos`'s scripts, a `trap` body included, and fails on a quoted or expanded command word other than `"$SYSTEM_BIN/<tool>"` or `"$SYSTEM_SBIN/<tool>"`, a backtick, an unreadable `trap` operand, a `find` option outside `-mindepth`, `-maxdepth`, `-type`, `-name`, `-print` and `-print0`, `PATH` or `BASH_ENV` as an `env:` key at any level, an assignment of `PATH`, `BASH_ENV` or `ENV`, any `GITHUB_PATH`, and any `GITHUB_ENV` write but the identities step's one block of two `echo` lines. |
+| `mise run test:release-shape`    | Runs that check against the unchanged workflows, then against copies altered one change at a time, and expects each to fail.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `mise run test:sign-macos`       | Runs `sign-macos`'s `run:` scripts, extracted from `release.yaml`, against recording stand-ins of the macOS tools: each refusal, the flags, that the keychain and files are deleted after a pass and after a failure at each step, and that no secret or `.p8` line is printed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `mise run test:signed-pkg`       | Runs `test-signed-pkg.sh` against stand-ins and produces each of its refusals, including an unsigned file that `SHA256SUMS` does not list and a notary log of another submission.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `mise run test:assemble-release` | Runs `assemble-release.sh` against temporary directories: the four lines in order, and a refusal for another file set or a changed file.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 
 The stand-ins record calls and return canned answers, so these tests show the flow
 and the refusals, not that Apple accepts a signature. The signed package is checked

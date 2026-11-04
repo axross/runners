@@ -313,7 +313,9 @@ record a change to either workflow, to the build call in
     covers, and the maintainer confirmed that reading at the plan gate.
   - **Only `sign-macos` reads the signing secrets.** `verify-macos` runs a
     repository script on a runner that holds no signing identity and no secret, and
-    `assemble-signed` and every other job hold none either.
+    `assemble-signed` and every other job hold none either. That script also checks
+    that the unsigned files are the ones the build's `SHA256SUMS` lists and that the
+    notary log is of the submission `sign-macos` made.
   - **The signing identifier** `app.axross.marshal` and the team are fixed and
     checked at each release, so the binary's designated requirement stays the same.
     Changing either breaks the Keychain trust that later work relies on and goes
@@ -324,9 +326,11 @@ record a change to either workflow, to the build call in
   - **Pull requests never sign or reach the Environment.** The dry run builds
     unsigned, and no workflow a pull request triggers declares an Environment.
     [`check-release-shape.mjs`](../../.github/scripts/check-release-shape.mjs) in
-    `mise run check` fails if the signing jobs drift from this record. A pull
-    request can edit it, so it guards against mistakes, not against a hostile pull
-    request. What keeps pull requests away is the branch rule on the Environment
+    `mise run check` fails if the signing jobs drift from this record, including if
+    a job but `sign-macos` reads a signing secret. A pull request can edit it, so it
+    guards against mistakes, not against a hostile pull request, and
+    [CLI](../operations/cli.md#extending-the-release-workflows) names what it does
+    not read. What keeps pull requests away is the branch rule on the Environment
     and that `release.yaml` runs only on a dispatch.
   - **No secret is printed.** Secret values reach the scripts through `env:` and
     files written with mode 0600 under the runner's temporary directory, and each
