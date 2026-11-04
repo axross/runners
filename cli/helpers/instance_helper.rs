@@ -10,6 +10,8 @@
 //!                                             its address, answer `ok` to every
 //!                                             request until end of input
 //! instance-helper mute --root DIR             as serve, but answer nothing
+//! instance-helper serve-agent --root DIR      as serve, but open the agent's channel
+//!                                             of protocol version 2
 //! instance-helper idle                        wait for end of input
 //! ```
 //!
@@ -118,6 +120,42 @@ fn serve(lock: &InstanceLock, roots: &Roots, mute: bool) -> ExitCode {
     })
 }
 
+/// opens the agent's channel, which serves protocol version 2 and answers every
+/// request that reaches the agent with a refusal, until end of input.
+#[cfg(debug_assertions)]
+fn serve_agent(lock: &InstanceLock, roots: &Roots) -> ExitCode {
+    use marshal_cli::agent::AgentChannel;
+    use marshal_cli::agent::server::Limits;
+    use marshal_cli::agent::snapshot::Snapshot;
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            eprintln!("the runtime cannot start: {error}");
+            return ExitCode::from(exit::NO_CHANNEL);
+        }
+    };
+    runtime.block_on(async {
+        let (calls, requests) = tokio::sync::mpsc::unbounded_channel();
+        let (_snapshots, receiver) =
+            tokio::sync::watch::channel(std::sync::Arc::new(Snapshot::default()));
+        let channel = match AgentChannel::open(lock, roots, calls, receiver, Limits::default()) {
+            Ok(channel) => channel,
+            Err(error) => {
+                println!("refused: {error}");
+                return ExitCode::from(exit::NO_CHANNEL);
+            }
+        };
+        println!("{}", channel.address());
+        let _ = input_closed().await;
+        drop(requests);
+        drop(channel);
+        ExitCode::SUCCESS
+    })
+}
+
 #[cfg(debug_assertions)]
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -129,7 +167,7 @@ fn main() -> ExitCode {
             let _ = std::io::copy(&mut std::io::stdin(), &mut std::io::sink());
             ExitCode::SUCCESS
         }
-        "try" | "hold" | "serve" | "mute" => {
+        "try" | "hold" | "serve" | "mute" | "serve-agent" => {
             let Some(roots) = root_from(&args) else {
                 eprintln!("--root DIR is required");
                 return ExitCode::from(exit::USAGE);
@@ -143,6 +181,9 @@ fn main() -> ExitCode {
             };
             if mode == "serve" || mode == "mute" {
                 return serve(&lock, &roots, mode == "mute");
+            }
+            if mode == "serve-agent" {
+                return serve_agent(&lock, &roots);
             }
             if mode == "try" {
                 println!("acquired");

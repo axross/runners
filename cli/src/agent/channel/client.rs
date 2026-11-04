@@ -353,7 +353,7 @@ async fn read_messages<R: AsyncRead + Unpin>(
 }
 
 #[cfg(unix)]
-mod platform {
+pub mod platform {
     use tokio::net::UnixStream;
 
     use crate::instance::roots::Roots;
@@ -383,7 +383,7 @@ mod platform {
 }
 
 #[cfg(windows)]
-mod platform {
+pub mod platform {
     use std::ffi::OsStr;
     use std::io;
     use std::time::Duration;
