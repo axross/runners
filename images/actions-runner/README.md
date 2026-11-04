@@ -1,8 +1,8 @@
 # actions-runner image
 
-The runner image that the CLI, [`marshal`](../../docs/operations/cli.md), starts on a
-host configured as [`hosts/windows-docker-desktop/`](../../hosts/windows-docker-desktop/README.md)
-describes, one throwaway container per job. It is GitHub's own
+The runner image that the CLI, [`marshal`](../../docs/operations/cli.md), starts,
+one throwaway container per job. The host configuration it runs under is described
+in [`hosts/windows-docker-desktop/`](../../hosts/windows-docker-desktop/README.md). It is GitHub's own
 `ghcr.io/actions/actions-runner` image plus the build dependencies jobs commonly
 assume are already installed. It is built on the runner host and never pushed to
 a registry.
