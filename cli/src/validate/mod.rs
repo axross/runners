@@ -1,7 +1,8 @@
 //! host configuration validation: [`validate`] is a pure function from configuration
-//! bytes and a profile to a plan or an ordered list of errors, in the order and with
-//! the message text that `docs/operations/cli.md` states; it reads nothing but its
-//! arguments, so a token file is not its concern.
+//! bytes and a profile to a plan or an ordered list of errors, in the order and under
+//! the rules that `docs/operations/cli.md` states, with message text the shared
+//! fixtures pin; it reads nothing but its arguments, so a token file is not its
+//! concern.
 
 mod budget;
 mod entry;

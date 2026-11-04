@@ -1,17 +1,17 @@
 # CLI
 
 The Rust command line tool under [`cli/`](../../cli): what `validate` accepts and
-prints, the rules it applies, the shared fixtures its tests read, the runtime layer that runs a host's pools (the container backend, JIT
-registration, CPU placement, and the slot loop), the instance layer that keeps
+prints, the rules it applies, the shared fixtures its tests read, the runtime layer
+that runs a host's pools (the container backend, JIT registration, CPU placement,
+and the slot loop), the instance layer that keeps
 `start` to one instance per machine (the instance state, the single-instance lock,
 and the control channel), the image contract every runner image declares and the
 check of it, running a host with `build`, `start`, `stop`, `restart`, `status`, and
 `diagnostics`, the diagnostic containers a diagnostics-enabled pool runs and their
 export, the toolchain and the gates that cover it, how a release is built and
-installed, and why its name is fixed. The
-binary is `marshal`, and axpc runs its pools with it, as
-[Windows Runner Host](./windows-runner-host.md) describes, including how to roll
-back to the previous release.
+installed, and why its name is fixed. The binary is `marshal`, and axpc runs its
+pools with it, as [Windows Runner Host](./windows-runner-host.md) describes,
+including how to roll back to the previous release.
 
 ## Running It
 
@@ -71,9 +71,10 @@ unchanged on purpose; a caller that must tell the two apart reads the output.
 
 ## Profiles
 
-A profile names a host. The rules and messages under Validation Rules apply to
-both. The profile decides the fields, the platform labels, the routing
-label, the path form, and the extra checks.
+A profile names a host. The format, order, and rules under Validation Rules apply
+to both, and the shared fixtures pin the message text. The profile decides the
+fields, the platform labels, the routing label, the path form, and the extra
+checks.
 
 | Aspect                  | `axpc` (Windows, Docker Desktop)                                         | `axmc` (macOS host)                                                                       |
 | ----------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
@@ -149,10 +150,11 @@ records every error it finds rather than stopping at the first.
 
 ### Error Order
 
-A file that cannot be read prints `Host configuration cannot be read: <path>: <problem>`,
-and one that is not valid JSON prints `Host configuration is not valid JSON: <problem>`;
-each is the only error. Otherwise the errors come in the order the checks find
-them:
+A missing file prints `Host configuration file not found: <path>`, another file
+that cannot be read prints `Host configuration cannot be read: <path>: <problem>`,
+and one that is not valid JSON prints
+`Host configuration is not valid JSON: <problem>`; each is the only error.
+Otherwise the errors come in the order the checks find them:
 
 1. The root's unknown fields, in document order, each
    `<path>.<name>: unknown field`. Every object, entry and `budget` included,
@@ -165,19 +167,30 @@ them:
    `name`, `cpus`, `memoryGb`, on axmc `diskGb`, then `diagnostics` and
    `diagnosticRawRecords` when they are not booleans, `diagnosticDirectory`, and last
    `diagnosticRawRecords: requires diagnostics`.
-4. The cross-entry checks, once every entry is read. For each entry after the first,
-   in file order, against each earlier entry in file order: a colliding `name`, then
-   for the same repository a different token file or an ambiguous routing label, or
-   for another repository a reused token file.
-5. On axmc, the budget checks.
+4. The cross-entry checks, among the entries whose own fields read without error. An
+   entry with an invalid `owner`, `repository`, `tokenPath`, `labels`, `volumes`,
+   `slots`, `name`, `cpus`, `memoryGb`, or on axmc `os` or `diskGb`, is left out of
+   them; an invalid `diagnostics`, `diagnosticRawRecords`, or `diagnosticDirectory`
+   does not leave an entry out. For each entry after the first, in file order,
+   against each earlier entry in file order: a colliding `name`, then for the same
+   repository a different token file or an ambiguous routing label, or for another
+   repository a reused token file.
+5. On axmc, the budget checks, over the same entries as step 4.
 
 The exit code is 1 and standard output is empty whenever there is an error. A valid
-configuration prints its summary on standard output: the image and the entry count,
-the CPU policy line, and for each entry its repository, slots, labels, token file,
-name, container name pattern, CPU and memory limits, planned affinity count and
-position, diagnostic settings, and volumes. The axmc summary has `os` and `disk`
-lines in place of the container, affinity, and volume lines, and ends with the
-budget use. Lines end in `\n`.
+configuration prints its summary on standard output, with lines ending in `\n`:
+
+- **axpc.** The header `Host configuration is valid: <n> entries, image <name>`, a
+  CPU policy line that only the axpc summary has, and for each entry its
+  repository, slots, labels, token file, name, container name pattern, CPU and
+  memory limits, planned affinity count and position, diagnostic settings, and
+  volumes.
+- **axmc.** The header `Host configuration is valid: <n> entries, profile axmc`,
+  followed by `, image <name>` when the configuration names an image, and no CPU
+  policy line. Each entry has its repository, `os`, slots, labels, token file,
+  name, CPU and memory limits, `disk`, and diagnostic settings, but no container
+  name pattern, affinity, or volume lines. A `Budget use` block ends the summary,
+  with the macOS VMs, CPUs, memory, and disk used against the limit.
 
 ### Behaviour That Is Easy to Miss
 
@@ -335,8 +348,8 @@ the fake `docker` sees on Linux and macOS; no safe API reads a Windows process's
 creation flags, so the Windows flag is checked by review. A client is killed when
 the future that waits for it is dropped.
 
-Every client other than a job container is bounded. A listing, a volume command, and an info call are bounded at
-120 s. A removal and a stop take the budget their caller passes; stale cleanup removes
+Every client other than a job container is bounded. A listing, a volume command,
+and an info call are bounded at 120 s. A removal and a stop take the budget their caller passes; stale cleanup removes
 within 120 s. The CPU probe and the removal of a leftover probe have the budgets
 under CPU Placement. A `docker info` that fails, hangs, or cannot start (the
 program is missing) means Docker is not available yet. Output from a job container
@@ -381,7 +394,7 @@ to `https://api.github.com`, with these headers
 (`Authorization: Bearer <token>`, `Accept: application/vnd.github+json`,
 `X-GitHub-Api-Version: 2022-11-28`, `Content-Type: application/json`) and this body
 (`name`, `runner_group_id` 1, and the pool's labels). It reads `encoded_jit_config`;
-a response without one is a failure. Beyond the request itself:
+a response without one is a failure. The client also:
 
 - it sends `User-Agent: marshal/<version>`;
 - it follows no redirect, so a redirect is a failure;
@@ -423,7 +436,8 @@ the CPUs, then registers, then runs the container. An image that cannot run jobs
 or a check Docker does not answer, registers nothing and goes into the backoff. A
 failed probe or registration, or a non-zero exit, waits
 5 s, then 10 s, doubling to 300 s; an exit of 0 resets the delay and starts the
-replacement at once. A wait ends early when a stop is asked for, and a stop that arrives as a registration completes starts no container. Time and sleeping
+replacement at once. A wait ends early when a stop is asked for, and a stop that
+arrives as a registration completes starts no container. Time and sleeping
 come through a `Clock` seam, so the tests do not wait.
 
 Preparing the pools puts the image check between the wait for Docker and the
