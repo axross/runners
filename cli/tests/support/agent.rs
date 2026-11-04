@@ -126,6 +126,8 @@ pub struct Rig {
     pub executable: RefCell<Option<PathBuf>>,
     /// the agent has no token store, as on a host without one.
     pub no_store: Cell<bool>,
+    /// a store the agent uses in place of the in-memory one, as the Credential Manager.
+    pub other_store: RefCell<Option<Arc<dyn TokenStore>>>,
     lock: RefCell<Option<InstanceLock>>,
 }
 
@@ -155,6 +157,7 @@ impl Rig {
             times: Cell::new(StopTimes::default()),
             executable: RefCell::new(None),
             no_store: Cell::new(false),
+            other_store: RefCell::new(None),
             lock: RefCell::new(Some(lock)),
         }
     }
@@ -216,7 +219,12 @@ impl Rig {
             clock: &self.clock,
             registrar: &self.registrar,
             builder: &self.builder,
-            store: (!self.no_store.get()).then(|| self.store.clone() as Arc<dyn TokenStore>),
+            store: (!self.no_store.get()).then(|| {
+                self.other_store
+                    .borrow()
+                    .clone()
+                    .unwrap_or_else(|| self.store.clone() as Arc<dyn TokenStore>)
+            }),
             log: &self.log,
             roots: &self.roots,
             lock: &lock,
