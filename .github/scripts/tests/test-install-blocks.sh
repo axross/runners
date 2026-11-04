@@ -30,6 +30,20 @@ trap 'rm -rf -- "$work"' EXIT
 stand_ins="${work}/bin"
 mkdir -p "$stand_ins"
 
+# GNU mktemp -d puts its directory under TMPDIR. macOS mktemp -d behaves as
+# mktemp -t tmp, which prefers the per-user temp directory over TMPDIR, so a block
+# that calls it there ignores the TMPDIR a case sets. the block's work directory is
+# therefore read from its recorded calls, and only where mktemp honours TMPDIR is it
+# also required to sit under the case's tmp folder.
+mkdir -p "${work}/probe-tmp"
+probe="$(TMPDIR="${work}/probe-tmp" mktemp -d)"
+rmdir "$probe"
+if [[ "$probe" == "${work}/probe-tmp/"* ]]; then
+  mktemp_honours_tmpdir=1
+else
+  mktemp_honours_tmpdir=0
+fi
+
 version=1.2.3
 commit_sha=0123456789abcdef0123456789abcdef01234567
 failures=0
@@ -221,9 +235,32 @@ assert_installs_nothing() {
 assert_exists() { [[ -e "$1" ]] || fail "$1 does not exist"; }
 assert_absent() { [[ ! -e "$1" && ! -L "$1" ]] || fail "$1 exists"; }
 
+# the directory the block passed to `gh release download --dir`, which is its
+# mktemp -d directory wherever mktemp put it. empty when the block never got that far.
+recorded_work_dir() {
+  local line
+  line="$(grep -F -e "gh release download " "$STANDIN_LOG" | head -n 1)" || true
+  [[ "$line" == *" --dir "* ]] || return 0
+  printf '%s' "${line##* --dir }"
+}
+
+# the destination of the recorded `cp <source> <destination>` call.
+recorded_copy_of() {
+  local line
+  line="$(grep -F -e "cp $1 " "$STANDIN_LOG" | head -n 1)" || true
+  printf '%s' "${line#"cp $1 "}"
+}
+
+# the block's work directory is gone, wherever mktemp put it, and nothing is left
+# in the case's tmp folder, which is the only place GNU mktemp is pointed at.
 assert_clean_temp() {
+  local block_work
   if [[ -n "$(ls -A "${case_dir}/tmp")" ]]; then
     fail "the block left temporary files: $(ls -A "${case_dir}/tmp")"
+  fi
+  block_work="$(recorded_work_dir)"
+  if [[ -n "$block_work" && ( -e "$block_work" || -L "$block_work" ) ]]; then
+    fail "the block left its work directory ${block_work}"
   fi
 }
 
@@ -269,10 +306,19 @@ assert_called "gh release download v${version} --repo axross/runners --pattern S
 assert_not_called "--pattern ${package_name}"
 assert_called "gh attestation verify ${package} --repo axross/runners --signer-workflow axross/runners/.github/workflows/release.yaml --source-ref refs/heads/main --source-digest ${commit_sha} --deny-self-hosted-runners"
 assert_called "cp ${package} "
-assert_called "pkgutil --expand-full ${case_dir}/tmp/"
+copy="$(recorded_copy_of "$package")"
+copy_dir="$(dirname "$copy")"
+[[ -n "$copy" && "${copy##*/}" == "$package_name" ]] || fail "the copy '${copy}' is not <work>/${package_name}"
+[[ "$copy_dir" != "${case_dir}/downloads" && "$copy_dir" != "$(dirname "$package")" ]] \
+  || fail "the block worked in the downloads folder: ${copy_dir}"
+if [[ $mktemp_honours_tmpdir -eq 1 ]]; then
+  [[ "$copy_dir" == "${case_dir}/tmp/"* ]] || fail "the work directory ${copy_dir} is not under ${case_dir}/tmp"
+fi
+assert_called_matching "^pkgutil --expand-full $(regex_escape "$copy") $(regex_escape "${copy_dir}/unpacked")\$"
 assert_not_called "pkgutil --expand-full ${package} "
-assert_called_matching "xattr -d com\\.apple\\.quarantine $(regex_escape "${case_dir}")/tmp/[^/]+/$(regex_escape "${package_name}")\$"
+assert_called_matching "^xattr -d com\\.apple\\.quarantine $(regex_escape "$copy")\$"
 assert_not_called "xattr -d com.apple.quarantine ${package}"
+[[ "$(recorded_work_dir)" == "$copy_dir" ]] || fail "the block downloaded into '$(recorded_work_dir)', not the directory it copied into"
 assert_called_matching "xattr -d com.apple.quarantine .*/unpacked/Payload/usr/local/bin/marshal$"
 assert_called "payload --version"
 assert_installs_nothing
