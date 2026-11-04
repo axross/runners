@@ -10,12 +10,12 @@ param(
 $ErrorActionPreference = 'Stop'
 
 function Test-ControlPipe {
-    param([string] $Mode)
+    param([string] $Program, [string] $Mode)
 
     $root = Join-Path ([System.IO.Path]::GetTempPath()) "marshal-pipe-security-$PID-$Mode"
     New-Item -ItemType Directory -Path $root | Out-Null
 
-    $start = [System.Diagnostics.ProcessStartInfo]::new((Resolve-Path -LiteralPath $Helper).Path)
+    $start = [System.Diagnostics.ProcessStartInfo]::new((Resolve-Path -LiteralPath $Program).Path)
     $start.ArgumentList.Add($Mode)
     $start.ArgumentList.Add('--root')
     $start.ArgumentList.Add($root)
@@ -91,5 +91,5 @@ function Test-ControlPipe {
 # on the same pipe name with the same descriptor
 foreach ($mode in 'serve', 'serve-agent') {
     Write-Output "Mode: $mode"
-    Test-ControlPipe -Mode $mode
+    Test-ControlPipe -Program $Helper -Mode $mode
 }
