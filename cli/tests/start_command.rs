@@ -95,6 +95,7 @@ fn assert_axmc_start_refused(fixture: &str, replace: Option<(&str, &str)>) {
         .join(fixture);
     let mut text = fs::read_to_string(path).unwrap();
     if let Some((from, to)) = replace {
+        assert!(text.contains(from), "{from} is not in {fixture}");
         text = text.replace(from, to);
     }
     let config = host.root.write("axmc.json", text.as_bytes());
