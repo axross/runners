@@ -159,14 +159,23 @@ function Get-InstalledProduct {
     return , $products
 }
 
-# counts the Uninstall entries under the root whose DisplayName is marshal; a root
-# that does not exist holds none.
-function Get-UninstallEntryCount {
+# returns the key names of the Uninstall entries under the root whose DisplayName is
+# marshal; a root that does not exist holds none.
+function Get-UninstallEntryName {
     param([Parameter(Mandatory = $true)][string]$Root)
-    if (-not (Test-Path -LiteralPath $Root)) { return 0 }
-    $entries = @(Get-ChildItem -LiteralPath $Root | Get-ItemProperty |
-            Where-Object { $_.PSObject.Properties['DisplayName'] -and $_.DisplayName -eq 'marshal' })
-    return $entries.Count
+    if (-not (Test-Path -LiteralPath $Root)) { return , @() }
+    $names = @(Get-ChildItem -LiteralPath $Root | Where-Object {
+            $properties = Get-ItemProperty -LiteralPath $_.PSPath
+            $properties.PSObject.Properties['DisplayName'] -and $properties.DisplayName -eq 'marshal'
+        } | ForEach-Object { $_.PSChildName })
+    return , $names
+}
+
+# one line with the count and the key names of the marshal entries under both roots.
+function Format-UninstallEntryMeasure {
+    $hkcu = Get-UninstallEntryName -Root $HkcuUninstallRoot
+    $hklm = Get-UninstallEntryName -Root $HklmUninstallRoot
+    return "Uninstall entries named marshal under HKCU: $($hkcu.Count)$(if ($hkcu.Count -gt 0) { ' (' + ($hkcu -join ', ') + ')' }); under HKLM: $($hklm.Count)$(if ($hklm.Count -gt 0) { ' (' + ($hklm -join ', ') + ')' })"
 }
 
 function Get-RelatedProductCode {
@@ -272,8 +281,9 @@ try {
     $result = Install-Msi -Path $ReleaseMsi -LogName 'release-install'
     Assert-ExitCode -Result $result -Label 'the release MSI installs'
     # measured before the assertions, so a run that fails them still shows where Windows registered the product.
-    Write-Measured "Uninstall entries named marshal under HKCU: $(Get-UninstallEntryCount -Root $HkcuUninstallRoot)"
-    Write-Measured "Uninstall entries named marshal under HKLM: $(Get-UninstallEntryCount -Root $HklmUninstallRoot)"
+    # Windows lists this user-unmanaged product under HKLM Uninstall (measured on windows-latest), so the
+    # per-user install is proved by the Windows Installer context below, not by where the Uninstall entry lives.
+    Write-Measured (Format-UninstallEntryMeasure)
     $registered = @(Get-InstalledProduct | ForEach-Object { "$($_.ProductCode) in context $($_.Context) ($($_.ContextName))" })
     Write-Measured "Windows Installer ProductsEx products named marshal: $($registered.Count)$(if ($registered.Count -gt 0) { ': ' + ($registered -join '; ') })"
     Assert-Installed -Hash $binaryHash -Version $InstallerVersion -Label 'the release MSI'
@@ -286,13 +296,13 @@ try {
     Write-Measured "the Windows Installer listing: ProductName $($product.Name), Publisher $($product.Publisher), VersionString $($product.Version), product code $($product.ProductCode), context $($product.Context) ($($product.ContextName))"
     $elevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
     Write-Measured "this run is elevated: $elevated, so it shows nothing about a UAC prompt"
-    Assert-That ((Get-UninstallEntryCount -Root $HklmUninstallRoot) -eq 0) 'the product has no machine-wide Uninstall entry'
     Assert-That ($product.Context -eq 2) "the product is installed for the user, not the machine: its context is $($product.Context), $($product.ContextName)"
 
     $result = Uninstall-Msi -Path $ReleaseMsi -LogName 'release-uninstall'
     Assert-ExitCode -Result $result -Label 'the release MSI uninstalls'
     Assert-NothingInstalled -Label 'after the uninstall'
     Assert-That (Test-Path -LiteralPath $LogsMarker) 'the uninstall leaves %LOCALAPPDATA%\marshal\logs'
+    Write-Measured "after the uninstall: $(Format-UninstallEntryMeasure)"
 
     Write-Output '== fixtures =='
     $fixtureA = Copy-Fixture -Name 'a' -Source $Binary -Tail "`nfixture-a"
