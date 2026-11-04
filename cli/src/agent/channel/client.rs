@@ -128,6 +128,8 @@ pub struct Client<W> {
     /// set once the agent accepted a subscription, from when its silence means it is
     /// gone.
     subscribed: Arc<AtomicBool>,
+    /// set, with the answers cleared, when the reading task ends for any reason.
+    closed: Arc<AtomicBool>,
     reading: JoinHandle<()>,
 }
 
@@ -138,7 +140,10 @@ impl<W> Drop for Client<W> {
 }
 
 impl<W: AsyncWrite + Unpin> Client<W> {
-    /// sends `method` with `params` and waits for its result.
+    /// sends `method` with `params` and waits for its result. A call fails with
+    /// [`CallError::Closed`] once the connection has ended, but it waits as long as the
+    /// agent takes on a connection that stays open, so a caller that needs a bound
+    /// wraps it in its own timeout.
     pub async fn call(
         &self,
         method: &str,
@@ -149,7 +154,15 @@ impl<W: AsyncWrite + Unpin> Client<W> {
         }
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let (reply, answer) = oneshot::channel();
-        lock(&self.answers).insert(id, reply);
+        {
+            // checked under the lock the reading task clears the answers with, so a call
+            // is either refused here or answered or cleared there
+            let mut answers = lock(&self.answers);
+            if self.closed.load(Ordering::SeqCst) {
+                return Err(CallError::Closed);
+            }
+            answers.insert(id, reply);
+        }
         let message = ClientMessage::Request {
             id,
             method: method.to_string(),
@@ -274,11 +287,13 @@ where
     let answers: Answers = Arc::default();
     let (pushes, receiver) = mpsc::unbounded_channel();
     let subscribed = Arc::new(AtomicBool::new(false));
+    let closed = Arc::new(AtomicBool::new(false));
     let reading = tokio::spawn(read_messages(
         reader,
         Arc::clone(&answers),
         pushes,
         Arc::clone(&subscribed),
+        Arc::clone(&closed),
     ));
     let client = Client {
         welcome,
@@ -286,6 +301,7 @@ where
         next_id: AtomicU64::new(1),
         answers,
         subscribed,
+        closed,
         reading,
     };
     Ok((client, receiver))
@@ -296,6 +312,7 @@ async fn read_messages<R: AsyncRead + Unpin>(
     answers: Answers,
     pushes: mpsc::UnboundedSender<Push>,
     subscribed: Arc<AtomicBool>,
+    closed: Arc<AtomicBool>,
 ) {
     let mut line = Vec::new();
     loop {
@@ -348,7 +365,11 @@ async fn read_messages<R: AsyncRead + Unpin>(
             | AgentMessage::Event { .. } => {}
         }
     }
-    lock(&answers).clear();
+    {
+        let mut answers = lock(&answers);
+        closed.store(true, Ordering::SeqCst);
+        answers.clear();
+    }
     let _ = pushes.send(Push::Closed);
 }
 
@@ -505,6 +526,31 @@ mod tests {
         let (_client, mut pushes) = handshake(near, &ClientInfo::default()).await.unwrap();
         assert_eq!(pushes.recv().await, Some(Push::Heartbeat { seq: 4 }));
         assert_eq!(pushes.recv().await, Some(Push::Closed));
+    }
+
+    #[tokio::test]
+    async fn a_call_after_the_connection_ended_fails_instead_of_waiting_forever() {
+        let (near, far) = duplex(4096);
+        tokio::spawn(async move {
+            let (read, mut write) = tokio::io::split(far);
+            let mut reader = BufReader::new(read);
+            let mut hello = String::new();
+            reader.read_line(&mut hello).await.unwrap();
+            write
+                .write_all(b"{\"type\":\"welcome\",\"version\":2,\"methods\":[\"status\"],\"topics\":[]}\n")
+                .await
+                .unwrap();
+            // the agent's end of the connection drops here
+        });
+        let (client, mut pushes) = handshake(near, &ClientInfo::default()).await.unwrap();
+        assert_eq!(pushes.recv().await, Some(Push::Closed));
+        let answer = timeout(
+            Duration::from_secs(5),
+            client.call("status", serde_json::Value::Null),
+        )
+        .await
+        .expect("the call waited for an answer that cannot come");
+        assert_eq!(answer, Err(CallError::Closed));
     }
 
     #[tokio::test]
