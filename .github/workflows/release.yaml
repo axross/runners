@@ -334,11 +334,11 @@ jobs:
           application_identity="$identity_hash"
           check_certificate Application
           pick_identity Installer
-          installer_identity="$identity_hash"
+          installer_name="$identity_name"
           check_certificate Installer
           {
             echo "APPLICATION_IDENTITY=${application_identity}"
-            echo "INSTALLER_IDENTITY=${installer_identity}"
+            echo "INSTALLER_IDENTITY_NAME=${installer_name}"
           } >>"$GITHUB_ENV"
           echo "team_id=${MACOS_TEAM_ID}" >>"$GITHUB_OUTPUT"
       # the signature replaces the linker's ad-hoc one. the identifier is fixed, not
@@ -364,7 +364,10 @@ jobs:
           "$SYSTEM_BIN/codesign" --display --requirements - "$binary"
       # build-pkg.sh's layout and pkgbuild arguments, repeated because this job runs
       # no repository file; check-release-shape.mjs fails if the two differ. the
-      # signing options are the only addition.
+      # signing options are the only addition. pkgbuild takes the Installer
+      # identity by its name, the one form its manual gives, which the identities
+      # step has shown to be the only Developer ID Installer identity in the
+      # keychain; codesign takes the Application identity by its SHA-1 hash.
       - name: Build The Signed Package
         env:
           VERSION: ${{ needs.plan.outputs.version }}
@@ -389,7 +392,7 @@ jobs:
             --version "$version" \
             --install-location / \
             --ownership recommended \
-            --sign "$INSTALLER_IDENTITY" \
+            --sign "$INSTALLER_IDENTITY_NAME" \
             --keychain "$keychain" \
             "$output"
           echo "Built ${output} at version ${version}."
