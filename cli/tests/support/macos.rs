@@ -10,14 +10,13 @@
 
 use std::ffi::OsString;
 use std::fs;
-use std::path::Path;
-use std::sync::mpsc;
 use std::time::Duration;
 
 use marshal_cli::macos::keep_awake::KeepAwakeConfig;
 use marshal_cli::macos::network::NetworkTools;
 
 use super::TempDir;
+use super::tart::{Invocation, ended_within, invocations};
 
 pub const FAKE_MACOS: &str = env!("CARGO_BIN_EXE_fake-macos");
 
@@ -106,59 +105,6 @@ impl Fake {
     /// whether call `number` ends within `within`, seen through the lock it holds
     /// while it lives.
     pub fn ended_within(&self, number: usize, within: Duration) -> bool {
-        let alive = self.dir.path().join(format!("inv-{number:06}.alive"));
-        let (ended, wait) = mpsc::channel();
-        std::thread::spawn(move || {
-            let file = fs::File::open(alive).unwrap();
-            file.lock().unwrap();
-            let _ = ended.send(());
-        });
-        wait.recv_timeout(within).is_ok()
+        ended_within(self.dir.path(), number, within)
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Invocation {
-    pub arguments: Vec<String>,
-    pub pid: u32,
-    /// the process group the call ran in, on Unix.
-    pub pgid: Option<u32>,
-    pub jit_present: bool,
-    pub stdin_terminal: bool,
-    pub stdout_terminal: bool,
-}
-
-pub fn invocations(dir: &Path) -> Vec<Invocation> {
-    let mut found = Vec::new();
-    for number in 0.. {
-        let stem = dir.join(format!("inv-{number:06}"));
-        let Ok(argv) = fs::read(stem.with_extension("argv")) else {
-            break;
-        };
-        let text = String::from_utf8(argv).unwrap();
-        let environment = fs::read_to_string(stem.with_extension("env")).unwrap();
-        let flag = |name: &str| {
-            environment
-                .lines()
-                .any(|line| line == format!("{name}=true"))
-        };
-        found.push(Invocation {
-            arguments: if text.is_empty() {
-                Vec::new()
-            } else {
-                text.split('\0').map(str::to_string).collect()
-            },
-            pid: fs::read_to_string(stem.with_extension("pid"))
-                .unwrap()
-                .parse()
-                .unwrap(),
-            pgid: fs::read_to_string(stem.with_extension("pgid"))
-                .ok()
-                .and_then(|text| text.trim().parse().ok()),
-            jit_present: environment.lines().any(|line| line == "JIT=present"),
-            stdin_terminal: flag("stdin_terminal"),
-            stdout_terminal: flag("stdout_terminal"),
-        });
-    }
-    found
 }
