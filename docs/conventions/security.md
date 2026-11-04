@@ -363,7 +363,9 @@ record a change to either workflow, to the build call in
   runner is discarded after the job either way.
   It uses no secret, attests nothing, and adds no action beyond the `actions/*`
   already used. This job and the build legs upload their installer logs, from
-  `msiexec /l*v` and `installer -dumplog`, as workflow artifacts kept for 14 days.
+  `msiexec /l*v` and `installer -dumplog`, as workflow artifacts. They ask for 14
+  days, and the repository's shorter artifact retention limit, 7 days on this
+  repository's pull request runs, applies instead.
   The logs may hold the ephemeral GitHub-hosted runner's machine and account names,
   which the job log's "Set up job" section already shows, and they hold no secret.
 - **No credential stays in a checkout.** Every checkout sets

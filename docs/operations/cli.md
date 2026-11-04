@@ -1754,7 +1754,9 @@ approval of the first one is the decision to sign.
 `attest`. Both read `marshal-release-signed`, and `marshal-release` stays the
 unsigned build set. `attest` keeps `id-token: write` and `attestations: write`
 alone. The kept uploads, the signed files, the notary log and `marshal-release-signed`,
-last 14 days and hold no secret.
+hold no secret. The workflows ask GitHub to keep them for 14 days. GitHub keeps them
+for the repository's artifact retention limit instead when that is shorter; on this
+repository's pull request runs it was 7 days.
 
 `sign-macos` is the one job that declares the Environment or reads a signing secret.
 [Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
@@ -1899,10 +1901,11 @@ The contracts F0 owns are these:
 
 - **The identifier** is `app.axross.marshal`, and it never changes. One code object
   carries it: the `marshal` binary until W1's installer pull request, and from M2 on
-  the Mac app bundle's signature, through its main executable. From M2 on,
-  `verify-macos` reads the designated requirement from the signed app, and K2's trust
-  matches it. M2's first release compares the app's requirement with the one recorded
-  for `marshal`, and records any difference. The package's own identifier is the same
+  the Mac app bundle's signature, through its main executable. F0 proposes that from
+  M2 on `verify-macos` reads the designated requirement from the signed app, and K2's
+  trust matches it. F0 also asks M2's plan to compare, at M2's first release, the
+  app's requirement with the one recorded for `marshal`, and to record any difference.
+  M2's plan accepts or answers both. The package's own identifier is the same
   string. On Windows nothing is signed, so the identifier binds only the Mac. Changing
   the identifier or the team breaks the Keychain trust that K2 and M2 rely on, so a
   change goes through a roadmap revision.
@@ -2249,9 +2252,23 @@ prints the new version even when you skipped the block;
 [Migrating From a Manual Install](#migrating-from-a-manual-install) says what is
 left behind.
 
-The MSI is expected to install for your user only, with no administrator approval,
-and Windows may show only its progress window, but this is not yet measured.
-<!-- measured: whether the MSI installs, and the check block's extraction runs, for a standard user without administrator rights -->
+The MSI installs for your user only. In CI, on a GitHub-hosted Windows Server
+runner, a standard local user without administrator rights, signed in through an
+interactive logon and not elevated, ran the check block, which unpacks the MSI with
+`msiexec /a`. The same user then installed the MSI with `msiexec /i` and no UI, ran
+the installed `marshal`, and ran the uninstall block. Each step passed. For that run
+the test set the Windows Installer policy `DisableMSI` to 0. In a run without that
+change, `msiexec /i` exited 1625 and its log reported `DisableMsi` as 1, and the
+runner has no Installer policy key, so the value is expected to be the Windows
+Server default. Microsoft documents 0 as the behavior with no policy for Windows XP,
+Vista and 7, and states no default for Windows 10 or 11. On a Windows 11 PC with no
+Installer policy the install is expected to work the same way, with no administrator
+approval, but this is not yet measured there. What Windows shows when you open the
+file was not measured.
+
+If `msiexec` reports error 1625, "The system administrator has set policies to
+prevent this installation", a Windows Installer policy on that PC blocks the install
+for your user. Changing that policy is for whoever manages the PC.
 
 Of the install steps, only the pkg needs the administrator password. It is expected
 to create `/usr/local/bin` when it is absent; that case was not measured. On a
