@@ -694,6 +694,60 @@ async fn a_subscriber_is_told_of_a_configuration_a_refused_build_found_invalid()
         .await;
 }
 
+// the runtime core's restarts ---------------------------------------------------------
+
+/// the core fails each time a job container is run (a panic in the fake), so it is
+/// restarted after 10, 30 and 60 s of the fake clock and, at the fourth failure within
+/// the window, the agent stops. Each restart waits 400 ms of real time, so the script
+/// can look at the window; no timer option of the agent is needed.
+#[tokio::test(flavor = "current_thread")]
+async fn a_failing_core_is_restarted_with_a_due_time_and_stops_at_the_limit() {
+    let rig = running_rig();
+    rig.clock.pause.set(Duration::from_millis(400));
+    rig.backend.state.borrow_mut().on_run = Some(Box::new(|| panic!("the core broke")));
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            let mut dues = Vec::new();
+            for _ in 0..3 {
+                let snapshot = conn
+                    .until("a restart due", |s| {
+                        s.agent.restart_due.is_some() && !dues.contains(&s.agent.restart_due)
+                    })
+                    .await;
+                dues.push(snapshot.agent.restart_due);
+                // the agent is still running, and its pool list is empty for the
+                // window, so the totals over the listed pools read 0
+                assert_eq!(snapshot.agent.state, "running", "{snapshot:#?}");
+                assert!(snapshot.pools.is_empty(), "{snapshot:#?}");
+                assert_eq!((snapshot.runners_up, snapshot.runners_wanted), (0, 0));
+                assert_eq!(snapshot.repositories.len(), 1, "{snapshot:#?}");
+            }
+            let due: Vec<u64> = dues.into_iter().map(Option::unwrap).collect();
+            // each due time is the failure's plus the delay, and a failure comes after
+            // the previous due time
+            assert!(due[1] >= due[0] + 30_000, "{due:?}");
+            assert!(due[2] >= due[1] + 60_000, "{due:?}");
+
+            let snapshot = conn.until_state("stopped").await;
+            let reason = snapshot.agent.reason.as_ref().unwrap();
+            assert_eq!(reason.code, "restart_limit");
+            assert_eq!(snapshot.agent.restart_due, None);
+            // a stopped agent lists its pools again
+            assert_eq!(snapshot.pools.len(), 1, "{snapshot:#?}");
+            conn.ok("quit").await;
+        })
+        .await;
+    let lines = rig.log.lines().join("\n");
+    for delay in ["10 s", "30 s", "60 s"] {
+        assert!(
+            lines.contains(&format!("Restarting the runtime core in {delay}.")),
+            "{lines}"
+        );
+    }
+    assert!(lines.contains("failed too often"), "{lines}");
+}
+
 // tokens ---------------------------------------------------------------------------
 
 /// `token_set` and `token_remove` change the store, not the lifecycle, so they are

@@ -90,24 +90,29 @@ impl ImageBuilder for FakeBuilder {
 
 /// the fake clock with a real pause in each sleep, so a backoff loop that the fake
 /// time would spin through lets the script and the channel run.
-pub struct PacedClock(pub FakeClock);
+pub struct PacedClock {
+    pub fake: FakeClock,
+    /// the real pause in each sleep; a test that must see the state during a wait
+    /// lengthens it.
+    pub pause: Cell<Duration>,
+}
 
 impl std::ops::Deref for PacedClock {
     type Target = FakeClock;
 
     fn deref(&self) -> &FakeClock {
-        &self.0
+        &self.fake
     }
 }
 
 impl marshal_cli::runtime::clock::Clock for PacedClock {
     fn now(&self) -> std::time::SystemTime {
-        self.0.now()
+        self.fake.now()
     }
 
     async fn sleep(&self, duration: Duration) {
-        self.0.sleep(duration).await;
-        tokio::time::sleep(Duration::from_millis(60)).await;
+        self.fake.sleep(duration).await;
+        tokio::time::sleep(self.pause.get()).await;
     }
 }
 
@@ -148,7 +153,10 @@ impl Rig {
             root,
             roots,
             backend: FakeBackend::default(),
-            clock: Rc::new(PacedClock(FakeClock::at(START))),
+            clock: Rc::new(PacedClock {
+                fake: FakeClock::at(START),
+                pause: Cell::new(Duration::from_millis(60)),
+            }),
             registrar,
             builder: FakeBuilder::default(),
             store,

@@ -1095,7 +1095,7 @@ a reader ignores one it does not know.
 | `agent`                        | `version`, `state`, `reason` (`code`, `message`), `since`, `build`, `restart_due`                     |
 | `agent.build`                  | `started`, `outcome` (`building`, `ready`, `failed`, `cancelled`), `finished`, `message`              |
 | `configuration`                | `path` and `problems`, at most 100                                                                    |
-| `runners_up`, `runners_wanted` | Totals over all pools, kept when rows are left out                                                    |
+| `runners_up`, `runners_wanted` | Totals over the listed pools, kept when rows are left out; 0 while `restart_due` is set               |
 | `repositories`                 | Each repository (`owner/name` in lower case), `has_token` and its pools                               |
 | `pools`                        | `name`, `repository`, `state`, `reason`, `has_token`, `runners_up`, `slots`, `runners`, `diagnostics` |
 | `pools[].runners`              | `slot`, `state`, `workload`, `reason`, `since`                                                        |
@@ -1103,6 +1103,13 @@ a reader ignores one it does not know.
 | `leftovers`                    | What a stop could not remove, `kind` (today `container`) and `name`                                   |
 | `images`                       | Each image the agent tracks (today the runner image): `name`, `lines`, `warnings`                     |
 | `omitted`                      | How many `runners`, `problems`, `pools`, `repositories`, `leftovers` and `images` it left out         |
+
+When the runtime core fails, the agent starts it again after 10, 30 and 60 s for the
+first, second and third failure within 10 minutes, and stops for `restart_limit` at the
+fourth. While it waits, `agent.restart_due` holds the time it restarts, the agent's
+state stays `running`, and `pools` is empty, so `runners_up` and `runners_wanted` read
+0 for the wait, because the core's rows are not kept across a failure. A stopped agent
+lists its pools again. `repositories` is still listed.
 
 A pool is `waiting_for_docker`, `preparing`, `running`, `skipped` or `stopped`. A
 runner is `running`, `registering`, `backing_off` or `stopped`. The `reason` of a
@@ -1140,7 +1147,11 @@ token store, and talk to it with the library's client or by hand, line by line.
 `tests/agent_resident.rs` covers stop, start and quit (also while a subscribed
 connection reads nothing), launching stopped, the executable renamed, the resuming
 state, build (ready, failed, cancelled by a stop or a quit, `busy`, `refused`), and
-staying up for each reason, also through `start_all`, which answers `resuming`.
+staying up for each reason, also through `start_all`, which answers `resuming`, that
+`token_set` and `token_remove` are answered while it resumes, builds and stops, and the
+core's restarts: the `restart_due` window with its empty pool list, and the stop for
+`restart_limit`. The restart waits are the fake clock's, with a real pause of 400 ms
+each so the script can look at the window.
 `tests/agent_protocol.rs` covers the handshake, `welcome`, unknown methods, topics
 and fields, subscription, coalescing, heartbeats, `ending`, the limits as timers and
 a connection that stops reading. `tests/agent_tokens.rs` covers what `token_set` and
