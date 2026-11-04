@@ -201,6 +201,11 @@ assert_called_matching() {
   grep -q -E -e "$1" "$STANDIN_LOG" || fail "no call matches '$1'; calls: $(tr '\n' ';' <"$STANDIN_LOG")"
 }
 
+# regex_escape <text> prints the text with its extended-regex metacharacters escaped.
+regex_escape() {
+  printf '%s' "$1" | sed 's/[][\.*^$+?(){}|]/\\&/g'
+}
+
 assert_not_called() {
   if grep -q -F -e "$1" "$STANDIN_LOG"; then
     fail "'$1' was called; calls: $(tr '\n' ';' <"$STANDIN_LOG")"
@@ -266,7 +271,7 @@ assert_called "gh attestation verify ${package} --repo axross/runners --signer-w
 assert_called "cp ${package} "
 assert_called "pkgutil --expand-full ${case_dir}/tmp/"
 assert_not_called "pkgutil --expand-full ${package} "
-assert_called "xattr -d com.apple.quarantine ${case_dir}/tmp/"
+assert_called_matching "xattr -d com\\.apple\\.quarantine $(regex_escape "${case_dir}")/tmp/[^/]+/$(regex_escape "${package_name}")\$"
 assert_not_called "xattr -d com.apple.quarantine ${package}"
 assert_called_matching "xattr -d com.apple.quarantine .*/unpacked/Payload/usr/local/bin/marshal$"
 assert_called "payload --version"
