@@ -18,7 +18,7 @@ use std::process::{Command, Output, Stdio};
 
 use marshal_cli::golden::steps::LAUNCHER;
 use marshal_cli::runtime::docker_args::JIT_VARIABLE;
-use support::TempDir;
+use support::{TempDir, settle_executable};
 
 const SECRET: &str = "eyJmYWtlIjoianVzdC1hLXRlc3QifQ==";
 
@@ -42,7 +42,11 @@ impl Launcher {
             )
             .as_bytes(),
         );
-        fs::set_permissions(docker, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::set_permissions(&docker, fs::Permissions::from_mode(0o755)).unwrap();
+        let missing = dir.path().join("no-record");
+        settle_executable(&docker, |command| {
+            command.env("RECORD", &missing);
+        });
         Self { dir, script }
     }
 

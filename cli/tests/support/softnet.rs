@@ -13,8 +13,8 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use super::TempDir;
 use super::tart::{Invocation, ended_within, invocations};
+use super::{TempDir, settle_executable};
 
 pub const FAKE_SOFTNET: &str = env!("CARGO_BIN_EXE_fake-softnet");
 
@@ -63,10 +63,16 @@ impl Host {
         file
     }
 
-    /// copies the fake `softnet` to `<directory>/softnet` and returns that file.
+    /// copies the fake `softnet` to `<directory>/softnet` and returns that file, once
+    /// it can be run. A throwaway run records its call in a directory of its own, so
+    /// the calls a test sees in `directory` are only its own.
     pub fn copy(&self, directory: &str) -> PathBuf {
         let file = self.directory(directory).join("softnet");
         fs::copy(FAKE_SOFTNET, &file).unwrap();
+        let scratch = self.directory("copy-probe");
+        settle_executable(&file, |command| {
+            command.arg("--version").env("FAKE_SOFTNET_DIR", &scratch);
+        });
         file
     }
 

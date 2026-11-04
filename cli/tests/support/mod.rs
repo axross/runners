@@ -24,8 +24,9 @@ pub mod tart;
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 
 pub const BINARY: &str = env!("CARGO_BIN_EXE_marshal");
 
@@ -87,6 +88,34 @@ impl TempDir {
         let path = self.write(relative, contents);
         make_private(&path);
         path
+    }
+}
+
+/// runs `program` once, as `probe` configures it, retrying while the kernel refuses with
+/// "text file busy". A child another test thread forks keeps a just-written file open
+/// for writing until it execs, so the first run of a fresh executable can be refused;
+/// once one run starts, no writer is left. The probe's exit code is ignored.
+pub fn settle_executable(program: &Path, probe: impl Fn(&mut Command)) {
+    const BUDGET: Duration = Duration::from_secs(10);
+    let started = Instant::now();
+    loop {
+        let mut command = Command::new(program);
+        probe(&mut command);
+        let result = command
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        match result {
+            Ok(_) => return,
+            Err(error)
+                if error.kind() == std::io::ErrorKind::ExecutableFileBusy
+                    && started.elapsed() < BUDGET =>
+            {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(error) => panic!("{} could not run: {error}", program.display()),
+        }
     }
 }
 
