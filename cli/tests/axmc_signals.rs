@@ -162,7 +162,7 @@ fn another_router_on_the_same_interface_is_a_change_and_the_same_network_is_not(
 
     // the same network again, and with its hardware address unreadable
     host.set_network(WIFI_NETWORK);
-    host.set_network("interface=en0\nrouter=192.168.1.1\n");
+    host.set_network("interface=en0\nrouter=192.0.2.1\n");
     std::thread::sleep(Duration::from_millis(800));
     assert!(host.status().contains("state: running"));
 

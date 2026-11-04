@@ -133,7 +133,7 @@ fn route_is_read_as_macos_prints_it() {
         parse_route(ROUTE_WIFI),
         Some(RouteEntry {
             interface: "en0".to_string(),
-            gateway: Some(Ipv4Addr::new(192, 168, 1, 1)),
+            gateway: Some(Ipv4Addr::new(192, 0, 2, 1)),
         })
     );
 }
@@ -164,7 +164,7 @@ fn a_route_whose_gateway_is_a_link_leaves_through_that_interface_without_a_route
             "   route to: default\ndestination: default\n       mask: default\n    gateway: {gateway}\n  interface: utun4\n      flags: <UP,GATEWAY,DONE,STATIC,GLOBAL>\n"
         )
     };
-    for gateway in ["link#17", "link#1", "a4:83:e7:1:2:3"] {
+    for gateway in ["link#17", "link#1", "0:0:5e:0:53:1"] {
         assert_eq!(
             parse_route(&vpn(gateway)),
             Some(RouteEntry {
@@ -184,14 +184,14 @@ fn route_output_in_any_other_form_is_refused() {
         "route: writing to routing socket: not in table\n".to_string(),
         "   route to: default\n".to_string(),
         with("route to: default", "route to: 8.8.8.8"),
-        with("gateway: 192.168.1.1", "gateway: fe80::1%en0"),
-        with("gateway: 192.168.1.1", "gateway: link#"),
-        with("gateway: 192.168.1.1", "gateway: link#x"),
-        with("gateway: 192.168.1.1", "gateway: link#17 extra"),
-        with("gateway: 192.168.1.1", "gateway: link#1234567890"),
-        with("gateway: 192.168.1.1", "gateway: 0.0.0.0"),
-        with("gateway: 192.168.1.1", "gateway: 192.168.001.001"),
-        with("gateway: 192.168.1.1", "gateway: 192.168.1.1 extra"),
+        with("gateway: 192.0.2.1", "gateway: fe80::1%en0"),
+        with("gateway: 192.0.2.1", "gateway: link#"),
+        with("gateway: 192.0.2.1", "gateway: link#x"),
+        with("gateway: 192.0.2.1", "gateway: link#17 extra"),
+        with("gateway: 192.0.2.1", "gateway: link#1234567890"),
+        with("gateway: 192.0.2.1", "gateway: 0.0.0.0"),
+        with("gateway: 192.0.2.1", "gateway: 192.000.002.001"),
+        with("gateway: 192.0.2.1", "gateway: 192.0.2.1 extra"),
         with("interface: en0", "interface: "),
         with("interface: en0", "interface: 0en"),
         with("interface: en0", "interface: en0 en1"),
@@ -199,7 +199,7 @@ fn route_output_in_any_other_form_is_refused() {
         with("interface: en0", "interface: en0-x"),
         ROUTE_WIFI.replace("  interface: en0\n", ""),
         format!("{ROUTE_WIFI}  interface: en1\n"),
-        format!("{ROUTE_WIFI}    gateway: 192.168.1.2\n"),
+        format!("{ROUTE_WIFI}    gateway: 192.0.2.2\n"),
         ROUTE_WIFI.replacen("   route to: default\n", "", 1),
     ];
     for text in refused {
@@ -214,7 +214,7 @@ fn the_longest_interface_name_is_fifteen_characters() {
     assert_eq!(parse_route(&text).unwrap().interface, name);
 }
 
-const ROUTER: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 1);
+const ROUTER: Ipv4Addr = Ipv4Addr::new(192, 0, 2, 1);
 
 fn address(bytes: [u8; 6]) -> HardwareAddress {
     HardwareAddress::new(bytes)
@@ -224,29 +224,28 @@ fn address(bytes: [u8; 6]) -> HardwareAddress {
 fn arp_is_read_as_macos_prints_it_without_zero_padding() {
     assert_eq!(
         parse_arp(ARP_ROUTER, ROUTER, "en0"),
-        Some(address([0xa4, 0x83, 0xe7, 1, 2, 3]))
+        Some(address([0x00, 0x00, 0x5e, 0, 0x53, 1]))
     );
-    let permanent = "? (192.168.1.1) at 0:a:95:ff:0:10 on en0 ifscope permanent [ethernet]\n";
+    let permanent = "? (192.0.2.1) at 0:0:5e:0:53:10 on en0 ifscope permanent [ethernet]\n";
     assert_eq!(
         parse_arp(permanent, ROUTER, "en0"),
-        Some(address([0, 0x0a, 0x95, 0xff, 0, 0x10]))
+        Some(address([0, 0, 0x5e, 0, 0x53, 0x10]))
     );
-    let proxy =
-        "? (192.168.1.1) at a4:83:e7:1:2:3 on en0 ifscope published (proxy only) [ethernet]";
+    let proxy = "? (192.0.2.1) at 0:0:5e:0:53:1 on en0 ifscope published (proxy only) [ethernet]";
     assert!(parse_arp(proxy, ROUTER, "en0").is_some());
 }
 
 #[test]
 fn hardware_addresses_print_padded() {
-    let parsed = parse_hardware_address("0:a:95:ff:0:10").unwrap();
-    assert_eq!(parsed.to_string(), "00:0a:95:ff:00:10");
+    let parsed = parse_hardware_address("0:0:5e:0:53:10").unwrap();
+    assert_eq!(parsed.to_string(), "00:00:5e:00:53:10");
 }
 
 #[test]
 fn an_incomplete_or_missing_arp_entry_means_the_address_cannot_be_read() {
-    let incomplete = "? (192.168.1.1) at (incomplete) on en0 ifscope [ethernet]\n";
+    let incomplete = "? (192.0.2.1) at (incomplete) on en0 ifscope [ethernet]\n";
     assert_eq!(parse_arp(incomplete, ROUTER, "en0"), None);
-    let missing = "192.168.1.1 (192.168.1.1) -- no entry\n";
+    let missing = "192.0.2.1 (192.0.2.1) -- no entry\n";
     assert_eq!(parse_arp(missing, ROUTER, "en0"), None);
     assert_eq!(parse_arp("", ROUTER, "en0"), None);
 }
@@ -254,18 +253,18 @@ fn an_incomplete_or_missing_arp_entry_means_the_address_cannot_be_read() {
 #[test]
 fn arp_output_in_any_other_form_is_refused() {
     let refused = [
-        "? (192.168.1.1) at A4:83:E7:1:2:3 on en0 ifscope [ethernet]",
-        "? (192.168.1.1) at a4:83:e7:1:2 on en0 ifscope [ethernet]",
-        "? (192.168.1.1) at a4:83:e7:1:2:3:4 on en0 ifscope [ethernet]",
-        "? (192.168.1.1) at a4:83:e7:100:2:3 on en0 ifscope [ethernet]",
-        "? (192.168.1.1) at a4:83:e7:1:2:g on en0 ifscope [ethernet]",
-        "? (192.168.1.1) at a4-83-e7-1-2-3 on en0 ifscope [ethernet]",
-        "? (192.168.1.1) at a4:83:e7:1:2:3",
-        "? (192.168.1.2) at a4:83:e7:1:2:3 on en0 ifscope [ethernet]",
-        "? (192.168.1.1 at a4:83:e7:1:2:3 on en0 ifscope [ethernet]",
-        "router (192.168.1.1) at a4:83:e7:1:2:3 on en0 ifscope [ethernet]",
-        "? (192.168.1.1) at a4:83:e7:1:2:3 on en0 ifscope surprise [ethernet]",
-        "? (192.168.1.1) at a4:83:e7:1:2:3 on 0en ifscope [ethernet]",
+        "? (192.0.2.1) at 0:0:5E:0:53:1 on en0 ifscope [ethernet]",
+        "? (192.0.2.1) at 0:0:5e:0:53 on en0 ifscope [ethernet]",
+        "? (192.0.2.1) at 0:0:5e:0:53:1:4 on en0 ifscope [ethernet]",
+        "? (192.0.2.1) at 0:0:5e:100:53:1 on en0 ifscope [ethernet]",
+        "? (192.0.2.1) at 0:0:5e:0:53:g on en0 ifscope [ethernet]",
+        "? (192.0.2.1) at 0-0-5e-0-53-1 on en0 ifscope [ethernet]",
+        "? (192.0.2.1) at 0:0:5e:0:53:1",
+        "? (192.0.2.2) at 0:0:5e:0:53:1 on en0 ifscope [ethernet]",
+        "? (192.0.2.1 at 0:0:5e:0:53:1 on en0 ifscope [ethernet]",
+        "router (192.0.2.1) at 0:0:5e:0:53:1 on en0 ifscope [ethernet]",
+        "? (192.0.2.1) at 0:0:5e:0:53:1 on en0 ifscope surprise [ethernet]",
+        "? (192.0.2.1) at 0:0:5e:0:53:1 on 0en ifscope [ethernet]",
         "arp: bad address",
     ];
     for text in refused {
@@ -281,24 +280,24 @@ fn one_unreadable_line_refuses_the_whole_arp_answer() {
 
 #[test]
 fn arp_entries_on_other_interfaces_are_ignored_and_disagreeing_ones_refused() {
-    let both = "? (192.168.1.1) at a4:83:e7:1:2:3 on en0 ifscope [ethernet]
-? (192.168.1.1) at 0:11:22:33:44:55 on en1 ifscope [ethernet]
+    let both = "? (192.0.2.1) at 0:0:5e:0:53:1 on en0 ifscope [ethernet]
+? (192.0.2.1) at 0:0:5e:0:53:3 on en1 ifscope [ethernet]
 ";
     assert_eq!(
         parse_arp(both, ROUTER, "en0"),
-        Some(address([0xa4, 0x83, 0xe7, 1, 2, 3]))
+        Some(address([0x00, 0x00, 0x5e, 0, 0x53, 1]))
     );
     assert_eq!(
         parse_arp(both, ROUTER, "en1"),
-        Some(address([0, 0x11, 0x22, 0x33, 0x44, 0x55]))
+        Some(address([0, 0, 0x5e, 0, 0x53, 3]))
     );
     assert_eq!(parse_arp(both, ROUTER, "en2"), None);
-    let disagree = "? (192.168.1.1) at a4:83:e7:1:2:3 on en0 ifscope [ethernet]
-? (192.168.1.1) at 0:11:22:33:44:55 on en0 [ethernet]
+    let disagree = "? (192.0.2.1) at 0:0:5e:0:53:1 on en0 ifscope [ethernet]
+? (192.0.2.1) at 0:0:5e:0:53:3 on en0 [ethernet]
 ";
     assert_eq!(parse_arp(disagree, ROUTER, "en0"), None);
-    let agree = "? (192.168.1.1) at a4:83:e7:1:2:3 on en0 ifscope [ethernet]
-? (192.168.1.1) at a4:83:e7:1:2:3 on en0 [ethernet]
+    let agree = "? (192.0.2.1) at 0:0:5e:0:53:1 on en0 ifscope [ethernet]
+? (192.0.2.1) at 0:0:5e:0:53:1 on en0 [ethernet]
 ";
     assert!(parse_arp(agree, ROUTER, "en0").is_some());
 }
@@ -311,9 +310,9 @@ fn network(interface: &str, router: Option<[u8; 4]>, hardware: Option<[u8; 6]>) 
     }
 }
 
-const ROUTER_BYTES: Option<[u8; 4]> = Some([192, 168, 1, 1]);
-const MAC_A: Option<[u8; 6]> = Some([0xa4, 0x83, 0xe7, 1, 2, 3]);
-const MAC_B: Option<[u8; 6]> = Some([0, 0x11, 0x22, 0x33, 0x44, 0x55]);
+const ROUTER_BYTES: Option<[u8; 4]> = Some([192, 0, 2, 1]);
+const MAC_A: Option<[u8; 6]> = Some([0x00, 0x00, 0x5e, 0, 0x53, 1]);
+const MAC_B: Option<[u8; 6]> = Some([0, 0, 0x5e, 0, 0x53, 3]);
 
 fn wifi() -> NetworkReading {
     NetworkReading::Primary(network("en0", ROUTER_BYTES, MAC_A))
@@ -349,7 +348,7 @@ fn a_difference_on_one_check_is_not_a_change_and_a_return_resets_the_count() {
 #[test]
 fn joining_another_network_on_the_same_interface_is_a_change_by_its_router() {
     let mut watch = NetworkWatch::begin(wifi());
-    let other_router = NetworkReading::Primary(network("en0", Some([10, 0, 0, 1]), MAC_A));
+    let other_router = NetworkReading::Primary(network("en0", Some([198, 51, 100, 1]), MAC_A));
     assert_eq!(watch.observe(other_router.clone()), WatchOutcome::Differing);
     assert_eq!(watch.observe(other_router), changed("en0", "en0"));
 }
@@ -506,8 +505,8 @@ fn the_reasons_are_exact_and_name_interfaces_only() {
         panic!("not a change");
     };
     let reason = change.reason();
-    assert!(!reason.contains("192.168"), "{reason}");
-    assert!(!reason.contains("a4:83"), "{reason}");
+    assert!(!reason.contains("192.0.2"), "{reason}");
+    assert!(!reason.contains("0:0:5e"), "{reason}");
 }
 
 #[cfg(debug_assertions)]

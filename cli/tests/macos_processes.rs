@@ -24,12 +24,12 @@ use marshal_cli::macos::probe::{MAX_OUTPUT_BYTES, PROBE_BUDGET, ProbeError, run_
 use marshal_cli::macos::signals::{SignalSource, Signals};
 use support::macos::{ARP_ROUTER, FAKE_MACOS, Fake, ROUTE_WIFI};
 
-const WIFI_HARDWARE: [u8; 6] = [0xa4, 0x83, 0xe7, 1, 2, 3];
+const WIFI_HARDWARE: [u8; 6] = [0x00, 0x00, 0x5e, 0, 0x53, 1];
 
 fn wifi() -> NetworkReading {
     NetworkReading::Primary(PrimaryNetwork {
         interface: "en0".to_string(),
-        router: Some(Ipv4Addr::new(192, 168, 1, 1)),
+        router: Some(Ipv4Addr::new(192, 0, 2, 1)),
         hardware: Some(HardwareAddress::new(WIFI_HARDWARE)),
     })
 }
@@ -45,7 +45,7 @@ async fn the_network_is_read_from_route_then_arp_with_their_exact_arguments() {
     let calls = fake.invocations();
     assert_eq!(calls.len(), 2);
     assert_eq!(calls[0].arguments, words(&["-n", "get", "default"]));
-    assert_eq!(calls[1].arguments, words(&["-n", "192.168.1.1"]));
+    assert_eq!(calls[1].arguments, words(&["-n", "192.0.2.1"]));
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -118,7 +118,7 @@ async fn a_routing_table_that_cannot_be_read_is_no_default_route() {
         fake.script("route_stdout", "");
         fake.script("route_exit", "1");
     };
-    let garbage = |fake: &Fake| fake.script("route_stdout", "default via 10.0.0.1 dev en0\n");
+    let garbage = |fake: &Fake| fake.script("route_stdout", "default via 198.51.100.1 dev en0\n");
     let failed = |fake: &Fake| fake.script("fail-route", "route: writing to routing socket");
     let flooded = |fake: &Fake| {
         fake.script("route_stdout", ROUTE_WIFI);
@@ -159,29 +159,25 @@ async fn a_route_program_that_is_missing_is_no_default_route() {
 async fn an_arp_that_cannot_be_read_leaves_the_hardware_address_unread_not_the_route() {
     let unread = PrimaryNetwork {
         interface: "en0".to_string(),
-        router: Some(Ipv4Addr::new(192, 168, 1, 1)),
+        router: Some(Ipv4Addr::new(192, 0, 2, 1)),
         hardware: None,
     };
     let cases = [
         (
             "an incomplete entry",
-            "? (192.168.1.1) at (incomplete) on en0 ifscope [ethernet]\n",
+            "? (192.0.2.1) at (incomplete) on en0 ifscope [ethernet]\n",
             None,
         ),
-        (
-            "no entry",
-            "192.168.1.1 (192.168.1.1) -- no entry\n",
-            Some("1"),
-        ),
+        ("no entry", "192.0.2.1 (192.0.2.1) -- no entry\n", Some("1")),
         ("an unknown form", "surprise\n", None),
         (
             "another router",
-            "? (10.0.0.1) at a4:83:e7:1:2:3 on en0 ifscope [ethernet]\n",
+            "? (198.51.100.1) at 0:0:5e:0:53:1 on en0 ifscope [ethernet]\n",
             None,
         ),
         (
             "another interface",
-            "? (192.168.1.1) at a4:83:e7:1:2:3 on en1 ifscope [ethernet]\n",
+            "? (192.0.2.1) at 0:0:5e:0:53:1 on en1 ifscope [ethernet]\n",
             None,
         ),
         ("a failing code", ARP_ROUTER, Some("1")),
@@ -222,7 +218,7 @@ async fn arp_output_past_the_bound_is_refused() {
     let error = run_bounded(
         &program,
         &fake.environment(),
-        &words(&["-n", "192.168.1.1"]),
+        &words(&["-n", "192.0.2.1"]),
         Duration::from_secs(10),
     )
     .await;
@@ -476,7 +472,7 @@ mod scripted {
         assert_eq!(signals.read_network().await, NetworkReading::NoDefaultRoute);
         fake.script(
             "network",
-            "interface=en0\nrouter=192.168.1.1\nhardware=a4:83:e7:1:2:3\n",
+            "interface=en0\nrouter=192.0.2.1\nhardware=0:0:5e:0:53:1\n",
         );
         assert_eq!(signals.read_network().await, wifi());
         fake.script("network", "none");
@@ -507,7 +503,7 @@ mod scripted {
     fn a_network_file_that_is_not_one_is_no_default_route() {
         assert_eq!(parse_scripted_network(""), NetworkReading::NoDefaultRoute);
         assert_eq!(
-            parse_scripted_network("router=192.168.1.1"),
+            parse_scripted_network("router=192.0.2.1"),
             NetworkReading::NoDefaultRoute
         );
         let bad_parts = parse_scripted_network("interface=utun1\nrouter=nope\nhardware=zz");

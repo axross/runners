@@ -37,11 +37,15 @@ fn network(interface: &str, router: [u8; 4], hardware: Option<[u8; 6]>) -> Netwo
 }
 
 fn wifi() -> NetworkReading {
-    network("en0", [192, 168, 1, 1], Some([0xa4, 0x83, 0xe7, 1, 2, 3]))
+    network("en0", [192, 0, 2, 1], Some([0x00, 0x00, 0x5e, 0, 0x53, 1]))
 }
 
 fn other_wifi() -> NetworkReading {
-    network("en0", [10, 0, 0, 1], Some([0x3c, 0x22, 0xfb, 4, 5, 6]))
+    network(
+        "en0",
+        [198, 51, 100, 1],
+        Some([0x00, 0x00, 0x5e, 0, 0x53, 2]),
+    )
 }
 
 fn vpn() -> NetworkReading {
@@ -263,7 +267,7 @@ async fn the_same_interface_and_router_with_the_same_hardware_address_is_not_a_c
 #[tokio::test(flavor = "current_thread")]
 async fn a_missing_hardware_address_is_not_compared() {
     // AC: a missing hardware address is not compared
-    let without = network("en0", [192, 168, 1, 1], None);
+    let without = network("en0", [192, 0, 2, 1], None);
     let setup = Signaled::new([wifi(), without.clone(), without, wifi()]);
     let s = &setup;
     let (_, state) = setup

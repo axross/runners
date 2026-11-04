@@ -25,15 +25,15 @@ pub const FAKE_MACOS: &str = env!("CARGO_BIN_EXE_fake-macos");
 pub const ROUTE_WIFI: &str = "   route to: default
 destination: default
        mask: default
-    gateway: 192.168.1.1
+    gateway: 192.0.2.1
   interface: en0
       flags: <UP,GATEWAY,DONE,STATIC,PRCLONING,GLOBAL>
  recvpipe  sendpipe  ssthresh  rtt,msec    rttvar  hopcount      mtu     expire
        0         0         0         0         0         0      1500         0
 ";
 
-/// `arp -n 192.168.1.1` for that router, as macOS prints it.
-pub const ARP_ROUTER: &str = "? (192.168.1.1) at a4:83:e7:1:2:3 on en0 ifscope [ethernet]\n";
+/// `arp -n 192.0.2.1` for that router, as macOS prints it.
+pub const ARP_ROUTER: &str = "? (192.0.2.1) at 0:0:5e:0:53:1 on en0 ifscope [ethernet]\n";
 
 pub struct Fake {
     pub dir: TempDir,

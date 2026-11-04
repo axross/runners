@@ -36,10 +36,10 @@ fn make_sink(path: &Path) {
 }
 
 /// what the scripted signal source reads as a Wi-Fi primary network.
-pub const WIFI_NETWORK: &str = "interface=en0\nrouter=192.168.1.1\nhardware=a4:83:e7:1:2:3\n";
+pub const WIFI_NETWORK: &str = "interface=en0\nrouter=192.0.2.1\nhardware=0:0:5e:0:53:1\n";
 
 /// another Wi-Fi network: the same interface behind another router.
-pub const OTHER_WIFI_NETWORK: &str = "interface=en0\nrouter=10.0.0.1\nhardware=3c:22:fb:4:5:6\n";
+pub const OTHER_WIFI_NETWORK: &str = "interface=en0\nrouter=198.51.100.1\nhardware=0:0:5e:0:53:2\n";
 
 /// a VPN that takes the default route.
 pub const VPN_NETWORK: &str = "interface=utun4\n";
