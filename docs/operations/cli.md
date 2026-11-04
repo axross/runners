@@ -2224,19 +2224,24 @@ the configuration check and the image rebuild around this procedure.
    the old environment. On macOS, `command -v marshal` prints
    `/usr/local/bin/marshal`.
 
-If step 5 prints another version on Windows, or `command -v marshal` prints another
-path on macOS, a manual install from before the installers is still in place. Run
-the [migration block](#migrating-from-a-manual-install), then uninstall and install
-again.
+If `command -v marshal` prints another path on macOS, a manual install from before
+the installers is still in place. Run the
+[migration block](#migrating-from-a-manual-install), then uninstall and install
+again. On Windows the MSI replaces a manual copy at the install path, so step 5
+prints the new version even when you skipped the block;
+[Migrating From a Manual Install](#migrating-from-a-manual-install) says what is
+left behind.
 
 The MSI is expected to install for your user only, with no administrator approval,
 and Windows may show only its progress window, but this is not yet measured.
 <!-- measured: whether the MSI installs, and the check block's extraction runs, for a standard user without administrator rights -->
 
 Of the install steps, only the pkg needs the administrator password. It is expected
-to create `/usr/local/bin` when it is absent. What it does to an existing
-`/usr/local/bin`:
-<!-- measured: the owner and mode of /usr/local/bin before and after the pkg installs, on a runner where it exists -->
+to create `/usr/local/bin` when it is absent; that case was not measured. On a
+GitHub-hosted runner where `/usr/local/bin` already existed, it was owned by
+`runner:admin` with mode 775 before the install, and the install and the uninstall
+left that owner and mode unchanged. The package lists the directory as `root:wheel`
+with mode 0755, so the listing was not applied to a directory that already existed.
 
 ### Checking the Download
 
@@ -2427,12 +2432,25 @@ refuses if the instance does not stop, then removes the manual install:
 Updating from `v0.1.0` is this block, then an install. If you skip it, the recovery
 is this block, then an uninstall and an install again.
 
-Installing the MSI over a manual copy at the same path, without the block:
-<!-- measured: which binary is at the install path after the MSI installs over a manual copy without the migration block -->
+Installing the MSI over a manual copy at the same path, without the block, was run
+in CI on a GitHub-hosted runner. `msiexec` exited 0 and listed one product. The
+installer's binary replaced the manual copy, and `marshal --version` at the install
+path printed the installer's version. The user `PATH` then listed the install
+directory twice, once from the manual install and once from the MSI. Step 5 of the
+install shows the new version. To get back to one `PATH` entry, run the block, then
+uninstall and install again. The uninstall block after that install passed and
+removed the file at the install path.
 
 Installing the pkg beside a manual copy at `~/.local/bin/marshal`, without the block,
-when `~/.local/bin` comes before `/usr/local/bin` on `PATH`:
-<!-- measured: which binary command -v marshal prints after the pkg installs beside a manual copy with ~/.local/bin ahead of /usr/local/bin on PATH -->
+when `~/.local/bin` comes before `/usr/local/bin` on `PATH`, was run in CI on a
+GitHub-hosted runner, with the same result under zsh and `/bin/bash`. The pkg
+installed its own binary at `/usr/local/bin/marshal` and left the manual copy in
+place. The shell kept finding the manual copy: `command -v marshal` printed the manual
+copy's path, and `marshal --version` printed the manual copy's version. So step 5
+shows the old version and the manual copy's path. The recovery is the migration block,
+which removes the manual copy, then an uninstall and an install again. The uninstall
+block after that install exited 0 and removed `/usr/local/bin/marshal`, and the manual
+copy stayed.
 
 On macOS, in bash or zsh:
 
@@ -2516,10 +2534,20 @@ On Windows, in PowerShell 5.1 or 7:
 - **Update.** Install a newer version, steps 1 to 5 above. Stop the instance first,
   then rebuild the image and start again, as
   [Updating the Runner](./windows-runner-host.md#updating-the-runner) describes.
-- **Upgrading while a program runs from the install path** on Windows:
-  <!-- measured: the outcome of an MSI upgrade while a program runs from the install path, and the recovery -->
-- **A lower pkg over a higher one** on macOS:
-  <!-- measured: what installer does when a lower pkg is installed over a higher one -->
+- **Upgrading while a program runs from the install path** on Windows. In CI, on a
+  GitHub-hosted runner, an upgrade with no UI (`/qn`) ran while a stand-in console
+  program ran from the install path as `marshal.exe`. `msiexec` exited 0. The
+  upgrade's log shows Restart Manager shutting down the applications that held files
+  in use. The file at the install path was then the new version, the program was no
+  longer running, one product was listed at the new version, and no rename was left
+  pending for a reboot. So the upgrade ends a `marshal` that runs from the install
+  path and replaces the file with no reboot. Stop the instance first, as the update
+  bullet says; if you did not, start it again after the upgrade. What the interactive
+  installer window shows was not measured.
+- **A lower pkg over a higher one** on macOS. In CI, on a GitHub-hosted runner, the
+  installer exited 0, the lower version's file replaced the higher version's, and the
+  receipt reported the lower version. So macOS Installer accepts the downgrade, and
+  installing an older pkg is a working rollback there.
 - **Repair.** Uninstall, then install.
 - **Uninstall.** The block for your OS stops the instance and refuses if it does not
   stop. The logs stay, in `%LOCALAPPDATA%\marshal\logs\` on Windows and
@@ -2535,7 +2563,9 @@ On Windows, in PowerShell 5.1 or 7:
 - **Roll back.** Uninstall, then install the older version, steps 1 to 5. The MSI
   refuses a lower version while a newer one is installed, with the message "A newer
   version of marshal is already installed.", and the installed version stays, so
-  uninstall first.
+  uninstall first. The pkg does not refuse, as the lower pkg bullet above says, so on
+  macOS installing the older pkg over the newer one works too. Uninstalling first
+  stays the documented route on both.
   The Developer ID certificates are expected to last one year, and whether a
   notarized pkg still installs once its Installer certificate has expired is not
   confirmed, so a rollback through an older release's pkg may fail. The bare-binary
