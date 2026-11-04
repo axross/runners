@@ -5,6 +5,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::marker::PhantomData;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -70,7 +71,7 @@ impl std::error::Error for ConnectError {}
 pub enum CallError {
     /// the agent answered with an error.
     Agent(ErrorBody),
-    /// the agent's `welcome` did not list the method, so it was not sent.
+    /// the agent's `welcome` did not list the method or topic, so it was not sent.
     NotServed(String),
     /// the connection ended before the answer.
     Closed,
@@ -119,31 +120,52 @@ pub struct Welcome {
 type Answers = Arc<Mutex<BTreeMap<u64, oneshot::Sender<Result<serde_json::Value, ErrorBody>>>>>;
 
 /// a connection to the agent; requests may be made from several tasks at once, and
-/// the agent answers each connection's requests in order.
+/// the agent answers each connection's requests in order. `W` is the write half of
+/// the connection, which a task of the client owns.
 pub struct Client<W> {
     pub welcome: Welcome,
-    writer: tokio::sync::Mutex<W>,
+    /// whole request lines for the writing task, which writes each to the end even
+    /// when the call that queued it is dropped.
+    outgoing: mpsc::UnboundedSender<Vec<u8>>,
     next_id: AtomicU64,
     answers: Answers,
     /// set once the agent accepted a subscription, from when its silence means it is
     /// gone.
     subscribed: Arc<AtomicBool>,
-    /// set, with the answers cleared, when the reading task ends for any reason.
+    /// set, with the answers cleared, when the connection ends for any reason.
     closed: Arc<AtomicBool>,
     reading: JoinHandle<()>,
+    writing: JoinHandle<()>,
+    write_half: PhantomData<fn() -> W>,
 }
 
 impl<W> Drop for Client<W> {
     fn drop(&mut self) {
         self.reading.abort();
+        self.writing.abort();
     }
 }
 
-impl<W: AsyncWrite + Unpin> Client<W> {
+/// takes a call's place in the answers away when the call ends, however it ends, so
+/// a call dropped while it waits leaves nothing behind.
+struct Waiting<'a> {
+    answers: &'a Answers,
+    id: u64,
+}
+
+impl Drop for Waiting<'_> {
+    fn drop(&mut self) {
+        lock(self.answers).remove(&self.id);
+    }
+}
+
+impl<W> Client<W> {
     /// sends `method` with `params` and waits for its result. A call fails with
     /// [`CallError::Closed`] once the connection has ended, but it waits as long as the
     /// agent takes on a connection that stays open, so a caller that needs a bound
-    /// wraps it in its own timeout.
+    /// wraps it in its own timeout. Dropping the call, as a timeout does, is safe: the
+    /// request is queued whole and written to the end, its answer is discarded, and
+    /// the client serves the next call.
     pub async fn call(
         &self,
         method: &str,
@@ -153,23 +175,28 @@ impl<W: AsyncWrite + Unpin> Client<W> {
             return Err(CallError::NotServed(method.to_string()));
         }
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
+        let message = ClientMessage::Request {
+            id,
+            method: method.to_string(),
+            params,
+        };
+        let mut line = serde_json::to_vec(&message).map_err(|_| CallError::Closed)?;
+        line.push(b'\n');
         let (reply, answer) = oneshot::channel();
         {
-            // checked under the lock the reading task clears the answers with, so a call
-            // is either refused here or answered or cleared there
+            // checked under the lock the connection's end clears the answers with, so a
+            // call is either refused here or answered or cleared there
             let mut answers = lock(&self.answers);
             if self.closed.load(Ordering::SeqCst) {
                 return Err(CallError::Closed);
             }
             answers.insert(id, reply);
         }
-        let message = ClientMessage::Request {
+        let _waiting = Waiting {
+            answers: &self.answers,
             id,
-            method: method.to_string(),
-            params,
         };
-        if self.write(&message).await.is_err() {
-            lock(&self.answers).remove(&id);
+        if self.outgoing.send(line).is_err() {
             return Err(CallError::Closed);
         }
         match answer.await {
@@ -177,14 +204,6 @@ impl<W: AsyncWrite + Unpin> Client<W> {
             Ok(Err(body)) => Err(CallError::Agent(body)),
             Err(_) => Err(CallError::Closed),
         }
-    }
-
-    async fn write(&self, message: &ClientMessage) -> std::io::Result<()> {
-        let mut line = serde_json::to_vec(message).map_err(std::io::Error::other)?;
-        line.push(b'\n');
-        let mut writer = self.writer.lock().await;
-        writer.write_all(&line).await?;
-        writer.flush().await
     }
 
     /// the agent's snapshot now.
@@ -195,6 +214,9 @@ impl<W: AsyncWrite + Unpin> Client<W> {
 
     /// subscribes to the `state` topic; the first push is its whole value.
     pub async fn subscribe(&self) -> Result<(), CallError> {
+        if !self.welcome.topics.iter().any(|topic| topic == TOPIC_STATE) {
+            return Err(CallError::NotServed(format!("the topic {TOPIC_STATE}")));
+        }
         self.call("subscribe", serde_json::json!({ "topic": TOPIC_STATE }))
             .await?;
         self.subscribed.store(true, Ordering::SeqCst);
@@ -284,10 +306,20 @@ where
         Ok(AgentMessage::Error { error }) => return Err(ConnectError::Refused(error)),
         _ => return Err(ConnectError::NotProtocol),
     };
+    if welcome.version != VERSION {
+        return Err(ConnectError::NotProtocol);
+    }
     let answers: Answers = Arc::default();
     let (pushes, receiver) = mpsc::unbounded_channel();
     let subscribed = Arc::new(AtomicBool::new(false));
     let closed = Arc::new(AtomicBool::new(false));
+    let (outgoing, queued) = mpsc::unbounded_channel();
+    let writing = tokio::spawn(write_lines(
+        writer,
+        queued,
+        Arc::clone(&answers),
+        Arc::clone(&closed),
+    ));
     let reading = tokio::spawn(read_messages(
         reader,
         Arc::clone(&answers),
@@ -297,12 +329,14 @@ where
     ));
     let client = Client {
         welcome,
-        writer: tokio::sync::Mutex::new(writer),
+        outgoing,
         next_id: AtomicU64::new(1),
         answers,
         subscribed,
         closed,
         reading,
+        writing,
+        write_half: PhantomData,
     };
     Ok((client, receiver))
 }
@@ -365,12 +399,33 @@ async fn read_messages<R: AsyncRead + Unpin>(
             | AgentMessage::Event { .. } => {}
         }
     }
-    {
-        let mut answers = lock(&answers);
-        closed.store(true, Ordering::SeqCst);
-        answers.clear();
-    }
+    end_answers(&answers, &closed);
     let _ = pushes.send(Push::Closed);
+}
+
+/// marks the connection ended and fails every call that waits.
+fn end_answers(answers: &Answers, closed: &AtomicBool) {
+    let mut answers = lock(answers);
+    closed.store(true, Ordering::SeqCst);
+    answers.clear();
+}
+
+/// writes each queued line to the end, one after the other; a write that fails ends
+/// the connection for every call.
+async fn write_lines<W: AsyncWrite + Unpin>(
+    mut writer: W,
+    mut queued: mpsc::UnboundedReceiver<Vec<u8>>,
+    answers: Answers,
+    closed: Arc<AtomicBool>,
+) {
+    while let Some(line) = queued.recv().await {
+        if writer.write_all(&line).await.is_err() || writer.flush().await.is_err() {
+            break;
+        }
+    }
+    end_answers(&answers, &closed);
+    // the agent sees the end of what the client sends, and ends the connection
+    let _ = writer.shutdown().await;
 }
 
 #[cfg(unix)]
@@ -603,5 +658,109 @@ mod tests {
         );
         assert_eq!(snapshot.images[1].known_warnings().count(), 0);
         assert_eq!(snapshot.leftovers[0].kind, "vm");
+    }
+
+    #[tokio::test]
+    async fn a_welcome_for_another_version_is_not_protocol_version_2() {
+        let (near, far) = duplex(4096);
+        tokio::spawn(async move {
+            let (read, mut write) = tokio::io::split(far);
+            let mut reader = BufReader::new(read);
+            let mut hello = String::new();
+            reader.read_line(&mut hello).await.unwrap();
+            write
+                .write_all(b"{\"type\":\"welcome\",\"version\":3,\"methods\":[\"status\"],\"topics\":[\"state\"]}\n")
+                .await
+                .unwrap();
+        });
+        let outcome = handshake(near, &ClientInfo::default()).await;
+        assert!(matches!(outcome, Err(ConnectError::NotProtocol)));
+    }
+
+    #[tokio::test]
+    async fn a_topic_the_welcome_did_not_list_is_not_subscribed_to() {
+        let (near, far) = duplex(4096);
+        let agent = tokio::spawn(async move {
+            let (read, mut write) = tokio::io::split(far);
+            let mut reader = BufReader::new(read);
+            let mut hello = String::new();
+            reader.read_line(&mut hello).await.unwrap();
+            write
+                .write_all(b"{\"type\":\"welcome\",\"version\":2,\"methods\":[\"subscribe\"],\"topics\":[]}\n")
+                .await
+                .unwrap();
+            let mut next = String::new();
+            reader.read_line(&mut next).await.unwrap();
+            next
+        });
+        let (client, _pushes) = handshake(near, &ClientInfo::default()).await.unwrap();
+        assert_eq!(
+            client.subscribe().await,
+            Err(CallError::NotServed("the topic state".to_string()))
+        );
+        drop(client);
+        assert_eq!(agent.await.unwrap(), "", "nothing was sent");
+    }
+
+    #[tokio::test]
+    async fn a_call_dropped_while_it_writes_is_still_written_whole_and_leaves_no_answer_behind() {
+        // a buffer far smaller than the request, so the write is not done when the
+        // call is dropped
+        let (near, far) = duplex(64);
+        let (read, mut write) = tokio::io::split(far);
+        let mut reader = BufReader::new(read);
+        let mut hello = String::new();
+        let info = ClientInfo::default();
+        let handshaking = handshake(near, &info);
+        let agent_hello = async {
+            reader.read_line(&mut hello).await.unwrap();
+            write
+                .write_all(b"{\"type\":\"welcome\",\"version\":2,\"methods\":[\"status\"],\"topics\":[]}\n")
+                .await
+                .unwrap();
+        };
+        let (client, ()) = tokio::join!(async { handshaking.await.unwrap().0 }, agent_hello);
+        let padding = "x".repeat(5000);
+        let dropped = timeout(
+            Duration::from_millis(50),
+            client.call("status", serde_json::json!({ "pad": padding })),
+        )
+        .await;
+        assert!(dropped.is_err(), "the call finished with nobody reading");
+        assert!(
+            lock(&client.answers).is_empty(),
+            "the dropped call left its place"
+        );
+        // the agent reads: the dropped call's line is whole, and the next call's follows it
+        let next =
+            tokio::spawn(async move { client.call("status", serde_json::Value::Null).await });
+        let mut first = String::new();
+        reader.read_line(&mut first).await.unwrap();
+        let first: serde_json::Value = serde_json::from_str(first.trim_end()).unwrap();
+        assert_eq!(first["method"], "status");
+        assert_eq!(first["params"]["pad"].as_str().unwrap().len(), 5000);
+        let mut second = String::new();
+        reader.read_line(&mut second).await.unwrap();
+        let second: serde_json::Value = serde_json::from_str(second.trim_end()).unwrap();
+        assert_eq!(
+            second["id"].as_u64().unwrap(),
+            first["id"].as_u64().unwrap() + 1
+        );
+        // the answer to the dropped call is discarded; the next call gets its own
+        write
+            .write_all(
+                format!(
+                    "{{\"type\":\"response\",\"id\":{},\"result\":{{}}}}\n{{\"type\":\"response\",\"id\":{},\"result\":{{\"ok\":true}}}}\n",
+                    first["id"], second["id"]
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+        let answer = timeout(Duration::from_secs(5), next)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(answer, Ok(serde_json::json!({"ok": true})));
     }
 }

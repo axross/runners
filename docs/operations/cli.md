@@ -941,8 +941,9 @@ but never rename or remove one.
 | `ending`    | `reason`: `quit` or `executable_changed`                                                             |
 
 A reader ignores a message type, a field and a topic it does not know, and calls only
-the methods `welcome` lists. The library's `Client` does so, and `tests/agent_protocol.rs`
-shows it against unknown methods, topics and fields.
+the methods `welcome` lists. The library's `Client` does so, refuses a `welcome` that is not version 2, and
+subscribes only to a topic `welcome` listed; `tests/agent_protocol.rs` shows it
+against unknown methods, topics and fields.
 
 The agent answers one connection's requests in order and several connections at once.
 
@@ -982,7 +983,9 @@ an event the agent sends a `heartbeat` with the last `seq`, and the library's cl
 reads 45 s of silence on a subscribed connection as a lost agent. A `Client::call`
 fails with `Closed` once the connection has ended but waits as long as the agent
 takes on one that stays open, so a caller that needs a bound wraps it in its own
-timeout. Before the agent ends it sends `ending` to every connection, one still in
+timeout. Dropping a call, as that timeout does, is safe: the client has queued the
+request whole for a task that writes it to the end, and discards the answer.
+Before the agent ends it sends `ending` to every connection, one still in
 its handshake included, and waits up to 0.5 s for them to end; an
 answer already given, such as `quit`'s, is written before the `ending`.
 
