@@ -430,9 +430,13 @@ impl<C: Clock> TartBackend<C> {
             _ => Stop::NotStarted,
         };
         tear_down(&self.client, &vm, stop, budget).await?;
-        self.containers
-            .borrow_mut()
-            .retain(|_, container_vm| *container_vm != vm);
+        self.containers.borrow_mut().retain(|name, container_vm| {
+            let gone = *container_vm == vm;
+            if gone {
+                self.retained.forget_if_exported(name);
+            }
+            !gone
+        });
         // the VM is gone, so its holder has nothing left to clean up
         host.hold.borrow_mut().take();
         Ok(())

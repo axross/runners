@@ -418,7 +418,7 @@ async fn a_forced_stop_deletes_the_diagnostic_vm_without_an_export_and_reports_t
         rig.log_lines("WARN: "),
         [
             format!(
-                "WARN: Forced stop: the job VM of diagnostic container {name} is deleted without its export."
+                "WARN: Forced stop: the job VM of diagnostic container {name} will be deleted without its export when the hosts are released."
             ),
             format!(
                 "WARN: Diagnostic gap in pool {POOL}, container {name}: private export unavailable, incomplete, unsafe or over budget; prior evidence retained."
@@ -427,7 +427,7 @@ async fn a_forced_stop_deletes_the_diagnostic_vm_without_an_export_and_reports_t
     );
     assert_eq!(
         rig.backend.retained().names(),
-        [name],
+        std::slice::from_ref(&name),
         "kept: the exit is 1"
     );
     assert!(bundles(&sink).is_empty(), "nothing was exported");
@@ -448,6 +448,45 @@ async fn a_forced_stop_deletes_the_diagnostic_vm_without_an_export_and_reports_t
         rig.fake.vm_names(),
         [golden_name()],
         "the release deletes it"
+    );
+    assert_eq!(
+        rig.backend.retained().names(),
+        [name],
+        "its evidence was never exported, so it stays among those lost"
+    );
+}
+
+/// N2: an export that succeeded and a removal that failed leave the container
+/// retained, and the release that then deletes its VM leaves nothing to report as
+/// lost, because the bundle stands in the sink.
+#[tokio::test(flavor = "current_thread")]
+async fn a_release_that_deletes_the_vm_of_an_exported_container_forgets_it() {
+    let rig = Rig::exporting();
+    let scratch = TempDir::new();
+    let sink = private_sink(&scratch);
+    let name = ended_diagnostic_job(&rig, &record(&sink)).await;
+    let claim = rig.backend.retained().claim(&name).unwrap();
+    rig.fake.script("fail-delete", "");
+
+    let finalized =
+        diagnostic::finalize(&rig.backend, &claim, Deadlines::from(Instant::now())).await;
+
+    assert_eq!(finalized.export, ExportOutcome::Complete);
+    assert!(!finalized.removed, "the deletion failed");
+    assert_eq!(bundles(&sink).len(), 1);
+    assert_eq!(rig.backend.retained().names(), std::slice::from_ref(&name));
+    drop(claim);
+
+    fs::remove_file(rig.fake.dir.path().join("fail-delete")).unwrap();
+    rig.backend
+        .release_job_host(&host(), Duration::from_secs(10))
+        .await
+        .unwrap();
+
+    assert_eq!(rig.fake.vm_names(), [golden_name()]);
+    assert!(
+        rig.backend.retained().names().is_empty(),
+        "the export stands, so nothing was lost"
     );
 }
 

@@ -143,6 +143,16 @@ impl Retained {
         self.entries.borrow().contains_key(name)
     }
 
+    /// forgets the container if a bundle was admitted for it, because the host that
+    /// held it is gone and its evidence stands in the sink; one without a bundle stays,
+    /// as the evidence it lost.
+    pub fn forget_if_exported(&self, name: &str) {
+        let mut entries = self.entries.borrow_mut();
+        if entries.get(name).is_some_and(|entry| entry.bundle_admitted) {
+            entries.remove(name);
+        }
+    }
+
     /// every retained container, by name.
     #[must_use]
     pub fn names(&self) -> Vec<String> {

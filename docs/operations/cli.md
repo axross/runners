@@ -634,7 +634,10 @@ leftover. Each reports the loss with today's gap wording,
 `Diagnostic gap in pool <pool>, job VM <vm>: <text>`, or, for a forced stop,
 `container <name>` in place of the VM. A forced stop keeps the container names in
 its result, so `start` exits 1 as for a kept container and its last line says that
-the job VMs were deleted without an export.
+the job VMs were deleted without an export. A container whose export had succeeded
+is not among them: when a release deletes its VM, the backend forgets it, so that
+line names only evidence that was lost. The forced stop's warning says the VM
+"will be deleted" when the hosts are released, because the deletion can still fail.
 
 Every VM of a diagnostics-enabled pool that is deleted in these cases is reported as
 a diagnostic gap, whether or not a job ran in it, because the CLI cannot tell a VM

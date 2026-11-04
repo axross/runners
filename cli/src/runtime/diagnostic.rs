@@ -355,11 +355,10 @@ pub async fn container_steps<B: Backend>(
         return;
     }
     if backend.deletes_leftovers_unexported() {
-        // the host that holds the evidence is deleted when the hosts are released
         for name in &names {
             log.warn(&format!(
-                "Forced stop: the job VM of diagnostic container {name} is deleted \
-                 without its export."
+                "Forced stop: the job VM of diagnostic container {name} will be deleted \
+                 without its export when the hosts are released."
             ));
             if let Some(record) = retained.record(name)
                 && let Some(text) = gap_text(ExportOutcome::Failed)
