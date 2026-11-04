@@ -309,13 +309,37 @@ jobs:
             fi
           }
 
+          hash_pattern='^SHA-1 hash: ([0-9A-Fa-f]{40})[[:space:]]*$'
+
           # check_certificate <Application or Installer>: prints the subject, the team
-          # and the expiry date of the identity pick_identity chose, refuses a
-          # certificate of another team or an expired one, and warns within 90 days.
+          # and the expiry date of the certificate of the identity pick_identity
+          # chose, refuses a certificate of another team or an expired one, and warns
+          # within 90 days. find-certificate matches by name and lists the SHA-1 hash
+          # of each certificate it finds, so the certificate checked is the one with
+          # the identity's hash, and the name must match exactly one certificate:
+          # pkgbuild signs by name, and a second certificate of that name could be
+          # the one it uses.
           check_certificate() {
-            local kind="$1" pem details subject team ends
+            local kind="$1" pem listing line have want found=0 selected=0 matched=0 details subject team ends
             pem="${dir}/${kind}.pem"
-            "$SYSTEM_BIN/security" find-certificate -c "$identity_name" -p "$keychain" >"$pem"
+            listing="$("$SYSTEM_BIN/security" find-certificate -a -Z -c "$identity_name" -p "$keychain")" || refuse "the keychain holds no certificate named '${identity_name}'"
+            want="$(printf '%s' "$identity_hash" | tr 'A-F' 'a-f')"
+            : >"$pem"
+            while IFS= read -r line; do
+              if [[ "$line" =~ $hash_pattern ]]; then
+                found=$((found + 1))
+                selected=0
+                have="$(printf '%s' "${BASH_REMATCH[1]}" | tr 'A-F' 'a-f')"
+                if [[ "$have" == "$want" ]]; then
+                  selected=1
+                  matched=$((matched + 1))
+                fi
+              elif [[ $selected -eq 1 ]]; then
+                printf '%s\n' "$line" >>"$pem"
+              fi
+            done <<<"$listing"
+            [[ $found -eq 1 ]] || refuse "the keychain holds ${found} certificates named '${identity_name}', not exactly one"
+            [[ $matched -eq 1 ]] || refuse "the certificate named '${identity_name}' does not have the SHA-1 hash ${identity_hash} of the Developer ID ${kind} identity"
             details="$("$SYSTEM_BIN/openssl" x509 -in "$pem" -noout -subject -enddate -nameopt RFC2253)"
             subject="$(printf '%s\n' "$details" | sed -n 's/^subject= *//p')"
             team="$(printf '%s\n' "$subject" | tr ',' '\n' | sed -n 's/^ *OU=//p')"
@@ -365,9 +389,11 @@ jobs:
       # build-pkg.sh's layout and pkgbuild arguments, repeated because this job runs
       # no repository file; check-release-shape.mjs fails if the two differ. the
       # signing options are the only addition. pkgbuild takes the Installer
-      # identity by its name, the one form its manual gives, which the identities
-      # step has shown to be the only Developer ID Installer identity in the
-      # keychain; codesign takes the Application identity by its SHA-1 hash.
+      # identity by its name, the one form its manual gives. the identities step
+      # has shown that the temporary keychain holds one Developer ID Installer
+      # identity and one certificate of that name, and --keychain keeps pkgbuild
+      # to that keychain, so the name cannot be another identity's. codesign takes
+      # the Application identity by its SHA-1 hash.
       - name: Build The Signed Package
         env:
           VERSION: ${{ needs.plan.outputs.version }}

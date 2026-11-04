@@ -10,7 +10,8 @@
 # the .p12 and the key file have mode 0600.
 #
 # covered, each as a case below:
-#   - the refusals before any `security` call, and after;
+#   - the refusals before any `security` call, and after, among them a certificate
+#     that is another team's, expired, a second of its name, or not the identity's;
 #   - the flags of codesign, pkgbuild, notarytool, stapler and pkgutil;
 #   - the deletion of the keychain and the files after a pass, after a failure
 #     injected at each stand-in call, and after a failure at the end of each step;
@@ -37,6 +38,7 @@ team=ABCDE12345
 identifier=app.axross.marshal
 application_identity=A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1
 installer_name="Developer ID Installer: Test Maintainer (${team})"
+installer_hash=B1B1B1B1B1B1B1B1B1B1B1B1B1B1B1B1B1B1B1B1
 keychain_password=c0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ffee
 submission=8c4f2a1e-0b3d-4a6e-9f7c-1d2e3f4a5b6c
 windows="marshal-${version}-windows-x64.exe"
@@ -114,6 +116,13 @@ mode_is_600() {
   }
 }
 
+# identity_hash <letter> <number>: a 40-digit hex hash for the identity.
+identity_hash() {
+  local hash=""
+  while [[ ${#hash} -lt 40 ]]; do hash="${hash}${1}${2}"; done
+  echo "${hash:0:40}"
+}
+
 case "$tool" in
   shasum)
     shift 2
@@ -142,12 +151,6 @@ case "$tool" in
         esac
         ;;
       find-identity)
-        # identity_hash <letter> <number>: a 40-digit hex hash for the identity.
-        identity_hash() {
-          local hash=""
-          while [[ ${#hash} -lt 40 ]]; do hash="${hash}${1}${2}"; done
-          echo "${hash:0:40}"
-        }
         # a listing; with `valid`, an identity marked invalid is left out.
         listing() {
           local n=0 i invalid
@@ -168,9 +171,26 @@ case "$tool" in
         if [[ "$1" == -v ]]; then listing valid; else listing all; fi
         ;;
       find-certificate)
+        # find-certificate -a -Z -c <name> -p <keychain>: the SHA-1 hash and the
+        # PEM of each certificate whose name holds <name>. the scenario's
+        # `<kind>_certificates` is `one` (the identity's own certificate, the
+        # default), `other` (a certificate of another hash) or `two` (the identity's
+        # and a second one).
+        [[ "$1 $2 $3 $5" == "-a -Z -c -p" ]] || exit 89
         kind=Application
-        [[ "$2" == *Installer* ]] && kind=Installer
-        printf -- '-----BEGIN CERTIFICATE-----\nFAKE %s\n-----END CERTIFICATE-----\n' "$kind"
+        letter=A
+        if [[ "$4" == *Installer* ]]; then kind=Installer letter=B; fi
+        certificate() {
+          printf 'SHA-1 hash: %s\n-----BEGIN CERTIFICATE-----\nFAKE %s\n-----END CERTIFICATE-----\n' "$1" "$kind"
+        }
+        case "$(scn "$(echo "$kind" | tr 'A-Z' 'a-z')_certificates" one)" in
+          one) certificate "$(identity_hash "$letter" 1)" ;;
+          other) certificate "$(identity_hash D 1)" ;;
+          two)
+            certificate "$(identity_hash "$letter" 1)"
+            certificate "$(identity_hash D 1)"
+            ;;
+        esac
         ;;
       delete-keychain)
         if [[ "$(scn delete_fails 0)" == 1 ]]; then exit 1; fi
@@ -505,6 +525,8 @@ check_flags() {
     "security set-key-partition-list -S apple-tool:,apple: -k ${keychain_password} ${keychain}" \
     "security find-identity ${keychain}" \
     "security find-identity -v ${keychain}" \
+    "security find-certificate -a -Z -c Developer ID Application: Test Maintainer (${team}) -p ${keychain}" \
+    "security find-certificate -a -Z -c ${installer_name} -p ${keychain}" \
     "codesign --force --sign ${application_identity} --keychain ${keychain} --options runtime --timestamp --identifier ${identifier} signed/${macos}" \
     "codesign --verify --strict --verbose=2 signed/${macos}" \
     " --install-location / --ownership recommended --sign ${installer_name} --keychain ${keychain} signed/${macos_pkg}" \
@@ -674,6 +696,18 @@ run_case "an Application certificate of another team" fail "Developer ID Applica
 reset_case
 scenario_lines="installer_team=ZZZZZ99999"
 run_case "an Installer certificate of another team" fail "Developer ID Installer certificate names team 'ZZZZZ99999'" some
+reset_case
+scenario_lines="installer_certificates=two"
+run_case "a second Installer certificate of the same name" fail "holds 2 certificates named 'Developer ID Installer: Test Maintainer (${team})', not exactly one" some
+reset_case
+scenario_lines="application_certificates=two"
+run_case "a second Application certificate of the same name" fail "holds 2 certificates named 'Developer ID Application: Test Maintainer (${team})', not exactly one" some
+reset_case
+scenario_lines="installer_certificates=other"
+run_case "an Installer certificate that does not have the identity's hash" fail "does not have the SHA-1 hash ${installer_hash} of the Developer ID Installer identity" some
+reset_case
+scenario_lines="application_certificates=other"
+run_case "an Application certificate that does not have the identity's hash" fail "does not have the SHA-1 hash ${application_identity} of the Developer ID Application identity" some
 reset_case
 scenario_lines="application_days=-5"
 run_case "an expired Application certificate" fail "Application certificate expired on" some
