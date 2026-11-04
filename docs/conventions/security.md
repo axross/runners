@@ -82,7 +82,11 @@ runtime, the HTTPS client's URL parser, the Windows pipe crate, and the Windows 
 Object crate bring. They are locked by `Cargo.lock` checksums and covered by
 `cargo-deny` like the other crates, and a new procedural-macro crate needs the
 maintainer's review, as does a second version of a crate beyond the two that
-`deny.toml` lists. The HTTPS client's TLS
+`deny.toml` lists. The TOML configuration reader and its write path add `toml_edit`
+and the crates it uses, `toml_parser`, `toml_writer`, `toml_datetime`, `winnow`,
+`indexmap`, `hashbrown`, and `equivalent`. All come from crates.io under `MIT` or
+`Apache-2.0`, so the allowlist does not change, and none runs code at build time. The
+HTTPS client's TLS
 stack also needs the `ISC` and `BSD-3-Clause` licences on the allowlist, and the
 Windows pipe crate needs `0BSD`; the maintainer approved all three, and [CLI](../operations/cli.md#dependencies) records why
 each crate is there. `rustup` itself is
@@ -649,6 +653,40 @@ Residual risks, accepted on a single-user host:
   its pipe closing, cannot kill its `docker` clients. On Unix they run until each
   ends by itself; on Windows the Job Object ends them when `start` ends. They carry
   no JIT configuration.
+
+## The TOML Configuration Holds No Token and Echoes No Value
+
+A configuration file is untrusted input, and an operator can paste a token into one
+by mistake. [CLI](../operations/cli.md) owns the format, its problems, and the write
+path; these are the properties it keeps.
+
+- The TOML format has no key for a token or a token file. `token_path` is an
+  undefined key, and the conversion from JSON leaves `tokenPath` behind, so a file in
+  this format cannot name a token's location.
+- A syntax error and a wrong-type problem carry only the key path, the line, the
+  column, and fixed text. The reader never uses the parser's display text, which
+  quotes the source line, so a token pasted into a value, or on a line of its own, is
+  not repeated in a problem, a log, or a terminal. A test pastes a token at every
+  position of a valid file and shows it appears only as the name of an unknown key.
+- The write path replaces the file in one step: a flushed temporary file in the same
+  folder, renamed over `config.toml`. A reader sees the old file or the new one and
+  never part of one. On Unix the temporary file is created with mode 0600, and the new
+  file takes the old file's mode. Its errors carry a path and an error kind, or the
+  name of the edit, and no text from the file.
+- The clean-up of leftover temporary files removes only regular files named exactly
+  like a temporary file of the write path, so it cannot remove a file the operator
+  keeps beside the configuration.
+
+Residual risks, accepted on a single-user host:
+
+- A token pasted as a key name is echoed as the name of an unknown key, because
+  that is how the key is found. A rule that compares a value, such as a duplicate
+  label or a name that collides, names that value too, as the JSON problems do.
+- The write path compares the file with the bytes it read just before the rename.
+  That narrows the window in which an editor's save could be overwritten, and cannot
+  close it.
+- The write path does not flush the folder after the rename. A crash right after a
+  write can leave the old file, and cannot leave a partial one.
 
 ## Diagnostic Evidence Stays Private
 
