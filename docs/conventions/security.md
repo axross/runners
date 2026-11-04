@@ -327,7 +327,8 @@ record a change to either workflow, to the build call in
     unsigned, and no workflow a pull request triggers declares an Environment.
     [`check-release-shape.mjs`](../../.github/scripts/check-release-shape.mjs) in
     `mise run check` fails if the signing jobs drift from this record, including if
-    a job but `sign-macos` reads a signing secret.
+    any job in any workflow but `sign-macos` in `release.yaml` reads a signing
+    secret.
     [CLI](../operations/cli.md#what-the-signing-tests-cover) lists its rules. A pull
     request can edit it, so it guards against mistakes, not against a hostile pull
     request, and [CLI](../operations/cli.md#extending-the-release-workflows) names
