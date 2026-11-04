@@ -15,7 +15,7 @@ use crate::validate::PlannedVolume;
 
 use super::backend::{
     Backend, BackendError, ContainerSpec, CpuRequest, DiagnosticRecord, ExportOutcome, Exported,
-    PoolContainers, StopRequest,
+    HostPreparation, HostRequest, JobHost, PoolContainers, StopRequest,
 };
 use super::clock::Clock;
 use super::log::{Log, Masks};
@@ -40,6 +40,31 @@ pub enum Call {
     /// an export began, with the deadline it was given.
     ExportDiagnostic(String, tokio::time::Instant),
     CountBundles(String),
+}
+
+/// one host call a [`FakeBackend`] received; they are kept out of [`Call`], so a test
+/// of the other calls sees only those.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HostCall {
+    Prepare(HostRequest),
+    /// a release, with the budget it was given.
+    Release(JobHost, Duration),
+}
+
+/// the steps the fakes took, in order, shared by handing the same timeline to each
+/// of them; a step is a short word such as `prepare`, `register` or `sleep`.
+#[derive(Debug, Clone, Default)]
+pub struct Timeline(Rc<RefCell<Vec<&'static str>>>);
+
+impl Timeline {
+    pub fn push(&self, step: &'static str) {
+        self.0.borrow_mut().push(step);
+    }
+
+    #[must_use]
+    pub fn steps(&self) -> Vec<&'static str> {
+        self.0.borrow().clone()
+    }
 }
 
 /// a container the fake engine holds.
@@ -100,6 +125,17 @@ pub struct FakeState {
     /// every `run_container` waits until a stop, a kill or a removal is asked for,
     /// of any container.
     pub hold_runs: bool,
+    /// the host calls, in order.
+    pub host_calls: Vec<HostCall>,
+    /// the answers to `prepare_job_host`; when they run out, every host is ready.
+    pub preparations: VecDeque<HostPreparation>,
+    /// the hosts prepared and not released, which `prepared_hosts` reports.
+    pub hosts: Vec<JobHost>,
+    /// a release fails with this error, once it is recorded.
+    pub release_error: Option<BackendError>,
+    /// the first preparation asks for the stop and then never ends, as a boot that a
+    /// stop interrupts.
+    pub stop_in_prepare: Option<watch::Sender<bool>>,
 }
 
 /// the labels of the image a [`FakeBackend`] answers with by default: this CLI's
@@ -116,6 +152,13 @@ pub fn matching_labels() -> ImageLabels {
 pub struct FakeBackend {
     pub state: RefCell<FakeState>,
     pub retained: Retained,
+    /// the command a job container runs; the container backend's when `None`.
+    pub run_command: Option<&'static str>,
+    /// the wait between engine checks; the container backend's when `None`.
+    pub engine_poll_interval: Option<Duration>,
+    /// what the stop sequence reserves to release hosts.
+    pub release_budget: Duration,
+    pub timeline: Timeline,
     /// fired by a stop, a kill or a removal, which ends every held run.
     ended: Notify,
 }
@@ -128,11 +171,59 @@ impl FakeBackend {
 }
 
 impl Backend for FakeBackend {
+    fn run_command(&self) -> &str {
+        self.run_command.unwrap_or("/home/runner/run.sh")
+    }
+
+    fn engine_poll_interval(&self) -> Duration {
+        self.engine_poll_interval.unwrap_or(Duration::from_secs(5))
+    }
+
     async fn wait_until_available(&self) {
         self.state.borrow_mut().calls.push(Call::WaitUntilAvailable);
     }
 
+    async fn prepare_job_host(&self, request: &HostRequest) -> HostPreparation {
+        self.timeline.push("prepare");
+        let interrupted = {
+            let mut state = self.state.borrow_mut();
+            state.host_calls.push(HostCall::Prepare(request.clone()));
+            if !state.hosts.contains(&request.host) {
+                state.hosts.push(request.host.clone());
+            }
+            state.stop_in_prepare.take()
+        };
+        if let Some(stop) = interrupted {
+            let _ = stop.send(true);
+            std::future::pending::<()>().await;
+        }
+        self.state
+            .borrow_mut()
+            .preparations
+            .pop_front()
+            .unwrap_or(HostPreparation::Ready)
+    }
+
+    async fn release_job_host(&self, host: &JobHost, budget: Duration) -> Result<(), BackendError> {
+        self.timeline.push("release");
+        let mut state = self.state.borrow_mut();
+        state
+            .host_calls
+            .push(HostCall::Release(host.clone(), budget));
+        state.hosts.retain(|held| held != host);
+        state.release_error.clone().map_or(Ok(()), Err)
+    }
+
+    fn prepared_hosts(&self) -> Vec<JobHost> {
+        self.state.borrow().hosts.clone()
+    }
+
+    fn release_budget(&self) -> Duration {
+        self.release_budget
+    }
+
     async fn check_image(&self, image: &str) -> ImageCheck {
+        self.timeline.push("check_image");
         let mut state = self.state.borrow_mut();
         state.image_checks.push(image.to_string());
         state
@@ -171,6 +262,7 @@ impl Backend for FakeBackend {
         names: &[String],
         _budget: Duration,
     ) -> Result<(), BackendError> {
+        self.timeline.push("remove");
         self.ended.notify_waiters();
         let mut state = self.state.borrow_mut();
         state.calls.push(Call::RemoveContainers(names.to_vec()));
@@ -205,6 +297,7 @@ impl Backend for FakeBackend {
     }
 
     async fn select_cpuset(&self, request: &CpuRequest) -> Result<String, BackendError> {
+        self.timeline.push("probe");
         let mut state = self.state.borrow_mut();
         state.calls.push(Call::SelectCpuset(request.clone()));
         state
@@ -214,6 +307,7 @@ impl Backend for FakeBackend {
     }
 
     async fn run_container(&self, spec: &ContainerSpec, jit: &Secret) -> Result<i32, BackendError> {
+        self.timeline.push("run");
         let _job = spec
             .diagnostic
             .as_ref()
@@ -253,6 +347,7 @@ impl Backend for FakeBackend {
     }
 
     async fn stop_containers(&self, request: &StopRequest) -> Result<(), BackendError> {
+        self.timeline.push("stop");
         let hangs = {
             let mut state = self.state.borrow_mut();
             state.calls.push(Call::StopContainers(request.clone()));
@@ -291,6 +386,7 @@ impl Backend for FakeBackend {
         record: &DiagnosticRecord,
         deadline: tokio::time::Instant,
     ) -> Exported {
+        self.timeline.push("export");
         let (hook, gate) = {
             let mut state = self.state.borrow_mut();
             state
@@ -372,10 +468,12 @@ pub struct FakeRegistrar {
     pub seen: RefCell<Vec<SeenRegistration>>,
     /// asked for the stop during the first request, before it answers.
     pub stop_during_request: RefCell<Option<watch::Sender<bool>>>,
+    pub timeline: Timeline,
 }
 
 impl Registrar for FakeRegistrar {
     async fn request_jit(&self, request: &JitRequest<'_>) -> Result<Secret, RegistrationError> {
+        self.timeline.push("register");
         self.seen.borrow_mut().push(SeenRegistration {
             owner: request.owner.to_string(),
             repository: request.repository.to_string(),
@@ -401,6 +499,7 @@ pub struct FakeClock {
     sleeps: RefCell<Vec<Duration>>,
     stop_after_sleeps: Cell<Option<usize>>,
     stop: RefCell<Option<watch::Sender<bool>>>,
+    pub timeline: Timeline,
 }
 
 impl FakeClock {
@@ -412,6 +511,7 @@ impl FakeClock {
             sleeps: RefCell::new(Vec::new()),
             stop_after_sleeps: Cell::new(None),
             stop: RefCell::new(None),
+            timeline: Timeline::default(),
         }
     }
 
@@ -438,6 +538,7 @@ impl Clock for FakeClock {
     }
 
     async fn sleep(&self, duration: Duration) {
+        self.timeline.push("sleep");
         self.sleeps.borrow_mut().push(duration);
         self.now.set(self.now.get() + duration);
         let recorded = self.sleeps.borrow().len();

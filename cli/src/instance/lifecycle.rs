@@ -38,6 +38,9 @@ pub struct StopTimes {
     /// the removal of what remains is ended at this budget, so the container steps
     /// take 26 s at the most.
     pub remove_budget: Duration,
+    /// the release of the prepared job hosts, which follows the container steps and
+    /// is ended at this budget; zero when the backend has no hosts.
+    pub release_budget: Duration,
     /// counted from the stop request; whatever still runs then is dropped, which
     /// kills the clients, and the instance ends.
     pub exit_deadline: Duration,
@@ -49,7 +52,34 @@ impl Default for StopTimes {
             grace: Duration::from_secs(15),
             stop_budget: Duration::from_secs(20),
             remove_budget: Duration::from_secs(6),
+            release_budget: Duration::ZERO,
             exit_deadline: Duration::from_secs(28),
+        }
+    }
+}
+
+/// the time a stop gives the container stop call to kill what ignores its grace.
+const KILL_MARGIN: Duration = Duration::from_secs(5);
+
+impl StopTimes {
+    /// the times for a backend that reserves `release` of the sequence to release its
+    /// job hosts: the container stop gives up the time, so that the stop, the removal
+    /// and the release together fit the exit deadline. No release leaves the default
+    /// times as they are.
+    #[must_use]
+    pub fn reserving(release: Duration) -> Self {
+        let times = Self::default();
+        let stop_budget = times.stop_budget.min(
+            times
+                .exit_deadline
+                .saturating_sub(times.remove_budget)
+                .saturating_sub(release),
+        );
+        Self {
+            grace: times.grace.min(stop_budget.saturating_sub(KILL_MARGIN)),
+            stop_budget,
+            release_budget: release,
+            ..times
         }
     }
 }
@@ -304,7 +334,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
             core,
             source,
             log,
-            times: StopTimes::default(),
+            times: StopTimes::reserving(backend.release_budget()),
             state: RefCell::new(State::Running),
             policy: RefCell::new(RestartPolicy::default()),
             exit_requested: Cell::new(false),
@@ -734,6 +764,28 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
             self.ordinary_steps(containers),
             diagnostic::container_steps(self.backend, self.log, start, self.times.remove_budget)
         );
+        self.release_hosts().await;
+    }
+
+    /// releases every job host still prepared, all at once, once the containers are
+    /// stopped: a worker releases its own host when its run ends, so what remains is
+    /// the host of a worker that is still busy or that a panic took.
+    async fn release_hosts(&self) {
+        let budget = self.times.release_budget;
+        let releases: Vec<_> = self
+            .backend
+            .prepared_hosts()
+            .into_iter()
+            .map(|host| async move {
+                if let Err(error) = self.backend.release_job_host(&host, budget).await {
+                    self.log.warn(&format!(
+                        "Releasing the job host of {} slot {} failed: {error}",
+                        host.pool, host.slot
+                    ));
+                }
+            })
+            .collect();
+        diagnostic::join_all(releases).await;
     }
 
     /// stops the containers in one call, and removes whatever remains in another; a
@@ -785,9 +837,40 @@ mod tests {
                 grace: Duration::from_secs(15),
                 stop_budget: Duration::from_secs(20),
                 remove_budget: Duration::from_secs(6),
+                release_budget: Duration::ZERO,
                 exit_deadline: Duration::from_secs(28),
             }
         );
+    }
+
+    #[test]
+    fn a_backend_without_hosts_keeps_the_default_times() {
+        assert_eq!(StopTimes::reserving(Duration::ZERO), StopTimes::default());
+    }
+
+    #[test]
+    fn a_release_of_ten_seconds_shortens_the_container_stop_to_fit_the_exit_deadline() {
+        let times = StopTimes::reserving(Duration::from_secs(10));
+        assert_eq!(
+            times,
+            StopTimes {
+                grace: Duration::from_secs(7),
+                stop_budget: Duration::from_secs(12),
+                remove_budget: Duration::from_secs(6),
+                release_budget: Duration::from_secs(10),
+                exit_deadline: Duration::from_secs(28),
+            }
+        );
+        assert!(
+            times.stop_budget + times.remove_budget + times.release_budget <= times.exit_deadline
+        );
+    }
+
+    #[test]
+    fn a_release_larger_than_the_sequence_leaves_the_stop_no_time_and_does_not_underflow() {
+        let times = StopTimes::reserving(Duration::from_secs(60));
+        assert_eq!(times.stop_budget, Duration::ZERO);
+        assert_eq!(times.grace, Duration::ZERO);
     }
 
     #[test]

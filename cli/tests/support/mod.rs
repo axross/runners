@@ -131,6 +131,7 @@ pub fn slot_spec(token: PathBuf) -> marshal_cli::runtime::pool::SlotSpec {
         cpu_count: 2,
         cpu_offset: 2,
         memory_gb: 16,
+        disk_gb: None,
         mounts: vec![marshal_cli::runtime::backend::Mount {
             volume: "example-repo-one-npm".to_string(),
             target: "/home/runner/.npm".to_string(),

@@ -22,14 +22,14 @@ use crate::validate::PlannedVolume;
 
 use super::backend::{
     Backend, BackendError, ContainerSpec, CpuRequest, DiagnosticRecord, ExportOutcome, Exported,
-    PoolContainers, StopRequest,
+    HostPreparation, HostRequest, JobHost, PoolContainers, StopRequest,
 };
 use super::clock::Clock;
 use super::docker_args::{
-    JIT_VARIABLE, image_inspect_arguments, image_list_arguments, info_arguments, job_run_arguments,
-    kill_arguments, pool_diagnostic_list_arguments, pool_list_arguments, probe_find_arguments,
-    probe_run_arguments, remove_arguments, stop_arguments, volume_chown_arguments,
-    volume_create_arguments,
+    JIT_VARIABLE, RUN_COMMAND, image_inspect_arguments, image_list_arguments, info_arguments,
+    job_run_arguments, kill_arguments, pool_diagnostic_list_arguments, pool_list_arguments,
+    probe_find_arguments, probe_run_arguments, remove_arguments, stop_arguments,
+    volume_chown_arguments, volume_create_arguments,
 };
 use super::log::Log;
 use super::retained::Retained;
@@ -607,6 +607,34 @@ async fn forward_lines<R: AsyncRead + Unpin>(stream: Option<R>, log: &dyn Log) {
 }
 
 impl<C: Clock> Backend for DockerBackend<C> {
+    fn run_command(&self) -> &str {
+        RUN_COMMAND
+    }
+
+    fn engine_poll_interval(&self) -> Duration {
+        DOCKER_POLL_INTERVAL
+    }
+
+    async fn prepare_job_host(&self, _request: &HostRequest) -> HostPreparation {
+        HostPreparation::Ready
+    }
+
+    async fn release_job_host(
+        &self,
+        _host: &JobHost,
+        _budget: Duration,
+    ) -> Result<(), BackendError> {
+        Ok(())
+    }
+
+    fn prepared_hosts(&self) -> Vec<JobHost> {
+        Vec::new()
+    }
+
+    fn release_budget(&self) -> Duration {
+        Duration::ZERO
+    }
+
     async fn wait_until_available(&self) {
         loop {
             let answered = self

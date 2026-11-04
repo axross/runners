@@ -12,11 +12,10 @@ use crate::image::check::{ImageCheck, freshness_warnings};
 use crate::runtime::backend::Backend;
 use crate::runtime::board::Board;
 use crate::runtime::clock::Clock;
-use crate::runtime::docker::DOCKER_POLL_INTERVAL;
 use crate::runtime::image::check_image;
 use crate::runtime::log::Log;
 use crate::runtime::pool::{
-    NoPoolStartable, PoolSpec, admit_pools, pools_from_plan, prepare_admitted,
+    NoPoolStartable, PoolSpec, admit_pools, image_name, pools_from_plan, prepare_admitted,
 };
 use crate::runtime::registration::Registrar;
 use crate::runtime::worker::{run_slot, wait_for_stop};
@@ -79,11 +78,12 @@ impl<'a, B: Backend, K: Clock, R: Registrar> RuntimeCore<'a, B, K, R> {
                 }
                 return Ok(());
             };
+            let interval = self.backend.engine_poll_interval();
             self.log.warn(&format!(
                 "{reason}, so the image {image} is checked again in {} s.",
-                DOCKER_POLL_INTERVAL.as_secs()
+                interval.as_secs()
             ));
-            self.clock.sleep(DOCKER_POLL_INTERVAL).await;
+            self.clock.sleep(interval).await;
             self.backend.wait_until_available().await;
         }
     }
@@ -127,7 +127,7 @@ impl<B: Backend, K: Clock, R: Registrar> Core for RuntimeCore<'_, B, K, R> {
         let _cleared = Cleared(&self.board, &self.running);
         let pools =
             pools_from_plan(plan).map_err(|error| failure(error.to_string(), Ending::Ordinary))?;
-        let image = plan.image_name.as_deref().unwrap_or_default();
+        let image = image_name(plan);
         self.board.expect_image(image);
         let prepared = tokio::select! {
             prepared = self.prepare(pools, image) => prepared?,
@@ -153,9 +153,7 @@ impl<B: Backend, K: Clock, R: Registrar> Core for RuntimeCore<'_, B, K, R> {
     }
 
     async fn check_image(&self, plan: &Plan) -> Result<(), String> {
-        let Some(image) = plan.image_name.as_deref() else {
-            return Ok(());
-        };
+        let image = image_name(plan);
         let check = check_image(self.backend, &self.board, image).await;
         if let ImageCheck::Unavailable(reason) = &check {
             self.log.warn(&format!(

@@ -269,7 +269,8 @@ PowerShell supervisor, and where it differs the difference is listed here.
 
 The runtime asks a backend to wait until it is available; check the configured
 image, as [The Image Contract](#the-image-contract) describes; list a pool's
-containers and remove containers; prepare volumes; choose a slot's CPUs; run a
+containers and remove containers; prepare volumes; prepare and release a job host,
+as below; choose a slot's CPUs; run a
 container under the run contract and report its exit code; name the containers it
 has started and not seen end; stop, end, or remove a set of containers within a
 budget; and, for a diagnostics-enabled pool, retain each diagnostic container it
@@ -282,6 +283,47 @@ which has no `Display`. The container backend passes it as an environment variab
 by name; a later backend that runs the containers in a virtual machine can pass it
 another way. A fake backend implements the same seam for the tests of the code
 above it.
+
+The backend also provides two values the runtime core would otherwise take from the
+container backend's modules: the command a job container runs after the launcher
+verifies its CPUs, and the wait between checks while the engine does not answer.
+The container backend gives `/home/runner/run.sh` and 5 s, so nothing on axpc
+changes.
+
+**Job hosts.** A job host is whatever one job runs on. A container on axpc runs
+directly on Docker Desktop, so the container backend's host is nothing; a backend
+that gives each job a virtual machine makes and deletes that machine as the host.
+Two steps, per job and per slot, carry this:
+
+- `prepare_job_host` runs after the image check and before any CPU probe or
+  registration. It is given the slot, its vCPUs, memory and disk, and answers one of
+  three outcomes. **Ready**: the host can take the job. **Failed**: the host could
+  not be made, and the slot backs off like any other failed attempt. **Held**: a
+  host prerequisite refuses this boot, with a reason. A held slot boots nothing,
+  warns in the log, shows `held: <reason>` in `status`, and tries again on the same
+  5 s doubling to 300 s schedule, and a job running on another slot is not
+  affected. A held slot is not a failure of the runtime core, and it counts for no
+  restart. An engine that does not answer is not an outcome of this step: the
+  backend waits for it in `wait_until_available`, or reports the image check as
+  unavailable, as Docker does today.
+- `release_job_host` is given a budget and gets rid of the host. It runs once after
+  every preparation, whatever the preparation answered, and on every path from there
+  on, before the slot backs off: after a failed or held preparation, a failed CPU
+  probe, a failed or refused registration, a run that ended or failed, and a stop at
+  any of those points. A diagnostic container is exported first, so the host is
+  released after the export. A release that fails is a warning and changes nothing
+  else.
+
+The backend counts a host as prepared from the start of its preparation until its
+release and lists the hosts it still counts, so the stop sequence can release the
+ones whose worker could not: a release does nothing for a host that is not
+prepared, and may run twice at once for one host. A backend also names the budget
+the stop sequence reserves for its releases; the container backend has no hosts, so
+its answer is zero.
+
+The container backend prepares every host as ready without running a command,
+releases nothing, and lists no host. Its argument lists, messages, and exit codes
+are unchanged.
 
 The container backend runs `docker` with the PowerShell supervisor's argument
 lists, byte for byte, except for the stop call below. A test reads the launcher
@@ -357,11 +399,20 @@ selection is `Runtime::of_pool` in `runtime::select`:
 | axmc | `os: "linux"`      | The VM runtime, a Tart VM per job; selected, but not implemented |
 | axmc | `os: "macos"`      | None                                                             |
 
-The backend above is the Docker Desktop runtime. The runtime core drives the
-containers through the backend seam, apart from two values it takes from the Docker
-modules: the engine poll interval from `runtime::docker` and the run command from
-`runtime::docker_args`. `start` and the shim construct the Docker backend
-directly. No code implements the VM runtime yet, so a
+The backend above is the Docker Desktop runtime. The runtime core takes nothing from
+the Docker modules: it drives the containers, and the per-job host steps under
+[Backend](#backend), through the backend seam, and the run command and the engine
+poll interval are values the backend provides. `start` and the shim construct the
+Docker backend directly.
+
+The core is ready for a runtime that gives each job a virtual machine. A plan of
+axmc Linux pools becomes pools: each slot's host has the pool's whole `cpus` as
+vCPUs, the pool's `memoryGb` and the pool's `diskGb`, and the job container's CPU
+quota and affinity cover all of the host's vCPUs, 0 to `cpus` - 1, with its memory
+limit equal to the host's memory. The image defaults to `actions-runner:local` when
+`imageName` is absent. `start` and the core apply that default, and `validate` and
+its summary do not. A plan with a macOS pool is not made into pools. No code
+implements the VM runtime yet, so a
 configuration that selects it, or selects none for a pool, is validated and then
 refused:
 
@@ -470,10 +521,12 @@ the same name. PowerShell used local time; the pattern, and so the cleanup of it
 leftovers, is unchanged. A name is recognised as a pool's own only when it is the
 pool's name, a hyphen, a slot number, a hyphen, and exactly 17 ASCII digits.
 
-A slot loops until it is asked to stop. Each attempt checks the image, then probes
-the CPUs, then registers, then runs the container. An image that cannot run jobs,
-or a check Docker does not answer, registers nothing and goes into the backoff. A
-failed probe or registration, or a non-zero exit, waits
+A slot loops until it is asked to stop. Each attempt checks the image, then prepares
+the job host, then probes the CPUs, then registers, then runs the container, then,
+for a diagnostics-enabled pool, exports it, and finally releases the host. An image
+that cannot run jobs, or a check Docker does not answer, registers nothing and goes
+into the backoff. A failed or held preparation, a failed probe or registration, or a
+non-zero exit releases the host and then waits
 5 s, then 10 s, doubling to 300 s; an exit of 0 resets the delay and starts the
 replacement at once. A wait ends early when a stop is asked for, and a stop that arrives as a registration completes starts no container. Time and sleeping
 come through a `Clock` seam, so the tests do not wait.
@@ -501,7 +554,13 @@ client and no argument, the process groups, the probe limits, the stale cleanup 
 the wait for Docker. `registration.rs` runs the client against a loopback stub for
 the request, the error text, a redirect, a stalled response and an oversize
 response. `slot_worker.rs`, `pool_preparation.rs` and `cpu_affinity.rs` use the
-fake seams, and `image_check.rs` drives the image check through the fake backend,
+fake seams. `job_host.rs` scripts a failure at each step of the slot cycle on the
+fake backend and shows the host released exactly once before the backoff, a failed
+probe registering nothing, a held slot on the board retrying on the backoff
+schedule, and the cycle's order; `pool_preparation.rs` also shows an axmc Linux
+pool's quota, affinity, memory, disk and default image, and
+`instance_state.rs` and `core_restart.rs` the release at a stop and at a core
+failure. `image_check.rs` drives the image check through the fake backend,
 the instance, and the real backend against `fake-docker`. The diagnostics tests are
 listed under [Diagnostics](#diagnostics). `real_docker.rs` runs a container and the
 probe through a real Docker daemon on Linux, and exports a container's small
@@ -582,6 +641,20 @@ instance reads the containers before it tells the core to stop, because dropping
 worker forgets its container. How the instance ended records whether every removal
 in its life succeeded, at a stop, a restart, or a failure of the core, so a failed
 removal is still reported when a later stop has nothing to remove.
+
+**Releasing job hosts.** After the container steps, the instance releases every job
+host the backend still counts as prepared, all at once, each within the backend's
+release budget: a worker releases its own host when its run ends, so what remains
+is the host of a worker that is still busy or that a panic took. The container
+backend has no hosts and a release budget of zero, so the stop sequence above is
+unchanged. A backend that reserves a release budget `R` shortens the container
+stop to fit the same 28 s exit deadline: the stop call is ended at 28 - 6 - `R`
+seconds, and its grace is 5 s shorter, never longer than 15 s. With a `R` of 10 s,
+the grace is 7 s and the stop call is ended at 12 s, then the removal at 6 s
+later, then the release at 10 s later, so the three take 28 s at the most and `stop`
+still ends within 30 s. The release itself splits its budget, a graceful stop of
+the host first and a forced stop and deletion in its last seconds; the backend
+chooses that split.
 
 The runtime core is the part that runs the pools. It fails when it ends, with an
 error, a panic, or neither, while no stop was asked for. The instance polls it
@@ -934,8 +1007,9 @@ answer in time.
 - `status` waits up to 5 s and prints one `name: value` line per field: `state`;
   `reason`, when stopped; `config`; `profile`; one `pool` line per pool, which is
   `waiting for Docker`, `preparing`, `running`, or `skipped: <reason>`; one `slot`
-  line per slot, which is `registering` (the CPU probe included), `backing off`,
-  or `running container <name>`; and the image lines under
+  line per slot, which is `registering` (the preparation of its job host and the CPU
+  probe included), `backing off`, `held: <reason>`, or `running container <name>`;
+  and the image lines under
   [The Image Contract](#the-image-contract). Pools and slots are listed while the
   runtime core runs; the image lines are listed on every call, as of the latest
   check. A `build` answers `state`, `image`, and `elapsed: <s> s`.

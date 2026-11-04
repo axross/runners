@@ -32,9 +32,12 @@ impl fmt::Display for PoolState {
 /// where a slot is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SlotState {
-    /// probing its CPUs and asking GitHub for a registration.
+    /// preparing its host, probing its CPUs and asking GitHub for a registration.
     Registering,
     BackingOff,
+    /// boots nothing because a host prerequisite refuses, for this reason, and
+    /// retries on the backoff schedule.
+    Held(String),
     /// running the job container of this name.
     Running(String),
 }
@@ -44,6 +47,7 @@ impl fmt::Display for SlotState {
         match self {
             Self::Registering => f.write_str("registering"),
             Self::BackingOff => f.write_str("backing off"),
+            Self::Held(reason) => write!(f, "held: {reason}"),
             Self::Running(name) => write!(f, "running container {name}"),
         }
     }
@@ -180,5 +184,9 @@ mod tests {
         assert_eq!(PoolState::Preparing.to_string(), "preparing");
         assert_eq!(SlotState::BackingOff.to_string(), "backing off");
         assert_eq!(SlotState::Registering.to_string(), "registering");
+        assert_eq!(
+            SlotState::Held("Softnet is not set up".to_string()).to_string(),
+            "held: Softnet is not set up"
+        );
     }
 }

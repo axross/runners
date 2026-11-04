@@ -8,10 +8,10 @@ use std::time::Duration;
 use tokio::time::Instant;
 
 use crate::affinity::{affinity_count, affinity_offset, slot_offset};
-use crate::profile::Profile;
+use crate::profile::{Os, Profile};
 use crate::validate::{Entry, Plan, PlannedVolume, format_cpu_count};
 
-use super::backend::{Backend, DiagnosticRecord, Mount, StopRequest};
+use super::backend::{Backend, DiagnosticRecord, HostRequest, JobHost, Mount, StopRequest};
 use super::board::{Board, PoolState};
 use super::diagnostic::{STOP_GRACE, STOP_WITHIN, finalize_claimed, gap_text};
 use super::log::Log;
@@ -39,6 +39,9 @@ pub struct PoolSpec {
     /// where the pool's first slot starts among the affinity positions.
     pub cpu_offset: u64,
     pub memory_gb: u32,
+    /// the disk of each slot's virtual machine; `None` on a pool that runs
+    /// containers.
+    pub disk_gb: Option<u32>,
     pub volumes: Vec<PlannedVolume>,
     /// where the pool's evidence goes, when its diagnostics are on.
     pub diagnostic: Option<DiagnosticRecord>,
@@ -59,6 +62,7 @@ pub struct SlotSpec {
     pub cpu_count: u64,
     pub cpu_offset: u64,
     pub memory_gb: u32,
+    pub disk_gb: Option<u32>,
     pub mounts: Vec<Mount>,
     pub image: String,
     pub diagnostic: Option<DiagnosticRecord>,
@@ -76,20 +80,43 @@ impl fmt::Display for PlanError {
 
 impl std::error::Error for PlanError {}
 
-/// turns a valid axpc plan into pools, in the plan's order, and fails for any other
-/// profile.
+/// the image an axmc pool runs when the configuration names none.
+pub const DEFAULT_IMAGE_NAME: &str = "actions-runner:local";
+
+/// the image the plan's pools run: the configured name, or on axmc the default.
+#[must_use]
+pub fn image_name(plan: &Plan) -> &str {
+    plan.image_name.as_deref().unwrap_or(DEFAULT_IMAGE_NAME)
+}
+
+/// turns a valid axpc plan, or an axmc plan of Linux pools, into pools, in the
+/// plan's order, and fails for a plan with any other pool.
 pub fn pools_from_plan(plan: &Plan) -> Result<Vec<PoolSpec>, PlanError> {
-    let (Profile::Axpc, Some(image)) = (plan.profile, plan.image_name.as_ref()) else {
-        return Err(PlanError(
-            "the container backend runs the axpc profile only",
-        ));
-    };
-    Ok(plan
-        .entries
-        .iter()
-        .enumerate()
-        .map(|(index, entry)| pool_from_entry(plan, index, entry, image))
-        .collect())
+    match plan.profile {
+        Profile::Axpc => {
+            let Some(image) = plan.image_name.as_ref() else {
+                return Err(PlanError(
+                    "the container backend runs the axpc profile only",
+                ));
+            };
+            Ok(plan
+                .entries
+                .iter()
+                .enumerate()
+                .map(|(index, entry)| pool_from_entry(plan, index, entry, image))
+                .collect())
+        }
+        Profile::Axmc => {
+            if plan.entries.iter().any(|entry| entry.os != Some(Os::Linux)) {
+                return Err(PlanError("the VM runtime runs Linux pools only"));
+            }
+            Ok(plan
+                .entries
+                .iter()
+                .map(|entry| vm_pool_from_entry(entry, image_name(plan)))
+                .collect())
+        }
+    }
 }
 
 /// the settings of a diagnostics-enabled entry's evidence.
@@ -124,12 +151,37 @@ fn pool_from_entry(plan: &Plan, index: usize, entry: &Entry, image: &str) -> Poo
         cpu_count: affinity_count(entry),
         cpu_offset: affinity_offset(&plan.entries, index),
         memory_gb: entry.memory_gb,
+        disk_gb: None,
         volumes: entry.volumes.clone(),
         diagnostic: diagnostic_record(entry),
         image: image.to_string(),
         slot_offsets: (1..=entry.slots)
             .map(|slot| slot_offset(&plan.entries, index, slot))
             .collect(),
+    }
+}
+
+/// a Linux pool of virtual machines: each slot's machine has all of the pool's
+/// whole vCPUs and memory, so the job container's quota and affinity cover vCPUs 0
+/// to `cpus` - 1 and its memory limit is the machine's.
+fn vm_pool_from_entry(entry: &Entry, image: &str) -> PoolSpec {
+    PoolSpec {
+        path: entry.path.clone(),
+        name: entry.name.clone(),
+        owner: entry.owner.clone(),
+        repository: entry.repository.clone(),
+        slots: entry.slots,
+        token_path: PathBuf::from(&entry.token_path),
+        labels: entry.labels.clone(),
+        cpus: format_cpu_count(entry.cpus),
+        cpu_count: affinity_count(entry),
+        cpu_offset: 0,
+        memory_gb: entry.memory_gb,
+        disk_gb: entry.disk_gb,
+        volumes: entry.volumes.clone(),
+        diagnostic: diagnostic_record(entry),
+        image: image.to_string(),
+        slot_offsets: (1..=entry.slots).map(|_| 0).collect(),
     }
 }
 
@@ -156,6 +208,7 @@ impl PoolSpec {
                 cpu_count: self.cpu_count,
                 cpu_offset: *offset,
                 memory_gb: self.memory_gb,
+                disk_gb: self.disk_gb,
                 mounts: self.volumes.iter().map(Mount::from).collect(),
                 image: self.image.clone(),
                 diagnostic: self.diagnostic.clone(),
@@ -175,6 +228,20 @@ impl SlotSpec {
     #[must_use]
     pub fn label(&self) -> String {
         format!("{} slot {}", self.pool, self.number)
+    }
+
+    /// the host the slot's jobs run on.
+    #[must_use]
+    pub fn host_request(&self) -> HostRequest {
+        HostRequest {
+            host: JobHost {
+                pool: self.pool.clone(),
+                slot: self.number,
+            },
+            vcpus: self.cpu_count,
+            memory_gb: self.memory_gb,
+            disk_gb: self.disk_gb,
+        }
     }
 }
 
