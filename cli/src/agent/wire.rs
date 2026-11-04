@@ -2,6 +2,8 @@
 //! here is a promise within version 2, and a reader ignores a field it does not know;
 //! `docs/operations/cli.md` describes them.
 
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 
 use super::snapshot::Snapshot;
@@ -122,8 +124,9 @@ pub struct ClientInfo {
     pub version: String,
 }
 
-/// what a client sends.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// what a client sends. `Debug` leaves out a request's params, since those of a
+/// `token_set` hold a token.
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMessage {
     /// the first line: the versions the client speaks, and who it is.
@@ -139,6 +142,24 @@ pub enum ClientMessage {
         #[serde(default)]
         params: serde_json::Value,
     },
+}
+
+impl fmt::Debug for ClientMessage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Hello { versions, client } => f
+                .debug_struct("Hello")
+                .field("versions", versions)
+                .field("client", client)
+                .finish(),
+            Self::Request { id, method, .. } => f
+                .debug_struct("Request")
+                .field("id", id)
+                .field("method", method)
+                .field("params", &"<redacted>")
+                .finish(),
+        }
+    }
 }
 
 /// who the agent is.
@@ -233,6 +254,17 @@ impl ServerMessage<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_debug_form_of_a_request_leaves_out_its_params() {
+        let line = br#"{"type":"request","id":3,"method":"token_set","params":{"repository":"o/r","token":"fake-token-for-the-test"}}"#;
+        let message: ClientMessage = serde_json::from_slice(line).unwrap();
+        for form in [format!("{message:?}"), format!("{message:#?}")] {
+            assert!(!form.contains("fake-token-for-the-test"), "{form}");
+            assert!(form.contains("token_set"), "{form}");
+            assert!(form.contains("<redacted>"), "{form}");
+        }
+    }
 
     #[test]
     fn a_hello_is_read_and_a_field_it_does_not_know_is_ignored() {
