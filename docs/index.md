@@ -45,10 +45,10 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   per-repository token and its file's access control, the host configuration,
   building the image, running and stopping the pools, diagnostics and their
   recovery, health checks, rebuilding and updating, recovery, and rolling back to
-  the PowerShell supervisor.
+  the previous `marshal` release.
 - [operations/cli.md](./operations/cli.md) - the CLI under `cli/`: what `validate`
-  accepts and prints for the axpc and axmc host profiles, how it stays equal to the
-  PowerShell validator, the shared fixtures and the parity test, the runtime layer
+  accepts and prints for the axpc and axmc host profiles, the validation rules and
+  the shared fixtures, the runtime layer
   (container backend, JIT registration, CPU placement, and the slot loop), the
   instance layer (instance state, single-instance lock, and control channel),
   the image contract (its labels, the image check, and freshness), building the

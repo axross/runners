@@ -1,7 +1,8 @@
 # actions-runner image
 
-The runner image that [`hosts/windows-docker-desktop/`](../../hosts/windows-docker-desktop/README.md)
-starts, one throwaway container per job. It is GitHub's own
+The runner image that the CLI, [`marshal`](../../docs/operations/cli.md), starts on a
+host configured as [`hosts/windows-docker-desktop/`](../../hosts/windows-docker-desktop/README.md)
+describes, one throwaway container per job. It is GitHub's own
 `ghcr.io/actions/actions-runner` image plus the build dependencies jobs commonly
 assume are already installed. It is built on the runner host and never pushed to
 a registry.
@@ -192,11 +193,11 @@ and embeds from this Dockerfile:
 `marshal build` adds two more on its command line, because they describe the
 build rather than the definition:
 
-- `com.github.axross.runners.image=actions-runner`, which the PowerShell rebuild
-  script also passes and both prune by;
+- `com.github.axross.runners.image=actions-runner`, which the prune after a build
+  filters by;
 - `com.github.axross.runners.built=<Unix seconds>`, the build time.
 
-So an image built by CI, by hand, or by the PowerShell rebuild task carries the
+So an image built by CI or by hand carries the
 three declared labels, passes the CLI's contract check, and shows an unknown
 build age. The [CLI document](../../docs/operations/cli.md#the-image-contract)
 says what the CLI does with each label, and when the contract version changes.
@@ -285,7 +286,7 @@ Gradle archives total 726,017,049 bytes, including the retained wrapper ZIP.
 Record the candidate image identity, uncached build duration, and final image
 size delta against the unchanged base image when verifying an update. These
 download figures are not measured job-time or CPU savings.
-The operator rebuild and rollback
+The operator rebuild and image rollback
 procedure is in the Building the Runner Image section of
 [Windows Runner Host](../../docs/operations/windows-runner-host.md).
 
