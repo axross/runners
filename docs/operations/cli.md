@@ -1594,7 +1594,10 @@ copies are packed and hashed, never run. They check the release installer's
 install, version, `PATH`, listing and byte identity, an upgrade, the extraction
 layout the optional check relies on, and an uninstall that keeps the logs, and
 that the installer carries no script, no code-running custom action and no
-dialogs and names only `marshal`, `axross` and the repository. The Windows test
+dialogs and names only `marshal`, `axross` and the repository. The one exception is
+the package archive: `pkgbuild` records the building account as each entry's owner,
+which on the build legs is `runner`, the account of every GitHub-hosted runner, and
+the macOS test checks that `runner` is the only owner. The Windows test
 also builds a same-version rebuild, a lower version over a higher one, and an
 upgrade while a copy of a stock waiting console program, packed as `marshal.exe`,
 runs from the install path. The macOS test also records the owner and mode of

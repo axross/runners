@@ -197,7 +197,15 @@ assert_true "the bill of materials gives usr/local/bin/marshal owner root:wheel"
   test \( "$user" = root -o "$user_id" = 0 \) -a \( "$group" = wheel -o "$group_id" = 0 \)
 
 table_of_contents="$(xar -f "$release_pkg" --dump-toc=-)"
-measured "the package archive owners: $(echo "$table_of_contents" | grep -o '<user>[^<]*</user>' | sort -u | tr '\n' ' ')"
+archive_owners="$(echo "$table_of_contents" | grep -o '<user>[^<]*</user>' | sort -u | tr '\n' ' ' || true)"
+measured "the package archive owners: ${archive_owners}"
+# pkgbuild records the building account as each entry's owner, and every release package
+# is built on a hosted runner, whose account is runner. so the owner is checked as that
+# one account and left out of the name check, which would otherwise refuse it.
+runner_owner="<user>runner</user>"
+assert_equal "the package archive owner is only the hosted runner account runner (any other owner means the package was built by another account)" \
+  "$archive_owners" "${runner_owner} "
+table_of_contents="${table_of_contents//"$runner_owner"/}"
 planted="${work}/planted-name"
 for identifying in "${USER:-}" "$(hostname)" "$(hostname -s)" "${HOME}" "${GITHUB_WORKSPACE:-}" "${RUNNER_TEMP:-}"; do
   [[ ${#identifying} -ge 4 ]] || continue
