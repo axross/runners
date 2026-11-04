@@ -16,7 +16,9 @@
 #   - the bare binary verifies with codesign --verify --strict, is signed by a
 #     Developer ID Application certificate of <team id> with the hardened runtime
 #     and a secure timestamp, and its designated requirement is exactly the
-#     default one for this identifier and team;
+#     default one for this identifier and team in one of two forms (plain
+#     codesign's conjunction, or the one Xcode writes), apart from comments,
+#     spacing and quotes round the team ID;
 #   - the package's signature is a Developer ID Installer chain of <team id> to
 #     Apple's root, stapler validates it, and spctl assesses it as notarized
 #     Developer ID;
@@ -129,13 +131,20 @@ bill_of_materials() {
   paste <("$SYSTEM_BIN/lsbom" -p f "$1") <("$SYSTEM_BIN/lsbom" -p m "$1") <("$SYSTEM_BIN/lsbom" -p U "$1") <("$SYSTEM_BIN/lsbom" -p G "$1") | LC_ALL=C sort
 }
 
-# requirement_clauses <text>: the clauses of a designated requirement, one per
-# line and sorted, without comments, parentheses or quotes, so that the order and
-# the punctuation macOS prints do not matter, and an extra or missing clause does.
+# normalized_requirement <text>: a designated requirement without its /* ... */
+# comments, with one space between tokens and the team ID unquoted, which are the
+# only differences between what codesign prints and the forms below.
+normalized_requirement() {
+  printf '%s\n' "$1" |
+    sed -e 's|/\*[^*]*\*/||g' -e 's/[[:space:]][[:space:]]*/ /g' -e 's/^ //' -e 's/ $//' \
+      -e 's/\(subject\.OU] = \)"\([A-Z0-9]*\)"/\1\2/'
+}
+
+# requirement_clauses <normalized requirement>: its clauses, one per line and
+# sorted, so that their order does not matter and an extra or missing one does.
 requirement_clauses() {
   printf '%s\n' "$1" |
-    sed -e 's|/\* [a-z]* \*/||g' -e 's/[()"]//g' |
-    awk '{ n = split($0, parts, / and /); for (i = 1; i <= n; i++) { gsub(/^ +| +$/, "", parts[i]); if (parts[i] != "") print parts[i] } }' |
+    awk '{ n = split($0, parts, / and /); for (i = 1; i <= n; i++) print parts[i] }' |
     LC_ALL=C sort
 }
 
@@ -185,11 +194,22 @@ assert_matches "the binary has the hardened runtime" "$details" '^CodeDirectory 
 assert_matches "the binary has a secure timestamp" "$details" '^Timestamp='
 requirement="$("$SYSTEM_BIN/codesign" --display --requirements - "$signed_binary" 2>&1 | sed -n 's/^designated => //p')"
 [[ -n "$requirement" ]] || fail "codesign printed no designated requirement"
-if grep -q ' or ' <<<"$requirement"; then
-  fail "the designated requirement has an alternative: ${requirement}"
+# form A: the plain codesign default, expected but inferred, not yet observed; as a set of
+# clauses it has no "or" or parentheses, since no clause has one. form B: the
+# requirement Xcode writes for Developer ID code, whole with its order and "or" (Apple TN3127).
+form_a="anchor apple generic and identifier \"${identifier}\" and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = ${team}"
+form_b="anchor apple generic and identifier \"${identifier}\" and (certificate leaf[field.1.2.840.113635.100.6.1.9] or certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = ${team})"
+normalized="$(normalized_requirement "$requirement")"
+form=""
+if [[ "$normalized" == "$(normalized_requirement "$form_b")" ]]; then
+  form=B
+elif [[ "$(requirement_clauses "$normalized")" == "$(requirement_clauses "$(normalized_requirement "$form_a")")" ]]; then
+  form=A
+else
+  fail "the designated requirement is not the default one for ${identifier} and team ${team}, in form A (plain codesign) or form B (Xcode, TN3127): ${requirement}"
 fi
-expected_requirement="$(requirement_clauses "anchor apple generic and identifier \"${identifier}\" and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = ${team}")"
-assert_equal "the designated requirement is the default one for ${identifier} and team ${team}" "$(requirement_clauses "$requirement")" "$expected_requirement"
+ok "the designated requirement is the default one for ${identifier} and team ${team} (form ${form})"
+echo "MEASURED: the signed binary's designated requirement matches form ${form}"
 echo "MEASURED: the signed binary's designated requirement: ${requirement}"
 
 echo "== the signed package =="

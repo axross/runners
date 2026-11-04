@@ -4,12 +4,14 @@
 # that differs, another identifier, a version or install location that differs, a
 # bill of materials that differs, Scripts, two teams, an unsigned or ad-hoc
 # binary, a missing hardened runtime or timestamp, a designated requirement that
-# is not the default one, an assessment spctl does not accept, an unstapled
-# package, a missing Installer signature, a notary log of another submission or
-# that lacks the binary's CDHash, and unsigned files that SHA256SUMS does not list. a positive control passes first, so each refusal is shown to be
-# the check named and not a failure the script always has, and every run is
-# checked for what the stand-ins saw: nothing is installed after a refusal before
-# the install, and the install is removed after a pass and after a failure.
+# is not the default one (another identifier, team, alternative, clause or
+# order), an assessment spctl does not accept, an unstapled package, a missing
+# Installer signature, a notary log of another submission or that lacks the
+# binary's CDHash, and unsigned files that SHA256SUMS does not list. a positive
+# control passes first, so each refusal is shown to be the check named and not a
+# failure the script always has, and every run is checked for what the stand-ins
+# saw: nothing is installed after a refusal before the install, and the install
+# is removed after a pass and after a failure.
 # the stand-in packages and binaries are text files whose `#@ key=value` lines say
 # what the stand-in tools report; a later line overrides an earlier one.
 set -euo pipefail
@@ -27,7 +29,10 @@ submission=8c4f2a1e-0b3d-4a6e-9f7c-1d2e3f4a5b6c
 other_submission=0d9e8f7a-6b5c-4d3e-8a2b-1c0d9e8f7a6b
 macos="marshal-${version}-macos-arm64"
 macos_pkg="${macos}.pkg"
-requirement="identifier \"${identifier}\" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = ${team}"
+# the plain codesign default (form A) as codesign prints it, comments included; form B
+# is the requirement Xcode writes (Apple TN3127). test-signed-pkg.sh accepts both.
+requirement="anchor apple generic and identifier \"${identifier}\" and certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = ${team}"
+requirement_b="anchor apple generic and identifier \"${identifier}\" and (certificate leaf[field.1.2.840.113635.100.6.1.9] /* exists */ or certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = ${team})"
 
 mkdir -p "${work}/bin" "${work}/sbin"
 # one stand-in answers to every tool's name.
@@ -380,10 +385,15 @@ run_case() {
 
 run_case "a genuine signed set" 0 "All signed package checks passed." yes
 
-# a different arrangement of the same requirement is the same requirement.
+# form A: the clauses may come in any order, and comments, spacing and quotes round the team ID are not part of it.
 requirement_saved="$requirement"
-requirement="anchor apple generic and identifier \"${identifier}\" and (certificate leaf[subject.OU] = \"${team}\" and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate 1[field.1.2.840.113635.100.6.2.6])"
-run_case "the same requirement in another order and punctuation" 0 "All signed package checks passed." yes
+requirement="certificate leaf[subject.OU] = \"${team}\"  and certificate leaf[field.1.2.840.113635.100.6.1.13] and   identifier \"${identifier}\" and certificate 1[field.1.2.840.113635.100.6.2.6] /* any comment */ and anchor apple generic"
+run_case "form A with its clauses in another order, other spacing and a quoted team" 0 "(form A)" yes
+# form B: Xcode's requirement, with or without its comments.
+requirement="$requirement_b"
+run_case "form B as codesign prints it" 0 "(form B)" yes
+requirement="anchor   apple generic and identifier \"${identifier}\" and (certificate leaf[field.1.2.840.113635.100.6.1.9] or certificate 1[field.1.2.840.113635.100.6.2.6]  /* any comment */ and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = \"${team}\")"
+run_case "form B without comments, with other spacing and a quoted team" 0 "(form B)" yes
 requirement="$requirement_saved"
 
 payload_extra=$'\n# one byte more\n'
@@ -457,16 +467,38 @@ run_case "a team ID that is not a team ID" 1 "'not-a-team' is not a 10-character
 
 bin_meta=$'#@ requirement=\n'
 run_case "a binary with no designated requirement" 1 "codesign printed no designated requirement" no
-bin_meta=$'#@ requirement=identifier "app.axross.other" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = ABCDE12345\n'
-run_case "a designated requirement for another identifier" 1 "the designated requirement is the default one" no
-bin_meta=$'#@ requirement=identifier "app.axross.marshal" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = ZZZZZ99999\n'
-run_case "a designated requirement for another team" 1 "the designated requirement is the default one" no
-bin_meta=$'#@ requirement=identifier "app.axross.marshal" and anchor apple generic and certificate leaf[subject.OU] = ABCDE12345\n'
-run_case "a designated requirement missing the Developer ID markers" 1 "the designated requirement is the default one" no
-bin_meta=$'#@ requirement=identifier "app.axross.marshal" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = ABCDE12345 and info[x] = y\n'
-run_case "a designated requirement with an extra clause" 1 "the designated requirement is the default one" no
-bin_meta=$'#@ requirement=identifier "app.axross.marshal" and anchor apple generic and (certificate leaf[subject.OU] = ABCDE12345 or certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13])\n'
-run_case "a designated requirement with an alternative" 1 "the designated requirement has an alternative" no
+bin_meta=$'#@ requirement=anchor apple generic and identifier "app.axross.other" and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = ABCDE12345\n'
+run_case "a designated requirement for another identifier (form A shape)" 1 "the designated requirement is not the default one" no
+bin_meta=$'#@ requirement=anchor apple generic and identifier "app.axross.other" and (certificate leaf[field.1.2.840.113635.100.6.1.9] or certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = ABCDE12345)\n'
+run_case "a designated requirement for another identifier (form B shape)" 1 "the designated requirement is not the default one" no
+bin_meta=$'#@ requirement=anchor apple generic and identifier "app.axross.marshal" and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = ZZZZZ99999\n'
+run_case "a designated requirement for another team (form A shape)" 1 "the designated requirement is not the default one" no
+bin_meta=$'#@ requirement=anchor apple generic and identifier "app.axross.marshal" and (certificate leaf[field.1.2.840.113635.100.6.1.9] or certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = ZZZZZ99999)\n'
+run_case "a designated requirement for another team (form B shape)" 1 "the designated requirement is not the default one" no
+bin_meta=$'#@ requirement=anchor apple generic and identifier "app.axross.marshal" and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[subject.OU] = ABCDE12345\n'
+run_case "a designated requirement missing a clause (form A shape)" 1 "the designated requirement is not the default one" no
+bin_meta=$'#@ requirement=anchor apple generic and identifier "app.axross.marshal" and (certificate leaf[field.1.2.840.113635.100.6.1.9] or certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[subject.OU] = ABCDE12345)\n'
+run_case "a designated requirement missing a clause (form B shape)" 1 "the designated requirement is not the default one" no
+bin_meta=$'#@ requirement=anchor apple generic and identifier "app.axross.marshal" and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = ABCDE12345 and info[x] = y\n'
+run_case "a designated requirement with an extra clause (form A shape)" 1 "the designated requirement is not the default one" no
+bin_meta=$'#@ requirement=anchor apple generic and identifier "app.axross.marshal" and (certificate leaf[field.1.2.840.113635.100.6.1.9] or certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = ABCDE12345 and info[x] = y)\n'
+run_case "a designated requirement with an extra clause (form B shape)" 1 "the designated requirement is not the default one" no
+bin_meta=$'#@ requirement=anchor apple generic and identifier "app.axross.marshal" and (certificate leaf[field.1.2.840.113635.100.6.1.7] or certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = ABCDE12345)\n'
+run_case "a designated requirement with a different alternative (form B shape)" 1 "the designated requirement is not the default one" no
+bin_meta=$'#@ requirement=anchor apple generic and identifier "app.axross.marshal" and (certificate leaf[subject.OU] = ABCDE12345 or certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13])\n'
+run_case "a designated requirement with an alternative that is not form B (form A shape)" 1 "the designated requirement is not the default one" no
+bin_meta=$'#@ requirement=anchor apple generic and identifier "app.axross.marshal" and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = ABCDE12345 or certificate leaf[field.1.2.840.113635.100.6.1.9]\n'
+run_case "a conjunction with an or added (form A shape)" 1 "the designated requirement is not the default one" no
+bin_meta=$'#@ requirement=anchor apple generic and identifier "app.axross.marshal" and (certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = ABCDE12345)\n'
+run_case "a conjunction in parentheses (form A shape)" 1 "the designated requirement is not the default one" no
+bin_meta=$'#@ requirement=anchor apple generic and identifier "app.axross.marshal" and (certificate leaf[field.1.2.840.113635.100.6.1.9] and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = ABCDE12345)\n'
+run_case "a designated requirement whose alternative is a conjunction (form B shape)" 1 "the designated requirement is not the default one" no
+bin_meta=$'#@ requirement=anchor apple generic and identifier "app.axross.marshal" and (certificate leaf[field.1.2.840.113635.100.6.1.9] or certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[subject.OU] = ABCDE12345 and certificate leaf[field.1.2.840.113635.100.6.1.13])\n'
+run_case "a designated requirement with its last two clauses swapped (form B shape)" 1 "the designated requirement is not the default one" no
+bin_meta=$'#@ requirement=identifier "app.axross.marshal" and anchor apple generic and (certificate leaf[field.1.2.840.113635.100.6.1.9] or certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = ABCDE12345)\n'
+run_case "a designated requirement with its first two clauses swapped (form B shape)" 1 "the designated requirement is not the default one" no
+bin_meta=$'#@ requirement=anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = ABCDE12345\n'
+run_case "a designated requirement with no identifier (form A shape)" 1 "the designated requirement is not the default one" no
 
 signed_meta=$'#@ signature=none\n'
 run_case "a package with no signature" 1 "pkgutil --check-signature rejects the signed package" no
