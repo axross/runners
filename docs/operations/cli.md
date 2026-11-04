@@ -461,7 +461,9 @@ it, and a test shows the lock free while a shim lives.
 
 - When `tart run` ends while the pipe is open, the shim relays what Tart printed, its
   standard error and then its standard output, to its own standard output, and exits
-  with Tart's code. It deletes nothing, so the VM is kept for the next start.
+  with Tart's code. It deletes nothing itself. The CLI that holds the pipe sees
+  `tart run` end and deletes the VM, as [The Golden VM Build](#the-golden-vm-build)
+  says, so the VM is not kept.
 - When the pipe closes, the shim stops the VM (`stop --timeout 5` within 8 s, then
   `stop --timeout 0` within 3 s when that fails), deletes it within 4 s, and exits 0.
   It exits 1 when the deletion fails or the 15 s run out. A shim started for a
@@ -469,8 +471,10 @@ it, and a test shows the lock free while a shim lives.
   `WARNING: Diagnostic gap in pool <pool>, job VM <vm>: <text>` to its standard
   error, which it shares with the CLI, once the VM is deleted. It cannot tell a VM
   holding evidence from an idle one, so it reports each VM it deletes, and none that
-  was already gone. None of its `tart` calls
-  prunes, which `TART_NO_AUTO_PRUNE=1` sets.
+  was already gone. No command in this version passes `--diagnostic-pool`, so the
+  warning is reached only by the shim's own tests (`vm_shim.rs`), which start the shim
+  with the option directly. None of its `tart` calls prunes, which
+  `TART_NO_AUTO_PRUNE=1` sets.
 
 The shim takes any VM name, so the build command can hold a build VM the same way.
 `HeldVm` is the CLI's end: it starts the shim, keeps the write end of the pipe, and
@@ -1493,7 +1497,10 @@ console close can leave one too. The next `build` removes it.
 | 2    | A usage error                                                                        |
 
 On axmc, exit 0 means the golden VM holds the new image, and exit 1 a refused, failed or
-stopped build that left the golden VM as it was.
+stopped build that left the golden VM as it was, with two exceptions. An exit at the 28 s
+deadline can leave the build VM behind, and a "commit unknown" exit does not say whether
+the rename happened. [The Golden VM Build](#the-golden-vm-build) describes both under
+Stop and failure.
 
 #### The Golden VM Build
 

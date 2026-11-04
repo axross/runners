@@ -186,10 +186,15 @@ Codex review uses its native priority label.
 
 These lenses apply to a change of the axmc Tart client and golden VM build:
 `cli/src/runtime/tart/`, `cli/src/macos/`, `cli/src/golden/`, the golden VM's
-provisioning assets, and the macOS host document. Each is a hard project rule, owned
-by [Security](docs/conventions/security.md#softnet-confines-a-job-vms-network)
-and the sections after it. Claude review labels a violation Important; Codex review
-uses its native priority label.
+provisioning assets, and the macOS host document. Each is a hard project rule. The
+Softnet lens is owned by
+[Security](docs/conventions/security.md#softnet-confines-a-job-vms-network) and the
+pin lens by
+[Security](docs/conventions/security.md#tart-softnet-and-the-golden-vm-are-pinned).
+The others are this review's checks for the build VM, set by
+[The Golden VM Contract](docs/operations/macos-runner-host.md#the-golden-vm-contract)
+and [The Golden VM Build](docs/operations/cli.md#the-golden-vm-build). Claude review
+labels a violation Important; Codex review uses its native priority label.
 
 - **No JIT configuration in an argument list.** The JIT configuration reaches the
   guest only on the standard input of a `tart exec -i` call, never with `-t`, and
@@ -201,10 +206,11 @@ uses its native priority label.
   An unbounded read of a guest call, or a parse that trusts its shape, is a
   finding.
 - **Deletion on every failure path.** Every exit from a build after its build VM
-  exists deletes that VM: an error, a boot failure, a stop, an interrupt and a
-  timeout. A new early return, `?` or `break` between the clone and the deletion is
-  checked for it. The shim deletes the VM when the liveness pipe closes, and no shim
-  or other child inherits the instance lock.
+  exists deletes that VM: an error, a boot failure, a stop and an interrupt. At the
+  28 s exit deadline the shim or the next build deletes it, and after the rename it is
+  the golden VM. A new early return, `?` or `break` between the clone and the
+  deletion is checked for it. The shim deletes the VM when the liveness pipe closes,
+  and no shim or other child inherits the instance lock.
 - **The Softnet check and rules on every boot.** Every `tart run` follows a Softnet
   file check and a version check, and carries the two Softnet rules from
   [Security](docs/conventions/security.md#softnet-confines-a-job-vms-network) and no
@@ -216,8 +222,9 @@ uses its native priority label.
   carries no `--dir` and no `--rosetta`. Every Tart call sets `TART_NO_AUTO_PRUNE`,
   gets `marshal`'s `PATH`, and has a standard output that is not a terminal.
 - **Names and cleanup stay exact.** Cleanup in `build` matches only build VMs by
-  their name form, and only `build` deletes golden and build VMs. A looser match
-  could delete a VM `marshal` does not own.
+  their name form, and only `build` and its shim delete build VMs, while `build`
+  alone deletes old golden VMs. A looser match could delete a VM `marshal` does not
+  own.
 - **Pins hold.** The base image is pinned by digest, the current pin is never on
   the retired list, Docker Engine comes from Docker's apt repository at pinned
   versions after the signing key's fingerprint is checked, and the tested Tart and

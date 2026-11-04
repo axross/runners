@@ -61,7 +61,8 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   the image contract (its labels, the image check, and freshness), building the
   runner image with `build`, running a host with `start`, `stop`, `restart`,
   `status`, and `diagnostics` (the log, containment, the stop sequence, and the
-  diagnostic containers and their export), the toolchain and Rust
+  diagnostic containers and their export), the axmc host's prerequisites, its VM
+  shim, golden VM provisioning, and the golden VM build, the toolchain and Rust
   gates, the release build and its dry run, installing, updating, and rolling
   back from a release, the allowed dependencies, and why the CLI's name is fixed.
 - [operations/agent-skills.md](./operations/agent-skills.md) - installing and
