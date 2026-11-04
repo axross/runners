@@ -391,7 +391,7 @@ async fn a_listing_a_removal_or_a_volume_failure_is_handled_per_pool() {
 #[test]
 fn a_plan_for_the_other_profile_is_not_a_container_plan() {
     let config = br#"{"budget":{"cpus":4,"memoryGb":16,"diskGb":100},"repositories":[
-        {"owner":"o","repository":"r","name":"r","slots":1,"tokenPath":"/t","os":"linux","diskGb":10}]}"#;
+        {"owner":"o","repository":"r","name":"r","slots":1,"tokenPath":"/t","os":"linux","diskGb":20}]}"#;
     let plan = validate(config, Profile::Axmc, None).outcome.unwrap();
     assert!(pools_from_plan(&plan).is_err());
 }

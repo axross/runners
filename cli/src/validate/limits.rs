@@ -6,6 +6,8 @@ use super::fields::Errors;
 
 pub const DEFAULT_CPUS: f64 = 2.0;
 pub const MAX_CPUS: f64 = 64.0;
+pub const MAX_VM_CPUS: u32 = 64;
+pub const MIN_LINUX_DISK_GB: u32 = 20;
 pub const DEFAULT_MEMORY_GB: u32 = 8;
 pub const MAX_MEMORY_GB: u32 = 256;
 pub const MAX_SLOTS: u32 = 16;
@@ -41,6 +43,11 @@ pub fn read_bounded_integer(
         errors.add(format!("{path}: must be an integer from 1 to {max}"));
     }
     integer
+}
+
+/// reads a whole vCPU count from 1 to [`MAX_VM_CPUS`], as a VM has no fractional CPUs.
+pub fn whole_cpu_count(value: &Value, path: &str, errors: &mut Errors) -> Option<f64> {
+    read_bounded_integer(value, path, MAX_VM_CPUS, errors).map(f64::from)
 }
 
 /// reads a CPU count above 0 and at most 64 and large enough that its text form is

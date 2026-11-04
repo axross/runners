@@ -88,10 +88,12 @@ label, the path form, and the extra checks.
 | Foreign platform labels | Accepted and listed, such as `ARM64`                                     | Rejected: another host's or OS's platform label, such as `macOS` on a Linux pool or `x64` |
 
 On `axmc`, `os` is `linux` or `macos`, `diskGb` is the per-VM disk cap, and
-`budget` holds `cpus`, `memoryGb`, and `diskGb`. `volumes` is rejected on an entry
-even as `null`, because VM pools keep no volumes. The axmc fields are provisional:
-later phases may extend them but MUST NOT change what this phase accepts without a
-recorded migration.
+`budget` holds `cpus`, `memoryGb`, and `diskGb`. A VM has whole vCPUs, so `cpus`
+is an integer from 1 to 64 on `axmc`, while axpc keeps its fractional CPU counts.
+`volumes` is rejected on an entry even as `null`, because VM pools keep no volumes.
+The axmc fields are provisional: later phases may extend them but MUST NOT change
+what this phase accepts without a recorded migration, which [Migrations](#migrations)
+holds.
 
 ### New Rules
 
@@ -100,20 +102,42 @@ form, and each is pinned by a fixture under
 [`tests/host-configuration/rust/`](../../tests/host-configuration/rust). A later
 phase MUST NOT change the text without a recorded migration.
 
-| Rule                                                  | Path and message                                                                                                                                                               |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `volumes` present                                     | `repositories[i].volumes: not supported on axmc, because VM pools keep no volumes`                                                                                             |
-| `os` missing, or not `linux` or `macos`               | `repositories[i].os: required field is missing`, or `...os: must be "linux" or "macos"`                                                                                        |
-| `diskGb` missing or out of range                      | `repositories[i].diskGb: required field is missing`, or `...diskGb: must be an integer from 1 to 16384`                                                                        |
-| `budget` missing, not an object, or a member unusable | `budget: required field is missing` or `budget: must be an object`; `budget.cpus` follows the entry `cpus` rule; `budget.memoryGb` is 1 to 1024; `budget.diskGb` is 1 to 16384 |
-| A platform label the pool cannot provide              | `repositories[i].labels: '<label>' is a platform label that a <os> pool on axmc cannot provide, so list only non-platform labels`                                              |
-| More than two macOS VMs                               | `budget: macOS pools total N VMs (the sum of their slots), above the limit of 2`                                                                                               |
-| CPU, memory, or disk use above the budget             | `budget: pools total N CPUs (the sum of slots times cpus), above the budget of M`, and the same for `GB of memory` and `GB of disk`                                            |
+| Rule                                                  | Path and message                                                                                                                                                                    |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `volumes` present                                     | `repositories[i].volumes: not supported on axmc, because VM pools keep no volumes`                                                                                                  |
+| `os` missing, or not `linux` or `macos`               | `repositories[i].os: required field is missing`, or `...os: must be "linux" or "macos"`                                                                                             |
+| `diskGb` missing or out of range                      | `repositories[i].diskGb: required field is missing`, or `...diskGb: must be an integer from 1 to 16384`                                                                             |
+| `cpus` or `budget.cpus` not a whole vCPU count        | `repositories[i].cpus: must be an integer from 1 to 64`, or `budget.cpus: must be an integer from 1 to 64`                                                                          |
+| `diskGb` below 20 on a Linux pool                     | `repositories[i].diskGb: must be at least 20 on a Linux pool, the golden VM's disk size`                                                                                            |
+| `budget` missing, not an object, or a member unusable | `budget: required field is missing` or `budget: must be an object`; `budget.cpus` is a whole vCPU count from 1 to 64; `budget.memoryGb` is 1 to 1024; `budget.diskGb` is 1 to 16384 |
+| A platform label the pool cannot provide              | `repositories[i].labels: '<label>' is a platform label that a <os> pool on axmc cannot provide, so list only non-platform labels`                                                   |
+| More than two macOS VMs                               | `budget: macOS pools total N VMs (the sum of their slots), above the limit of 2`                                                                                                    |
+| CPU, memory, or disk use above the budget             | `budget: pools total N CPUs (the sum of slots times cpus), above the budget of M`, and the same for `GB of memory` and `GB of disk`; see below for the disk reserve                 |
 
 The budget errors come after every per-entry and cross-entry error. They sum
 `slots` times the limit over the entries that join the cross-entry checks. The
 macOS VM limit is fixed by the host, so it is checked even when `budget` itself is
 unusable.
+
+When any Linux pool is configured, the disk total also counts a fixed 40 GB for the
+Linux golden VM and Tart's image cache, and the disk error says so:
+`budget: pools total N GB of disk (the sum of slots times diskGb, plus 40 GB for the golden VM and Tart's image cache), above the budget of M GB`.
+The summary's disk line includes the reserve and ends `, including a 40 GB reserve`.
+Without a Linux pool the total and the message are the sum of slots times `diskGb`
+alone.
+
+### Migrations
+
+A change to what `axmc` accepts is recorded here with each old and new rule, its
+message, and the fixture that shows it. A configuration that validated before the
+change may be rejected now; the last column says how to change it.
+
+| Rule                          | Old                                                                                          | New                                                                                                                                               | Fixture                                                                                                                                                                                                                                                              | To migrate                                                              |
+| ----------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `cpus` of a pool              | A number above 0 and at most 64, fractions allowed                                           | An integer from 1 to 64: `repositories[i].cpus: must be an integer from 1 to 64`                                                                  | [`axmc-fractional-cpus.json`](../../tests/host-configuration/rust/rejected/axmc-fractional-cpus.json), accepted before and rejected now                                                                                                                              | Round each fractional `cpus` to a whole vCPU count, at least 1          |
+| `budget.cpus`                 | A number above 0 and at most 64, fractions allowed                                           | An integer from 1 to 64: `budget.cpus: must be an integer from 1 to 64`                                                                           | [`axmc-budget-members.json`](../../tests/host-configuration/rust/rejected/axmc-budget-members.json), message changed; `axmc-fractional-cpus.json`                                                                                                                    | Round `budget.cpus` to a whole number that covers the pools             |
+| `diskGb` of a Linux pool      | Any integer from 1 to 16384                                                                  | At least 20: `repositories[i].diskGb: must be at least 20 on a Linux pool, the golden VM's disk size`                                             | Tested by `a_linux_pool_needs_the_golden_vms_disk_but_a_macos_pool_does_not` in `cli/tests/validate.rs`; no fixture                                                                                                                                                  | Raise a Linux pool's `diskGb` to 20 or more; a macOS pool is unchanged  |
+| Disk budget with a Linux pool | `budget: pools total N GB of disk (the sum of slots times diskGb), above the budget of M GB` | `budget: pools total N GB of disk (the sum of slots times diskGb, plus 40 GB for the golden VM and Tart's image cache), above the budget of M GB` | [`axmc-disk-over-budget.json`](../../tests/host-configuration/rust/rejected/axmc-disk-over-budget.json), message and total; [`axmc-budget-at-limit.json`](../../tests/host-configuration/rust/accepted/axmc-budget-at-limit.json), whose budget rose from 150 to 190 | Raise `budget.diskGb` by 40 GB, or lower the pools' `diskGb` or `slots` |
 
 ### Labels
 
@@ -160,9 +184,10 @@ PowerShell one is removed. Behaviour that is easy to miss:
 - **Patterns.** A pattern matches the whole value, so a trailing newline does not
   pass, as with PowerShell's `\z`.
 - **Numbers.** Integer fields accept only an integer literal: `8.0` and `1e1` are
-  rejected. Decimal fields accept integers, decimals, and exponents. A CPU count is
-  rounded half away from zero at nine decimals on its 15-significant-digit form,
-  and a value that rounds to zero is rejected. An out-of-range literal such as
+  rejected. Decimal fields accept integers, decimals, and exponents; on axmc `cpus`
+  is an integer field instead. An axpc CPU count is rounded half away from zero at
+  nine decimals on its 15-significant-digit form, and a value that rounds to zero is
+  rejected. An out-of-range literal such as
   `1e400` gets the field's range error, not a parse error.
 - **Cross-entry checks.** An entry joins them only when its owner, repository,
   token path, labels, volumes, slots, name, `cpus`, and `memoryGb` are all usable

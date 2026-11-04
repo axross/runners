@@ -6,7 +6,7 @@
       "macOS VMs:         2 of 2",
       "cpus:              8 of 8\n",
       "memory:            32 of 32 GB",
-      "disk:              150 of 150 GB"
+      "disk:              190 of 190 GB, including a 40 GB reserve"
     ],
     "lacks": []
   },
@@ -26,12 +26,6 @@
     "profile": "axmc",
     "outcome": "accept",
     "contains": ["diagnostics:       True", "raw records:       True"],
-    "lacks": []
-  },
-  "rust/accepted/axmc-fractional-cpus.json": {
-    "profile": "axmc",
-    "outcome": "accept",
-    "contains": ["cpus:              1.5 of 1.5"],
     "lacks": []
   },
   "rust/accepted/axmc-image-name.json": {
@@ -216,7 +210,7 @@
     "profile": "axmc",
     "outcome": "reject",
     "contains": [
-      "budget.extra: unknown field\n  - budget.cpus: must be a number greater than 0 and at most 64\n  - budget.memoryGb: must be an integer from 1 to 1024\n  - budget.diskGb: required field is missing"
+      "budget.extra: unknown field\n  - budget.cpus: must be an integer from 1 to 64\n  - budget.memoryGb: must be an integer from 1 to 1024\n  - budget.diskGb: required field is missing"
     ],
     "lacks": []
   },
@@ -244,7 +238,7 @@
     "profile": "axmc",
     "outcome": "reject",
     "contains": [
-      "budget: pools total 10 CPUs (the sum of slots times cpus), above the budget of 8"
+      "budget: pools total 12 CPUs (the sum of slots times cpus), above the budget of 8"
     ],
     "lacks": ["memory", "disk"]
   },
@@ -290,7 +284,7 @@
     "profile": "axmc",
     "outcome": "reject",
     "contains": [
-      "budget: pools total 300 GB of disk (the sum of slots times diskGb), above the budget of 200 GB"
+      "budget: pools total 340 GB of disk (the sum of slots times diskGb, plus 40 GB for the golden VM and Tart's image cache), above the budget of 200 GB"
     ],
     "lacks": ["CPUs", "memory"]
   },
@@ -298,6 +292,14 @@
     "profile": "axmc",
     "outcome": "reject",
     "contains": ["repositories: must list at least one repository"],
+    "lacks": []
+  },
+  "rust/rejected/axmc-fractional-cpus.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": [
+      "budget.cpus: must be an integer from 1 to 64\n  - repositories[0].cpus: must be an integer from 1 to 64"
+    ],
     "lacks": []
   },
   "rust/rejected/axmc-image-name-invalid.json": {

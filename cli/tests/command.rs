@@ -52,9 +52,10 @@ fn accepts_the_axmc_example() {
     let output = run_path(&axmc_example(), Some("axmc"));
     assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
     let summary = stdout(&output);
-    assert!(summary.contains("macOS VMs:         1 of 2\n"));
+    assert!(summary.contains("macOS VMs:         0 of 2\n"));
+    assert!(summary.contains("disk:              120 of 120 GB, including a 40 GB reserve\n"));
     assert!(
-        summary.contains("labels:            self-hosted, macOS, ARM64, axmc, example-label-two\n")
+        summary.contains("labels:            self-hosted, linux, ARM64, axmc, example-label-one\n")
     );
 }
 
