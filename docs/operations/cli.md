@@ -404,43 +404,47 @@ registration error is.
 A pool's operating system, on the host that runs it, selects its runtime. The
 selection is `Runtime::of_pool` in `runtime::select`:
 
-| Host | Pool               | Runtime                                                          |
-| ---- | ------------------ | ---------------------------------------------------------------- |
-| axpc | every pool (Linux) | The Docker Desktop container runtime, the backend above          |
-| axmc | `os: "linux"`      | The VM runtime, a Tart VM per job; built, but no command runs it |
-| axmc | `os: "macos"`      | None                                                             |
+| Host | Pool               | Runtime                                                 |
+| ---- | ------------------ | ------------------------------------------------------- |
+| axpc | every pool (Linux) | The Docker Desktop container runtime, the backend above |
+| axmc | `os: "linux"`      | The VM runtime, a Tart VM per job, run by `start`       |
+| axmc | `os: "macos"`      | None: `start` skips the pool                            |
 
 The backend above is the Docker Desktop runtime. The runtime core takes nothing from
 the Docker modules: it drives the containers, and the per-job host steps under
 [Backend](#backend), through the backend seam, and the run command and the engine
-poll interval are values the backend provides. `start` and the shim construct the
-Docker backend directly.
+poll interval are values the backend provides. `start` constructs the backend the
+host's profile selects: the Docker backend on axpc, and on axmc the
+[Tart Backend](#tart-backend). The shim constructs the Docker backend directly.
 
-The core is ready for a runtime that gives each job a virtual machine. A plan of
-axmc Linux pools becomes pools: each slot's host has the pool's whole `cpus` as
+The core runs a runtime that gives each job a virtual machine. A plan of axmc
+Linux pools becomes pools: each slot's host has the pool's whole `cpus` as
 vCPUs, the pool's `memoryGb` and the pool's `diskGb`, and the job container's CPU
 quota and affinity cover all of the host's vCPUs, 0 to `cpus` - 1, with its memory
 limit equal to the host's memory. The image defaults to `actions-runner:local` when
 `imageName` is absent. `start` and the core apply that default, and `validate` and
-its summary do not. A plan with a macOS pool is not made into pools. The VM runtime
-is the [Tart Backend](#tart-backend), but `start` and `build` do not construct it
-yet, so a configuration that selects it, or selects none for a pool, is validated and
-then refused:
+its summary do not. The macOS pools of a plan are not made into pools. The VM
+runtime is the [Tart Backend](#tart-backend), which `start` runs; `build` does not
+build its golden VM yet:
 
-- `start --profile axmc` exits 1 after taking the lock and validating, before it
-  opens a log file or calls an engine. It prints:
-
-  ```text
-  error: the configuration is valid, but this version of marshal cannot run axmc's VM pools yet
-  ```
-
-- `build --profile axmc` exits 1 after the same lock and validation, and prints:
+- `start --profile axmc` runs the Linux pools on the Tart backend. Each macOS pool
+  is skipped: the core logs `Skipping pool <pool>: macOS VM pools are not supported yet`
+  once for it at each run, and `status` shows the pool as
+  `skipped: macOS VM pools are not supported yet`. When every pool is skipped,
+  nothing can start, and `start` exits 1 with
+  `No pool can start, because macOS VM pools are not supported yet`, without
+  checking Tart or Softnet. A restart or a resume that finds only macOS pools fails
+  the core the same way, as any later run without a startable pool does. On a
+  Windows host, `start --profile axmc` exits 1 first, before taking the lock or
+  calling any engine, with `error: the axmc profile runs only on macOS`; a Linux
+  host is refused as unsupported, as under [Start](#start).
+- `build --profile axmc` exits 1 after taking the lock and validating, and prints:
 
   ```text
   error: the configuration is valid, but this version of marshal cannot build axmc's golden VM yet
   ```
 
-Both refusals print on standard error, as every `start` and `build` error before
+That refusal prints on standard error, as every `start` and `build` error before
 the log opens. axpc is unaffected: its commands, messages, exit codes, and the run
 contract keep their text.
 
@@ -451,10 +455,10 @@ bundle. The exporter child's admission, bundle files, limits, exit codes, and
 deadline do not depend on the transport. Its first transport, `DockerCopy`, runs
 `docker inspect` and `docker cp` as [Backend](#backend) lists them.
 
-A unit test in `runtime::select` pins the table. `start_command.rs` and
-`build_command.rs` pin the two refusal texts and their exit code, and
-`start_command.rs` also refuses a configuration of Linux and macOS pools and one of
-macOS pools alone. Unit tests in `diagnostics::exporter` write a complete bundle, a
+A unit test in `runtime::select` pins the table. `build_command.rs` pins the build
+refusal text and its exit code. `axmc_start.rs` runs a configuration of Linux and
+macOS pools, and one of macOS pools alone, through `start` as processes, and a
+unit test in `profile` pins the Windows refusal. Unit tests in `diagnostics::exporter` write a complete bundle, a
 gap, and the failed bundles of an unreadable identity and a failed archive through a
 scripted transport, and the
 diagnostics tests listed under [Diagnostics](#diagnostics) run the exporter through
@@ -464,9 +468,10 @@ diagnostics tests listed under [Diagnostics](#diagnostics) run the exporter thro
 
 `runtime::tart::backend::TartBackend` is the VM runtime. It gives each job a VM
 cloned from the golden VM, runs the run contract's Docker commands inside it, and
-deletes it. `start` and `build` do not construct it yet, so no command reaches it;
-the tests build it through `cli/tests/support/rig.rs` against the fake `tart`,
-`docker` and `softnet`. The `tart` client library under it is documented where its
+deletes it. `start` constructs it for the axmc profile, with the VM shim as its
+launcher; `build` does not use it. The in-process tests build it through
+`cli/tests/support/rig.rs` against the fake `tart`, `docker` and `softnet`, and
+`cli/tests/axmc_start.rs` runs it through `start`. The `tart` client library under it is documented where its
 parts are: [Host Prerequisites](#host-prerequisites),
 [Golden VM Provisioning](#golden-vm-provisioning), and the argument lists in
 `tart::args`.
@@ -474,7 +479,8 @@ parts are: [Host Prerequisites](#host-prerequisites),
 **Availability.** `wait_until_available` runs `tart list` and, while it fails, warns
 `Tart is not responding yet (not installed, or not answering) - waiting.` and tries
 again every 5 s. A Tart that does not answer is therefore never a failure of the
-runtime core. `check_image` runs the same listing within the image check's budget and
+runtime core. A missing `tart` is refused at `start` before this wait is reached, as
+[Host Prerequisites](#host-prerequisites) maps it. `check_image` runs the same listing within the image check's budget and
 reads the golden VM from the VM names alone ([The Image Contract](#the-image-contract)
 describes the check's outcomes). A listing that fails or overruns is
 `Unavailable`, which registers nothing and goes into the backoff.
@@ -621,8 +627,8 @@ closes it when it is dropped.
 The axmc runtime runs two programs it does not ship: `tart`, and `softnet`, which
 Tart runs. `macos::prerequisites` checks both and returns a `Check`: a pass, a
 warning, or a refusal that carries a `Cause` and its message. The
-[Tart Backend](#tart-backend) calls it before each boot, and no command calls it
-yet. The tested versions are constants in `macos::version`, Tart 2.41.1 and Softnet
+[Tart Backend](#tart-backend) calls it before each boot, and `start`, `restart` and
+the resume of a stopped instance call it before anything is started. The tested versions are constants in `macos::version`, Tart 2.41.1 and Softnet
 0.25.0, and the host document records them in
 [Installing Tart and Softnet](./macos-runner-host.md#installing-tart-and-softnet);
 a change of either is a change of the constant, the document, and the fake programs'
@@ -663,7 +669,28 @@ cannot start is `Missing`, a program that does not answer within the bound is
 up is `Setup`. A missing `tart` or `softnet` at `start` or `build` is refused naming
 the install section. A `tart` that does not answer, or goes missing after `start`, is
 Tart unavailable and its slots wait. A `softnet` that does not answer counts as a
-refusal. The Tart backend maps the causes this way before each boot: a Tart that is
+refusal.
+
+**At `start`, `restart` and a resume.** The instance asks the core to check the
+prerequisites once, through the backend's `check_prerequisites`, when the core runs
+a plan with a Linux pool on axmc; a plan of macOS pools alone, and every axpc plan,
+pass without a check. Every refusal of Tart's check but `NotAnswering` is a
+refusal, and so is every refusal of Softnet's, a missing or unanswering `softnet`
+included; a `tart` that does not answer is not, because the slots wait for it. Then:
+
+- At a fresh `start` a refusal ends the instance before the runtime core runs: the
+  log warns `The instance ends: <the refusal's message>`, which names the host
+  document's section, and `start` exits 1. Nothing but `tart --version` and
+  `softnet --version` has run, so no VM was cloned, set, or booted.
+- At a `restart` or a resume, including a `start` that resumes a stopped instance, a
+  refusal leaves the instance stopped with the refusal's message as its reason,
+  exactly as an image that cannot run jobs does, and the client exits 1. The check
+  runs before the image check. A restart has by then stopped every running job.
+- The warnings of a passing check, a newer patch of Tart or Softnet, are logged once
+  and shown by `status` as `warning: <message>` lines, listed on every call, after
+  the image lines, as of the latest check that passed.
+
+After `start`, the Tart backend maps the causes this way before each boot: a Tart that is
 `Missing` or `NotAnswering` makes the slot wait, a Tart `Version` refusal holds the
 slot, and every refusal of Softnet holds it, a missing or unanswering `softnet`
 included.
@@ -1005,6 +1032,11 @@ running instance refuses a resume too.
   `start` fixes it as the path it was given, made absolute but not resolved, so
   each read finds the checkout above it as the first validation did; the
   canonical path is kept only to compare with a resume's.
+- A resume and a `restart` check the host prerequisites, on axmc, and then the
+  image after the file validates, before the instance answers. A prerequisite that
+  refuses leaves the instance stopped with the refusal's message as its reason; the
+  instance also checks them once before its first run, and a refusal there ends the
+  instance, so `start` exits 1.
 - A resume and a `restart` check the image after the file validates, before the
   instance answers. An image that cannot run jobs leaves the instance stopped,
   with a reason that names the image and says to run `marshal stop`, then
@@ -1340,18 +1372,25 @@ A fresh `start` does these in order:
 1. It takes the instance lock. When the lock is held it asks this user's instance
    to resume instead, as below.
 2. It validates the configuration as `validate` does. An invalid one prints every
-   error and exits 1, and nothing is written. With `--profile axmc` a valid
-   configuration still exits 1, with the refusal that [Runtime Seam](#runtime-seam)
-   gives.
+   error and exits 1, and nothing is written.
 3. It opens its log file and logs the plan summary.
 4. It contains its children, builds the HTTPS client, and opens the control
    channel. A failure of any of them, including a TLS setup failure, exits 1.
-5. It runs the instance. The runtime core waits for Docker every 5 s, checks the
-   image as [The Image Contract](#the-image-contract) describes, prepares the pools
+5. It runs the instance on the backend of the profile: Docker on axpc, Tart on
+   axmc. On axmc, a host prerequisite that refuses ends the instance first, as
+   [Host Prerequisites](#host-prerequisites) says. The runtime core waits for the
+   engine every 5 s (Docker, or Tart), checks the image as
+   [The Image Contract](#the-image-contract) describes, prepares the pools
    as [Names and the Slot Loop](#names-and-the-slot-loop) describes, and then runs
    every slot's loop until a stop. When the image cannot run jobs, the instance
    ends, and `start` exits 1, saying to run `marshal build --config <path>`, then
    `marshal start --config <path>`. When no pool can start, `start` exits 1.
+
+On Windows, `start --profile axmc` exits 1 before step 1 with
+`error: the axmc profile runs only on macOS`, because Tart exists only on macOS.
+On axmc the containment of a job VM is the [VM shim](#the-vm-shim): `start` gives
+the Tart backend the shim as its launcher on Unix, as it gives the Docker backend
+the container shim.
 
 On Linux a release build exits 1 at the first step, because Linux is not a
 supported host, and `tests/instance_roots.rs` shows it in the release profile. A
@@ -1360,8 +1399,11 @@ runs the container backend with Unix containment, which serves the tests, not an
 operated host. `MARSHAL_TEST_ROOT` moves the lock, the channel, and the log
 directory, `MARSHAL_TEST_GITHUB_API` moves the GitHub base address,
 `MARSHAL_TEST_DOCKER` names the `docker` client that `start` and `build` run, the
-Unix shim's removal in `start` included, and `MARSHAL_TEST_BUILD_DEFINITION` names
-a test definition that `build` builds instead of the embedded one. Only a debug
+Unix shim's removal in `start` included, `MARSHAL_TEST_TART` names the `tart`
+client that `start` runs on axmc, and `MARSHAL_TEST_BUILD_DEFINITION` names
+a test definition that `build` builds instead of the embedded one. On axmc the
+tests also set `PATH` to find the fake `softnet`, as Tart does, and
+`MARSHAL_TEST_SOFTNET_OWNER_MODE` to judge its file. Only a debug
 build honours any of them: in the release profile `tests/base_address.rs` shows
 that the client stays `docker`, and `tests/build_definition.rs` that `build` keeps
 the embedded definition. The tests name the fake client rather than put it first on `PATH`,
@@ -1378,6 +1420,8 @@ configuration path, sends `resume <profile> <path>`, and waits up to 10 s:
   and so does a stopped one started with another path or profile. `start` exits 1.
 - A stopped instance whose image cannot run jobs stays stopped with that reason,
   and `start` exits 1.
+- A stopped axmc instance whose host prerequisite refuses stays stopped with the
+  refusal as its reason, and `start` exits 1.
 - When nothing answers on this user's channel, `start` exits 1, saying that the
   lock is held by another OS user or by an instance of this user that is still
   starting or ending. The lock does not say which, and `start` never connects to
@@ -1395,9 +1439,10 @@ answer in time.
   line per slot, which is `registering` (the preparation of its job host and the CPU
   probe included), `backing off`, `held: <reason>`, or `running container <name>`;
   and the image lines under
-  [The Image Contract](#the-image-contract). Pools and slots are listed while the
-  runtime core runs; the image lines are listed on every call, as of the latest
-  check. A `build` answers `state`, `image`, and `elapsed: <s> s`.
+  [The Image Contract](#the-image-contract), then one `warning: <message>` line per
+  warning of the latest passing host prerequisite check, on axmc. Pools and slots
+  are listed while the runtime core runs; the image and warning lines are listed on
+  every call, as of the latest check. A `build` answers `state`, `image`, and `elapsed: <s> s`.
 - `restart` waits up to 35 s for the instance to run its container steps, read its
   file again, check the image, and answer. An invalid file or an image that cannot
   run jobs leaves the instance stopped, and `restart` exits 1. It is refused while
@@ -1877,6 +1922,18 @@ left; on Windows, a handle to the job container's client is signalled when
 `instance_state.rs` and `core_restart.rs` cover forced removal, the exit deadline,
 a panicking core, and no startable pool. The diagnostics tests are listed under
 [Diagnostics](#diagnostics).
+
+`axmc_start.rs` runs `start` on the axmc profile as real processes, with the fake
+`tart`, the fake `softnet` and the fake `docker` in the VMs: a configuration of
+Linux and macOS pools that starts only the Linux pools, with one skip warning per
+macOS pool, and one of macOS pools alone that exits 1; a missing `tart`, a missing
+`softnet`, version refusals, Softnet setup refusals and a `softnet` that does not
+answer, each exiting 1 before any VM is cloned or booted; a `tart` that does not
+answer, which makes the slots wait; a newer patch, with its warnings in the log and
+`status`; a restart and two `start`s that a refused prerequisite leaves stopped with
+its reason, the last resuming; and a refusal after `start` that holds a slot while
+another slot's job ends, and lets it boot again. `prerequisite_gate.rs` shows where
+the instance asks for the check, on the fake seams.
 
 `build_command.rs` runs `build` the same way, from an empty directory, with
 `fake-docker` keeping an image store: the one build's arguments, labels, temporary

@@ -11,12 +11,13 @@ names it. The sections below say what holds today and what a later change adds.
 is reviewed against are in [Security](../conventions/security.md). The Windows
 equivalent is [Windows Runner Host](./windows-runner-host.md).
 
-**Today.** `marshal` checks the host prerequisites below, and the library holds the
-VM runtime that will use them: a job VM per job, cloned from the golden VM, with the
-run contract's Docker commands run inside it. But `marshal start` and `marshal build`
-with `--profile axmc` still refuse to run: the configuration is validated, and the
-VM runtime is not wired into them yet. The procedures below that run Tart, Softnet
-or `marshal` on a Mac have not been run there yet; see
+**Today.** `marshal start --profile axmc` runs the Linux pools of the configuration:
+it checks the host prerequisites below, and then each slot runs a job VM per job,
+cloned from the golden VM, with the run contract's Docker commands run inside it.
+It skips each macOS pool with a warning, because macOS VM pools are not supported
+yet, and exits 1 when every pool is skipped. `marshal build --profile axmc` still
+refuses to run: the golden VM cannot be built by `marshal` yet. The procedures below
+that run Tart, Softnet or `marshal` on a Mac have not been run there yet; see
 [Verification Status](#verification-status).
 
 ## Installing Tart and Softnet
@@ -145,10 +146,13 @@ interrupted build leaves behind.
 
 ## Running the Host
 
-`marshal start --profile axmc` will run every `os: "linux"` pool, one fresh VM per
-job, and skip each `os: "macos"` pool with a warning until macOS VM pools exist.
-This section will hold the host configuration for the Mac, starting and stopping the
-pools, and `marshal status`. The example configuration is
+`marshal start --profile axmc` runs every `os: "linux"` pool, one fresh VM per
+job, and skips each `os: "macos"` pool with a warning until macOS VM pools exist;
+when every pool is skipped it exits 1. Before any VM boots it checks Tart and
+Softnet, and a refusal makes it exit 1, naming the section of this document to
+follow. A refusal after `start` holds that slot, which `marshal status` shows with
+its reason, while jobs on other slots finish. This section will hold the host
+configuration for the Mac, starting and stopping the pools, and `marshal status`. The example configuration is
 [`hosts/macos/runner-host.example.json`](../../hosts/macos/runner-host.example.json).
 
 ## Sleep, Wake, and Network Changes
@@ -181,6 +185,8 @@ the maintainer's Mac, and their evidence is posted on
 the version parsing and sorting of both programs, and the judgment of Softnet's file
 and the search for it on `PATH`, against fake `tart` and `softnet` programs in the
 CLI's tests; and the VM runtime's slot cycle, probes, run arguments, release and VM
-shim, against fake `tart`, `docker` and `softnet` programs. The guest user comes from
+shim, against fake `tart`, `docker` and `softnet` programs; and `marshal start`
+on the axmc profile as a process against the same fakes: the skipped macOS pools,
+each refusal before any VM boots, a held slot, and a refused resume. The guest user comes from
 the guest agent's source and has not been seen on a running VM. No real Tart VM, guest
 agent or Softnet has run under `marshal`.
