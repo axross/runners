@@ -450,8 +450,14 @@ The diagnostics export reads a retained container's evidence through the
 `EvidenceTransport` seam in `diagnostics::transport`: the allowlisted identity
 text, and the evidence archive, which the strict archive reader writes into the
 bundle. The exporter child's admission, bundle files, limits, exit codes, and
-deadline do not depend on the transport. Its first transport, `DockerCopy`, runs
-`docker inspect` and `docker cp` as [Backend](#backend) lists them.
+deadline do not depend on the transport. `DockerCopy` runs `docker inspect` and
+`docker cp` as [Backend](#backend) lists them. `VmCopy` runs the same two commands
+inside a job VM as `tart exec <vm> docker ...`, with the same identity cap and
+archive limits. The exporter child picks the transport from its arguments: with
+`--vm <name>` it reads that VM through the Tart program it is given, and without it
+it reads the container with `DockerCopy`, so axpc's exporter command line is
+unchanged. Both backends start the child, take its admission lock, and read its
+`admitted` and `bundles` lines through `runtime::exports`.
 
 A unit test in `runtime::select` pins the table. `axmc_start.rs` runs a
 configuration of Linux and macOS pools, and one of macOS pools alone, through
@@ -460,7 +466,9 @@ and `golden_build.rs` runs the golden VM build. Unit tests in `diagnostics::expo
 gap, and the failed bundles of an unreadable identity and a failed archive through a
 scripted transport, and the
 diagnostics tests listed under [Diagnostics](#diagnostics) run the exporter through
-`DockerCopy` with unchanged expectations.
+`DockerCopy` with unchanged expectations. `tart_diagnostics.rs` and
+`axmc_diagnostics.rs` run it through `VmCopy` against the fake `tart` and the fake
+`docker` in its VMs.
 
 ### Tart Backend
 
@@ -588,17 +596,32 @@ diagnostics-enabled pool, it also says that its diagnostic evidence is gone, in
 today's gap wording. Only the pool's own VMs are matched, so another pool's, a
 golden VM and a build VM are left alone.
 
-**Diagnostics.** The bookkeeping for a diagnostics-enabled pool is in place: a
-diagnostic container is recorded as retained when it starts, and the runtime
-finalises it, exporting before it removes the container, and releases the host
-only after that, as the [worker's order](#names-and-the-slot-loop) has it. The
-backend has no way to read a VM's evidence yet, so `export_diagnostic` answers a
-failure and `count_bundles` answers nothing, and a finalisation warns of the gap
-and removes the container; no export is faked. What remains is an
-`EvidenceTransport` over the guest agent (`tart exec <vm> docker inspect` and
-`docker cp`, read by the strict archive reader), the export and the count of a
-pool's bundles through it, and, for a retained VM, keeping it until its export has
-run.
+**Diagnostics.** A diagnostic container is recorded as retained when it starts, and
+the runtime finalises it, exporting before it removes the container, and releases
+the host only after that, as the [worker's order](#names-and-the-slot-loop) has it.
+For a VM, the export runs the exporter child with `--vm <name>`, which reads the
+evidence through `VmCopy` (`tart exec <vm> docker inspect` and `docker cp`), with
+the identity cap, the strict archive reader, and the bundle limits of
+[Diagnostics](#diagnostics), and `count_bundles` counts the pool's bundles through
+the same child. The VM is the retained container: it stays alive after its job
+until the export has run, and the removal of a retained container is the deletion
+of its VM, by the release above, within the removal's 24 s clock, where a container
+backend would run `docker rm -f`. A failed deletion keeps the container retained
+for `diagnostics`, as a failed removal does. The worker does not release a stopping
+slot's diagnostic host itself (`host_awaits_finalisation`), because the stop
+sequence exports it first and then releases it; without that, the slot's own
+release would delete the VM while the export reads it. The warnings and gaps are
+today's.
+
+**Evidence a VM loses.** A diagnostic VM is deleted without an export in three
+cases: a second SIGINT, which skips the export and deletes the VM where a container
+would be killed and kept; a crashed `start`, whose [VM shim](#the-vm-shim) deletes
+the VM when the liveness pipe closes; and the next `start`, which deletes a
+leftover. Each reports the loss with today's gap wording,
+`Diagnostic gap in pool <pool>, job VM <vm>: <text>`, or, for a forced stop,
+`container <name>` in place of the VM. A forced stop keeps the container names in
+its result, so `start` exits 1 as for a kept container and its last line says that
+the job VMs were deleted without an export.
 
 ### The VM Shim
 
@@ -613,7 +636,12 @@ it, and a test shows the lock free while a shim lives.
   with Tart's code. It deletes nothing, so the VM is kept for the next start.
 - When the pipe closes, the shim stops the VM (`stop --timeout 5` within 8 s, then
   `stop --timeout 0` within 3 s when that fails), deletes it within 4 s, and exits 0.
-  It exits 1 when the deletion fails or the 15 s run out. None of its `tart` calls
+  It exits 1 when the deletion fails or the 15 s run out. A shim started for a
+  diagnostics-enabled pool's VM (`--diagnostic-pool <pool>`) also writes
+  `WARNING: Diagnostic gap in pool <pool>, job VM <vm>: <text>` to its standard
+  error, which it shares with the CLI, once the VM is deleted. It cannot tell a VM
+  holding evidence from an idle one, so it reports each VM it deletes, and none that
+  was already gone. None of its `tart` calls
   prunes, which `TART_NO_AUTO_PRUNE=1` sets.
 
 The shim takes any VM name, so the build command can hold a build VM the same way.
@@ -863,7 +891,8 @@ in `tests/support/rig.rs`: availability and the golden VM check, the cleanup of
 leftovers, each step of a slot's cycle and its failures, the boot failure text, the
 probes, the JIT configuration reaching the guest on standard input alone, the run
 arguments, bounded and masked output, the stop and release within their budgets,
-and a release run twice at once. `vm_shim.rs` runs the VM shim as a real process,
+and a release run twice at once. `tart_diagnostics.rs` and `axmc_diagnostics.rs` run the
+diagnostic VM cases listed under [Diagnostics](#diagnostics). `vm_shim.rs` runs the VM shim as a real process,
 for a job VM and for a build VM, and `tart_slot.rs` runs the slot loop on the
 backend with the fake programs, for the order of a cycle and what each failure does
 to the VM and the registration. Both are Unix only. `real_docker.rs` runs a container and the
@@ -1470,7 +1499,8 @@ default action; the others still stop the instance.
 1. The slots stop registering at once.
 2. The container steps under [Instance State](#instance-state) run: one
    `docker stop --time 15`, ended at 20 s, and then one `docker rm -f`, ended 6 s
-   later; alongside, each diagnostic container is exported and removed by 24 s.
+   later; alongside, each diagnostic container is exported and removed by 24 s, a
+   VM's by deleting the VM.
 3. At 28 s whatever still runs is dropped. A `docker` client is killed; on Unix a
    job container's shim sees its liveness pipe close, removes its container, or
    ends a diagnostic one and keeps it, within 5 s, and ends. A VM backend reserves
@@ -1484,7 +1514,10 @@ default action; the others still stop the instance.
 A second SIGINT, Ctrl+C, or Ctrl+Break skips the grace period: a `docker stop` under
 way is abandoned and the ordinary containers are removed at once, while each
 diagnostic container is ended with `docker kill` and kept without its export.
-`start` then exits 1, and its last line names each kept container. Raising Ctrl+C in a
+`start` then exits 1, and its last line names each kept container. A VM backend cannot
+keep a container once its VM is gone, so it deletes each diagnostic VM without an
+export and reports the lost evidence, as [Diagnostics](#diagnostics) describes; `start`
+still exits 1 and names the containers. Raising Ctrl+C in a
 Windows test needs `unsafe`, so the Windows handling is checked by review. On axpc
 one Ctrl+C stopped the instance with exit 0, and a second Ctrl+C force-stopped it
 with exit 1 (maintainer's report,
@@ -1609,10 +1642,22 @@ not remove one, and its last line names each one. The next `start` finalises the
 while their pool's diagnostics are on, and reports each one; an export gap alone
 does not change `start`'s exit code.
 
+**Diagnostic VMs.** On axmc the diagnostic container lives in a job VM, which is the
+retained thing: it stays alive after the job until the exporter has read the
+evidence through the guest agent, and its removal is the VM's deletion. A graceful
+stop, `diagnostics`, and the job end finalise it as they do a container. A forced
+stop, a hard kill of `start`, and the next `start` cannot keep the evidence, because
+nothing keeps a VM alive without its holder. They delete the VM without an export and
+report the loss with the same gap wording as an export gap, and a forced stop still
+exits `start` with 1, naming the containers whose evidence is lost. A crash reports
+the loss from the VM shim, on the standard error it shares with `start`.
+
 **The exporter.** Each export runs in a child process: the CLI run again as the
 hidden
-`marshal export --pool <pool> --directory <sink> [--container <name>] [--raw-records] [--checkout <path>] --deadline-ms <ms> -- <docker>`.
-Without `--container` it only counts the pool's bundles.
+`marshal export --pool <pool> --directory <sink> [--container <name>] [--vm <name>] [--raw-records] [--checkout <path>] --deadline-ms <ms> -- <docker or tart>`.
+Without `--container` it only counts the pool's bundles. With `--vm` it reads the
+evidence from that VM through `tart exec`, with the program after `--` as `tart`; the
+bundle, its files, limits, and exit codes are the same.
 
 - **Sink checks.** Before each bundle the child checks the sink. It must be an
   existing directory outside the checkout above the configuration, judged by the
@@ -1692,6 +1737,11 @@ names it on a line of its own and leaves it to the manual recovery. It prints:
   which was left to the manual recovery, such as
   `container <name>: removal failed; it stays retained`.
 
+A retained VM is finalised the same way: the export reads it through the guest
+agent, and its removal is the VM's deletion, so a VM whose deletion failed is
+reported as `removal failed; it stays retained` and deleted by a later `diagnostics`
+once Tart can, without a second bundle.
+
 It exits 0 when every container it acted on was removed, and 1 when one was not or
 one was left to the manual recovery. With nothing to act on and no
 diagnostics-enabled pool it says so and exits 0. It is allowed while the instance
@@ -1725,6 +1775,18 @@ and `cp` with a scripted archive or a stall, and stand in for the exporter child
   failed and then retried removal, the manual-recovery and `unknown` lines, an
   exporter whose instance is killed, a mixed stop within 30 s, and on Linux and
   macOS a first SIGINT during an export, a second SIGINT, and a hard kill;
+- `tart_diagnostics.rs` runs the Tart backend and the real exporter child against the
+  fake `tart` and the fake `docker` in its VMs: the bundle exported through the guest
+  agent, token-free, before the VM is deleted; a malformed or oversized archive, a
+  missing final observation, a full sink, a failed stop and a clock with no time left
+  to begin the export, each with the container's gap; `diagnostics` finalising a
+  retained VM; a VM kept for its finalisation at a stop; a forced stop that deletes
+  the VM without an export and reports the gap; and a VM already gone;
+- `axmc_diagnostics.rs` runs `start`, `stop`, and `diagnostics` as processes on an
+  axmc host with a diagnostics-enabled Linux pool: a finished job exported and its VM
+  deleted, a graceful stop that exports a running job first, a second SIGINT, the
+  next `start` deleting a leftover, a killed `start` whose shim deletes the VM and
+  reports the gap, and `diagnostics` finalising a VM whose deletion failed;
 - `sink.rs`'s unit tests refuse a sink that is missing, under a link, inside the
   checkout, also when the checkout is named through a link, or not private, and on Windows one that is or lies under a junction or
   a directory symbolic link.
@@ -1971,8 +2033,9 @@ failure.
   only.
 - **VM shim.** A job VM's `tart run` is held by the VM shim, the CLI run again as
   `marshal vm-shim`, with a liveness pipe of its own, as [The VM Shim](#the-vm-shim)
-  describes. It stops and deletes its VM within 15 s when the pipe closes, and
-  holds no lock.
+  describes. It stops and deletes its VM within 15 s when the pipe closes, reporting
+  the lost evidence of a diagnostics-enabled pool's VM on the standard error it shares
+  with `start`, and holds no lock.
 - **Exporter.** The exporter child under [Diagnostics](#diagnostics) has a
   liveness pipe of its own and keeps its own deadline, on every system, and on
   Windows it is also in the Job Object.

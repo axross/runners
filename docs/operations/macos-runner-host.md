@@ -131,7 +131,10 @@ version>-<yyyyMMddHHmmss>`. A build VM is
   at commit `6d4bd9c`.
 - **Leftovers.** At `start`, each job VM of a configured pool that an earlier run
   left behind is stopped and deleted, and its diagnostic evidence, if the pool
-  collects it, is not exported.
+  collects it, is not exported; the loss is reported in the log. A finished job's
+  diagnostic evidence is exported from its VM, through the guest agent, into the
+  pool's private `diagnosticDirectory` before the VM is deleted; a forced stop or a
+  crash of `start` deletes the VM without that export and reports the loss.
 
 - **The base image** is `ghcr.io/cirruslabs/ubuntu:24.04`, pinned by the digest of its
   manifest (`golden::pins::BASE_REFERENCE`): arm64 Ubuntu 24.04 with a 20 GB disk and
