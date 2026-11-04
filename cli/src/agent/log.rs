@@ -230,22 +230,24 @@ mod tests {
         let directory = scratch("recovers");
         let mut log = AgentLog::open(&directory, 256).unwrap();
         log.retry_every = Duration::from_millis(50);
-        // the directory is replaced by a file, so the next roll cannot create one
-        let aside = scratch("recovers-aside");
-        fs::rename(&directory, &aside).unwrap();
-        fs::write(&directory, b"in the way").unwrap();
+        // the log is pointed at a path that is a file, so the next roll cannot create
+        // one; the directory itself is not moved, which Windows refuses while the log
+        // holds a file open in it
+        let blocked = scratch("recovers-blocked");
+        fs::write(&blocked, b"in the way").unwrap();
+        let real = std::mem::replace(&mut log.directory, blocked.clone());
         for index in 0..10 {
             log.info(&format!("lost {index} {}", "x".repeat(60)));
         }
         assert!(log.current.borrow().file.is_none());
-        fs::remove_file(&directory).unwrap();
+        log.directory = real;
         // inside the retry time nothing is tried
         log.info("too early");
         assert!(log.current.borrow().file.is_none());
         std::thread::sleep(Duration::from_millis(120));
         log.info("back again");
         let text = fs::read_to_string(log.path()).unwrap();
-        let written: usize = files(&aside)
+        let written: usize = files(&directory)
             .iter()
             .map(|file| fs::read_to_string(file).unwrap().matches("lost ").count())
             .sum();
@@ -259,7 +261,7 @@ mod tests {
         assert!(text.contains("back again"), "{text}");
         assert!(!text.contains("too early"), "{text}");
         fs::remove_dir_all(&directory).unwrap();
-        fs::remove_dir_all(&aside).unwrap();
+        fs::remove_file(&blocked).unwrap();
     }
 
     #[test]
