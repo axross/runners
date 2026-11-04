@@ -10,6 +10,8 @@
 //!   with `true` or `false`. It holds an exclusive lock on `inv-<n>.alive` until it
 //!   ends, taken before the arguments are written, so a test that takes that lock
 //!   sees the call end, however it ends;
+//! - `--version` prints the file `version_output` exactly as it holds it, else
+//!   `2.41.1` and a newline, as Tart 2.41.1 does; scripts name it `version`;
 //! - `vms` holds the fake Tart's VMs, one
 //!   `name<TAB>state<TAB>source<TAB>cpu<TAB>memory MB<TAB>disk GB` per line, which
 //!   `list`, `clone`, `set`, `run`, `stop`, `delete`, `pull` and `rename` read and
@@ -28,22 +30,25 @@
 //!   its `--timeout` seconds first, as Tart waits for a VM that ignores the
 //!   interrupt;
 //! - `delete` refuses a running VM and a VM that does not exist;
-//! - any subcommand called `<sub>` fails with `fail-<sub>` present, printing the
+//! - any subcommand called `<sub>` (`version` for `--version`) fails with `fail-<sub>` present, printing the
 //!   file's text, or a default one, to standard error; hangs with `hang-<sub>`
 //!   present; and prints 200 000 bytes to each of standard output and standard
 //!   error first with `flood-<sub>` present. Every wait is bounded, so a test that
 //!   fails does not leave the helper running.
 
+mod fake_support;
+
 use std::fmt::Write as _;
 use std::fs;
-use std::io::{IsTerminal, Read, Write};
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
-const JIT_VARIABLE: &str = "ACTIONS_RUNNER_INPUT_JITCONFIG";
-const LONGEST_WAIT: Duration = Duration::from_secs(60);
-const FLOOD_BYTES: usize = 200_000;
+use fake_support::{exists, record, scripted, sleep_while, text};
+
+const RECORDED_VARIABLES: [&str; 2] = ["TART_NO_AUTO_PRUNE", "PATH"];
+const DEFAULT_VERSION: &str = "2.41.1\n";
 const MAX_STDIN_BYTES: u64 = 1024 * 1024;
 const RUNNING: &str = "running";
 const STOPPED: &str = "stopped";
@@ -63,15 +68,17 @@ fn main() -> ExitCode {
 fn run() -> Result<u8, String> {
     let dir = PathBuf::from(std::env::var_os("FAKE_TART_DIR").ok_or("FAKE_TART_DIR is not set")?);
     let arguments: Vec<String> = std::env::args().skip(1).collect();
-    let (stem, _held_until_exit) = record(&dir, &arguments)?;
+    let (stem, _held_until_exit) = record(&dir, &arguments, &RECORDED_VARIABLES)?;
     let words: Vec<&str> = arguments.iter().map(String::as_str).collect();
-    if let Some(code) = words
-        .first()
-        .and_then(|subcommand| scripted(&dir, subcommand))
-    {
+    let scripted_name = match words.first() {
+        Some(&"--version") => Some("version"),
+        other => other.copied(),
+    };
+    if let Some(code) = scripted_name.and_then(|subcommand| scripted(&dir, subcommand)) {
         return Ok(code);
     }
     match words.as_slice() {
+        ["--version"] => version(&dir),
         ["list", "--format", "json"] => list(&dir),
         ["clone", source, target] => clone(&dir, source, target),
         ["set", name, options @ ..] => set(&dir, name, options),
@@ -83,103 +90,6 @@ fn run() -> Result<u8, String> {
         ["rename", name, target] => rename(&dir, name, target),
         _ => Err(format!("unexpected call: {arguments:?}")),
     }
-}
-
-fn record(dir: &Path, arguments: &[String]) -> Result<(PathBuf, fs::File), String> {
-    for number in 0..100_000 {
-        let stem = dir.join(format!("inv-{number:06}"));
-        let argv = stem.with_extension("argv");
-        let created = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&argv);
-        let Ok(mut file) = created else {
-            continue;
-        };
-        let alive =
-            fs::File::create(stem.with_extension("alive")).map_err(|error| error.to_string())?;
-        alive.lock().map_err(|error| error.to_string())?;
-        fs::write(stem.with_extension("pid"), std::process::id().to_string())
-            .map_err(|error| error.to_string())?;
-        record_process_group(&stem);
-        fs::write(stem.with_extension("env"), environment_lines())
-            .map_err(|error| error.to_string())?;
-        // the arguments come last, so a call a test can name already holds its
-        // lock and has written the rest
-        file.write_all(arguments.join("\0").as_bytes())
-            .map_err(|error| error.to_string())?;
-        return Ok((stem, alive));
-    }
-    Err("no invocation number".to_string())
-}
-
-fn environment_lines() -> String {
-    let mut lines = String::new();
-    for name in ["TART_NO_AUTO_PRUNE", "PATH"] {
-        if let Some(value) = std::env::var_os(name) {
-            let _ = writeln!(lines, "{name}={}", value.to_string_lossy());
-        }
-    }
-    if std::env::var_os(JIT_VARIABLE).is_some() {
-        lines.push_str("JIT=present\n");
-    }
-    let _ = writeln!(lines, "stdin_terminal={}", std::io::stdin().is_terminal());
-    let _ = writeln!(lines, "stdout_terminal={}", std::io::stdout().is_terminal());
-    let _ = writeln!(lines, "stderr_terminal={}", std::io::stderr().is_terminal());
-    lines
-}
-
-/// records the process group this call runs in, where `ps` can tell it.
-#[cfg(unix)]
-fn record_process_group(stem: &Path) {
-    let output = std::process::Command::new("ps")
-        .args(["-o", "pgid=", "-p", &std::process::id().to_string()])
-        .output();
-    if let Ok(output) = output {
-        let _ = fs::write(stem.with_extension("pgid"), output.stdout);
-    }
-}
-
-#[cfg(not(unix))]
-fn record_process_group(_stem: &Path) {}
-
-fn exists(dir: &Path, flag: &str) -> bool {
-    dir.join(flag).exists()
-}
-
-fn text(dir: &Path, file: &str) -> Option<String> {
-    fs::read_to_string(dir.join(file))
-        .ok()
-        .map(|text| text.trim().to_string())
-}
-
-fn sleep_while(mut condition: impl FnMut() -> bool) {
-    let started = Instant::now();
-    while condition() && started.elapsed() < LONGEST_WAIT {
-        std::thread::sleep(Duration::from_millis(20));
-    }
-}
-
-/// the scripted hang, failure or flood of a subcommand; `Some` ends the call.
-fn scripted(dir: &Path, subcommand: &str) -> Option<u8> {
-    if exists(dir, &format!("hang-{subcommand}")) {
-        sleep_while(|| true);
-        return Some(1);
-    }
-    if exists(dir, &format!("flood-{subcommand}")) {
-        let chunk = vec![b'a'; FLOOD_BYTES];
-        let _ = std::io::stdout().write_all(&chunk);
-        let _ = std::io::stderr().write_all(&chunk);
-    }
-    let failure = format!("fail-{subcommand}");
-    if exists(dir, &failure) {
-        let message = text(dir, &failure)
-            .filter(|message| !message.is_empty())
-            .unwrap_or_else(|| "a scripted failure".to_string());
-        let _ = writeln!(std::io::stderr(), "{message}");
-        return Some(1);
-    }
-    None
 }
 
 #[derive(Clone)]
@@ -256,6 +166,14 @@ fn edit(dir: &Path, change: impl FnOnce(&mut Vec<Vm>) -> Result<(), String>) -> 
     let staged = dir.join(format!("vms.{}", std::process::id()));
     fs::write(&staged, lines.join("\n")).map_err(|error| error.to_string())?;
     fs::rename(staged, dir.join("vms")).map_err(|error| error.to_string())?;
+    Ok(0)
+}
+
+/// prints `version_output` exactly as the file holds it, else `2.41.1` and a newline.
+fn version(dir: &Path) -> Result<u8, String> {
+    let output = fs::read_to_string(dir.join("version_output"))
+        .unwrap_or_else(|_| DEFAULT_VERSION.to_string());
+    let _ = std::io::stdout().write_all(output.as_bytes());
     Ok(0)
 }
 

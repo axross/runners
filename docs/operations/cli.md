@@ -244,26 +244,29 @@ registration, and the loop of one slot. `start` reaches it through the instance
 layer, and the tests also drive it through its seams. It reproduces the
 PowerShell supervisor, and where it differs the difference is listed here.
 
-| Module                                              | Holds                                                                                  |
-| --------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `affinity`                                          | The CPU offsets `validate` and the backend share, and the selection of a slot's CPUs   |
-| `runtime::backend`                                  | The backend seam                                                                       |
-| `runtime::select`                                   | The runtime a pool's operating system selects on its host                              |
-| `runtime::docker`, `runtime::docker_args`           | The container backend and the exact `docker` argument lists                            |
-| `runtime::tart`, `tart::args`, `tart::client`       | The `tart` client: the exact argument lists, and the bounded process wrapper           |
-| `runtime::tart::list`, `tart::names`                | The reader of `tart list --format json`, and the VM names, parsers and matchers        |
-| `runtime::registration`, `token`, `scrub`, `secret` | JIT registration, the token file, error text, and the type that hides a secret         |
-| `runtime::clock`, `runtime::log`                    | The time source and the sink for the runtime's messages, each a seam the tests replace |
-| `runtime::name`                                     | Runner and container names, and the test for a pool's own                              |
-| `runtime::pool`                                     | Pools from a plan, and their preparation                                               |
-| `runtime::worker`                                   | The slot loop and its backoff                                                          |
-| `runtime::retained`                                 | The diagnostic containers the backend retains, their records, and who finalises each   |
-| `runtime::diagnostic`                               | Finalising diagnostic containers at job end, in the container steps, and at startup    |
-| `diagnostics`, `diagnostics::exporter`              | The exporter child and the lines and exit codes it answers with                        |
-| `diagnostics::transport`                            | The transport seam through which the exporter reads a container's evidence             |
-| `diagnostics::sink`, `archive`, `identity`          | The sink checks and admission, the strict archive reader, and the identity readback    |
-| `runtime::board`                                    | Each pool's and each slot's state, which `status` reports                              |
-| `runtime::fake`                                     | In-memory stand-ins for the seams, used by tests; a debug or test build only           |
+| Module                                              | Holds                                                                                             |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `affinity`                                          | The CPU offsets `validate` and the backend share, and the selection of a slot's CPUs              |
+| `runtime::backend`                                  | The backend seam                                                                                  |
+| `runtime::select`                                   | The runtime a pool's operating system selects on its host                                         |
+| `runtime::docker`, `runtime::docker_args`           | The container backend and the exact `docker` argument lists                                       |
+| `runtime::tart`, `tart::args`, `tart::client`       | The `tart` client: the exact argument lists, and the bounded process wrapper                      |
+| `runtime::tart::list`, `tart::names`                | The reader of `tart list --format json`, and the VM names, parsers and matchers                   |
+| `macos::version`                                    | The tested Tart and Softnet versions, the readers of their `--version`, and the sorting           |
+| `macos::softnet`                                    | Finding Softnet on `PATH` as Tart does, the judgment of its file, and its version read            |
+| `macos::prerequisites`                              | The host checks: Tart's version, then Softnet's file and version, each a pass, warning or refusal |
+| `runtime::registration`, `token`, `scrub`, `secret` | JIT registration, the token file, error text, and the type that hides a secret                    |
+| `runtime::clock`, `runtime::log`                    | The time source and the sink for the runtime's messages, each a seam the tests replace            |
+| `runtime::name`                                     | Runner and container names, and the test for a pool's own                                         |
+| `runtime::pool`                                     | Pools from a plan, and their preparation                                                          |
+| `runtime::worker`                                   | The slot loop and its backoff                                                                     |
+| `runtime::retained`                                 | The diagnostic containers the backend retains, their records, and who finalises each              |
+| `runtime::diagnostic`                               | Finalising diagnostic containers at job end, in the container steps, and at startup               |
+| `diagnostics`, `diagnostics::exporter`              | The exporter child and the lines and exit codes it answers with                                   |
+| `diagnostics::transport`                            | The transport seam through which the exporter reads a container's evidence                        |
+| `diagnostics::sink`, `archive`, `identity`          | The sink checks and admission, the strict archive reader, and the identity readback               |
+| `runtime::board`                                    | Each pool's and each slot's state, which `status` reports                                         |
+| `runtime::fake`                                     | In-memory stand-ins for the seams, used by tests; a debug or test build only                      |
 
 ### Backend
 
@@ -448,6 +451,63 @@ gap, and the failed bundles of an unreadable identity and a failed archive throu
 scripted transport, and the
 diagnostics tests listed under [Diagnostics](#diagnostics) run the exporter through
 `DockerCopy` with unchanged expectations.
+
+### Host Prerequisites
+
+The axmc runtime runs two programs it does not ship: `tart`, and `softnet`, which
+Tart runs. `macos::prerequisites` checks both and returns a `Check`: a pass, a
+warning, or a refusal that carries a `Cause` and its message. No command calls it
+yet. The tested versions are constants in `macos::version`, Tart 2.41.1 and Softnet
+0.25.0, and the host document records them in
+[Installing Tart and Softnet](./macos-runner-host.md#installing-tart-and-softnet);
+a change of either is a change of the constant, the document, and the fake programs'
+default output.
+
+| Check             | How                                                                                                                                                                                                |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tart's version    | `tart --version` through the Tart client, within 5 s. The output is exactly three dot-separated numbers and one optional final newline                                                             |
+| Softnet's file    | The first `softnet` on the `PATH` the Tart client carries, found as Tart finds it (see below); a regular file owned by root, with the SUID bit set and no write permission for its group or others |
+| Softnet's version | `softnet --version`, run on that file, within 5 s. The output is `softnet <three numbers>-<short commit>` and one optional final newline: clap's form for Softnet's release build                  |
+
+Each version sorts into the tested version, which runs; a newer patch of the tested
+minor version, which runs with a warning that names the tested version; or a refusal
+that names the tested version and the host document's install section. An older
+patch, another minor or major version, a fourth number, a suffix other than
+Softnet's commit, and output with no version are refused. Each number has no sign and
+no leading zero, and the commit is 7 to 40 lowercase hexadecimal digits. Softnet
+0.25.0 is a patch of 0, so an older patch of its minor version cannot exist. The
+version reads and the Tart client share one bounded process wrapper: their own
+process group, killed when the call is dropped, standard input null, output cut at
+64 KiB, and the JIT variable cleared. A `softnet` read gets the same `PATH`.
+
+Tart takes no path for Softnet. It runs the first `softnet` on its own `PATH`, found
+by `resolveBinaryPath` in Tart 2.41.1's `Sources/tart/Utils.swift`: each entry in
+order, empty entries skipped, the first where the file exists with links followed.
+It tests existence alone, so a directory named `softnet` matches, and a link that
+leads nowhere does not. `macos::softnet::find_on_path` does the same and the file
+check reads that file's type, owner and mode with the standard library's metadata,
+which follows links. The judgment is a pure function over the file's type, owner and
+mode (`setup_problem`); the first failing requirement in the order type, owner, SUID
+bit, group write, other write gives the message. The file is judged before it runs,
+so a file that fails never starts. The reader of owner and mode is Unix code; on
+another platform it returns an error, which is a refusal.
+
+A refusal carries a cause, so a caller can map it. A missing program or one that
+cannot start is `Missing`, a program that does not answer within the bound is
+`NotAnswering`, a version that does not run is `Version`, and a file that is not set
+up is `Setup`. A missing `tart` or `softnet` at `start` or `build` is refused naming
+the install section. A `tart` that does not answer, or goes missing after `start`, is
+Tart unavailable and its slots wait. A `softnet` that does not answer counts as a
+refusal.
+
+A debug build replaces the owner and mode read from Softnet's file with
+`MARSHAL_TEST_SOFTNET_OWNER_MODE=<user ID>:<octal mode>`, such as `0:4755`, for the
+process tests of later slices, because CI cannot create a root-owned file. The
+file's type is still read, links followed. A release build ignores the variable, and
+a debug build refuses a malformed value. `Check`'s tests are in
+`cli/tests/host_prerequisites.rs`, against the fake `tart` and `fake-softnet`
+(`cli/helpers/fake_softnet.rs`, documented in its header, which prints Softnet's real
+form), and the parsers and the file judgment have unit tests in `macos`.
 
 ### CPU Placement
 

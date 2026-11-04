@@ -46,6 +46,12 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   building the image, running and stopping the pools, diagnostics and their
   recovery, health checks, rebuilding and updating, recovery, and rolling back to
   the PowerShell supervisor.
+- [operations/macos-runner-host.md](./operations/macos-runner-host.md) -
+  running Linux runners in Tart VMs on the Mac, the axmc host: installing Tart
+  and Softnet at the tested versions, setting up Softnet's SUID bit, the
+  signed-in session, the golden VM contract, and the sections that building,
+  running, sleep and network changes, removing a pool's VMs and verification
+  status will fill in.
 - [operations/cli.md](./operations/cli.md) - the CLI under `cli/`: what `validate`
   accepts and prints for the axpc and axmc host profiles, how it stays equal to the
   PowerShell validator, the shared fixtures and the parity test, the runtime layer

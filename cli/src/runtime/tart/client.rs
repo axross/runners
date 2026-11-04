@@ -213,6 +213,54 @@ fn captured(code: Option<i32>, stdout: &Sink, stderr: &Sink) -> Captured {
     }
 }
 
+/// runs `command` to its end within `budget` with its standard output and error
+/// piped and cut at [`MAX_OUTPUT_BYTES`], and `input` on its standard input when
+/// there is some, else a null one; the child is killed when the future is dropped or
+/// the budget ends. The Softnet version read runs through it too.
+pub(crate) async fn capture_command(
+    mut command: Command,
+    input: Option<&[u8]>,
+    budget: Duration,
+) -> Result<Captured, TartError> {
+    command
+        .stdin(if input.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = command.spawn().map_err(TartError::Unavailable)?;
+    let (stdout, stderr) = (Sink::default(), Sink::default());
+    let (stdin_pipe, stdout_pipe, stderr_pipe) =
+        (child.stdin.take(), child.stdout.take(), child.stderr.take());
+    let call = async {
+        let write = async {
+            if let (Some(mut pipe), Some(input)) = (stdin_pipe, input) {
+                // a client that ends without reading all of it shows in its status
+                let _ = pipe.write_all(input).await;
+            }
+        };
+        let read_stdout = async {
+            if let Some(pipe) = stdout_pipe {
+                drain(pipe, stdout.clone()).await;
+            }
+        };
+        let read_stderr = async {
+            if let Some(pipe) = stderr_pipe {
+                drain(pipe, stderr.clone()).await;
+            }
+        };
+        tokio::join!(write, read_stdout, read_stderr);
+        child.wait().await
+    };
+    let status = tokio::time::timeout(budget, call)
+        .await
+        .map_err(|_| TartError::TimedOut(budget))?
+        .map_err(TartError::Unavailable)?;
+    Ok(captured(status.code(), &stdout, &stderr))
+}
+
 fn operand(value: &str) -> Result<&str, TartError> {
     if value.is_empty() || value.starts_with('-') {
         return Err(TartError::Refused(format!(
@@ -309,41 +357,7 @@ impl TartClient {
         input: Option<&[u8]>,
         budget: Duration,
     ) -> Result<Captured, TartError> {
-        let mut command = self.command(arguments);
-        command.stdin(if input.is_some() {
-            Stdio::piped()
-        } else {
-            Stdio::null()
-        });
-        let mut child = command.spawn().map_err(TartError::Unavailable)?;
-        let (stdout, stderr) = (Sink::default(), Sink::default());
-        let (stdin_pipe, stdout_pipe, stderr_pipe) =
-            (child.stdin.take(), child.stdout.take(), child.stderr.take());
-        let call = async {
-            let write = async {
-                if let (Some(mut pipe), Some(input)) = (stdin_pipe, input) {
-                    // a client that ends without reading all of it shows in its status
-                    let _ = pipe.write_all(input).await;
-                }
-            };
-            let read_stdout = async {
-                if let Some(pipe) = stdout_pipe {
-                    drain(pipe, stdout.clone()).await;
-                }
-            };
-            let read_stderr = async {
-                if let Some(pipe) = stderr_pipe {
-                    drain(pipe, stderr.clone()).await;
-                }
-            };
-            tokio::join!(write, read_stdout, read_stderr);
-            child.wait().await
-        };
-        let status = tokio::time::timeout(budget, call)
-            .await
-            .map_err(|_| TartError::TimedOut(budget))?
-            .map_err(TartError::Unavailable)?;
-        Ok(captured(status.code(), &stdout, &stderr))
+        capture_command(self.command(arguments), input, budget).await
     }
 
     /// the VMs Tart holds, local ones and cached images. A listing cut at

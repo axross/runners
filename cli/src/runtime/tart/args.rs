@@ -16,6 +16,12 @@ fn strings<const N: usize>(words: [&str; N]) -> Vec<String> {
     words.into_iter().map(str::to_string).collect()
 }
 
+/// `tart --version`.
+#[must_use]
+pub fn version_arguments() -> Vec<String> {
+    strings(["--version"])
+}
+
 /// `tart list --format json`.
 #[must_use]
 pub fn list_arguments() -> Vec<String> {

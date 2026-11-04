@@ -97,15 +97,21 @@ impl Fake {
     /// whether call `number` ends within `within`, seen through the lock it holds
     /// while it lives.
     pub fn ended_within(&self, number: usize, within: Duration) -> bool {
-        let alive = self.dir.path().join(format!("inv-{number:06}.alive"));
-        let (ended, wait) = mpsc::channel();
-        std::thread::spawn(move || {
-            let file = fs::File::open(alive).unwrap();
-            file.lock().unwrap();
-            let _ = ended.send(());
-        });
-        wait.recv_timeout(within).is_ok()
+        ended_within(self.dir.path(), number, within)
     }
+}
+
+/// whether call `number` recorded in `dir` ends within `within`, seen through the
+/// lock it holds while it lives.
+pub fn ended_within(dir: &Path, number: usize, within: Duration) -> bool {
+    let alive = dir.join(format!("inv-{number:06}.alive"));
+    let (ended, wait) = mpsc::channel();
+    std::thread::spawn(move || {
+        let file = fs::File::open(alive).unwrap();
+        file.lock().unwrap();
+        let _ = ended.send(());
+    });
+    wait.recv_timeout(within).is_ok()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
