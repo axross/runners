@@ -6,7 +6,7 @@
 # the installer. macOS ships bash 3.2, so this uses nothing newer.
 set -euo pipefail
 
-identifier="io.github.axross.runners.marshal"
+identifier="app.axross.marshal"
 
 if [[ $# -ne 3 ]]; then
   echo "Usage: build-pkg.sh <binary> <version> <output>" >&2

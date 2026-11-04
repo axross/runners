@@ -528,7 +528,7 @@ run_block macos-uninstall "installed=${installed}"
 assert_passed
 assert_called "marshal ${installed} stop"
 assert_called "sudo rm -f ${installed}"
-assert_called "sudo pkgutil --forget io.github.axross.runners.marshal"
+assert_called "sudo pkgutil --forget app.axross.marshal"
 assert_absent "$installed"
 assert_absent "$STANDIN_RECEIPT"
 finish_case
@@ -579,7 +579,7 @@ make_marshal "$installed" "$version" "" 0
 : >"$STANDIN_RECEIPT"
 export STANDIN_SUDO_FORGET_FAIL=1
 run_block macos-uninstall "installed=${installed}"
-assert_refused "the receipt for io.github.axross.runners.marshal could not be forgotten"
+assert_refused "the receipt for app.axross.marshal could not be forgotten"
 assert_called "sudo rm -f ${installed}"
 assert_absent "$installed"
 assert_exists "$STANDIN_RECEIPT"

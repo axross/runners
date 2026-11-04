@@ -1549,7 +1549,7 @@ Installer `ProductVersion`'s limits (major and minor at most 255, patch at most
   dialogs and no UI extension, and its only custom action is the error message
   for the downgrade, which runs no code.
 - The pkg is built by [`build-pkg.sh`](../../.github/scripts/build-pkg.sh) with
-  `pkgbuild`, identifier `io.github.axross.runners.marshal`, `--ownership recommended`,
+  `pkgbuild`, identifier `app.axross.marshal`, `--ownership recommended`,
   and a payload of `usr/local/bin/marshal` with mode 0755. It has no scripts.
 
 [`test-msi-installer.ps1`](../../.github/scripts/tests/test-msi-installer.ps1)
@@ -2020,7 +2020,7 @@ On macOS, in bash or zsh:
   set -euo pipefail
   refuse() { echo "refused: $*" >&2; exit 1; }
   installed=/usr/local/bin/marshal
-  identifier=io.github.axross.runners.marshal
+  identifier=app.axross.marshal
 
   if ! pkgutil --pkg-info "$identifier" >/dev/null 2>&1; then
     echo "The marshal package is not installed; nothing to uninstall."

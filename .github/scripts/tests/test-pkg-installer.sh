@@ -23,7 +23,7 @@ release_version="$3"
 installer_version="$4"
 log_directory="$5"
 
-identifier="io.github.axross.runners.marshal"
+identifier="app.axross.marshal"
 installed="/usr/local/bin/marshal"
 logs_directory="${HOME}/Library/Logs/marshal"
 logs_marker="${logs_directory}/installer-test.marker"
