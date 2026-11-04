@@ -57,12 +57,12 @@ path from being read whole. It is a rule of the CLI, pinned by
 The uniqueness checks compare every pair of entries, so their time grows with the
 square of the number of entries, and it grows with the labels per entry too. On a
 release build in a 4-CPU cloud container, 8,000 entries (about 0.8 MB) in distinct
-repositories take about 0.6 s when nothing collides, and 8,000 entries in one
-repository with a distinct label each take about 0.9 s. With many labels per entry it takes
+repositories take about 1 s when nothing collides, and 8,000 entries in one
+repository with a distinct label each take about 1.1 s. With many labels per entry it takes
 longer: 1,500 entries in one repository with 50 labels each take about 3 s. Colliding
 entries grow the error output with the square too, because every error is reported:
 8,000 entries in one repository with the default labels print about 32 million error
-lines and use about 9 GB of memory, and several collisions per pair or shorter entries
+lines and use about 8.4 GB of memory, and several collisions per pair or shorter entries
 (the 1 MiB limit fits about 11,900) give more. The 1 MiB limit bounds both. Real
 configurations are expected to have about ten entries.
 
