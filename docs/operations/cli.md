@@ -424,8 +424,8 @@ quota and affinity cover all of the host's vCPUs, 0 to `cpus` - 1, with its memo
 limit equal to the host's memory. The image defaults to `actions-runner:local` when
 `imageName` is absent. `start` and the core apply that default, and `validate` and
 its summary do not. The macOS pools of a plan are not made into pools. The VM
-runtime is the [Tart Backend](#tart-backend), which `start` runs; `build` does not
-build its golden VM yet:
+runtime is the [Tart Backend](#tart-backend), which `start` runs, and
+`build --profile axmc` makes its golden VM:
 
 - `start --profile axmc` runs the Linux pools on the Tart backend. Each macOS pool
   is skipped: the core logs `Skipping pool <pool>: macOS VM pools are not supported yet`
@@ -438,13 +438,11 @@ build its golden VM yet:
   Windows host, `start --profile axmc` exits 1 first, before taking the lock or
   calling any engine, with `error: the axmc profile runs only on macOS`; a Linux
   host is refused as unsupported, as under [Start](#start).
-- `build --profile axmc` exits 1 after taking the lock and validating, and prints:
+- `build --profile axmc` makes the golden VM, as
+  [The Golden VM Build](#the-golden-vm-build) describes. On a Windows host it exits 1
+  first, before taking the lock, with `error: the axmc profile runs only on macOS`.
 
-  ```text
-  error: the configuration is valid, but this version of marshal cannot build axmc's golden VM yet
-  ```
-
-That refusal prints on standard error, as every `start` and `build` error before
+A refusal prints on standard error, as every `start` and `build` error before
 the log opens. axpc is unaffected: its commands, messages, exit codes, and the run
 contract keep their text.
 
@@ -455,10 +453,10 @@ bundle. The exporter child's admission, bundle files, limits, exit codes, and
 deadline do not depend on the transport. Its first transport, `DockerCopy`, runs
 `docker inspect` and `docker cp` as [Backend](#backend) lists them.
 
-A unit test in `runtime::select` pins the table. `build_command.rs` pins the build
-refusal text and its exit code. `axmc_start.rs` runs a configuration of Linux and
-macOS pools, and one of macOS pools alone, through `start` as processes, and a
-unit test in `profile` pins the Windows refusal. Unit tests in `diagnostics::exporter` write a complete bundle, a
+A unit test in `runtime::select` pins the table. `axmc_start.rs` runs a
+configuration of Linux and macOS pools, and one of macOS pools alone, through
+`start` as processes, unit tests in `profile` and `build` pin the Windows refusal,
+and `golden_build.rs` runs the golden VM build. Unit tests in `diagnostics::exporter` write a complete bundle, a
 gap, and the failed bundles of an unreadable identity and a failed archive through a
 scripted transport, and the
 diagnostics tests listed under [Diagnostics](#diagnostics) run the exporter through
@@ -627,8 +625,9 @@ closes it when it is dropped.
 The axmc runtime runs two programs it does not ship: `tart`, and `softnet`, which
 Tart runs. `macos::prerequisites` checks both and returns a `Check`: a pass, a
 warning, or a refusal that carries a `Cause` and its message. The
-[Tart Backend](#tart-backend) calls it before each boot, and `start`, `restart` and
-the resume of a stopped instance call it before anything is started. The tested versions are constants in `macos::version`, Tart 2.41.1 and Softnet
+[Tart Backend](#tart-backend) calls it before each boot, `start`, `restart` and
+the resume of a stopped instance call it before anything is started, and
+[`build --profile axmc`](#the-golden-vm-build) calls it before it creates any VM. The tested versions are constants in `macos::version`, Tart 2.41.1 and Softnet
 0.25.0, and the host document records them in
 [Installing Tart and Softnet](./macos-runner-host.md#installing-tart-and-softnet);
 a change of either is a change of the constant, the document, and the fake programs'
@@ -706,8 +705,8 @@ form), and the parsers and the file judgment have unit tests in `macos`.
 
 ### Golden VM Provisioning
 
-The `golden` module holds what `build --profile axmc` will use to provision the
-golden VM; nothing calls it yet. `golden::pins` records the base image by its
+The `golden` module holds what `build --profile axmc` uses to provision the
+golden VM; [The Golden VM Build](#the-golden-vm-build) sequences it. `golden::pins` records the base image by its
 digest (`ghcr.io/cirruslabs/ubuntu`, tag `24.04`, arm64), the list of retired base
 pins, Docker's apt repository and signing-key fingerprint, the four Docker Engine
 packages at their pinned versions (Compose is not installed), and the launcher's
@@ -739,6 +738,10 @@ The launcher reads the JIT configuration from standard input to its end, sets
 then `exec`s with its own arguments, and refuses an empty input or one over 64 KiB
 with exit code 64, without printing the input. The Tart runtime will call it as
 `tart exec -i <vm> /usr/local/bin/marshal-launch <docker run arguments>`.
+
+`golden::steps::build_vm_docker_command` is the prefix the build uses to run `docker`
+in the build VM, `sudo -n docker`, because the `docker` group applies only from the
+guest agent's next start; see [The Golden VM Build](#the-golden-vm-build).
 
 ### CPU Placement
 
@@ -1743,9 +1746,9 @@ these in order:
    nothing, naming the instance's state when this user's channel answers within
    5 s, and otherwise giving `start`'s message for a lock held elsewhere.
 2. It validates the configuration as `validate` does; an invalid one exits 1.
-   `--profile axmc` exits 1 after validation with the refusal that
-   [Runtime Seam](#runtime-seam) gives. An image name given by digest is refused,
-   because it cannot be tagged. It prints the name it builds.
+   `--profile axmc` then builds the golden VM instead, as
+   [The Golden VM Build](#the-golden-vm-build) describes. An image name given by
+   digest is refused, because it cannot be tagged. It prints the name it builds.
 3. It contains its children as `start` does on Windows, and opens the control
    channel. While it builds, `status` answers `state: building`, `image: <name>`,
    and `elapsed: <s> s`; a `start`, a resume, `restart`, and `diagnostics` are refused, naming
@@ -1805,6 +1808,111 @@ console close can leave one too. The next `build` removes it.
 | 0    | The configured name holds the new image                                              |
 | 1    | A refused, invalid, or failed `build`, Docker not answering, or an uncommitted abort |
 | 2    | A usage error                                                                        |
+
+On axmc, exit 0 means the golden VM holds the new image, and exit 1 a refused, failed or
+stopped build that left the golden VM as it was.
+
+#### The Golden VM Build
+
+`build --profile axmc` makes the golden VM that every job VM is cloned from
+(`build::golden`). It takes the lock, validates, contains and opens the control channel
+as above, and answers `status` and `stop` the same way, but it calls `tart`, not
+`docker`. A debug build runs the `tart` that `MARSHAL_TEST_TART` names, and a release
+build always runs `tart` from `PATH`, as the [Tart Backend](#tart-backend) does. It
+does these in order:
+
+1. **Prerequisites.** It reads Tart's version, then finds Softnet on the `PATH` the Tart
+   client carries and judges its file and version, as
+   [Host Prerequisites](#host-prerequisites) says. A refusal, a missing `tart` or
+   `softnet` included, exits 1 before any VM exists, with a message that names the
+   host document's section ([Installing Tart and Softnet](./macos-runner-host.md#installing-tart-and-softnet)
+   or [Setting Up Softnet](./macos-runner-host.md#setting-up-softnet)). A warning, such
+   as a newer patch version, is logged and the build runs. `build` does not wait for
+   Tart, as it does not wait for Docker.
+2. **Leftovers.** Every local VM whose name is `marshal-build-linux-<yyyyMMddHHmmssfff>`
+   is stopped forcibly and deleted, within 15 s each. These are the build VMs of
+   a CLI that died: its [VM shim](#the-vm-shim) deletes its VM when the CLI is gone,
+   and this deletes any that the shim could not. A VM that cannot be deleted is a
+   warning.
+3. **Pull and clone.** `tart pull` of the base image by its pinned digest
+   (`golden::pins::BASE_REFERENCE`), within 30 min, and `tart clone` of it to a new
+   build VM, `marshal-build-linux-<yyyyMMddHHmmssfff>`. The name is recorded before
+   the clone runs, so a clone that fails halfway is deleted. The build VM keeps the
+   base's CPUs, memory and 20 GB disk: the build does not run `tart set`, because no
+   job needs more than the image build takes, and every job VM is sized from the pool
+   when it is cloned.
+4. **Boot.** `tart run` under the VM shim (this program run again, as for a job VM),
+   then the wait for the guest agent, every second with each question bounded at 5 s,
+   until it answers, `tart run` ends, or 120 s pass. A boot that fails has the job VM
+   boot failure's text, naming the build VM, and the same section,
+   [The Signed-In Session](./macos-runner-host.md#the-signed-in-session). The wait is
+   `tart::boot`, which the Tart backend's job VM boot shares.
+5. **Provisioning.** The six guest calls of [Golden VM Provisioning](#golden-vm-provisioning),
+   in order, each through `tart exec` with its own budget. Their output is read as data,
+   cut at 64 KiB, and appears only in the message of a call that failed, on one line. A
+   call that exits non-zero fails the build. The listing from the third call goes to
+   `golden::key`; a mismatch, a second key, or an empty or oversize listing fails the
+   build before the fourth call, which installs from Docker's repository.
+6. **The image.** It waits up to 60 s for the Docker Engine in the VM (`docker info`
+   every 2 s, each bounded at 10 s), then builds the runner image from the definition
+   embedded in the binary, with the context on the standard input of
+   `tart exec -i`, and follows the axpc flow as far as a new VM needs: the one
+   `docker build` with exactly axpc's arguments under the temporary tag
+   `<repository>:marshal-build-<yyyyMMddHHmmssfff>` in UTC, a `docker image inspect` of
+   the labels that requires this CLI's image contract, a `docker tag` to the configured
+   `imageName`, and the removal of the temporary tag (a failure of the removal is a
+   warning). It does not remove earlier temporary tags or prune dangling images,
+   because the VM is new. The build's output is forwarded to the log line by line,
+   masked and cut as a container's output is.
+7. **Commit.** `tart stop` of the build VM, which asks the guest to shut down and
+   gives it 60 s, within 90 s, then the wait for `tart run` to end, then
+   `tart rename` to the golden name,
+   `marshal-golden-linux-g<golden VM version>-c<image contract version>-r<runner version>-<yyyyMMddHHmmss>`
+   with the build time. **The rename is the commit.**
+8. **After the commit.** It deletes every other golden VM, whatever its versions, and
+   removes from Tart's cache each image named in `golden::pins::RETIRED_BASE_PINS`, with
+   `tart delete`; the current pin is never deleted, and the list never holds it. A
+   failure of any of these is a warning that the next `build` tries again, and
+   `build` still exits 0, because the newest golden VM is the one used.
+
+`imageName` is optional on axmc. When it is absent, `build` names the image
+`actions-runner:local` (`runtime::pool::DEFAULT_IMAGE_NAME`), and `validate` and its
+summary do not change.
+
+**The Docker group.** The fourth guest call adds `admin` to the `docker` group, but a
+group change reaches `tart exec` commands only when the guest agent next starts, and
+the build VM is not restarted. The image build therefore runs `sudo -n docker`
+(`golden::steps::build_vm_docker_command`), where it could instead have rebooted the VM,
+which would add a boot and a second wait for the agent. Job VMs, which boot from the
+golden VM, run `docker` as `admin` without `sudo`.
+
+**Stop and failure.** Any failure, and `stop`, SIGINT, SIGTERM and SIGHUP at any step
+before the rename, drop the call in flight, which kills its `tart` client, and delete
+the build VM: a graceful stop and then a forced stop if that fails, then `tart delete`,
+within 15 s as one `teardown` budget (7.5 s, 3 s, 3 s and 1.5 s for a listing). The previous golden VM is not touched.
+The exit deadline of 28 s from the stop applies as it does on axpc, and at it `build`
+exits 1, naming that the VM shim or the next build deletes the build VM. The rename has
+the same grace as axpc's retag: when a stop arrives during it, `tart rename` gets up to
+5 s from the stop, and then a listing, within 4 s, says whether the golden name exists.
+If it does, the build has committed and `build` exits 0; if it does not, the build VM is
+deleted and `build` exits 1; if the listing fails, the exit is 1 with "commit unknown"
+and the golden name to look for. After the rename, a stop skips the rest of the
+clean-up, and `build` exits 0.
+
+**A CLI that dies.** A build VM is held by a [VM shim](#the-vm-shim), so a CLI that is
+killed, or crashes, leaves its build VM to the shim, which stops and deletes it within
+15 s. A shim that is killed too leaves it to the next `build`, which deletes every build
+VM by name form.
+
+**Keep-awake.** `build` holds no keep-awake and ignores the sleep and network signals,
+which only a running instance reacts to. A Mac that sleeps during a build stops the VM's
+work, and the build fails or is stopped; the host document tells the operator to keep
+the Mac awake.
+
+**Windows.** `build --profile axmc` on Windows exits 1 before the lock, the
+configuration and any engine, with `error: the axmc profile runs only on macOS`. The
+code compiles on Windows and holds the VM with `VmLauncher::Direct` there, which no run
+reaches.
 
 ### The Log
 
@@ -1947,7 +2055,19 @@ build runs. The unit tests in `cli/src/build/steps.rs` run the steps against a
 stop, which prunes when it committed and is reported as a stall when it did not,
 and one that succeeds within a stop's grace, which commits without an inspect.
 `image_check.rs` runs `start` against images that cannot run jobs.
-`real_docker_build.rs` runs `build` through a real Docker daemon on Linux, with the
+`golden_build.rs` runs the axmc build ([The Golden VM Build](#the-golden-vm-build))
+against the fake `tart`, `softnet` and `docker`, which are scripted per step: the order
+of the calls and the build VM's name; a failure scripted at the pull, the clone, the boot,
+each provisioning call, the engine wait, the image build, the contract check, the tag, the
+shutdown and the rename, each of which deletes the build VM and keeps the old golden VM,
+with the rename only after success; a key with another fingerprint and an empty listing,
+which fail before anything is installed; a stop at the pull, the clone, a provisioning
+call and the image build, each within the stop sequence; a stop after the rename;
+leftover build VMs deleted before the pull; the other golden VMs and only the retired
+pins deleted after the commit; `TART_NO_AUTO_PRUNE` and `PATH` on every call; and, as a
+real process under the VM shim, a missing `tart` or `softnet` exiting 1 before any VM
+boots, the default and the configured image name, SIGINT within 30 s, and a killed CLI
+whose build VM the shim deletes. `real_docker_build.rs` runs `build` through a real Docker daemon on Linux, with the
 test definition in `cli/tests/build-definition/`, the runner image's digest-pinned
 base and its declared labels, and fails unless the result carries all five labels,
 no temporary tag remains, and the container backend's image check finds the image

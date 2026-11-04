@@ -15,9 +15,9 @@ equivalent is [Windows Runner Host](./windows-runner-host.md).
 it checks the host prerequisites below, and then each slot runs a job VM per job,
 cloned from the golden VM, with the run contract's Docker commands run inside it.
 It skips each macOS pool with a warning, because macOS VM pools are not supported
-yet, and exits 1 when every pool is skipped. `marshal build --profile axmc` still
-refuses to run: the golden VM cannot be built by `marshal` yet. The procedures below
-that run Tart, Softnet or `marshal` on a Mac have not been run there yet; see
+yet, and exits 1 when every pool is skipped. `marshal build --profile axmc` builds
+the golden VM. The procedures below that run Tart, Softnet or `marshal` on a Mac
+have not been run there yet; see
 [Verification Status](#verification-status).
 
 ## Installing Tart and Softnet
@@ -133,16 +133,97 @@ version>-<yyyyMMddHHmmss>`. A build VM is
   left behind is stopped and deleted, and its diagnostic evidence, if the pool
   collects it, is not exported.
 
-The base image and its digest and the steps of the golden VM's build are added here
-with the command that uses them.
+- **The base image** is `ghcr.io/cirruslabs/ubuntu:24.04`, pinned by the digest of its
+  manifest (`golden::pins::BASE_REFERENCE`): arm64 Ubuntu 24.04 with a 20 GB disk and
+  the guest agent, and no Docker. The golden VM keeps that disk size, so a pool's
+  `diskGb` is at least 20. `build` pulls it by digest, so a tag that moves changes
+  nothing, and removes from Tart's cache only the digests of the retired base pins that
+  the CLI lists. A change of the pin raises the golden VM version and adds the old pin
+  to that list.
+- **What the build installs.** The Ubuntu packages are upgraded. Docker Engine, `docker-ce`,
+  `docker-ce-cli`, `containerd.io` and `docker-buildx-plugin`, comes from Docker's apt
+  repository at pinned package versions, which apt holds, after the repository's signing
+  key has matched a recorded fingerprint. Docker Compose is not installed. The launcher is
+  `/usr/local/bin/marshal-launch`, owned by root, mode 0755. The `admin` password is
+  locked and SSH is masked, so the base image's `admin`/`admin` login cannot be used; the
+  guest agent does not use SSH. The runner image is built inside the VM under the
+  configured `imageName`, which is `actions-runner:local` when the configuration gives
+  none, and carries this CLI's image contract.
+- **The launcher's input** is the JIT configuration on standard input and the arguments
+  of a `docker run` as arguments; see a slot's cycle above.
+- **Who deletes what.** Only `build` creates and deletes golden and build VMs. A build
+  makes its VM under the build name, renames it to the golden name only when it is
+  complete, and deletes every other golden VM only after that. A failed or interrupted
+  build leaves the previous golden VM in place.
 
 ## Building the Golden VM
 
-`marshal build --profile axmc` will build the golden VM and replace the previous
-one only when the new one is complete. This section will hold its procedure: the
-prerequisites, the disk it needs beyond the pools' (the 40 GB reserve that
-`validate` counts), keeping the Mac awake for the whole build, and what a failed or
-interrupted build leaves behind.
+`marshal build --profile axmc --config <path>` builds the golden VM and replaces the
+previous one only when the new one is complete. Run it after installing Tart and
+Softnet, after any change of the CLI that raises the golden VM version or the image
+contract version, when `marshal` reports a missing, mismatched or old golden VM, and
+as often as the freshness warnings ask.
+
+**Before you start**
+
+- `marshal` must not be running, and no other `build`: the build takes the same
+  instance lock as `start`, and exits 1 saying so otherwise.
+- Tart and Softnet must be installed and set up as the sections
+  [Installing Tart and Softnet](#installing-tart-and-softnet) and
+  [Setting Up Softnet](#setting-up-softnet) say. The build checks both before it creates
+  any VM, and exits 1 naming the section when one is missing or wrong.
+- Sign in at the Mac's screen and run `marshal` from a terminal in that session, as
+  [The Signed-In Session](#the-signed-in-session) says: the build boots a VM too.
+- **Keep the Mac awake for the whole build.** `build` holds no keep-awake and ignores
+  the sleep and network signals that stop a running instance. A Mac that goes to sleep
+  during the build stops the VM's work, and the build then fails or has to be stopped.
+  Turn off the Mac's sleep for the time being, or run `caffeinate -i` in another
+  terminal until the build ends.
+- The disk: the pull caches the 20 GB base image, the build VM is a clone of it that
+  grows while the runner image is built, and the finished golden VM stays. This is the
+  40 GB that `validate` reserves beyond the pools' own disks. The build VM keeps the
+  base's 20 GB disk; the runner image and Docker's layers have to fit in it, and a build
+  that runs out of disk fails at the image build with the output of Docker in its log.
+
+**What it does**
+
+1. Checks the prerequisites above.
+2. Deletes any build VM an earlier build left behind, `marshal-build-linux-<time>`.
+3. Pulls the base image by its digest and clones it to a new build VM, which keeps the
+   base's CPUs and memory.
+4. Boots the build VM on Softnet and waits up to 120 s for its guest agent.
+5. Upgrades the Ubuntu packages, installs Docker Engine at the pinned versions after
+   checking Docker's signing key against its recorded fingerprint, installs the
+   launcher, and disables the SSH login. A key whose fingerprint is not the recorded one
+   fails the build before anything is installed from Docker.
+6. Builds the runner image inside the VM, from the definition embedded in `marshal`,
+   with the arguments `build` gives it on axpc, under the configured `imageName`, and
+   checks its image contract label. This needs the VM to reach the network: Docker's
+   repository, the Ubuntu archive, and the registries the Dockerfile pulls from, on
+   Softnet's rules, which allow globally routable addresses.
+7. Shuts the VM down and renames it to the golden name,
+   `marshal-golden-linux-g<golden VM version>-c<image contract version>-r<runner version>-<time>`.
+   This rename is the moment the new golden VM takes over.
+8. Deletes every other golden VM and the retired base images from Tart's cache. A failure
+   here is only a warning; the next build tries again, and the newest golden VM is the one
+   that is used.
+
+**If it fails or is interrupted.** Ctrl+C, `marshal stop` from another terminal, and a
+failure at any step before the rename delete the build VM within the 30 s stop sequence
+and leave the previous golden VM as it was, so `start` is not affected. After the rename
+the new golden VM stays, and a stop only skips the clean-up in step 8. If `marshal` is
+killed or crashes mid-build, a helper process stops and deletes the build VM within 15 s;
+if that fails too, the next `marshal build` deletes it by its name. `tart list` shows
+whatever is left: `marshal-build-linux-<time>` is a build VM that is safe to delete with
+`tart delete`, and `marshal-golden-linux-...` is a golden VM.
+
+**Which command line.** `marshal build --profile axmc` is only for macOS. On Windows it
+exits 1 saying that the axmc profile runs only on macOS. `--profile` defaults to axmc on
+macOS. The build prints its steps to the terminal, and the image build's own output
+line by line.
+
+The procedure above has not been run on a Mac yet; see
+[Verification Status](#verification-status).
 
 ## Running the Host
 
@@ -185,8 +266,9 @@ the maintainer's Mac, and their evidence is posted on
 the version parsing and sorting of both programs, and the judgment of Softnet's file
 and the search for it on `PATH`, against fake `tart` and `softnet` programs in the
 CLI's tests; and the VM runtime's slot cycle, probes, run arguments, release and VM
-shim, against fake `tart`, `docker` and `softnet` programs; and `marshal start`
-on the axmc profile as a process against the same fakes: the skipped macOS pools,
-each refusal before any VM boots, a held slot, and a refused resume. The guest user comes from
+shim, and the golden VM build with its failure and stop cases, against fake
+`tart`, `docker` and `softnet` programs; and `marshal start` on the axmc profile as
+a process against the same fakes: the skipped macOS pools, each refusal before any
+VM boots, a held slot, and a refused resume. The guest user comes from
 the guest agent's source and has not been seen on a running VM. No real Tart VM, guest
 agent or Softnet has run under `marshal`.
