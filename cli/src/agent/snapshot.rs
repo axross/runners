@@ -9,6 +9,9 @@ use super::wire::MAX_AGENT_MESSAGE_BYTES;
 /// the most configuration problems a snapshot lists.
 pub const MAX_PROBLEMS: usize = 100;
 
+/// the most characters a long text of the snapshot keeps once nothing else can be cut.
+const TEXT_CHARS: usize = 512;
+
 /// room in a message for what wraps the snapshot: the type, the topic and the
 /// sequence number.
 const ENVELOPE_BYTES: usize = 256;
@@ -307,6 +310,15 @@ pub struct Omitted {
     /// pools, from the end, once no runner row was left to drop.
     #[serde(default)]
     pub pools: u32,
+    /// repositories, from the end, once no pool was left to drop.
+    #[serde(default)]
+    pub repositories: u32,
+    /// leftovers, from the end, once no pool was left to drop.
+    #[serde(default)]
+    pub leftovers: u32,
+    /// images, from the end, once no pool was left to drop.
+    #[serde(default)]
+    pub images: u32,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -374,6 +386,76 @@ impl Snapshot {
             self.pools.pop();
             self.omitted.pools += 1;
         }
+        if size(self) > limit {
+            self.fit_lists(limit);
+        }
+    }
+
+    /// what is left to cut once no pool is: the lists beside the pools from their ends,
+    /// then the configuration problems, and last the long texts, so that a snapshot
+    /// always fits and says what it left out.
+    fn fit_lists(&mut self, limit: usize) {
+        self.omitted.leftovers += self.keep_most(
+            limit,
+            |s| s.leftovers.len(),
+            |s, n| {
+                s.leftovers.truncate(n);
+            },
+        );
+        self.omitted.repositories += self.keep_most(
+            limit,
+            |s| s.repositories.len(),
+            |s, n| s.repositories.truncate(n),
+        );
+        self.omitted.images +=
+            self.keep_most(limit, |s| s.images.len(), |s, n| s.images.truncate(n));
+        let dropped = self.keep_most(
+            limit,
+            |s| s.configuration.problems.len(),
+            |s, n| s.configuration.problems.truncate(n),
+        );
+        self.omitted.problems += dropped;
+        if size(self) > limit {
+            for text in [&mut self.configuration.path, &mut self.agent.version] {
+                *text = text.chars().take(TEXT_CHARS).collect();
+            }
+            if let Some(reason) = &mut self.agent.reason {
+                reason.message = reason.message.chars().take(TEXT_CHARS).collect();
+            }
+            if let Some(build) = &mut self.agent.build {
+                build.message = build
+                    .message
+                    .take()
+                    .map(|text| text.chars().take(TEXT_CHARS).collect());
+            }
+        }
+    }
+
+    /// keeps the most entries of a list, found by halving, that bring the snapshot
+    /// within `limit`, and returns how many it cut; it keeps none when none helps.
+    fn keep_most(
+        &mut self,
+        limit: usize,
+        count: fn(&Self) -> usize,
+        truncate: fn(&mut Self, usize),
+    ) -> u32 {
+        let total = count(self);
+        if total == 0 || size(self) <= limit {
+            return 0;
+        }
+        let (mut low, mut high) = (0, total);
+        while low < high {
+            let middle = (low + high).div_ceil(2);
+            let mut trial = self.clone();
+            truncate(&mut trial, middle);
+            if size(&trial) <= limit {
+                low = middle;
+            } else {
+                high = middle - 1;
+            }
+        }
+        truncate(self, low);
+        u32::try_from(total - low).unwrap_or(u32::MAX)
     }
 
     /// a copy that keeps the first `keep` runner rows.
@@ -479,6 +561,48 @@ mod tests {
         assert!(size(&snapshot) <= MAX_SNAPSHOT_BYTES);
         assert!(snapshot.omitted.pools > 0);
         assert_eq!(snapshot.pools.len() + snapshot.omitted.pools as usize, 2000);
+    }
+
+    #[test]
+    fn lists_beside_the_pools_are_cut_too_so_a_snapshot_always_fits() {
+        let mut snapshot = Snapshot {
+            leftovers: (0..4000)
+                .map(|index| Leftover {
+                    kind: "container".to_string(),
+                    name: format!("container-{index}-{}", "x".repeat(40)),
+                })
+                .collect(),
+            repositories: (0..2000)
+                .map(|index| RepositoryInfo {
+                    repository: format!("owner/repository-{index}"),
+                    has_token: true,
+                    pools: vec![format!("pool-{index}")],
+                })
+                .collect(),
+            runners_up: 7,
+            ..Snapshot::default()
+        };
+        snapshot.fit(MAX_SNAPSHOT_BYTES);
+        assert!(size(&snapshot) <= MAX_SNAPSHOT_BYTES);
+        assert_eq!(
+            snapshot.leftovers.len() + snapshot.omitted.leftovers as usize,
+            4000
+        );
+        assert!(snapshot.omitted.leftovers > 0);
+        assert_eq!(snapshot.runners_up, 7);
+    }
+
+    #[test]
+    fn a_snapshot_with_huge_texts_falls_back_to_short_ones() {
+        let mut snapshot = Snapshot::default();
+        snapshot.agent.reason = Some(Reason {
+            code: "invalid_configuration".to_string(),
+            message: "y".repeat(200_000),
+        });
+        snapshot.configuration.path = "p".repeat(100_000);
+        snapshot.fit(MAX_SNAPSHOT_BYTES);
+        assert!(size(&snapshot) <= MAX_SNAPSHOT_BYTES);
+        assert_eq!(snapshot.agent.reason.unwrap().message.len(), TEXT_CHARS);
     }
 
     #[test]
