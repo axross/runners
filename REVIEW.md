@@ -198,8 +198,10 @@ uses its native priority label.
   line, and never part of the VM's image.
 - **Guest output is bounded.** Every guest-agent call's captured output is cut off
   at a fixed bound (64 KiB), and the CLI never parses it beyond its expected form.
-  An unbounded read of a guest call, or a parse that trusts its shape, is a
-  finding.
+  The one exception is the diagnostics export's `docker cp` archive, which
+  `VmCopy` streams; the strict archive reader and the bundle limits bound it
+  instead. An unbounded read of any other guest call, or a parse that trusts its
+  shape, is a finding.
 - **Deletion on every failure path.** Every exit from a slot's cycle after the
   clone, and from a build after its build VM exists, deletes that VM: an error, a
   failed probe, a boot failure, a stop, an interrupt and a timeout. A new early
@@ -282,7 +284,13 @@ Apply the lens for each kind of file in the diff.
   a container an earlier process left: no record exists, so a startup with the
   pool's diagnostics on adopts it with the pool's current settings. A path that
   removes one without trying its export while its clock allows, or finalises one
-  the backend already retains with a later plan's settings, is a finding. The sink checks refuse and never create, repair,
+  the backend already retains with a later plan's settings, is a finding. A
+  diagnostic VM on axmc is deleted without an export by design in exactly three
+  cases: a second SIGINT, a crashed `start` (the VM shim), and a leftover at the
+  next `start`, each reporting the diagnostic gap. A fourth export-less deletion
+  of a VM, or any of the three that reports no gap, is a finding (see
+  [CLI](docs/operations/cli.md#tart-backend), the paragraph "Evidence a VM
+  loses"). The sink checks refuse and never create, repair,
   or relax, and a new log line, warning, or channel answer names only the pool,
   the container, and the gap, never bundle contents. The exporter child and each
   of its `docker` clients end by their deadline and with `start`; a new wait in

@@ -683,6 +683,13 @@ how a bundle is written.
   recovery, so a later `start` with the pool's diagnostics off does not destroy its
   evidence. [CLI](../operations/cli.md#diagnostics) owns when a finalisation
   exports, and the cases where it removes a container without an export.
+- A diagnostic VM on axmc is the exception, by design: the VM is the retained
+  container, and it is deleted without an export in three cases only, a forced
+  stop (a second SIGINT), a crashed `start` whose VM shim deletes it, and a
+  leftover at the next `start`. Each reports a diagnostic gap that names only the
+  pool, the VM, and the gap. The paragraph "Evidence a VM loses" in the
+  [Tart backend](../operations/cli.md#tart-backend) section of the CLI document
+  owns the cases.
 
 ## `build` Builds Only What the Binary Embeds
 
@@ -765,7 +772,11 @@ four after it are the constraints the VM runtime of
   image.
 - Guest-agent output is data. Each call's captured output MUST be cut off at a fixed
   bound (64 KiB), and `marshal` MUST NOT parse it beyond its expected form. Logged
-  text is scrubbed and masked as container output is.
+  text is scrubbed and masked as container output is. The one exception is the
+  diagnostics export, which streams the `docker cp` archive out of the VM: the
+  strict archive reader and the bundle limits of
+  [Diagnostic Evidence Stays Private](#diagnostic-evidence-stays-private) bound it
+  instead.
 - Every `tart` call MUST set `TART_NO_AUTO_PRUNE`, so a clone never deletes an image
   another program cached; MUST get `marshal`'s own `PATH`, which `marshal` also uses
   to find `tart` and `softnet`; and MUST have a standard output that is not a
