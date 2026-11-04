@@ -7,20 +7,16 @@
 use std::ffi::OsStr;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{ExitCode, Stdio};
+use std::process::ExitCode;
 
-use tokio::io::{AsyncRead, AsyncReadExt};
-use tokio::process::Child;
 use tokio::sync::oneshot;
 use tokio::time::Instant;
 
 use crate::runtime::diagnostic::BUNDLE_QUOTA;
-use crate::runtime::docker::client_command;
-use crate::runtime::docker_args::{copy_arguments, identity_arguments};
 
-use super::archive::{ArchiveError, EntrySink, MAX_METRICS_BYTES, METRICS_FILE, read_archive};
-use super::identity::{MAX_IDENTITY_BYTES, identity_text};
+use super::archive::{EntrySink, MAX_METRICS_BYTES, METRICS_FILE};
 use super::sink::{checked_sink, count_bundles, create_bundle, create_file};
+use super::transport::{DockerCopy, EvidenceTransport};
 use super::{
     ADMITTED, BUNDLES, EXIT_COMPLETE, EXIT_FAILED, EXIT_GAP, EXIT_SINK_FULL, ExportRequest,
 };
@@ -31,9 +27,6 @@ pub const COMPLETE_TEXT: &str = "export complete; evidence remains untrusted and
 /// the line of `metrics.txt` the collector writes once it observed the runner's end.
 const FINAL_OBSERVED: &str = "final=observed";
 
-/// the most bytes a copy client may print after the end of its archive.
-const MAX_TRAILER_BYTES: u64 = 1024 * 1024;
-
 /// runs the exporter for `request` and returns its exit code.
 #[must_use]
 pub fn run(request: &ExportRequest, docker: &OsStr) -> ExitCode {
@@ -43,7 +36,7 @@ pub fn run(request: &ExportRequest, docker: &OsStr) -> ExitCode {
     else {
         return ExitCode::from(EXIT_FAILED);
     };
-    let code = runtime.block_on(supervise(request, docker));
+    let code = runtime.block_on(supervise(request, &DockerCopy::new(docker)));
     // a blocking thread stuck in the sink is left behind; the process ends anyway
     runtime.shutdown_background();
     ExitCode::from(code)
@@ -59,7 +52,7 @@ fn input_closed() -> oneshot::Receiver<()> {
     receiver
 }
 
-async fn supervise(request: &ExportRequest, docker: &OsStr) -> u8 {
+async fn supervise(request: &ExportRequest, transport: &impl EvidenceTransport) -> u8 {
     let deadline = Instant::now() + request.deadline;
     let closed = input_closed();
     // dropping the export kills its clients, which were started to die with it
@@ -67,7 +60,7 @@ async fn supervise(request: &ExportRequest, docker: &OsStr) -> u8 {
         biased;
         _ = closed => EXIT_FAILED,
         () = tokio::time::sleep_until(deadline) => EXIT_FAILED,
-        code = export(request, docker) => code,
+        code = export(request, transport) => code,
     }
 }
 
@@ -81,7 +74,7 @@ fn say(line: &str) {
     let _ = out.flush();
 }
 
-async fn export(request: &ExportRequest, docker: &OsStr) -> u8 {
+async fn export(request: &ExportRequest, transport: &impl EvidenceTransport) -> u8 {
     let (directory, checkout) = (request.directory.clone(), request.checkout.clone());
     let Some(Ok(sink)) = blocking(move || checked_sink(&directory, checkout.as_deref())).await
     else {
@@ -105,7 +98,7 @@ async fn export(request: &ExportRequest, docker: &OsStr) -> u8 {
     };
     say(ADMITTED);
     say(&format!("{BUNDLES}{}", count + 1));
-    match fill(&bundle, container, request.raw_records, docker).await {
+    match fill(&bundle, container, request.raw_records, transport).await {
         Some(false) => EXIT_COMPLETE,
         Some(true) => EXIT_GAP,
         None => EXIT_FAILED,
@@ -120,29 +113,19 @@ async fn write_file(bundle: &Path, name: &'static str, bytes: Vec<u8>) -> Option
 }
 
 /// writes the bundle's files and returns whether its final observation is missing.
-async fn fill(bundle: &Path, container: &str, raw_records: bool, docker: &OsStr) -> Option<bool> {
-    let identity = read_identity(docker, container).await?;
+async fn fill(
+    bundle: &Path,
+    container: &str,
+    raw_records: bool,
+    transport: &impl EvidenceTransport,
+) -> Option<bool> {
+    let identity = transport.read_identity(container).await?;
     write_file(bundle, "identity.txt", identity.into_bytes()).await?;
-    let mut copy = client(docker, &copy_arguments(container))?;
-    let mut stdout = copy.stdout.take()?;
-    let mut sink = BundleSink {
+    let sink = BundleSink {
         bundle: bundle.to_path_buf(),
         file: None,
     };
-    read_archive(&mut stdout, raw_records, &mut sink)
-        .await
-        .map_err(|_: ArchiveError| ())
-        .ok()?;
-    drop(sink);
-    let mut trailer = Vec::new();
-    (&mut stdout)
-        .take(MAX_TRAILER_BYTES)
-        .read_to_end(&mut trailer)
-        .await
-        .ok()?;
-    if !copy.wait().await.ok()?.success() {
-        return None;
-    }
+    transport.copy_archive(container, raw_records, sink).await?;
     let metrics = bundle.join(METRICS_FILE);
     let observed = blocking(move || final_observed(&metrics)).await??;
     write_file(bundle, "complete.txt", COMPLETE_TEXT.as_bytes().to_vec()).await?;
@@ -163,32 +146,6 @@ fn final_observed(metrics: &Path) -> Option<bool> {
             .unwrap_or(line)
             .eq_ignore_ascii_case(FINAL_OBSERVED.as_bytes())
     }))
-}
-
-fn client(docker: &OsStr, arguments: &[String]) -> Option<Child> {
-    let mut command = client_command(docker, &[], arguments);
-    command.stdout(Stdio::piped()).stderr(Stdio::null());
-    command.spawn().ok()
-}
-
-/// reads the allowlisted identity within its cap.
-async fn read_identity(docker: &OsStr, container: &str) -> Option<String> {
-    let mut inspect = client(docker, &identity_arguments(container))?;
-    let stdout = inspect.stdout.take()?;
-    let output = read_capped(stdout, MAX_IDENTITY_BYTES).await?;
-    let text = identity_text(&output).ok()?;
-    inspect.wait().await.ok()?.success().then_some(text)
-}
-
-/// reads to the end or to `cap` bytes, whichever comes first.
-async fn read_capped<R: AsyncRead + Unpin>(stream: R, cap: usize) -> Option<Vec<u8>> {
-    let mut bytes = Vec::new();
-    stream
-        .take(u64::try_from(cap).ok()?)
-        .read_to_end(&mut bytes)
-        .await
-        .ok()?;
-    Some(bytes)
 }
 
 struct BundleSink {
@@ -227,6 +184,62 @@ impl EntrySink for BundleSink {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// a transport that reads no container: the bundle comes from what it yields.
+    struct Scripted;
+
+    impl EvidenceTransport for Scripted {
+        async fn read_identity(&self, source: &str) -> Option<String> {
+            Some(format!("identity of {source}"))
+        }
+
+        async fn copy_archive<S: EntrySink>(
+            &self,
+            _source: &str,
+            _raw_records: bool,
+            mut sink: S,
+        ) -> Option<()> {
+            sink.open(METRICS_FILE).await.ok()?;
+            sink.write(b"a=1\nfinal=observed\n".to_vec()).await.ok()?;
+            Some(())
+        }
+    }
+
+    #[tokio::test]
+    async fn an_export_writes_its_bundle_from_whatever_transport_it_is_given() {
+        let sink = std::env::temp_dir().join(format!("exporter-seam-{}", std::process::id()));
+        std::fs::create_dir_all(&sink).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&sink, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let request = ExportRequest {
+            pool: "p".to_string(),
+            container: Some("p-1-x".to_string()),
+            directory: sink.to_string_lossy().into_owned(),
+            raw_records: false,
+            checkout: None,
+            deadline: std::time::Duration::from_secs(10),
+        };
+        assert_eq!(export(&request, &Scripted).await, EXIT_COMPLETE);
+        let bundles: Vec<_> = std::fs::read_dir(&sink)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect();
+        assert_eq!(bundles.len(), 1);
+        let mut files: Vec<_> = std::fs::read_dir(&bundles[0])
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        files.sort();
+        assert_eq!(files, ["complete.txt", "identity.txt", "metrics.txt"]);
+        assert_eq!(
+            std::fs::read_to_string(bundles[0].join("identity.txt")).unwrap(),
+            "identity of p-1-x"
+        );
+        std::fs::remove_dir_all(sink).unwrap();
+    }
 
     #[test]
     fn a_final_observation_is_a_whole_line_with_an_optional_carriage_return() {

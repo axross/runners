@@ -6,6 +6,7 @@ pub mod archive;
 pub mod exporter;
 pub mod identity;
 pub mod sink;
+pub mod transport;
 
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
