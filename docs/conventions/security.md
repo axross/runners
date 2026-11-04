@@ -389,11 +389,11 @@ Residual risks, accepted:
   refuses unless it prints the version's `--version`, so an older genuine installer
   under a newer version's name is refused by an operator who runs the check. The
   bare-binary blocks make the same check of the downloaded binary before they
-  replace the installed one, and refuse without touching the install path. These
-  refusals have run in CI against stand-ins and the dry run's installers, and have
-  not yet run on axpc or the Mac
-  ([#56](https://github.com/axross/runners/issues/56)); the refusal checks of the
-  bare-binary block were not run on axpc.
+  replace the installed one, and refuse without touching the install path. The
+  check block's refusals have run in CI against stand-ins and the dry run's
+  installers, and the bare-binary blocks' refusals against stand-ins. Neither has
+  yet run on axpc or the Mac ([#56](https://github.com/axross/runners/issues/56));
+  the refusal checks of the bare-binary block were not run on axpc.
 - **A green run can release nothing.** If main moves after the dispatch, the
   release job logs that the local branch is behind the remote one and ends without
   a tag or a release, after the binaries are attested.

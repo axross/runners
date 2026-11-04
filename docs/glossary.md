@@ -85,9 +85,9 @@ subjects since the last `v*` tag. See
 [operations/development-workflow.md](./operations/development-workflow.md#cutting-a-release).
 
 **CLI Installer** - the unsigned Windows MSI or macOS pkg of a **CLI Release**, which
-holds the **CLI**'s binary unchanged and which an operator opens to install it. A
-**Check Block** checks the download first, and the installer's version is the
-release's `X.Y.Z`, or `0.0.0` for the dry run's. See
+holds the **CLI**'s binary unchanged and which an operator opens to install it. An
+optional **Check Block** checks the download first, and the installer's version is
+the release's `X.Y.Z`, or `0.0.0` for the dry run's. See
 [operations/cli.md](./operations/cli.md#installing-updating-and-rolling-back).
 
 **Check Block** - the optional block in the **CLI** document that checks a

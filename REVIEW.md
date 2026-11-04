@@ -207,16 +207,17 @@ Apply the lens for each kind of file in the diff.
 - **Release workflows.** A change to
   [`release-build.yaml`](./.github/workflows/release-build.yaml),
   [`release.yaml`](./.github/workflows/release.yaml), the release-build job and the
-  `Install Blocks` job in `merge-checks.yaml`, the scripts under `.github/scripts/`, the release tooling
-  under [`release/`](./release), or `cli/.cargo/config.toml` is checked against
+  `Install Blocks` job in `merge-checks.yaml`, the scripts under
+  `.github/scripts/`, the release tooling under [`release/`](./release), or
+  `cli/.cargo/config.toml` is checked against
   each bullet of the release record in
   [Security](docs/conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main).
   A publish or attest step outside `release.yaml`, a job that both runs the npm
   tree and holds `id-token: write`, an asset other than the two named binaries, the
   two installers named for them, and `SHA256SUMS`, such as a helper binary, an
   installer that carries a script or a custom action that runs code, a download
-  other than the pinned WiX package, the recorded Rust toolchain exception, and the
-  Node that `actions/setup-node` installs (recorded under Security's Pinning
+  that is none of the pinned WiX package, the recorded Rust toolchain exception, or
+  the Node that `actions/setup-node` installs (recorded under Security's Pinning
   Convention), or a departure from the record that the change does not also make to
   the record, is a finding. Install-time verification is optional for the
   installers, so a document or comment that presents the check block as required of
