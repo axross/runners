@@ -39,7 +39,7 @@ doc = false
 
 # `serde` is declared without its default features: its derive runs procedural
 # macros (`serde_derive`, `syn`, `quote`, `proc-macro2`) at build time, and the
-# JSON reader is in this crate.
+# validator's JSON reader is in this crate.
 [dependencies]
 clap = { version = "4.6.7", default-features = false, features = ["std", "help", "usage", "error-context"] }
 regex = { version = "1.13.1", default-features = false, features = ["std", "unicode-perl"] }

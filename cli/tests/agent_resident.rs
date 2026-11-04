@@ -1,11 +1,11 @@
 //! the resident agent on fake seams: stop, start, quit, build and staying up, behind
+//! its real channel.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
     clippy::indexing_slicing
 )]
-//! its real channel.
 mod support;
 
 use std::time::{Duration, Instant};
@@ -99,7 +99,7 @@ async fn an_agent_launched_stopped_runs_nothing_until_it_is_told_to() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn quit_works_from_every_state_and_frees_the_lock_within_a_second() {
+async fn quit_from_the_stopped_state_frees_the_lock_within_a_second() {
     let rig = Rig::new(ONE_POOL);
     let rig = &rig;
     let (_, took) = rig
@@ -159,6 +159,26 @@ async fn the_agent_ends_by_itself_when_its_executable_is_renamed() {
     assert_eq!(ended.reason, EXECUTABLE_CHANGED);
     assert!(started.elapsed() < Duration::from_secs(5));
     assert!(rig.lock_is_free());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn the_agent_logs_when_it_cannot_watch_its_executable() {
+    let rig = Rig::new(ONE_POOL);
+    *rig.executable.borrow_mut() = Some(rig.root.path().join("no-such-executable"));
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Stopped, |conn| async move {
+            conn.ok("quit").await;
+        })
+        .await;
+    assert!(
+        rig.log
+            .lines()
+            .iter()
+            .any(|line| line.contains("cannot watch") && line.contains("no-such-executable")),
+        "{:?}",
+        rig.log.lines()
+    );
 }
 
 #[tokio::test(flavor = "current_thread")]

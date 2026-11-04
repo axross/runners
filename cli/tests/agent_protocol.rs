@@ -300,6 +300,22 @@ async fn the_seventeenth_connection_is_told_it_is_busy() {
         .await;
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn a_connection_still_in_its_handshake_is_told_the_agent_is_ending() {
+    let rig = Rig::new(ONE_POOL);
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Stopped, |conn| async move {
+            let mut early = Raw::open(&conn.roots).await;
+            conn.ok("quit").await;
+            let ending = early.next().await.unwrap();
+            assert_eq!(ending["type"], "ending", "{ending}");
+            assert_eq!(ending["reason"], "quit", "{ending}");
+            assert!(early.closed_within(Duration::from_secs(5)).await);
+        })
+        .await;
+}
+
 // the limits as timers ---------------------------------------------------------------
 
 fn quick() -> Limits {
