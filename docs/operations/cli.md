@@ -1,8 +1,7 @@
 # CLI
 
 The Rust command line tool under [`cli/`](../../cli): what `validate` accepts and
-prints, how it stays equal to the PowerShell validator, the shared fixtures both
-read, the runtime layer that runs a host's pools (the container backend, JIT
+prints, the rules it applies, the shared fixtures its tests read, the runtime layer that runs a host's pools (the container backend, JIT
 registration, CPU placement, and the slot loop), the instance layer that keeps
 `start` to one instance per machine (the instance state, the single-instance lock,
 and the control channel), the image contract every runner image declares and the
@@ -11,10 +10,8 @@ check of it, running a host with `build`, `start`, `stop`, `restart`, `status`, 
 export, the toolchain and the gates that cover it, how a release is built and
 installed, and why its name is fixed. The
 binary is `marshal`, and axpc runs its pools with it, as
-[Windows Runner Host](./windows-runner-host.md) describes. The PowerShell
-supervisor and rebuild task under
-[`hosts/windows-docker-desktop/`](../../hosts/windows-docker-desktop) stay only as
-that document's rollback path, and the CLI must not be started beside them.
+[Windows Runner Host](./windows-runner-host.md) describes, including how to roll
+back to the previous release.
 
 ## Running It
 
@@ -34,11 +31,11 @@ nothing. It does not check that a token file exists or who can read it; `start`
 does. Running a Host describes `build`, `start` and the four clients, and their
 exit codes. This section is about `validate`.
 
-| Exit | Meaning                                                                                                                                                                                              |
-| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0    | The configuration is valid. The plan summary is on standard output, with `\n` line endings.                                                                                                          |
-| 1    | The file is missing or unreadable, is not valid JSON, or breaks a rule. Every error is on standard error, in the PowerShell validator's format and order, and nothing is printed to standard output. |
-| 2    | A usage error, including no `--profile` on an operating system that has no default.                                                                                                                  |
+| Exit | Meaning                                                                                                                                                                                                        |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | The configuration is valid. The plan summary is on standard output, with `\n` line endings.                                                                                                                    |
+| 1    | The file is missing or unreadable, is not valid JSON, or breaks a rule. Every error is on standard error, in the format below and the order under Validation Rules, and nothing is printed to standard output. |
+| 2    | A usage error, including no `--profile` on an operating system that has no default.                                                                                                                            |
 
 Without `--profile`, Windows is `axpc` and macOS is `axmc`. On any other operating
 system `validate` stops with exit 2 and asks for `--profile`. `--profile` lets the
@@ -52,7 +49,7 @@ the header and has the single error `configuration: must be an object`.
 A configuration larger than 1 MiB (1048576 bytes) is refused before it is parsed:
 `Host configuration cannot be read: <path>: the file is larger than 1048576 bytes (1 MiB)`,
 exit 1. Real configurations are a few kilobytes, so the limit only stops a mistaken
-path from being read whole. It is a Rust-only rule, pinned by
+path from being read whole. It is a rule of the CLI, pinned by
 `a_file_over_the_size_limit_is_rejected_without_being_parsed` in
 `cli/tests/command.rs`, which also checks a file of exactly 1 MiB is read.
 
@@ -74,8 +71,8 @@ unchanged on purpose; a caller that must tell the two apart reads the output.
 
 ## Profiles
 
-A profile names a host. The shared rules and messages are the PowerShell
-validator's. The profile decides the fields, the platform labels, the routing
+A profile names a host. The rules and messages under Validation Rules apply to
+both. The profile decides the fields, the platform labels, the routing
 label, the path form, and the extra checks.
 
 | Aspect                  | `axpc` (Windows, Docker Desktop)                                         | `axmc` (macOS host)                                                                       |
@@ -132,8 +129,8 @@ file, which a worktree has) and `cli/Cargo.toml`; another repository, such as a
 dotfiles repository at the home directory, does not count. The comparison is
 lexical on absolute paths after collapsing repeated separators, and does not
 resolve links. It is case-insensitive on axpc and case-sensitive on axmc. When no
-checkout is found, a note on standard error says the rule was not applied, so the
-summary on standard output stays equal to the PowerShell one. The rule applies on
+checkout is found, a note on standard error says the rule was not applied, and the
+summary on standard output is the same with or without a checkout. The rule applies on
 both profiles but can only bite where the profile's path form matches the
 operating system: axpc on Windows, axmc on Linux and macOS.
 
@@ -142,23 +139,59 @@ volume is case-insensitive. A `diagnosticDirectory` that differs from the checko
 only in case therefore passes the rule even though it names the same directory. The
 validator cannot know a volume's case sensitivity, so it does not guess.
 
-## Parity With the PowerShell Validator
+## Validation Rules
 
-On the shared fixtures the CLI accepts and rejects what the PowerShell validator
-does, with the same ordered error lists and the same summaries, until the
-PowerShell one is removed. Behaviour that is easy to miss:
+The CLI and its fixtures alone define the rules. A change to a rule changes the
+fixtures and their expectations in the same change; [Fixtures and
+Tests](#fixtures-and-tests) says how they are read. `validate` is a pure function
+from the file's bytes and a profile to a plan or an ordered list of errors, and it
+records every error it finds rather than stopping at the first.
 
-- **Required and direct fields.** A field the PowerShell validator reads as a
-  required value reports `null` as `required field is missing`: `repositories`,
-  `imageName` on axpc, and per entry `owner`, `repository`, `tokenPath`, `slots`,
-  `name`, `volumes`, `diagnosticDirectory`, a volume's `suffix` and `mountPath`,
-  and on axmc `budget`, its members, `os`, and `diskGb`. A field it reads directly
-  reports `null` as its own type error: `cpus`, `memoryGb`, `labels`,
-  `diagnostics`, and `diagnosticRawRecords`.
+### Error Order
+
+A file that cannot be read prints `Host configuration cannot be read: <path>: <problem>`,
+and one that is not valid JSON prints `Host configuration is not valid JSON: <problem>`;
+each is the only error. Otherwise the errors come in the order the checks find
+them:
+
+1. The root's unknown fields, in document order, each
+   `<path>.<name>: unknown field`. Every object, entry and `budget` included,
+   starts with its own unknown fields in the same way.
+2. `imageName`, then on axmc `budget` and its members (`cpus`, `memoryGb`,
+   `diskGb`), then `repositories` itself: missing, not a list, or empty.
+3. Each entry in file order, all of one entry's errors before the next entry's. An
+   entry's own errors follow its unknown fields in this order: `owner`,
+   `repository`, `tokenPath`, on axmc `os`, then `labels`, `volumes`, `slots`,
+   `name`, `cpus`, `memoryGb`, on axmc `diskGb`, then `diagnostics` and
+   `diagnosticRawRecords` when they are not booleans, `diagnosticDirectory`, and last
+   `diagnosticRawRecords: requires diagnostics`.
+4. The cross-entry checks, once every entry is read. For each entry after the first,
+   in file order, against each earlier entry in file order: a colliding `name`, then
+   for the same repository a different token file or an ambiguous routing label, or
+   for another repository a reused token file.
+5. On axmc, the budget checks.
+
+The exit code is 1 and standard output is empty whenever there is an error. A valid
+configuration prints its summary on standard output: the image and the entry count,
+the CPU policy line, and for each entry its repository, slots, labels, token file,
+name, container name pattern, CPU and memory limits, planned affinity count and
+position, diagnostic settings, and volumes. The axmc summary has `os` and `disk`
+lines in place of the container, affinity, and volume lines, and ends with the
+budget use. Lines end in `\n`.
+
+### Behaviour That Is Easy to Miss
+
+- **Required and direct fields.** A field read as a required value reports `null`
+  as `required field is missing`: `repositories`, `imageName` on axpc, and per entry
+  `owner`, `repository`, `tokenPath`, `slots`, `name`, `volumes`,
+  `diagnosticDirectory`, a volume's `suffix` and `mountPath`, and on axmc `budget`,
+  its members, `os`, and `diskGb`. A field read directly reports `null` as its own
+  type error: `cpus`, `memoryGb`, `labels`, `diagnostics`, and
+  `diagnosticRawRecords`.
 - **Names.** Known fields are found case-insensitively; the unknown-field check is
   case-sensitive, so `"Owner"` gives only `Owner: unknown field`.
 - **Patterns.** A pattern matches the whole value, so a trailing newline does not
-  pass, as with PowerShell's `\z`.
+  pass.
 - **Numbers.** Integer fields accept only an integer literal: `8.0` and `1e1` are
   rejected. Decimal fields accept integers, decimals, and exponents. A CPU count is
   rounded half away from zero at nine decimals on its 15-significant-digit form,
@@ -171,53 +204,47 @@ PowerShell one is removed. Behaviour that is easy to miss:
   `diagnosticRawRecords`, or `diagnosticDirectory`, does not.
 - **Strings.** Owner, repository, label, and name comparisons are case-insensitive
   over ASCII, which their patterns allow. Token paths compare under Unicode simple
-  case folding. Every string in a `labels` list joins the duplicate set, as in
-  PowerShell, including one that fails its own pattern.
+  case folding. Every string in a `labels` list joins the duplicate set, including
+  one that fails its own pattern.
 - **Input.** The file is UTF-8 strict JSON. A leading byte-order mark is ignored.
   An exact duplicate key keeps its last value at the position of its last
   occurrence. Two keys that differ only in case, and an empty key, are errors. A
   value more than 128 levels below the root is an error, and so is a file over 1
-  MiB (see Running It). PowerShell 7 reads about 1024 levels and accepts large
-  files, and it rejects an empty key as Rust does.
+  MiB (see Running It).
 
-### Declared Divergences
+### Inputs the Fixtures Pin
 
-These inputs are outside parity. Each is either a Rust-only fixture under
-[`tests/host-configuration/rust/raw/`](../../tests/host-configuration/rust/raw), whose
-bytes MUST NOT be reformatted, or a Rust test where the input is not a file. A
-fixture's expectation records PowerShell's own outcome, or `skip` where PowerShell
-cannot run it or its result depends on the platform's globalization data.
-The case-folding rows are not files: `fold::tests::simple_folding_differs_from_powershell_eq_on_declared_pairs`
-in `cli/src/fold.rs` pins Rust's side of them, and the PowerShell side is
-recorded in the table. Eight `rust/raw/` fixtures record `powershell: accept`:
+Each input below is a rule of the CLI. Each is either a fixture under
+[`tests/host-configuration/rust/raw/`](../../tests/host-configuration/rust/raw),
+whose bytes MUST NOT be reformatted, or a test where the input is not a file.
 `comment.json`, `trailing-comma.json`, `leading-zero-integer.json`,
 `single-quoted-string.json`, `unquoted-property-name.json`, and
-`lone-surrogate-escape.json` for the strict-JSON row, `invalid-utf8.json` for the
-UTF-8 row, and `root-array.json` for the root row. The parity test runs PowerShell on
-them to confirm it. The other inputs in the strict-JSON row were probed by hand with
-PowerShell 7.6.6 and have no fixture. The depth and size rows are Rust tests, not
-fixtures: `the_depth_limit_is_128_levels_below_the_root` in `cli/src/json.rs` and the
-size test named under Running It, with PowerShell's side probed by hand.
+`lone-surrogate-escape.json` pin the strict-JSON row, `invalid-utf8.json` the UTF-8
+row, and `root-array.json` the root row. The other inputs in the strict-JSON row have
+no fixture. The case-folding rows are not files:
+`fold::tests::simple_folding_equates_the_declared_pairs` in `cli/src/fold.rs` pins
+them. The depth and size rows are tests, not fixtures:
+`the_depth_limit_is_128_levels_below_the_root` in `cli/src/json.rs` and the size
+test named under Running It.
 
-| Input                                                                                                                                                                                                                                                                       | Rust                                                               | PowerShell                                                                                                                                                                                                                                |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A missing file, truncated or otherwise invalid JSON, two keys that differ only in case, an empty key                                                                                                                                                                        | Rejects with its own wording                                       | Rejects with a .NET message                                                                                                                                                                                                               |
-| A value more than 128 levels below the root, a file over 1 MiB                                                                                                                                                                                                              | Rejects                                                            | Reads them; PowerShell 7 reads about 1024 levels                                                                                                                                                                                          |
-| Invalid UTF-8                                                                                                                                                                                                                                                               | Rejects                                                            | Substitutes U+FFFD and may accept                                                                                                                                                                                                         |
-| A non-object root                                                                                                                                                                                                                                                           | Rejects and keeps the path in the header; a root array is rejected | Omits the path; unrolls a one-object array                                                                                                                                                                                                |
-| Anything outside RFC 8259 (strict JSON): comments, trailing commas, single-quoted strings, unquoted property names, leading zeros (`01`), `.5`, `0x2`, `NaN`, no-break space or form-feed whitespace, a trailing NUL, U+2028 after the document, and lone surrogate escapes | Rejects with its own wording                                       | PowerShell 7 (Json.NET) accepts each at the JSON level, and accepts `NaN` for `cpus`, where it passes the range check (`slots` rejects it); Windows PowerShell 5.1 rejects comments and trailing commas, and the rest is not probed there |
-| Token paths that `-eq` equates but simple case folding does not                                                                                                                                                                                                             | Treats them as different                                           | Treats them as equal                                                                                                                                                                                                                      |
-| A `null` entry in `repositories`                                                                                                                                                                                                                                            | Rejects: `repositories[0]: must be an object`                      | Rejects with a binding error                                                                                                                                                                                                              |
-| The checkout rule                                                                                                                                                                                                                                                           | Applies it on both profiles                                        | Anchors on the supervisor's own repository, on Windows only                                                                                                                                                                               |
-| U+017F against `s` or `S`, U+0345 against U+03B9 or U+0399, U+1E9B against U+1E61 or U+1E60                                                                                                                                                                                 | Equal under simple case folding                                    | `-eq` treats each pair as different (PowerShell 7.6.6 on Linux)                                                                                                                                                                           |
-| The Kelvin sign U+212A against `k` or `K`                                                                                                                                                                                                                                   | Equal under simple case folding                                    | The result follows the platform's globalization data (equal on PowerShell 7.6.6 on Linux)                                                                                                                                                 |
+| Input                                                                                                                                                                                                                                                                       | Rule                                                               |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| A missing file, truncated or otherwise invalid JSON, two keys that differ only in case, an empty key                                                                                                                                                                        | Rejected with the CLI's own wording                                |
+| A value more than 128 levels below the root, a file over 1 MiB                                                                                                                                                                                                              | Rejected                                                           |
+| Invalid UTF-8                                                                                                                                                                                                                                                               | Rejected                                                           |
+| A non-object root                                                                                                                                                                                                                                                           | Rejected, keeping the path in the header; a root array is rejected |
+| Anything outside RFC 8259 (strict JSON): comments, trailing commas, single-quoted strings, unquoted property names, leading zeros (`01`), `.5`, `0x2`, `NaN`, no-break space or form-feed whitespace, a trailing NUL, U+2028 after the document, and lone surrogate escapes | Rejected with the CLI's own wording                                |
+| Token paths that differ in a way simple case folding does not equate, such as canonically equivalent forms or an ignorable character                                                                                                                                        | Different paths                                                    |
+| A `null` entry in `repositories`                                                                                                                                                                                                                                            | Rejected: `repositories[0]: must be an object`                     |
+| The checkout rule                                                                                                                                                                                                                                                           | Applied on both profiles                                           |
+| U+017F against `s` or `S`, U+0345 against U+03B9 or U+0399, U+1E9B against U+1E61 or U+1E60                                                                                                                                                                                 | Equal under simple case folding                                    |
+| The Kelvin sign U+212A against `k` or `K`                                                                                                                                                                                                                                   | Equal under simple case folding                                    |
 
 ## The Runtime Layer
 
 The library holds the code that runs a host's pools: the container backend, JIT
 registration, and the loop of one slot. `start` reaches it through the instance
-layer, and the tests also drive it through its seams. It reproduces the
-PowerShell supervisor, and where it differs the difference is listed here.
+layer, and the tests also drive it through its seams.
 
 | Module                                              | Holds                                                                                  |
 | --------------------------------------------------- | -------------------------------------------------------------------------------------- |
@@ -254,10 +281,13 @@ by name; a later backend that runs the containers in a virtual machine can pass 
 another way. A fake backend implements the same seam for the tests of the code
 above it.
 
-The container backend runs `docker` with the PowerShell supervisor's argument
-lists, byte for byte, except for the stop call below. A test reads the launcher
-guard and the probe's reader script out of `docker-commands.ps1` and compares
-them; the tests compare every other list with one written out in the test:
+The container backend runs `docker` with the run contract's argument lists. The
+image smoke tests run the same container commands through the helpers
+`smoke-docker-commands.ps1` and `smoke-diagnostic-export.ps1` in
+[`images/actions-runner/tests/`](../../images/actions-runner/tests). A test reads the
+launcher guard and the probe's reader script out of `smoke-docker-commands.ps1`
+and compares them with the backend's, so a change to either side alone fails the
+CLI's tests; the tests compare every other list with one written out in the test:
 
 | Purpose                    | Command                                                                                                                                                                                                                                                        |
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -274,10 +304,8 @@ them; the tests compare every other list with one written out in the test:
 | Stop, for the later `stop` | `docker stop --time <seconds> <names>`, one call for all names                                                                                                                                                                                                 |
 | End without removing       | `docker kill <names>`, one call for all names                                                                                                                                                                                                                  |
 
-The stop call differs from the supervisor's. `supervisor.ps1` runs
-`docker stop <names>`, so Docker's default grace of 10 s applies. The backend always
-passes `--time <seconds>`, the grace its caller chose, so no caller inherits a
-default it did not pick.
+The stop call always passes `--time <seconds>`, the grace its caller chose, so no
+caller inherits Docker's default of 10 s.
 
 The launcher is the guard script followed by `exec "$@"`. It reads
 `Cpus_allowed_list` from `/proc/self/status` and exits 125 unless it equals the set
@@ -294,8 +322,11 @@ The diagnostic variant differs from an ordinary job container only in its missin
 The identity allowlist is
 `{{.Image}}|{{.HostConfig.NanoCpus}}|{{.HostConfig.Memory}}|{{.HostConfig.MemorySwap}}|{{.HostConfig.CpuQuota}}|{{.HostConfig.CpuPeriod}}|{{.HostConfig.CpusetCpus}}|{{.State.OOMKilled}}|{{.State.ExitCode}}`,
 so the environment, and the JIT configuration in it, is never read. A unit test in
-`cli/src/image/contract.rs` fails when `docker-commands.ps1` no longer holds the
-variant's argument list and launcher as the CLI writes them.
+`cli/src/image/contract.rs` fails when `smoke-docker-commands.ps1` no longer holds the
+variant's argument list and launcher as the CLI writes them. The identity and copy
+commands are held equal to `smoke-diagnostic-export.ps1` by a test in
+`cli/src/runtime/docker_args.rs`, and the completion marker by one in
+`cli/src/diagnostics/exporter.rs`.
 
 Every client starts in its own process group: `process_group(0)` on Unix, and
 `CREATE_NEW_PROCESS_GROUP` on Windows. A Ctrl+C in the terminal then reaches the CLI
@@ -304,8 +335,7 @@ the fake `docker` sees on Linux and macOS; no safe API reads a Windows process's
 creation flags, so the Windows flag is checked by review. A client is killed when
 the future that waits for it is dropped.
 
-Every client other than a job container is bounded, which the PowerShell
-supervisor did not do. A listing, a volume command, and an info call are bounded at
+Every client other than a job container is bounded. A listing, a volume command, and an info call are bounded at
 120 s. A removal and a stop take the budget their caller passes; stale cleanup removes
 within 120 s. The CPU probe and the removal of a leftover probe have the budgets
 under CPU Placement. A `docker info` that fails, hangs, or cannot start (the
@@ -338,19 +368,20 @@ The selection starts at the offset modulo the number of allowed CPUs and takes
 consecutive IDs from the sorted list, wrapping. It writes them as `a,b-c`. The list
 must be ordered, distinct ranges of IDs that fit a 32-bit signed integer, with no
 space, sign or leading zero. The syntax of the whole list is judged before any ID's
-range or order, as PowerShell does, so a list with several defects is refused as
-invalid. The PowerShell golden case is a test: the inventory
-`2,5-6,11,14-15` with five slots of two CPUs gives `2,5`, `6,11`, `14-15`, `2,5`,
-and `2,15`, and the rejected inventories are the PowerShell test's.
+range or order, so a list with several defects is refused as invalid. A test pins
+the golden case: the inventory `2,5-6,11,14-15` with five slots of two CPUs gives
+`2,5`, `6,11`, `14-15`, `2,5`, and `2,15`, and
+`the_rejected_inventories_are_rejected` in `cli/src/affinity.rs` lists the
+inventories the selection refuses.
 
 ### Registration
 
 A registration is `POST /repos/<owner>/<repo>/actions/runners/generate-jitconfig`
-to `https://api.github.com`, with the PowerShell supervisor's headers
+to `https://api.github.com`, with these headers
 (`Authorization: Bearer <token>`, `Accept: application/vnd.github+json`,
-`X-GitHub-Api-Version: 2022-11-28`, `Content-Type: application/json`) and body
+`X-GitHub-Api-Version: 2022-11-28`, `Content-Type: application/json`) and this body
 (`name`, `runner_group_id` 1, and the pool's labels). It reads `encoded_jit_config`;
-a response without one is a failure. It differs from PowerShell in four ways:
+a response without one is a failure. Beyond the request itself:
 
 - it sends `User-Agent: marshal/<version>`;
 - it follows no redirect, so a redirect is a failure;
@@ -358,15 +389,14 @@ a response without one is a failure. It differs from PowerShell in four ways:
 - it fails a response larger than 1 MiB, whether the size is declared or streamed.
 
 Each failure goes into the slot's backoff. The error text has the token replaced by
-`<token>`, whitespace collapsed, and is cut to 500 characters followed by `...`,
-as the PowerShell supervisor does. The token is read again from its file at every
+`<token>`, whitespace collapsed, and is cut to 500 characters followed by `...`.
+The token is read again from its file at every
 registration, trimmed, and held in a `Secret`; the header that carries it is marked
 sensitive. The HTTPS client is built without reqwest's `json` feature: the body is
 three validated fields written by a small writer with the escapes RFC 8259
 requires, and the response is read with the crate's own parser. The client keeps
 reqwest's handling of the `HTTPS_PROXY` and `NO_PROXY` environment variables, and
-does not read the Windows system proxy, which the PowerShell supervisor did; no
-test covers the proxy variables.
+does not read the Windows system proxy; no test covers the proxy variables.
 
 TLS uses rustls with the `ring` provider, installed explicitly by
 `install_tls_provider` before the client is built, and the platform's certificate
@@ -385,8 +415,7 @@ and CI runs it again in the release profile.
 ### Names and the Slot Loop
 
 A runner is named `<pool>-<slot>-<yyyyMMddHHmmssfff>` in UTC, and its container has
-the same name. PowerShell used local time; the pattern, and so the cleanup of its
-leftovers, is unchanged. A name is recognised as a pool's own only when it is the
+the same name. A name is recognised as a pool's own only when it is the
 pool's name, a hyphen, a slot number, a hyphen, and exactly 17 ASCII digits.
 
 A slot loops until it is asked to stop. Each attempt checks the image, then probes
@@ -397,8 +426,8 @@ failed probe or registration, or a non-zero exit, waits
 replacement at once. A wait ends early when a stop is asked for, and a stop that arrives as a registration completes starts no container. Time and sleeping
 come through a `Clock` seam, so the tests do not wait.
 
-Preparing the pools follows the PowerShell supervisor, with the image check
-between the wait for Docker and the pools' cleanup. A pool whose token file is
+Preparing the pools puts the image check between the wait for Docker and the
+pools' cleanup. A pool whose token file is
 missing or blank is skipped with a warning that names the pool and the reason, and
 never the token. Docker is waited for once. Each remaining pool's own stale
 containers are cleaned up and its volumes prepared; a pool that fails either is
@@ -518,8 +547,7 @@ window, 30 s for the second, and 60 s for the third. A fourth failure in the win
 stops the instance, with the restart limit as its reason. A core restart that
 finds an image that cannot run jobs moves the instance straight to stopped, with
 the reason a resume gives, and counts no failure. A failure exactly 10
-minutes old still counts and an older one does not; this window replaces the
-PowerShell supervisor's reset after 10 healthy minutes. A clock that moves back
+minutes old still counts and an older one does not. A clock that moves back
 forgets nothing.
 
 ### Single-Instance Lock
@@ -670,8 +698,8 @@ before any pool runs and before each job.
 ### Labels
 
 An image `build` makes carries five labels. The Dockerfile's final stage declares
-the first three, so an image built from the definition another way, in CI, by hand,
-or by the PowerShell rebuild task, carries those three only; `build` adds the last
+the first three, so an image built from the definition another way, in CI or by hand,
+carries those three only; `build` adds the last
 two on its command line, because they describe the build, not the definition.
 
 | Label                                       | Value                                           | Set by         |
@@ -692,8 +720,8 @@ path and output directory.
 Unit tests in `cli/src/image/contract.rs` keep the declaration honest:
 
 - `APPROVED_CONTRACTS` pins a fingerprint of the run contract's argument lists, the
-  launcher, the diagnostic variant's argument lists and launcher as
-  `docker-commands.ps1` gives them, the label keys and the inspect format, against
+  launcher, the diagnostic variant's argument lists and launcher, the label keys
+  and the inspect format, against
   the version they were approved for. Changing any of them without raising the
   contract version fails, and the failure names the row to add with the new
   version.
@@ -738,7 +766,7 @@ check runs:
   cannot run jobs registers nothing and goes into the slot's backoff with the
   message; a check Docker does not answer goes into the backoff as a Docker
   failure. `build` cannot run while an instance exists, so a mismatch here means the
-  image was replaced another way, such as by the PowerShell rebuild task.
+  image was replaced another way, such as by a build made by hand.
   `docker run` resolves the name again after the check, and a replacement between
   the two is the accepted residual case.
 
@@ -754,8 +782,8 @@ more the second:
 | 7 to 20    | `` the image is <d> days old and should be rebuilt with `marshal build` ``                    | `runner <v> was released <d> days ago, and a newer runner may exist`                                                                                      |
 | 21 or more | `` the image's operating-system packages are <d> days old; rebuild it with `marshal build` `` | `runner <v> was released <d> days ago, so each job's runner likely updates itself at start; update the CLI to get a newer runner, then rebuild the image` |
 
-An image without a build-time label, such as one the PowerShell rebuild task or CI
-built, has an unknown build age, and its warning says it was not built by
+An image without a build-time label, such as one CI or a build by hand made, has an
+unknown build age, and its warning says it was not built by
 `marshal build`. `start` logs the current warnings at each run of the core, at
 start, a resume, a `restart`, and a core restart, and not at a job launch. Neither
 the warnings nor an unknown age block a start.
@@ -779,10 +807,7 @@ when the image is missing or its labels are missing or malformed.
 runtime layer, and `stop`, `restart`, `status`, and `diagnostics` talk to it from another terminal
 over the control channel. `build` builds the runner image, and the same clients
 talk to it. axpc runs its pools with `start` and builds its image with `build`, as
-[Windows Runner Host](./windows-runner-host.md) describes. Neither may run beside the
-PowerShell supervisor or its rebuild task, which that document's rollback restores:
-`start`'s stale cleanup removes the supervisor's job containers, and the scripts do
-not take the instance lock.
+[Windows Runner Host](./windows-runner-host.md) describes.
 
 | Module                   | Holds                                                                                                |
 | ------------------------ | ---------------------------------------------------------------------------------------------------- |
@@ -957,8 +982,8 @@ writes no second bundle.
   ended.
 
 An export with a gap is a warning,
-`Diagnostic gap in pool <pool>, container <name>: <text>`, with the PowerShell
-supervisor's text: a missing final observation, a full sink, a failed or unsafe
+`Diagnostic gap in pool <pool>, container <name>: <text>`, where the text names the
+gap: a missing final observation, a full sink, a failed or unsafe
 export, or a clock that left no time to begin it. It is never the slot's failure and
 does not change its backoff. A removal that fails or runs out of time is a warning,
 and the container stays retained for the next finalisation.
@@ -993,7 +1018,7 @@ the pool that an earlier process left and the backend does not retain:
   `Diagnostic container <name> that an earlier run left: exported, removed.`, with
   `export gap` or `not removed` in place of either word.
 - **Diagnostics off.** It gives them one bounded `docker stop --time 10`, ended at
-  12 s, as PowerShell does, warns for each, and refuses the pool. The reason names
+  12 s, warns for each, and refuses the pool. The reason names
   the manual recovery in
   [Windows Runner Host](./windows-runner-host.md#recover-before-disabling-diagnostics).
   The CLI keeps their names until the next preparation of that pool, or until a
@@ -1038,14 +1063,12 @@ Without `--container` it only counts the pool's bundles.
   `<pool>-bundle-<32 hexadecimal digits>`, and prints the line `admitted` and then
   `bundles <n>`. The instance releases the lock on `admitted`, or when the child
   ends. A second export of the same pool waits for the lock until its own export
-  deadline, where PowerShell gave up after 0.5 s. Every export happens inside the
-  one instance, which the machine-wide lock makes unique, so this lock replaces
-  PowerShell's named mutex, which the CLI does not take.
+  deadline. Every export happens inside the one instance, which the machine-wide
+  lock makes unique, so no named mutex is needed.
 - **Identity and archive.** The child writes `identity.txt` from the inspect
   allowlist under [Backend](#backend), its output capped at 1 KiB and required to
-  match a fixed shape, as PowerShell's `Get-DiagnosticIdentity` does. It reads the
-  `docker cp` archive through the same strict ustar subset as
-  `Copy-DiagnosticTar`. It accepts the collector's directory entry, named `./`,
+  match a fixed shape. It reads the `docker cp` archive through a strict ustar
+  subset. It accepts the collector's directory entry, named `./`,
   `.`, or `runner-diagnostics/` with size 0, and regular files named `metrics.txt`
   or, only when raw records are on, `raw-<n>.log` with `<n>` of one to three
   digits. Either file name may follow `runner-diagnostics/`, and either of those
@@ -1056,7 +1079,7 @@ Without `--container` it only counts the pool's bundles.
   prefixes are dropped. It reads at most 132 headers, with `metrics.txt` at most
   8 MiB, raw files 32 MiB together, and 40 MiB of payload in all, less 4 KiB kept
   for the bundle's own files. It writes `metrics.txt`, each accepted raw file, and
-  `complete.txt` last, in PowerShell's formats. A `metrics.txt` without
+  `complete.txt` last. A `metrics.txt` without
   `final=observed` is a gap.
 - **Isolation.** The child starts in a process group of its own, as the shim does,
   so a terminal's first Ctrl+C reaches only `start`, and a job-end export goes on
@@ -1074,9 +1097,9 @@ Without `--container` it only counts the pool's bundles.
   ends by itself, and on Windows until `start` ends and its Job Object closes.
 - **Exit codes.** 0 is a complete bundle, or a count; 3 a complete bundle with a
   gap; 4 a full sink; and 1 anything else, a refused sink, a failed copy, an archive
-  outside the subset, a deadline, or a closed pipe. PowerShell's 5, "not admitted to
-  containment", is not used: the Job Object on Windows and the liveness pipe on Unix
-  are in place before the child starts.
+  outside the subset, a deadline, or a closed pipe. Containment needs no exit code
+  of its own: the Job Object on Windows and the liveness pipe on Unix are in place
+  before the child starts.
 - **Bounded output.** The child prints only those two lines. On standard error it
   writes at most the one line a panic gives, which names only the code location.
   The CLI never prints or logs the evidence: a warning names only the pool, the
@@ -1113,8 +1136,8 @@ holds only what the collector wrote.
 The tests use the `fake-docker` helper, which can keep containers, answer `inspect`
 and `cp` with a scripted archive or a stall, and stand in for the exporter child:
 
-- `diagnostic_archive.rs` ports every `Get-DiagnosticTar` case of the PowerShell
-  test, and the limits at and one past each bound;
+- `diagnostic_archive.rs` covers the archive reader's accepted and refused
+  entries, and the limits at and one past each bound;
 - `diagnostic_export.rs` runs the container backend and the real exporter child:
   the bundle and its modes, raw mode, a gap, a container removed whatever the
   export did, the identity cases, a retried removal with no second bundle, an 11th
@@ -1175,8 +1198,7 @@ these in order:
    where the repository is the name without its tag: everything before the last
    `:` that follows the last `/`, so a registry port stays.
 7. It tags the build as the configured name, which commits it. It then removes the
-   temporary tag, and prunes the dangling images that carry the image label, as
-   the PowerShell rebuild script does. A failed tag removal is a warning naming the
+   temporary tag, and prunes the dangling images that carry the image label. A failed tag removal is a warning naming the
    tag, which the next `build` removes, and a failed prune is a warning; both still
    exit 0.
 8. A failed build or a failed retag removes the temporary tag, leaves the
@@ -1360,37 +1382,24 @@ hosted runners show.
 
 [`tests/host-configuration/`](../../tests/host-configuration) holds every fixture
 and one [`expectations.json`](../../tests/host-configuration/expectations.json),
-which the Rust tests, the PowerShell test, and the parity harness all read:
+which the CLI's tests read:
 
-- `shared/accepted/` and `shared/rejected/` are read by both validators.
-- `shared/pwsh7/` holds shared fixtures that Windows PowerShell 5.1 may judge
-  differently, such as `1e400`. The Rust tests and the parity harness read them;
-  the PowerShell test skips them below version 7.
-- `rust/accepted/` and `rust/rejected/` hold the axmc and Rust-only rule fixtures.
-- `rust/raw/` holds the declared divergences. `.prettierignore` and
+- `shared/accepted/` and `shared/rejected/` hold the axpc rule fixtures.
+- `shared/pwsh7/` holds three more axpc fixtures: `1e400` as a `cpus` literal and
+  two duplicate-key cases. The directory's name is historical and stays until the
+  fixtures are reshaped.
+- `rust/accepted/` and `rust/rejected/` hold the axmc and the other CLI-only rule
+  fixtures.
+- `rust/raw/` holds the inputs under Inputs the Fixtures Pin. `.prettierignore` and
   `.gitattributes` (`-text`) keep their bytes unchanged.
 
-Each expectation names the fixture's profile, its outcome, `contains` and `lacks`
-string arrays, and for a divergence fixture PowerShell's own outcome. The Rust tests
-read the file into derived types through the crate's serde reader, with exact key
-spelling, so an unknown or misspelled key fails the read. Expected
-strings are ASCII, with newlines as JSON `\n` escapes. Both readers fail when a
+Each expectation names the fixture's profile, its outcome, and `contains` and `lacks`
+string arrays. The tests read the file into derived types through the crate's serde
+reader, with exact key spelling, so an unknown or misspelled key fails the read.
+Expected strings are ASCII, with newlines as JSON `\n` escapes. The tests fail when a
 fixture has no expectation or an expectation has no fixture. The byte-order-mark
 input is built at run time from the axpc example, because a formatter or editor
 would strip a stored mark.
-
-`mise run test:parity` runs
-[`parity.ps1`](../../tests/host-configuration/parity.ps1) under PowerShell 7. It
-runs both validators over the shared fixtures, including `shared/pwsh7/`, the axpc
-example, and the byte-order-mark copy. It fails when their outcomes differ, when
-their ordered errors or summaries differ after the configuration path is
-normalized, or when an expected string is missing or an unwanted one is present. It
-also runs PowerShell over the divergence fixtures and fails only when its outcome
-differs from the recorded one. Before comparing anything, a self-test feeds it a
-deliberately wrong expectation and a stand-in validator that drops an error, and
-requires both to fail. It runs on Linux only, because that is where the check job
-has PowerShell 7 and the pinned tools; Windows PowerShell 5.1 runs the PowerShell
-test against the same fixtures in its own job.
 
 ## Toolchain and Gates
 
@@ -1408,7 +1417,6 @@ errors, not abort.
 | `lint:rust`              | `cargo clippy --locked --all-targets -- -D warnings` |
 | `test:rust`              | `cargo test --locked`                                |
 | `deny:rust`              | `cargo deny --locked check bans licenses sources`    |
-| `test:parity`            | `build:rust`, then the parity harness                |
 
 Each Rust task first checks for `cargo`, `rustfmt`, and `clippy` and fails at once
 with one line naming `.agents/install-rust`. A task never skips when the toolchain is
@@ -1556,13 +1564,9 @@ main, at that commit. It needs `gh` 2.102 or later, signed in
 (`gh auth status`).
 
 axpc runs the binary this procedure installs, and
-[Windows Runner Host](./windows-runner-host.md) is its operator procedure. The
-binary MUST NOT be started on axpc beside the PowerShell supervisor. Until Phase 4c
-removes the PowerShell scripts, axpc can roll back to them by stopping the CLI,
-rebuilding the image with the PowerShell script, and registering its Task Scheduler
-tasks again, as
-[Rolling Back to the PowerShell Supervisor](./windows-runner-host.md#rolling-back-to-the-powershell-supervisor)
-describes.
+[Windows Runner Host](./windows-runner-host.md) is its operator procedure, including
+[Rolling Back marshal](./windows-runner-host.md#rolling-back-marshal), which adds
+the configuration check and the image rebuild around this procedure.
 
 | OS      | Install path                                  |
 | ------- | --------------------------------------------- |
@@ -1801,10 +1805,10 @@ optional, but the CLI's feature set (`std` and `unicode-perl`, no `perf`) does n
 build them. They are accepted under their MIT alternative, so the Unlicense is not
 on the allowlist and need not be.
 
-The JSON parser is in the crate, not a dependency. Parity needs the behaviours of
-`ConvertFrom-Json` listed above: order-preserving objects, the last-position
-duplicate rule, case-conflict errors, and number literals kept as text. The crate
-owns that parser, and the fixtures pin it.
+The JSON parser is in the crate, not a dependency. The rules under Validation Rules
+need order-preserving objects, the last-position duplicate rule, case-conflict
+errors, and number literals kept as text. The crate owns that parser, and the
+fixtures pin it.
 
 The reader implements serde's `Deserializer`, so a type that derives `Deserialize`
 can be read from the parsed tree. A failed read is an error, never a panic, and
@@ -1872,6 +1876,4 @@ binary's: the image labels `com.github.axross.runners.*`, the container labels
 `runners.diagnostic-lifecycle` and `runners.cpu-probe`, the `.cache/runners`
 directory, the CI image tag `runners-docker-test:ci`, the login-profile markers in
 `.agents/setup`, the `repository=runners` telemetry attribute in
-`.claude/settings.json`, and the Amp continuation marker. The PowerShell host
-under `hosts/` keeps its own `runners` names, such as its diagnostics mutex,
-until Phase 4c retires it.
+`.claude/settings.json`, and the Amp continuation marker.
