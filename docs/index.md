@@ -25,7 +25,9 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   repository runs its own jobs on GitHub-hosted runners only, the cache-poisoning
   threat model for shared runner storage, per-repository isolation on a runner
   host, the release record for the CLI's dispatch-only release workflow, the accepted
-  LAN-egress risk, what is never committed, and why the review
+  LAN-egress risk, Softnet's confinement of the golden VM build's network and its
+  SUID check, and the pinned Tart, Softnet, and golden VM base, what is never
+  committed, and why the review
   gate admits one bot identity by login.
 - [conventions/documentation.md](./conventions/documentation.md) - which
   document a change to each runner surface invalidates, and what the
@@ -68,8 +70,8 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
 
 ## Glossary
 
-- [glossary.md](./glossary.md) - runner, image, host, CLI, agent-host, and
-  change-loop vocabulary.
+- [glossary.md](./glossary.md) - runner, image, host, CLI, golden VM, build VM,
+  Softnet, agent-host, and change-loop vocabulary.
 
 For what this project is, how to start it, and the commands it has, see
 [`README.md`](../README.md). [`AGENTS.md`](../AGENTS.md) is the working agreement

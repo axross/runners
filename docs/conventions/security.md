@@ -11,7 +11,9 @@ capability owns.
 The runner image under [`images/actions-runner/`](../../images/actions-runner) and
 the host configuration under
 [`hosts/windows-docker-desktop/`](../../hosts/windows-docker-desktop) exist and are
-reviewed against the sections on runner trust and shared storage below. The
+reviewed against the sections on runner trust and shared storage below, and the
+macOS host's golden VM build ([#74](https://github.com/axross/runners/issues/74))
+against the sections on Softnet and the pinned programs. The
 agent-host configuration this repository is also for does not exist yet; those
 sections are the constraints it will be reviewed against.
 
@@ -731,6 +733,76 @@ containers' subnet, or a custom network) has not been researched or implemented.
 The operator procedure tells operators to run the host only on a network they
 would trust the listed repositories' workflows with. Revisit the exception when a
 blocking mechanism is verified.
+
+## Softnet Confines a Job VM's Network
+
+Every axmc VM runs on Softnet, Tart's filtering network, so a VM cannot reach the
+local network, another VM, a multicast group or an IPv6 address, and reaches the
+Mac itself only for DNS. In this version only the golden VM build boots a VM, its
+build VM, and the rules below hold for it. No acceptance in
+[LAN Egress From Runner Containers (Accepted Risk)](#lan-egress-from-runner-containers-accepted-risk)
+extends to axmc: that section is about Docker Desktop's default network, and a VM on
+Tart's default network would reach the LAN, the host and other VMs.
+
+- Each `tart run` MUST pass Softnet two rules. `--net-softnet-allow` carries
+  `out proto udp @host port 53,out proto tcp @host port 53`, and
+  `--net-softnet-block` carries `out @host,224.0.0.0/4`. A rule with a port outranks
+  one without, so DNS to the Mac's address on Softnet's bridge (the gateway) passes
+  and every other packet to the gateway and all multicast do not. With Softnet's
+  defaults, which block the private, shared, link-local and loopback IPv4 ranges and
+  every IPv6 frame, a VM can then send only to globally routable IPv4 addresses and
+  to the gateway's DNS. Softnet's defaults alone let a VM reach every port on the
+  gateway, a Mac service listening on all interfaces among them, and forward
+  multicast, so they are not enough. A `tart run` MUST carry no other network option.
+- Softnet's privilege is a SUID bit on its binary, with no `sudoers` rule.
+  `marshal` MUST check it before every VM boot and MUST NOT set it. It finds `softnet`
+  as Tart does, as the first match on the `PATH` it gives Tart, follows links, and
+  requires a regular file owned by root, with the SUID bit set and no write
+  permission for its group or others. Otherwise it refuses and boots nothing. A
+  `softnet` that an unprivileged user can write would let that user run code as
+  root, and Homebrew installs a new binary without the bit at each upgrade, so the
+  check runs at every boot rather than once. `marshal` never handles a root-owned
+  file itself, and a `softnet` that does not answer `--version` counts as a
+  refusal.
+- Softnet's rules make it track every flow a VM starts, in a table of 32,768
+  entries that refuses new connections while full. A VM that opens more than that
+  within about 5 minutes has new connections refused.
+- The filtering rests on a reading of Softnet's source, which already contradicts
+  Tart's documentation about host access. The host run therefore probes targets
+  that answer from the Mac, and a VM that reaches any of them stops M1 before its
+  pull request is marked ready, so a plan revision can choose a fallback
+  ([#74](https://github.com/axross/runners/issues/74)).
+
+## Tart, Softnet, and the Golden VM Are Pinned
+
+`marshal` neither bundles, installs nor repairs Tart or Softnet: the maintainer
+installs both with Homebrew, and `marshal` calls them as external programs. What
+they and the golden VM are built from is pinned, so that a rebuild changes only
+what a reviewed change changes.
+
+- Tart and Softnet are each pinned to one tested version, recorded in the CLI and
+  in [macOS Runner Host](../operations/macos-runner-host.md#installing-tart-and-softnet).
+  The tested version runs. A newer patch of the tested minor version runs with a
+  warning that names the tested version. Any other version, and any output other
+  than three dot-separated numbers (which Softnet alone follows with
+  `-<short commit>`), is refused. A minor release can change isolation flags or
+  `tart exec`, so an untested minor version does not run. Each host run records the
+  versions in use.
+- The golden VM's base image, `ghcr.io/cirruslabs/ubuntu:24.04`, MUST be pinned by
+  digest. A change of the pin adds the old digest to the CLI's list of retired
+  pins, and `build` removes from Tart's cache only the digests on that list, never
+  the current pin.
+- Docker Engine in the golden VM MUST come from Docker's apt repository at pinned
+  package versions, held there, after the repository's signing key is checked
+  against a recorded fingerprint. A mismatch fails the build.
+- The golden VM is built on each host and never published to a registry. A rebuild
+  upgrades the base's Ubuntu packages, so it picks up security fixes; the golden VM
+  version goes up whenever the pin, the provisioning steps, the launcher or the
+  Docker Engine versions change.
+- The runner image's arm64 build in CI runs on `ubuntu-24.04-arm`, a GitHub-hosted
+  runner, tags the image on the runner and never pushes it, and its job holds only
+  `contents: read`.
+- The Tart client and the golden VM build add no crate to the CLI.
 
 ## Nothing Identifying or Secret Is Committed
 

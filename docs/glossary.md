@@ -105,6 +105,25 @@ in the pool's private sink, then removes it. Until then it is retained with the
 settings it ran with. See
 [operations/cli.md](./operations/cli.md#diagnostics).
 
+**Golden VM** - the Tart Ubuntu VM that `build --profile axmc` makes on the macOS
+host and that a VM per job will be cloned from. It holds Docker Engine, the launcher
+and the **Runner Image**, and its name records its golden VM version, the **Image
+Contract Version**, the runner version and the build time, so they are read without
+booting it. Only `build` deletes it. See
+[operations/macos-runner-host.md](./operations/macos-runner-host.md#the-golden-vm-contract).
+
+**Build VM** - the temporary VM, named `marshal-build-linux-<time>`, in which
+`build --profile axmc` makes a new **Golden VM**. It is renamed to the golden name
+only when complete, and a failed or interrupted build deletes it, so the previous
+Golden VM stays in place.
+
+**Softnet** - the program Tart runs to filter a VM's network. It lets a VM
+send only to globally routable IPv4 addresses and to its gateway, and `marshal`
+passes it rules that leave the gateway only DNS and block all multicast. Its
+privilege is a SUID bit on its binary, which `marshal` checks before it boots a VM
+and never sets. See
+[operations/macos-runner-host.md](./operations/macos-runner-host.md#setting-up-softnet).
+
 **Host Profile** - the host a **Host Configuration** is checked for: `axpc`, the
 Windows machine with Docker Desktop, or `axmc`, the macOS machine. A profile fixes
 the fields, the platform labels, the **Routing Label**, and the path form. See
