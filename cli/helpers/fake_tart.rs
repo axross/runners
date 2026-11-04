@@ -23,11 +23,17 @@
 //!   exits with `exec_exit`. It refuses `-t`, and a VM that is not running. With a
 //!   `docker_program` file that names the fake `docker`, it instead runs that program
 //!   in the VM's place for a command that starts with `docker`, or with the launcher
-//!   `/usr/local/bin/marshal-launch`: the program gets the command's arguments, its
+//!   `/usr/local/bin/marshal-launch`, or with `sudo -n docker`, which the golden VM's
+//!   image build runs as root: the program gets the command's arguments, its
 //!   `FAKE_DOCKER_DIR` is the `docker` directory beside this one, shared by all VMs,
 //!   and it exits when this call ends. The launcher's standard input becomes the
 //!   program's `ACTIONS_RUNNER_INPUT_JITCONFIG`, as the real launcher does, and an
 //!   empty one fails with exit code 64;
+//! - a provisioning call, which runs `bash -c <script> <name>` (after `sudo -n` when it
+//!   is privileged), takes its script from files that carry its `<name>`, such as
+//!   `marshal-list-key`: `exec_stdout-<name>` and `exec_exit-<name>` replace the
+//!   generic `exec_stdout` and `exec_exit`, and `fail-exec-<name>`, `hang-exec-<name>`
+//!   and `flood-exec-<name>` work as the subcommand scripts below do;
 //! - `run` marks its VM running and holds until the VM is no longer running, then
 //!   exits 0. `run_mode` set to `exit` makes it print `run_error` to standard error
 //!   and exit with `run_exit` (default 1) without starting anything;
@@ -330,12 +336,30 @@ fn exec(dir: &Path, stem: &Path, rest: &[&str]) -> Result<u8, String> {
     if let Some(code) = forward_to_docker(dir, command, &input)? {
         return Ok(code);
     }
-    if let Some(output) = text(dir, "exec_stdout") {
+    let step = provisioning_step(command);
+    if let Some(code) = step.and_then(|name| scripted(dir, &format!("exec-{name}"))) {
+        return Ok(code);
+    }
+    let file = |base: &str| match step {
+        Some(name) if exists(dir, &format!("{base}-{name}")) => format!("{base}-{name}"),
+        _ => base.to_string(),
+    };
+    if let Some(output) = text(dir, &file("exec_stdout")) {
         let _ = writeln!(std::io::stdout(), "{output}");
     }
-    Ok(text(dir, "exec_exit")
+    Ok(text(dir, &file("exec_exit"))
         .and_then(|code| code.parse().ok())
         .unwrap_or(0))
+}
+
+/// the name of a provisioning call: the word after the script in `bash -c <script>
+/// <name>`.
+fn provisioning_step<'a>(command: &[&'a str]) -> Option<&'a str> {
+    let at = command.iter().position(|word| *word == "bash")?;
+    match command.get(at + 1..)? {
+        ["-c", _script, name, ..] => Some(name),
+        _ => None,
+    }
 }
 
 /// runs the fake `docker` for a `docker` or launcher command when the script names
@@ -345,7 +369,9 @@ fn forward_to_docker(dir: &Path, command: &[&str], input: &[u8]) -> Result<Optio
         return Ok(None);
     };
     let (jit, arguments) = match command.split_first() {
-        Some((&"docker", arguments)) => (None, arguments),
+        Some((&"docker", arguments)) | Some((&"sudo", ["-n", "docker", arguments @ ..])) => {
+            (None, arguments)
+        }
         Some((&LAUNCHER, arguments)) => {
             // the launcher's `$(...)` drops trailing newlines
             let jit = String::from_utf8_lossy(input)

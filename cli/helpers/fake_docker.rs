@@ -44,7 +44,9 @@
 //!   which `image inspect`, `image ls`, `image rm`, `build` and `tag` read and
 //!   change;
 //! - `build` writes its standard input to `inv-<n>.stdin` and tags a new image
-//!   with its `--label`s;
+//!   with its `--label`s, and with the contract label whose value is the file
+//!   `build_contract` when there is one, as the Dockerfile's `LABEL` gives a real
+//!   image;
 //! - the files `info_hangs`, `inspect_hangs`, `build_hangs` (holding `tagged` to
 //!   tag before it hangs), `build_fails`, `tag_hangs` (holding `after` to tag
 //!   before it hangs), `tag_fails`, `image_rm_fails`, `prune_hangs` and
@@ -792,12 +794,15 @@ fn build(dir: &Path, arguments: &[&str]) -> Result<u8, String> {
         return Ok(1);
     }
     let tag = value_after(arguments, "--tag").ok_or("a build without --tag")?;
-    let labels = arguments
+    let mut labels: Vec<(String, String)> = arguments
         .windows(2)
         .filter(|pair| pair.first() == Some(&"--label"))
         .filter_map(|pair| pair.get(1).and_then(|label| label.split_once('=')))
         .map(|(key, value)| (key.to_string(), value.to_string()))
         .collect();
+    if let Some(contract) = text(dir, "build_contract") {
+        labels.push((CONTRACT_LABEL.to_string(), contract));
+    }
     let id = format!(
         "sha256:built-{}",
         stem.file_name().unwrap_or_default().to_string_lossy()
