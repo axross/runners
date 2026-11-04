@@ -1520,9 +1520,8 @@ no cross-compilation, in one leg that:
 8. on the macOS leg, runs the "Check The Signing Tools" step, which holds no secret
    and prints a `MEASURED: signing tools:` line with the path of each tool that
    `sign-macos` and `verify-macos` call. It fails the leg if one is missing, and
-   runs `base64` and `shasum`, the only two it runs, against the flags those jobs use,
-   so a tool that moves on a new runner image fails a pull request before it fails a
-   release;
+   runs `base64` and `shasum` against the flags those jobs use, so a tool that moves
+   on a new runner image fails a pull request before it fails a release;
 9. hands the SHA-256 of the binary and of the installer to the next job as job
    outputs, and uploads those two files by name.
 
@@ -1794,13 +1793,13 @@ pull request fixes it.
 F0 owns these. W1, W4, K2 and M2 consume them. Each is a child of roadmap
 [#72](https://github.com/axross/runners/issues/72), as F0 is:
 
-- **F0** is the installers and the release signing this section describes.
-- **W1** is the child that adds its installer to the release, and chooses its app's
-  bundle identifier.
-- **W4** is the child that adds an update feed, with a signed update archive.
-- **K2** is the child whose Keychain items trust the Developer ID-signed `marshal`
-  under the identifier below.
-- **M2** is the child that adds an app bundle and a disk image, and signs the bundled
+- **F0**, "Installers and release signing", is the child this section describes.
+- **W1**, "Windows tray app, first release", adds its installer to the release set,
+  and chooses its app's bundle identifier.
+- **W4**, "Automatic updates, on Windows", signs the update archive.
+- **K2**, "Tokens in the operating system's store", has Keychain items that trust the
+  Developer ID-signed `marshal` under the identifier below.
+- **M2**, "Mac app", adds steps for the app and the disk image, and signs the bundled
   command line with the same identifier and team.
 
 The contracts F0 owns are these:
