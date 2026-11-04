@@ -213,7 +213,7 @@ function Format-InstallerPolicyState {
 
 # the hosted Windows Server image blocks a non-elevated per-user install unless DisableMSI is 0.
 function Enable-InstallerPolicy {
-    $null = New-Item -Path $InstallerPolicyPath -Force
+    if (-not (Test-Path -LiteralPath $InstallerPolicyPath)) { $null = New-Item -Path $InstallerPolicyPath -Force }
     $null = New-ItemProperty -LiteralPath $InstallerPolicyPath -Name 'DisableMSI' -PropertyType DWord -Value 0 -Force
 }
 
@@ -388,8 +388,6 @@ try {
     & icacls.exe $Staging /grant "*S-1-5-32-545:(OI)(CI)M" | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "icacls exited $LASTEXITCODE" }
 
-    # a scheduled task logs on as a batch job, so its token has no INTERACTIVE group, and msiexec could not reach
-    # the Windows Installer service from it; a secondary logon is interactive, as a person's logon is.
     Write-Output '== the Windows Installer policy as found =='
     Write-Diagnostic "values under $InstallerPolicyPath" -Arguments $InstallerPolicyPath -Gather { param($path) Get-PolicyKeyReport -Path $path }
     Write-Diagnostic "values under $UserInstallerPolicyPath of $env:USERNAME" -Arguments $UserInstallerPolicyPath -Gather { param($path) Get-PolicyKeyReport -Path $path }
@@ -398,6 +396,8 @@ try {
     $policyTouched = $true
     Enable-InstallerPolicy
 
+    # a scheduled task logs on as a batch job, so its token has no INTERACTIVE group, and msiexec could not reach
+    # the Windows Installer service from it; a secondary logon is interactive, as a person's logon is.
     $credential = New-Object System.Management.Automation.PSCredential("$env:COMPUTERNAME\$UserName", $secure)
     $testStart = Get-Date
     $failure = $null
