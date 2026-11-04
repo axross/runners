@@ -290,8 +290,28 @@ run = "bash .github/scripts/tests/test-fetch-wix.sh"
 description = "Run the documented macOS install blocks of docs/operations/cli.md under bash against stand-ins, producing every refusal"
 run = "bash .github/scripts/tests/test-install-blocks.sh bash"
 
+[tasks."test:assemble-release"]
+description = "Check the script that writes SHA256SUMS for the release's four files and refuses another file set or a changed file"
+run = "bash .github/scripts/tests/test-assemble-release.sh"
+
+[tasks."check:release-shape"]
+description = "Check that the release workflows keep the shape the release record describes: one signing job in the release Environment, what it holds and runs, and its place in the chain"
+run = "node .github/scripts/check-release-shape.mjs"
+
+[tasks."test:release-shape"]
+description = "Run the release shape check against altered copies of the workflows, one change at a time, and expect each to fail"
+run = "bash .github/scripts/tests/test-release-shape.sh"
+
+[tasks."test:sign-macos"]
+description = "Run sign-macos's shell steps against recording stand-ins of the macOS signing tools: every refusal, the flags, the clean-up, and that no secret is printed"
+run = "bash .github/scripts/tests/test-sign-macos.sh"
+
+[tasks."test:signed-pkg"]
+description = "Run the signed package check, which verify-macos runs, against stand-ins and produce each of its refusals"
+run = "bash .github/scripts/tests/test-signed-pkg-refusals.sh"
+
 [tasks.check]
-description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, host test, release script tests, installer version and WiX fetch tests, install block tests, Rust tests, Rust dependency check, parity test"
+description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, host test, release script tests, release shape check and its test, sign-macos, signed package and assemble tests, installer version and WiX fetch tests, install block tests, Rust tests, Rust dependency check, parity test"
 depends = [
   "format:check",
   "lint",
@@ -302,6 +322,11 @@ depends = [
   "test:host",
   "test:set-release-version",
   "test:verify-release",
+  "test:assemble-release",
+  "check:release-shape",
+  "test:release-shape",
+  "test:sign-macos",
+  "test:signed-pkg",
   "test:installer-version",
   "test:fetch-wix",
   "test:install-blocks",
