@@ -83,6 +83,16 @@ impl Profile {
         }
     }
 
+    /// why this profile cannot run on a Windows host, when it cannot: the axmc profile
+    /// runs Tart, which exists only on macOS.
+    #[must_use]
+    pub fn refusal_on_windows(self) -> Option<&'static str> {
+        match self {
+            Self::Axpc => None,
+            Self::Axmc => Some("the axmc profile runs only on macOS"),
+        }
+    }
+
     #[must_use]
     pub fn name(self) -> &'static str {
         match self {
@@ -164,5 +174,24 @@ impl fmt::Display for Profile {
 impl fmt::Display for Os {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.name())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_the_axmc_profile_is_refused_on_windows() {
+        assert_eq!(Profile::Axpc.refusal_on_windows(), None);
+        assert_eq!(
+            Profile::Axmc.refusal_on_windows(),
+            Some("the axmc profile runs only on macOS")
+        );
+    }
+
+    #[test]
+    fn build_refuses_through_it() {
+        assert!(include_str!("build/mod.rs").contains("profile.refusal_on_windows()"));
     }
 }

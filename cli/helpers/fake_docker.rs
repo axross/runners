@@ -28,6 +28,9 @@
 //!
 //! a `hold` job container stays until its entry leaves `containers` or exits, then
 //! exits 137, so `rm -f`, `stop` and `kill` end it as they would end a real one;
+//! with `FAKE_DOCKER_WATCH_PARENT` set, as the fake `tart` sets it when it runs this
+//! program for `tart exec`, it also ends when its parent process ends, as a command
+//! in a VM ends when the guest agent's call is cancelled;
 //! a `longline` job container prints one line of [`LONG_LINE_BYTES`] bytes, the
 //! letters `a` to `z` in turn, then exits as an ordinary job does. every wait is
 //! bounded, so a test that fails does not leave the helper running.
@@ -41,7 +44,9 @@
 //!   which `image inspect`, `image ls`, `image rm`, `build` and `tag` read and
 //!   change;
 //! - `build` writes its standard input to `inv-<n>.stdin` and tags a new image
-//!   with its `--label`s;
+//!   with its `--label`s, and with the contract label whose value is the file
+//!   `build_contract` when there is one, as the Dockerfile's `LABEL` gives a real
+//!   image;
 //! - the files `info_hangs`, `inspect_hangs`, `build_hangs` (holding `tagged` to
 //!   tag before it hangs), `build_fails`, `tag_hangs` (holding `after` to tag
 //!   before it hangs), `tag_fails`, `image_rm_fails`, `prune_hangs` and
@@ -122,16 +127,13 @@ fn run() -> Result<u8, String> {
 fn record(dir: &Path, arguments: &[String]) -> Result<fs::File, String> {
     for number in 0..100_000 {
         let stem = dir.join(format!("inv-{number:06}"));
-        let argv = stem.with_extension("argv");
-        let created = fs::OpenOptions::new()
+        let claimed = fs::OpenOptions::new()
             .write(true)
             .create_new(true)
-            .open(&argv);
-        let Ok(mut file) = created else {
+            .open(stem.with_extension("claim"));
+        if claimed.is_err() {
             continue;
-        };
-        // the arguments come last, so a call a test can name already holds its
-        // lock and has written the rest
+        }
         let alive =
             fs::File::create(stem.with_extension("alive")).map_err(|error| error.to_string())?;
         alive.lock().map_err(|error| error.to_string())?;
@@ -145,11 +147,18 @@ fn record(dir: &Path, arguments: &[String]) -> Result<fs::File, String> {
             )
             .map_err(|error| error.to_string())?;
         }
-        file.write_all(arguments.join("\0").as_bytes())
-            .map_err(|error| error.to_string())?;
+        publish_arguments(&stem, arguments)?;
         return Ok(alive);
     }
     Err("no invocation number".to_string())
+}
+
+/// renames the arguments into place as `.argv`, so a call a test can name already
+/// holds its lock and has written the rest; a reader never sees them half written.
+fn publish_arguments(stem: &Path, arguments: &[String]) -> Result<(), String> {
+    let pending = stem.with_extension("argv.tmp");
+    fs::write(&pending, arguments.join("\0")).map_err(|error| error.to_string())?;
+    fs::rename(&pending, stem.with_extension("argv")).map_err(|error| error.to_string())
 }
 
 /// records the process group this call runs in, where `ps` can tell it.
@@ -541,7 +550,9 @@ fn job(dir: &Path, name: &str, diagnostic: bool) -> Result<u8, String> {
         print_long_line(&mut std::io::stdout());
     }
     let code = if text(dir, "run_mode").as_deref() == Some("hold") {
-        sleep_while(|| running(dir, name));
+        let parent = parent_id();
+        let watching = std::env::var_os("FAKE_DOCKER_WATCH_PARENT").is_some();
+        sleep_while(|| running(dir, name) && (!watching || parent_id() == parent));
         137
     } else {
         let exit = text(dir, "run_exit")
@@ -551,6 +562,17 @@ fn job(dir: &Path, name: &str, diagnostic: bool) -> Result<u8, String> {
         exit
     };
     Ok(code)
+}
+
+/// the process that started this one, which changes to another when that one ends.
+#[cfg(unix)]
+fn parent_id() -> u32 {
+    std::os::unix::process::parent_id()
+}
+
+#[cfg(not(unix))]
+fn parent_id() -> u32 {
+    0
 }
 
 fn print_long_line(out: &mut impl Write) {
@@ -772,12 +794,15 @@ fn build(dir: &Path, arguments: &[&str]) -> Result<u8, String> {
         return Ok(1);
     }
     let tag = value_after(arguments, "--tag").ok_or("a build without --tag")?;
-    let labels = arguments
+    let mut labels: Vec<(String, String)> = arguments
         .windows(2)
         .filter(|pair| pair.first() == Some(&"--label"))
         .filter_map(|pair| pair.get(1).and_then(|label| label.split_once('=')))
         .map(|(key, value)| (key.to_string(), value.to_string()))
         .collect();
+    if let Some(contract) = text(dir, "build_contract") {
+        labels.push((CONTRACT_LABEL.to_string(), contract));
+    }
     let id = format!(
         "sha256:built-{}",
         stem.file_name().unwrap_or_default().to_string_lossy()
@@ -797,12 +822,13 @@ fn build(dir: &Path, arguments: &[&str]) -> Result<u8, String> {
     Ok(0)
 }
 
-/// the stem of the newest `inv-<n>` this call recorded.
+/// the stem of the newest `inv-<n>` this call recorded. It walks the claims, as a
+/// concurrent call's arguments may not be in place yet.
 fn latest_invocation(dir: &Path) -> Result<PathBuf, String> {
     let pid = std::process::id().to_string();
     (0..100_000)
         .map(|number| dir.join(format!("inv-{number:06}")))
-        .take_while(|stem| stem.with_extension("argv").exists())
+        .take_while(|stem| stem.with_extension("claim").exists())
         .filter(|stem| {
             fs::read_to_string(stem.with_extension("pid"))
                 .ok()

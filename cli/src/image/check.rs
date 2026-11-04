@@ -7,6 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::json::{self, Value};
 use crate::runtime::name::{civil_from_days, days_from_civil};
+use crate::runtime::tart::GOLDEN_VM_VERSION;
 
 use super::contract::{
     BUILT_LABEL, CONTRACT_LABEL, CONTRACT_VERSION, RUNNER_RELEASED_LABEL, RUNNER_VERSION_LABEL,
@@ -93,6 +94,61 @@ pub enum ImageCheck {
     Missing,
     /// Docker could not say, within the bound; never read as a mismatch.
     Unavailable(String),
+    /// what the VM runtime's check of the golden VM found, in place of an image.
+    Golden(GoldenCheck),
+}
+
+/// what the check of the golden VM found, from the VM names alone.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GoldenCheck {
+    /// the newest golden VM carries this CLI's golden VM version and image contract
+    /// version; the labels hold what its name records.
+    Matching { name: String, labels: ImageLabels },
+    /// the newest golden VM carries another golden VM version or image contract
+    /// version.
+    Mismatched {
+        name: String,
+        golden_version: u32,
+        contract_version: u32,
+        labels: ImageLabels,
+    },
+    /// no golden VM exists.
+    Missing,
+}
+
+impl GoldenCheck {
+    fn labels(&self) -> Option<&ImageLabels> {
+        match self {
+            Self::Matching { labels, .. } | Self::Mismatched { labels, .. } => Some(labels),
+            Self::Missing => None,
+        }
+    }
+
+    fn name(&self) -> Option<&str> {
+        match self {
+            Self::Matching { name, .. } | Self::Mismatched { name, .. } => Some(name),
+            Self::Missing => None,
+        }
+    }
+
+    /// why the golden VM cannot run jobs, worded as an image's refusal is.
+    fn refusal(&self) -> Option<String> {
+        match self {
+            Self::Matching { .. } => None,
+            Self::Mismatched {
+                name,
+                golden_version,
+                contract_version,
+                ..
+            } => Some(format!(
+                "the golden VM {name} has golden VM version {golden_version} and image contract {contract_version}, \
+                 but this CLI needs golden VM version {GOLDEN_VM_VERSION} and image contract {CONTRACT_VERSION}"
+            )),
+            Self::Missing => Some(format!(
+                "the golden VM is missing; this CLI needs one with golden VM version {GOLDEN_VM_VERSION} and image contract {CONTRACT_VERSION}"
+            )),
+        }
+    }
 }
 
 impl ImageCheck {
@@ -112,6 +168,7 @@ impl ImageCheck {
     pub fn refusal(&self, image: &str) -> Option<String> {
         match self {
             Self::Matching(_) | Self::Unavailable(_) => None,
+            Self::Golden(golden) => golden.refusal(),
             Self::Mismatched(labels) => Some(format!(
                 "the image {image} has image contract {}, but this CLI needs image contract {CONTRACT_VERSION}",
                 shown_contract(labels)
@@ -125,7 +182,33 @@ impl ImageCheck {
     fn labels(&self) -> Option<&ImageLabels> {
         match self {
             Self::Matching(labels) | Self::Mismatched(labels) => Some(labels),
+            Self::Golden(golden) => golden.labels(),
             Self::Missing | Self::Unavailable(_) => None,
+        }
+    }
+
+    /// what the warnings call the thing that was checked.
+    fn subject(&self) -> Subject {
+        match self {
+            Self::Golden(_) => Subject::GoldenVm,
+            _ => Subject::Image,
+        }
+    }
+}
+
+/// what a freshness warning is about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Subject {
+    Image,
+    GoldenVm,
+}
+
+impl Subject {
+    /// the subject as a sentence names it.
+    fn the(self) -> &'static str {
+        match self {
+            Self::Image => "the image",
+            Self::GoldenVm => "the golden VM",
         }
     }
 }
@@ -209,22 +292,23 @@ pub fn age_days(now: SystemTime, then: u64) -> u64 {
     now.saturating_sub(then) / SECONDS_PER_DAY
 }
 
-/// the freshness warnings for the image a check found, as of `now`.
+/// the freshness warnings for the image or golden VM a check found, as of `now`.
 #[must_use]
 pub fn freshness_warnings(check: &ImageCheck, now: SystemTime) -> Vec<String> {
     let Some(labels) = check.labels() else {
         return Vec::new();
     };
+    let subject = check.subject().the();
     let mut warnings = Vec::new();
     match built_seconds(labels).map(|built| age_days(now, built)) {
-        None => warnings.push(
-            "the image was not built by `marshal build`, so its build age is unknown".to_string(),
-        ),
+        None => warnings.push(format!(
+            "{subject} was not built by `marshal build`, so its build age is unknown"
+        )),
         Some(days) if days >= SECOND_WARNING_DAYS => warnings.push(format!(
-            "the image's operating-system packages are {days} days old; rebuild it with `marshal build`"
+            "{subject}'s operating-system packages are {days} days old; rebuild it with `marshal build`"
         )),
         Some(days) if days >= FIRST_WARNING_DAYS => warnings.push(format!(
-            "the image is {days} days old and should be rebuilt with `marshal build`"
+            "{subject} is {days} days old and should be rebuilt with `marshal build`"
         )),
         Some(_) => {}
     }
@@ -233,7 +317,7 @@ pub fn freshness_warnings(check: &ImageCheck, now: SystemTime) -> Vec<String> {
         if days >= SECOND_WARNING_DAYS {
             warnings.push(format!(
                 "runner {version} was released {days} days ago, so each job's runner likely updates \
-                 itself at start; update the CLI to get a newer runner, then rebuild the image"
+                 itself at start; update the CLI to get a newer runner, then rebuild {subject}"
             ));
         } else if days >= FIRST_WARNING_DAYS {
             warnings.push(format!(
@@ -258,7 +342,18 @@ pub fn status_fields(
             "mismatch (image {}, CLI {CONTRACT_VERSION})",
             shown_contract(labels)
         ),
-        Some(ImageCheck::Missing) => "missing".to_string(),
+        Some(ImageCheck::Missing | ImageCheck::Golden(GoldenCheck::Missing)) => {
+            "missing".to_string()
+        }
+        Some(ImageCheck::Golden(GoldenCheck::Matching { .. })) => CONTRACT_VERSION.to_string(),
+        Some(ImageCheck::Golden(GoldenCheck::Mismatched {
+            golden_version,
+            contract_version,
+            ..
+        })) => format!(
+            "mismatch (golden VM version {golden_version} and image contract {contract_version}, \
+             CLI golden VM version {GOLDEN_VM_VERSION} and image contract {CONTRACT_VERSION})"
+        ),
     };
     let labels = check.and_then(ImageCheck::labels);
     let built = labels.and_then(built_seconds).map_or_else(
@@ -275,6 +370,11 @@ pub fn status_fields(
         ("image-built", built),
         ("runner", runner),
     ];
+    if let Some(ImageCheck::Golden(golden)) = check
+        && let Some(name) = golden.name()
+    {
+        fields.push(("golden-vm", name.to_string()));
+    }
     if let Some(check) = check {
         fields.extend(
             freshness_warnings(check, now)
@@ -539,5 +639,48 @@ mod tests {
             )
         );
         assert_eq!(fields[3], ("runner", "unknown".to_string()));
+    }
+
+    #[test]
+    fn a_golden_vm_reads_as_status_shows_it_and_its_old_runner_asks_for_a_rebuild() {
+        let found = labels(&CONTRACT_VERSION.to_string());
+        let matching = ImageCheck::Golden(GoldenCheck::Matching {
+            name: "marshal-golden-linux-g1-c1-r2.337.0-19700101001640".to_string(),
+            labels: found.clone(),
+        });
+        let now = at(date_seconds("2026-10-26").unwrap());
+        let fields = status_fields("actions-runner:local", Some(&matching), now);
+        assert_eq!(fields[1], ("image-contract", CONTRACT_VERSION.to_string()));
+        assert_eq!(
+            fields[4],
+            (
+                "golden-vm",
+                "marshal-golden-linux-g1-c1-r2.337.0-19700101001640".to_string()
+            )
+        );
+        let warnings = freshness_warnings(&matching, now);
+        assert_eq!(
+            warnings.last().unwrap(),
+            "runner 2.337.0 was released 61 days ago, so each job's runner likely updates itself \
+             at start; update the CLI to get a newer runner, then rebuild the golden VM"
+        );
+        let mismatched = ImageCheck::Golden(GoldenCheck::Mismatched {
+            name: "marshal-golden-linux-g2-c1-r2.337.0-19700101001640".to_string(),
+            golden_version: 2,
+            contract_version: 1,
+            labels: found,
+        });
+        assert_eq!(
+            status_fields("x", Some(&mismatched), now)[1],
+            (
+                "image-contract",
+                format!(
+                    "mismatch (golden VM version 2 and image contract 1, CLI golden VM version {GOLDEN_VM_VERSION} and image contract {CONTRACT_VERSION})"
+                )
+            )
+        );
+        let missing = status_fields("x", Some(&ImageCheck::Golden(GoldenCheck::Missing)), now);
+        assert_eq!(missing[1], ("image-contract", "missing".to_string()));
+        assert_eq!(missing.len(), 4);
     }
 }

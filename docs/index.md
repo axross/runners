@@ -46,6 +46,11 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   building the image, running and stopping the pools, diagnostics and their
   recovery, health checks, rebuilding and updating, recovery, and rolling back to
   the previous `marshal` release.
+- [operations/macos-runner-host.md](./operations/macos-runner-host.md) -
+  preparing the Mac, the axmc host, for Linux runners in Tart VMs with the CLI:
+  installing Tart and Softnet at the tested versions, setting up Softnet's SUID bit,
+  the signed-in session, the golden VM contract, building the golden VM, the host
+  configuration, and the verification status.
 - [operations/cli.md](./operations/cli.md) - the CLI under `cli/`: what `validate`
   accepts and prints for the axpc and axmc host profiles, the validation rules and
   the shared fixtures, the runtime layer

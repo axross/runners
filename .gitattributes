@@ -1,3 +1,4 @@
 *.sh text eol=lf
 Dockerfile text eol=lf
 tests/host-configuration/rust/raw/** -text
+cli/src/golden/fixtures/*.txt text eol=lf
