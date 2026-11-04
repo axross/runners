@@ -242,12 +242,13 @@ pub enum ServerMessage<'a> {
 }
 
 impl ServerMessage<'_> {
-    /// the message as the line the agent writes, with its line break.
+    /// the message as the line the agent writes, with its line break; `None` when it
+    /// cannot be serialised, in which case nothing is written.
     #[must_use]
-    pub fn line(&self) -> Vec<u8> {
-        let mut line = serde_json::to_vec(self).unwrap_or_default();
+    pub fn line(&self) -> Option<Vec<u8>> {
+        let mut line = serde_json::to_vec(self).ok()?;
         line.push(b'\n');
-        line
+        Some(line)
     }
 }
 
@@ -316,7 +317,7 @@ mod tests {
         }
         .line();
         assert_eq!(
-            String::from_utf8(line).unwrap(),
+            String::from_utf8(line.unwrap()).unwrap(),
             "{\"type\":\"response\",\"id\":3,\"result\":{\"state\":\"running\"}}\n"
         );
         let error = ErrorBody::new(ErrorCode::Refused, "no");
@@ -327,7 +328,7 @@ mod tests {
         }
         .line();
         assert_eq!(
-            String::from_utf8(line).unwrap(),
+            String::from_utf8(line.unwrap()).unwrap(),
             "{\"type\":\"response\",\"id\":4,\"error\":{\"code\":\"refused\",\"message\":\"no\"}}\n"
         );
     }

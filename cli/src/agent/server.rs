@@ -1,11 +1,16 @@
 //! one connection of protocol version 2, as the agent serves it: the handshake, the
 //! requests answered in order, the subscription's coalesced events and heartbeats,
 //! and the `ending` message; every limit is a timer on the agent's own runtime, so a
-//! silent or stalled client holds no thread, on any operating system.
+//! silent or stalled client holds no task of its own past its timers. On Windows the
+//! pipe crate flushes on a blocking thread, which only the explicit flushes of the
+//! last messages start; see `docs/operations/cli.md`.
 
 use std::future::pending;
+use std::io;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
@@ -197,20 +202,77 @@ fn read_lines<R: AsyncRead + Unpin + Send + 'static>(read: R) -> (mpsc::Receiver
     (lines, Reader(task))
 }
 
+/// the write half of a connection, which can be dropped without waiting for the peer
+/// to read what was written to it.
+pub trait Abandon {
+    /// takes back the wait for the peer to read, so dropping the half returns at once.
+    /// On Windows the pipe crate otherwise sends a stream whose peer has not read to
+    /// a blocking thread that waits for it, for as long as the peer stays.
+    fn abandon(&mut self);
+}
+
+impl<S> Abandon for tokio::io::WriteHalf<S> {
+    fn abandon(&mut self) {}
+}
+
+/// a write half that is abandoned when it is dropped, for whatever reason the
+/// connection ended; what must reach the peer is flushed on purpose, in a bounded time.
+struct Writer<W: Abandon>(W);
+
+impl<W: Abandon> Drop for Writer<W> {
+    fn drop(&mut self) {
+        self.0.abandon();
+    }
+}
+
+impl<W: AsyncWrite + Abandon + Unpin> AsyncWrite for Writer<W> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.0).poll_write(cx, buf)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.0).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.0).poll_shutdown(cx)
+    }
+}
+
+/// whether a message is only queued for the peer, or must reach it because the
+/// connection ends with it.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Delivery {
+    Queued,
+    Final,
+}
+
 /// writes a message in at most `within`; false when it was not written, and the
-/// connection ends.
+/// connection ends. A `Final` message is also flushed in that time, which on Windows
+/// waits for the peer to read it; a stalled peer costs the time and, there, one
+/// blocking thread until it reads or closes, which the end of the process does not wait for.
 async fn write<W: AsyncWrite + Unpin>(
     writer: &mut W,
     message: &ServerMessage<'_>,
     within: Duration,
+    delivery: Delivery,
 ) -> bool {
-    let line = message.line();
+    let Some(line) = message.line() else {
+        return false;
+    };
     if line.len() > MAX_AGENT_MESSAGE_BYTES {
         return false;
     }
     let written = async {
         writer.write_all(&line).await?;
-        writer.flush().await
+        if delivery == Delivery::Final {
+            writer.flush().await?;
+        }
+        Ok::<(), io::Error>(())
     };
     timeout(within, written)
         .await
@@ -271,12 +333,13 @@ fn error(code: ErrorCode, message: &str) -> ErrorBody {
 }
 
 /// serves one connection until it ends, for any reason.
-pub async fn serve<S>(stream: S, shared: Arc<Shared>, admission: Admission)
+pub async fn serve<R, W>(read: R, writer: W, shared: Arc<Shared>, admission: Admission)
 where
-    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    R: AsyncRead + Unpin + Send + 'static,
+    W: AsyncWrite + Abandon + Unpin + Send,
 {
     let limits = shared.limits;
-    let (read, mut writer) = tokio::io::split(stream);
+    let mut writer = Writer(writer);
     let (mut lines, _reader) = read_lines(read);
     let mut ending = shared.ending.clone();
     let first = tokio::select! {
@@ -285,7 +348,13 @@ where
             _ => return,
         },
         reason = ending_reason(&mut ending) => {
-            write(&mut writer, &ServerMessage::Ending { reason: &reason }, limits.write).await;
+            write(
+                &mut writer,
+                &ServerMessage::Ending { reason: &reason },
+                limits.write,
+                Delivery::Final,
+            )
+            .await;
             return;
         }
     };
@@ -299,6 +368,7 @@ where
                 &mut writer,
                 &ServerMessage::Error { error: &body },
                 limits.write,
+                Delivery::Final,
             )
             .await;
             drop(slot);
@@ -316,6 +386,7 @@ where
             &mut writer,
             &ServerMessage::Error { error: &body },
             limits.write,
+            Delivery::Final,
         )
         .await;
         return;
@@ -328,7 +399,7 @@ where
         methods: &METHODS,
         topics: &TOPICS,
     };
-    if !write(&mut writer, &welcome, limits.write).await {
+    if !write(&mut writer, &welcome, limits.write, Delivery::Queued).await {
         return;
     }
     Session {
@@ -343,18 +414,24 @@ where
     .await;
 }
 
-struct Session<'a, W> {
+struct Session<'a, W: Abandon> {
     shared: &'a Shared,
-    writer: W,
+    writer: Writer<W>,
     lines: mpsc::Receiver<Read>,
     subscription: Option<Subscription>,
     pending: Pending,
     last_received: Instant,
 }
 
-impl<W: AsyncWrite + Unpin> Session<'_, W> {
+impl<W: AsyncWrite + Abandon + Unpin> Session<'_, W> {
     async fn send(&mut self, message: &ServerMessage<'_>) -> bool {
-        write(&mut self.writer, message, self.shared.limits.write).await
+        write(
+            &mut self.writer,
+            message,
+            self.shared.limits.write,
+            Delivery::Queued,
+        )
+        .await
     }
 
     async fn run(mut self) {
@@ -364,7 +441,13 @@ impl<W: AsyncWrite + Unpin> Session<'_, W> {
             let reason = ending.borrow_and_update().clone();
             if let Some(reason) = reason {
                 self.answer_if_ready().await;
-                self.send(&ServerMessage::Ending { reason: &reason }).await;
+                write(
+                    &mut self.writer,
+                    &ServerMessage::Ending { reason: &reason },
+                    limits.write,
+                    Delivery::Final,
+                )
+                .await;
                 return;
             }
             let idle = (self.subscription.is_none() && self.pending.is_none())

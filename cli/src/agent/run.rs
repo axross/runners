@@ -277,7 +277,12 @@ pub fn run(options: AgentOptions<'_>, err: &mut dyn Write) -> u8 {
         executable,
         limits,
     };
-    match runtime.block_on(run_resident(resident)) {
+    let ended = runtime.block_on(run_resident(resident));
+    // the runtime is not waited for: on Windows a stalled client can keep a blocking
+    // task of the pipe crate alive for as long as it stays, and the exit and the lock
+    // must not wait for it
+    runtime.shutdown_background();
+    match ended {
         Ok(ended) => finish(&*log, &ended),
         Err(error) => log_error(&*log, &error),
     }

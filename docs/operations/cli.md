@@ -1003,7 +1003,12 @@ its handshake included, and waits up to 0.5 s for them to end; an
 answer already given, such as `quit`'s, is written before the `ending`.
 
 The limits are timers on the agent's own runtime on every operating system, so a
-silent or stalled client holds no thread:
+silent or stalled client holds no task of its own past them. A thread is held only
+where the pipe crate needs one, which is measured on Linux only (the stalled readers'
+test counts the runtime's worker threads there, and finds none held); the Windows
+case is next to the table.
+
+The limits:
 
 | Limit         | Value                                                                                                                |
 | ------------- | -------------------------------------------------------------------------------------------------------------------- |
@@ -1017,7 +1022,18 @@ On Windows the pipe is created as the first instance of the name with the descri
 `D:P(A;;GA;;;<user SID>)` and with remote clients rejected, as for `start`, but it
 is served by the pipe crate's asynchronous listener on the agent's runtime, so the
 limits above are the same there as on macOS. Both channels take the pipe's options
-from one function, so they cannot differ. On Unix the socket has the checks of
+from one function, so they cannot differ. The pipe crate flushes a pipe on a blocking
+thread that waits until the peer has read everything, and that wait cannot be
+cancelled. So the agent flushes only the messages that end a connection (`ending`,
+and the error that answers a refused or failed handshake), each in at most the write
+limit, and abandons a connection's write half when the connection ends for any
+reason, so the crate does not park it on a waiting thread. A client that never reads
+and never closes can still keep one such thread for each of those final messages.
+The agent leaves its runtime without waiting for blocking tasks, so neither the exit
+nor the release of the lock waits for such a thread, and
+`tests/agent_quit_stalled.rs` runs the agent as a process on every platform and
+shows a `quit` ends it within a second or so while a subscribed client reads
+nothing. On Unix the socket has the checks of
 [Control Channel](#control-channel).
 
 ### The Snapshot
@@ -1084,7 +1100,9 @@ and the store's kind and code in an error, a skipped pool's reason and the log.
 `tests/agent_snapshot.rs` covers the snapshot, the diagnostics, the leftovers, the
 64 KiB cut, that `quit` frees the lock within a second with 640 runners and four
 subscribed connections that never read, the stalled readers' thread count (measured
-on Linux only, from the runtime's worker threads), and that no token or JIT
+on Linux only, from the runtime's worker threads) and, in
+`tests/agent_quit_stalled.rs`, that the process ends within a second or so of a
+`quit` with a stalled subscriber, and that no token or JIT
 configuration reaches a connection or the log. `tests/agent_versions.rs` runs `stop`,
 `status`, `restart` and `diagnostics` against an agent and shows they exit 1 and
 change nothing. `tests/agent_channel.rs` covers the socket's mode, the peer's user

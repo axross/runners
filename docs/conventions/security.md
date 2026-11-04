@@ -612,8 +612,11 @@ built: its names, modes, and checks.
   there; [CLI](../operations/cli.md#the-agent) owns the protocol. A first line
   that is not a `hello` is refused and the connection closed, so no version 1
   request reaches the agent. A silent or stalled client cannot hold the agent:
-  every connection limit is a timer, and a client that stops reading is closed
-  after 5 s.
+  every connection limit is a timer, a client that stops reading is closed after
+  5 s, and the agent ends and frees its lock without waiting for the pipe crate's
+  blocking flush thread that a stalled Windows client can keep alive (a process
+  test shows it). Such a thread is at most one for each final message to a client
+  that never reads and never closes, which is accepted on a single-user host.
 - Both Windows channels, `start`'s and the agent's, take their pipe name, byte
   mode, refusal of remote clients and the only-user descriptor from one function,
   `instance::windows::control_pipe_options`, so the two cannot differ. A test on

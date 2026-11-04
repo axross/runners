@@ -3,6 +3,7 @@
 use std::io;
 use std::path::PathBuf;
 
+use tokio::io::{ReadHalf, WriteHalf};
 use tokio::net::{UnixListener, UnixStream};
 
 use crate::instance::channel::{ChannelError, bind_private};
@@ -57,4 +58,9 @@ impl Listener {
             }
         }
     }
+}
+
+/// the two halves of an accepted connection.
+pub fn split(stream: UnixStream) -> (ReadHalf<UnixStream>, WriteHalf<UnixStream>) {
+    tokio::io::split(stream)
 }

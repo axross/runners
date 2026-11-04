@@ -6,10 +6,14 @@
 use std::io;
 
 use interprocess::os::windows::named_pipe::pipe_mode;
-use interprocess::os::windows::named_pipe::tokio::{DuplexPipeStream, PipeListener};
+use interprocess::os::windows::named_pipe::tokio::{
+    DuplexPipeStream, PipeListener, RecvPipeStream, SendPipeStream,
+};
 
 use crate::instance::channel::ChannelError;
 use crate::instance::roots::Roots;
+
+use super::super::server::Abandon;
 use crate::instance::windows::{control_pipe_options, creation_error};
 
 pub type Stream = DuplexPipeStream<pipe_mode::Bytes>;
@@ -35,4 +39,20 @@ impl Listener {
     pub async fn accept(&mut self) -> io::Result<Stream> {
         self.listener.accept().await
     }
+}
+
+impl Abandon for SendPipeStream<pipe_mode::Bytes> {
+    fn abandon(&mut self) {
+        self.assume_flushed();
+    }
+}
+
+/// the two halves of an accepted connection; the stream closes when both are dropped.
+pub fn split(
+    stream: Stream,
+) -> (
+    RecvPipeStream<pipe_mode::Bytes>,
+    SendPipeStream<pipe_mode::Bytes>,
+) {
+    stream.split()
 }

@@ -30,9 +30,9 @@ pub use client::platform::{Stream as RawStream, connect as connect_raw};
 pub use client::{CallError, Client, ConnectError, Push, Welcome, connect};
 
 #[cfg(unix)]
-use unix::Listener;
+use unix::{Listener, split as platform_split};
 #[cfg(windows)]
-use windows::Listener;
+use windows::{Listener, split as platform_split};
 
 /// the open channel; dropping it closes it at once.
 pub struct AgentChannel {
@@ -152,6 +152,7 @@ async fn accept(mut listener: Listener, shared: Arc<Shared>) {
         let Some(admission) = shared.counts.admit(&shared.limits) else {
             continue;
         };
-        connections.spawn(serve(stream, Arc::clone(&shared), admission));
+        let (read, write) = platform_split(stream);
+        connections.spawn(serve(read, write, Arc::clone(&shared), admission));
     }
 }
