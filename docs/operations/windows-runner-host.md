@@ -44,6 +44,8 @@ Not yet verified on axpc, each for the reason given:
 
 - the install's refusals, which were not run because installation is to move to
   winget and Homebrew ([#70](https://github.com/axross/runners/issues/70));
+- rolling back to a previous `marshal` release, which no host has done because only
+  one release exists;
 - the token-file access control step's result, whose `icacls` evidence was not
   collected;
 - Ctrl+Break in the `start` window, which could not be tested;

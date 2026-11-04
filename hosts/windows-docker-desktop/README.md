@@ -51,9 +51,9 @@ The image, resource limits, slots, mounts, and diagnostic settings do not change
 marshal validate --config C:\path\to\runner-host.json --profile axpc
 ```
 
-prints each repository's registration labels, name, container name pattern, CPU and
-memory limits, and volume names, plus the global image, without calling Docker or
-GitHub, and exits 1 on an invalid configuration.
+The command prints each repository's registration labels, name, container name
+pattern, CPU and memory limits, and volume names, plus the global image, without
+calling Docker or GitHub, and exits 1 on an invalid configuration.
 Quota and planned affinity cardinality are separate; actual CPU IDs require
 runtime discovery. There is no CPU-ID, workload-role, or affinity opt-in field.
 Every ordinary and diagnostic job has affinity, distributed across measured
