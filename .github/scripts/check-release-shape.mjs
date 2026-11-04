@@ -14,13 +14,17 @@
 // dispatch. it reads the commands a signing script runs, a trap's body
 // included, but not what its commands are told to do, so these can still run
 // code it does not see:
-//   - the programs of awk and sed, and the tests inside `[[ ]]`;
+//   - the programs of awk and sed, and the operands of a `[[ ]]` test, of which
+//     it reads only the command substitutions;
 //   - an option or variable name built at run time, such as `find "$option"` or
 //     `read -r "$name"` and `printf -v "$name"`;
 //   - an assignment through `${PATH:=...}`, and any environment variable other
 //     than PATH, BASH_ENV and ENV.
-// a later signing job or step (W4, M2) is
-// added to this check in its own pull request, under REVIEW.md's release lens.
+// it also does not see a write to SHA256SUMS in release-build.yaml's assemble
+// job other than by a redirection, tee, cp or mv, or a step condition in attest
+// or release that skips a step, such as `if: false`. a later signing job or step
+// (W4, M2) is added to this check in its own pull request, under REVIEW.md's
+// release lens.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -141,10 +145,17 @@ const EXPORT_BLOCK = new RegExp(
   `\\{\\n(?:[ \\t]*echo "(?:${EXPORTED.join("|")})=\\$\\{[a-z_]+\\}"\\n)+[ \\t]*\\} >>"\\$GITHUB_ENV"`,
 );
 const GUARD_CONTEXT = "every new job";
+// the jobs that run every step they have: a step condition could skip a check.
+const CONDITION_FREE_JOBS = ["verify-macos", "assemble-signed"];
+// the runner labels of the jobs after sign-macos, all GitHub-hosted. sign-macos
+// has its own rule.
+const RUNNERS = {
+  "verify-macos": "macos-latest",
+  "assemble-signed": "ubuntu-latest",
+};
 const LIMITS = { "sign-macos": 60, "verify-macos": 20, "assemble-signed": 10 };
 // GitHub reads the names of its status functions without regard to case, so
 // `Always()` and `always ( )` are the function too.
-const STATUS_FUNCTION = /\b(always|failure|cancelled|success)\s*\(\s*\)/i;
 const FAILURE_FUNCTION = /\b(always|failure|cancelled)\s*\(\s*\)/i;
 // the `with:` keys the artifact actions may take in sign-macos. any other, such
 // as `repository`, `run-id` or `github-token`, could point them elsewhere.
@@ -464,13 +475,35 @@ function trapOperands(script) {
   return { bodies, bare };
 }
 
+// the outermost `$(...)` of a text, each to its closing parenthesis, or to the
+// end of the text when it has none.
+function substitutionsOf(span) {
+  const found = [];
+  for (let start = span.indexOf("$("); start !== -1;) {
+    let depth = 0;
+    let end = start + 1;
+    for (; end < span.length; end += 1) {
+      if (span[end] === "(") depth += 1;
+      else if (span[end] === ")" && --depth === 0) break;
+    }
+    found.push(span.slice(start, end + 1));
+    start = span.indexOf("$(", end + 1);
+  }
+  return found;
+}
+
 // every word a script uses as a command, the functions it defines, and the
 // commands it uses in a way this check will not read (`refused`).
 function commandWords(script) {
   let flat = skeleton(script);
   const functions = new Set();
   const refused = [];
-  flat = flat.replace(/\[\[ .*? \]\]/g, "[[ ]]");
+  // a `[[ ]]` test is not read as commands, but the shell runs the command
+  // substitutions it holds, so they stay, as arguments of the test.
+  flat = flat.replace(
+    /\[\[ .*? \]\]/g,
+    (span) => `[[ ]] ${substitutionsOf(span).join(" ")} `,
+  );
   flat = flat.replace(/^[ \t]*([A-Za-z_]\w*)\(\)[ \t]*\{/gm, (_, name) => {
     functions.add(name);
     return "";
@@ -498,6 +531,18 @@ function commandWords(script) {
       }
     }
     const word = tokens[index];
+    // a substitution that stands where a command word would, after the start of
+    // a line, `;`, `&`, `|`, `(`, `{`, a keyword or the assignments before a
+    // command, runs whatever it prints. one attached to a word, as in `x=$(...)`,
+    // or to the end of a substitution, as in `$(...)$(...)`, does not.
+    if (
+      word === undefined &&
+      terminator === "$(" &&
+      !/\S$/.test(parts[part]) &&
+      !(parts[part] === "" && parts[part - 1] === ")")
+    ) {
+      refused.push("runs a command substitution as a command");
+    }
     if (word === undefined || word === "for" || word === "}") continue;
     if (["fi", "done", "esac", "in"].includes(word)) continue;
     if (quotedWholly.test(word)) {
@@ -740,10 +785,11 @@ function checkSigningJob() {
       }
     }
   }
-  // the only steps that may run after a failure.
+  // the only steps that carry a condition. any other could skip a signing step
+  // (`if: false`) or let one run after a failure.
   for (const step of stepsOf(signing)) {
+    if (!("if" in step)) continue;
     const condition = text(step.if);
-    if (!STATUS_FUNCTION.test(condition)) continue;
     const isCleanup =
       typeof step.run === "string" &&
       step.run.split("\n")[0] === "# sign-macos: cleanup";
@@ -941,6 +987,8 @@ function checkNewJobs() {
     if (text(job.if).trim() !== GUARD)
       problem(`${where} must carry \`if: ${GUARD}\``);
     if (id !== SIGNING_JOB) {
+      if (job["runs-on"] !== RUNNERS[id])
+        problem(`${where} must run on ${RUNNERS[id]}`);
       if (!sameMap(job.permissions, { contents: "read" }))
         problem(`${where} must hold exactly \`contents: read\``);
       if ("environment" in job) problem(`${where} must declare no environment`);
@@ -977,6 +1025,11 @@ function checkNewJobs() {
       if (!have.includes(name))
         problem(`release.yaml ${id} must need ${name} directly`);
     }
+  }
+  // the jobs that publish carry the guard too, in the same form.
+  for (const id of ["attest", "release"]) {
+    if (jobs[id] && text(jobs[id].if).trim() !== GUARD)
+      problem(`release.yaml ${id} must carry \`if: ${GUARD}\``);
   }
   if (
     jobs.attest &&
@@ -1028,6 +1081,10 @@ function checkNewJobs() {
       if (id !== SIGNING_JOB && FAILURE_FUNCTION.test(text(step.if))) {
         problem(
           `release.yaml ${id}: step "${text(step.name)}" can run after a failure`,
+        );
+      } else if (CONDITION_FREE_JOBS.includes(id) && "if" in step) {
+        problem(
+          `release.yaml ${id}: step "${text(step.name)}" has a condition, which could skip it; ${CONDITION_FREE_JOBS.join(" and ")} run every step`,
         );
       }
     }
@@ -1113,6 +1170,19 @@ function checkMeasuredTools() {
 
 // ---- release-build.yaml's assemble ----------------------------------------
 
+// a command that writes a file named SHA256SUMS: a redirection to it, tee, or cp
+// or mv with it as the destination, the last argument. reading it (`cat`,
+// `sha256sum -c`) is not a write.
+const SUMS_FILE = String.raw`["']?[^\s;&|"']*SHA256SUMS["']?(?![\w.-])`;
+const SUMS_WRITES = [
+  new RegExp(String.raw`>>?[ \t]*${SUMS_FILE}`),
+  new RegExp(String.raw`\btee\b[^;&|\n]*[ \t]${SUMS_FILE}`),
+  new RegExp(
+    String.raw`\b(?:cp|mv)\b[^;&|\n]*[ \t]${SUMS_FILE}[ \t]*(?:$|[;&|)])`,
+    "m",
+  ),
+];
+
 function checkBuildAssemble() {
   const assemble = jobsOf(releaseBuild).find(([id]) => id === "assemble")?.[1];
   if (!assemble) {
@@ -1137,7 +1207,11 @@ function checkBuildAssemble() {
   ) {
     problem("release-build.yaml assemble does not call assemble-release.sh");
   }
-  if (scripts.some((script) => /SHA256SUMS\s*$|>\s*SHA256SUMS/m.test(script))) {
+  if (
+    scripts.some((script) =>
+      SUMS_WRITES.some((write) => write.test(codeLines(script).join("\n"))),
+    )
+  ) {
     problem(
       "release-build.yaml assemble writes SHA256SUMS itself; assemble-release.sh is the only writer",
     );
@@ -1172,9 +1246,9 @@ for (const [file, doc] of Object.entries(workflows)) {
 // no environment of release.yaml, which sign-macos runs in, may set where
 // commands are found or a file the shell runs first.
 if (release) {
-  for (const path of keyPaths(release, /^(PATH|BASH_ENV)$/)) {
+  for (const path of keyPaths(release, /^(PATH|BASH_ENV|ENV)$/)) {
     problem(
-      `release.yaml: ${path} sets PATH or BASH_ENV; the signing job's tools are called by path and nothing may change what its shell runs`,
+      `release.yaml: ${path} sets PATH, BASH_ENV or ENV; the signing job's tools are called by path and nothing may change what its shell runs`,
     );
   }
 }

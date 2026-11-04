@@ -4,14 +4,17 @@
 # cause). every change is one the release record forbids: the signing job's
 # permissions, an action it uses, a checkout, a `${{ }}` inside run, a package
 # manager or fetch or repository file, a tool called by name, a command that is
-# quoted, expanded, run by a trap or by find or hidden in an arithmetic expansion,
-# or found through PATH, BASH_ENV, GITHUB_PATH or GITHUB_ENV (set or read into),
-# a shell of its own, an artifact action's other inputs, the stand-in prefixes,
-# pkgbuild's arguments; an Environment in another job, in a `.yml` workflow, or
-# reachable from a pull request; a signing secret read outside sign-macos, in any workflow; a signing
-# job without its guard or its place in the chain; and a way past a failed job,
-# whatever the case of its status function. a change the test cannot find in the
-# files fails the test, so it cannot go stale and pass.
+# quoted, expanded, a bare command substitution, run by a trap or by find, held
+# in the test of a `[[ ]]` or hidden in an arithmetic expansion, or found through
+# PATH, BASH_ENV, ENV, GITHUB_PATH or GITHUB_ENV (set or read into), a shell of
+# its own, an artifact action's other inputs, the stand-in prefixes, pkgbuild's
+# arguments; an Environment in another job, in a `.yml` workflow, or reachable
+# from a pull request; a signing secret read outside sign-macos, in any workflow;
+# a job without its guard, its runner or its place in the chain; a step condition
+# that could skip a signing or verification step; a write to SHA256SUMS in the
+# build's assemble job; and a way past a failed job, whatever the case of its
+# status function. a change the test cannot find in the files fails the test, so
+# it cannot go stale and pass.
 # shellcheck disable=SC2016,SC1003 # the texts the changes find and replace are literal, not expansions.
 set -euo pipefail
 
@@ -54,6 +57,27 @@ expect_pass() {
     failures=$((failures + 1))
   else
     echo "ok   ${1}"
+  fi
+}
+
+# expect_pass_with <name> <file under the root> <exact text> <replacement>: the
+# check must still pass on a copy with one change, which shows the rule it
+# might trip over is not stricter than the change needs.
+expect_pass_with() {
+  local name="$1" root output status=0
+  root="${work}/case-${name//[^a-zA-Z0-9]/-}"
+  cp -r "$pristine" "$root"
+  alter "${root}/$2" "$3" "$4" || {
+    echo "FAIL ${name}: the change could not be made" >&2
+    failures=$((failures + 1))
+    return
+  }
+  output="$(node "$check" "$root" 2>&1)" || status=$?
+  if [[ $status -ne 0 ]]; then
+    echo "FAIL ${name}: exit ${status}: ${output}" >&2
+    failures=$((failures + 1))
+  else
+    echo "ok   ${name}"
   fi
 }
 
@@ -195,6 +219,30 @@ expect_fail "sign-macos running a quoted tool through a path that leaves the sys
   "$release" "$import_echo" $'          "$SYSTEM_BIN/../../tmp/tool"\n'"$import_echo"
 expect_fail "sign-macos using a backtick substitution" "cannot be analysed: a backtick command substitution" \
   "$release" "$import_echo" $'          echo `npm ci`\n'"$import_echo"
+# the shell runs a command substitution inside the test of a `[[ ]]`.
+expect_fail "sign-macos with a fetch inside a [[ ]] test" "runs curl; the job downloads nothing" \
+  "$release" "$import_echo" $'          [[ -z "$(curl -s x)" ]] || true\n'"$import_echo"
+expect_fail "sign-macos with a package manager inside an if [[ ]] test" "runs the package manager npm" \
+  "$release" "$import_echo" $'          if [[ "$(npm view x)" == y ]]; then :; fi\n'"$import_echo"
+expect_fail "sign-macos with an unquoted command substitution as a [[ ]] test" "runs the package manager npm" \
+  "$release" "$import_echo" $'          [[ $(npm ci) ]]\n'"$import_echo"
+expect_pass_with "sign-macos with a harmless command substitution inside a [[ ]] test" \
+  "$release" "$import_echo" $'          [[ -n "$(echo x)" ]] || true\n'"$import_echo"
+# a command substitution that stands where the command word would runs what it prints.
+expect_fail "sign-macos running a bare command substitution as the command" "runs a command substitution as a command" \
+  "$release" "$import_echo" $'          $(printf npm)\n'"$import_echo"
+expect_fail "sign-macos running a bare command substitution with a quoted argument" "runs a command substitution as a command" \
+  "$release" "$import_echo" $'          $(printf "npm ci")\n'"$import_echo"
+expect_fail "sign-macos running a command substitution after an assignment" "runs a command substitution as a command" \
+  "$release" "$import_echo" $'          x=1 $(printf npm)\n'"$import_echo"
+expect_fail "sign-macos running a command substitution after a semicolon" "runs a command substitution as a command" \
+  "$release" "$import_echo" $'          true; $(printf npm)\n'"$import_echo"
+expect_fail "sign-macos running a command substitution after then" "runs a command substitution as a command" \
+  "$release" "$import_echo" $'          if true; then $(printf npm); fi\n'"$import_echo"
+expect_fail "sign-macos running a command substitution after an assignment of one" "runs a command substitution as a command" \
+  "$release" "$import_echo" $'          x=$(true) $(printf npm)\n'"$import_echo"
+expect_pass_with "sign-macos assigning two adjacent command substitutions" \
+  "$release" "$import_echo" $'          x=$(true)$(true)\n'"$import_echo"
 # the body of a trap runs as commands.
 expect_fail "sign-macos with a trap that runs a package manager" "runs the package manager npm" \
   "$release" $'          trap \'rm -f "$key_file"\' EXIT' $'          trap \'npm ci\' EXIT'
@@ -244,15 +292,19 @@ expect_fail "sign-macos downloading another run's artifact" "gives actions/downl
 expect_fail "sign-macos uploading with an extra input" "gives actions/upload-artifact the input overwrite" \
   "$release" $'          path: signed\n          retention-days: 14\n' $'          path: signed\n          overwrite: true\n          retention-days: 14\n'
 # nothing may change where commands are found, or what the shell runs first.
-expect_fail "a step of sign-macos that sets PATH in its env" "sets PATH or BASH_ENV" \
+expect_fail "a step of sign-macos that sets PATH in its env" "sets PATH, BASH_ENV or ENV" \
   "$release" $'        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n        run: |\n          # sign-macos: sign' $'        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n          PATH: /tmp/fake\n        run: |\n          # sign-macos: sign'
-expect_fail "a step of sign-macos that sets BASH_ENV in its env" "sets PATH or BASH_ENV" \
+expect_fail "a step of sign-macos that sets BASH_ENV in its env" "sets PATH, BASH_ENV or ENV" \
   "$release" $'        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n        run: |\n          # sign-macos: sign' $'        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n          BASH_ENV: /tmp/fake.sh\n        run: |\n          # sign-macos: sign'
-expect_fail "sign-macos that sets PATH in its env" "sets PATH or BASH_ENV" \
+expect_fail "sign-macos that sets PATH in its env" "sets PATH, BASH_ENV or ENV" \
   "$release" $'    timeout-minutes: 60\n    environment: release' $'    timeout-minutes: 60\n    env:\n      PATH: /tmp/fake\n    environment: release'
-expect_fail "sign-macos that sets BASH_ENV in its env" "sets PATH or BASH_ENV" \
+expect_fail "sign-macos that sets BASH_ENV in its env" "sets PATH, BASH_ENV or ENV" \
   "$release" $'    timeout-minutes: 60\n    environment: release' $'    timeout-minutes: 60\n    env:\n      BASH_ENV: /tmp/fake.sh\n    environment: release'
-expect_fail "a workflow that sets PATH in its env" "sets PATH or BASH_ENV" \
+expect_fail "a step of sign-macos that sets ENV in its env" "sets PATH, BASH_ENV or ENV" \
+  "$release" $'        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n        run: |\n          # sign-macos: sign' $'        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n          ENV: /tmp/fake.sh\n        run: |\n          # sign-macos: sign'
+expect_fail "a workflow that sets ENV in its env" "sets PATH, BASH_ENV or ENV" \
+  "$release" $'permissions:\n  contents: read\n' $'permissions:\n  contents: read\n\nenv:\n  ENV: /tmp/fake.sh\n'
+expect_fail "a workflow that sets PATH in its env" "sets PATH, BASH_ENV or ENV" \
   "$release" $'permissions:\n  contents: read\n' $'permissions:\n  contents: read\n\nenv:\n  PATH: /tmp/fake\n'
 expect_fail "a script that assigns PATH" "assigns PATH" \
   "$release" "$import_echo" $'          PATH="/tmp/fake:${PATH}"\n'"$import_echo"
@@ -374,12 +426,26 @@ expect_fail "release-build's assemble with a checkout that keeps credentials" "r
   "$release_build" $'    steps:\n      - name: Checkout\n        uses: actions/checkout@v7\n        with:\n          persist-credentials: false\n      - name: Download The Windows Files' $'    steps:\n      - name: Checkout\n        uses: actions/checkout@v7\n      - name: Download The Windows Files'
 expect_fail "release-build's assemble writing SHA256SUMS itself" "assemble-release.sh is the only writer" \
   "$release_build" $'        run: bash .github/scripts/assemble-release.sh "$VERSION" dist "$WINDOWS_SHA256" "$WINDOWS_MSI_SHA256" "$MACOS_SHA256" "$MACOS_PKG_SHA256"' $'        run: |\n          bash .github/scripts/assemble-release.sh "$VERSION" dist "$WINDOWS_SHA256" "$WINDOWS_MSI_SHA256" "$MACOS_SHA256" "$MACOS_PKG_SHA256"\n          sha256sum dist/* > dist/SHA256SUMS'
+assemble_call='bash .github/scripts/assemble-release.sh "$VERSION" dist "$WINDOWS_SHA256" "$WINDOWS_MSI_SHA256" "$MACOS_SHA256" "$MACOS_PKG_SHA256"'
+for writing in 'sha256sum dist/* >> dist/SHA256SUMS' 'sha256sum dist/* | tee dist/SHA256SUMS' 'cp sums.txt dist/SHA256SUMS' 'mv sums.txt "dist/SHA256SUMS"'; do
+  expect_fail "release-build's assemble writing SHA256SUMS with ${writing}" "assemble-release.sh is the only writer" \
+    "$release_build" "        run: ${assemble_call}" "        run: |"$'\n'"          ${assemble_call}"$'\n'"          ${writing}"
+done
+for reading in 'cat dist/SHA256SUMS' 'sha256sum -c dist/SHA256SUMS' 'cp dist/SHA256SUMS sums.txt' 'mv dist/SHA256SUMS dist/SHA256SUMS.old'; do
+  expect_pass_with "release-build's assemble reading SHA256SUMS with ${reading}" \
+    "$release_build" "        run: ${assemble_call}" "        run: |"$'\n'"          ${assemble_call}"$'\n'"          ${reading}"
+done
 expect_fail "sign-macos with a timeout beyond 60 minutes" "release.yaml sign-macos must set timeout-minutes to at most 60" \
   "$release" $'    runs-on: macos-latest\n    timeout-minutes: 60' $'    runs-on: macos-latest\n    timeout-minutes: 61'
 expect_fail "verify-macos without a timeout" "release.yaml verify-macos must set timeout-minutes to at most 20" \
   "$release" $'    timeout-minutes: 20\n    permissions:' $'    permissions:'
 expect_fail "assemble-signed with a timeout beyond 10 minutes" "release.yaml assemble-signed must set timeout-minutes to at most 10" \
   "$release" $'    runs-on: ubuntu-latest\n    timeout-minutes: 10\n    permissions:\n      contents: read\n    outputs:\n      artifact: marshal-release-signed' $'    runs-on: ubuntu-latest\n    timeout-minutes: 30\n    permissions:\n      contents: read\n    outputs:\n      artifact: marshal-release-signed'
+
+expect_fail "verify-macos on a self-hosted runner" "release.yaml verify-macos must run on macos-latest" \
+  "$release" $'    runs-on: macos-latest\n    timeout-minutes: 20' $'    runs-on: self-hosted\n    timeout-minutes: 20'
+expect_fail "assemble-signed on a self-hosted runner" "release.yaml assemble-signed must run on ubuntu-latest" \
+  "$release" $'    runs-on: ubuntu-latest\n    timeout-minutes: 10\n    permissions:\n      contents: read\n    outputs:\n      artifact: marshal-release-signed' $'    runs-on: [self-hosted, linux]\n    timeout-minutes: 10\n    permissions:\n      contents: read\n    outputs:\n      artifact: marshal-release-signed'
 
 echo "-- the chain and the guard --"
 guard="    if: github.ref == 'refs/heads/main' && needs.plan.outputs.version != ''"
@@ -389,6 +455,12 @@ expect_fail "sign-macos with a weaker guard" "release.yaml sign-macos must carry
   "$release" $'    needs: [plan, build]\n'"$guard"$'\n    runs-on: macos-latest' $'    needs: [plan, build]\n    if: github.ref == \'refs/heads/main\'\n    runs-on: macos-latest'
 expect_fail "verify-macos with a guard on another branch" "release.yaml verify-macos must carry" \
   "$release" $'    needs: [plan, build, sign-macos]\n'"$guard" $'    needs: [plan, build, sign-macos]\n    if: github.ref == \'refs/heads/dev\' && needs.plan.outputs.version != \'\''
+expect_fail "attest without the guard" "release.yaml attest must carry" \
+  "$release" $'    needs: [plan, assemble-signed]\n'"$guard"$'\n' $'    needs: [plan, assemble-signed]\n'
+expect_fail "attest with a weaker guard" "release.yaml attest must carry" \
+  "$release" $'    needs: [plan, assemble-signed]\n'"$guard" $'    needs: [plan, assemble-signed]\n    if: github.ref == \'refs/heads/main\''
+expect_fail "release without the version in its guard" "release.yaml release must carry" \
+  "$release" $'    needs: [plan, attest]\n'"$guard" $'    needs: [plan, attest]\n    if: github.ref == \'refs/heads/main\' && needs.plan.outputs.version != \'x\''
 expect_fail "assemble-signed without plan in needs" "release.yaml assemble-signed (every new job) must need plan directly" \
   "$release" $'    needs: [plan, build, sign-macos, verify-macos]' $'    needs: [build, sign-macos, verify-macos]'
 expect_fail "sign-macos without plan in needs" "release.yaml sign-macos (every new job) must need plan directly" \
@@ -427,6 +499,17 @@ expect_fail "failure() on the sign step" "is allowed only on the clean-up and no
   "$release" $'      - name: Sign The Binary\n' $'      - name: Sign The Binary\n        if: failure()\n'
 expect_fail "always() on a step of another job" "can run after a failure" \
   "$release" $'      - name: Download The Notary Log\n' $'      - name: Download The Notary Log\n        if: always()\n'
+# a condition that skips a step also skips a check.
+expect_fail "if: false on verify-macos's test of the signed package" "release.yaml verify-macos: step \"Test The Signed Package\" has a condition" \
+  "$release" $'      - name: Test The Signed Package\n        timeout-minutes: 10\n' $'      - name: Test The Signed Package\n        if: false\n        timeout-minutes: 10\n'
+expect_fail "a condition on a step of assemble-signed" "release.yaml assemble-signed: step \"Check The Hashes And Write SHA256SUMS\" has a condition" \
+  "$release" $'      - name: Check The Hashes And Write SHA256SUMS\n        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n          MACOS_SHA256' $'      - name: Check The Hashes And Write SHA256SUMS\n        if: github.ref == \'refs/heads/main\'\n        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n          MACOS_SHA256'
+expect_fail "a condition on sign-macos's Notarize step" "is allowed only on the clean-up and notary-log upload steps" \
+  "$release" $'      - name: Notarize The Package\n' $'      - name: Notarize The Package\n        if: false\n'
+expect_fail "a condition on sign-macos's Staple step" "is allowed only on the clean-up and notary-log upload steps" \
+  "$release" $'      - name: Staple And Check The Package\n' $'      - name: Staple And Check The Package\n        if: success()\n'
+expect_fail "a condition on sign-macos's Sign step that is not a status function" "is allowed only on the clean-up and notary-log upload steps" \
+  "$release" $'      - name: Sign The Binary\n' $'      - name: Sign The Binary\n        if: needs.plan.outputs.version != \'\'\n'
 # GitHub reads a status function's name in any case.
 expect_fail "Always() in assemble-signed's condition" "has a job-level condition that can run it after a failure" \
   "$release" $'    needs: [plan, build, sign-macos, verify-macos]\n'"$guard" $'    needs: [plan, build, sign-macos, verify-macos]\n    if: Always() && needs.plan.outputs.version != \'\''
