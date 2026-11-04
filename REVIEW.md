@@ -124,7 +124,8 @@ Codex review uses its native priority label.
   comment, or a test fixture. The public maintainer handle and the owner and
   repository names of this repository and of `axross/skills` are allowed, and so
   are the default runner labels `axpc` and `axmc`, the two committed host labels,
-  kept by the maintainer's decision (see
+  kept by the maintainer's decision, and the macOS signing team ID and designated
+  requirement that a later CLI record may hold, as Security records (see
   [Security](docs/conventions/security.md#nothing-identifying-or-secret-is-committed)).
   An example uses an obviously fake
   placeholder (`<owner>`, `<repo>`, `example.invalid`). A value a runner needs
@@ -180,7 +181,12 @@ Codex review uses its native priority label.
   directory without a stated need are findings.
 - **Secrets stay out of logs and images.** A secret is never echoed, passed on
   a command line that a process listing exposes, written into an image layer
-  (`ENV`, `ARG`, `COPY`), or left in a build cache.
+  (`ENV`, `ARG`, `COPY`), or left in a build cache. Two exceptions for a
+  credential are recorded, both in `sign-macos`: `security`'s password arguments, and
+  `notarytool`'s `--key-id` and `--issuer` arguments for the notary key's ID and issuer
+  ID. The `.p8` key reaches `notarytool` only as a file path. Any other change to how
+  the key's ID, issuer ID or `.p8` reaches `notarytool` is a finding to raise (see
+  [Security](docs/conventions/security.md#nothing-identifying-or-secret-is-committed)).
 
 ## VM runtime lenses
 
@@ -258,16 +264,42 @@ Apply the lens for each kind of file in the diff.
   `timeout-minutes`. `concurrency` cancels superseded pull request runs only.
 - **Release workflows.** A change to
   [`release-build.yaml`](./.github/workflows/release-build.yaml),
-  [`release.yaml`](./.github/workflows/release.yaml), the release-build job in
-  `merge-checks.yaml`, the scripts under `.github/scripts/`, the release tooling
-  under [`release/`](./release), or `cli/.cargo/config.toml` is checked against
-  each bullet of the release record in
+  [`release.yaml`](./.github/workflows/release.yaml), the release-build job and the
+  `Install Blocks` job in `merge-checks.yaml`, the scripts under `.github/scripts/`,
+  the release tooling under [`release/`](./release), or `cli/.cargo/config.toml` is
+  checked against each bullet of the release record in
   [Security](docs/conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main).
-  A publish or attest step outside `release.yaml`, a job that both runs the npm
-  tree and holds `id-token: write`, an asset other than the two named binaries and
-  `SHA256SUMS`, such as a helper binary, or a departure from the record that the
-  change does not also make to the record, is a finding. A change that relaxes the
-  record needs the maintainer's review.
+  A publish or attest step outside `release.yaml`, a job that both runs the npm tree
+  and holds `id-token: write`, an asset other than the two named binaries, the two
+  installers named for them, and `SHA256SUMS`, such as a helper binary, an installer
+  that carries a script or a custom action that runs code, a download that is none of
+  the pinned WiX package, the recorded Rust toolchain exception, or the Node that
+  `actions/setup-node` installs (recorded under Security's Pinning Convention), or a
+  departure from the record that the change does not also make to the record, is a
+  finding. Install-time verification is optional for the installers, so a document or
+  comment that presents the check block as required of an operator is a finding, and
+  so is a change that weakens a pin or drops one of the check block's four checks, or
+  any check of the bare-binary blocks that roll back to `v0.1.0`. The signing job's
+  rules are also findings when broken: an `environment:` in any job but `sign-macos`,
+  or in a workflow a pull request triggers or a job such a workflow calls; a signing
+  secret read by any job but `sign-macos`; `sign-macos` holding more than
+  `contents: read`, running a checkout, an action besides `actions/download-artifact` and
+  `actions/upload-artifact`, a package manager, a fetch, a file from the repository,
+  or a `${{ }}` inside `run:`, or calling a signing tool by anything but its system path; a
+  signing step that a later job can pass without, such as `continue-on-error`, a
+  job-level `always()`, `!cancelled()` or `failure()`, a step condition in
+  `sign-macos` beyond the `if: always()` of the clean-up and the notary-log upload, a
+  step condition in `verify-macos` or `assemble-signed`, or one in `attest` or
+  `release` that skips a step, which the shape check does not see; an attest or release job that reads
+  the unsigned set or does not follow every signing step; a secret printed, or passed
+  on a command line apart from `security`'s password arguments and `notarytool`'s
+  `--key-id` and `--issuer` arguments in `sign-macos`, the two exceptions for a
+  credential that Security records; a change to how the notary
+  key's ID, issuer ID or `.p8` key reaches `notarytool`; a change to the identifier
+  `app.axross.marshal`, the team pin, or the G2 intermediate's pin without its source and the record's update;
+  and a signing job or step added without being added to `check-release-shape.mjs` and
+  its test. A change that relaxes the record, or touches the signing job, needs the
+  maintainer's review.
 - **Rust.** The CLI under `cli/` has no `unsafe` and no panic on an input path
   (`unwrap`, `expect`, `panic!`, indexing); it collects every error in the order
   [CLI](docs/operations/cli.md) states under Validation Rules rather than returning

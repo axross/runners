@@ -2,7 +2,8 @@
 
 This project's supply-chain and runner-trust conventions: how a `uses:` reference
 under [`.github/`](../../.github) is pinned, what a workflow may be granted, how a
-release of the CLI is published, where
+release of the CLI is published and its
+macOS files are signed, where
 a self-hosted runner may and may not run, what a runner's shared storage exposes,
 and what is never committed. It does not cover application-level security, such as
 input validation or the OWASP-style concerns the installed `application-security`
@@ -95,6 +96,51 @@ computed from the real download, and are not covered by Dependabot. Dependabot
 does cover the CLI's own dependencies: its `cargo` and `rust-toolchain` entries
 for `/cli` propose the crate and toolchain refreshes as pull requests.
 
+The Windows installer's tool is pinned the same way. Besides the Rust toolchain,
+whose exception is recorded below, WiX is the one tool the release build fetches.
+[`fetch-wix.sh`](../../.github/scripts/fetch-wix.sh) downloads the NuGet package
+`wix` 7.0.1 from
+`https://api.nuget.org/v3-flatcontainer/wix/7.0.1/wix.7.0.1.nupkg`, refuses it
+unless its SHA-256 is
+`25209a1f73b20106621f11abe5e1a4e87c1d9f5c596795d246de7bb64446df17`, and only then
+installs it with `dotnet tool install --tool-path`. `dotnet` reads a NuGet.Config
+that clears every source and lists one folder holding the checked package, so no
+other source is consulted, and the package has no dependencies. `mise run
+test:fetch-wix` feeds the script a package with another SHA-256 and shows the
+refusal. No WiX extension is used, so nothing else is downloaded.
+
+WiX 7 is released under the Open Source Maintenance Fee (OSMF) EULA, and
+`wix build` refuses to run without `-acceptEula wix7`, which
+[`build-msi.ps1`](../../.github/scripts/build-msi.ps1) passes. The EULA asks a
+maintenance fee of users with revenue-generating use whose annual gross revenue
+reaches its threshold. The maintainer accepted the EULA for this project's use and
+assesses that fee themself, in approving the installers' plan
+([#71](https://github.com/axross/runners/issues/71)). Dependabot does not cover
+WiX. To bump it:
+
+1. Look up the latest WiX release, never recall it.
+2. Download `wix.<version>.nupkg` from the URL above with the new version, and
+   compute its SHA-256 from that download.
+3. Change `version` and `sha256` in `fetch-wix.sh` together, and run
+   `mise run test:fetch-wix`.
+4. If the major version changed, read the new EULA, have the maintainer accept it
+   again, and change the number in `-acceptEula wix7`.
+
+The change needs the maintainer's review, since it changes the supply-chain
+surface (see [REVIEW.md](../../REVIEW.md)).
+
+The macOS signing job pins the one certificate it embeds. Apple's Developer ID G2
+intermediate certificate is embedded in `sign-macos` as base64, because the runner
+image's trust in it is unknown and the job fetches nothing. The job refuses it
+unless its SHA-256 is
+`f16cd3c54c7f83cea4bf1a3e6a0819c8aaa8e4a1528fd144715f350643d2df3a`, and that check
+comes before the first `security` call. Its source is
+`https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer`, fetched on
+2026-11-03 PST, and it expires on 2031-09-17. To replace it, fetch the certificate
+again from that URL, compute its SHA-256 from the download, and change the embedded
+text and the pin together, with the maintainer's review. The job downloads only the
+run's own artifacts.
+
 The Rust toolchain is one of two downloads in this repository that are not
 checksum-pinned, and the maintainer accepted that exception when approving the
 CLI's plan. `rustup` fetches a channel manifest over HTTPS and checks each
@@ -167,9 +213,10 @@ is passed into a step through an `env:` variable and quoted, never expanded insi
 ## A Release Is Published Only From a Dispatch on Main
 
 [`release.yaml`](../../.github/workflows/release.yaml) releases the CLI with
-semantic-release, and [`release-build.yaml`](../../.github/workflows/release-build.yaml)
-builds the binaries; [CLI](../operations/cli.md#releases) owns the steps. This is
-the record a change to either workflow, to the build call in
+semantic-release and signs the macOS files in the `release` Environment, and
+[`release-build.yaml`](../../.github/workflows/release-build.yaml) builds the binaries
+and their installers; [CLI](../operations/cli.md#releases) owns the steps. This is the
+record a change to either workflow, to the build call in
 [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml), to
 [`release/`](../../release), or to the scripts under
 [`.github/scripts/`](../../.github/scripts) is checked against:
@@ -177,12 +224,15 @@ the record a change to either workflow, to the build call in
 - **A manual dispatch is the only trigger.** `release.yaml` runs on
   `workflow_dispatch` and on nothing else: no push, tag, pull request, schedule, or
   `workflow_run` trigger. The dispatch is the maintainer's decision to release.
-  There is no Environment and no approval step.
+  `sign-macos` then waits for the maintainer's approval in the `release`
+  Environment, which follows the commit check in
+  [Each Release](../operations/development-workflow.md#each-release). No other job
+  declares an Environment or waits for an approval.
 - **The branch guard is advisory.** Every job in `release.yaml` has
   `if: github.ref == 'refs/heads/main'`. A dispatch on another branch runs that
   branch's own copy of the file, which could drop the guard, so it binds only the
-  copy on main. The controls are the install-side `--source-ref refs/heads/main`
-  and the compare-API check that the commit is on main.
+  copy on main. The controls are the optional check's `--source-ref refs/heads/main`
+  and its compare-API check that the commit is on main, for an operator who runs it.
 - **The build is split from the release.** The build is a reusable workflow that
   `merge-checks.yaml` calls on every pull request as the dry run, with the version
   `0.0.0-dryrun.<run number>`, and `release.yaml` calls with the version its plan
@@ -197,16 +247,22 @@ the record a change to either workflow, to the build call in
   - the plan job holds `contents: write`, for the `git push --dry-run` that
     semantic-release's dry run makes, and runs the npm tree;
   - the build job holds `contents: read`;
+  - `sign-macos` holds `contents: read` and declares the `release` Environment, and
+    `verify-macos` and `assemble-signed` hold `contents: read` alone and declare no
+    Environment. None of the three runs the npm tree, and the signing record below
+    says what `sign-macos` may do;
   - the attest job holds `id-token: write` and `attestations: write`, and nothing
     else. It checks nothing out and installs no npm package: it downloads the
-    files, checks them, and runs `actions/attest`;
+    signed set from `assemble-signed`, checks it, and runs `actions/attest`;
   - the release job holds `contents: write`, to push the tag and its note and to
     create the release, and runs the npm tree.
 
   A job that runs the npm tree can push tags and edit releases, and its token can
-  fast-forward main, but it cannot mint an attestation, so a binary it substitutes
-  fails `gh attestation verify` at install. A change it pushes to main is another
-  matter, as the residual risks below say. One release job with all three scopes
+  fast-forward main, but it cannot mint an attestation, so a file it substitutes
+  fails `gh attestation verify` for an operator who runs the optional check before
+  opening it. An operator who skips the check opens the substituted file, as the
+  residual risks below say. A change it pushes to main is another matter, as they
+  also say. One release job with all three scopes
   was rejected: any package in the npm tree could then attest any binary as
   `release.yaml` on `refs/heads/main`. No job needs `artifact-metadata: write`,
   which is for storage records in a registry. `@semantic-release/github`'s comments
@@ -217,11 +273,110 @@ the record a change to either workflow, to the build call in
 - **The files are checked twice before they are used.** The attest job, and the
   release gate [`verify-release.sh`](../../.github/scripts/verify-release.sh) that
   semantic-release runs before it tags anything, each refuse unless the files are
-  exactly the two binaries named for the version and `SHA256SUMS`, `SHA256SUMS`
-  lists exactly those two, and `sha256sum --check --strict` passes. The gate checks
-  against the version semantic-release worked out in its own run.
+  exactly the two binaries and the two installers named for the version and
+  `SHA256SUMS`, `SHA256SUMS` lists exactly those four, and
+  `sha256sum --check --strict` passes. The attest job attests the four files
+  `SHA256SUMS` lists, after signing. The installers are an MSI and a flat package
+  that the build legs pack the release binary into unchanged and test; the MSI is
+  not signed, the package is signed and notarized by `sign-macos`, and neither
+  carries a script or a custom action that runs code. One script,
+  [`assemble-release.sh`](../../.github/scripts/assemble-release.sh), writes every
+  `SHA256SUMS`. The gate checks against the version semantic-release worked out in
+  its own run.
   `@semantic-release/github` skips an asset that is missing rather than failing, so
   the gate is what holds the file set.
+- **Signing happens in one job, in one Environment.** `sign-macos` is the only job
+  that declares an Environment or reads a signing secret;
+  [CLI](../operations/cli.md#signing-the-macos-files) gives its steps and the
+  contracts. The record it is checked against:
+  - **The Environment `release`** is created and maintained by the maintainer.
+    Deployment branches are selected branches, `main` only and no tags. Required
+    reviewers are the maintainer, with "Prevent self-review" off, because the
+    maintainer is the only reviewer and
+    [the roadmap](https://github.com/axross/runners/issues/72) requires
+    self-approval. "Allow administrators to bypass" is off. The maintainer reports
+    the settings on the tracking issue, because agents cannot read them.
+  - **Its secrets** are the six Environment secrets `MACOS_APPLICATION_P12_BASE64`,
+    `MACOS_INSTALLER_P12_BASE64`, `MACOS_P12_PASSWORD`, `MACOS_NOTARY_KEY_P8`,
+    `MACOS_NOTARY_KEY_ID` and `MACOS_NOTARY_ISSUER_ID`, and its variable is
+    `MACOS_TEAM_ID`, which is not secret. A job reads them only if it declares the
+    Environment, and only after the reviewer approves it. No repository secret is
+    added for signing.
+  - **`sign-macos` holds `contents: read`**, checks nothing out, runs no repository
+    file and no package manager, and uses no action but `actions/download-artifact`
+    and `actions/upload-artifact`. It fetches no tool or certificate. Each signing
+    tool it calls is called by its absolute system path, so nothing earlier on
+    `PATH` can stand in for one; its other commands are shell built-ins and macOS
+    base utilities, such as `base64` and `mktemp`, called by name. The Developer ID
+    G2 intermediate it imports is embedded and checked against the pin under
+    [Pinning Convention](#pinning-convention). Every context value reaches its
+    scripts through `env:`. The job's inline steps are not repository code: they are
+    the job's own definition in `release.yaml`, which the maintainer's approval
+    covers, and the maintainer confirmed that reading at the plan gate.
+  - **Only `sign-macos` reads the signing secrets.** `verify-macos` runs a
+    repository script on a runner that holds no signing identity and no secret, and
+    `assemble-signed` and every other job hold none either. That script also checks
+    that the unsigned files are the ones the build's `SHA256SUMS` lists and that the
+    notary log is of the submission `sign-macos` made.
+  - **The signing identifier** `app.axross.marshal` and the team are fixed and
+    checked at each release, so the designated requirement of the code object that
+    carries it stays the same. Changing either breaks the Keychain trust that later
+    work relies on and goes through a roadmap revision.
+  - **A signing failure stops the release before any tag.** Every signing step
+    comes before `release`, no job continues past a failure, and the notarization
+    result is read from the status, not the exit code.
+  - **Pull requests never sign or reach the Environment.** The dry run builds
+    unsigned, and no workflow a pull request triggers declares an Environment.
+    [`check-release-shape.mjs`](../../.github/scripts/check-release-shape.mjs) in
+    `mise run check` fails if the signing jobs drift from this record, including if
+    any job in any workflow but `sign-macos` in `release.yaml` reads a signing
+    secret.
+    [CLI](../operations/cli.md#what-the-signing-tests-cover) lists its rules. A pull
+    request can edit it, so it guards against mistakes, not against a hostile pull
+    request, and [CLI](../operations/cli.md#extending-the-release-workflows) names
+    what it does not read. What keeps pull requests away is the branch rule on the
+    Environment and that `release.yaml` runs only on a dispatch.
+  - **No secret is printed.** Secret values reach the scripts through `env:` and
+    files written with mode 0600 under the runner's temporary directory, and each
+    line of the `.p8` is masked. The keychain and those files are deleted whether the
+    job passes or fails, and the notary log, which holds no secret, is uploaded.
+    The certificates' subjects name the maintainer's Apple developer account and
+    team, as every Developer ID signature does; nothing of that is committed, except
+    that a later documentation change records the team ID and the exact designated
+    requirement in the CLI document, as the exception under [Nothing Identifying or
+    Secret Is Committed](#nothing-identifying-or-secret-is-committed) describes.
+  - **Extensions** by later work add their signing jobs or steps to the shape check
+    and keep these rules: only signing jobs declare the Environment, a signing job
+    holds `contents: read` and runs no repository code, checksums and attestation
+    follow every signing step, no pull-request run reaches the Environment, and
+    F0's and M2's signing jobs use only operating-system signing tools. W4's
+    update-signing job is the one exception to that last rule: it runs `tauri-cli`'s
+    `signer sign`, built with `--locked` in a tool job without the Environment from a
+    crate archive whose SHA-256 equals one committed in the repository. The signing
+    job checks the binary it receives against the SHA-256 that the tool job outputs,
+    before it runs it.
+    [CLI](../operations/cli.md#extending-the-release-workflows) names the points.
+- **The documented install blocks run against the dry run's installers on hosted
+  runners.** The `Install Blocks` job in
+  [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) needs the dry run,
+  downloads its artifact, and holds `contents: read`. It stubs `gh` and runs the
+  blocks of [CLI](../operations/cli.md#installing-updating-and-rolling-back) with
+  the real installers, so it installs and removes the dry run's own MSI and pkg on
+  a runner that is discarded afterwards. On Windows it also creates a local user
+  outside the Administrators group, runs the check block and the install as that
+  user through a secondary logon with its profile loaded, and removes the user at
+  the end. Nothing changes a user right. The test sets the Windows Installer
+  policy `DisableMSI` to 0 for the run, because the GitHub-hosted Windows Server
+  image blocks a non-elevated per-user install, and restores it at the end. The
+  runner is discarded after the job either way.
+  It uses no secret, attests nothing, and adds no action beyond the `actions/*`
+  already used. This job and the build legs upload their installer logs, from
+  `msiexec /l*v` and `installer -dumplog`, as workflow artifacts. They ask for 14
+  days. The repository's artifact retention limit applies instead when it is
+  shorter, and it cut the build legs' installer logs to 7 days in a pull request's
+  dry run.
+  The logs may hold the ephemeral GitHub-hosted runner's machine and account names,
+  which the job log's "Set up job" section already shows, and they hold no secret.
 - **No credential stays in a checkout.** Every checkout sets
   `persist-credentials: false`. Under GitHub Actions, semantic-release builds an
   `x-access-token:` URL from `GITHUB_TOKEN` for its own git commands.
@@ -233,14 +388,17 @@ the record a change to either workflow, to the build call in
 - **Pins.** `actions/checkout`, `actions/setup-node`, `actions/upload-artifact`,
   `actions/download-artifact`, and `actions/attest` stay on major tags, under
   [`actions/*` Stays on Major Tags](#actions-stays-on-major-tags). Neither release
-  workflow uses a third-party action. `jdx/mise-action` was rejected for Node here:
-  at this repository's pin it caches by default, installs every mise tool, and
+  workflow uses a third-party action, and the one tool the build fetches besides
+  the recorded Rust toolchain exception is WiX, pinned under
+  [Pinning Convention](#pinning-convention). `jdx/mise-action` was rejected for Node
+  here: at this repository's pin it caches by default, installs every mise tool, and
   receives the job token. `actions/setup-node` installs Node `24.21.0`, the version
   in `mise.toml`, and the Node download is trusted under the same joint-trust
   decision, not by a checksum; see [Pinning Convention](#pinning-convention).
   `release/package.json` names an exact version of semantic-release and of each
-  plugin and preset, `release/package-lock.json` records each package's integrity hash, and
-  `npm ci --ignore-scripts` installs exactly that and runs no install script.
+  plugin and preset, `release/package-lock.json` records each package's integrity
+  hash, and `npm ci --ignore-scripts` installs exactly that and runs no install
+  script.
   Dependabot's `npm` entry proposes the refreshes. `release/` keeps these packages
   out of the repository root and out of mise's tool locks.
 - **A release run is never cancelled.** Only the two calling workflows declare
@@ -265,11 +423,19 @@ What protects a release is outside the workflow files:
 - Only accounts with write access can dispatch a workflow or push a tag here. On
   this user-owned repository that is the maintainer, and the agents that share the
   maintainer's identity.
-- The install pins `--signer-workflow` to `release.yaml`, `--source-ref` to
+- Install-time verification is optional. Opening the installer is the main install
+  procedure, and the check block that goes with it is recommended, not required, so
+  nothing stops an operator who skips it from opening a file that nothing has
+  checked. The block pins `--signer-workflow` to `release.yaml`, `--source-ref` to
   `refs/heads/main`, and `--source-digest` to the tag's commit, denies self-hosted
-  runners, and refuses a commit the compare API does not place on main. An
-  attestation from any other workflow, branch, or commit is refused; see
-  [CLI](../operations/cli.md#installing-updating-and-rolling-back).
+  runners, and refuses a commit the compare API does not place on main, a checksum
+  that `SHA256SUMS` does not list, and an installer whose binary is not the
+  version's. An attestation from any other workflow, branch, or commit is refused
+  there; see
+  [CLI](../operations/cli.md#installing-updating-and-rolling-back). The
+  attestation's role is to make that check possible. The bare-binary blocks that
+  roll back to `v0.1.0` keep every one of those checks as a requirement of their
+  procedure.
 - Immutable releases are turned on for the repository before the first dispatch,
   so a published release's assets cannot be replaced and its tag cannot be moved
   or deleted.
@@ -278,25 +444,29 @@ Immutable releases are a repository setting, not a file here;
 [Cutting a Release](../operations/development-workflow.md#cutting-a-release) gives
 the setting and its read-back.
 
-An agent never dispatches `release.yaml`, never pushes, moves, or deletes a `v*`
-tag, and never changes release settings, such as immutable releases or an
-Environment or ruleset that applies to releases. This rule is absolute, and it is
+An agent never dispatches `release.yaml`, never approves a deployment of it,
+including the `release` Environment's approval of `sign-macos`, never pushes,
+moves, or deletes a `v*` tag, and never changes release settings, such as
+immutable releases or an Environment or ruleset that applies to releases. This rule
+is absolute, and it is
 stricter than the
 [delivery grant](../operations/development-workflow.md#authorizing-delivery-operations).
 The grant lets an explicit human instruction cover release, deployment, and
 settings effects. These release effects have no such path: an agent never performs
 one, even when the maintainer asks in the session or another agent relays it.
 Agent sessions share the maintainer's GitHub identity, so to GitHub a dispatch by an
-agent and one by the maintainer are the same. With no approval step and no tag
-ruleset, this rule is the only control on agents.
+agent and one by the maintainer are the same, and so are an approval by each. With
+no tag ruleset, this rule is the only control on agents.
 
 Residual risks, accepted:
 
 - **The npm tree runs with `contents: write`.** A compromised package in the plan
   or release job can push, move, or delete tags; create, edit, or delete draft and
   published releases; and push to any branch that no rule protects. It cannot mint
-  an attestation, so a binary it substitutes fails `gh attestation verify` at
-  install. It can deny a release, or publish one whose binaries hosts then refuse.
+  an attestation, so a file it substitutes fails `gh attestation verify` for an
+  operator who runs the optional check. An operator who skips it opens the
+  substituted installer, which the next risk below describes. It can deny a
+  release, or publish one whose files operators who check them then refuse.
 - **The npm tree can push to main.** The ruleset on main blocks only deleting the
   branch and pushes that are not fast-forwards. The plan and release jobs'
   `GITHUB_TOKEN` can therefore fast-forward main with a source change that touches
@@ -311,24 +481,59 @@ Residual risks, accepted:
 - **The attest job attests whatever passes its checks.** `SHA256SUMS` comes from
   the same build artifact, so the check catches transport damage, not a compromised
   build leg.
-- **No approval step and no tag ruleset.** Any account with write access can
-  dispatch a release, and that is the account the agents run as. The rule above is
-  the only control on agents. The maintainer accepted this in choosing a manual
-  dispatch with no ruleset.
+- **No tag ruleset.** Any account with write access can dispatch a release, and
+  dispatching needs only that access. That is the account the agents run as. The rule
+  above is the only control on agents. The maintainer accepted this in choosing a
+  manual dispatch with no ruleset.
+- **A hostile change on main gets signed if it is approved.** `sign-macos` signs
+  whatever the dispatched commit builds, with the maintainer's Developer ID. The
+  control is the check in
+  [Each Release](../operations/development-workflow.md#each-release), before each
+  dispatch and before the approval, that every commit on main since the last `v*`
+  tag came from a merged pull request. A stronger option is a rule on main that
+  requires a pull request, which is the maintainer's choice and is not in place.
+- **One identity can dispatch and approve.** The Environment allows self-approval,
+  because the roadmap requires it and the maintainer is the only reviewer, and agents
+  share the maintainer's GitHub identity. A session could therefore dispatch and
+  approve a signed release. The rule above, which now covers approving a deployment,
+  is the control, and a second reviewer is not an option here.
+- **A certificate or membership lapse stops signing.** The Developer ID certificates
+  are expected to last one year, which the maintainer confirms from the certificates'
+  dates, and `sign-macos` refuses an expired one and warns within 90 days.
+  Signatures made with a secure timestamp stay valid after the certificate expires.
+  Whether an older release's package still installs after its Installer certificate
+  expires is not confirmed, and Apple's pages disagree, which bears on rolling back
+  through that package. A membership lapse leaves signed software working but allows
+  no new certificate. [Development
+  Workflow](../operations/development-workflow.md#renewing-the-certificates) records
+  the dates and the renewal.
+- **An early dispatch creates an empty Environment.** A dispatch before the maintainer
+  creates the `release` Environment makes GitHub create one with no protection rules
+  and no secrets. `sign-macos` refuses on the empty secrets before it imports
+  anything, and [Before the First
+  Release](../operations/development-workflow.md#before-the-first-release) creates the
+  Environment first. Until the maintainer reports its settings, nothing in the
+  repository shows that its branch rule and reviewer are in place.
+- **The first signed release is the first run of signing.** Nothing before merge can
+  exercise the Environment, the certificates or notarization, and `verify-macos`
+  first runs for real there. The stand-in suites and the shape check cover the flow,
+  not Apple's answers. A failure stops that release before its tag.
 - **Unprotected tags change the next version.** Any account with write access can
   push, move, or delete a `v*` tag that has no published release, `v0.0.0`
   included, and that changes the version semantic-release works out next.
   Immutable releases lock only the tags of published releases.
 - **A weaker install pin.** `--source-ref refs/heads/main` proves that the build
   ran from main, not from a particular tag. `--source-digest` and the reachability
-  check still tie the binary to one commit on main, but no longer to a version.
-  The install therefore checks the downloaded binary's `--version` before it
-  replaces the installed one, so an older genuine binary under a newer version's
-  name is refused without touching the install path. On Windows that refusal, like
-  the install's other refusals, is not yet verified on axpc
-  ([#56](https://github.com/axross/runners/issues/56)): the refusal checks were not
-  run there, because installation is to move to winget and Homebrew
-  ([#70](https://github.com/axross/runners/issues/70)).
+  check still tie the file to one commit on main, but no longer to a version. The
+  optional check therefore runs the binary inside the downloaded installer and
+  refuses unless it prints the version's `--version`, so an older genuine installer
+  under a newer version's name is refused by an operator who runs the check. The
+  bare-binary blocks make the same check of the downloaded binary before they
+  replace the installed one, and refuse without touching the install path. CI runs
+  the check block's refusals against stand-ins and the dry run's installers, and the
+  bare-binary blocks' refusals against stand-ins. Neither has run on axpc or the
+  Mac ([#56](https://github.com/axross/runners/issues/56)); the refusal checks of the
+  bare-binary block were not run on axpc.
 - **A green run can release nothing.** If main moves after the dispatch, the
   release job logs that the local branch is behind the remote one and ends without
   a tag or a release, after the binaries are attested.
@@ -357,15 +562,62 @@ Residual risks, accepted:
   Checks loads `release/.releaserc.json`, so a Dependabot bump in `release/` that
   breaks the plan job merges green and fails only on the next dispatch, before any
   tag or release is made.
-- The binaries are not code-signed or notarised, so macOS Gatekeeper and Windows
-  SmartScreen may warn or block. The install removes the macOS quarantine
-  attribute. On axpc the installed Windows copy had no `Zone.Identifier`
+- **An installer opened without the check runs before anything has checked it.**
+  The maintainer chose opening the installer as the main install procedure and the
+  check as optional. The release job's npm tree can replace published files (the
+  first risk above), and an operator who skips the check opens whatever the release
+  page then holds. On Windows that is a file nothing has checked. On macOS,
+  Gatekeeper is expected to assess a package that carries the download mark, but it
+  is not expected to tie the package to the maintainer's team, as the next entry
+  says. Signing the MSI, or making the check required again, is the remedy in a later
+  change.
+- **A replaced installer can run code.** A replaced MSI could carry a custom action
+  that runs code as the user, or ask for elevation behind a prompt the procedure
+  has taught operators to pass. A replaced pkg could carry scripts that run as root
+  once the administrator password is entered. Gatekeeper is expected to block a
+  replaced pkg that is unsigned or not notarized, or whose signature or notarization
+  is revoked, but only when it assesses the file, which it does for a file that
+  carries the download mark (`com.apple.quarantine`), as a browser download does. A
+  pkg fetched with `gh` or `curl` has no mark. Gatekeeper is also expected to accept
+  a pkg signed with any Developer ID and notarized, so it does not tie the pkg to the
+  maintainer's team. That is a residual risk: until the CLI document records the team
+  ID after the first signed release, nothing in the install procedure compares a
+  downloaded package's team with the maintainer's. An operator who runs the optional
+  check block verifies the attestation, which ties the file to `release.yaml`'s build
+  on `main`, the build that signed it; the attestation does not tie the file to the
+  team. An operator who wants the team checked reads `pkgutil --check-signature` and
+  compares the team ID once it is recorded. All of this is expected, not yet observed on a
+  Mac, and no control is added for it here. The genuine installers carry neither a
+  script nor a custom action that runs code, and the build tests that they do not.
+- **On axpc, code running as the operator can read what the operator can**,
+  including the token files `marshal start` reads. A replaced installer runs as the
+  operator, so it can read them; the per-file access control step in
+  [Windows Runner Host](../operations/windows-runner-host.md) restricts those files
+  to other accounts, not to this one.
+- **The pkg's downgrade behaviour is only what the macOS build leg measured.** The
+  MSI refuses a lower version, which stops an older genuine MSI under a newer name
+  from replacing a newer installed version on Windows even when the operator skips
+  the check. The pkg has no such refusal that this project designed; what a lower
+  pkg does over a higher one is the outcome that
+  [CLI](../operations/cli.md#installing-updating-and-rolling-back) states, and the
+  documented rollback does not depend on it.
+- **The Windows procedure asks operators to pass prompts for unsigned files.** The
+  Windows installer and binary are not code-signed, so Windows SmartScreen and the
+  browser warn or block, and the procedure tells the operator to choose "Run anyway"
+  and to keep the download. An operator who has learned to pass those prompts passes
+  the same prompt for a replaced file. The macOS package is signed and notarized, so
+  its procedure teaches no prompt to pass. The prompts are
+  described as expected until the first install on each host records them. On axpc, a
+  binary fetched with `gh release download` had no `Zone.Identifier`
   ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511048211)), and
-  SmartScreen did not prompt, with "Check apps and files" On and Smart App Control
-  Off ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511120441)).
-  So with Smart App Control Off, the unsigned binary the install places, which
-  carries no Mark of the Web, is not blocked on axpc. A copy that carries one, such
-  as a browser download, or a host with Smart App Control On, could be.
+  SmartScreen did not prompt, with "Check apps and files" On and Smart App Control Off
+  ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511120441)). The
+  bare-binary blocks remove the macOS quarantine attribute from what they download;
+  the installers' procedure removes no mark.
+- **Smart App Control On may block the installers.** It blocks unsigned code unless
+  its cloud service predicts the file safe, whether or not the file carries a Mark
+  of the Web, and whether it evaluates an unsigned `.msi` is not verified. It is Off
+  on axpc. Signing the MSI is the remedy in a later change.
 - The runner image's definition is embedded in the binary, so a runner bump reaches
   a host only through a new release and an update.
 
@@ -903,14 +1155,33 @@ environment or supplied at run time. The exceptions are the two default runner l
 and `axmc`, which a host adds when `labels` is absent or empty and which are
 committed by the maintainer's decision: `axpc` names the Windows Docker Desktop
 host and `axmc` the macOS host. Every other host, consumer, or machine value stays
-a parameter.
+a parameter. The one further exception is the macOS signing team ID and the exact
+designated requirement, which a documentation change records in the CLI document
+after the first signed release as the contract text for later work. The team ID is
+public in every signed file, so recording it discloses nothing; it is not an account
+credential.
 
 [`.gitignore`](../../.gitignore) excludes `settings.local.json`, `.env.local`,
 token files, and private keys so that a local working file cannot be committed by
-accident; it is a backstop, not the control. The only repository secret the
-workflows read is `CLAUDE_CODE_OAUTH_TOKEN`, used by `claude-review.yaml` and
-added by the maintainer. A secret value is never echoed, passed on a command line,
-or written into an image layer or build cache.
+accident; it is a backstop, not the control. The workflows read one repository
+secret, `CLAUDE_CODE_OAUTH_TOKEN`, used by `claude-review.yaml` and added by the
+maintainer. `sign-macos` reads six Environment secrets of the `release` Environment,
+`MACOS_APPLICATION_P12_BASE64`, `MACOS_INSTALLER_P12_BASE64`, `MACOS_P12_PASSWORD`,
+`MACOS_NOTARY_KEY_P8`, `MACOS_NOTARY_KEY_ID` and `MACOS_NOTARY_ISSUER_ID`, and one
+Environment variable that is not secret, `MACOS_TEAM_ID`; the maintainer creates
+them, and no value is committed. A secret value is never echoed, passed on a command
+line, or written into an image layer or build cache. Two exceptions for a
+credential on a command line are recorded, both in `sign-macos`. The password
+arguments of `security` were allowed at the plan gate. The `--key-id` and `--issuer`
+arguments of `notarytool`, which carry the API key's ID and issuer ID, were allowed
+by the maintainer on 2026-11-04 PST. Neither tool has a non-interactive alternative:
+`security` has none for its password, and `notarytool` and its `store-credentials`
+command take the IDs only as arguments or through a keychain profile that is itself
+created from those arguments, with no documented environment variable or
+configuration file. The runner is discarded after the job, and a request is
+authenticated by a token signed with the `.p8` private key, which reaches `notarytool`
+only as a file path. GitHub masks secret values in the
+log, not in a process listing.
 
 ## The Review Gate Admits One Bot Identity by Login, Not Association
 

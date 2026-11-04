@@ -76,11 +76,38 @@ starts a runner container, waits for it to exit, and repeats. On axpc it is the
 the binary embeds; `start` runs a host's pools in the foreground as the
 **Supervisor**, and `stop`, `restart`, `status`, and `diagnostics` talk to it.
 
-**CLI Release** - a `v<version>` tag on main and the GitHub release that carries
-the **CLI**'s two binaries and `SHA256SUMS`. The maintainer starts one by
-dispatching `release.yaml`, and semantic-release picks the version from the commit
-subjects since the last `v*` tag. See
+**CLI Release** - a `v<version>` tag on main and the GitHub release that carries the
+**CLI**'s two binaries, the unsigned Windows MSI and the signed and notarized macOS
+pkg that carry them, and `SHA256SUMS`. The macOS binary is signed too. The maintainer
+starts one by dispatching `release.yaml`, and semantic-release picks the version from
+the commit subjects since the last `v*` tag. See
 [operations/development-workflow.md](./operations/development-workflow.md#cutting-a-release).
+
+**CLI Installer** - the Windows MSI, which is not code-signed, or the macOS pkg,
+which is signed with Developer ID and notarized, of a **CLI Release**. It holds the
+**CLI**'s binary unchanged and an operator opens it to install it. An
+optional **Check Block** checks the download first, and the installer's version is
+the release's `X.Y.Z`, or `0.0.0` for the dry run's. See
+[operations/cli.md](./operations/cli.md#installing-updating-and-rolling-back).
+
+**Release Environment** - the GitHub Environment named `release`, which holds the
+macOS signing secrets and the `MACOS_TEAM_ID` variable. It admits `main` only and
+needs the maintainer's approval for each run, and only `sign-macos` declares it. The
+maintainer creates and changes it; agents never do. See
+[operations/cli.md](./operations/cli.md#the-signing-contracts).
+
+**Signing Identifier** - `app.axross.marshal`, the identifier one code object is signed
+under: the **CLI**'s macOS binary until the Windows app's installer replaces the
+command line in the release, and the Mac app once it ships. The macOS pkg is built
+with it too. It and the team are fixed, so the designated requirement stays the
+same from release to release, which is what the Keychain trust of later work
+matches. See
+[operations/cli.md](./operations/cli.md#the-signing-contracts).
+
+**Check Block** - the optional block in the **CLI** document that checks a
+downloaded **CLI Installer** against `SHA256SUMS`, the tag's commit on main, the
+attestation, and the version of the binary inside it, and installs nothing. It
+ends with `refused:` and its cause when a check fails.
 
 **Placeholder Version** - `0.0.0-dev`, the version the **CLI**'s `Cargo.toml` and
 `Cargo.lock` hold on main. A release build writes the release version over it in

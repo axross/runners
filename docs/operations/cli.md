@@ -10,8 +10,8 @@ and the control channel), the image contract every runner image declares and the
 check of it, running a host with `build` (the runner image on axpc, the golden VM on
 axmc), `start`, `stop`, `restart`, `status`, and
 `diagnostics`, the diagnostic containers and VMs a diagnostics-enabled pool runs and their
-export, the toolchain and the gates that cover it, how a release is built and
-installed, and why its name is fixed. The binary is `marshal`. axpc runs its pools
+export, the toolchain and the gates that cover it, how a release is built, signed,
+and installed, and why its name is fixed. The binary is `marshal`. axpc runs its pools
 with it, as [Windows Runner Host](./windows-runner-host.md) describes, including how
 to roll back to the previous release, and axmc runs its Linux pools with it in Tart
 VMs, as [macOS Runner Host](./macos-runner-host.md) describes.
@@ -2427,7 +2427,10 @@ A release is a `v<version>` tag on the default branch and the GitHub release tha
 carries its files, such as `v0.1.0`. The maintainer starts one by dispatching
 [`release.yaml`](../../.github/workflows/release.yaml) on main, and semantic-release
 works out the version from the commits since the last `v*` tag. Releases are never
-prereleases.
+prereleases. The run has seven jobs, three of which sign the macOS files, check
+them, and assemble the signed set, once the maintainer approves the first in the
+`release` Environment, as [Signing the macOS Files](#signing-the-macos-files)
+describes.
 [Development Workflow](./development-workflow.md#cutting-a-release) gives the
 maintainer's steps and the version rules, and
 [Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
@@ -2445,18 +2448,35 @@ checkout. `--locked` then fails if the two files disagree, and
 `marshal --version` prints `marshal <version>`, from the same field.
 `mise run test:set-release-version` tests the script.
 
-Each release carries three files, and nothing else:
+Each release carries five files, and nothing else:
 
 | File                                | Built on         | Compiler host target     |
 | ----------------------------------- | ---------------- | ------------------------ |
 | `marshal-<version>-windows-x64.exe` | `windows-latest` | `x86_64-pc-windows-msvc` |
+| `marshal-<version>-windows-x64.msi` | `windows-latest` | -                        |
 | `marshal-<version>-macos-arm64`     | `macos-latest`   | `aarch64-apple-darwin`   |
+| `marshal-<version>-macos-arm64.pkg` | `macos-latest`   | -                        |
 | `SHA256SUMS`                        | `ubuntu-latest`  | -                        |
 
-The files are bare binaries, not archives, since there is one file per target.
-`SHA256SUMS` is in the `sha256sum` format, one line per binary. The binaries are
-not code-signed or notarised. Nothing modifies a binary after linking, so the macOS
-binary keeps the ad-hoc signature its linker gave it.
+The binaries are bare files, not archives. The `.msi` and the `.pkg` are installers
+that hold the binary of the same target unchanged. `SHA256SUMS` is in the
+`sha256sum` format, one line for each of the other four files, computed after
+signing.
+
+- **macOS.** The binary is signed with a Developer ID Application certificate, under
+  the fixed identifier `app.axross.marshal`, with the hardened runtime and a secure
+  timestamp. The package is signed with a Developer ID Installer certificate,
+  notarized by Apple's notary service, and stapled. The `sign-macos` job does this
+  on `macos-latest`, after the build and before the checksums, as
+  [Signing the macOS Files](#signing-the-macos-files) describes. A release run is the
+  first place the signing runs and no Mac has yet assessed a signed package, so that
+  Gatekeeper accepts it is an expectation, not an observation.
+- **Windows.** Neither the binary nor the MSI is code-signed. Windows signing is
+  deferred until a need arises, such as Smart App Control being On, so the MSI raises
+  the prompts that [Installing](#installing) describes.
+
+The linker's ad-hoc signature on a macOS binary is replaced by the Developer ID
+one. The `v0.1.0` binary predates signing and keeps the ad-hoc one.
 
 [`release-build.yaml`](../../.github/workflows/release-build.yaml) builds them. It
 is a reusable workflow with `contents: read` and no publish or attest step, and its
@@ -2474,12 +2494,25 @@ no cross-compilation, in one leg that:
    version its caller passed;
 6. copies the binary to its release name, and on Windows fails if it imports a
    `vcruntime` DLL;
-7. hands its SHA-256 to the next job as a job output, and uploads that one file by
-   name.
+7. builds the installer from the binary, as [Installers](#installers) describes,
+   and runs the installer tests there;
+8. on the macOS leg, runs the "Check The Signing Tools" step, which holds no secret
+   and prints a `MEASURED: signing tools:` line with the path of each tool that
+   `sign-macos` and `verify-macos` call. It fails the leg if one is missing, and
+   runs `base64` and `shasum` against the flags those jobs use, so a tool that moves
+   on a new runner image fails a pull request before it fails a release;
+9. hands the SHA-256 of the binary and of the installer to the next job as job
+   outputs, and uploads those two files by name.
 
-An assemble job then downloads both binaries, fails unless they are exactly the two
-expected files and each SHA-256 matches the handed-over value, writes
-`SHA256SUMS`, and uploads the three files as one artifact, `marshal-release`.
+An assemble job then downloads both legs' files and runs
+[`assemble-release.sh`](../../.github/scripts/assemble-release.sh). The script fails
+unless the files are exactly the four expected ones and each SHA-256 matches the
+handed-over value, writes `SHA256SUMS` with a line for each in a fixed order, checks
+it with `sha256sum --check --strict`, and the job uploads the five files as one
+artifact, `marshal-release`. That artifact is the unsigned build set: the dry run
+uploads it, and a release's `sign-macos` job starts from it. The `assemble-signed`
+job of `release.yaml` calls the same script, so one implementation writes every
+`SHA256SUMS`. `mise run test:assemble-release` tests it.
 
 The Windows binary links the C runtime statically: `+crt-static` is set for
 `x86_64-pc-windows-msvc` in [`cli/.cargo/config.toml`](../../cli/.cargo/config.toml),
@@ -2492,62 +2525,1089 @@ read nothing cannot pass.
 
 A release never ships a helper: `fake-docker`, `fake-tart`, `fake-softnet`,
 `fake-macos` or `instance-helper`. The release-profile tests build them into
-`target/release`, so the build names `marshal` alone and copies only
-that file out, each leg's artifact holds that one file, and the assemble job, the
+`target/release`, so the build names `marshal` alone and copies only that file out,
+each leg's artifact holds that binary and its installer, and the assemble job, the
 attest job, and the release gate refuse a set of files that holds anything else.
+
+### Installers
+
+Each leg packs its binary into an installer, unchanged, and signs neither: the signing
+happens later and only for the macOS files, as [Signing the macOS
+Files](#signing-the-macos-files) describes. The installed file is byte-identical to
+the attested bare binary, which on macOS is the signed one. An installer's own version
+is the release's `X.Y.Z`, and a dry run's is `0.0.0`, while its file name keeps the
+full dry-run version.
+[`installer-version.sh`](../../.github/scripts/installer-version.sh) maps the version
+for both legs: it keeps a release `X.Y.Z`, maps `0.0.0-dryrun.<n>` to `0.0.0`, and
+refuses any other prerelease form and an `X.Y.Z` beyond a Windows Installer
+`ProductVersion`'s limits (major and minor at most 255, patch at most 65535).
+`mise run test:installer-version` tests it.
+
+- The MSI is built by
+  [`build-msi.ps1`](../../.github/scripts/build-msi.ps1) from
+  [`marshal.wxs`](../../.github/scripts/marshal.wxs) with WiX, which
+  [`fetch-wix.sh`](../../.github/scripts/fetch-wix.sh) installs from a pinned and
+  checked package; [Security](../conventions/security.md#pinning-convention)
+  records the pin. It is a per-user package named `marshal`, manufacturer `axross`,
+  with a fixed upgrade code that never changes. It installs
+  `%LOCALAPPDATA%\Programs\marshal\marshal.exe`, appends that directory to the
+  user `PATH` and removes the entry on uninstall, refuses a lower version with the
+  message "A newer version of marshal is already installed.", and replaces the
+  installed product when a build of the same version is installed. It has no
+  dialogs and no UI extension, and its only custom action is the error message
+  for the downgrade, which runs no code.
+- The pkg is built by [`build-pkg.sh`](../../.github/scripts/build-pkg.sh) with
+  `pkgbuild`, identifier `app.axross.marshal`, `--ownership recommended`, and a
+  payload of `usr/local/bin/marshal` with mode 0755. It has no scripts. The leg builds
+  its package without signing it. `sign-macos` builds the release's package again from
+  the signed binary with the same arguments plus the Installer identity, and
+  `verify-macos` compares the two.
+
+[`test-msi-installer.ps1`](../../.github/scripts/tests/test-msi-installer.ps1)
+runs on the Windows leg with the real `msiexec`, and
+[`test-pkg-installer.sh`](../../.github/scripts/tests/test-pkg-installer.sh) on the
+macOS leg with the real `installer` and passwordless `sudo`. Each builds throwaway
+installers at fixed test versions from two copies of the binary that differ in
+trailing bytes, and judges every install by the installed file's SHA-256; those
+copies are packed and hashed, never run. They check the release installer's
+install, version, `PATH`, listing and byte identity, an upgrade, the extraction
+layout the optional check relies on, and an uninstall that keeps the logs, and
+that the installer carries no script, no code-running custom action and no
+dialogs and names only `marshal`, `axross` and the repository. The one exception is
+the package archive: `pkgbuild` records the building account as each entry's owner,
+which on the build legs is `runner`, the account of every GitHub-hosted runner, and
+the macOS test checks that `runner` is the only owner. The Windows test
+also builds a same-version rebuild, a lower version over a higher one, and an
+upgrade while a copy of a stock waiting console program, packed as `marshal.exe`,
+runs from the install path. The macOS test also records the owner and mode of
+`/usr/local/bin` before and after the install, the bill of materials' entries, a
+login zsh finding `marshal` by name, and what a lower package does over a higher
+one. Its uninstall runs the uninstall block of this document, extracted from it.
+Each measured outcome is a log line that starts with `MEASURED:`, and the
+installer logs are kept as the `installer-test-logs-<target>` artifact of the run.
+A failed check fails the leg.
+
+### The Dry Run and the Release Workflow
 
 [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) calls the build
 workflow on every pull request and every push to the default branch, as the dry
 run, with the version `0.0.0-dryrun.<run number>`: both legs and the assemble job
-run, each binary must print `marshal 0.0.0-dryrun.<run number>`, and the
-`marshal-release` artifact is uploaded to the run, but nothing is attested or
-published. [`release.yaml`](../../.github/workflows/release.yaml) runs only on a
-manual dispatch on main, in four jobs on the dispatched commit:
+run, each binary must print `marshal 0.0.0-dryrun.<run number>`, the installers are
+built and tested, and the `marshal-release` artifact, with all five files, is
+uploaded to the run, but nothing is signed, attested or published, and no job
+references an Environment. The `Install Blocks` job
+then runs the documented install blocks against that artifact, as
+[What the Install Tests Cover](#what-the-install-tests-cover) describes.
+[`release.yaml`](../../.github/workflows/release.yaml) runs only on a
+manual dispatch on main, in seven jobs on the dispatched commit. Every job but
+`plan` runs only when the plan job handed out a version, and every job after `build`
+needs `plan` directly:
 
-1. A plan job runs semantic-release as a dry run. Its gate,
+1. `plan` runs semantic-release as a dry run. Its gate,
    [`.github/scripts/verify-release.sh`](../../.github/scripts/verify-release.sh),
    which `@semantic-release/exec` runs from
    [`release/.releaserc.json`](../../release/.releaserc.json), hands out the next
    version. With nothing to release, it hands out none, and the other jobs are
    skipped.
-2. The build workflow builds and assembles the files at that version.
-3. An attest job downloads the artifact and fails unless it holds exactly that
-   version's three files, `SHA256SUMS` lists exactly the two binaries, and
-   `sha256sum --check --strict` passes. It then attests the build provenance of the
-   two binaries with `actions/attest`. It checks nothing out and installs no npm
-   package.
-4. A release job downloads the artifact and runs semantic-release. The gate makes
-   the same check for the version semantic-release worked out in that run, before
-   anything is tagged. semantic-release then pushes the tag and its note, and
+2. `build` is the build workflow, which builds and assembles the unsigned files at
+   that version into `marshal-release`.
+3. `sign-macos` signs and notarizes the macOS binary and package in the `release`
+   Environment, once the maintainer approves it, as
+   [Signing the macOS Files](#signing-the-macos-files) describes.
+4. `verify-macos` checks the signed package on a runner that holds no signing
+   identity.
+5. `assemble-signed` writes `SHA256SUMS` over the files that are published: the
+   Windows files as the build made them and the macOS files as `sign-macos`
+   signed them. It uploads them as `marshal-release-signed`.
+6. `attest` downloads `marshal-release-signed` and fails unless it holds exactly
+   that version's five files, `SHA256SUMS` lists exactly the two binaries and the
+   two installers, and `sha256sum --check --strict` passes. It then attests the
+   build provenance of those four files with `actions/attest`. It checks nothing out
+   and installs no npm package.
+7. `release` downloads `marshal-release-signed` and runs semantic-release. The gate
+   makes the same check for the version semantic-release worked out in that run,
+   before anything is tagged. semantic-release then pushes the tag and its note, and
    `@semantic-release/github` creates a draft release with the generated notes,
-   uploads the three files, and publishes it. `mise run test:verify-release` tests
+   uploads the five files, and publishes it. `mise run test:verify-release` tests
    the gate.
+
+Every signing step comes before `release`, so a signing, notarization or
+verification failure stops the run before any tag is pushed. The jobs and their
+`needs` chain are the contract that W1, W4, M2 and M4, other children of roadmap
+[#72](https://github.com/axross/runners/issues/72), extend
+([Extending the Release Workflows](#extending-the-release-workflows); [The Signing
+Contracts](#the-signing-contracts) says what each of them is), and
+`mise run check:release-shape` fails if they drift from it.
 
 The runner image's definition is embedded in the binary (see [Build](#build)), so a
 change to it, such as a runner bump, reaches a host only through a new release and
 an update.
 
+### Signing the macOS Files
+
+Three jobs of `release.yaml` sit between `build` and `attest`. The maintainer's
+approval of the first one is the decision to sign.
+
+| Job               | Needs                                         | Runs on, timeout            | Permissions      | Environment | What it holds                                                                                                                                                                                                                    |
+| ----------------- | --------------------------------------------- | --------------------------- | ---------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sign-macos`      | `plan`, `build`                               | `macos-latest`, 60 minutes  | `contents: read` | `release`   | The six signing secrets and `MACOS_TEAM_ID`. Downloads `marshal-release`; uploads `marshal-macos-arm64-signed` and `notary-log-macos`. It checks nothing out.                                                                    |
+| `verify-macos`    | `plan`, `build`, `sign-macos`                 | `macos-latest`, 20 minutes  | `contents: read` | none        | No secret and no signing identity. Checks out the repository with `persist-credentials: false`, downloads three artifacts, and runs `test-signed-pkg.sh` with the team ID and the notary submission ID that `sign-macos` output. |
+| `assemble-signed` | `plan`, `build`, `sign-macos`, `verify-macos` | `ubuntu-latest`, 10 minutes | `contents: read` | none        | Checks out the repository with `persist-credentials: false`, runs `assemble-release.sh`, and uploads `marshal-release-signed`.                                                                                                   |
+
+`attest` then needs `plan` and `assemble-signed`, and `release` needs `plan` and
+`attest`. Both read `marshal-release-signed`, and `marshal-release` stays the
+unsigned build set. `attest` keeps `id-token: write` and `attestations: write`
+alone. The kept uploads, the signed files, the notary log and `marshal-release-signed`,
+hold no secret. The workflows ask GitHub to keep these uploads for 14 days. GitHub
+keeps them for the repository's artifact retention limit instead when that is
+shorter. That limit cut the installer-log uploads of a pull request run to 7 days.
+
+`sign-macos` is the one job that declares the Environment or reads a signing secret.
+[Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
+owns what it may hold and run: `contents: read`, no checkout, no repository file, no
+package manager, no fetch, and no action but `actions/download-artifact` and
+`actions/upload-artifact`. Its steps are the job's own definition in `release.yaml`,
+and its only network use is the artifact transfer and Apple's timestamp, notary and
+ticket services. Each signing tool is called by its absolute system path, `/usr/bin/`
+for `security`, `codesign`, `pkgbuild`, `openssl`, `plutil`, `shasum` and `xcrun`, and
+`/usr/sbin/` for `pkgutil`, so nothing earlier on `PATH` can stand in for one. The
+scripts read the two prefixes from `SYSTEM_BIN` and `SYSTEM_SBIN`, whose defaults are
+those literal paths and which only the stand-in test overrides; the shape check
+requires the defaults and rejects either name as an `env:` key anywhere. Its steps run
+in this order:
+
+1. It downloads `marshal-release`, the build's set.
+2. It refuses, before importing anything, unless:
+   - every secret and `MACOS_TEAM_ID` is non-empty, and `MACOS_TEAM_ID` is 10
+     characters of A-Z and 0-9;
+   - the version is `X.Y.Z`;
+   - the downloaded files are exactly the five of the release, all regular files;
+   - the macOS binary and package match their lines in that `SHA256SUMS`, so it signs
+     what the build produced and checked;
+   - every tool exists at its path, and `xcrun --find` finds `notarytool` and
+     `stapler`.
+3. It creates a temporary keychain with a random password that the log masks. It
+   refuses the embedded Developer ID G2 intermediate unless its SHA-256 equals the pin
+   in [Security](../conventions/security.md#pinning-convention), and that check comes
+   before any `security` call. It then imports the intermediate and both `.p12` files.
+   The intermediate is embedded because the runner image's trust in it is unknown and
+   the job fetches no certificate. It expires on 2031-09-17, and replacing it is a change
+   to the job and to the pin.
+4. It lists the keychain's identities and refuses unless there is exactly one
+   Developer ID Application identity and exactly one Developer ID Installer identity,
+   and each must be valid. For each it prints the subject, team and expiry date of the certificate
+   whose SHA-1 hash equals the selected identity's, found with
+   `security find-certificate -a -Z -c <name>`. It refuses unless the name matches
+   exactly one certificate, because `pkgbuild` signs by name. It refuses a certificate
+   whose team differs from `MACOS_TEAM_ID` and an expired one, and it warns with a
+   workflow warning annotation when a certificate expires within 90 days.
+5. It signs a copy of the binary with the Application identity, selected by its SHA-1
+   hash, `--options runtime`, `--timestamp` and `--identifier app.axross.marshal`. The
+   signature replaces the linker's ad-hoc one. It then runs
+   `codesign --verify --strict` and prints the designated requirement.
+6. It builds the package from the signed binary. The staging layout and the `pkgbuild`
+   arguments repeat
+   [`build-pkg.sh`](../../.github/scripts/build-pkg.sh)'s, because the job runs no
+   repository file, and `--sign` and `--keychain` are the only additions. `pkgbuild`
+   takes the Installer identity by its common name, the one form its manual gives, and
+   `codesign` takes the Application identity by hash. The name cannot be another
+   identity's: step 4 has shown that the temporary keychain holds one certificate of
+   that name, and `--keychain` keeps `pkgbuild` to that keychain. The shape check
+   fails if the two argument lists differ, and `verify-macos` compares the signed
+   package with the unsigned one.
+7. It notarizes the package with
+   `xcrun notarytool submit … --wait --timeout 30m --output-format json`, and reads
+   the result with `plutil`. It refuses unless the status is `Accepted`, whatever
+   `notarytool` exited with, and a timeout is therefore a failure. Whenever a
+   submission ID exists it fetches the notary log, which Apple says to read even
+   after a success, and which lists each ticketed CDHash.
+8. It staples the package, runs `stapler validate`, and refuses unless
+   `pkgutil --check-signature` names a Developer ID Installer certificate of the
+   team.
+9. It outputs the two signed files' SHA-256, the team ID and the submission ID, and
+   uploads the signed files.
+
+Whether the job passes or fails, the clean-up step deletes the keychain, the `.p12`
+files and the key file, and the notary log is uploaded when one exists. These two
+steps run with `if: always()`, and no other step in the job may.
+
+No secret is printed. Secret values reach the scripts only through `env:` and files
+written with mode 0600 under the runner's temporary directory, and each line of the
+`.p8` is masked as well. Two exceptions to "never passed on a command
+line" are recorded, the password arguments of `security` and the `--key-id` and
+`--issuer` arguments of `notarytool`, and the `.p8` private key reaches `notarytool`
+only as a file path.
+[Security](../conventions/security.md#nothing-identifying-or-secret-is-committed)
+records both and the reasons.
+
+`verify-macos` runs
+[`test-signed-pkg.sh`](../../.github/scripts/tests/test-signed-pkg.sh) on a runner
+that holds no signing identity. It takes the team ID and the notary submission ID that
+`sign-macos` output, the latter through `env: SUBMISSION_ID`. The script refuses unless:
+
+- the unsigned binary and package each match their single line in the unsigned set's
+  `SHA256SUMS`;
+- the signed package's identifier, version and install location equal the unsigned
+  one's, and the identifier is `app.axross.marshal`;
+- the two bills of materials list the same paths with the same owner and mode, which
+  leaves out the binary's size;
+- neither package holds `Scripts`;
+- the binary in the signed package is byte-identical to the signed bare binary;
+- the bare binary verifies with `codesign --verify --strict`, is signed by a Developer
+  ID Application certificate of the team, carries the hardened runtime and a
+  timestamp, and its designated requirement is one of the two known default forms for
+  the identifier and the team ([The Signing Contracts](#the-signing-contracts) names
+  them), nothing else being accepted;
+- the package's signature is a Developer ID Installer chain of the team to Apple's
+  root, `stapler validate` passes, and `spctl --assess --type install` accepts it;
+- the notary log's `jobId`, read with `plutil`, equals the submission ID `sign-macos`
+  output, ignoring case, so the log is of that submission, and it lists the bare
+  binary's CDHash.
+
+It then installs the signed package with `installer -pkg`, runs `codesign --verify` and
+`--version` on the installed file, and removes it. It prints `MEASURED:` lines for
+which form of the designated requirement matched, the requirement itself, and
+`spctl`'s answer. That is the first time the signed
+package is checked, and it happens in the release run: a dry run cannot sign, and the
+signed package has not been opened on a Mac.
+
+Nothing here has run on macOS or in Actions. The scripts read the output of
+`security find-identity`, `pkgutil --check-signature`, `codesign -d`, `spctl` and
+`lsbom` as the manuals describe it, and none of those formats is confirmed. Nor is how
+long `stapler` takes after an accepted submission, or what the signing certificate's
+subject `OU` holds. The first signed release is therefore the first real run of the
+job and of `verify-macos`. A defect stops that release before its tag, and a later
+pull request fixes it.
+
+### The Signing Contracts
+
+F0 owns these. W1, W4, M2 and M4 consume them. Each is a child of roadmap
+[#72](https://github.com/axross/runners/issues/72), as F0 is:
+
+- **F0**, "Installers and release signing", is the child this section describes.
+- **W1**, "Windows tray app, first release", has an installer pull request that
+  replaces the release's files. Its app's bundle identifier is the identifier
+  below, because the app and its agent are one code object. W1 owns that use.
+- **W4**, "Automatic updates, on Windows", signs the update archive. The archive's
+  signature is W4's contract. W4 makes it in W4's own update-signing job, under the
+  rules in [Extending the Release Workflows](#extending-the-release-workflows). M4
+  may also sign the Mac's update archive there.
+- **M2**, "Mac app", signs the Mac app with the same identifier and team, and
+  notarizes and staples its disk image, in F0's signing job. The commands and the
+  layout are M2's. M2 also holds the Keychain store. Its Keychain items trust the
+  signed Marshal executable, which is the code object that carries the identifier in
+  the first contract below, and must be created by F0's stable Developer ID identity.
+- **M4**, "Mac app: login, power, updates and telemetry", updates the installed Mac
+  app. Its updates keep M2's Keychain tokens working only while the identifier and the
+  team stay the same.
+
+The contracts F0 owns are these:
+
+- **The identifier** is `app.axross.marshal`, and it never changes. One code object
+  carries it: the `marshal` binary until W1's installer pull request, and from M2 on
+  the Mac app bundle's signature, through its main executable. F0 proposes that from
+  M2 on `verify-macos` reads the designated requirement from the signed app, and M2's
+  Keychain trust matches it. F0 also asks M2's plan to compare, at M2's first release, the
+  app's requirement with the one recorded for `marshal`, and to record any difference.
+  M2's plan accepts or answers both. The package's own identifier is the same
+  string. On Windows nothing is signed, so the identifier binds only the Mac. Changing
+  the identifier or the team breaks the Keychain trust that M2 relies on, so a
+  change goes through a roadmap revision.
+- **The designated requirement** is the default one for a Developer ID signature: this
+  identifier, `anchor apple generic`, the Developer ID intermediate and leaf markers,
+  and `certificate leaf[subject.OU]` equal to the team ID. Two forms of it are known,
+  and `verify-macos` accepts exactly these, after it drops `/* … */` comments,
+  collapses whitespace and unquotes the team ID:
+  - **Form A**, the expected one, is the plain `codesign` default: the conjunction of
+    `anchor apple generic`, `identifier "<id>"`,
+    `certificate 1[field.1.2.840.113635.100.6.2.6]`,
+    `certificate leaf[field.1.2.840.113635.100.6.1.13]` and
+    `certificate leaf[subject.OU] = <team>`, in any order, compared as a set of
+    clauses. It is inferred, not yet observed, because TN3127 says plain `codesign`
+    applies a different default from Xcode's and does not print it.
+  - **Form B** is the requirement Xcode writes for Developer ID code, from TN3127,
+    compared as a whole string:
+    `anchor apple generic and identifier "<id>" and (certificate leaf[field.1.2.840.113635.100.6.1.9] or certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = <team>)`.
+
+  The script prints a `MEASURED:` line naming the form that matched, then the
+  requirement, so the first signed release records which one it was. Keychain items
+  that trust the requirement are expected to keep trusting later releases signed under
+  the same identifier and team, including after a certificate renewal; that is
+  inferred, not observed. After the first signed release, a later change records the
+  team ID, the form that matched, and the exact requirement printed for the bare
+  binary here, as the text that M2 consumes.
+
+- **The team** is pinned by the Environment variable `MACOS_TEAM_ID`. `sign-macos`
+  refuses a certificate of another team, and `verify-macos` refuses a designated
+  requirement that is neither form A nor form B above, each built from the identifier
+  and the team ID that `sign-macos` output after checking it.
+- **The Environment** is named `release`. The maintainer creates it and its secrets,
+  and agents never change them or read the settings:
+  - deployment branches: selected branches, `main` only, no tags;
+  - required reviewers: the maintainer, with "Prevent self-review" off, so the
+    maintainer can approve a run they started;
+  - "Allow administrators to bypass": off.
+- **The secrets** are Environment secrets only, and no repository secret is added.
+  Both certificates come from the Developer ID G2 intermediate.
+
+  | Secret                         | Holds                                                             |
+  | ------------------------------ | ----------------------------------------------------------------- |
+  | `MACOS_APPLICATION_P12_BASE64` | The Developer ID Application identity as a `.p12`, base64-encoded |
+  | `MACOS_INSTALLER_P12_BASE64`   | The Developer ID Installer identity as a `.p12`, base64-encoded   |
+  | `MACOS_P12_PASSWORD`           | The password of both `.p12` files                                 |
+  | `MACOS_NOTARY_KEY_P8`          | The App Store Connect team API key's `.p8` text                   |
+  | `MACOS_NOTARY_KEY_ID`          | The key's ID                                                      |
+  | `MACOS_NOTARY_ISSUER_ID`       | The issuer ID                                                     |
+
+  The team ID is the Environment variable `MACOS_TEAM_ID`, not a secret.
+
+- **A missing Environment.** A dispatch that finds no `release` Environment makes
+  GitHub create one with no protection rules and no secrets. `sign-macos` then
+  refuses on the empty secrets, before it imports anything.
+  [Development Workflow](./development-workflow.md#before-the-first-release) has the
+  maintainer create the Environment first.
+- **Certificate lifetime.** The Developer ID certificates are expected to last one
+  year, and the maintainer confirms the dates from the certificates. Software
+  signed with a secure timestamp keeps working after its certificate expires.
+  Whether an older release's package still installs after its Installer certificate
+  has expired is unconfirmed, and bears on rolling back to it.
+  [Development Workflow](./development-workflow.md#renewing-the-certificates) says how
+  to renew.
+
+### Reading a Signature
+
+These commands show what a release's files carry. They are information, not steps of
+the install procedure, and the answers below are what the documentation leads to
+expect, not what a Mac has shown.
+
+```bash
+pkgutil --check-signature marshal-<version>-macos-arm64.pkg
+spctl --assess --type install -vv marshal-<version>-macos-arm64.pkg
+xcrun stapler validate marshal-<version>-macos-arm64.pkg
+codesign --verify --strict -vv /usr/local/bin/marshal
+codesign -d -r- /usr/local/bin/marshal
+```
+
+- `pkgutil --check-signature` is expected to show a Developer ID Installer
+  certificate of the maintainer's team, chained to Apple's root. An operator who wants
+  the team checked compares the team ID it shows with the one this document records
+  once the first signed release has fixed it. Gatekeeper is not expected to do that
+  check, and it assesses only a file that carries the download mark, which a package
+  fetched with `gh` or `curl` lacks.
+  [Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
+  records what it is expected to block and accept. This is expected, not yet observed
+  on a Mac.
+- `spctl --assess --type install -vv` is expected to print `accepted` with
+  `source=Notarized Developer ID`. One unanswered report says macOS 26.3 rejected a
+  notarized, stapled package; if a genuine release shows that, it is a defect to
+  record.
+- `xcrun stapler validate` passes for a stapled package.
+- `codesign -d -r-` on the installed or the bare binary prints the designated
+  requirement of the identifier contract. `spctl --type execute` does not suit a bare
+  command line tool, so the binary's notarization is read from its CDHash in the
+  notary log instead.
+
+### Extending the Release Workflows
+
+The release workflows' structure is F0's, and W1, W4, M2 and M4 extend them at
+these points:
+
+- **W1** adds its installer to the build legs and to the release set. That changes
+  the five-file set, so the same change updates it across `release-build.yaml`,
+  `assemble-release.sh` and `test-assemble-release.sh`, `sign-macos`'s file check,
+  `assemble-signed`, `attest`, `verify-release.sh` and `test-verify-release.sh`,
+  `.releaserc.json` and `test-sign-macos.sh`. The install-block suites and
+  `test-msi-standard-user.ps1` name the one installer they install, so they change
+  only if W1's installer replaces or renames it; `test-signed-pkg-refusals.sh` uses
+  one Windows file name only as a fixture for an unlisted file, and needs no change.
+  W1's installer pull request replaces the release's files. From it on, the release
+  carries W1's Windows app and installer and no macOS file until M2, and
+  no macOS command line is built or signed.
+- **M2** adds steps to `sign-macos` and `verify-macos` that sign the Mac app with the
+  same identifier and team, and notarize and staple its disk image. The commands and
+  the layout are M2's.
+- **W4** adds its own update-signing job, which roadmap [#72](https://github.com/axross/runners/issues/72) adopted, to sign the
+  update archive. The archive's signature is W4's contract.
+- **M4** may sign the Mac's update archive in W4's update-signing job.
+
+Every extension keeps these rules:
+
+- only signing jobs declare the Environment;
+- a signing job holds `contents: read` and runs no repository code;
+- checksums and attestation follow every signing step;
+- no pull-request run reaches the Environment;
+- F0's and M2's signing jobs use only operating-system signing tools.
+
+W4's update-signing job is the one exception to the last rule. It runs `tauri-cli`'s
+`signer sign`. A tool job without the Environment builds that binary with `--locked`
+from a crate archive whose SHA-256 must equal one committed in the repository. The
+signing job checks the binary it receives against the SHA-256 that the tool job
+outputs, before running it. A later revision of F0's plan, before W1's installer pull
+request, sets how the job sits beside F0's jobs.
+
+An extension adds its jobs or steps to `check-release-shape.mjs` and its test in its
+own pull request, under REVIEW.md's release lens and the maintainer's review. The
+shape check guards against mistakes. A pull request can edit it, so it is not the
+control against a hostile one: what keeps pull requests away from the Environment is
+the maintainer's branch rule and that `release.yaml` runs only on a dispatch. It reads
+the commands a signing script runs, but not what they are told to do, so these can
+still run code it does not see: the programs of `awk` and `sed`, the operands of a
+`[[ ]]` test, of which it reads only the command substitutions, an option or variable
+name built at run time, such as `find "$option"`, `read -r "$name"` and
+`printf -v "$name"`, an assignment through `${PATH:=...}`, and any environment variable
+other than `PATH`, `BASH_ENV` and `ENV`. It also does not see a write to `SHA256SUMS`
+in `release-build.yaml`'s `assemble` job other than by a redirection, `tee`, `cp` or
+`mv`, or a step condition in `attest` or `release` that skips a step, such as
+`if: false`.
+
+### What the Signing Tests Cover
+
+Each of these runs in `mise run check`, on Linux, with no signing identity and no
+secret:
+
+| Task                             | What it covers                                                                                                                                                                                                                                                                  |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mise run check:release-shape`   | Reads the `.yaml` and `.yml` workflows and the `sign-macos` scripts and fails unless the rules listed under this table hold.                                                                                                                                                    |
+| `mise run test:release-shape`    | Runs that check against the unchanged workflows, then against copies altered one change at a time, and expects each to fail.                                                                                                                                                    |
+| `mise run test:sign-macos`       | Runs `sign-macos`'s `run:` scripts, extracted from `release.yaml`, against recording stand-ins of the macOS tools: each refusal, the flags, that the keychain and files are deleted after a pass and after a failure at each step, and that no secret or `.p8` line is printed. |
+| `mise run test:signed-pkg`       | Runs `test-signed-pkg.sh` against stand-ins and produces each of its refusals, including an unsigned file that `SHA256SUMS` does not list and a notary log of another submission.                                                                                               |
+| `mise run test:assemble-release` | Runs `assemble-release.sh` against temporary directories: the four lines in order, and a refusal for another file set or a changed file.                                                                                                                                        |
+
+`mise run check:release-shape` enforces these rules. They apply to every `.yaml` and
+`.yml` workflow, unless a rule names a file or job. Each failure names its rule, and
+a workflow that cannot be read, a missing `release.yaml` or `release-build.yaml`, and a
+missing `build-pkg.sh` fail it too.
+
+- **The Environment.** Only `release.yaml`'s `sign-macos` declares an `environment`,
+  and only `release`. No step declares one.
+- **Triggers.** `release.yaml` is triggered by `workflow_dispatch` alone. A workflow
+  that `pull_request` or `pull_request_target` triggers calls only local workflows
+  (`./.github/workflows/...`), and none of them, directly or through another called
+  workflow, declares an Environment.
+- **The signing secrets.** No workflow but `release.yaml`'s `sign-macos` reads one,
+  whether by `secrets.MACOS_*`, `secrets[...]`, `toJSON(secrets)` or
+  `secrets: inherit`.
+- **The `sign-macos` job.** It holds exactly `contents: read`, declares
+  `environment: release`, and runs on `macos-latest`. No step sets `shell:`, and
+  neither the workflow nor the job sets `defaults.run.shell`.
+- **Its steps.** None checks out the repository. The only actions are
+  `actions/download-artifact` and `actions/upload-artifact`, each on a major tag. The
+  download takes only the inputs `name` and `path`, and the upload only `name`,
+  `path`, `retention-days` and `if-no-files-found`. No `run:` contains `${{ }}`, and
+  each begins with a `# sign-macos: <name>` marker line.
+- **Its commands.** Each command word, a `trap` body included, is a function the
+  script defines, a shell built-in or base utility on a fixed list, or a signing tool
+  at `"$SYSTEM_BIN/<tool>"` or `"$SYSTEM_SBIN/<tool>"`: `security`, `codesign`,
+  `pkgbuild`, `openssl`, `plutil`, `shasum` and `xcrun` under the first, `pkgutil` under
+  the second. A package manager, `curl` or `wget`, an interpreter, `source`, `eval` or
+  `exec`, a path into the repository, a signing tool called by its bare name, and any
+  other command fail. So do a quoted or expanded command word, a bare command
+  substitution where a command word would stand (one attached to a word, as in
+  `x=$(...)`, is read as that word's value), a backtick, an arithmetic expansion
+  `$(( ... ))` that contains `$(` or a backtick, an unreadable
+  `trap` operand, a `find` option outside `-mindepth`, `-maxdepth`, `-type`, `-name`,
+  `-print` and `-print0`, and a reference to `.github/`, `GITHUB_WORKSPACE` or
+  `github.workspace`. The command substitutions inside a `[[ ]]` test are read as
+  commands too; the rest of the test is not.
+- **The tool prefixes.** A script that uses `SYSTEM_BIN` or `SYSTEM_SBIN` has the line
+  `: "${SYSTEM_BIN:=/usr/bin}"` (`/usr/sbin` for `SYSTEM_SBIN`), gives it no other
+  default, and neither assigns nor exports it. No `env:` of any workflow, job or step
+  sets either name.
+- **The scripts' environment.** No script mentions `GITHUB_PATH`. A script mentions
+  `GITHUB_ENV` only in a block of one or more `echo "NAME=${variable}"` lines for
+  `APPLICATION_IDENTITY` and `INSTALLER_IDENTITY_NAME`, which is accepted in any
+  `sign-macos` script. No script assigns `PATH`, `BASH_ENV` or `ENV`, or starts a
+  `read`, `printf -v`, `declare`, `typeset`, `local`, `export`, `readonly`, `mapfile`,
+  `readarray`, `getopts`, `for` or `select` command that names one of the three. None
+  of the three is an `env:` key at any level of `release.yaml`.
+- **Step conditions in `sign-macos`.** A step with any `if` is the clean-up step
+  (marker `# sign-macos: cleanup`) or the `notary-log-macos` upload, so a condition
+  such as `if: false` or `if: success()` is refused as well as the status functions
+  `always()`, `failure()` and `cancelled()`, whatever their case and inner spaces. Each
+  of those two steps exists exactly once and has `if: always()`.
+- **The check script.** The script marked `# sign-macos: check` lists in `bin_tools`
+  and `sbin_tools` every tool the job calls by `$SYSTEM_BIN` or `$SYSTEM_SBIN`, and
+  looks for `notarytool` and `stapler` with `xcrun --find`.
+- **The package.** `build-pkg.sh` sets an `identifier`, and every `identifier=` in
+  `sign-macos` equals it. The package script's staging lines (`mkdir -p`, `cp`,
+  `chmod`) equal `build-pkg.sh`'s, and its `pkgbuild` call passes `--sign` and
+  `--keychain` once each and otherwise the arguments `build-pkg.sh` passes.
+- **The new jobs.** `sign-macos`, `verify-macos` and `assemble-signed` each need
+  `plan` directly, carry
+  `if: github.ref == 'refs/heads/main' && needs.plan.outputs.version != ''`, and set
+  `timeout-minutes` to at most 60, 20 and 10. `verify-macos` runs on `macos-latest`
+  and `assemble-signed` on `ubuntu-latest`, and both hold exactly `contents: read` and
+  declare no environment; their checkouts set `persist-credentials: false`, and no
+  step of either carries an `if`. `attest` and `release` carry exactly the same
+  `if` as the new jobs.
+- **The chain.** Each job needs these directly: `sign-macos` needs `plan` and
+  `build`; `verify-macos` adds `sign-macos`; `assemble-signed` adds `verify-macos`;
+  `attest` needs `plan` and `assemble-signed`; `release` needs `plan` and `attest`.
+  `attest` holds exactly `id-token: write` and `attestations: write`. `attest` and
+  `release` each download exactly one artifact, `marshal-release-signed`, and no step
+  of `release` reads `needs.build`.
+- **No way past a failure.** No job or step of `release.yaml` sets
+  `continue-on-error`. No job-level `if` uses `always()`, `failure()` or
+  `cancelled()`, and neither does a step of any job but `sign-macos`, whose step
+  conditions are the rule above. A step of `verify-macos` or `assemble-signed` carries
+  no `if` at all. A step condition of `attest` or `release` that skips a step, such as
+  `if: false`, is not seen.
+- **The dry run's tool check.** In `release-build.yaml`'s `build` job, the "Check The
+  Signing Tools" step runs on the macOS leg only, fails with `exit 1` when a tool is
+  missing, and has no `env:` key that contains `SECRET` or `MACOS_`. Its `bin_tools`
+  and `sbin_tools` list every tool that `sign-macos`'s and `verify-macos`'s scripts
+  and `test-signed-pkg.sh` call, and it looks for `notarytool` and `stapler` with
+  `xcrun --find`.
+- **The dry run's `assemble`.** Its checkouts set `persist-credentials: false`, a
+  script calls `assemble-release.sh`, and none writes `SHA256SUMS` itself, which means a
+  `>` or `>>` redirection to it, `tee`, or `cp` or `mv` with it as the destination;
+  reading it, as `cat` or `sha256sum -c` does, is not a write.
+
+The stand-ins record calls and return canned answers, so these tests show the flow
+and the refusals, not that Apple accepts a signature. The signed package is checked
+only in the release run, by `verify-macos`, and on the Mac, and neither has run.
+[Development Workflow](./development-workflow.md#cutting-a-release) has the
+maintainer check the first signed release by hand.
+
 ## Installing, Updating and Rolling Back
 
-`marshal` is installed from a release, never built on the host. The procedure
-accepts a binary only when its checksum matches `SHA256SUMS`, the tag's commit is
-on the default branch, and its attestation verifies against `release.yaml` run from
-main, at that commit. It needs `gh` 2.102 or later, signed in
-(`gh auth status`).
+`marshal` is installed from a release, never built on the host. You open the
+release's installer, the MSI on Windows or the pkg on macOS, and it places the
+binary, puts it on `PATH`, and handles updates and removal, so nothing is copied or
+added to `PATH` by hand. The pkg is signed with Developer ID and notarized, and the
+MSI is not code-signed ([Releases](#releases)). So Gatekeeper is expected to accept
+the pkg with no block to pass, while Windows warns about the MSI, and the steps below
+say which prompts to expect on Windows and how to pass them.
+
+Checking the downloaded installer before you open it is optional but recommended.
+The [check block](#checking-the-download) tests its checksum against
+`SHA256SUMS`, that the tag's commit is on the default branch, its attestation
+against `release.yaml` run from main, and the version of the binary inside it. It
+needs `gh` 2.102 or later, signed in (`gh auth status`). Without the check, you open
+a file that nothing has checked, and the file runs before anything else can catch a
+replaced one: an MSI runs as you, and a pkg runs as root once you enter the
+administrator password.
+[Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
+records that risk.
+
+The first release expected to carry installers is `0.2.0`, and the check blocks
+below name it. `v0.1.0`, the only release so far, has the two bare binaries and no
+installer, so until a release with installers exists, install `v0.1.0` with the
+[bare-binary blocks](#rolling-back-to-v010). To check another release, change the
+`version` assignment line of a block, and in a check block the `file` assignment
+line too. If the first release with installers gets another version, a later change
+corrects the line.
+
+CI runs these blocks against stand-ins in `mise run check` and in the `Install Blocks`
+job, and the `Install Blocks` job also runs them against the dry run's real installers
+([What the Install Tests Cover](#what-the-install-tests-cover)). They have not run on
+axpc or the Mac. The dry run builds its pkg without signing it, so the signed pkg is
+checked only in the release run, by `verify-macos`, and on the Mac, and neither has
+happened. Every prompt below is described as expected, from the platform's
+documentation, not as observed. The maintainer's first install of a release
+with installers on each host records what the prompts showed, and this document then
+states it.
+
+The pkg is notarized, which you can see before opening it. This is information, not a
+step. `spctl --assess --type install -vv <pkg>` is expected to print `accepted` with
+`source=Notarized Developer ID`, and `pkgutil --check-signature <pkg>` to show a
+Developer ID Installer certificate chained to Apple's root;
+[Reading a Signature](#reading-a-signature) says more.
 
 axpc runs the binary this procedure installs, and
 [Windows Runner Host](./windows-runner-host.md) is its operator procedure, including
 [Rolling Back marshal](./windows-runner-host.md#rolling-back-marshal), which adds
 the configuration check and the image rebuild around this procedure.
 
-| OS      | Install path                                  |
-| ------- | --------------------------------------------- |
-| macOS   | `~/.local/bin/marshal`                        |
-| Windows | `%LOCALAPPDATA%\Programs\marshal\marshal.exe` |
+| OS      | Installed by            | Install path                                  |
+| ------- | ----------------------- | --------------------------------------------- |
+| Windows | the MSI                 | `%LOCALAPPDATA%\Programs\marshal\marshal.exe` |
+| macOS   | the pkg                 | `/usr/local/bin/marshal`                      |
+| macOS   | by hand, before the pkg | `~/.local/bin/marshal`                        |
+| Windows | by hand, before the MSI | `%LOCALAPPDATA%\Programs\marshal\marshal.exe` |
 
-The operator adds the directory to the user's `PATH`. Updating is the procedure
-with a newer tag, and rolling back is the procedure with the previous tag;
-immutable releases keep a published release's tag from moving.
+### Installing
+
+`<version>` is the release's version without the `v`, such as `0.2.0`.
+
+1. Download `marshal-<version>-windows-x64.msi` or
+   `marshal-<version>-macos-arm64.pkg` from the
+   [release page](https://github.com/axross/runners/releases). If the browser warns
+   that the file is uncommon or could be harmful, choose to keep it. For the pkg, a
+   browser prompt is not expected, but this is not yet observed.
+2. Optionally, and recommended, run the [check block](#checking-the-download) on
+   the downloaded file before opening it.
+3. Before opening the installer, do what applies:
+   - When updating, stop the running instance first with `marshal stop`.
+   - If this host has a manual install from `v0.1.0`, which is
+     `~/.local/bin/marshal` on macOS or a `marshal.exe` copied by hand to
+     `%LOCALAPPDATA%\Programs\marshal` on Windows, run the
+     [migration block](#migrating-from-a-manual-install). It stops the instance
+     itself.
+4. Open the downloaded file.
+   - On Windows, if SmartScreen shows "Windows protected your PC", choose "More
+     info", then "Run anyway". If another security warning names the file, choose
+     to run it. Smart App Control, when On, may block an unsigned installer; this is
+     not verified.
+   - On macOS, Installer shows its usual window and asks for an administrator
+     password. Gatekeeper is expected to accept the notarized package with no block
+     to pass; this is expected, not yet observed on a Mac.
+5. Close every terminal window, open a new one, and run `marshal --version`; it
+   prints `marshal <version>`. A new tab in a window that was already open can keep
+   the old environment. On macOS, `command -v marshal` prints
+   `/usr/local/bin/marshal`.
+
+If `command -v marshal` prints another path on macOS, a manual install from before
+the installers is still in place. Run the
+[migration block](#migrating-from-a-manual-install), then uninstall and install
+again. On Windows the MSI replaces a manual copy at the install path, so step 5
+prints the new version even when you skipped the block;
+[Migrating From a Manual Install](#migrating-from-a-manual-install) says what is
+left behind.
+
+The MSI installs for your user only. In CI, a GitHub-hosted Windows Server runner
+ran this as a standard local user without administrator rights. The user signed in
+through an interactive logon and was not elevated. The user ran the check block,
+which unpacks the MSI with `msiexec /a`. The same user then installed the MSI with
+`msiexec /i` and no UI, ran the installed `marshal`, and ran the uninstall block.
+Each step passed. For that run the test set the Windows Installer policy
+`DisableMSI` to 0. A run without that change exited 1625, and its log reported
+`DisableMsi` as 1. The runner has no Installer policy key, so the value is expected
+to be the Windows Server default. Microsoft documents 0 as the behavior with no
+policy for Windows XP, Vista and 7. It states no default for Windows 10 or 11.
+Whether a Windows 11 PC with no Installer policy allows the install is not yet
+measured. The follow-up after the first release measures it on axpc. What Windows
+shows when you open the file was not measured.
+
+If `msiexec` exits 1625, its verbose log says "This installation is forbidden by
+system policy. Contact your system administrator." A system policy on that PC, such
+as the Windows Installer policy `DisableMSI`, blocks the install for your user.
+Changing that policy is for whoever manages the PC.
+
+Of the install steps, only the pkg needs the administrator password. It is expected
+to create `/usr/local/bin` when it is absent; that case was not measured. On a
+GitHub-hosted runner where `/usr/local/bin` already existed, it was owned by
+`runner:admin` with mode 775 before the install, and the install and the uninstall
+left that owner and mode unchanged. The package lists the directory as `root:wheel`
+with mode 0755, so the listing was not applied to a directory that already existed.
+
+### Checking the Download
+
+The block opens with two assignment lines: `version`, and `file`, the path of the
+downloaded installer, for example in the browser's download folder. Edit those two
+lines, then paste the block whole into one shell. It does not check the macOS
+package's signature or its team; what Gatekeeper does and does not check is under
+[Reading a Signature](#reading-a-signature). It downloads `SHA256SUMS` with `gh`, then
+refuses unless:
+
+1. the installer's SHA-256 matches the line of `SHA256SUMS` for the file name the
+   version gives, whatever the downloaded file is called;
+2. the tag's commit, with an annotated tag dereferenced, is on the default branch,
+   which the compare API reports as `identical` to or `behind` it;
+3. `gh attestation verify` passes, pinned to `release.yaml`, the branch
+   `refs/heads/main`, and that commit, with self-hosted runners denied; and
+4. the binary inside the installer prints `marshal <version>`. The attestation ties
+   the installer to a commit on main, not to a version, so this step keeps an older
+   genuine installer under a newer version's name from passing.
+
+A check that fails prints its cause after `refused:` and ends the block there
+without closing the shell. The block installs nothing and changes neither the
+downloaded file nor its download mark. It reads the binary from a temporary copy
+with the mark removed: on Windows `msiexec /a` unpacks the copy into a temporary
+folder, and on macOS `pkgutil --expand-full` does. The block has no comment lines,
+because an interactive zsh runs a line that starts with `#` as a command unless
+`interactive_comments` is set.
+
+On a Windows host with Smart App Control On, the block's last step is expected to be
+blocked, because it runs the unsigned `marshal.exe` extracted from the installer; this
+is not measured. The block then refuses with "the binary in the installer does not
+run:" and the error. The macOS block's matching refusal is "the binary in the package
+does not run". A refusal at this step is not evidence of a bad file, and you may skip
+the optional check.
+
+On macOS, the system is expected to ask first whether Terminal may access the
+Downloads folder, which the default `file` path is in. Allow it, or the block refuses
+because the file "could not be read". This is expected, not measured.
+
+On macOS, in bash or zsh:
+
+<!-- install-block: macos-check -->
+
+```bash
+(
+  version=0.2.0
+  file="$HOME/Downloads/marshal-0.2.0-macos-arm64.pkg"
+  set -euo pipefail
+  refuse() { echo "refused: $*" >&2; exit 1; }
+  name="marshal-${version}-macos-arm64.pkg"
+  work="$(mktemp -d)" || refuse "no temporary directory"
+  trap 'rm -rf "$work"' EXIT
+
+  gh release download "v${version}" --repo axross/runners --pattern SHA256SUMS --dir "$work" \
+    || refuse "SHA256SUMS could not be downloaded"
+
+  listed="$(awk -v name="$name" '$2 == name { count++; hash = $1 } END { if (count == 1) print hash }' "${work}/SHA256SUMS")"
+  [ -n "$listed" ] || refuse "SHA256SUMS has no single line for ${name}"
+  actual="$(shasum -a 256 "$file" | awk '{ print $1 }')" || refuse "${file} could not be read"
+  [ "$actual" = "$listed" ] || refuse "${file} does not match the ${name} line of SHA256SUMS"
+
+  ref="$(gh api "repos/axross/runners/git/ref/tags/v${version}" --jq '.object.type + " " + .object.sha')" \
+    || refuse "the tag v${version} could not be read"
+  read -r type sha <<<"$ref"
+  if [ "$type" = tag ]; then
+    ref="$(gh api "repos/axross/runners/git/tags/${sha}" --jq '.object.type + " " + .object.sha')" \
+      || refuse "the annotated tag v${version} could not be read"
+    read -r type sha <<<"$ref"
+  fi
+  [ "$type" = commit ] || refuse "v${version} does not resolve to a commit"
+  commit="$sha"
+
+  comparison="$(gh api "repos/axross/runners/compare/main...${commit}" --jq .status)" \
+    || refuse "${commit} could not be compared with main"
+  case "$comparison" in
+    identical | behind) echo "${commit} is on main." ;;
+    *) refuse "${commit} is not on main (${comparison})" ;;
+  esac
+
+  gh attestation verify "$file" --repo axross/runners \
+    --signer-workflow axross/runners/.github/workflows/release.yaml \
+    --source-ref refs/heads/main --source-digest "$commit" \
+    --deny-self-hosted-runners \
+    || refuse "the attestation does not verify"
+
+  copy="${work}/${name}"
+  cp "$file" "$copy" || refuse "${file} could not be copied"
+  if xattr -p com.apple.quarantine "$copy" >/dev/null 2>&1; then
+    xattr -d com.apple.quarantine "$copy" || refuse "the quarantine attribute could not be removed from the copy"
+  fi
+  pkgutil --expand-full "$copy" "${work}/unpacked" || refuse "the package could not be unpacked"
+  binary="${work}/unpacked/Payload/usr/local/bin/marshal"
+  [ -f "$binary" ] || refuse "the package holds no usr/local/bin/marshal"
+  chmod 0755 "$binary" || refuse "the unpacked binary could not be made executable"
+  if xattr -p com.apple.quarantine "$binary" >/dev/null 2>&1; then
+    xattr -d com.apple.quarantine "$binary" || refuse "the quarantine attribute could not be removed from the unpacked binary"
+  fi
+  printed="$("$binary" --version)" || refuse "the binary in the package does not run"
+  [ "$printed" = "marshal ${version}" ] || refuse "the binary in the package is not marshal ${version}: ${printed}"
+
+  echo "Passed: ${file} is the v${version} package. Nothing was installed."
+)
+```
+
+On Windows, in PowerShell 5.1 or 7:
+
+<!-- install-block: windows-check -->
+
+```powershell
+& {
+  $version = '0.2.0'
+  $file = "$env:USERPROFILE\Downloads\marshal-0.2.0-windows-x64.msi"
+  $ErrorActionPreference = 'Stop'
+  function Refuse([string]$Why) { throw "refused: $Why" }
+  $name = "marshal-$version-windows-x64.msi"
+  try {
+    $work = New-Item -ItemType Directory -Path (Join-Path ([IO.Path]::GetTempPath()) ([IO.Path]::GetRandomFileName()))
+  } catch { Refuse "no temporary directory: $_" }
+  try {
+    gh release download "v$version" --repo axross/runners --pattern SHA256SUMS --dir $work
+    if ($LASTEXITCODE -ne 0) { Refuse 'SHA256SUMS could not be downloaded' }
+
+    try {
+      $listed = @(Get-Content -LiteralPath (Join-Path $work 'SHA256SUMS') | Where-Object { ($_ -split '\s+')[1] -eq $name })
+      $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash.ToLowerInvariant()
+    } catch { Refuse "$file or SHA256SUMS could not be read: $_" }
+    if ($listed.Count -ne 1 -or ($listed[0] -split '\s+')[0] -ne $actual) { Refuse "$file does not match the $name line of SHA256SUMS" }
+
+    $ref = gh api "repos/axross/runners/git/ref/tags/v$version"
+    if ($LASTEXITCODE -ne 0) { Refuse "the tag v$version could not be read" }
+    $object = ($ref | ConvertFrom-Json).object
+    if ($object.type -eq 'tag') {
+      $ref = gh api "repos/axross/runners/git/tags/$($object.sha)"
+      if ($LASTEXITCODE -ne 0) { Refuse "the annotated tag v$version could not be read" }
+      $object = ($ref | ConvertFrom-Json).object
+    }
+    if ($object.type -ne 'commit') { Refuse "v$version does not resolve to a commit" }
+    $commit = $object.sha
+
+    $comparison = gh api "repos/axross/runners/compare/main...$commit" --jq .status
+    if ($LASTEXITCODE -ne 0) { Refuse "$commit could not be compared with main" }
+    if ($comparison -notin 'identical', 'behind') { Refuse "$commit is not on main ($comparison)" }
+    Write-Host "$commit is on main."
+
+    gh attestation verify $file --repo axross/runners `
+      --signer-workflow axross/runners/.github/workflows/release.yaml `
+      --source-ref refs/heads/main --source-digest $commit `
+      --deny-self-hosted-runners
+    if ($LASTEXITCODE -ne 0) { Refuse 'the attestation does not verify' }
+
+    $copy = Join-Path $work $name
+    try {
+      Copy-Item -LiteralPath $file -Destination $copy
+      Unblock-File -LiteralPath $copy
+    } catch { Refuse "the temporary copy could not be made: $_" }
+    $unpacked = Join-Path $work 'unpacked'
+    $unpack = Start-Process -FilePath msiexec.exe -ArgumentList @('/a', "`"$copy`"", '/qn', "TARGETDIR=`"$unpacked`"") -Wait -PassThru
+    $null = $unpack.Handle
+    if ($unpack.ExitCode -ne 0) { Refuse "msiexec could not unpack the installer (exit code $($unpack.ExitCode))" }
+    $binaries = @(Get-ChildItem -LiteralPath $unpacked -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'marshal.exe' })
+    if ($binaries.Count -ne 1) { Refuse "the installer holds $($binaries.Count) files named marshal.exe, not 1" }
+    $binary = $binaries[0].FullName
+    try { $printed = & $binary --version } catch { Refuse "the binary in the installer does not run: $_" }
+    if ($LASTEXITCODE -ne 0 -or "$printed" -ne "marshal $version") { Refuse "the binary in the installer is not marshal ${version}: $printed" }
+
+    Write-Host "Passed: $file is the v$version installer. Nothing was installed."
+  } finally {
+    Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+  }
+}
+```
+
+### Migrating From a Manual Install
+
+Before the first installer install, and again after any rollback to `v0.1.0`, which
+restores the manual install, run the block for your OS. It stops the instance and
+refuses if the instance does not stop, then removes the manual install:
+
+- On Windows, the copied `marshal.exe`, its directory when that is left empty, and the
+  user `PATH` entry for the directory. The block prints what it removed, or that there
+  is nothing to migrate. It looks up the MSI's product by the MSI's fixed upgrade code
+  and refuses if it cannot list the products. The manual copy and the MSI share one
+  path, so when the product is installed the block removes the installed file too,
+  says so, and leaves the product registered: uninstall it and install it again.
+- On macOS, `~/.local/bin/marshal` when it is present. The block leaves `~/.local/bin`
+  and any `PATH` entry for it alone.
+
+Updating from `v0.1.0` is this block, then an install. If you skip it, the recovery
+is this block, then an uninstall and an install again.
+
+Installing the MSI over a manual copy at the same path, without the block, was run
+in CI on a GitHub-hosted runner. `msiexec` exited 0 and listed one product. The
+installer's binary replaced the manual copy, and `marshal --version` at the install
+path printed the installer's version. The user `PATH` then listed the install
+directory twice, once from the manual install and once from the MSI. Step 5 of the
+install shows the new version. To get back to one `PATH` entry, run the block, then
+uninstall and install again. The uninstall block after that install passed and
+removed the file at the install path.
+
+Installing the pkg beside a manual copy at `~/.local/bin/marshal`, without the block,
+when `~/.local/bin` comes before `/usr/local/bin` on `PATH`, was run in CI on a
+GitHub-hosted runner, with the same result under zsh and `/bin/bash`. The pkg
+installed its own binary at `/usr/local/bin/marshal` and left the manual copy in
+place. The shell kept finding the manual copy: `command -v marshal` printed the manual
+copy's path, and `marshal --version` printed the manual copy's version. So step 5
+shows the old version and the manual copy's path. The recovery is the migration block,
+which removes the manual copy, then an uninstall and an install again. The uninstall
+block after that install exited 0 and removed `/usr/local/bin/marshal`, and the manual
+copy stayed.
+
+On macOS, in bash or zsh:
+
+<!-- install-block: macos-migrate -->
+
+```bash
+(
+  set -euo pipefail
+  refuse() { echo "refused: $*" >&2; exit 1; }
+  manual="$HOME/.local/bin/marshal"
+  if [ ! -e "$manual" ] && [ ! -L "$manual" ]; then
+    echo "There is no manual install at ${manual}; nothing to migrate."
+    exit 0
+  fi
+
+  if [ -x "$manual" ]; then
+    stopped="$("$manual" stop 2>&1)" || [ "$stopped" = "No instance is running." ] \
+      || refuse "the instance did not stop: ${stopped}"
+  fi
+  rm -f "$manual" || refuse "${manual} could not be removed"
+  echo "Removed ${manual}."
+)
+```
+
+On Windows, in PowerShell 5.1 or 7:
+
+<!-- install-block: windows-migrate -->
+
+```powershell
+& {
+  $ErrorActionPreference = 'Stop'
+  function Refuse([string]$Why) { throw "refused: $Why" }
+  $upgradeCode = '{512F67C6-97ED-4562-84F3-2584FA3BA29C}'
+  $directory = Join-Path $env:LOCALAPPDATA 'Programs\marshal'
+  $target = Join-Path $directory 'marshal.exe'
+  $removed = New-Object System.Collections.Generic.List[string]
+
+  try {
+    $installer = New-Object -ComObject WindowsInstaller.Installer
+    $products = @($installer.GetType().InvokeMember('RelatedProducts', 'GetProperty', $null, $installer, @($upgradeCode)))
+  } catch { Refuse "the installed products could not be listed: $_" }
+
+  if (Test-Path -LiteralPath $target) {
+    $stopped = & {
+      $ErrorActionPreference = 'Continue'
+      (& $target stop 2>&1 | ForEach-Object { "$_" }) -join "`n"
+    }
+    if ($LASTEXITCODE -ne 0 -and $stopped.Trim() -ne 'No instance is running.') { Refuse "the instance did not stop: $stopped" }
+    try { Remove-Item -LiteralPath $target -Force } catch { Refuse "$target could not be removed: $_" }
+    $removed.Add($target)
+  }
+  if ((Test-Path -LiteralPath $directory) -and -not (Get-ChildItem -LiteralPath $directory -Force)) {
+    Remove-Item -LiteralPath $directory -Force
+    $removed.Add("the empty directory $directory")
+  }
+
+  try {
+    $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
+    try {
+      $entries = @(([string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)) -split ';' | Where-Object { $_.Trim() -ne '' })
+      $kept = @($entries | Where-Object { [Environment]::ExpandEnvironmentVariables($_.Trim()).TrimEnd('\') -ine $directory.TrimEnd('\') })
+      if ($kept.Count -ne $entries.Count) {
+        $key.SetValue('Path', ($kept -join ';'), [Microsoft.Win32.RegistryValueKind]::ExpandString)
+        $removed.Add("the user PATH entry for $directory")
+      }
+    } finally { $key.Close() }
+  } catch { Refuse "the user PATH could not be updated: $_" }
+  if ($removed.Count -eq 0) {
+    Write-Host "There is no manual install at $directory; nothing to migrate."
+  } else {
+    Write-Host "Removed $($removed -join ', ')."
+  }
+  if ($products.Count -gt 0 -and $removed.Count -gt 0) {
+    Write-Host 'The marshal installer is installed, and what was removed was part of it too; uninstall it and install it again.'
+  }
+}
+```
+
+### Updating, Repairing, Uninstalling and Rolling Back
+
+- **Update.** Install a newer version, steps 1 to 5 above. Stop the instance first,
+  then rebuild the image and start again, as
+  [Updating the Runner](./windows-runner-host.md#updating-the-runner) describes.
+- **Upgrading while a program runs from the install path** on Windows. In CI, on a
+  GitHub-hosted runner, an upgrade with no UI (`/qn`) ran while a stand-in console
+  program ran from the install path as `marshal.exe`. `msiexec` exited 0. The
+  upgrade's log shows Restart Manager shutting down the applications that held files
+  in use. The file at the install path was then the new version, the program was no
+  longer running, one product was listed at the new version, and no rename was left
+  pending for a reboot. So the upgrade ends a `marshal` that runs from the install
+  path and replaces the file with no reboot. Stop the instance first, as the update
+  bullet says; if you did not, start it again after the upgrade. What the interactive
+  installer window shows was not measured.
+- **A lower pkg over a higher one** on macOS. In CI, on a GitHub-hosted runner, the
+  installer exited 0, the lower version's file replaced the higher version's, and the
+  receipt reported the lower version. So macOS Installer accepts the downgrade, and
+  installing an older pkg is a working rollback there.
+- **Repair.** Uninstall, then install.
+- **Uninstall.** The block for your OS stops the instance and refuses if it does not
+  stop. The logs stay, in `%LOCALAPPDATA%\marshal\logs\` on Windows and
+  `~/Library/Logs/marshal/` on macOS. On Windows the block finds the installed
+  product by the MSI's fixed upgrade code and removes it with `msiexec /x`, and
+  Settings, Apps removes it too, after you stop the instance. macOS has no pkg
+  uninstall, so when `pkgutil --pkg-info` finds the pkg's receipt the block removes
+  `/usr/local/bin/marshal` and forgets the receipt with `pkgutil --forget`, which
+  removes no file. When it finds no receipt the block says the package is not
+  installed, runs no `sudo`, and leaves any file at `/usr/local/bin/marshal` in place,
+  because the package did not install it. If the block reports such a file and you do
+  not want it, remove it with `sudo rm /usr/local/bin/marshal`.
+- **Roll back.** Uninstall, then install the older version, steps 1 to 5. The MSI
+  refuses a lower version while a newer one is installed, with the message "A newer
+  version of marshal is already installed.", and the installed version stays, so
+  uninstall first. The pkg does not refuse, as the lower pkg bullet above says, so on
+  macOS installing the older pkg over the newer one works too. Uninstalling first
+  stays the documented route on both.
+  The Developer ID certificates are expected to last one year, and whether a
+  notarized pkg still installs once its Installer certificate has expired is not
+  confirmed, so a rollback through an older release's pkg may fail. The bare-binary
+  route to `v0.1.0` and a newer release stay available.
+- **Roll back to `v0.1.0`.** Uninstall, then use the [bare-binary
+  blocks](#rolling-back-to-v010) and add the install directory to the user's `PATH`
+  by hand, as the manual install always needed. On Windows, add
+  `%LOCALAPPDATA%\Programs\marshal` to the user `Path` under **Settings, System,
+  About, Advanced system settings, Environment Variables**. On macOS, `~/.local/bin`
+  is not on the default `PATH`, so add it in the shell's startup file. Updating from
+  `v0.1.0` again starts with the migration block.
+
+Immutable releases keep a published release's tag from moving, so a version you
+install again is the file you installed before.
+
+On macOS, in bash or zsh:
+
+<!-- install-block: macos-uninstall -->
+
+```bash
+(
+  set -euo pipefail
+  refuse() { echo "refused: $*" >&2; exit 1; }
+  installed=/usr/local/bin/marshal
+  identifier=app.axross.marshal
+
+  if ! pkgutil --pkg-info "$identifier" >/dev/null 2>&1; then
+    echo "The marshal package is not installed; nothing to uninstall."
+    if [ -e "$installed" ] || [ -L "$installed" ]; then
+      echo "${installed} exists but the package did not install it, so it is left in place."
+    fi
+    exit 0
+  fi
+
+  if [ -x "$installed" ]; then
+    stopped="$("$installed" stop 2>&1)" || [ "$stopped" = "No instance is running." ] \
+      || refuse "the instance did not stop: ${stopped}"
+  fi
+  sudo rm -f "$installed" || refuse "${installed} could not be removed"
+  sudo pkgutil --forget "$identifier" || refuse "the receipt for ${identifier} could not be forgotten"
+  echo "Uninstalled marshal. The logs in ~/Library/Logs/marshal stay."
+)
+```
+
+On Windows, in PowerShell 5.1 or 7:
+
+<!-- install-block: windows-uninstall -->
+
+```powershell
+& {
+  $ErrorActionPreference = 'Stop'
+  function Refuse([string]$Why) { throw "refused: $Why" }
+  $upgradeCode = '{512F67C6-97ED-4562-84F3-2584FA3BA29C}'
+  $target = Join-Path $env:LOCALAPPDATA 'Programs\marshal\marshal.exe'
+
+  try {
+    $installer = New-Object -ComObject WindowsInstaller.Installer
+    $products = @($installer.GetType().InvokeMember('RelatedProducts', 'GetProperty', $null, $installer, @($upgradeCode)))
+  } catch { Refuse "the installed products could not be listed: $_" }
+  if ($products.Count -eq 0) {
+    Write-Host 'The marshal installer is not installed; nothing to uninstall.'
+    return
+  }
+
+  if (Test-Path -LiteralPath $target) {
+    $stopped = & {
+      $ErrorActionPreference = 'Continue'
+      (& $target stop 2>&1 | ForEach-Object { "$_" }) -join "`n"
+    }
+    if ($LASTEXITCODE -ne 0 -and $stopped.Trim() -ne 'No instance is running.') { Refuse "the instance did not stop: $stopped" }
+  }
+  foreach ($product in $products) {
+    $removal = Start-Process -FilePath msiexec.exe -ArgumentList @('/x', $product, '/qn', '/norestart') -Wait -PassThru
+    $null = $removal.Handle
+    if ($removal.ExitCode -ne 0) { Refuse "msiexec could not remove $product (exit code $($removal.ExitCode))" }
+  }
+  Write-Host 'Uninstalled marshal. The logs in %LOCALAPPDATA%\marshal\logs stay.'
+}
+```
+
+### Rolling Back to v0.1.0
+
+`v0.1.0` has no installer, so it is installed from a bare binary. If an installer is
+installed, uninstall it first with the uninstall block. On macOS, a remaining
+`/usr/local/bin/marshal` comes first on `PATH` unless you add `~/.local/bin` ahead
+of `/usr/local/bin`, so remove it first. The blocks do not touch `PATH`: add
+`%LOCALAPPDATA%\Programs\marshal` to the user `Path` on Windows, or `~/.local/bin`
+in the shell's startup file on macOS, as the
+[Roll back to `v0.1.0`](#updating-repairing-uninstalling-and-rolling-back) bullet
+describes. The procedure accepts a binary only when its checksum matches
+`SHA256SUMS`, the tag's commit is on the default branch, and its attestation
+verifies against `release.yaml` run from main, at that commit. It needs `gh` 2.102
+or later, signed in. The blocks below pin `version=0.1.0` and are the only ones that
+copy a binary into place.
 
 Paste a block below whole into one shell. A check that fails prints its cause after
 `refused:` and ends the block there without closing the shell, so nothing after it
@@ -2574,6 +3634,8 @@ clean.
 
 On macOS, in bash or zsh. The block has no comment lines, because an interactive zsh
 runs a line that starts with `#` as a command unless `interactive_comments` is set:
+
+<!-- install-block: macos-bare -->
 
 ```bash
 (
@@ -2637,6 +3699,8 @@ runs a line that starts with `#` as a command unless `interactive_comments` is s
 ```
 
 On Windows, in PowerShell:
+
+<!-- install-block: windows-bare -->
 
 ```powershell
 & {
@@ -2712,8 +3776,7 @@ the block at the "No instance is running." line.
 Windows cannot replace an executable that is running, so step 7 also fails while an
 instance still runs from the install path. The procedure's refusals on Windows are
 not yet verified on axpc ([#56](https://github.com/axross/runners/issues/56)): the
-refusal checks were not run there, because installation is to move to winget and
-Homebrew ([#70](https://github.com/axross/runners/issues/70)). A binary fetched with
+refusal checks were not run there. A binary fetched with
 `gh release download` is assumed to carry no Mark of the Web, and the procedure
 does not clear one. On axpc the installed copy had no `Zone.Identifier`
 ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511048211)), and
@@ -2722,6 +3785,61 @@ Off ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511120441))
 So with Smart App Control Off, the unsigned binary this procedure installs, which
 carries no Mark of the Web, is not blocked on axpc. A copy that carries one, such
 as a browser download, or a host with Smart App Control On, could be.
+
+### What the Install Tests Cover
+
+Each block above has a marker comment, `<!-- install-block: <id> -->`, before its
+fence, and the tests extract the block from this document, so the text you paste is
+the text under test. A test replaces a block's `version` assignment line, and a check
+block's `file` assignment line, and the macOS uninstall block's `installed`
+assignment line, and changes nothing else.
+
+`mise run test:install-blocks` runs the macOS blocks under bash with stand-ins first
+on `PATH` for `gh`, `pkgutil`, `xattr`, `sudo`, `installer`, `cp`, and `marshal`, each
+recording its calls. Every refusal is produced, and each case asserts what ran and
+what did not, so a failed check is shown to install nothing. The suite includes the
+bare-binary blocks' refusals, the uninstall and migration refusals when the
+instance does not stop, and the uninstall refusals when `sudo rm` or
+`pkgutil --forget` fails. The `gh` stand-ins, here and in the Windows suite, serve a
+canned API response body and apply the block's `--jq` expression to it with `jq`, so
+a wrong expression fails the suite. `mise.toml` pins `jq` for `mise run check`, and
+the `Install Blocks` job runs the suites outside mise, so it uses its runner's own
+`jq`; the suites stop with one line when `jq` is missing. The macOS suite finishes in
+well under a minute on Linux. The `Install Blocks` job in
+[`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) runs the same suite
+under zsh on macOS, and the Windows suite
+([`test-install-blocks.ps1`](../../.github/scripts/tests/test-install-blocks.ps1))
+under Windows PowerShell 5.1 and PowerShell 7 on Windows.
+
+The job needs the release dry run and downloads its `marshal-release` artifact, then
+runs the documented blocks against the real installers with only `gh` stubbed, to
+serve the artifact's real `SHA256SUMS`, a tag on main, and a passing attestation.
+The dry run's pkg is built without signing, so the blocks never see a signed package,
+and the check block works on it because it checks no signature; the signed package is
+exercised only by `verify-macos` in a release run:
+
+- the check block passes a genuine installer given as a renamed copy that carries a
+  seeded download mark (`Zone.Identifier` on Windows, `com.apple.quarantine` on
+  macOS), installs nothing, and leaves the file and its mark unchanged;
+- the check block refuses a genuine installer served under another version's name,
+  with a matching checksum line and a passing attestation, at the version step;
+- the migration block removes a seeded manual install that differs from the
+  installer's binary, after which the installer installs and `marshal --version` at
+  the install path prints the build's version;
+- installing over such a manual copy without migration is recorded as a `MEASURED:`
+  line;
+- the migration block, run while the MSI is installed, removes the installed file
+  too, after which the uninstall block and a second install leave the installer's
+  binary at the install path;
+- the uninstall block removes the installation.
+
+macOS runs under zsh and the system `/bin/bash`; Windows runs under Windows
+PowerShell 5.1. On the Windows leg a standard local user without administrator
+rights then runs the check block and installs the MSI through a secondary logon,
+which is an interactive logon, and the outcome is a `MEASURED:` line. The test
+sets the Windows Installer policy `DisableMSI` to 0 for that run, because the
+GitHub-hosted Windows Server image blocks a non-elevated per-user install, and
+restores it at the end.
 
 ## Dependencies
 
