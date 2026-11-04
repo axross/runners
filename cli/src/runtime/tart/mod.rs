@@ -6,6 +6,7 @@
 
 pub mod args;
 pub mod backend;
+pub mod boot;
 pub mod client;
 pub mod golden_check;
 pub mod guest;

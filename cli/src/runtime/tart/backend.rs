@@ -14,8 +14,7 @@ use tokio::time::Instant;
 use crate::affinity::select_cpus;
 use crate::image::check::{IMAGE_CHECK_BUDGET, ImageCheck};
 use crate::macos::prerequisites::{
-    Cause, Check, SIGNED_IN_SECTION, VERSION_BUDGET, check_softnet, check_softnet_with, check_tart,
-    section_of_document,
+    Cause, Check, VERSION_BUDGET, check_softnet, check_softnet_with, check_tart,
 };
 use crate::macos::softnet::OwnerMode;
 use crate::runtime::backend::{
@@ -36,6 +35,7 @@ use crate::runtime::scrub::scrub_error_text;
 use crate::runtime::secret::Secret;
 use crate::validate::PlannedVolume;
 
+use super::boot::{AgentWait, BootEnd, JOB_VM, boot_failure_text, wait_for_agent};
 use super::client::{Captured, TartClient, TartError};
 use super::golden_check::{check_golden, clone_source};
 use super::guest::Guest;
@@ -137,14 +137,6 @@ pub struct TartBackend<C> {
     /// the owner and mode a test gives Softnet's file; the environment's override
     /// applies when it is unset.
     softnet_owner_mode: Option<OwnerMode>,
-}
-
-/// why the wait for a VM's guest agent ended without an answer.
-enum BootEnd {
-    /// `tart run` ended first.
-    Ended(Captured),
-    /// the deadline came, and the last question's error is the text.
-    NoAnswer(String),
 }
 
 fn text_of(error: &TartError) -> String {
@@ -339,24 +331,12 @@ impl<C: Clock> TartBackend<C> {
     /// waits until the guest agent of `vm` answers, `tart run` ends, or the boot
     /// deadline, counted from now, passes.
     async fn wait_for_agent(&self, vm: &str, held: &HeldVm) -> Result<(), BootEnd> {
-        let guest = Guest::new(&self.client, vm);
-        let last = RefCell::new(String::new());
-        let asking = async {
-            loop {
-                match guest.ask(self.timings.agent_call).await {
-                    Ok(()) => return,
-                    Err(text) => *last.borrow_mut() = text,
-                }
-                self.clock.sleep(self.timings.agent_poll).await;
-            }
+        let wait = AgentWait {
+            deadline: self.timings.boot_deadline,
+            poll: self.timings.agent_poll,
+            call: self.timings.agent_call,
         };
-        tokio::select! {
-            () = asking => Ok(()),
-            ended = held.ended() => Err(BootEnd::Ended(ended)),
-            () = tokio::time::sleep(self.timings.boot_deadline) => {
-                Err(BootEnd::NoAnswer(last.borrow().clone()))
-            }
-        }
+        wait_for_agent(&self.client, &self.clock, wait, vm, held).await
     }
 
     /// waits until the Docker Engine in the VM answers.
@@ -472,30 +452,8 @@ impl<C: Clock> TartBackend<C> {
     }
 }
 
-/// the boot failure's text: Tart's bounded error and the host document's section on
-/// the signed-in session, because a locked login keychain is the documented cause.
 fn boot_failure(vm: &str, end: &BootEnd) -> BackendError {
-    let cause = match end {
-        BootEnd::Ended(ended) => {
-            let code = ended.code.map_or_else(
-                || "no exit code".to_string(),
-                |code| format!("exit code {code}"),
-            );
-            let text = ended.error_text();
-            let text = if text.is_empty() { "no output" } else { &text };
-            format!("tart run for the job VM {vm} ended with {code} ({text})")
-        }
-        BootEnd::NoAnswer(text) => {
-            let text = if text.is_empty() { "no error" } else { text };
-            format!(
-                "the guest agent of the job VM {vm} did not answer by the boot deadline ({text})"
-            )
-        }
-    };
-    BackendError::new(format!(
-        "boot failure: {cause}; a locked login keychain is the documented cause, see {}",
-        section_of_document(SIGNED_IN_SECTION)
-    ))
+    BackendError::new(boot_failure_text(JOB_VM, vm, end))
 }
 
 impl<C: Clock> Backend for TartBackend<C> {

@@ -89,7 +89,7 @@ pub async fn tear_down(
         return Ok(());
     }
     Err(BackendError::new(format!(
-        "deleting the job VM {vm} failed ({})",
+        "deleting the VM {vm} failed ({})",
         scrub_error_text(&error.to_string(), "")
     )))
 }
