@@ -1079,6 +1079,48 @@ follows it, and case matters.
 No command writes or reads these names yet: the macOS runtime and `build` do not
 exist.
 
+### The Two-VM Count
+
+Apple's licence allows two additional macOS VMs on a Mac, so the macOS runtime
+counts them before it creates one. `macos::count` is that count as pure logic: it
+takes Tart's VM list once (each VM's name and state, running, suspended, or
+stopped, where a stopping VM is still running), the configured pools with their
+operating systems, and an OS lookup that stands in for `tart get`, and calls no
+process itself. The lookup answers macOS, Linux, or unreadable, which covers a
+failed call and an answer the reader does not know.
+
+| Counts                                                                                                                   | Does not count                                                       |
+| ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
+| A job VM of a configured macOS pool, or a macOS build VM, by its name form, in any state                                 | The golden macOS VM while it is stopped                              |
+| A Marshal job VM of a pool that is not configured, in any state, when the lookup reports macOS                           | Job, build, and golden VMs of configured Linux pools, by their names |
+| Any other running or suspended VM the lookup reports as macOS, including the golden macOS VM if someone boots it by hand | Other VMs the lookup reports as Linux                                |
+| Any running or suspended VM whose operating system is unreadable                                                         | Stopped VMs that Marshal did not create                              |
+
+- **The lookup is asked only what the names leave open**, once for each such VM:
+  a Marshal job VM of an unconfigured pool in any state, and any other running or
+  suspended VM that is not a Linux golden or build VM. A VM the name and the
+  configured pools already decide is never asked about.
+- **Unreadable counts** because over-counting only makes a job wait, while
+  under-counting could exceed the licence. A stopped VM of an unconfigured pool
+  whose operating system is unreadable does not count, because the table counts
+  unreadable VMs only while they run or are suspended.
+- **A job VM of a configured Linux pool never counts**, so a macOS VM left under a
+  pool name that has since become a Linux pool is not counted: the count would have
+  to ask about every Linux job VM to see it, and `start` deletes a configured
+  pool's leftovers by name before it registers anything.
+- **A failed deletion** needs no rule of its own: the VM stays in Tart's list, so
+  it counts until a later attempt deletes it.
+- **The output** is the VMs that count, each with its reason; the total; whether a
+  place is free, below `MAX_MACOS_VMS`; and the counted job VMs of unconfigured
+  pools, by name, for the log and `status`, because `start` deletes only the
+  leftovers of configured pools.
+
+`macos::place::PlaceLock` is the lock a slot holds from its count until its clone
+is listed, one per instance and shared by the macOS slots, so two slots never take
+the last place together: the second counts after the first's VM exists, and sees
+two. Neither the count nor the lock is wired into `start`, `build`, or `status`
+yet; that waits for the macOS runtime.
+
 ## Running a Host
 
 `start` runs the host's pools in the foreground through the instance layer and the
