@@ -118,7 +118,7 @@ impl Table {
 }
 
 /// the key as the TOML file spells it; an owner is part of `repository`.
-pub(super) fn key_name(key: Key) -> &'static str {
+pub(crate) fn key_name(key: Key) -> &'static str {
     match key {
         Key::ImageName => "image_name",
         Key::Repositories => "pool",

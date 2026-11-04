@@ -6,6 +6,7 @@ pub mod build;
 pub mod checkout;
 pub mod command;
 pub mod control;
+pub mod convert;
 pub mod de;
 pub mod diagnostics;
 pub mod fold;

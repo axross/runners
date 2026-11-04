@@ -31,6 +31,7 @@ use crate::profile::Profile;
 
 pub use budget::{MAX_MACOS_VMS, Usage, usage};
 pub use json_reader::JsonReader;
+pub(crate) use json_reader::key_name as json_key_name;
 pub use limits::{format_cpu_count, format_nanos};
 pub use paths::is_inside_checkout;
 pub use plan::{Budget, Entry, Lifecycle, Plan, PlannedVolume, Settings};
@@ -38,6 +39,7 @@ pub use problem::{Key, KeyPath, Kind, Location, Problem, Segment};
 pub use reader::Reader;
 pub use settings::SCHEMA_VERSION;
 use toml_reader::TomlReader;
+pub(crate) use toml_schema::key_name as toml_key_name;
 
 use fields::{Errors, Field};
 

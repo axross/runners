@@ -177,7 +177,7 @@ impl Reader for JsonReader {
 /// the key as the JSON file spells it, which is also the name the shared tree gives it
 /// whatever the format; the keys only a file with settings has are spelled the same
 /// way, though no JSON file has them.
-pub(super) fn key_name(key: Key) -> &'static str {
+pub(crate) fn key_name(key: Key) -> &'static str {
     match key {
         Key::ImageName => "imageName",
         Key::Repositories => "repositories",
