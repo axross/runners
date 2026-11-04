@@ -1,9 +1,10 @@
 name: Merge Checks
 
 # the repository's own CI: the gates behind mise run check, the CLI tests on
-# Linux, Windows, and macOS, the image build, the host test under Windows
-# PowerShell 5.1, and the release dry run. GitHub-hosted runners only, because
-# this repository is public; see docs/conventions/security.md.
+# Linux, Windows, and macOS, the image build and its build-only arm64 twin, the
+# host test under Windows PowerShell 5.1, and the release dry run. GitHub-hosted
+# runners only, because this repository is public; see
+# docs/conventions/security.md.
 
 on:
   pull_request:
@@ -146,6 +147,21 @@ jobs:
       # modified by an earlier job.
       - name: Smoke Test Runner Image
         run: bash images/actions-runner/tests/smoke-test.sh actions-runner:ci
+
+  # build only, on the hosted Linux arm64 runner: the axmc golden VM builds the
+  # same Dockerfile for linux/arm64. the smoke tests assume x86_64, so none runs
+  # here. no registry login and no push, so the job holds no credential.
+  image-arm64:
+    name: Build Runner Image On Arm64
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Build Runner Image
+        run: docker build --platform linux/arm64 --tag actions-runner:ci-arm64 images/actions-runner
 
   # the host scripts target the Windows PowerShell 5.1 that the scheduled tasks
   # use, which the check job's PowerShell 7 does not cover. this runs only the
