@@ -74,7 +74,7 @@ fn a_gap_of_exactly_three_seconds_is_not_a_sleep_and_a_little_more_is() {
     assert!(!slept_between(&before, &ordinary));
     let edge = clocks.advance(Duration::from_secs(1), SLEEP_GAP);
     assert!(!slept_between(&ordinary, &edge));
-    let over = clocks.advance(Duration::from_secs(1), SLEEP_GAP + Duration::from_nanos(1));
+    let over = clocks.advance(Duration::from_secs(1), SLEEP_GAP + millis(1));
     assert!(slept_between(&edge, &over));
 }
 
