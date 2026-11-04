@@ -2,7 +2,8 @@
 
 This project's supply-chain and runner-trust conventions: how a `uses:` reference
 under [`.github/`](../../.github) is pinned, what a workflow may be granted, how a
-release of the CLI is published, where
+release of the CLI is published and its
+macOS files are signed, where
 a self-hosted runner may and may not run, what a runner's shared storage exposes,
 and what is never committed. It does not cover application-level security, such as
 input validation or the OWASP-style concerns the installed `application-security`
@@ -126,6 +127,18 @@ WiX. To bump it:
 The change needs the maintainer's review, since it changes the supply-chain
 surface (see [REVIEW.md](../../REVIEW.md)).
 
+The macOS signing job pins the one certificate it embeds. Apple's Developer ID G2
+intermediate certificate is embedded in `sign-macos` as base64, because the runner
+image's trust in it is unknown and the job fetches nothing. The job refuses it
+unless its SHA-256 is
+`f16cd3c54c7f83cea4bf1a3e6a0819c8aaa8e4a1528fd144715f350643d2df3a`, and that check
+comes before the first `security` call. Its source is
+`https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer`, fetched on
+2026-11-03 PST, and it expires on 2031-09-17. To replace it, fetch the certificate
+again from that URL, compute its SHA-256 from the download, and change the embedded
+text and the pin together, with the maintainer's review. The job downloads only the
+run's own artifacts.
+
 The Rust toolchain is one of two downloads in this repository that are not
 checksum-pinned, and the maintainer accepted that exception when approving the
 CLI's plan. `rustup` fetches a channel manifest over HTTPS and checks each
@@ -198,9 +211,10 @@ is passed into a step through an `env:` variable and quoted, never expanded insi
 ## A Release Is Published Only From a Dispatch on Main
 
 [`release.yaml`](../../.github/workflows/release.yaml) releases the CLI with
-semantic-release, and [`release-build.yaml`](../../.github/workflows/release-build.yaml)
-builds the binaries and their installers; [CLI](../operations/cli.md#releases) owns
-the steps. This is the record a change to either workflow, to the build call in
+semantic-release and signs the macOS files in the `release` Environment, and
+[`release-build.yaml`](../../.github/workflows/release-build.yaml) builds the binaries
+and their installers; [CLI](../operations/cli.md#releases) owns the steps. This is the
+record a change to either workflow, to the build call in
 [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml), to
 [`release/`](../../release), or to the scripts under
 [`.github/scripts/`](../../.github/scripts) is checked against:
@@ -208,7 +222,10 @@ the steps. This is the record a change to either workflow, to the build call in
 - **A manual dispatch is the only trigger.** `release.yaml` runs on
   `workflow_dispatch` and on nothing else: no push, tag, pull request, schedule, or
   `workflow_run` trigger. The dispatch is the maintainer's decision to release.
-  There is no Environment and no approval step.
+  `sign-macos` then waits for the maintainer's approval in the `release`
+  Environment, which follows the commit check in
+  [Each Release](../operations/development-workflow.md#each-release). No other job
+  declares an Environment or waits for an approval.
 - **The branch guard is advisory.** Every job in `release.yaml` has
   `if: github.ref == 'refs/heads/main'`. A dispatch on another branch runs that
   branch's own copy of the file, which could drop the guard, so it binds only the
@@ -228,9 +245,13 @@ the steps. This is the record a change to either workflow, to the build call in
   - the plan job holds `contents: write`, for the `git push --dry-run` that
     semantic-release's dry run makes, and runs the npm tree;
   - the build job holds `contents: read`;
+  - `sign-macos` holds `contents: read` and declares the `release` Environment, and
+    `verify-macos` and `assemble-signed` hold `contents: read` alone and declare no
+    Environment. None of the three runs the npm tree, and the signing record below
+    says what `sign-macos` may do;
   - the attest job holds `id-token: write` and `attestations: write`, and nothing
     else. It checks nothing out and installs no npm package: it downloads the
-    files, checks them, and runs `actions/attest`;
+    signed set from `assemble-signed`, checks it, and runs `actions/attest`;
   - the release job holds `contents: write`, to push the tag and its note and to
     create the release, and runs the npm tree.
 
@@ -253,12 +274,68 @@ the steps. This is the record a change to either workflow, to the build call in
   exactly the two binaries and the two installers named for the version and
   `SHA256SUMS`, `SHA256SUMS` lists exactly those four, and
   `sha256sum --check --strict` passes. The attest job attests the four files
-  `SHA256SUMS` lists. The installers are an MSI and a flat package that the build
-  legs pack the release binary into unchanged and test; neither is signed, and
-  neither carries a script or a custom action that runs code. The gate checks
-  against the version semantic-release worked out in its own run.
+  `SHA256SUMS` lists, after signing. The installers are an MSI and a flat package
+  that the build legs pack the release binary into unchanged and test; the MSI is
+  not signed, the package is signed and notarized by `sign-macos`, and neither
+  carries a script or a custom action that runs code. One script,
+  [`assemble-release.sh`](../../.github/scripts/assemble-release.sh), writes every
+  `SHA256SUMS`. The gate checks against the version semantic-release worked out in
+  its own run.
   `@semantic-release/github` skips an asset that is missing rather than failing, so
   the gate is what holds the file set.
+- **Signing happens in one job, in one Environment.** `sign-macos` is the only job
+  that declares an Environment or reads a signing secret;
+  [CLI](../operations/cli.md#signing-the-macos-files) gives its steps and the
+  contracts. The record it is checked against:
+  - **The Environment `release`** is created and maintained by the maintainer.
+    Deployment branches are selected branches, `main` only and no tags. Required
+    reviewers are the maintainer, with "Prevent self-review" off, because the
+    maintainer is the only reviewer and the roadmap requires self-approval. "Allow
+    administrators to bypass" is off. The maintainer reports the settings on the
+    tracking issue, because agents cannot read them.
+  - **Its secrets** are the six Environment secrets `MACOS_APPLICATION_P12_BASE64`,
+    `MACOS_INSTALLER_P12_BASE64`, `MACOS_P12_PASSWORD`, `MACOS_NOTARY_KEY_P8`,
+    `MACOS_NOTARY_KEY_ID` and `MACOS_NOTARY_ISSUER_ID`, and its variable is
+    `MACOS_TEAM_ID`, which is not secret. A job reads them only if it declares the
+    Environment, and only after the reviewer approves it. No repository secret is
+    added for signing.
+  - **`sign-macos` holds `contents: read`**, checks nothing out, runs no repository
+    file and no package manager, and uses no action but `actions/download-artifact`
+    and `actions/upload-artifact`. It fetches no tool or certificate. Each tool it
+    calls is called by its absolute system path, and the Developer ID G2
+    intermediate it imports is embedded and checked against the pin under
+    [Pinning Convention](#pinning-convention). Every context value reaches its
+    scripts through `env:`. The job's inline steps are not repository code: they are
+    the job's own definition in `release.yaml`, which the maintainer's approval
+    covers, and the maintainer confirmed that reading at the plan gate.
+  - **Only `sign-macos` reads the signing secrets.** `verify-macos` runs a
+    repository script on a runner that holds no signing identity and no secret, and
+    `assemble-signed` and every other job hold none either.
+  - **The signing identifier** `app.axross.marshal` and the team are fixed and
+    checked at each release, so the binary's designated requirement stays the same.
+    Changing either breaks the Keychain trust that later work relies on and goes
+    through a roadmap revision.
+  - **A signing failure stops the release before any tag.** Every signing step
+    comes before `release`, no job continues past a failure, and the notarization
+    result is read from the status, not the exit code.
+  - **Pull requests never sign or reach the Environment.** The dry run builds
+    unsigned, and no workflow a pull request triggers declares an Environment.
+    [`check-release-shape.mjs`](../../.github/scripts/check-release-shape.mjs) in
+    `mise run check` fails if the signing jobs drift from this record. A pull
+    request can edit it, so it guards against mistakes, not against a hostile pull
+    request. What keeps pull requests away is the branch rule on the Environment
+    and that `release.yaml` runs only on a dispatch.
+  - **No secret is printed.** Secret values reach the scripts through `env:` and
+    files written with mode 0600 under the runner's temporary directory, and each
+    line of the `.p8` is masked. The keychain and those files are deleted whether the
+    job passes or fails, and the notary log, which holds no secret, is uploaded.
+    The certificates' subjects name the maintainer's Apple developer account and
+    team, as every Developer ID signature does; nothing of that is committed.
+  - **Extensions** by later work add their signing jobs or steps to the shape check
+    and keep these rules: only signing jobs declare the Environment, a signing job
+    holds `contents: read` and runs no repository code, checksums and attestation
+    follow every signing step, and no pull-request run reaches the Environment.
+    [CLI](../operations/cli.md#extending-the-release-workflows) names the points.
 - **The documented install blocks run against the dry run's installers on hosted
   runners.** The `Install Blocks` job in
   [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) needs the dry run,
@@ -339,17 +416,19 @@ Immutable releases are a repository setting, not a file here;
 [Cutting a Release](../operations/development-workflow.md#cutting-a-release) gives
 the setting and its read-back.
 
-An agent never dispatches `release.yaml`, never pushes, moves, or deletes a `v*`
-tag, and never changes release settings, such as immutable releases or an
-Environment or ruleset that applies to releases. This rule is absolute, and it is
+An agent never dispatches `release.yaml`, never approves a deployment of it,
+including the `release` Environment's approval of `sign-macos`, never pushes,
+moves, or deletes a `v*` tag, and never changes release settings, such as
+immutable releases or an Environment or ruleset that applies to releases. This rule
+is absolute, and it is
 stricter than the
 [delivery grant](../operations/development-workflow.md#authorizing-delivery-operations).
 The grant lets an explicit human instruction cover release, deployment, and
 settings effects. These release effects have no such path: an agent never performs
 one, even when the maintainer asks in the session or another agent relays it.
 Agent sessions share the maintainer's GitHub identity, so to GitHub a dispatch by an
-agent and one by the maintainer are the same. With no approval step and no tag
-ruleset, this rule is the only control on agents.
+agent and one by the maintainer are the same, and so are an approval by each. With
+no tag ruleset, this rule is the only control on agents.
 
 Residual risks, accepted:
 
@@ -374,10 +453,42 @@ Residual risks, accepted:
 - **The attest job attests whatever passes its checks.** `SHA256SUMS` comes from
   the same build artifact, so the check catches transport damage, not a compromised
   build leg.
-- **No approval step and no tag ruleset.** Any account with write access can
-  dispatch a release, and that is the account the agents run as. The rule above is
-  the only control on agents. The maintainer accepted this in choosing a manual
-  dispatch with no ruleset.
+- **No tag ruleset.** Any account with write access can dispatch a release, and
+  dispatching needs only that access. That is the account the agents run as. The rule
+  above is the only control on agents. The maintainer accepted this in choosing a
+  manual dispatch with no ruleset.
+- **A hostile change on main gets signed if it is approved.** `sign-macos` signs
+  whatever the dispatched commit builds, with the maintainer's Developer ID. The
+  control is the check in
+  [Each Release](../operations/development-workflow.md#each-release), before each
+  dispatch and before the approval, that every commit on main since the last `v*`
+  tag came from a merged pull request. A stronger option is a rule on main that
+  requires a pull request, which is the maintainer's choice and is not in place.
+- **One identity can dispatch and approve.** The Environment allows self-approval,
+  because the roadmap requires it and the maintainer is the only reviewer, and agents
+  share the maintainer's GitHub identity. A session could therefore dispatch and
+  approve a signed release. The rule above, which now covers approving a deployment,
+  is the control, and a second reviewer is not an option here.
+- **A certificate or membership lapse stops signing.** The Developer ID certificates
+  last one year, and `sign-macos` refuses an expired one and warns within 90 days.
+  Signatures made with a secure timestamp stay valid after the certificate expires.
+  Whether an older release's package still installs after its Installer certificate
+  expires is not confirmed, and Apple's pages disagree, which bears on rolling back
+  through that package. A membership lapse leaves signed software working but allows
+  no new certificate. [Development
+  Workflow](../operations/development-workflow.md#renewing-the-certificates) records
+  the dates and the renewal.
+- **An early dispatch creates an empty Environment.** A dispatch before the maintainer
+  creates the `release` Environment makes GitHub create one with no protection rules
+  and no secrets. `sign-macos` refuses on the empty secrets before it imports
+  anything, and [Before the First
+  Release](../operations/development-workflow.md#before-the-first-release) creates the
+  Environment first. Until the maintainer reports its settings, nothing in the
+  repository shows that its branch rule and reviewer are in place.
+- **The first signed release is the first run of signing.** Nothing before merge can
+  exercise the Environment, the certificates or notarization, and `verify-macos`
+  first runs for real there. The stand-in suites and the shape check cover the flow,
+  not Apple's answers. A failure stops that release before its tag.
 - **Unprotected tags change the next version.** Any account with write access can
   push, move, or delete a `v*` tag that has no published release, `v0.0.0`
   included, and that changes the version semantic-release works out next.
@@ -426,13 +537,17 @@ Residual risks, accepted:
   The maintainer chose opening the installer as the main install procedure and the
   check as optional. The release job's npm tree can replace published files (the
   first risk above), and an operator who skips the check opens whatever the release
-  page then holds. Signing the installers, or making the check required again, is
-  the remedy in a later change.
+  page then holds. On Windows that is a file nothing has checked. On macOS,
+  Gatekeeper checks the package's signature when it opens. Signing the MSI, or
+  making the check required again, is the remedy in a later change.
 - **A replaced installer can run code.** A replaced MSI could carry a custom action
   that runs code as the user, or ask for elevation behind a prompt the procedure
   has taught operators to pass. A replaced pkg could carry scripts that run as root
-  once the administrator password is entered. The genuine installers carry neither
-  a script nor a custom action that runs code, and the build tests that they do not.
+  once the administrator password is entered, but Gatekeeper blocks a replaced pkg
+  that is not signed by the maintainer's team when it opens, and the same holds for
+  one whose notarization is revoked. That is expected, not yet observed on a Mac. The
+  genuine installers carry neither a script nor a custom action that runs code, and
+  the build tests that they do not.
 - **On axpc, code running as the operator can read what the operator can**,
   including the token files `marshal start` reads. A replaced installer runs as the
   operator, so it can read them; the per-file access control step in
@@ -445,23 +560,23 @@ Residual risks, accepted:
   pkg does over a higher one is the outcome that
   [CLI](../operations/cli.md#installing-updating-and-rolling-back) states, and the
   documented rollback does not depend on it.
-- **The procedure asks operators to pass prompts for unsigned files.** The
-  installers and binaries are not code-signed or notarised, so Windows SmartScreen,
-  the browser, and macOS Gatekeeper warn or block, and the procedure tells the
-  operator to choose "Run anyway", to keep the download, and to use "Open Anyway".
-  An operator who has learned to pass those prompts passes the same prompt for a
-  replaced file. The prompts are described as expected until the first install on
-  each host records them. On axpc, a binary fetched with `gh release download` had
-  no `Zone.Identifier`
+- **The Windows procedure asks operators to pass prompts for unsigned files.** The
+  Windows installer and binary are not code-signed, so Windows SmartScreen and the
+  browser warn or block, and the procedure tells the operator to choose "Run anyway"
+  and to keep the download. An operator who has learned to pass those prompts passes
+  the same prompt for a replaced file. The macOS package is signed and notarized, so
+  its procedure teaches no prompt to pass. The prompts are
+  described as expected until the first install on each host records them. On axpc, a
+  binary fetched with `gh release download` had no `Zone.Identifier`
   ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511048211)), and
-  SmartScreen did not prompt, with "Check apps and files" On and Smart App Control
-  Off ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511120441)).
-  The bare-binary blocks remove the macOS quarantine attribute from what they
-  download; the installers' procedure removes no mark.
+  SmartScreen did not prompt, with "Check apps and files" On and Smart App Control Off
+  ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511120441)). The
+  bare-binary blocks remove the macOS quarantine attribute from what they download;
+  the installers' procedure removes no mark.
 - **Smart App Control On may block the installers.** It blocks unsigned code unless
   its cloud service predicts the file safe, whether or not the file carries a Mark
   of the Web, and whether it evaluates an unsigned `.msi` is not verified. It is Off
-  on axpc. Signing is the remedy in a later change.
+  on axpc. Signing the MSI is the remedy in a later change.
 - The runner image's definition is embedded in the binary, so a runner bump reaches
   a host only through a new release and an update.
 
@@ -849,10 +964,16 @@ a parameter.
 
 [`.gitignore`](../../.gitignore) excludes `settings.local.json`, `.env.local`,
 token files, and private keys so that a local working file cannot be committed by
-accident; it is a backstop, not the control. The only repository secret the
-workflows read is `CLAUDE_CODE_OAUTH_TOKEN`, used by `claude-review.yaml` and
-added by the maintainer. A secret value is never echoed, passed on a command line,
-or written into an image layer or build cache.
+accident; it is a backstop, not the control. The workflows read one repository
+secret, `CLAUDE_CODE_OAUTH_TOKEN`, used by `claude-review.yaml` and added by the
+maintainer. `sign-macos` reads six Environment secrets of the `release` Environment,
+`MACOS_APPLICATION_P12_BASE64`, `MACOS_INSTALLER_P12_BASE64`, `MACOS_P12_PASSWORD`,
+`MACOS_NOTARY_KEY_P8`, `MACOS_NOTARY_KEY_ID` and `MACOS_NOTARY_ISSUER_ID`, and one
+Environment variable that is not secret, `MACOS_TEAM_ID`; the maintainer creates
+them, and no value is committed. A secret value is never echoed, passed on a command
+line, or written into an image layer or build cache. The one exception is the
+password arguments of `security` in `sign-macos`, which have no non-interactive
+alternative and whose runner is discarded after the job.
 
 ## The Review Gate Admits One Bot Identity by Login, Not Association
 
