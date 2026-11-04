@@ -200,6 +200,54 @@ jobs:
           ASSET: ${{ steps.asset.outputs.name }}
           VERSION: ${{ inputs.version }}
         run: bash ../.github/scripts/tests/test-pkg-installer.sh "${PWD}/../dist/${ASSET}" "${PWD}/../dist/${INSTALLER}" "$VERSION" "$INSTALLER_VERSION" "${RUNNER_TEMP}/installer-logs"
+      # holds no secret. release.yaml's sign-macos and verify-macos call these tools
+      # by absolute path, and a tool that moves on a new runner image should fail a
+      # pull request here instead of a release. the lists must name every tool those
+      # jobs and test-signed-pkg.sh call; check-release-shape.mjs compares them.
+      # base64 and shasum are run, since their flags are what the jobs rely on.
+      - name: Check The Signing Tools
+        if: runner.os == 'macOS'
+        run: |
+          bin_tools="security codesign pkgbuild openssl plutil shasum xcrun lsbom sudo"
+          sbin_tools="pkgutil spctl installer"
+          found=""
+          missing=""
+          for tool in $bin_tools; do
+            if [[ -x "/usr/bin/${tool}" ]]; then
+              found="${found} ${tool}=/usr/bin/${tool}"
+            else
+              missing="${missing} /usr/bin/${tool}"
+            fi
+          done
+          for tool in $sbin_tools; do
+            if [[ -x "/usr/sbin/${tool}" ]]; then
+              found="${found} ${tool}=/usr/sbin/${tool}"
+            else
+              missing="${missing} /usr/sbin/${tool}"
+            fi
+          done
+          for tool in notarytool stapler; do
+            path="$(/usr/bin/xcrun --find "$tool" 2>/dev/null)" || path=""
+            if [[ -n "$path" ]]; then
+              found="${found} ${tool}=${path}"
+            else
+              missing="${missing} xcrun:${tool}"
+            fi
+          done
+          base64_path="$(command -v base64)" || base64_path=""
+          if [[ -n "$base64_path" && "$(printf 'dGVzdA==' | base64 --decode)" == "test" ]]; then
+            found="${found} base64=${base64_path}"
+          else
+            missing="${missing} base64:--decode"
+          fi
+          if [[ "$(/usr/bin/shasum -a 256 </dev/null)" != e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855* ]]; then
+            missing="${missing} shasum:-a-256"
+          fi
+          echo "MEASURED: signing tools:${found}"
+          if [[ -n "$missing" ]]; then
+            echo "error: the signing jobs call tools that are missing or do not behave as they rely on:${missing}" >&2
+            exit 1
+          fi
       - name: Upload The Installer Test Logs
         if: always()
         uses: actions/upload-artifact@v7
