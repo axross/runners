@@ -97,10 +97,11 @@ maintainer creates and changes it; agents never do. See
 [operations/cli.md](./operations/cli.md#the-signing-contracts).
 
 **Signing Identifier** - `app.axross.marshal`, the identifier one code object is signed
-under: the **CLI**'s macOS binary until W1's installer pull request, and from M2 on the
-Mac app. The macOS pkg is built with it too. It and the team are fixed, so the
-designated requirement stays the same from release to release, which is what the
-Keychain trust of later work matches. See
+under: the **CLI**'s macOS binary until the Windows app's installer replaces the
+command line in the release, and the Mac app once it ships. The macOS pkg is built
+with it too. It and the team are fixed, so the designated requirement stays the
+same from release to release, which is what the Keychain trust of later work
+matches. See
 [operations/cli.md](./operations/cli.md#the-signing-contracts).
 
 **Check Block** - the optional block in the **CLI** document that checks a

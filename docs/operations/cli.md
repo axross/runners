@@ -1754,9 +1754,9 @@ approval of the first one is the decision to sign.
 `attest`. Both read `marshal-release-signed`, and `marshal-release` stays the
 unsigned build set. `attest` keeps `id-token: write` and `attestations: write`
 alone. The kept uploads, the signed files, the notary log and `marshal-release-signed`,
-hold no secret. The workflows ask GitHub to keep them for 14 days. GitHub keeps them
-for the repository's artifact retention limit instead when that is shorter; on this
-repository's pull request runs it was 7 days.
+hold no secret. The workflows ask GitHub to keep these uploads for 14 days. GitHub
+keeps them for the repository's artifact retention limit instead when that is
+shorter. That limit cut the installer-log uploads of a pull request run to 7 days.
 
 `sign-macos` is the one job that declares the Environment or reads a signing secret.
 [Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
@@ -1881,9 +1881,9 @@ F0 owns these. W1, W4, K2, M2 and M4 consume them. Each is a child of roadmap
 [#72](https://github.com/axross/runners/issues/72), as F0 is:
 
 - **F0**, "Installers and release signing", is the child this section describes.
-- **W1**, "Windows tray app, first release", adds its installer to the release set.
-  Its app's bundle identifier is the identifier below, because the app and its agent
-  are one code object. W1 owns that use.
+- **W1**, "Windows tray app, first release", has an installer pull request that
+  replaces the release's files. Its app's bundle identifier is the identifier
+  below, because the app and its agent are one code object. W1 owns that use.
 - **W4**, "Automatic updates, on Windows", signs the update archive. The archive's
   signature is W4's contract. W4 signs it under that contract, and adds that job or
   those steps under the rules in
@@ -2017,7 +2017,7 @@ points:
   only if W1's installer replaces or renames it; `test-signed-pkg-refusals.sh` uses
   one Windows file name only as a fixture for an unlisted file, and needs no change.
   W1's installer pull request replaces the release's files. From it on, the release
-  carries W1's Windows app and installer and no macOS file until M2's disk image, and
+  carries W1's Windows app and installer and no macOS file until M2, and
   no macOS command line is built or signed.
 - **M2** adds steps to `sign-macos` and `verify-macos` that sign the Mac app with the
   same identifier and team, and notarize and staple its disk image. The commands and
@@ -2252,23 +2252,24 @@ prints the new version even when you skipped the block;
 [Migrating From a Manual Install](#migrating-from-a-manual-install) says what is
 left behind.
 
-The MSI installs for your user only. In CI, on a GitHub-hosted Windows Server
-runner, a standard local user without administrator rights, signed in through an
-interactive logon and not elevated, ran the check block, which unpacks the MSI with
-`msiexec /a`. The same user then installed the MSI with `msiexec /i` and no UI, ran
-the installed `marshal`, and ran the uninstall block. Each step passed. For that run
-the test set the Windows Installer policy `DisableMSI` to 0. In a run without that
-change, `msiexec /i` exited 1625 and its log reported `DisableMsi` as 1, and the
-runner has no Installer policy key, so the value is expected to be the Windows
-Server default. Microsoft documents 0 as the behavior with no policy for Windows XP,
-Vista and 7, and states no default for Windows 10 or 11. On a Windows 11 PC with no
-Installer policy the install is expected to work the same way, with no administrator
-approval, but this is not yet measured there. What Windows shows when you open the
-file was not measured.
+The MSI installs for your user only. In CI, a GitHub-hosted Windows Server runner
+ran this as a standard local user without administrator rights. The user signed in
+through an interactive logon and was not elevated. The user ran the check block,
+which unpacks the MSI with `msiexec /a`. The same user then installed the MSI with
+`msiexec /i` and no UI, ran the installed `marshal`, and ran the uninstall block.
+Each step passed. For that run the test set the Windows Installer policy
+`DisableMSI` to 0. A run without that change exited 1625, and its log reported
+`DisableMsi` as 1. The runner has no Installer policy key, so the value is expected
+to be the Windows Server default. Microsoft documents 0 as the behavior with no
+policy for Windows XP, Vista and 7. It states no default for Windows 10 or 11.
+Whether a Windows 11 PC with no Installer policy allows the install is not yet
+measured. The follow-up after the first release measures it on axpc. What Windows
+shows when you open the file was not measured.
 
-If `msiexec` reports error 1625, "The system administrator has set policies to
-prevent this installation", a Windows Installer policy on that PC blocks the install
-for your user. Changing that policy is for whoever manages the PC.
+If `msiexec` exits 1625, its verbose log says "This installation is forbidden by
+system policy. Contact your system administrator." A system policy on that PC, such
+as the Windows Installer policy `DisableMSI`, blocks the install for your user.
+Changing that policy is for whoever manages the PC.
 
 Of the install steps, only the pkg needs the administrator password. It is expected
 to create `/usr/local/bin` when it is absent; that case was not measured. On a
