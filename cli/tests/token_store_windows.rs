@@ -32,6 +32,15 @@ fn listed(target: &str) -> String {
     String::from_utf8_lossy(&output.stdout).to_string()
 }
 
+/// whether `cmdkey`'s listing holds an entry for `target`: its `Target:` line names it.
+/// The heading `Currently stored credentials for <target>:` is printed whether or not
+/// there is one, so the target's mere presence in the text says nothing.
+fn has_entry(listing: &str, target: &str) -> bool {
+    listing
+        .lines()
+        .any(|line| line.trim_start().starts_with("Target:") && line.contains(target))
+}
+
 #[test]
 fn a_token_is_a_local_machine_credential_that_round_trips_and_goes() {
     let store = credential_manager().unwrap();
@@ -52,7 +61,8 @@ fn a_token_is_a_local_machine_credential_that_round_trips_and_goes() {
         Some("Local")
     );
     let text = listed(&target);
-    assert!(text.contains(&target), "{text}");
+    assert!(has_entry(&text, &target), "{text}");
+    assert!(!text.contains("* NONE *"), "{text}");
     assert!(!text.contains(FAKE));
 
     // setting again replaces the token
@@ -67,7 +77,10 @@ fn a_token_is_a_local_machine_credential_that_round_trips_and_goes() {
     store.remove(&key).unwrap();
     assert!(store.get(&key).unwrap().is_none());
     store.remove(&key).unwrap();
-    assert!(!listed(&target).contains(&target));
+    let text = listed(&target);
+    assert!(!has_entry(&text, &target), "{text}");
+    assert!(text.contains("* NONE *"), "{text}");
+    assert!(!text.contains(FAKE));
 }
 
 /// removes a test credential when the test ends, whether it passed or not.
