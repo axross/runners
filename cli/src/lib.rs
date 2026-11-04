@@ -9,6 +9,7 @@ pub mod control;
 pub mod de;
 pub mod diagnostics;
 pub mod fold;
+pub mod golden;
 pub mod image;
 pub mod instance;
 pub mod json;

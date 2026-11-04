@@ -244,33 +244,34 @@ registration, and the loop of one slot. `start` reaches it through the instance
 layer, and the tests also drive it through its seams. It reproduces the
 PowerShell supervisor, and where it differs the difference is listed here.
 
-| Module                                               | Holds                                                                                             |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `affinity`                                           | The CPU offsets `validate` and the backend share, and the selection of a slot's CPUs              |
-| `runtime::backend`                                   | The backend seam                                                                                  |
-| `runtime::select`                                    | The runtime a pool's operating system selects on its host                                         |
-| `runtime::docker`, `runtime::docker_args`            | The container backend and the exact `docker` argument lists                                       |
-| `runtime::tart`, `tart::args`, `tart::client`        | The `tart` client: the exact argument lists, and the bounded process wrapper                      |
-| `runtime::tart::list`, `tart::names`                 | The reader of `tart list --format json`, and the VM names, parsers and matchers                   |
-| `macos::version`                                     | The tested Tart and Softnet versions, the readers of their `--version`, and the sorting           |
-| `macos::softnet`                                     | Finding Softnet on `PATH` as Tart does, the judgment of its file, and its version read            |
-| `macos::prerequisites`                               | The host checks: Tart's version, then Softnet's file and version, each a pass, warning or refusal |
-| `runtime::registration`, `token`, `scrub`, `secret`  | JIT registration, the token file, error text, and the type that hides a secret                    |
-| `runtime::clock`, `runtime::log`                     | The time source and the sink for the runtime's messages, each a seam the tests replace            |
-| `runtime::name`                                      | Runner and container names, and the test for a pool's own                                         |
-| `runtime::pool`                                      | Pools from a plan, and their preparation                                                          |
-| `runtime::worker`                                    | The slot loop and its backoff                                                                     |
-| `runtime::retained`                                  | The diagnostic containers the backend retains, their records, and who finalises each              |
-| `runtime::diagnostic`                                | Finalising diagnostic containers at job end, in the container steps, and at startup               |
-| `diagnostics`, `diagnostics::exporter`               | The exporter child and the lines and exit codes it answers with                                   |
-| `diagnostics::transport`                             | The transport seam through which the exporter reads a container's evidence                        |
-| `diagnostics::sink`, `archive`, `identity`           | The sink checks and admission, the strict archive reader, and the identity readback               |
-| `runtime::board`                                     | Each pool's and each slot's state, which `status` reports                                         |
-| `macos::signals`, `macos::mac`                       | The signal-source seam and its real macOS source                                                  |
-| `macos::sleep`, `macos::network`, `macos::watch`     | The sleep judgment, the `route` and `arp` readers, and the primary network's judgment             |
-| `macos::keep_awake`, `macos::probe`, `macos::reason` | The `caffeinate` hold, the bounded system-program call, and the stop-reason texts                 |
-| `macos::fake`, `macos::scripted`                     | The in-process signal source for tests, and the one a debug build reads from a directory          |
-| `runtime::fake`                                      | In-memory stand-ins for the seams, used by tests; a debug or test build only                      |
+| Module                                                   | Holds                                                                                                       |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `affinity`                                               | The CPU offsets `validate` and the backend share, and the selection of a slot's CPUs                        |
+| `runtime::backend`                                       | The backend seam                                                                                            |
+| `runtime::select`                                        | The runtime a pool's operating system selects on its host                                                   |
+| `runtime::docker`, `runtime::docker_args`                | The container backend and the exact `docker` argument lists                                                 |
+| `runtime::tart`, `tart::args`, `tart::client`            | The `tart` client: the exact argument lists, and the bounded process wrapper                                |
+| `runtime::tart::list`, `tart::names`                     | The reader of `tart list --format json`, and the VM names, parsers and matchers                             |
+| `golden`, `golden::pins`, `golden::key`, `golden::steps` | The golden VM's pins, the check of Docker's signing key, the launcher and the guest calls that provision it |
+| `macos::version`                                         | The tested Tart and Softnet versions, the readers of their `--version`, and the sorting                     |
+| `macos::softnet`                                         | Finding Softnet on `PATH` as Tart does, the judgment of its file, and its version read                      |
+| `macos::prerequisites`                                   | The host checks: Tart's version, then Softnet's file and version, each a pass, warning or refusal           |
+| `runtime::registration`, `token`, `scrub`, `secret`      | JIT registration, the token file, error text, and the type that hides a secret                              |
+| `runtime::clock`, `runtime::log`                         | The time source and the sink for the runtime's messages, each a seam the tests replace                      |
+| `runtime::name`                                          | Runner and container names, and the test for a pool's own                                                   |
+| `runtime::pool`                                          | Pools from a plan, and their preparation                                                                    |
+| `runtime::worker`                                        | The slot loop and its backoff                                                                               |
+| `runtime::retained`                                      | The diagnostic containers the backend retains, their records, and who finalises each                        |
+| `runtime::diagnostic`                                    | Finalising diagnostic containers at job end, in the container steps, and at startup                         |
+| `diagnostics`, `diagnostics::exporter`                   | The exporter child and the lines and exit codes it answers with                                             |
+| `diagnostics::transport`                                 | The transport seam through which the exporter reads a container's evidence                                  |
+| `diagnostics::sink`, `archive`, `identity`               | The sink checks and admission, the strict archive reader, and the identity readback                         |
+| `runtime::board`                                         | Each pool's and each slot's state, which `status` reports                                                   |
+| `macos::signals`, `macos::mac`                           | The signal-source seam and its real macOS source                                                            |
+| `macos::sleep`, `macos::network`, `macos::watch`         | The sleep judgment, the `route` and `arp` readers, and the primary network's judgment                       |
+| `macos::keep_awake`, `macos::probe`, `macos::reason`     | The `caffeinate` hold, the bounded system-program call, and the stop-reason texts                           |
+| `macos::fake`, `macos::scripted`                         | The in-process signal source for tests, and the one a debug build reads from a directory                    |
+| `runtime::fake`                                          | In-memory stand-ins for the seams, used by tests; a debug or test build only                                |
 
 ### Backend
 
@@ -512,6 +513,42 @@ a debug build refuses a malformed value. `Check`'s tests are in
 `cli/tests/host_prerequisites.rs`, against the fake `tart` and `fake-softnet`
 (`cli/helpers/fake_softnet.rs`, documented in its header, which prints Softnet's real
 form), and the parsers and the file judgment have unit tests in `macos`.
+
+### Golden VM Provisioning
+
+The `golden` module holds what `build --profile axmc` will use to provision the
+golden VM; nothing calls it yet. `golden::pins` records the base image by its
+digest (`ghcr.io/cirruslabs/ubuntu`, tag `24.04`, arm64), the list of retired base
+pins, Docker's apt repository and signing-key fingerprint, the four Docker Engine
+packages at their pinned versions (Compose is not installed), and the launcher's
+path in the VM, `/usr/local/bin/marshal-launch`. A change to the base digest, the
+provisioning scripts, the launcher or the Docker Engine versions raises
+`GOLDEN_VM_VERSION`, and a change of the base digest also adds the old one to the
+retired list. A test asserts the current base is a digest reference and is not on
+that list.
+
+`golden::steps` builds each guest call as a `tart exec` command and the standard
+input it takes, from scripts embedded in the binary. The calls run in this order:
+
+1. upgrade the Ubuntu packages and install `ca-certificates`, `curl` and `gnupg`;
+2. download Docker's key to `/etc/apt/keyrings/docker.asc`;
+3. list the key with `gpg --show-keys --with-colons`;
+4. install the apt source and the four packages at their pinned versions, and hold
+   them;
+5. install the launcher, owned by root, mode 0755;
+6. lock the `admin` password and mask `ssh.service` and `ssh.socket`.
+
+`golden::key` compares the listing from step 3 with the recorded fingerprint. It
+accepts only one primary key, listed with its fingerprint record, and refuses a
+mismatch, a second primary key and anything it does not recognise. Its result is
+the argument the call for step 4 requires, so nothing from Docker's repository is
+installed before the comparison passes.
+
+The launcher reads the JIT configuration from standard input to its end, sets
+`ACTIONS_RUNNER_INPUT_JITCONFIG` in the environment of the `docker` client it
+then `exec`s with its own arguments, and refuses an empty input or one over 64 KiB
+with exit code 64, without printing the input. The Tart runtime will call it as
+`tart exec -i <vm> /usr/local/bin/marshal-launch <docker run arguments>`.
 
 ### CPU Placement
 
