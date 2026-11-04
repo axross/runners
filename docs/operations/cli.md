@@ -545,7 +545,8 @@ backend and clock, and a helper process.
 | `instance::source`                        | The instance's own configuration file, read again at a restart or a resume                  |
 | `instance::lock`, `instance::roots`       | The single-instance lock, and where the lock and the channel live                           |
 | `instance::channel`, `instance::protocol` | The control channel's server and client, and its text protocol                              |
-| `instance::windows`                       | The current user's security identifier and the descriptor that admits only that user        |
+| `instance::windows`                       | The current user's security identifier, the only-user descriptor, and the pipe's options    |
+| `instance::steps`                         | The container steps of a stop, shared by the foreground instance and the agent              |
 | `private`                                 | The Unix checks for a private directory and a private file, and the current user ID         |
 | `instance::runtime_core`                  | The runtime core `start` runs: pool preparation and every slot's loop                       |
 | `instance::log_file`                      | The log `start` writes through, its file, the file's cap, and the files kept                |
@@ -773,6 +774,9 @@ in.
 | ------------------- | ----------------------------------------------------------------------------------- |
 | `agent::machine`    | The agent's state, and what each request, failure and changed executable does to it |
 | `agent::core`       | The pools' slots, with each token read from the store and late pools started        |
+| `agent::state`      | Where the agent is, why it is stopped, and what it knows of its configuration       |
+| `agent::tokens`     | The pools' token source, read from the store, and the changes that start late pools |
+| `agent::view`       | The snapshot, built from the state, the board, the retained record and the tokens   |
 | `agent::api`        | The methods a connection can call and the errors they answer with                   |
 | `agent::wire`       | The messages of protocol version 2 and the version and size constants               |
 | `agent::server`     | One connection: handshake, requests, subscription, heartbeat, `ending` and timers   |
@@ -794,7 +798,7 @@ transition is answered at once, never queued behind it. It starts `running` or
 | Method         | Answer                                                                                                                                                                    |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `status`       | The snapshot, in any state                                                                                                                                                |
-| `start_all`    | Stopped: reads the configuration again, checks the image, and answers `running` once the pools are going, or `stopped` with the reason it could not. Running: `running`   |
+| `start_all`    | Stopped: reads the configuration again, checks the image, and answers `resuming` at once, or `stopped` with the reason it could not. Running: the state it is in          |
 | `stop_all`     | Running: runs the stop sequence (the same grace, budget and exit deadline of 28 s as `stop`) and answers `stopped` when it is done. Stopped: `stopped`                    |
 | `build`        | Stopped: answers `building` with the start time once the build began, and the snapshot tells the rest. Running: `refused`. A configuration that cannot be used: `refused` |
 | `quit`         | Runs the stop sequence if runners run, cancels a build, answers `quitting`, and ends the agent; the lock is free within a second of the answer                            |
@@ -818,7 +822,12 @@ snapshot, as the reason of the `stopped` state:
 | `no_pool_started`       | No pool could start, such as every pool without a token                      |
 | `restart_limit`         | The runtime core failed too often, under the same restart policy `start` has |
 | `image_build_failed`    | A `build` failed; the build's message is in the snapshot                     |
-| `image_ready`           | A `build` succeeded                                                          |
+
+A `build` that succeeds changes no reason: the agent is stopped for the reason it
+had before, and the outcome is only in `agent.build`. A `start_all` answers
+`resuming`, which stays true until the pools are admitted: the snapshot's `state`
+becomes `running` once they are, or `stopped` with one of the reasons above when
+they could not be.
 
 The set is open: a reader keeps a code it does not know as text. A pool skipped for
 want of a token does not stop the others: it is listed `skipped` with its reason,
@@ -846,16 +855,18 @@ continued in a new file when it reaches 10 MiB, so no line is lost to the limit,
 the newest ten files are kept. Every token and JIT configuration is masked in it, and
 nothing goes to a terminal, since the agent has none: a failure before the log opens
 goes to standard error, and everything after goes to the log. A `docker build` the
-agent runs inherits the agent's own output streams, so its lines are not in the
-log.
+agent runs has its output read line by line into the log, each line masked and
+marked `docker build:`; a line is cut at 8 KiB, and the last five lines, masked,
+end the message of a failed build. `marshal build` itself still passes the build's
+output on to its terminal.
 
 ### The Token Store
 
 `token_store` is the one place the agent keeps a repository's token. The interface
 names no operating system: `get`, `set` and `remove` by a repository key, which is
 `owner/name` in lower case, so `Axross/Runners` and `axross/runners` are one token.
-A token is trimmed, then refused when it is empty or longer than 1280 UTF-16 code units, which
-keeps it inside the Credential Manager's 2560 bytes.
+A token is trimmed, then refused when it is empty or longer than 1280 UTF-16 code
+units, which keeps it inside the Credential Manager's 2560 bytes.
 
 - **Windows.** The Credential Manager of the current user, through
   `windows-native-keyring-store`, as one generic credential per repository named
@@ -885,6 +896,10 @@ registration, so a `token_set` takes effect at the next registration, and a
 `token_remove` makes the next registration fail and its slot back off with "no
 token". A running job container keeps the JIT configuration it was started with.
 
+`has_token` in the snapshot is the store's answer as of the last configuration
+read, not a live reading: it refreshes only on a configuration read, a `token_set`
+or a `token_remove`.
+
 ### Protocol Version 2
 
 Protocol version 2 is served only by the agent, on the channel of the instance layer
@@ -899,7 +914,7 @@ but never rename or remove one.
 
 | Message     | Fields                                                                                               |
 | ----------- | ---------------------------------------------------------------------------------------------------- |
-| `hello`     | `versions` (the versions the client speaks), `client` (`name`, `version`, for the log)               |
+| `hello`     | `versions` (the versions the client speaks), `client` (`name`, `version`), which the agent ignores   |
 | `welcome`   | `version` (2), `agent` (`version`), `methods`, `topics`                                              |
 | `request`   | `id` (an integer of the client's own), `method`, `params`                                            |
 | `response`  | `id`, then `result` or `error`                                                                       |
@@ -917,8 +932,8 @@ The agent answers one connection's requests in order and several connections at 
 | Method         | Params                | Result                                                             |
 | -------------- | --------------------- | ------------------------------------------------------------------ |
 | `status`       | none                  | The snapshot                                                       |
-| `subscribe`    | `topic`: `state`      | `{}`; the first event follows at once                              |
-| `start_all`    | none                  | `{state}`                                                          |
+| `subscribe`    | `topic`: `state`      | `{"topic":"state"}`; the first event follows at once               |
+| `start_all`    | none                  | `{state}`, `resuming` while the pools are admitted                 |
 | `stop_all`     | none                  | `{state}`                                                          |
 | `build`        | none                  | `{state, started}`, `started` in milliseconds since the Unix epoch |
 | `quit`         | none                  | `{state}`                                                          |
@@ -947,8 +962,11 @@ with the whole snapshot after each change, at most one per 250 ms: changes withi
 window are merged into one event, so a client never sees an intermediate state it did
 not ask for. `seq` rises by one with each event of the connection. After 15 s without
 an event the agent sends a `heartbeat` with the last `seq`, and the library's client
-reads 45 s of silence on a subscribed connection as a lost agent. Before the agent
-ends it sends `ending` to every connection and waits up to 0.5 s for them to end; an
+reads 45 s of silence on a subscribed connection as a lost agent. A `Client::call`
+fails with `Closed` once the connection has ended but waits as long as the agent
+takes on one that stays open, so a caller that needs a bound wraps it in its own
+timeout. Before the agent ends it sends `ending` to every connection, one still in
+its handshake included, and waits up to 0.5 s for them to end; an
 answer already given, such as `quit`'s, is written before the `ending`.
 
 The limits are timers on the agent's own runtime on every operating system, so a
@@ -965,7 +983,8 @@ silent or stalled client holds no thread:
 On Windows the pipe is created as the first instance of the name with the descriptor
 `D:P(A;;GA;;;<user SID>)` and with remote clients rejected, as for `start`, but it
 is served by the pipe crate's asynchronous listener on the agent's runtime, so the
-limits above are the same there as on macOS. On Unix the socket has the checks of
+limits above are the same there as on macOS. Both channels take the pipe's options
+from one function, so they cannot differ. On Unix the socket has the checks of
 [Control Channel](#control-channel).
 
 ### The Snapshot
@@ -987,12 +1006,14 @@ a reader ignores one it does not know.
 | `pools[].diagnostics`          | `limit`, `written`, `in_sink`, `containers`, `findings`, `manual_recovery`                            |
 | `leftovers`                    | What a stop could not remove, `kind` (today `container`) and `name`                                   |
 | `images`                       | Each image the agent tracks (today the runner image): `name`, `lines`, `warnings`                     |
-| `omitted`                      | How many `runners`, `problems` and `pools` the snapshot left out                                      |
+| `omitted`                      | How many `runners`, `problems`, `pools`, `repositories`, `leftovers` and `images` it left out         |
 
 A pool is `waiting_for_docker`, `preparing`, `running`, `skipped` or `stopped`. A
 runner is `running`, `registering`, `backing_off` or `stopped`. The `reason` of a
 runner is plain text that says more about its state, such as what a state means that
-the reader may not know. An image warning is data, not text: a `code`
+the reader may not know. A backing-off runner gives the reason it backs off: a token
+store failure's kind and code, or what GitHub answered, scrubbed of any token and
+never a command. An image warning is data, not text: a `code`
 (`not_built_by_marshal`, `packages_old`, `image_old`, `runner_old` or
 `runner_may_be_newer`) with `days` or `version` where they apply, so the app words it.
 `leftovers` lists every container name of a failed removal call, which can name more
@@ -1007,8 +1028,11 @@ client shows an event with a state and a warning from a later agent.
 
 A snapshot is cut to at most 64 KiB less the message's envelope. When it is larger
 it first lists no more than 100 configuration problems, then leaves out runner rows
-from the end, as many as it must and no more, then pools from the end, and says how
-many in `omitted`. `runners_up` and `runners_wanted` still count a row left out.
+from the end, as many as it must and no more, then pools from the end, then
+leftovers, repositories, images and configuration problems from their ends, and says
+how many in `omitted`. Last of all the long texts, the configuration path and the
+agent's version, reason and build message, are cut to 512 characters. `runners_up`
+and `runners_wanted` still count a row left out.
 
 ### What the Agent Tests Cover
 
@@ -1018,17 +1042,18 @@ token store, and talk to it with the library's client or by hand, line by line.
 `tests/agent_resident.rs` covers stop, start and quit (also while a connection
 leaves a message unread), launching stopped, the executable renamed, build (ready,
 failed, cancelled by a stop or a quit, `busy`, `refused`), and staying up for each
-reason. `tests/agent_protocol.rs` covers the handshake, `welcome`, unknown methods,
+reason, also through `start_all`, which answers `resuming`. `tests/agent_protocol.rs` covers the handshake, `welcome`, unknown methods,
 topics and fields, subscription, coalescing, heartbeats, `ending`, the limits as
 timers and a connection that stops reading. `tests/agent_tokens.rs` covers what
 `token_set` and `token_remove` do to the next registration, a skipped pool starting,
 refused tokens, and the store's kind and code in an error, a skipped pool's reason
 and the log. `tests/agent_snapshot.rs` covers the snapshot, the diagnostics, the
-leftovers, the 64 KiB cut, the stalled readers' thread count, and that no token or
+leftovers, the 64 KiB cut, the stalled readers' thread count (measured on Linux only, from the runtime's
+worker threads), and that no token or
 JIT configuration reaches a connection or the log. `tests/agent_versions.rs` runs
 `stop`, `status`, `restart` and `diagnostics` against an agent and shows they exit 1
 and change nothing. `tests/agent_channel.rs` covers the socket's mode, the peer's
-user and a directory open to others on Unix. `tests/agent_process.rs` runs the agent
+user and a directory open to others on Unix. `tests/agent_channel_windows.rs` shows a pipe of a taken name is refused. `tests/agent_process.rs` runs the agent
 as a process on the fake `docker` and a GitHub stub, a second agent refused, and the
 log continued with ten files kept.
 

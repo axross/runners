@@ -610,6 +610,10 @@ built: its names, modes, and checks.
   request reaches the agent. A silent or stalled client cannot hold the agent:
   every connection limit is a timer, and a client that stops reading is closed
   after 5 s.
+- Both Windows channels, `start`'s and the agent's, take their pipe name, byte
+  mode, refusal of remote clients and the only-user descriptor from one function,
+  `instance::windows::control_pipe_options`, so the two cannot differ. A test on
+  Windows shows a second pipe of the same name is refused as taken.
 - Only a debug build can move the lock, the channel, the log directory, or their
   roots, for the tests; a release build always uses the host's fixed locations,
   and a CI step checks in the release profile that it ignores the request. The
@@ -634,8 +638,8 @@ named and used.
 - On macOS and Linux the agent has no store, so it skips every pool with "no token
   store" rather than falling back to a file; it never reads `tokenPath`.
 - The `token_set` request is the first message in which a secret travels, from the
-  client to the agent. The token is held as a secret from the moment its line is
-  parsed, is masked in the log from then on, and is never repeated: not in the
+  client to the agent. The token is held as a `Secret` once the request is parsed,
+  is masked in the log from then on, and is never repeated: not in the
   response, an event, a snapshot, an error, or a log line. An error about a token
   names its cause, such as an empty or too long token, and never the params. A
   store failure names its kind and the platform's code, which hold no token. The
