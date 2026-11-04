@@ -1,37 +1,27 @@
 {
-  "budget": { "cpus": 12, "memoryGb": 48, "diskGb": 500 },
+  "budget": { "cpus": 8, "memoryGb": 16, "diskGb": 120 },
   "repositories": [
     {
       "owner": "example-owner",
       "repository": "example-repo-one",
-      "name": "example-linux",
+      "name": "example-linux-one",
       "os": "linux",
-      "slots": 2,
+      "slots": 1,
       "tokenPath": "/path/to/example-repo-one.token",
       "labels": ["axmc", "example-label-one"],
-      "cpus": 2,
+      "cpus": 4,
       "memoryGb": 8,
       "diskGb": 40
     },
     {
       "owner": "example-owner",
-      "repository": "example-repo-one",
-      "name": "example-macos",
-      "os": "macos",
-      "slots": 1,
-      "tokenPath": "/path/to/example-repo-one.token",
-      "labels": ["axmc", "example-label-two"],
-      "cpus": 4,
-      "memoryGb": 16,
-      "diskGb": 80
-    },
-    {
-      "owner": "example-owner",
       "repository": "example-repo-two",
-      "name": "example-repo-two",
+      "name": "example-linux-two",
       "os": "linux",
       "slots": 1,
       "tokenPath": "/path/to/example-repo-two.token",
+      "cpus": 4,
+      "memoryGb": 8,
       "diskGb": 40
     }
   ]

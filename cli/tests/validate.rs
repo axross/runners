@@ -47,7 +47,7 @@ fn a_non_list_repositories_is_reported_beside_the_budgets_own_field_errors() {
     assert_eq!(
         found,
         [
-            "budget.cpus: must be a number greater than 0 and at most 64",
+            "budget.cpus: must be an integer from 1 to 64",
             "budget.memoryGb: must be an integer from 1 to 1024",
             "budget.diskGb: required field is missing",
             "repositories: must be a list",
@@ -75,7 +75,7 @@ fn an_unusable_entry_beside_usable_ones_still_lets_the_budget_totals_appear() {
             "repositories[1].slots: must be an integer from 1 to 16",
             "budget: pools total 4 CPUs (the sum of slots times cpus), above the budget of 1",
             "budget: pools total 16 GB of memory (the sum of slots times memoryGb), above the budget of 1 GB",
-            "budget: pools total 80 GB of disk (the sum of slots times diskGb), above the budget of 1 GB",
+            "budget: pools total 120 GB of disk (the sum of slots times diskGb, plus 40 GB for the golden VM and Tart's image cache), above the budget of 1 GB",
         ]
     );
 }
@@ -158,4 +158,73 @@ fn collisions_from_several_pairs_are_reported_in_the_order_of_the_pairs() {
             "repositories[4].labels: ambiguous same-repository routing; labels 'Shared, AXPC' also appear at repositories[2]",
         ]
     );
+}
+
+#[test]
+fn a_linux_pool_needs_the_golden_vms_disk_but_a_macos_pool_does_not() {
+    let found = errors(
+        Profile::Axmc,
+        r#"{
+            "budget": { "cpus": 8, "memoryGb": 16, "diskGb": 100 },
+            "repositories": [
+                { "owner": "o", "repository": "r", "name": "a", "os": "linux", "slots": 1,
+                  "tokenPath": "/t", "diskGb": 19 },
+                { "owner": "o", "repository": "r", "name": "b", "os": "macos", "slots": 1,
+                  "tokenPath": "/t", "diskGb": 19 }
+            ]
+        }"#,
+    );
+    assert_eq!(
+        found,
+        ["repositories[0].diskGb: must be at least 20 on a Linux pool, the golden VM's disk size"]
+    );
+}
+
+#[test]
+fn a_disk_budget_without_a_linux_pool_has_no_reserve() {
+    let found = errors(
+        Profile::Axmc,
+        r#"{
+            "budget": { "cpus": 8, "memoryGb": 16, "diskGb": 50 },
+            "repositories": [
+                { "owner": "o", "repository": "r", "name": "a", "os": "macos", "slots": 1,
+                  "tokenPath": "/t", "diskGb": 60 }
+            ]
+        }"#,
+    );
+    assert_eq!(
+        found,
+        [
+            "budget: pools total 60 GB of disk (the sum of slots times diskGb), above the budget of 50 GB"
+        ]
+    );
+}
+
+#[test]
+fn axmc_counts_whole_vcpus_and_axpc_still_takes_fractions() {
+    let axmc = errors(
+        Profile::Axmc,
+        r#"{
+            "budget": { "cpus": 65, "memoryGb": 16, "diskGb": 100 },
+            "repositories": [
+                { "owner": "o", "repository": "r", "name": "a", "os": "macos", "slots": 1,
+                  "tokenPath": "/t", "diskGb": 40, "cpus": 0.5 }
+            ]
+        }"#,
+    );
+    assert_eq!(
+        axmc,
+        [
+            "budget.cpus: must be an integer from 1 to 64",
+            "repositories[0].cpus: must be an integer from 1 to 64",
+        ]
+    );
+    let axpc = validate(
+        br#"{ "imageName": "image:tag", "repositories": [
+            { "owner": "o", "repository": "r", "name": "a", "slots": 1, "tokenPath": "C:\\t",
+              "volumes": [], "cpus": 0.5 } ] }"#,
+        Profile::Axpc,
+        None,
+    );
+    assert!(axpc.outcome.is_ok());
 }

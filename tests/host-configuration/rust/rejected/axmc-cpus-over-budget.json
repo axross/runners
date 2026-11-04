@@ -13,7 +13,7 @@
       "slots": 4,
       "tokenPath": "/path/to/example-repo-1.token",
       "diskGb": 40,
-      "cpus": 2.5
+      "cpus": 3
     }
   ]
 }
