@@ -445,6 +445,11 @@ terminal of `marshal start` prints it as `The instance is stopped: <reason>.`:
   `(en0 to utun4)` for a VPN that took the default route, and `(en0 to none)` when no
   interface holds the default route any more.
 
+The reason names only interfaces, so a change of the router, or of the router's
+hardware address, on the same interface also reads `(en0 to en0)`, with the same
+name twice. The text does not say which of the interface, the router or the hardware
+address differed; `route -n get default` shows the router that holds the route now.
+
 A reason names interfaces and never a network's name or an address. Before it says
 stopped, the instance fails every running job, deletes every job VM within the same
 30-second stop sequence `marshal stop` uses, and leaves the golden VM alone.
