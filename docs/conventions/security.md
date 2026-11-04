@@ -11,7 +11,9 @@ capability owns.
 The runner image under [`images/actions-runner/`](../../images/actions-runner) and
 the Windows host scripts under
 [`hosts/windows-docker-desktop/`](../../hosts/windows-docker-desktop) exist and are
-reviewed against the sections on runner trust and shared storage below. The
+reviewed against the sections on runner trust and shared storage below, and the
+macOS host's Linux VM runtime ([#74](https://github.com/axross/runners/issues/74))
+against the sections on a per-job VM, Softnet and the pinned programs. The
 agent-host configuration this repository is also for does not exist yet; those
 sections are the constraints it will be reviewed against.
 
@@ -733,6 +735,151 @@ containers' subnet, or a custom network) has not been researched or implemented.
 The operator procedure tells operators to run the host only on a network they
 would trust the listed repositories' workflows with. Revisit the exception when a
 blocking mechanism is verified.
+
+## A Linux Job on axmc Runs in a Per-Job VM
+
+The axmc host runs each `os: "linux"` pool's job in its own Tart virtual machine
+(VM), cloned from the golden VM for that job and deleted after it, so a job meets a
+single-tenant kernel and filesystem that nothing outlives. This section and the
+four after it are the constraints the VM runtime of
+[#74](https://github.com/axross/runners/issues/74) is reviewed against.
+[macOS Runner Host](../operations/macos-runner-host.md) owns the procedure, and
+[CLI](../operations/cli.md) the runtime.
+
+- A job VM MUST be a fresh clone of the golden VM, and MUST be deleted when its job
+  ends, on every failure path, at a stop, and by the next `start` if the CLI died.
+  A shim per VM holds its Tart process and deletes the VM when the CLI's liveness
+  pipe closes, so a hard-killed CLI leaves no VM behind. Cleanup at `start` matches
+  only the job VMs of configured pools by their name form, so it never deletes a
+  golden VM, a build VM, a VM of an unconfigured pool, or a VM `marshal` does not
+  own.
+- A job VM MUST share no host directory, clipboard or audio, MUST attach no USB
+  accessories, Rosetta or display, and MUST NOT accept the base image's password
+  SSH login, which the golden VM disables. A shared directory is a path from the
+  job to the Mac's files, and Rosetta, the clipboard and the accessories widen the
+  host-facing surface for no job's benefit.
+- The JIT configuration MUST reach the guest only through the guest agent's
+  standard input, and inside the VM only the golden VM's launcher passes it to
+  `docker run`, in the Docker client's environment, as on axpc. It MUST NOT be an
+  argument of any `tart` call, appear in a log line, or be written into the VM's
+  image.
+- Guest-agent output is data. Each call's captured output MUST be cut off at a fixed
+  bound (64 KiB), and `marshal` MUST NOT parse it beyond its expected form. Logged
+  text is scrubbed and masked as container output is.
+- Every `tart` call MUST set `TART_NO_AUTO_PRUNE`, so a clone never deletes an image
+  another program cached; MUST get `marshal`'s own `PATH`, which `marshal` also uses
+  to find `tart` and `softnet`; and MUST have a standard output that is not a
+  terminal, so Tart never offers to change Softnet's privilege. Only `build`
+  deletes golden and build VMs.
+- A VM MUST have a fixed vCPU count, memory size and disk cap, the pool's `cpus`,
+  `memoryGb` and `diskGb`, so one job's use of the Mac's CPU, memory and disk is
+  bounded by its pool. The disk cap bounds what a root job can write to the Mac's
+  disk.
+
+## CPU Placement Inside a Job VM
+
+Inside a job VM, [CPU Placement Is Not Resource Reservation](#cpu-placement-is-not-resource-reservation)
+holds with one difference: the VM is single-tenant, so the runner container's quota
+and affinity MUST equal all of the VM's vCPUs, 0 to `cpus` - 1, and its memory limit
+MUST equal the VM's memory. Nothing else runs there to share CPUs with, so no
+allocation among slots is needed, and the VM's own vCPU count is the bound. The
+probe and the guard that read the effective placement back MUST run through the
+guest agent, and a failed probe MUST end the slot's cycle before a runner
+registers. A job that exhausts memory meets the guest's out-of-memory killer, and
+the VM is deleted either way. The Mac's scheduler, not `marshal`, shares its cores
+among VMs, so a pool's `cpus` is a count of vCPUs, not a reservation of the Mac's
+cores.
+
+## Softnet Confines a Job VM's Network
+
+Every axmc VM runs on Softnet, Tart's filtering network, so a job cannot reach the
+local network, another VM, a multicast group or an IPv6 address, and reaches the
+Mac itself only for DNS. No acceptance in
+[LAN Egress From Runner Containers (Accepted Risk)](#lan-egress-from-runner-containers-accepted-risk)
+extends to axmc: that section is about Docker Desktop's default network, and a VM on
+Tart's default network would reach the LAN, the host and other VMs.
+
+- Each `tart run` MUST pass Softnet two rules. `--net-softnet-allow` carries
+  `out proto udp @host port 53,out proto tcp @host port 53`, and
+  `--net-softnet-block` carries `out @host,224.0.0.0/4`. A rule with a port outranks
+  one without, so DNS to the Mac's address on Softnet's bridge (the gateway) passes
+  and every other packet to the gateway and all multicast do not. With Softnet's
+  defaults, which block the private, shared, link-local and loopback IPv4 ranges and
+  every IPv6 frame, a VM can then send only to globally routable IPv4 addresses and
+  to the gateway's DNS. Softnet's defaults alone let a VM reach every port on the
+  gateway, a Mac service listening on all interfaces among them, and forward
+  multicast, so they are not enough. A `tart run` MUST carry no other network option.
+- Softnet's privilege is a SUID bit on its binary, with no `sudoers` rule.
+  `marshal` MUST check it before every VM boot and MUST NOT set it. It finds `softnet`
+  as Tart does, as the first match on the `PATH` it gives Tart, follows links, and
+  requires a regular file owned by root, with the SUID bit set and no write
+  permission for its group or others. Otherwise it refuses and boots nothing. A
+  `softnet` that an unprivileged user can write would let that user run code as
+  root, and Homebrew installs a new binary without the bit at each upgrade, so the
+  check runs at every boot rather than once. `marshal` never handles a root-owned
+  file itself, and a `softnet` that does not answer `--version` counts as a
+  refusal.
+- Softnet's rules make it track every flow a VM starts, in a table of 32,768
+  entries that refuses new connections while full. A job that opens more than that
+  within about 5 minutes has new connections refused, and the failure stays inside
+  that job.
+- The filtering rests on a reading of Softnet's source, which already contradicts
+  Tart's documentation about host access. The host run therefore probes targets
+  that answer from the Mac, and a VM that reaches any of them stops M1 before its
+  pull request is marked ready, so a plan revision can choose a fallback
+  ([#74](https://github.com/axross/runners/issues/74)).
+
+## The Accepted Host-Facing Surface of a Job VM
+
+These are what an axmc job VM can still touch, or depends on, and the maintainer
+accepts them. The acceptance holds only while no public repository and no fork pull
+request reaches axmc: a pool serves private repositories whose workflows the
+maintainer controls. A change that routes a public repository or a fork pull
+request to axmc ends it and needs a new decision.
+
+- **Softnet**, a SUID-root component that every axmc pool depends on. A flaw in it
+  is a flaw in the Mac's root boundary, which is why it is pinned and checked.
+- **Tart**, a pinned external program that `marshal` calls and never bundles.
+- **Guest-agent output**, which the CLI bounds and treats as data.
+- **Host disk use by a root job**, limited by the per-VM disk cap.
+- **A globally routable address on one of the Mac's interfaces**, which Softnet's
+  global allowance would reach through the gateway. The maintainer runs the host on
+  networks that give the Mac private addresses.
+- **DNS through the Mac's resolver**, which can answer the names of the Mac's
+  networks and VPNs, though their addresses stay blocked.
+- **The JIT configuration**, which the job can read inside its VM. It is single-use
+  and already in the runner's environment.
+
+## Tart, Softnet, and the Golden VM Are Pinned
+
+`marshal` neither bundles, installs nor repairs Tart or Softnet: the maintainer
+installs both with Homebrew, and `marshal` calls them as external programs. What
+they and the golden VM are built from is pinned, so that a rebuild changes only
+what a reviewed change changes.
+
+- Tart and Softnet are each pinned to one tested version, recorded in the CLI and
+  in [macOS Runner Host](../operations/macos-runner-host.md#installing-tart-and-softnet).
+  The tested version runs. A newer patch of the tested minor version runs with a
+  warning that names the tested version. Any other version, and any output other
+  than three dot-separated numbers (which Softnet alone follows with
+  `-<short commit>`), is refused. A minor release can change isolation flags or
+  `tart exec`, so an untested minor version does not run. Each host run records the
+  versions in use.
+- The golden VM's base image, `ghcr.io/cirruslabs/ubuntu:24.04`, MUST be pinned by
+  digest. A change of the pin adds the old digest to the CLI's list of retired
+  pins, and `build` removes from Tart's cache only the digests on that list, never
+  the current pin.
+- Docker Engine in the golden VM MUST come from Docker's apt repository at pinned
+  package versions, held there, after the repository's signing key is checked
+  against a recorded fingerprint. A mismatch fails the build.
+- The golden VM is built on each host and never published to a registry. A rebuild
+  upgrades the base's Ubuntu packages, so it picks up security fixes; the golden VM
+  version goes up whenever the pin, the provisioning steps, the launcher or the
+  Docker Engine versions change.
+- The runner image's arm64 build in CI runs on `ubuntu-24.04-arm`, a GitHub-hosted
+  runner, tags the image on the runner and never pushes it, and its job holds only
+  `contents: read`.
+- The VM runtime adds no crate to the CLI.
 
 ## Nothing Identifying or Secret Is Committed
 
