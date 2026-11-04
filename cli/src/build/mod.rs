@@ -1,12 +1,15 @@
 //! `build`: builds the runner image the host configuration names, from the
 //! definition embedded in this binary, as an instance in its own `building` state that
 //! holds the instance lock throughout, so it is refused while any instance exists and
-//! so is a `start` during it; see `docs/operations/cli.md`.
+//! so is a `start` during it. On axmc the image is built inside the golden VM and
+//! `build` makes that VM; see `docs/operations/cli.md`.
 
 mod arguments;
+pub mod golden;
 mod steps;
 
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsStr;
+use std::future::Future;
 use std::io::Write;
 use std::path::Path;
 use std::pin::pin;
@@ -16,6 +19,7 @@ use tokio::sync::{mpsc, watch};
 use tokio::time::Instant;
 
 use crate::command::{EXIT_FAILED, EXIT_OK, checkout_rule_note, load_plan, print_error};
+use crate::golden::pins::RETIRED_BASE_PINS;
 use crate::image::archive::context_archive;
 use crate::image::definition::resolve_definition;
 use crate::instance::channel::{ChannelServer, exchange};
@@ -25,8 +29,12 @@ use crate::instance::roots::Roots;
 use crate::profile::Profile;
 use crate::runtime::docker::resolve_program;
 use crate::runtime::log::{Log, StderrLog};
+use crate::runtime::pool::DEFAULT_IMAGE_NAME;
+use crate::runtime::tart::client::program_from_environment;
+use crate::runtime::tart::{TartClient, TartConfig, VmLauncher};
 use crate::start::{ANSWERS_WITHIN, LOCK_HELD_ELSEWHERE, signals, single_threaded_runtime};
 
+use golden::{GoldenBuild, GoldenTimings};
 use steps::{BuildLimits, Steps};
 
 const HOLDER_ANSWER_WITHIN: Duration = Duration::from_secs(5);
@@ -50,6 +58,9 @@ pub struct BuildRequest<'a> {
 /// runs `build` and returns its exit code; Docker is reached only after the lock,
 /// validation and the tag check.
 pub fn build(request: &BuildRequest<'_>, err: &mut dyn Write) -> u8 {
+    if let Some(refusal) = axmc_host_refusal(request.profile, cfg!(windows)) {
+        return print_error(err, &refusal);
+    }
     let roots = match Roots::resolve(request.test_root) {
         Ok(roots) => roots,
         Err(error) => return print_error(err, &error),
@@ -70,13 +81,10 @@ pub fn build(request: &BuildRequest<'_>, err: &mut dyn Write) -> u8 {
             return EXIT_FAILED;
         }
     };
-    if request.profile == Profile::Axmc {
-        return print_error(
-            err,
-            &"the configuration is valid, but this version of marshal cannot build axmc's golden VM yet",
-        );
-    }
-    let Some(image) = plan.image_name else {
+    let Some(image) = plan
+        .image_name
+        .or_else(|| (request.profile == Profile::Axmc).then(|| DEFAULT_IMAGE_NAME.to_string()))
+    else {
         return print_error(err, &"the configuration names no image to build");
     };
     if image.contains('@') {
@@ -110,12 +118,98 @@ pub fn build(request: &BuildRequest<'_>, err: &mut dyn Write) -> u8 {
         lock: &lock,
         roots: &roots,
         image: &image,
-        program: resolve_program(request.docker),
         log: &log,
+        after_deadline: match request.profile {
+            Profile::Axpc => {
+                format!("`docker image inspect {image}` tells which image the name holds")
+            }
+            Profile::Axmc => {
+                "the build VM is deleted by its shim, or by the next build".to_string()
+            }
+        },
     };
-    match runtime.block_on(build.run(context)) {
+    let outcome = match request.profile {
+        Profile::Axpc => {
+            let program = resolve_program(request.docker);
+            let (image, log) = (&image, &log);
+            runtime.block_on(build.run(|stop| async move {
+                Steps {
+                    program,
+                    image,
+                    context,
+                    log,
+                    limits: BuildLimits::default(),
+                    stop,
+                }
+                .run()
+                .await
+            }))
+        }
+        Profile::Axmc => {
+            let launcher = match golden_launcher() {
+                Ok(launcher) => launcher,
+                Err(error) => return print_error(err, &error),
+            };
+            let client = TartClient::new(TartConfig {
+                program: program_from_environment(),
+                ..TartConfig::default()
+            });
+            let (image, log) = (&image, &log);
+            runtime.block_on(build.run(|stop| async move {
+                GoldenBuild {
+                    client,
+                    launcher,
+                    image,
+                    context,
+                    log,
+                    timings: GoldenTimings::default(),
+                    retired: RETIRED_BASE_PINS,
+                    softnet_owner_mode: None,
+                    stop,
+                }
+                .run()
+                .await
+            }))
+        }
+    };
+    match outcome {
         Ok(()) => EXIT_OK,
         Err(error) => print_error(err, &error),
+    }
+}
+
+/// why `build --profile axmc` cannot run on this host before it calls any engine: the
+/// axmc profile runs only on macOS, and Windows can never run it.
+fn axmc_host_refusal(profile: Profile, windows: bool) -> Option<&'static str> {
+    (profile == Profile::Axmc && windows).then_some("the axmc profile runs only on macOS")
+}
+
+/// holds the build VM under the VM shim, which is this program run again, so a CLI that
+/// dies leaves the VM to the shim.
+fn golden_launcher() -> Result<VmLauncher, String> {
+    #[cfg(unix)]
+    {
+        std::env::current_exe()
+            .map(VmLauncher::Shim)
+            .map_err(|error| format!("the path of this program cannot be read: {error}"))
+    }
+    #[cfg(not(unix))]
+    {
+        Ok(VmLauncher::Direct)
+    }
+}
+
+/// completes when a stop is asked for, with its time; never, when the sender is gone
+/// without one.
+pub(crate) async fn stop_requested(stop: &watch::Receiver<Option<Instant>>) -> Instant {
+    let mut stop = stop.clone();
+    loop {
+        if let Some(at) = *stop.borrow_and_update() {
+            return at;
+        }
+        if stop.changed().await.is_err() {
+            return std::future::pending().await;
+        }
     }
 }
 
@@ -139,30 +233,28 @@ struct Build<'a> {
     lock: &'a InstanceLock,
     roots: &'a Roots,
     image: &'a str,
-    program: OsString,
     log: &'a dyn Log,
+    /// ends the message for a build still running at the exit deadline.
+    after_deadline: String,
 }
 
 impl Build<'_> {
-    /// opens the channel and runs the build.
-    async fn run(&self, context: Vec<u8>) -> Result<(), String> {
+    /// opens the channel and runs the build that `steps` makes from the stop signal.
+    async fn run<S, F>(&self, steps: S) -> Result<(), String>
+    where
+        S: FnOnce(watch::Receiver<Option<Instant>>) -> F,
+        F: Future<Output = Result<(), String>>,
+    {
         let (sender, requests) = mpsc::unbounded_channel();
         let server = ChannelServer::open(self.lock, self.roots, sender.clone())
             .map_err(|error| error.to_string())?;
         let (stop, stop_receiver) = watch::channel(None);
-        let steps = Steps {
-            program: self.program.clone(),
-            image: self.image,
-            context,
-            log: self.log,
-            limits: BuildLimits::default(),
-            stop: stop_receiver,
-        };
+        let steps = steps(stop_receiver);
         let outcome = {
             // the receiver ends with this block, before the channel closes
             let mut requests = requests;
             tokio::select! {
-                outcome = self.serve(steps.run(), &mut requests, &stop) => outcome,
+                outcome = self.serve(steps, &mut requests, &stop) => outcome,
                 never = signals(&sender, None, self.log) => match never {},
             }
         };
@@ -188,9 +280,9 @@ impl Build<'_> {
                 () = tokio::time::sleep_until(exit_by.unwrap_or(started)), if exit_by.is_some() => {
                     return Err(format!(
                         "the build did not end within {} s of the stop, so what still runs is \
-                         ended now; `docker image inspect {}` tells which image the name holds",
+                         ended now; {}",
                         EXIT_DEADLINE_AFTER_STOP.as_secs(),
-                        self.image
+                        self.after_deadline
                     ));
                 }
                 incoming = requests.recv(), if open => match incoming {
@@ -232,5 +324,21 @@ impl Build<'_> {
                     .with("state", state)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_the_axmc_profile_on_windows_is_refused_before_an_engine_is_called() {
+        assert_eq!(
+            axmc_host_refusal(Profile::Axmc, true),
+            Some("the axmc profile runs only on macOS")
+        );
+        assert_eq!(axmc_host_refusal(Profile::Axmc, false), None);
+        assert_eq!(axmc_host_refusal(Profile::Axpc, true), None);
+        assert_eq!(axmc_host_refusal(Profile::Axpc, false), None);
     }
 }

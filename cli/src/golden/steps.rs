@@ -156,6 +156,17 @@ pub fn disable_ssh_call() -> GuestCall {
     )
 }
 
+/// the command that runs `docker` with `arguments` as root in the build VM. The
+/// guest agent's user joins the `docker` group in step 4, but the group applies only
+/// when the agent next starts, which the build VM does not do, so the image build
+/// runs through `sudo` instead of restarting the VM.
+#[must_use]
+pub fn build_vm_docker_command(arguments: &[String]) -> Vec<String> {
+    let mut command: Vec<String> = ["sudo", "-n", "docker"].map(str::to_string).into();
+    command.extend(arguments.iter().cloned());
+    command
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -180,6 +191,14 @@ mod tests {
 
     fn verified() -> VerifiedKey {
         check_key_listing(REAL_LISTING).unwrap()
+    }
+
+    #[test]
+    fn the_build_vm_runs_docker_through_sudo() {
+        assert_eq!(
+            build_vm_docker_command(&words(&["info"])),
+            words(&["sudo", "-n", "docker", "info"])
+        );
     }
 
     #[test]

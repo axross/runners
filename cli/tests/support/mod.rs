@@ -11,6 +11,8 @@
 #[cfg(unix)]
 pub mod axmc;
 pub mod docker;
+#[cfg(unix)]
+pub mod golden;
 pub mod host;
 pub mod instance;
 pub mod macos;
