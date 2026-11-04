@@ -22,7 +22,8 @@ if (Test-Path -LiteralPath $Output) { throw "$Output already exists." }
 
 $source = Join-Path $PSScriptRoot 'marshal.wxs'
 # -acceptEula names the major version of the OSMF EULA that the maintainer accepted.
-& $wix build -acceptEula wix7 -arch x64 -d "MarshalBinary=$Binary" -d "MarshalVersion=$Version" -o $Output $source
+# -pdbtype none stops wix build from writing a .wixpdb beside the output.
+& $wix build -acceptEula wix7 -arch x64 -pdbtype none -d "MarshalBinary=$Binary" -d "MarshalVersion=$Version" -o $Output $source
 if ($LASTEXITCODE -ne 0) { throw "wix build exited $LASTEXITCODE." }
 if (-not (Test-Path -LiteralPath $Output -PathType Leaf)) { throw "wix build wrote no $Output." }
 Write-Output "Built $Output at version $Version."
