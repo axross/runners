@@ -456,6 +456,47 @@ async fn a_forced_stop_deletes_the_diagnostic_vm_without_an_export_and_reports_t
     );
 }
 
+/// D4: a forced stop in the window between an export that was admitted and the
+/// removal that follows it reports no lost evidence for that container, and still
+/// reports the container whose bundle was never admitted.
+#[tokio::test(flavor = "current_thread")]
+async fn a_forced_stop_in_an_exported_containers_removal_window_reports_no_gap_for_it() {
+    let rig = Rig::exporting();
+    let scratch = TempDir::new();
+    let sink = private_sink(&scratch);
+    let exported = ended_diagnostic_job(&rig, &record(&sink)).await;
+    let lost = "marshal-axmc-other-0-1".to_string();
+    rig.backend.retained().adopt(&lost, &record(&sink));
+    rig.backend
+        .retained()
+        .claim(&exported)
+        .unwrap()
+        .mark_exported();
+    assert!(rig.backend.retained().is_exported(&exported));
+    assert!(!rig.backend.retained().is_exported(&lost));
+
+    rig.backend.retained().force();
+    container_steps(
+        &rig.backend,
+        &*rig.log,
+        StopClock::at(Instant::now()),
+        Duration::from_secs(5),
+    )
+    .await;
+
+    assert_eq!(
+        rig.log_lines("WARN: "),
+        [
+            format!(
+                "WARN: Forced stop: the job VM of diagnostic container {lost} will be deleted without its export when the hosts are released."
+            ),
+            format!(
+                "WARN: Diagnostic gap in pool {POOL}, container {lost}: private export unavailable, incomplete, unsafe or over budget; prior evidence retained."
+            ),
+        ]
+    );
+}
+
 /// N2: an export that succeeded and a removal that failed leave the container
 /// retained, and the release that then deletes its VM leaves nothing to report as
 /// lost, because the bundle stands in the sink.

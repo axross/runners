@@ -319,11 +319,13 @@ async fn finalize_once_released<B: Backend>(
     }
 }
 
-/// the diagnostic column of the stop sequence's container steps, on `clock`: it finalises every retained container nobody holds, waits
-/// for those another path is finalising and finalises any it left retained; a
-/// forced stop, at any point, ends every retained container with `docker kill`
-/// within `kill_budget` and keeps it, or, for a backend whose hosts hold the
-/// evidence, only reports the evidence the release of the hosts then loses.
+/// the diagnostic column of the stop sequence's container steps, on `clock`: it
+/// finalises every retained container nobody holds, waits for those another path
+/// is finalising and finalises any it left retained; a forced stop, at any point,
+/// ends every retained container with `docker kill` within `kill_budget` and keeps
+/// it, or, for a backend whose hosts hold the evidence, only reports the evidence
+/// the release of the hosts then loses, which a container with its bundle admitted
+/// has not lost.
 pub async fn container_steps<B: Backend>(
     backend: &B,
     log: &dyn Log,
@@ -355,7 +357,7 @@ pub async fn container_steps<B: Backend>(
         return;
     }
     if backend.deletes_leftovers_unexported() {
-        for name in &names {
+        for name in names.iter().filter(|name| !retained.is_exported(name)) {
             log.warn(&format!(
                 "Forced stop: the job VM of diagnostic container {name} will be deleted \
                  without its export when the hosts are released."
