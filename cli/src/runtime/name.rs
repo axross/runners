@@ -166,8 +166,8 @@ mod tests {
     }
 
     #[test]
-    fn the_powershell_test_pin_gives_the_same_name() {
-        // 2024-03-05 06:07:08.009 UTC, the instant test-host-configuration.ps1 pins.
+    fn a_pinned_instant_gives_the_expected_name() {
+        // 2024-03-05 06:07:08.009 UTC.
         assert_eq!(
             job_container_name("example-repo-one", 2, at(1_709_618_828_009)),
             "example-repo-one-2-20240305060708009"
@@ -232,7 +232,7 @@ mod tests {
     }
 
     #[test]
-    fn own_names_follow_the_powershell_pattern() {
+    fn own_names_follow_the_job_container_pattern() {
         let stamp = "20240305060708009";
         assert!(is_own_container_name(
             "example-repo-one",

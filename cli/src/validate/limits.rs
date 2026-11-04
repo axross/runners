@@ -20,7 +20,7 @@ const NANOS_PER_CPU: u128 = 1_000_000_000;
 const SIGNIFICANT_DIGITS_AFTER_FIRST: usize = 14;
 
 /// returns an integer field's value when it is an integer literal from 1 to `max`;
-/// `8.0` and `1e1` are not, as in PowerShell.
+/// `8.0` and `1e1` are not.
 #[must_use]
 pub fn bounded_integer(value: &Value, max: u32) -> Option<u32> {
     let Value::Number(number) = value else {
@@ -76,8 +76,7 @@ pub fn cpu_count(value: &Value, path: &str, errors: &mut Errors) -> Option<f64> 
 const RANGE_PROBLEM: &str = "must be a number greater than 0 and at most 64";
 
 /// returns the CPU count in billionths, rounded half away from zero at nine decimals
-/// on its 15 significant digits as the PowerShell validator's `0.#########` format
-/// does, which differs from Rust's own rounding.
+/// on its 15 significant digits, which differs from Rust's own rounding.
 #[must_use]
 pub fn nanos(cpus: f64) -> u128 {
     let scientific = format!("{cpus:.SIGNIFICANT_DIGITS_AFTER_FIRST$e}");

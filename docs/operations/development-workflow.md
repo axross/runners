@@ -254,8 +254,8 @@ PowerShell 7, failing unless it grants the current user alone. Neither step need
 new action, permission, or secret. It also builds the runner image for linux/arm64 on
 the hosted `ubuntu-24.04-arm` runner, in a job of its own that builds and never pushes
 and runs no smoke test, since those assume x86_64 ([#74](https://github.com/axross/runners/issues/74)).
-It also runs the host configuration test under Windows
-PowerShell 5.1. Its release-build job is the release build's dry run: it calls
+The workflow's release-build job is the release
+build's dry run: it calls
 [`release-build.yaml`](../../.github/workflows/release-build.yaml), which builds the
 Windows x64 and macOS arm64 release binaries on their hosted runners, runs the
 release-profile tests on each, checks each binary's `--version` and, on Windows,

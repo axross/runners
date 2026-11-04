@@ -38,14 +38,13 @@ embeds and runs jobs only in an image that declares the same. See
 [operations/cli.md](./operations/cli.md#the-image-contract).
 
 **Runner Host** - the machine that builds runner images and starts runner
-containers, together with the scripts under `hosts/<platform>/`. The first
+containers, together with the host configuration under `hosts/<platform>/`. The first
 platform is Windows with Docker Desktop, under `hosts/windows-docker-desktop/`.
 
 **Host Configuration** - the machine-local JSON file, kept outside the repository,
 that names a runner host's image and lists its **Execution Pools** for
 **Target Repositories**. The
-**Supervisor** and the host's other scripts read it. The **CLI** reads it too,
-checked against a **Host Profile**.
+**CLI** reads it, checked against a **Host Profile**.
 
 **Target Repository** - a GitHub repository a runner host serves. Its
 **Execution Pools** share one repository-scoped token file.
@@ -70,7 +69,7 @@ previous one exits.
 **Supervisor** - the host-side process that keeps each slot of every **Execution
 Pool** filled: it requests a **JIT Config** with the target repository's token,
 starts a runner container, waits for it to exit, and repeats. On axpc it is the
-**CLI**'s `start`; the PowerShell script it replaced stays only as a rollback path.
+**CLI**'s `start`.
 
 **CLI** - this project's Rust command line tool, under `cli/`. `validate` checks a
 **Host Configuration**; `build` builds its **Runner Image** from the definition
@@ -151,12 +150,8 @@ the fields, the platform labels, the **Routing Label**, and the path form. See
 [operations/cli.md](./operations/cli.md).
 
 **Shared Fixtures** - the configuration files under `tests/host-configuration/`
-that the PowerShell validator's test, the **CLI**'s tests, and the **Parity Test**
-read, with one `expectations.json` recording what each must give.
-
-**Parity Test** - the check that runs the PowerShell validator and the **CLI** over
-the **Shared Fixtures** and fails when their outcomes, ordered errors, or summaries
-differ. It ends when the PowerShell validator is removed.
+that the **CLI**'s tests read, with one `expectations.json` recording what each
+must give.
 
 **Shared Volume** - storage, such as a named Docker volume for a package cache,
 mounted into more than one runner container over time. It is the surface the

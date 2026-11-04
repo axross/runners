@@ -4,20 +4,19 @@ This file defines the working agreement for agents contributing to runners.
 
 ## Project overview
 
-**runners** holds generic GitHub Actions self-hosted runner images and the host
-scripts that run them, and later the WSL 2 host configuration for Claude Code
+**runners** holds generic GitHub Actions self-hosted runner images and the CLI
+that runs them, and later the WSL 2 host configuration for Claude Code
 Remote Control and Amp runner agent hosts. It is being extracted from the
 runner setup of a private application repository, in steps. It holds its agent
 foundation (the entry files, agent configuration, documentation, and lint
 toolchain), the `images/actions-runner/` runner image, the
-`hosts/windows-docker-desktop/` runner host scripts, the `hosts/macos/` example
-configuration, and the CLI under `cli/`,
-a Rust command line tool that validates a host configuration, builds its runner
-image with `build`, and runs a host's pools with `start`, `stop`, `restart`,
-`status`, and `diagnostics`. The axpc host runs its pools with the CLI, and the
-PowerShell host scripts stay as its rollback path. The axmc host, an Apple silicon
-Mac, runs its Linux pools with the CLI in Tart VMs, and `build` makes their golden
-VM; the agent-host configuration is still planned.
+`hosts/windows-docker-desktop/` example host configuration, the `hosts/macos/`
+example host configuration, and the CLI under `cli/`, a Rust command line tool
+that validates a host configuration, builds its runner image with `build`, and
+runs a host's pools with `start`, `stop`, `restart`, `status`, and `diagnostics`.
+The axpc host runs its pools with the CLI. The axmc host, an Apple silicon Mac,
+runs its Linux pools with the CLI in Tart VMs, and `build` makes their golden VM;
+the agent-host configuration is still planned.
 [README.md](./README.md) owns project commands; [docs/index.md](./docs/index.md)
 indexes conventions, operations, and the glossary. mise pins the toolchain, and
 Prettier, markdownlint, shellcheck, hadolint, actionlint, PSScriptAnalyzer,
@@ -217,7 +216,7 @@ adds the document that owns its procedure and the row that routes to it.
 | Whether something should be a comment at all, or the code reshaped instead                                                                                                                           | [Code Maintainability](./.claude/skills/code-maintainability/SKILL.md)                                                                                                                                           |
 | Where a document goes and how it is indexed                                                                                                                                                          | [docs/index.md](./docs/index.md) and [Living Project Documentation](./.claude/skills/living-project-documentation/SKILL.md)                                                                                      |
 | Which document a change to a runner surface invalidates, and the documentation checks                                                                                                                | [Documentation](./docs/conventions/documentation.md)                                                                                                                                                             |
-| Runner image (`images/actions-runner/`), the Windows host scripts (`hosts/windows-docker-desktop/`), the host configuration, scheduled tasks, tokens, updating, and recovery                         | [Windows Runner Host](./docs/operations/windows-runner-host.md), with the per-repository isolation rules in [Security](./docs/conventions/security.md)                                                           |
-| The CLI (`cli/`), its commands, its profiles (`axpc`, `axmc`), the shared fixtures (`tests/host-configuration/`), the parity test, and its Rust toolchain and gates                                  | [CLI](./docs/operations/cli.md), with [Security](./docs/conventions/security.md) for labels, paths, and the dependency surface                                                                                   |
+| Runner image (`images/actions-runner/`), the Windows host configuration (`hosts/windows-docker-desktop/`), tokens, updating, rolling back, and recovery                                              | [Windows Runner Host](./docs/operations/windows-runner-host.md), with the per-repository isolation rules in [Security](./docs/conventions/security.md)                                                           |
+| The CLI (`cli/`), its commands, its profiles (`axpc`, `axmc`), the shared fixtures (`tests/host-configuration/`), and its Rust toolchain and gates                                                   | [CLI](./docs/operations/cli.md), with [Security](./docs/conventions/security.md) for labels, paths, and the dependency surface                                                                                   |
 | The macOS host (`hosts/macos/`): Tart, Softnet, the golden VM, the axmc host configuration, and the runtime that runs its Linux pools (`cli/src/runtime/tart/`, `cli/src/macos/`, `cli/src/golden/`) | [macOS Runner Host](./docs/operations/macos-runner-host.md), with [Security](./docs/conventions/security.md) for the per-job VM, Softnet, and the pins, and [CLI](./docs/operations/cli.md) for the runtime seam |
 | Planned agent-host configuration (`agent-hosts/{claude-code,amp}/`)                                                                                                                                  | The operations document that change adds; until then [Security](./docs/conventions/security.md) and [REVIEW.md](./REVIEW.md)                                                                                     |

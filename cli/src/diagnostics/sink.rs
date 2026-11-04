@@ -136,8 +136,7 @@ fn without_verbatim_prefix(path: PathBuf) -> PathBuf {
     path
 }
 
-/// checks a bundle again before a file goes into it, as the PowerShell exporter
-/// does.
+/// checks a bundle again before a file goes into it.
 pub fn check_bundle(bundle: &Path) -> Result<(), SinkError> {
     check_directory(bundle)
 }

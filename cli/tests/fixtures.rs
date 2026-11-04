@@ -1,6 +1,5 @@
 //! runs the validator over every fixture under `tests/host-configuration/` and checks
-//! it against `expectations.json`, which the PowerShell test and the parity harness
-//! read too.
+//! it against `expectations.json`.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -30,9 +29,6 @@ struct Expectation {
     outcome: Outcome,
     contains: Vec<String>,
     lacks: Vec<String>,
-    // the PowerShell validator's outcome, which the parity harness checks
-    #[serde(rename = "powershell")]
-    _powershell: Option<String>,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]

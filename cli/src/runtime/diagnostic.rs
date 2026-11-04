@@ -76,8 +76,7 @@ impl StopClock {
 /// the bundles a pool's sink may hold, partial ones included.
 pub const BUNDLE_QUOTA: u32 = 10;
 
-/// the PowerShell supervisor's text for each export that has a gap, and `None` for
-/// one without.
+/// the log text for each export that has a gap, and `None` for one without.
 #[must_use]
 pub fn gap_text(outcome: ExportOutcome) -> Option<&'static str> {
     match outcome {

@@ -73,7 +73,7 @@ for mode in 0 7 wait abrupt observer-failure raw; do
   export_args=()
   if [ "$mode" = raw ]; then export_args+=(-RawRecords); fi
   if [ "$mode" = abrupt ] || [ "$mode" = observer-failure ]; then export_args+=(-FinalUnavailable); fi
-  pwsh -NoProfile -NonInteractive -File hosts/windows-docker-desktop/tests/export-smoke.ps1 \
+  pwsh -NoProfile -NonInteractive -File images/actions-runner/tests/export-smoke.ps1 \
     -Name "$name" -Sink "$work/$mode" -Marker "$suffix" "${export_args[@]}"
   docker rm "$name" > /dev/null
 done

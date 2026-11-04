@@ -1,10 +1,9 @@
 name: Merge Checks
 
 # the repository's own CI: the gates behind mise run check, the CLI tests on
-# Linux, Windows, and macOS, the image build and its build-only arm64 twin, the
-# host test under Windows PowerShell 5.1, and the release dry run. GitHub-hosted
-# runners only, because this repository is public; see
-# docs/conventions/security.md.
+# Linux, Windows, and macOS, the image build and its build-only arm64 twin, and
+# the release dry run. GitHub-hosted runners only, because this repository is
+# public; see docs/conventions/security.md.
 
 on:
   pull_request:
@@ -46,9 +45,8 @@ jobs:
       - name: Run Checks
         run: mise run check
 
-  # the parity test needs PowerShell 7 and the pinned mise tools, so it runs in
-  # the check job. no cache action: a cache would be a trust boundary for a job
-  # that builds code, and the build is small.
+  # no cache action: a cache would be a trust boundary for a job that builds
+  # code, and the build is small.
   rust:
     name: Test CLI On ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -162,22 +160,3 @@ jobs:
           persist-credentials: false
       - name: Build Runner Image
         run: docker build --platform linux/arm64 --tag actions-runner:ci-arm64 images/actions-runner
-
-  # the host scripts target the Windows PowerShell 5.1 that the scheduled tasks
-  # use, which the check job's PowerShell 7 does not cover. this runs only the
-  # configuration test; Docker Desktop, Task Scheduler, and icacls are not
-  # exercised here.
-  host-windows:
-    name: Test Host Scripts On Windows PowerShell 5.1
-    runs-on: windows-latest
-    timeout-minutes: 15
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - name: Run Host Configuration Test
-        shell: powershell
-        run: |
-          $PSVersionTable.PSVersion.ToString()
-          powershell.exe -NoProfile -ExecutionPolicy Bypass -File hosts/windows-docker-desktop/tests/test-host-configuration.ps1

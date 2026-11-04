@@ -50,7 +50,7 @@ async fn register(
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn registration_sends_the_powershell_request_and_reads_the_response() {
+async fn registration_sends_the_request_and_reads_the_response() {
     let stub = Stub::start(vec![Reply::json(
         r#"{"runner":{"id":1},"encoded_jit_config":"abc123=="}"#,
     )]);

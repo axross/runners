@@ -1,19 +1,19 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    runs the Docker command line client and builds the job container's
-    arguments, name and name pattern. dot-sourced by the supervisor and by each
-    slot's background job, so it depends on nothing from host-configuration.ps1.
+    smoke-test helper, not a host script: runs the Docker command line client
+    and builds a job container's arguments for the image smoke tests. the CLI's
+    tests hold its launcher guard, probe reader and diagnostic variant equal to
+    the CLI's own.
 
 .DESCRIPTION
     Windows PowerShell 5.1 turns a native command's stderr output into a
     terminating error under $ErrorActionPreference = 'Stop' once it is
     redirected, so Invoke-Docker relaxes the preference and returns the exit
-    code. runner logging uses explicitly quoted process arguments and separate
-    pipes.
+    code.
 #>
 
-. (Join-Path $PSScriptRoot 'diagnostic-process-lifetime.ps1')
+. (Join-Path $PSScriptRoot 'smoke-diagnostic-process-lifetime.ps1')
 $script:CpuProbeMilliseconds = 30000
 $script:CpuProbeCleanupMilliseconds = 5000
 $script:DockerClientTerminationMilliseconds = 1000
@@ -31,14 +31,6 @@ function Invoke-Docker {
     } finally {
         $ErrorActionPreference = $previous
     }
-}
-
-# runs Docker and writes each output line to the information stream as it
-# arrives, so a job's log never reaches the output stream the supervisor parses.
-function Invoke-DockerLogged {
-    param([Parameter(Mandatory)][string[]]$Arguments)
-
-    return Invoke-DiagnosticContainerRun -Arguments $Arguments
 }
 
 # quotes only at the ProcessStartInfo boundary; callers still supply arrays.
@@ -63,53 +55,6 @@ function Invoke-DiagnosticDocker {
     $process.StartInfo = $info
     $null = $process.Start()
     return $process
-}
-
-# explicit native quoting preserves bash's arguments on Windows PowerShell 5.1.
-function Invoke-DiagnosticContainerRun {
-    param([string[]]$Arguments)
-
-    $clientJob = $null
-    $process = $null
-    try {
-        try {
-            if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
-                Initialize-DiagnosticProcessContainment
-                $clientJob = New-Object Runners.DiagnosticJob
-            }
-        } catch { Write-Warning 'Diagnostic gap: runner client lifetime containment unavailable.' }
-        $process = Invoke-DiagnosticDocker -Arguments $Arguments
-        try { if ($null -ne $clientJob) { $clientJob.Assign($process.Handle) } }
-        catch { Write-Warning 'Diagnostic gap: runner client lifetime containment unavailable.' }
-        $stdout = $process.StandardOutput.ReadLineAsync()
-        $stderr = $process.StandardError.ReadLineAsync()
-        while (-not $process.HasExited -or $null -ne $stdout -or $null -ne $stderr) {
-            foreach ($pipe in @('stdout', 'stderr')) {
-                $read = Get-Variable -Name $pipe -ValueOnly
-                if ($null -ne $read -and $read.IsCompleted) {
-                    $line = $read.GetAwaiter().GetResult()
-                    $next = $null
-                    if ($null -ne $line) {
-                        Write-Information $line
-                        if ($pipe -eq 'stdout') { $next = $process.StandardOutput.ReadLineAsync() }
-                        else { $next = $process.StandardError.ReadLineAsync() }
-                    }
-                    Set-Variable -Name $pipe -Value $next
-                }
-            }
-            Start-Sleep -Milliseconds 20
-        }
-        return $process.ExitCode
-    } finally {
-        try {
-            if ($null -ne $clientJob -and -not $clientJob.Close()) { throw 'runner client containment cleanup failed' }
-            if ($null -ne $process -and -not $process.HasExited) {
-                $process.Kill()
-                if (-not $process.WaitForExit($script:DockerClientTerminationMilliseconds)) { throw 'runner client termination failed' }
-            }
-        } catch { Write-Warning 'Diagnostic gap: runner client termination unavailable.' }
-        finally { if ($null -ne $process) { $process.Dispose() } }
-    }
 }
 
 # ranges are counted without expanding the daemon's entire CPU inventory.
@@ -265,10 +210,10 @@ function Get-SlotCpuAffinity {
     return $selection
 }
 
-# returns the `docker run` arguments of a job container. -Cpus is the text
-# Format-CpuCount returns; memory and swap are both -MemoryGb, so there is no swap
-# beyond the limit. `-e NAME` without a value makes the Docker client read the
-# registration from its own environment, never a command line.
+# returns the `docker run` arguments of a job container. memory and swap are both
+# -MemoryGb, so there is no swap beyond the limit. `-e NAME` without a value makes
+# the Docker client read the registration from its own environment, never a command
+# line.
 function Get-JobContainerArgument {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -317,25 +262,4 @@ printf 'CPU affinity verified: %s\n' "$allowed"
     return @('run', '--rm', '--pull', 'never', '--name', $Name,
         '--cpus', $Cpus, '--cpuset-cpus', $CpusetCpus, '--memory', "${MemoryGb}g", '--memory-swap', "${MemoryGb}g") + @($Mounts) +
         @('-e', $JitConfigVariable, $ImageName, 'bash', '-c', $launcher, '--', $CpusetCpus, $RunCommand)
-}
-
-# returns the name of a slot's next job container, which is also its GitHub
-# runner name; the invariant culture keeps the timestamp digits ASCII under any
-# calendar.
-function Get-JobContainerName {
-    param(
-        [Parameter(Mandatory)][string]$EntryName,
-        [Parameter(Mandatory)][int]$Slot,
-        [datetime]$Now = (Get-Date)
-    )
-
-    return "$EntryName-$Slot-$($Now.ToString('yyyyMMddHHmmssfff', [System.Globalization.CultureInfo]::InvariantCulture))"
-}
-
-# matches only this entry's job container names, so an entry whose name extends
-# this one is not matched; \z rather than $ keeps a trailing newline out.
-function Get-JobContainerNamePattern {
-    param([Parameter(Mandatory)][string]$Name)
-
-    return '^' + [regex]::Escape($Name) + '-\d+-\d{17}\z'
 }

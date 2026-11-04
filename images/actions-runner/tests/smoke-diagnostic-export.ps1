@@ -1,18 +1,18 @@
 #Requires -Version 5.1
+# smoke-test helper, not a host script: exports a retained diagnostic container's evidence for the image smoke test.
 $ErrorActionPreference = 'Stop'
-$script:DiagnosticStopMilliseconds = 12000
 $script:DiagnosticExportMilliseconds = 18000
 $script:DiagnosticHostMilliseconds = 24000
 $script:DiagnosticTerminationMilliseconds = 1000
-. (Join-Path $PSScriptRoot 'docker-commands.ps1')
-. (Join-Path $PSScriptRoot 'diagnostic-process-lifetime.ps1')
+. (Join-Path $PSScriptRoot 'smoke-docker-commands.ps1')
+. (Join-Path $PSScriptRoot 'smoke-diagnostic-process-lifetime.ps1')
 
 # evidence is private operator data, not a job mount or an automatic upload.
 function Assert-PrivateDiagnosticDirectory {
     param([string]$Path)
 
     $full = [IO.Path]::GetFullPath($Path)
-    $checkout = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..')).TrimEnd([IO.Path]::DirectorySeparatorChar)
+    $checkout = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..')).TrimEnd([IO.Path]::DirectorySeparatorChar)
     if ($full -eq $checkout -or $full.StartsWith($checkout + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
         throw 'diagnostic directory must be outside the checkout'
     }
@@ -39,41 +39,6 @@ function Assert-PrivateDiagnosticDirectory {
         if ($statExit -ne 0 -or $LASTEXITCODE -ne 0 -or "$owner" -ne "$current") { throw 'diagnostic directory owner differs' }
     }
     return $full
-}
-
-# drains pipes without retaining daemon text, which can contain private host data.
-function Invoke-BoundedDiagnosticStop {
-    [CmdletBinding()]
-    param([string[]]$Names, [Diagnostics.Stopwatch]$Clock)
-
-    $process = $null
-    $success = $false
-    try {
-        $deadline = [Math]::Min($Clock.ElapsedMilliseconds + $script:DiagnosticStopMilliseconds, $script:DiagnosticExportMilliseconds)
-        if ($Clock.ElapsedMilliseconds -ge $deadline) { throw 'diagnostic stop timeout' }
-        $process = Invoke-DiagnosticDocker -Arguments (@('stop') + $Names)
-        $null = $process.StandardOutput.BaseStream.CopyToAsync([IO.Stream]::Null)
-        $null = $process.StandardError.BaseStream.CopyToAsync([IO.Stream]::Null)
-        if (-not $process.WaitForExit([Math]::Max(1, $deadline - $Clock.ElapsedMilliseconds)) -or $process.ExitCode -ne 0) {
-            throw 'diagnostic stop failed or timed out'
-        }
-        $success = $true
-    } catch {
-        Write-Warning 'Diagnostic gap: stop unavailable or over budget; export and removal will still be attempted.'
-    } finally {
-        if ($null -ne $process) {
-            try {
-                if (-not $process.HasExited) {
-                    $process.Kill()
-                    $remaining = [Math]::Max(1, [Math]::Min($script:DiagnosticTerminationMilliseconds, $script:DiagnosticHostMilliseconds - $Clock.ElapsedMilliseconds))
-                    if (-not $process.WaitForExit($remaining)) { throw 'diagnostic stop client termination unavailable' }
-                }
-            } catch {
-                Write-Warning 'Diagnostic gap: stop client termination unavailable.'
-            } finally { $process.Dispose() }
-        }
-    }
-    return $success
 }
 
 # one monotonic deadline covers all bytes, including blocked or truncated copies.
@@ -229,7 +194,7 @@ function Export-RunnerDiagnostic {
 # isolates all storage operations, including synchronous I/O, behind one deadline.
 function Invoke-BoundedDiagnosticExport {
     param([string]$Name, [string]$EntryName, [string]$Directory, [bool]$RawRecords, [Diagnostics.Stopwatch]$Clock,
-        [int]$DeadlineMilliseconds = $script:DiagnosticExportMilliseconds, [string]$ScriptPath = (Join-Path $PSScriptRoot 'export-runner-diagnostics.ps1'))
+        [int]$DeadlineMilliseconds = $script:DiagnosticExportMilliseconds, [string]$ScriptPath = (Join-Path $PSScriptRoot 'smoke-export-runner-diagnostics.ps1'))
 
     if ($Clock.ElapsedMilliseconds -ge $DeadlineMilliseconds) { throw 'diagnostic finalization timeout' }
     $arguments = @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', $ScriptPath, '-Name', $Name, '-EntryName', $EntryName, '-Directory', $Directory)
@@ -292,63 +257,4 @@ function Invoke-BoundedDiagnosticExport {
             $process.Dispose()
         }
     }
-}
-
-# drains removal output because daemon errors are not safe diagnostic evidence.
-function Invoke-BoundedContainerRemoval {
-    param([string]$Name, [Diagnostics.Stopwatch]$Clock, [int]$DeadlineMilliseconds = $script:DiagnosticHostMilliseconds)
-
-    $process = $null
-    $removed = $false
-    try {
-        $process = Invoke-DiagnosticDocker -Arguments @('rm', '-f', $Name)
-        $null = $process.StandardOutput.BaseStream.CopyToAsync([IO.Stream]::Null)
-        $null = $process.StandardError.BaseStream.CopyToAsync([IO.Stream]::Null)
-        $removed = $process.WaitForExit([Math]::Max(1, $DeadlineMilliseconds - $Clock.ElapsedMilliseconds)) -and $process.ExitCode -eq 0
-        if (-not $removed) { Write-Warning 'Container removal failed or over budget; startup recovery remains required.' }
-    } catch { Write-Warning 'Container removal unavailable; startup recovery remains required.' }
-    finally {
-        if ($null -ne $process) {
-            try {
-                if (-not $process.HasExited) {
-                    $process.Kill()
-                    if (-not $process.WaitForExit([Math]::Max(1, [Math]::Min($script:DiagnosticTerminationMilliseconds, $DeadlineMilliseconds - $Clock.ElapsedMilliseconds)))) {
-                        throw 'removal client still active'
-                    }
-                }
-            } catch { Write-Warning 'Diagnostic gap: removal client termination failed or unknown.' }
-            finally { $process.Dispose() }
-        }
-    }
-    return $removed
-}
-
-# removal is attempted after every export outcome, without replacing runner status.
-function Complete-DiagnosticContainer {
-    [CmdletBinding()]
-    param([string]$Name, [string]$EntryName, [string]$Directory, [bool]$RawRecords,
-        [Diagnostics.Stopwatch]$Clock = [Diagnostics.Stopwatch]::StartNew(), [long]$CompletedAt = 0)
-
-    $queuedMilliseconds = 0L
-    if ($CompletedAt -gt 0) {
-        $age = ([Diagnostics.Stopwatch]::GetTimestamp() - $CompletedAt) * 1000 / [Diagnostics.Stopwatch]::Frequency
-        $queuedMilliseconds = [long][Math]::Min($script:DiagnosticHostMilliseconds, [Math]::Max(0, $age - $Clock.ElapsedMilliseconds))
-    }
-    $exportDeadline = [int]($script:DiagnosticExportMilliseconds - $queuedMilliseconds)
-    $hostDeadline = [int]($script:DiagnosticHostMilliseconds - $queuedMilliseconds)
-    try {
-        if ($Clock.ElapsedMilliseconds -ge $exportDeadline) {
-            Write-Warning 'Diagnostic gap: finalization budget spent while waiting; export skipped.'
-        } else {
-            Invoke-BoundedDiagnosticExport -Name $Name -EntryName $EntryName -Directory $Directory -RawRecords $RawRecords -Clock $Clock -DeadlineMilliseconds $exportDeadline
-        }
-    } catch {
-        if ($_.Exception.Message -eq 'diagnostic sink full (ten bundles)') {
-            Write-Warning 'Diagnostic gap: private sink full (ten bundles); prior evidence retained.'
-        } elseif ($_.Exception.Message -eq 'diagnostic containment unavailable') {
-            Write-Warning 'Diagnostic gap: exporter containment unavailable; export not admitted.'
-        } else {
-            Write-Warning 'Diagnostic gap: private export unavailable, incomplete, unsafe or over budget; prior evidence retained.'
-        }
-    } finally { $null = Invoke-BoundedContainerRemoval -Name $Name -Clock $Clock -DeadlineMilliseconds $hostDeadline }
 }

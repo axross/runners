@@ -1,33 +1,33 @@
 # runners
 
-Generic GitHub Actions self-hosted runner images and host scripts, and later the
-host configuration for Claude Code Remote Control and Amp runner agent hosts on
-WSL 2.
+Generic GitHub Actions self-hosted runner images and the CLI that runs them, and
+later the host configuration for Claude Code Remote Control and Amp runner agent
+hosts on WSL 2.
 
 ## Status
 
 The repository holds the entry files for agent sessions, the agent configuration
 for Claude Code and Amp, the project documentation, the pinned lint toolchain, and
-the first runner material: one runner image and the host scripts that run it for
-several repositories from a Windows machine with Docker Desktop.
+the first runner material: one runner image and a Rust command line tool, the CLI,
+`marshal`, that runs it for several repositories from a Windows machine with Docker
+Desktop.
 [Windows Runner Host](./docs/operations/windows-runner-host.md) owns the operator
-procedure and states what has and has not been verified on a real host. A Rust
-command line tool, the CLI, `marshal`, replaces those scripts: it checks a host
-configuration, its `build` command builds the runner image, its `start`, `stop`,
-`restart`, and `status` commands run a host's pools, and its `diagnostics` command
-exports what a diagnostics-enabled pool left. The axpc host runs its pools with a
-released `marshal`, and the scripts stay only as its rollback path. On the axmc host,
-an Apple silicon Mac, `marshal` runs each Linux pool's jobs in a fresh Tart Ubuntu VM
-that is cloned from a golden VM, on Softnet, with no Docker Desktop, and
-`marshal build --profile axmc` makes the golden VM.
+procedure and states what has and has not been verified on a real host. The CLI
+checks a host configuration, its `build` command builds the runner image, its
+`start`, `stop`, `restart`, and `status` commands run a host's pools, and its
+`diagnostics` command exports what a diagnostics-enabled pool left. The axpc host
+runs its pools with a released `marshal`. On the axmc host, an Apple silicon Mac,
+`marshal` runs each Linux pool's jobs in a fresh Tart Ubuntu VM that is cloned from
+a golden VM, on Softnet, with no Docker Desktop, and `marshal build --profile axmc`
+makes the golden VM.
 [macOS Runner Host](./docs/operations/macos-runner-host.md) owns that procedure and
-states what has and has not been run on the Mac. The agent-host
-configuration is not here yet. Layout:
+states what has and has not been run on the Mac. The agent-host configuration is not
+here yet. Layout:
 
 | Path                            | Holds                                                                                                                                                           | State   |
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | `images/actions-runner/`        | The runner image: GitHub's runner image plus build dependencies, pinned by digest                                                                               | Present |
-| `hosts/windows-docker-desktop/` | The supervisor, image rebuild, and scheduled-task scripts, kept as the rollback path, and an example configuration                                              | Present |
+| `hosts/windows-docker-desktop/` | An example configuration for the axpc host profile, and the reference for its fields                                                                            | Present |
 | `cli/`                          | The CLI: `validate` checks a host configuration, `build` builds the runner image, and `start`, `stop`, `restart`, `status`, and `diagnostics` run a host        | Present |
 | `release/`                      | The pinned semantic-release tooling that `release.yaml` runs to tag and publish the CLI's releases                                                              | Present |
 | `hosts/macos/`                  | An example configuration for the macOS host profile, `axmc`, whose Linux pools run in Tart VMs; see [macOS Runner Host](./docs/operations/macos-runner-host.md) | Present |
@@ -88,14 +88,11 @@ Run from the repository root.
 | `mise run check:docs`               | Run the `docs/` structural validators                                                                                                                                                                                                                                                                                                |
 | `mise run check:amp`                | Run the Amp quality-hooks plugin's smoke test (`node --test`, no install needed)                                                                                                                                                                                                                                                     |
 | `mise run check:skills`             | Check that `skills-lock.json` and `.claude/skills/` list the same skills                                                                                                                                                                                                                                                             |
-| `mise run build:rust`               | Build the CLI's debug binary at `cli/target/debug/marshal`                                                                                                                                                                                                                                                                           |
 | `mise run lint:rust`                | clippy over the CLI, all targets, warnings as errors                                                                                                                                                                                                                                                                                 |
-| `mise run test:host`                | Check the Windows host configuration validation against the shared fixtures, the example, and its other checks                                                                                                                                                                                                                       |
 | `mise run test:set-release-version` | Run the version write script, `.github/scripts/set-release-version.sh`, against temporary copies of `Cargo.toml` and `Cargo.lock`: a release and a prerelease version, invalid versions, a missing placeholder, a duplicate entry, and CRLF files                                                                                    |
 | `mise run test:verify-release`      | Run the release gate, `.github/scripts/verify-release.sh`, against temporary release files: the plan phase's output, the exact files, a missing, extra, or misnamed file, a directory in place of a binary, a checksum mismatch, an unset or unknown phase, and the asset globs in `release/.releaserc.json` against the exact files |
 | `mise run test:rust`                | Run the CLI's unit and integration tests, which read the shared fixtures                                                                                                                                                                                                                                                             |
 | `mise run deny:rust`                | `cargo deny` bans, licenses, and sources over the CLI's crates; the advisory check runs in its own workflow                                                                                                                                                                                                                          |
-| `mise run test:parity`              | Build the CLI and check it against the PowerShell validator on the shared fixtures, after the harness's self-test                                                                                                                                                                                                                    |
 | `mise run check`                    | Run every gate above except the writing `format`; this is what CI runs                                                                                                                                                                                                                                                               |
 
 The installed copies under `.claude/skills/` are generated and are excluded from

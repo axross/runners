@@ -1,6 +1,6 @@
 //! the exporter: writes a diagnostic container's bundle into its pool's sink in a
 //! child process, so a hung sink or client holds only the child; its file formats and
-//! exit codes are the PowerShell exporter's, see `docs/operations/cli.md`.
+//! exit codes are stated in `docs/operations/cli.md`.
 
 pub mod archive;
 pub mod exporter;

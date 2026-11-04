@@ -682,7 +682,7 @@ impl<C: Clock> Backend for DockerBackend<C> {
     async fn select_cpuset(&self, request: &CpuRequest) -> Result<String, BackendError> {
         let selection = self.read_allowed_cpus(request).await;
         // the cleanup runs whatever the probe did, and its failure outranks the
-        // probe's result, as in the PowerShell `finally`.
+        // probe's result.
         self.remove_probe(&request.probe_name).await?;
         selection
     }

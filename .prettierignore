@@ -15,8 +15,8 @@ release/package-lock.json
 
 .claude/settings.local.json
 
-# declared-divergence fixtures whose exact bytes are the test: invalid JSON, a
-# byte order mark, comments, trailing commas, and invalid UTF-8.
+# raw fixtures whose exact bytes are the test: invalid JSON, a byte order mark,
+# comments, trailing commas, and invalid UTF-8.
 tests/host-configuration/rust/raw/
 
 cli/target/
