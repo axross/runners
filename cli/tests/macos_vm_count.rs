@@ -199,18 +199,19 @@ async fn a_leftover_job_vm_of_an_unconfigured_pool_reported_as_linux_does_not_co
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn a_leftover_job_vm_whose_os_is_unreadable_counts_only_while_booted() {
+async fn a_leftover_job_vm_whose_os_is_unreadable_counts_in_every_state_and_is_named() {
     for state in ALL_STATES {
         let name = job("gone", 1);
         let tart = FakeTart::with(&[(&name, state)]);
         let counted = count(&tart).await;
-        let expected = usize::from(state != VmState::Stopped);
-        assert_eq!(counted.total(), expected, "{state:?}");
-        if expected == 1 {
-            assert_eq!(reason_of(&counted, &name), Some(Reason::UnreadableOs));
-            assert_eq!(counted.leftover_jobs(), [name.as_str()]);
-        }
-        assert_eq!(tart.asked(), [name.as_str()]);
+        assert_eq!(counted.total(), 1, "{state:?}");
+        assert_eq!(
+            reason_of(&counted, &name),
+            Some(Reason::UnreadableOs),
+            "{state:?}"
+        );
+        assert_eq!(counted.leftover_jobs(), [name.as_str()], "{state:?}");
+        assert_eq!(tart.asked(), [name.as_str()], "{state:?}");
     }
 }
 
@@ -290,21 +291,68 @@ async fn a_golden_macos_vm_booted_by_hand_counts_as_a_reported_macos_vm() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn linux_job_build_and_golden_vms_never_count_and_are_never_asked_about() {
-    let linux_job = job("lin", 1);
+async fn linux_build_and_golden_vms_never_count_and_are_never_asked_about() {
     for state in ALL_STATES {
-        let tart = FakeTart::with(&[
-            (&linux_job, state),
-            (LINUX_BUILD, state),
-            (LINUX_GOLDEN, state),
-        ]);
+        let tart = FakeTart::with(&[(LINUX_BUILD, state), (LINUX_GOLDEN, state)]);
         // an answer of macOS would count them, so a lookup would show.
-        for name in [linux_job.as_str(), LINUX_BUILD, LINUX_GOLDEN] {
+        for name in [LINUX_BUILD, LINUX_GOLDEN] {
             tart.reports(name, GuestOs::Macos);
         }
         assert_eq!(count(&tart).await.total(), 0, "{state:?}");
         assert!(tart.asked().is_empty(), "{state:?}");
     }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_job_vm_of_a_configured_linux_pool_counts_when_the_lookup_reports_macos() {
+    for state in ALL_STATES {
+        let name = job("lin", 1);
+        let tart = FakeTart::with(&[(&name, state)]);
+        tart.reports(&name, GuestOs::Macos);
+        let counted = count(&tart).await;
+        assert_eq!(counted.total(), 1, "{state:?}");
+        assert_eq!(
+            reason_of(&counted, &name),
+            Some(Reason::LinuxPoolJobReportedMacos),
+            "{state:?}"
+        );
+        assert!(counted.leftover_jobs().is_empty(), "{state:?}");
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_job_vm_of_a_configured_linux_pool_does_not_count_when_reported_as_linux() {
+    for state in ALL_STATES {
+        let name = job("lin", 1);
+        let tart = FakeTart::with(&[(&name, state)]);
+        tart.reports(&name, GuestOs::Linux);
+        assert_eq!(count(&tart).await.total(), 0, "{state:?}");
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_job_vm_of_a_configured_linux_pool_does_not_count_when_its_os_is_unreadable() {
+    for state in ALL_STATES {
+        let name = job("lin", 1);
+        let tart = FakeTart::with(&[(&name, state)]);
+        let counted = count(&tart).await;
+        assert_eq!(counted.total(), 0, "{state:?}");
+        assert!(counted.leftover_jobs().is_empty(), "{state:?}");
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn the_lookup_is_asked_once_about_each_job_vm_of_a_configured_linux_pool() {
+    let (first, second, third) = (job("lin", 1), job("lin", 2), job("lin", 3));
+    let tart = FakeTart::with(&[
+        (&first, VmState::Running),
+        (&second, VmState::Stopped),
+        (&third, VmState::Suspended),
+    ]);
+    count(&tart).await;
+    let mut expected = [first, second, third];
+    expected.sort();
+    assert_eq!(tart.asked(), expected);
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -319,7 +367,7 @@ async fn a_pool_name_ending_in_digits_is_matched_whole() {
     ]);
     let counted = count(&tart).await;
     assert_eq!(names(&counted), [of_macos_pool.as_str()]);
-    assert!(tart.asked().is_empty());
+    assert_eq!(tart.asked(), [of_linux_pool.as_str()]);
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -350,12 +398,14 @@ async fn each_counted_vm_has_its_reason_and_the_lookup_is_asked_once_for_each_op
         job("gone", 2),
         job("gone-too", 1),
     );
+    let (linux_job, linux_job_reported_macos) = (job("lin", 1), job("lin", 2));
     let tart = FakeTart::with(&[
         (&macos_job, VmState::Stopped),
         (MACOS_BUILD, VmState::Running),
         (MACOS_GOLDEN, VmState::Stopped),
         (LINUX_GOLDEN, VmState::Running),
-        (&job("lin", 1), VmState::Running),
+        (&linux_job, VmState::Running),
+        (&linux_job_reported_macos, VmState::Stopped),
         (&gone, VmState::Stopped),
         (&gone_linux, VmState::Running),
         (&gone_unreadable, VmState::Suspended),
@@ -365,6 +415,8 @@ async fn each_counted_vm_has_its_reason_and_the_lookup_is_asked_once_for_each_op
         ("foreign-stopped", VmState::Stopped),
     ]);
     tart.reports(&gone, GuestOs::Macos)
+        .reports(&linux_job, GuestOs::Linux)
+        .reports(&linux_job_reported_macos, GuestOs::Macos)
         .reports(&gone_linux, GuestOs::Linux)
         .reports("foreign-mac", GuestOs::Macos)
         .reports("foreign-linux", GuestOs::Linux);
@@ -381,6 +433,11 @@ async fn each_counted_vm_has_its_reason_and_the_lookup_is_asked_once_for_each_op
             CountedVm {
                 name: MACOS_BUILD.to_string(),
                 reason: Reason::MacosBuild,
+                leftover_job: false
+            },
+            CountedVm {
+                name: linux_job_reported_macos.clone(),
+                reason: Reason::LinuxPoolJobReportedMacos,
                 leftover_job: false
             },
             CountedVm {
@@ -405,12 +462,14 @@ async fn each_counted_vm_has_its_reason_and_the_lookup_is_asked_once_for_each_op
             },
         ]
     );
-    assert_eq!(counted.total(), 6);
+    assert_eq!(counted.total(), 7);
     assert_eq!(
         counted.leftover_jobs(),
         [gone.as_str(), gone_unreadable.as_str()]
     );
     let mut expected_asked = vec![
+        linux_job,
+        linux_job_reported_macos,
         gone,
         gone_linux,
         gone_unreadable,

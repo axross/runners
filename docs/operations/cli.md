@@ -1089,25 +1089,27 @@ operating systems, and an OS lookup that stands in for `tart get`, and calls no
 process itself. The lookup answers macOS, Linux, or unreadable, which covers a
 failed call and an answer the reader does not know.
 
-| Counts                                                                                                                   | Does not count                                                       |
-| ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
-| A job VM of a configured macOS pool, or a macOS build VM, by its name form, in any state                                 | The golden macOS VM while it is stopped                              |
-| A Marshal job VM of a pool that is not configured, in any state, when the lookup reports macOS                           | Job, build, and golden VMs of configured Linux pools, by their names |
-| Any other running or suspended VM the lookup reports as macOS, including the golden macOS VM if someone boots it by hand | Other VMs the lookup reports as Linux                                |
-| Any running or suspended VM whose operating system is unreadable                                                         | Stopped VMs that Marshal did not create                              |
+| Counts                                                                                                                                      | Does not count                                                                |
+| ------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| A job VM of a configured macOS pool, or a macOS build VM, by its name form, in any state                                                    | The golden macOS VM while it is stopped                                       |
+| A Marshal job VM of a pool that is no longer configured, or whose `os` changed, in any state, when the lookup reports macOS                 | Linux golden and build VMs, by their name forms                               |
+| Any other running or suspended VM the lookup reports as macOS, including the golden macOS VM if someone boots it by hand                    | A job VM of a configured Linux pool, unless the lookup reports macOS          |
+| Any running or suspended VM whose operating system is unreadable, and a Marshal job VM of a pool that is no longer configured, in any state | Other VMs the lookup reports as Linux, and stopped VMs Marshal did not create |
 
 - **The lookup is asked only what the names leave open**, once for each such VM:
-  a Marshal job VM of an unconfigured pool in any state, and any other running or
-  suspended VM that is not a Linux golden or build VM. A VM the name and the
-  configured pools already decide is never asked about.
+  a Marshal job VM in any state whose pool is not a configured macOS pool, and any
+  other running or suspended VM that is not a Linux golden or build VM. A VM the
+  name and the configured pools already decide is never asked about.
 - **Unreadable counts** because over-counting only makes a job wait, while
-  under-counting could exceed the licence. A stopped VM of an unconfigured pool
-  whose operating system is unreadable does not count, because the table counts
-  unreadable VMs only while they run or are suspended.
-- **A job VM of a configured Linux pool never counts**, so a macOS VM left under a
-  pool name that has since become a Linux pool is not counted: the count would have
-  to ask about every Linux job VM to see it, and `start` deletes a configured
-  pool's leftovers by name before it registers anything.
+  under-counting could exceed the licence. A job VM of an unconfigured pool counts
+  in any state when its operating system is unreadable, and is named in the log
+  and in `status`, where the maintainer sees it and deletes it.
+- **A job VM of a configured Linux pool is presumed Linux.** Only an explicit
+  macOS answer counts it, as a VM left from before the pool's `os` changed. An
+  answer of Linux, or an unreadable one, in any state, does not, so a `tart get`
+  that fails never blocks macOS jobs because of Linux job VMs. It is not a
+  leftover of an unconfigured pool, because `start` is to delete a configured
+  pool's leftovers.
 - **A failed deletion** needs no rule of its own: the VM stays in Tart's list, so
   it counts until a later attempt deletes it.
 - **The output** is the VMs that count, each with its reason; the total; whether a

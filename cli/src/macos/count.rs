@@ -62,10 +62,14 @@ pub enum Reason {
     MacosBuild,
     /// a Marshal job VM of a pool that is no longer configured, reported as macOS.
     LeftoverJobReportedMacos,
+    /// a job VM of a configured Linux pool that the lookup reports as macOS, such as
+    /// one left from before the pool's `os` changed.
+    LinuxPoolJobReportedMacos,
     /// any other running or suspended VM reported as macOS, such as a golden macOS
     /// VM someone booted by hand.
     ReportedMacos,
-    /// a running or suspended VM whose operating system could not be read.
+    /// a VM whose operating system could not be read: any Marshal job VM of an
+    /// unconfigured pool, or any other running or suspended VM.
     UnreadableOs,
 }
 
@@ -79,8 +83,11 @@ impl Reason {
             Self::LeftoverJobReportedMacos => {
                 "a leftover job VM of a pool that is no longer configured, reported as macOS"
             }
+            Self::LinuxPoolJobReportedMacos => {
+                "a job VM of a configured Linux pool, reported as macOS"
+            }
             Self::ReportedMacos => "a running or suspended VM reported as macOS",
-            Self::UnreadableOs => "a running or suspended VM whose operating system is unreadable",
+            Self::UnreadableOs => "a VM whose operating system is unreadable",
         }
     }
 }
@@ -131,14 +138,23 @@ impl MacosVmCount {
     }
 }
 
+/// which VMs the name leaves open, which decides what an answer of the lookup means.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Open {
+    /// a Marshal job VM of a pool that is not configured.
+    LeftoverJob,
+    /// a job VM of a configured Linux pool: Linux unless the lookup says macOS.
+    LinuxPoolJob,
+    /// any other VM that is running or suspended.
+    Foreign,
+}
+
 /// what the name and the configured pools settle about one VM.
 enum Verdict {
     Counts(Reason),
     DoesNotCount,
     /// the name does not decide it, so `tart get` is asked.
-    Ask {
-        leftover_job: bool,
-    },
+    Ask(Open),
 }
 
 fn judge_by_name(vm: &ListedVm, pools: &[ConfiguredPool]) -> Verdict {
@@ -148,8 +164,8 @@ fn judge_by_name(vm: &ListedVm, pools: &[ConfiguredPool]) -> Verdict {
     if let Some(job) = JobName::parse(&vm.name) {
         return match pools.iter().find(|pool| pool.name == job.pool) {
             Some(pool) if pool.os == Os::Macos => Verdict::Counts(Reason::ConfiguredMacosJob),
-            Some(_) => Verdict::DoesNotCount,
-            None => Verdict::Ask { leftover_job: true },
+            Some(_) => Verdict::Ask(Open::LinuxPoolJob),
+            None => Verdict::Ask(Open::LeftoverJob),
         };
     }
     let is_linux_form =
@@ -159,27 +175,30 @@ fn judge_by_name(vm: &ListedVm, pools: &[ConfiguredPool]) -> Verdict {
     if is_linux_form || is_stopped_golden || !vm.state.is_booted() {
         Verdict::DoesNotCount
     } else {
-        Verdict::Ask {
-            leftover_job: false,
-        }
+        Verdict::Ask(Open::Foreign)
     }
 }
 
-/// what the answer of `tart get` settles about a VM the name left open.
-fn judge_by_os(vm: &ListedVm, leftover_job: bool, os: GuestOs) -> Option<Reason> {
-    match os {
-        GuestOs::Macos if leftover_job => Some(Reason::LeftoverJobReportedMacos),
-        GuestOs::Macos => Some(Reason::ReportedMacos),
-        GuestOs::Unreadable if vm.state.is_booted() => Some(Reason::UnreadableOs),
-        GuestOs::Linux | GuestOs::Unreadable => None,
+/// what the answer of `tart get` settles about a VM the name left open. Only an
+/// explicit macOS answer counts a job VM of a configured Linux pool, so a lookup
+/// that fails never blocks macOS jobs because of Linux VMs.
+fn judge_by_os(vm: &ListedVm, open: Open, os: GuestOs) -> Option<Reason> {
+    match (os, open) {
+        (GuestOs::Macos, Open::LeftoverJob) => Some(Reason::LeftoverJobReportedMacos),
+        (GuestOs::Macos, Open::LinuxPoolJob) => Some(Reason::LinuxPoolJobReportedMacos),
+        (GuestOs::Macos, Open::Foreign) => Some(Reason::ReportedMacos),
+        (GuestOs::Unreadable, Open::LeftoverJob) => Some(Reason::UnreadableOs),
+        (GuestOs::Unreadable, Open::Foreign) if vm.state.is_booted() => Some(Reason::UnreadableOs),
+        (GuestOs::Linux, _) | (GuestOs::Unreadable, _) => None,
     }
 }
 
 /// counts the macOS VMs in `vms`, a single reading of `tart list`.
 ///
 /// `lookup` is called once for each VM the name and `pools` leave open, and for
-/// no other: a Marshal job VM of an unconfigured pool in any state, and any other
-/// running or suspended VM that is not a Linux golden or build VM.
+/// no other: a Marshal job VM in any state whose pool is not configured as a macOS
+/// pool, and any other running or suspended VM that is not a Linux golden or build
+/// VM.
 pub async fn count_macos_vms(
     vms: &[ListedVm],
     pools: &[ConfiguredPool],
@@ -190,9 +209,9 @@ pub async fn count_macos_vms(
         let (reason, leftover_job) = match judge_by_name(vm, pools) {
             Verdict::Counts(reason) => (Some(reason), false),
             Verdict::DoesNotCount => (None, false),
-            Verdict::Ask { leftover_job } => {
+            Verdict::Ask(open) => {
                 let os = lookup.guest_os(&vm.name).await;
-                (judge_by_os(vm, leftover_job, os), leftover_job)
+                (judge_by_os(vm, open, os), open == Open::LeftoverJob)
             }
         };
         if let Some(reason) = reason {
