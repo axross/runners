@@ -1,7 +1,7 @@
 //! reading fields from the parsed tree and recording what is wrong with them:
-//! [`required`] reports `null` as a missing field, as the PowerShell validator does for
-//! a required value, and a caller matching on [`Field::get`] gets a type error for it,
-//! as for a field read directly; see `docs/operations/cli.md`.
+//! [`required`] reports `null` as a missing field, and a caller matching on
+//! [`Field::get`] gets a type error for it, as for a field read directly; see
+//! `docs/operations/cli.md`.
 
 use std::fmt;
 

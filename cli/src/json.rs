@@ -1,6 +1,6 @@
 //! a strict, order-preserving JSON reader: RFC 8259 and nothing more, with numbers
 //! kept as their literal text so a caller decides what an out-of-range one means.
-//! its duplicate-key rule is the PowerShell validator's, see `docs/operations/cli.md`.
+//! its duplicate-key rule is stated in `docs/operations/cli.md`.
 
 use std::collections::HashMap;
 
@@ -43,7 +43,7 @@ impl Number {
     }
 
     /// returns the nearest double, infinity for a literal beyond the range of a
-    /// double, as in PowerShell.
+    /// double.
     #[must_use]
     pub fn as_f64(&self) -> f64 {
         self.literal.parse().unwrap_or(f64::NAN)

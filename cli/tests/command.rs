@@ -66,7 +66,7 @@ fn the_axmc_example_is_not_an_axpc_configuration() {
 }
 
 #[test]
-fn rejects_with_every_error_in_the_powershell_format_and_writes_nothing_to_stdout() {
+fn rejects_with_every_error_in_the_validation_format_and_writes_nothing_to_stdout() {
     let fixture =
         repository_root().join("tests/host-configuration/shared/rejected/integer-literals.json");
     let output = run_path(&fixture, Some("axpc"));

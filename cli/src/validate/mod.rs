@@ -1,7 +1,7 @@
 //! host configuration validation: [`validate`] is a pure function from configuration
 //! bytes and a profile to a plan or an ordered list of errors, in the order and with
-//! the message text of `hosts/windows-docker-desktop/host-configuration.ps1`; it reads
-//! nothing but its arguments, so a token file is not its concern.
+//! the message text that `docs/operations/cli.md` states; it reads nothing but its
+//! arguments, so a token file is not its concern.
 
 mod budget;
 mod entry;

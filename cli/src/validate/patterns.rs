@@ -1,5 +1,5 @@
-//! the value patterns of the host configuration; each matches the whole value, as
-//! the PowerShell validator's `\z` does, so a trailing newline never passes.
+//! the value patterns of the host configuration; each matches the whole value, so a
+//! trailing newline never passes.
 
 use std::sync::LazyLock;
 

@@ -4,8 +4,7 @@ use crate::affinity::{affinity_count, affinity_offset};
 use crate::profile::Profile;
 use crate::validate::{Plan, format_cpu_count, format_nanos, usage};
 
-/// returns the summary lines; on axpc they equal the PowerShell supervisor's
-/// `-ValidateOnly` lines.
+/// returns the summary lines of a plan.
 #[must_use]
 pub fn plan_summary(plan: &Plan) -> Vec<String> {
     match plan.profile {

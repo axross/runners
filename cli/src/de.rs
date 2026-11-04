@@ -55,8 +55,8 @@ impl<'de> Deserializer<'de> {
         }
     }
 
-    /// matches member names to struct field names ignoring ASCII case, as PowerShell
-    /// does; map keys and enum variants stay exact.
+    /// matches member names to struct field names ignoring ASCII case; map keys and
+    /// enum variants stay exact.
     #[must_use]
     pub fn ignoring_field_case(self) -> Self {
         Self {

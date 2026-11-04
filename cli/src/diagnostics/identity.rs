@@ -49,7 +49,7 @@ pub fn identity_text(output: &[u8]) -> Result<String, IdentityError> {
 mod tests {
     use super::*;
 
-    /// the readback the PowerShell test's fake `docker` prints.
+    /// a readback in the identity format.
     fn readback() -> String {
         format!(
             "sha256:{}|1500000000|900|900|150000|100000|1,3-4|false|7",
