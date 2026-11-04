@@ -164,10 +164,7 @@ function Get-InstalledProduct {
 function Get-UninstallEntryName {
     param([Parameter(Mandatory = $true)][string]$Root)
     if (-not (Test-Path -LiteralPath $Root)) { return , @() }
-    $names = @(Get-ChildItem -LiteralPath $Root | Where-Object {
-            $properties = Get-ItemProperty -LiteralPath $_.PSPath
-            $properties.PSObject.Properties['DisplayName'] -and $properties.DisplayName -eq 'marshal'
-        } | ForEach-Object { $_.PSChildName })
+    $names = @(Get-ChildItem -LiteralPath $Root | Where-Object { $_.GetValue('DisplayName') -eq 'marshal' } | ForEach-Object { $_.PSChildName })
     return , $names
 }
 
