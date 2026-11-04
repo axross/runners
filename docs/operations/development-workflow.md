@@ -501,13 +501,14 @@ Do these once, before the first dispatch:
 
 2. Dispatch `release.yaml` on main, from Actions, Release, Run workflow, or with
    `gh workflow run release.yaml --repo axross/runners --ref main`. A dispatch made
-   while another release runs waits for it. The `release` concurrency group holds
-   one waiting run, so a later dispatch cancels an earlier one that is still
-   waiting, and only the latest of them runs. A run that waits at the `release`
+   while another release runs is queued behind it. The `release` concurrency group
+   holds one queued run, so a later dispatch cancels an earlier one that is still
+   queued, and only the latest of them runs. A run that waits at the `release`
    Environment's approval (step 4) is expected to hold the group like a running one,
-   so a later dispatch waits behind it. GitHub's documentation on concurrency groups
-   and on reviewing deployments does not say so, and it has not been observed here.
-   Approve or reject a waiting run before dispatching again.
+   so a later dispatch is queued behind it. GitHub's documentation on concurrency
+   groups and on reviewing deployments does not say so, and it has not been observed
+   here. Approve or reject a run that waits at the approval before dispatching
+   again.
 3. When there is nothing to release, the plan job hands out no version, and the
    other jobs are skipped. The run is green and releases nothing.
 4. When there is something to release, the run builds, then waits at `sign-macos`
@@ -516,11 +517,10 @@ Do these once, before the first dispatch:
    step 1 checked the tip of `origin/main` when you dispatched and a run can wait up
    to 30 days. Approve only if every commit since the last `v*` tag, up to that SHA,
    came from a merged pull request; otherwise reject the run. A rejected deployment
-   fails the run, and the jobs after it are skipped. Once it
-   runs, read `sign-macos`'s log for the expiry warnings: it prints each
-   certificate's subject, team and expiry date, and warns when one expires within 90
-   days. A warning means renewing the certificates, as below, before the next
-   release. A failure in `sign-macos`, `verify-macos` or `assemble-signed` stops the
+   fails the run, and the jobs after it are skipped. Once it runs, read
+   `sign-macos`'s log for the expiry warnings: it prints each certificate's subject,
+   team and expiry date, and warns when one expires within 90 days. A warning means
+   renewing the certificates, as below, before the next release. A failure in `sign-macos`, `verify-macos` or `assemble-signed` stops the
    run before any tag is pushed; fix it in a pull request and dispatch again.
 5. After a green run, check that the release exists and carries exactly the two
    binaries, the MSI and the pkg, and `SHA256SUMS`:

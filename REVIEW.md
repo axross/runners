@@ -123,7 +123,8 @@ Codex review uses its native priority label.
   comment, or a test fixture. The public maintainer handle and the owner and
   repository names of this repository and of `axross/skills` are allowed, and so
   are the default runner labels `axpc` and `axmc`, the two committed host labels,
-  kept by the maintainer's decision (see
+  kept by the maintainer's decision, and the macOS signing team ID and designated
+  requirement that a later CLI record may hold, as Security records (see
   [Security](docs/conventions/security.md#nothing-identifying-or-secret-is-committed)).
   An example uses an obviously fake
   placeholder (`<owner>`, `<repo>`, `example.invalid`). A value a runner needs
@@ -180,10 +181,10 @@ Codex review uses its native priority label.
 - **Secrets stay out of logs and images.** A secret is never echoed, passed on
   a command line that a process listing exposes, written into an image layer
   (`ENV`, `ARG`, `COPY`), or left in a build cache. The one recorded exception for a
-  credential is `security`'s password arguments in `sign-macos`; the notary API key's
-  ID and issuer ID also reach `notarytool` as arguments, because they identify the key
-  and are not credentials (see
-  [Security](docs/conventions/security.md#nothing-identifying-or-secret-is-committed)).
+  credential is `security`'s password arguments in `sign-macos`, and the notary key's
+  ID and issuer ID reach `notarytool` as arguments (see
+  [Security](docs/conventions/security.md#nothing-identifying-or-secret-is-committed)
+  for both).
 
 ## Language lenses
 
@@ -238,8 +239,8 @@ Apply the lens for each kind of file in the diff.
   the unsigned set or does not follow every signing step; a secret printed, or passed
   on a command line apart from `security`'s password arguments in `sign-macos`, the
   one exception for a credential that Security records, and the notary key's ID and
-  issuer ID that `notarytool` takes as arguments; a change to the identifier `app.axross.marshal`, the
-  team pin, or the G2 intermediate's pin without its source and the record's update;
+  issuer ID that `notarytool` takes as arguments; a change to the identifier
+  `app.axross.marshal`, the team pin, or the G2 intermediate's pin without its source and the record's update;
   and a signing job or step added without being added to `check-release-shape.mjs` and
   its test. A change that relaxes the record, or touches the signing job, needs the
   maintainer's review.

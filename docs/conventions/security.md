@@ -290,10 +290,10 @@ record a change to either workflow, to the build call in
   - **The Environment `release`** is created and maintained by the maintainer.
     Deployment branches are selected branches, `main` only and no tags. Required
     reviewers are the maintainer, with "Prevent self-review" off, because the
-    maintainer is the only reviewer and [the roadmap](https://github.com/axross/runners/issues/72)
-    requires self-approval. "Allow
-    administrators to bypass" is off. The maintainer reports the settings on the
-    tracking issue, because agents cannot read them.
+    maintainer is the only reviewer and
+    [the roadmap](https://github.com/axross/runners/issues/72) requires
+    self-approval. "Allow administrators to bypass" is off. The maintainer reports
+    the settings on the tracking issue, because agents cannot read them.
   - **Its secrets** are the six Environment secrets `MACOS_APPLICATION_P12_BASE64`,
     `MACOS_INSTALLER_P12_BASE64`, `MACOS_P12_PASSWORD`, `MACOS_NOTARY_KEY_P8`,
     `MACOS_NOTARY_KEY_ID` and `MACOS_NOTARY_ISSUER_ID`, and its variable is
@@ -327,11 +327,12 @@ record a change to either workflow, to the build call in
     unsigned, and no workflow a pull request triggers declares an Environment.
     [`check-release-shape.mjs`](../../.github/scripts/check-release-shape.mjs) in
     `mise run check` fails if the signing jobs drift from this record, including if
-    a job but `sign-macos` reads a signing secret. A pull request can edit it, so it
-    guards against mistakes, not against a hostile pull request, and
-    [CLI](../operations/cli.md#extending-the-release-workflows) names what it does
-    not read. What keeps pull requests away is the branch rule on the Environment
-    and that `release.yaml` runs only on a dispatch.
+    a job but `sign-macos` reads a signing secret.
+    [CLI](../operations/cli.md#what-the-signing-tests-cover) lists its rules. A pull
+    request can edit it, so it guards against mistakes, not against a hostile pull
+    request, and [CLI](../operations/cli.md#extending-the-release-workflows) names
+    what it does not read. What keeps pull requests away is the branch rule on the
+    Environment and that `release.yaml` runs only on a dispatch.
   - **No secret is printed.** Secret values reach the scripts through `env:` and
     files written with mode 0600 under the runner's temporary directory, and each
     line of the `.p8` is masked. The keychain and those files are deleted whether the
@@ -549,24 +550,26 @@ Residual risks, accepted:
   check as optional. The release job's npm tree can replace published files (the
   first risk above), and an operator who skips the check opens whatever the release
   page then holds. On Windows that is a file nothing has checked. On macOS,
-  Gatekeeper blocks a package that is unsigned, not notarized, or whose signature or
-  notarization is revoked, when it opens. It accepts a package signed with any
-  Developer ID and notarized, so it does not tie the package to the maintainer's
-  team. An operator who wants the team checked reads `pkgutil --check-signature` and
-  compares the team ID, once the CLI document records it after the first signed
-  release. Signing the MSI, or making the check required again, is the remedy in a
-  later change.
+  Gatekeeper is expected to assess a package that carries the download mark, but it
+  is not expected to tie the package to the maintainer's team, as the next entry
+  says. Signing the MSI, or making the check required again, is the remedy in a later
+  change.
 - **A replaced installer can run code.** A replaced MSI could carry a custom action
   that runs code as the user, or ask for elevation behind a prompt the procedure
   has taught operators to pass. A replaced pkg could carry scripts that run as root
-  once the administrator password is entered. Gatekeeper blocks a replaced pkg that is
-  unsigned or not notarized when it opens, and the same holds for one whose signature
-  or notarization is revoked, but it accepts one signed with any Developer ID and
-  notarized, so it does not tie the pkg to the maintainer's team; reading the team ID
-  with `pkgutil --check-signature` does, once the CLI document records it. That is
-  expected, not yet observed on a Mac. The
-  genuine installers carry neither a script nor a custom action that runs code, and
-  the build tests that they do not.
+  once the administrator password is entered. Gatekeeper is expected to block a
+  replaced pkg that is unsigned or not notarized, or whose signature or notarization
+  is revoked, but only when it assesses the file, which it does for a file that
+  carries the download mark (`com.apple.quarantine`), as a browser download does. A
+  pkg fetched with `gh` or `curl` has no mark. Gatekeeper is also expected to accept
+  a pkg signed with any Developer ID and notarized, so it does not tie the pkg to the
+  maintainer's team. That is a residual risk: until the CLI document records the team
+  ID after the first signed release, nothing ties a downloaded package to the
+  maintainer's team, and the optional check block does not check the team either. An
+  operator who wants the team checked reads `pkgutil --check-signature` and compares
+  the team ID once it is recorded. All of this is expected, not yet observed on a
+  Mac, and no control is added for it here. The genuine installers carry neither a
+  script nor a custom action that runs code, and the build tests that they do not.
 - **On axpc, code running as the operator can read what the operator can**,
   including the token files `marshal start` reads. A replaced installer runs as the
   operator, so it can read them; the per-file access control step in

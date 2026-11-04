@@ -1710,9 +1710,9 @@ test overrides; the shape check requires the defaults and rejects either name as
    The intermediate is embedded because the runner image's trust in it is unknown and
    the job fetches no certificate. It expires on 2031-09-17, and replacing it is a change
    to the job and to the pin.
-4. It lists the keychain's identities and refuses unless there is exactly one valid
-   Developer ID Application identity and exactly one valid Developer ID Installer
-   identity. For each it prints the subject, team and expiry date of the certificate
+4. It lists the keychain's identities and refuses unless there is exactly one
+   Developer ID Application identity and exactly one Developer ID Installer identity,
+   and each must be valid. For each it prints the subject, team and expiry date of the certificate
    whose SHA-1 hash equals the selected identity's, found with
    `security find-certificate -a -Z -c <name>`. It refuses unless the name matches
    exactly one certificate, because `pkgbuild` signs by name. It refuses a certificate
@@ -1729,9 +1729,9 @@ test overrides; the shape check requires the defaults and rejects either name as
    takes the Installer identity by its common name, the one form its manual gives, and
    `codesign` takes the Application identity by hash. The name cannot be another
    identity's: step 4 has shown that the temporary keychain holds one certificate of
-   that name, and `--keychain` keeps `pkgbuild` to that keychain. The shape check fails if the
-   two argument lists differ, and `verify-macos` compares the signed package with the
-   unsigned one.
+   that name, and `--keychain` keeps `pkgbuild` to that keychain. The shape check
+   fails if the two argument lists differ, and `verify-macos` compares the signed
+   package with the unsigned one.
 7. It notarizes the package with
    `xcrun notarytool submit … --wait --timeout 30m --output-format json`, and reads
    the result with `plutil`. It refuses unless the status is `Accepted`, whatever
@@ -1754,11 +1754,10 @@ written with mode 0600 under the runner's temporary directory, and each line of 
 a credential to "never passed on a command line", because the tool has no
 non-interactive alternative and the runner is discarded after the job; the maintainer
 allowed it at the plan gate. The API key's ID and issuer ID also reach `notarytool` as
-`--key-id` and `--issuer` arguments. They identify the key and are not credentials, and
-they are stored as secrets so that GitHub masks them in the log; the `.p8` key goes by
-a file path.
-[Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
-records it.
+arguments, which is not an exception for a credential, and the `.p8` key goes by a
+file path.
+[Security](../conventions/security.md#nothing-identifying-or-secret-is-committed)
+records both.
 
 `verify-macos` runs
 [`test-signed-pkg.sh`](../../.github/scripts/tests/test-signed-pkg.sh) on a runner
@@ -1881,9 +1880,12 @@ codesign -d -r- /usr/local/bin/marshal
 - `pkgutil --check-signature` is expected to show a Developer ID Installer
   certificate of the maintainer's team, chained to Apple's root. An operator who wants
   the team checked compares the team ID it shows with the one this document records
-  once the first signed release has fixed it. Gatekeeper does not do that check: it
-  accepts a package signed with any Developer ID and notarized, and blocks one that is
-  unsigned, not notarized, or whose signature or notarization is revoked.
+  once the first signed release has fixed it. Gatekeeper does not do that check: it is
+  expected to accept a package signed with any Developer ID and notarized, and to block
+  one that is unsigned, not notarized, or whose signature or notarization is revoked.
+  It assesses a file that carries the download mark (`com.apple.quarantine`), as a
+  browser download does, and a package fetched with `gh` or `curl` has none. This is
+  expected, not yet observed on a Mac.
 - `spctl --assess --type install -vv` is expected to print `accepted` with
   `source=Notarized Developer ID`. One unanswered report says macOS 26.3 rejected a
   notarized, stapled package; if a genuine release shows that, it is a defect to
@@ -2053,9 +2055,9 @@ to create `/usr/local/bin` when it is absent. What it does to an existing
 The block opens with two assignment lines: `version`, and `file`, the path of the
 downloaded installer, for example in the browser's download folder. Edit those two
 lines, then paste the block whole into one shell. It does not check the macOS
-package's signature; Gatekeeper assesses it when the package opens, but accepts any
-Developer ID signature that is notarized, so it does not tie the package to the
-maintainer's team. It downloads `SHA256SUMS` with `gh`, then refuses unless:
+package's signature or its team; what Gatekeeper does and does not check is under
+[Reading a Signature](#reading-a-signature). It downloads `SHA256SUMS` with `gh`, then
+refuses unless:
 
 1. the installer's SHA-256 matches the line of `SHA256SUMS` for the file name the
    version gives, whatever the downloaded file is called;
