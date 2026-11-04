@@ -25,7 +25,8 @@ then checked on axpc ([#56](https://github.com/axross/runners/issues/56)). Most 
 those checks rest on the maintainer's report on #56 rather than on posted output,
 and each place below that depends on one says which. Verified on axpc:
 
-- installing a released binary (maintainer's report,
+- installing `v0.1.0` from its bare binary with the manual procedure (maintainer's
+  report,
   [#56](https://github.com/axross/runners/issues/56#issuecomment-6511344317)), with
   no Mark of the Web on it and no SmartScreen prompt while Smart App Control is Off
   ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511048211),
@@ -42,8 +43,15 @@ and each place below that depends on one says which. Verified on axpc:
 
 Not yet verified on axpc, each for the reason given:
 
-- the install's refusals, which were not run because installation is to move to
-  winget and Homebrew ([#70](https://github.com/axross/runners/issues/70));
+- the MSI install, the migration block, the optional check block with its
+  extraction, the uninstall block, and the prompts an unsigned MSI from a browser
+  download raises, which have not run on axpc. CI runs the blocks against the release
+  dry run's MSI in its `Install Blocks` job; the maintainer's first install of a
+  release with installers records the rest, and until then this document describes
+  the prompts as expected;
+- the bare-binary block's refusals, which were not run on axpc
+  ([#56](https://github.com/axross/runners/issues/56)); CI runs them against
+  stand-ins;
 - rolling back to a previous `marshal` release, which no host has done because only
   one release exists;
 - the token-file access control step's result, whose `icacls` evidence was not
@@ -71,7 +79,8 @@ Not yet verified on axpc, each for the reason given:
 - **Docker Desktop** with the WSL 2 backend. This procedure does not use the
   Hyper-V backend or a Docker Engine inside a WSL distribution.
 - **GitHub CLI (`gh`) 2.102 or later, signed in** (`gh auth status`), which the
-  install procedure uses to download and verify `marshal`.
+  optional check of the installer uses, and so do the bare-binary blocks that roll
+  back to `v0.1.0`.
 - **Windows PowerShell 5.1** (shipped with Windows) or PowerShell 7, for the inline
   access control steps and the install procedure.
 
@@ -116,37 +125,51 @@ and so does `runs-on: self-hosted`.
 
 ## Installing marshal
 
-Install `marshal` from a release with the Windows procedure in
+Install `marshal` from a release by opening its MSI, with the Windows procedure in
 [CLI](./cli.md#installing-updating-and-rolling-back), never by building it on the
-host. The procedure refuses a binary whose checksum, commit on main, or attestation
-from `release.yaml` on main does not verify, or whose `--version` does not print the
-release's version, before it replaces anything. Those refusals are not yet verified
-on axpc ([#56](https://github.com/axross/runners/issues/56)): the refusal checks
-were not run there, because installation is to move to winget and Homebrew
-([#70](https://github.com/axross/runners/issues/70)). It installs the binary at
-`%LOCALAPPDATA%\Programs\marshal\marshal.exe`. Add that directory to your user
-`Path` under **Settings, System, About, Advanced system settings, Environment
-Variables**, then open a new terminal and confirm that `marshal --version` prints
-`marshal <version>`. The install itself is verified on axpc: the block for `0.1.0`
-ran to completion (maintainer's report,
+host. Download `marshal-<version>-windows-x64.msi` from the release page and, if you
+choose, run the optional check block on it first; that block refuses a file whose
+checksum, commit on main, attestation from `release.yaml` on main, or binary version
+does not verify, and installs nothing. If the host runs a manual install from
+`v0.1.0`, run the migration block in that procedure first: it stops the instance and
+removes the copied `marshal.exe` and its `Path` entry. Otherwise stop a running
+instance. Then open the MSI. It installs `marshal.exe` at
+`%LOCALAPPDATA%\Programs\marshal\marshal.exe` for your user, which is expected to
+need no UAC prompt but is not yet measured, adds that directory to your user `Path`,
+and lists `marshal` under **Settings, Apps**. Close every terminal window, open a
+new one, and confirm that `marshal --version` prints `marshal <version>`; a new tab
+in a window that was already open can keep the old environment.
+
+Uninstall from **Settings, Apps** or with the uninstall block, which leaves the logs
+under `%LOCALAPPDATA%\marshal\logs\`.
+
+The first release expected to carry the MSI is `0.2.0`. Until a release with an
+MSI exists, `v0.1.0` is installed with the bare-binary block in that procedure,
+which stays for rolling back to it; the roll back bullet of that procedure gives the
+steps to put it on `Path`. The install itself is verified on axpc: the block for
+`0.1.0` ran to completion (maintainer's report,
 [#56](https://github.com/axross/runners/issues/56#issuecomment-6511344317)), and
 `marshal --version` printed `marshal 0.1.0`
-([#56](https://github.com/axross/runners/issues/56#issuecomment-6511048211)).
+([#56](https://github.com/axross/runners/issues/56#issuecomment-6511048211)). The
+MSI, the migration block, the check block, and the uninstall block have not run on
+axpc; CI runs them against the release dry run's MSI in its `Install Blocks` job.
 
-The same procedure updates `marshal` with a newer tag and rolls it back with the
-previous one, as [Rolling Back marshal](#rolling-back-marshal) describes; it stops a
-running instance first. After an update, rebuild the image and start again, as
-[Updating the Runner](#updating-the-runner) describes. Nothing on the host needs a
-checkout of this repository: `build` uses the image definition embedded in the
-binary. The release binaries are not code-signed. On axpc the installed copy had no
-`Zone.Identifier`, so no Mark of the Web
+The same procedure updates `marshal` with a newer MSI and rolls it back by
+uninstalling and installing the older one, as [Rolling Back marshal](#rolling-back-marshal)
+describes; stop a running instance first. After an update, rebuild the image and
+start again, as [Updating the Runner](#updating-the-runner) describes. Nothing on
+the host needs a checkout of this repository: `build` uses the image definition
+embedded in the binary. The MSI is not code-signed, so SmartScreen may show
+"Windows protected your PC" for a browser download, which you pass with "More
+info", then "Run anyway", and Smart App Control, when On, may block it; both are
+expected, not yet observed. On axpc, a binary fetched with `gh release download`
+had no `Zone.Identifier`, so no Mark of the Web
 ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511048211)), and
 SmartScreen did not prompt at the install or at its first run from the terminal,
 with "Check apps and files" On and Smart App Control Off
-([#56](https://github.com/axross/runners/issues/56#issuecomment-6511120441)). So
-with Smart App Control Off, the unsigned binary the install procedure places, which
-carries no Mark of the Web, is not blocked on axpc. A copy that carries one, such as
-a browser download, or a host with Smart App Control On, could be.
+([#56](https://github.com/axross/runners/issues/56#issuecomment-6511120441)). A
+copy that carries a Mark of the Web, such as a browser download, or a host with
+Smart App Control On, could be blocked.
 
 ## The Fine-Grained Token
 
@@ -902,9 +925,8 @@ binary embeds the image definition:
    [Version Rules](./development-workflow.md#version-rules) describes.
 2. The maintainer dispatches `release.yaml` on main, as
    [Each Release](./development-workflow.md#each-release) describes.
-3. Update `marshal` to that release with the procedure in
-   [CLI](./cli.md#installing-updating-and-rolling-back), which stops the instance
-   first.
+3. Stop the instance with `marshal stop`, then update `marshal` to that release with
+   the procedure in [CLI](./cli.md#installing-updating-and-rolling-back).
 4. Run `marshal build`, then `marshal start`, as in
    [Building the Runner Image](#building-the-runner-image). Containers already
    running when the update stopped the instance have ended; the next ones start on
@@ -991,20 +1013,21 @@ Hub. No inbound port is needed.
 ## Rolling Back marshal
 
 Roll back when a `marshal` release misbehaves on the host. Rolling back means
-installing the previous release: it needs an earlier release to go back to, so a
-host on the first release has none, and a fault in it is fixed forward in a new
-release. Pick a quiet time, because the install stops the instance and a job in
-flight fails.
+uninstalling the installed release and installing the previous one: it needs an
+earlier release to go back to, so a host on the first release has none, and a fault
+in it is fixed forward in a new release. Pick a quiet time, because the uninstall
+stops the instance and a job in flight fails.
 
 1. If the release you go back to may not finalise a diagnostic container as the
    installed one does, recover the marked containers before replacing the binary:
    run steps 1 to 3 of
    [Recover before disabling diagnostics](#recover-before-disabling-diagnostics),
    then `marshal stop`.
-2. Install the previous release with the Windows procedure in
-   [CLI](./cli.md#installing-updating-and-rolling-back), setting its `version` to
-   that release. It stops a running instance first and refuses to go on if the
-   instance does not stop; see [Recovery](#recovery).
+2. Roll back with the Windows procedure in
+   [CLI](./cli.md#updating-repairing-uninstalling-and-rolling-back): uninstall, then
+   install the previous release's MSI, because the MSI refuses a lower version while
+   a newer one is installed. The uninstall block stops a running instance and
+   refuses to go on if the instance does not stop; see [Recovery](#recovery).
 3. Run `marshal validate --config C:\path\to\runner-host.json`. The previous
    release must accept the configuration file, and a field only the newer release
    knows is rejected, naming the field. Edit the file back before going on.
