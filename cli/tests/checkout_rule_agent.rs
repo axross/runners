@@ -65,7 +65,6 @@ fn a_sink_outside_a_checkout_is_accepted_and_a_sibling_prefix_is_not_confused() 
     for directory in [
         tree.path().join("evidence"),
         tree.path().join("checkout-evidence"),
-        tree.path().join("CHECKOUT/evidence"),
     ] {
         let directory = directory.to_str().unwrap();
         let validation = validate_with(
@@ -73,6 +72,29 @@ fn a_sink_outside_a_checkout_is_accepted_and_a_sibling_prefix_is_not_confused() 
             Profile::Axmc,
             CheckoutRule::AboveAndAtSink(None),
         );
+        assert!(validation.outcome.is_ok(), "{directory}: {validation:?}");
+        assert!(!validation.checkout_rule_skipped, "the sink was examined");
+    }
+}
+
+/// the agent finds the checkout from the sink's own place, so a case variant of the
+/// checkout's path is the checkout wherever the volume ignores case (macOS's default
+/// one) and another directory where it does not (Linux).
+#[cfg(unix)]
+#[test]
+fn a_case_variant_of_the_checkout_follows_the_volume() {
+    let tree = checkout();
+    let variant = tree.path().join("CHECKOUT/evidence");
+    let directory = variant.to_str().unwrap();
+    let validation = validate_with(
+        &axmc(directory),
+        Profile::Axmc,
+        CheckoutRule::AboveAndAtSink(None),
+    );
+    if cfg!(target_os = "macos") {
+        let found = errors(validation.outcome);
+        assert!(found.iter().any(|e| e == OUTSIDE), "{directory}: {found:?}");
+    } else {
         assert!(validation.outcome.is_ok(), "{directory}: {validation:?}");
         assert!(!validation.checkout_rule_skipped, "the sink was examined");
     }

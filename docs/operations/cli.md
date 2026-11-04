@@ -141,7 +141,10 @@ For the agent the checkout is found from the sink itself. The agent's configurat
 lives outside any checkout, so the checkout above the file would never exist: the
 agent compares each `diagnosticDirectory` with the first directory at or above that
 directory that holds both `.git` and `cli/Cargo.toml`, found the same way, lexically
-and without resolving a link, and with the same per-profile case rule. It also applies
+and without resolving a link, and with the same per-profile case rule. Because it looks
+from the sink, which directories hold `.git` follows the volume: on a volume that
+ignores case, such as macOS's default one, a case variant of the checkout's path finds
+the checkout and is refused, while on Linux it is another directory. It also applies
 the checkout above its configuration file where one exists. A sink at or under either
 is a configuration problem, `repositories[n].diagnosticDirectory: must be outside the
 checkout`, in the snapshot, and the agent stops for `invalid_configuration`. The agent
@@ -150,12 +153,16 @@ read on another host is not compared. Because the sink's own place was examined,
 agent writes no note that the rule was skipped. `start`, `validate` and `build` are
 unchanged: their checkout stays the one above the configuration file.
 `tests/checkout_rule_agent.rs` covers a sink inside a checkout, outside one, a sibling
-prefix, case, and the unchanged rule of `start`.
+prefix, a case variant (accepted on Linux, refused on macOS), and the unchanged rule of
+`start`.
 
 Known limitation: the axmc comparison is case-sensitive, while macOS's default APFS
-volume is case-insensitive. A `diagnosticDirectory` that differs from the checkout
-only in case therefore passes the rule even though it names the same directory. The
-validator cannot know a volume's case sensitivity, so it does not guess.
+volume is case-insensitive. For `start` and `validate`, whose checkout is the one above
+the configuration file, a `diagnosticDirectory` that differs from the checkout only in
+case therefore passes the rule even though it names the same directory. The validator
+cannot know a volume's case sensitivity, so it does not guess. The agent is not
+affected on such a volume: its lookup starts at the sink, and the volume itself answers
+for the case variant.
 
 ## Validation Rules
 
