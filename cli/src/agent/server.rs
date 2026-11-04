@@ -344,6 +344,7 @@ impl<W: AsyncWrite + Unpin> Session<'_, W> {
         loop {
             let reason = ending.borrow_and_update().clone();
             if let Some(reason) = reason {
+                self.answer_if_ready().await;
                 self.send(&ServerMessage::Ending { reason: &reason }).await;
                 return;
             }
@@ -379,6 +380,18 @@ impl<W: AsyncWrite + Unpin> Session<'_, W> {
             if !proceed {
                 return;
             }
+        }
+    }
+
+    /// answers the pending request when its answer is already there, so the answer to
+    /// a `quit` is not lost to the `ending` that follows it.
+    async fn answer_if_ready(&mut self) {
+        let ready = match &mut self.pending {
+            Some((_, receiver)) => receiver.try_recv().ok(),
+            None => None,
+        };
+        if let (Some(answer), Some((id, _))) = (ready, self.pending.take()) {
+            self.answer(id, &answer).await;
         }
     }
 
