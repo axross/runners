@@ -10,12 +10,14 @@ Remote Control and Amp runner agent hosts. It is being extracted from the
 runner setup of a private application repository, in steps. It holds its agent
 foundation (the entry files, agent configuration, documentation, and lint
 toolchain), the `images/actions-runner/` runner image, the
-`hosts/windows-docker-desktop/` runner host scripts, and the CLI under `cli/`,
+`hosts/windows-docker-desktop/` runner host scripts, the `hosts/macos/` example
+configuration, and the CLI under `cli/`,
 a Rust command line tool that validates a host configuration, builds its runner
 image with `build`, and runs a host's pools with `start`, `stop`, `restart`,
 `status`, and `diagnostics`. The axpc host runs its pools with the CLI, and the
-PowerShell host scripts stay as its rollback path; the agent-host configuration is
-still planned.
+PowerShell host scripts stay as its rollback path. The axmc host, an Apple silicon
+Mac, runs its Linux pools with the CLI in Tart VMs, and `build` makes their golden
+VM; the agent-host configuration is still planned.
 [README.md](./README.md) owns project commands; [docs/index.md](./docs/index.md)
 indexes conventions, operations, and the glossary. mise pins the toolchain, and
 Prettier, markdownlint, shellcheck, hadolint, actionlint, PSScriptAnalyzer,

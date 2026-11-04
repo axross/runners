@@ -21,7 +21,7 @@ an Apple silicon Mac, `marshal` runs each Linux pool's jobs in a fresh Tart Ubun
 that is cloned from a golden VM, on Softnet, with no Docker Desktop, and
 `marshal build --profile axmc` makes the golden VM.
 [macOS Runner Host](./docs/operations/macos-runner-host.md) owns that procedure and
-states what has been verified on the Mac. The agent-host
+states what has and has not been run on the Mac. The agent-host
 configuration is not here yet. Layout:
 
 | Path                            | Holds                                                                                                                                                           | State   |
