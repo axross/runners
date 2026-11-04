@@ -113,12 +113,6 @@ impl AgentChannel {
         &self.address
     }
 
-    /// the connections open or waiting for `busy`.
-    #[must_use]
-    pub fn connections(&self) -> usize {
-        self.counts.all()
-    }
-
     /// tells every connection the agent is ending for `reason`, stops accepting, and
     /// waits up to `within` for the connections to end, so the message reaches a
     /// client that reads; a connection that has not ended then is dropped, so a

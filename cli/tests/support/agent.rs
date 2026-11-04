@@ -354,10 +354,6 @@ impl Conn {
     }
 }
 
-pub fn quit_params() -> Value {
-    json!(null)
-}
-
 /// a connection the test speaks on by hand, line by line, to say what the library's
 /// client never would.
 pub struct Raw {
