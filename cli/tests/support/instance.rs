@@ -14,7 +14,9 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use marshal_cli::instance::fake::{FakeCore, FakeSource};
-use marshal_cli::instance::lifecycle::{Core, Ended, Instance, Settings, Source, StopTimes};
+use marshal_cli::instance::lifecycle::{
+    Core, Ended, Instance, Monitor, Settings, Source, StopTimes,
+};
 use marshal_cli::instance::protocol::{Incoming, Request, Response};
 use marshal_cli::profile::Profile;
 use marshal_cli::runtime::backend::Backend;
@@ -100,8 +102,8 @@ impl Rig {
 
 /// runs `instance` from `plan` and the script together, failing a run that takes
 /// longer than `within`; the script ends the instance, as a client's `stop` does.
-pub async fn drive<B, K, C, S, F, Fut, T>(
-    instance: &Instance<'_, B, K, C, S>,
+pub async fn drive<B, K, C, S, M, F, Fut, T>(
+    instance: &Instance<'_, B, K, C, S, M>,
     plan: Plan,
     within: Duration,
     script: F,
@@ -111,6 +113,7 @@ where
     K: Clock,
     C: Core,
     S: Source,
+    M: Monitor,
     F: FnOnce(Control) -> Fut,
     Fut: Future<Output = T>,
 {

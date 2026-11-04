@@ -14,13 +14,16 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::command::{EXIT_FAILED, EXIT_OK, checkout_rule_note, load_plan, print_error};
 use crate::instance::channel::{ChannelServer, ClientError, exchange};
-use crate::instance::lifecycle::{Ended, Ending, Instance, Settings};
+use crate::instance::lifecycle::{Ended, Ending, Instance, Monitor, NoMonitor, Settings};
 use crate::instance::lock::{InstanceLock, LockError};
 use crate::instance::log_file::{StartLog, open_log_file};
 use crate::instance::protocol::{Incoming, Outcome, Request};
 use crate::instance::roots::Roots;
 use crate::instance::runtime_core::RuntimeCore;
 use crate::instance::source::FileSource;
+use crate::macos::gate::NetworkGate;
+use crate::macos::monitor::{Cadence, SignalMonitor};
+use crate::macos::signals::Signals;
 use crate::profile::Profile;
 use crate::runtime::backend::Backend;
 use crate::runtime::clock::SystemClock;
@@ -232,7 +235,7 @@ async fn run_instance(parts: Parts<'_>, plan: crate::validate::Plan) -> u8 {
                 ..DockerConfig::default()
             };
             let backend = DockerBackend::new(config, SystemClock, parts.log.clone());
-            serve_instance(&backend, parts, plan, server, requests, sender).await
+            serve_instance(&backend, &NoMonitor, parts, plan, server, requests, sender).await
         }
         Profile::Axmc => {
             let client = TartClient::new(TartConfig {
@@ -240,6 +243,7 @@ async fn run_instance(parts: Parts<'_>, plan: crate::validate::Plan) -> u8 {
                 ..TartConfig::default()
             });
             let launcher = vm_launcher(&parts.launcher);
+            let gate = NetworkGate::new();
             let backend = TartBackend::new(
                 client,
                 launcher,
@@ -247,8 +251,13 @@ async fn run_instance(parts: Parts<'_>, plan: crate::validate::Plan) -> u8 {
                 SystemClock,
                 parts.log.clone(),
             )
-            .with_exporter(parts.exporter.clone(), parts.checkout.clone());
-            serve_instance(&backend, parts, plan, server, requests, sender).await
+            .with_exporter(parts.exporter.clone(), parts.checkout.clone())
+            .with_network_gate(gate.clone());
+            let signals = Signals::from_environment();
+            let cadence = Cadence::for_source(signals.is_scripted());
+            let log = parts.log.clone();
+            let monitor = SignalMonitor::new(signals, &SystemClock, &*log, gate, cadence);
+            serve_instance(&backend, &monitor, parts, plan, server, requests, sender).await
         }
     }
 }
@@ -264,8 +273,9 @@ fn vm_launcher(launcher: &JobLauncher) -> VmLauncher {
 }
 
 /// runs the instance on `backend` until it ends, and returns the exit code.
-async fn serve_instance<B: Backend>(
+async fn serve_instance<B: Backend, M: Monitor>(
     backend: &B,
+    monitor: &M,
     parts: Parts<'_>,
     plan: crate::validate::Plan,
     server: ChannelServer,
@@ -275,7 +285,8 @@ async fn serve_instance<B: Backend>(
     let log: &dyn Log = &*parts.log;
     let core = RuntimeCore::new(backend, &SystemClock, parts.registrar, log);
     let source = FileSource::new(parts.config_path, parts.settings.profile, log);
-    let instance = Instance::new(parts.settings, backend, &SystemClock, &core, &source, log);
+    let instance = Instance::new(parts.settings, backend, &SystemClock, &core, &source, log)
+        .with_monitor(monitor);
     let force = || instance.force_removal();
     let ended = {
         // the receiver ends with this block, before the channel closes

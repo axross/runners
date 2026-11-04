@@ -19,6 +19,7 @@ pub struct FakeSignals {
     warned: Cell<bool>,
     holds: Cell<u32>,
     releases: Cell<u32>,
+    rearms: Cell<u32>,
 }
 
 impl FakeSignals {
@@ -64,6 +65,12 @@ impl FakeSignals {
         self.releases.get()
     }
 
+    /// how many times the sleep baseline was re-armed.
+    #[must_use]
+    pub fn rearm_calls(&self) -> u32 {
+        self.rearms.get()
+    }
+
     #[must_use]
     pub fn network_reads(&self) -> u32 {
         self.reads.get()
@@ -90,6 +97,11 @@ impl FakeSignals {
 impl SignalSource for FakeSignals {
     fn sleep_detected(&self) -> bool {
         self.slept.replace(false)
+    }
+
+    fn rearm_sleep(&self) {
+        self.slept.set(false);
+        self.rearms.set(self.rearms.get() + 1);
     }
 
     fn read_network(&self) -> impl Future<Output = NetworkReading> {

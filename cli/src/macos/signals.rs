@@ -23,6 +23,11 @@ pub trait SignalSource {
     /// [`SAMPLE_INTERVAL`](super::sleep::SAMPLE_INTERVAL).
     fn sleep_detected(&self) -> bool;
 
+    /// forgets the clocks sampled so far, so the next sample only sets the baseline:
+    /// nothing samples while the instance is stopped, and the time it spent stopped
+    /// is no sleep. The instance calls it each time it begins to run.
+    fn rearm_sleep(&self);
+
     /// reads the primary network, as the instance does every
     /// [`CHECK_INTERVAL`](super::watch::CHECK_INTERVAL). A table that cannot be read is
     /// `NoDefaultRoute`.
@@ -44,6 +49,10 @@ pub trait SignalSource {
 impl<S: SignalSource + ?Sized> SignalSource for Rc<S> {
     fn sleep_detected(&self) -> bool {
         (**self).sleep_detected()
+    }
+
+    fn rearm_sleep(&self) {
+        (**self).rearm_sleep();
     }
 
     fn read_network(&self) -> impl Future<Output = NetworkReading> {
@@ -123,6 +132,14 @@ impl SignalSource for Signals {
             Self::Mac(source) => source.sleep_detected(),
             #[cfg(debug_assertions)]
             Self::Scripted(source) => source.sleep_detected(),
+        }
+    }
+
+    fn rearm_sleep(&self) {
+        match self {
+            Self::Mac(source) => source.rearm_sleep(),
+            #[cfg(debug_assertions)]
+            Self::Scripted(source) => source.rearm_sleep(),
         }
     }
 

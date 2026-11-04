@@ -5,6 +5,7 @@
 //! refused until the transition ends.
 
 use std::cell::{Cell, RefCell};
+use std::convert::Infallible;
 use std::fmt;
 use std::future::Future;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -14,6 +15,8 @@ use std::time::Duration;
 
 use tokio::sync::{mpsc, oneshot, watch};
 
+use crate::macos::reason::sleep_reason;
+use crate::macos::watch::NetworkChange;
 use crate::profile::Profile;
 use crate::runtime::backend::{Backend, DiagnosticRecord, StopRequest};
 use crate::runtime::clock::Clock;
@@ -97,6 +100,10 @@ pub enum StopReason {
     /// a host prerequisite refused at a restart or a resume; the text is the
     /// refusal, which names the host document's section.
     Prerequisite(String),
+    /// the Mac slept, or woke: a wake is when the instance learns of the sleep.
+    Slept,
+    /// the primary network differed from its record on two checks in a row.
+    NetworkChanged(NetworkChange),
 }
 
 impl fmt::Display for StopReason {
@@ -112,6 +119,8 @@ impl fmt::Display for StopReason {
                 WINDOW.as_secs() / 60
             ),
             Self::Image(reason) | Self::Prerequisite(reason) => f.write_str(reason),
+            Self::Slept => f.write_str(&sleep_reason()),
+            Self::NetworkChanged(change) => f.write_str(&change.reason()),
         }
     }
 }
@@ -202,6 +211,57 @@ pub trait Core {
 pub trait Source {
     /// the validated plan, or every problem that stops it from being one.
     fn load(&self) -> impl Future<Output = Result<Plan, Vec<String>>>;
+}
+
+/// the signals that stop every runner, and the keep-awake hold, which the instance
+/// runs beside its core. The instance asks it to `begin` each time it starts to run,
+/// including after a resume, and polls [`watch`](Monitor::watch) while it runs.
+pub trait Monitor {
+    /// arms a new run, before the core starts: the sleep baseline is set again, and a
+    /// primary network is recorded afresh by the next [`watch`](Monitor::watch).
+    fn begin(&self);
+
+    /// watches the clocks and the primary network until one of them stops every
+    /// runner, and returns why. It never ends otherwise, and dropping it ends the
+    /// watch.
+    fn watch(&self) -> impl Future<Output = StopReason>;
+
+    /// keeps the keep-awake hold in order while the instance is not running its
+    /// core: resuming, and stopping until teardown ends. It never ends.
+    fn maintain(&self) -> impl Future<Output = Infallible>;
+
+    /// takes the keep-awake hold, as the instance begins to run or resume.
+    fn hold(&self);
+
+    /// ends the keep-awake hold, as the instance stops.
+    fn release(&self);
+
+    /// what the monitor reports to `status`.
+    fn report(&self) -> Vec<(&'static str, String)>;
+}
+
+/// the monitor of a profile that has no signals.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NoMonitor;
+
+impl Monitor for NoMonitor {
+    fn begin(&self) {}
+
+    fn watch(&self) -> impl Future<Output = StopReason> {
+        std::future::pending()
+    }
+
+    fn maintain(&self) -> impl Future<Output = Infallible> {
+        std::future::pending()
+    }
+
+    fn hold(&self) {}
+
+    fn release(&self) {}
+
+    fn report(&self) -> Vec<(&'static str, String)> {
+        Vec::new()
+    }
 }
 
 /// what the instance was started with.
@@ -312,12 +372,13 @@ fn flushed_response(flushed: &Flushed) -> Response {
     )
 }
 
-pub struct Instance<'a, B, K, C, S> {
+pub struct Instance<'a, B, K, C, S, M = NoMonitor> {
     settings: Settings,
     backend: &'a B,
     clock: &'a K,
     core: &'a C,
     source: &'a S,
+    monitor: &'a M,
     log: &'a dyn Log,
     times: StopTimes,
     state: RefCell<State>,
@@ -332,6 +393,7 @@ pub struct Instance<'a, B, K, C, S> {
 }
 
 impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
+    /// an instance without signals, as axpc runs.
     #[must_use]
     pub fn new(
         settings: Settings,
@@ -347,6 +409,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
             clock,
             core,
             source,
+            monitor: &NoMonitor,
             log,
             times: StopTimes::reserving(backend.release_budget()),
             state: RefCell::new(State::Running),
@@ -360,6 +423,31 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
         }
     }
 
+    /// the instance with the signals of `monitor`.
+    #[must_use]
+    pub fn with_monitor<M: Monitor>(self, monitor: &'a M) -> Instance<'a, B, K, C, S, M> {
+        Instance {
+            settings: self.settings,
+            backend: self.backend,
+            clock: self.clock,
+            core: self.core,
+            source: self.source,
+            monitor,
+            log: self.log,
+            times: self.times,
+            state: self.state,
+            policy: self.policy,
+            exit_requested: self.exit_requested,
+            containers_removed: self.containers_removed,
+            core_has_run: self.core_has_run,
+            ending: self.ending,
+            force: self.force,
+            enabled: self.enabled,
+        }
+    }
+}
+
+impl<'a, B: Backend, K: Clock, C: Core, S: Source, M: Monitor> Instance<'a, B, K, C, S, M> {
     /// the instance with other stop times, so a test can reach the exit deadline
     /// quickly; a debug build only.
     #[cfg(debug_assertions)]
@@ -397,6 +485,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
                 Next::Run(plan) => self.running(&plan, requests).await,
                 Next::Idle => self.stopped(requests).await,
                 Next::Exit => {
+                    self.monitor.release();
                     return Ended {
                         containers_removed: self.containers_removed.get(),
                         ending: self.ending.get(),
@@ -407,7 +496,15 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
         }
     }
 
+    /// moves the instance to `state`; the keep-awake hold follows the state: held
+    /// when running or resuming, kept through stopping, and released on entering
+    /// stopped.
     fn set_state(&self, state: State) {
+        match &state {
+            State::Running | State::Resuming => self.monitor.hold(),
+            State::Stopped(_) => self.monitor.release(),
+            State::Stopping => {}
+        }
         *self.state.borrow_mut() = state;
     }
 
@@ -420,7 +517,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
         response = response
             .with("config", &self.settings.config_path)
             .with("profile", self.settings.profile.name());
-        for (name, value) in self.core.report() {
+        for (name, value) in self.core.report().into_iter().chain(self.monitor.report()) {
             response = response.with(name, &value);
         }
         response
@@ -453,6 +550,8 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
             .retained()
             .retain_unmanaged(|pool| plan.entries.iter().any(|entry| entry.name == pool));
         let (stop, stop_receiver) = watch::channel(false);
+        self.monitor.begin();
+        let mut watching = Box::pin(self.monitor.watch());
         let mut cycle = Box::pin(self.core_cycle(plan, stop_receiver));
         let mut flush: Flush<'_> = None;
         let mut open = true;
@@ -508,6 +607,16 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
                         return Next::Exit;
                     }
                     return next;
+                }
+                reason = &mut watching => {
+                    self.log.warn(&format!("Stopping every runner: {reason}."));
+                    self.wind_down(&stop, cycle, flush, requests).await;
+                    if self.exit_requested.get() {
+                        return Next::Exit;
+                    }
+                    self.log.warn(&format!("The instance is stopped: {reason}."));
+                    self.set_state(State::Stopped(reason));
+                    return Next::Idle;
                 }
                 incoming = requests.recv(), if open => {
                     let Some(incoming) = incoming else {
@@ -696,10 +805,12 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
         work: impl Future<Output = T>,
     ) -> Option<T> {
         let mut work = pin!(work);
+        let mut upkeep = pin!(self.monitor.maintain());
         let mut open = true;
         loop {
             tokio::select! {
                 output = &mut work => return Some(output),
+                never = &mut upkeep => match never {},
                 incoming = requests.recv(), if open => match incoming {
                     None => open = false,
                     Some(incoming) => {

@@ -16,6 +16,7 @@ use tokio::time::Instant;
 use crate::affinity::select_cpus;
 use crate::diagnostics::ExportRequest;
 use crate::image::check::{IMAGE_CHECK_BUDGET, ImageCheck};
+use crate::macos::gate::NetworkGate;
 use crate::macos::prerequisites::{
     Cause, Check, VERSION_BUDGET, check_softnet, check_softnet_with, check_tart,
 };
@@ -142,6 +143,8 @@ pub struct TartBackend<C> {
     /// the owner and mode a test gives Softnet's file; the environment's override
     /// applies when it is unset.
     softnet_owner_mode: Option<OwnerMode>,
+    /// closed while no primary network is recorded; no VM is cloned until it opens.
+    network_gate: NetworkGate,
 }
 
 fn text_of(error: &TartError) -> String {
@@ -173,6 +176,7 @@ impl<C: Clock> TartBackend<C> {
             exports: Exports::new(None, None),
             in_use: RefCell::new(InUse::default()),
             softnet_owner_mode: None,
+            network_gate: NetworkGate::default(),
         }
     }
 
@@ -182,6 +186,14 @@ impl<C: Clock> TartBackend<C> {
     #[must_use]
     pub fn with_exporter(mut self, exporter: Option<PathBuf>, checkout: Option<PathBuf>) -> Self {
         self.exports = Exports::new(exporter, checkout);
+        self
+    }
+
+    /// clones no job VM while `gate` is closed, which the instance's signals do until
+    /// a primary network is recorded.
+    #[must_use]
+    pub fn with_network_gate(mut self, gate: NetworkGate) -> Self {
+        self.network_gate = gate;
         self
     }
 
@@ -702,6 +714,7 @@ impl<C: Clock> Backend for TartBackend<C> {
         if let Some(reason) = self.wait_for_prerequisites().await {
             return HostPreparation::Held(reason);
         }
+        self.network_gate.wait_until_open().await;
         match self.boot(request, &host).await {
             Ok(()) => HostPreparation::Ready,
             Err(error) => HostPreparation::Failed(error),

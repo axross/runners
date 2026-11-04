@@ -347,6 +347,9 @@ fn a_refusal_after_start_holds_the_slot_while_another_slots_job_finishes_and_it_
         .find(|name| name.starts_with("linuxone-2-"))
         .unwrap();
     assert_eq!(host.count_of("clone"), 2);
+    // `status` shows a job once its client starts; ending it before the fake engine
+    // holds the container would end nothing
+    host.wait_for_containers(&[first, second], RUNNING_WITHIN);
 
     host.tart_script("version_output", OLD_TART);
     host.end_job(first);

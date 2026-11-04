@@ -41,6 +41,10 @@ impl SignalSource for MacSignals {
         self.detector.borrow_mut().observe(ClockSample::now())
     }
 
+    fn rearm_sleep(&self) {
+        *self.detector.borrow_mut() = SleepDetector::new();
+    }
+
     fn read_network(&self) -> impl Future<Output = NetworkReading> {
         self.network.read()
     }

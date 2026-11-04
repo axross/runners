@@ -4,8 +4,10 @@
 //! platform so the parsers and judgments run in the Linux tests; only the file's
 //! owner and mode need Unix. `docs/operations/cli.md` describes both.
 
+pub mod gate;
 pub mod keep_awake;
 pub mod mac;
+pub mod monitor;
 pub mod network;
 pub mod prerequisites;
 pub mod probe;

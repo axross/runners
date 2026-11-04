@@ -35,6 +35,15 @@ fn make_sink(path: &Path) {
     fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
 }
 
+/// what the scripted signal source reads as a Wi-Fi primary network.
+pub const WIFI_NETWORK: &str = "interface=en0\nrouter=192.168.1.1\nhardware=a4:83:e7:1:2:3\n";
+
+/// another Wi-Fi network: the same interface behind another router.
+pub const OTHER_WIFI_NETWORK: &str = "interface=en0\nrouter=10.0.0.1\nhardware=3c:22:fb:4:5:6\n";
+
+/// a VPN that takes the default route.
+pub const VPN_NETWORK: &str = "interface=utun4\n";
+
 /// one pool of a configuration.
 pub struct Pool {
     pub name: &'static str,
@@ -90,7 +99,7 @@ impl MacHost {
         let softnet = SoftnetHost::new();
         softnet.link("bin");
         let path = softnet.path_with_system(&["bin"]);
-        for directory in ["tart", "state"] {
+        for directory in ["tart", "state", "signals"] {
             fs::create_dir_all(root.path().join(directory)).unwrap();
         }
         if pools.iter().any(|pool| pool.diagnostics) {
@@ -116,6 +125,7 @@ impl MacHost {
             .to_string();
         host.tart_script("vms", &format!("{golden}\tstopped\tlocal\t\t\t"));
         host.tart_script("docker_program", FAKE_DOCKER);
+        host.set_network(WIFI_NETWORK);
         fs::create_dir_all(host.tart_dir().join("docker")).unwrap();
         host
     }
@@ -161,6 +171,53 @@ impl MacHost {
         self.tart_dir().join("docker")
     }
 
+    /// the directory the scripted signal source reads, which a test writes to drive
+    /// the signals of a running instance.
+    pub fn signals_dir(&self) -> PathBuf {
+        self.root.path().join("signals")
+    }
+
+    /// sets the primary network the scripted signals report: `network` is the file's
+    /// text, or `none` for no default route.
+    pub fn set_network(&self, network: &str) {
+        // renamed into place, so the instance never reads a half-written file
+        let staged = self.signals_dir().join("network.staged");
+        fs::write(&staged, network).unwrap();
+        fs::rename(staged, self.signals_dir().join("network")).unwrap();
+    }
+
+    /// makes the scripted signals report a sleep at their next sample.
+    pub fn sleep(&self) {
+        fs::write(self.signals_dir().join("sleep"), "").unwrap();
+    }
+
+    /// makes the keep-awake hold fail with `text`, or work again with `None`.
+    pub fn fail_keep_awake(&self, text: Option<&str>) {
+        let file = self.signals_dir().join("keep_awake_failure");
+        match text {
+            Some(text) => fs::write(file, text).unwrap(),
+            None => {
+                let _ = fs::remove_file(file);
+            }
+        }
+    }
+
+    /// waits until the scripted source has written `expected` about the hold: `held`,
+    /// `warning` or `released`. The file is rewritten in place, so a read can see it
+    /// half written.
+    pub fn wait_for_keep_awake(&self, expected: &str) {
+        let started = Instant::now();
+        let mut last = String::new();
+        while started.elapsed() < Duration::from_secs(10) {
+            last = fs::read_to_string(self.signals_dir().join("keep_awake")).unwrap_or_default();
+            if last == expected {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        panic!("the keep-awake hold was never {expected}; last: {last:?}");
+    }
+
     pub fn state(&self) -> PathBuf {
         self.root.path().join("state")
     }
@@ -193,6 +250,7 @@ impl MacHost {
             .current_dir(self.root.path())
             .env("MARSHAL_TEST_ROOT", self.state())
             .env("MARSHAL_TEST_TART", &self.tart_program)
+            .env("MARSHAL_TEST_SIGNALS", self.signals_dir())
             .env("FAKE_TART_DIR", self.tart_dir())
             .env("MARSHAL_TEST_SOFTNET_OWNER_MODE", &self.owner_mode)
             .env("PATH", &self.path)
@@ -303,6 +361,22 @@ impl MacHost {
             .filter(|name| !name.is_empty())
             .map(str::to_string)
             .collect()
+    }
+
+    /// waits until the fake `docker` holds every one of `names`.
+    pub fn wait_for_containers(&self, names: &[&String], within: Duration) {
+        let started = Instant::now();
+        while started.elapsed() < within {
+            let held = self.containers();
+            if names.iter().all(|name| held.contains(name)) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        panic!(
+            "the fake engine never held {names:?}; it holds {:?}",
+            self.containers()
+        );
     }
 
     /// the names of the VMs the fake `tart` holds.

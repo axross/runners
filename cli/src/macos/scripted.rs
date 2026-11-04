@@ -89,6 +89,13 @@ impl SignalSource for ScriptedSignals {
         self.state.sleep_detected()
     }
 
+    fn rearm_sleep(&self) {
+        // a sleep file written while the instance was stopped is stale, as a sleep
+        // of the Mac then would be
+        let _ = fs::remove_file(self.directory.join("sleep"));
+        self.state.rearm_sleep();
+    }
+
     fn read_network(&self) -> impl Future<Output = NetworkReading> {
         self.pull();
         self.state.read_network()
