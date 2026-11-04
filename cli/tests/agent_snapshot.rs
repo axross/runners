@@ -78,6 +78,48 @@ async fn a_stop_that_cannot_remove_a_container_lists_it_as_left() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn a_start_that_never_reaches_the_pools_keeps_the_leftovers_and_one_that_does_clears_them() {
+    use marshal_cli::image::check::ImageCheck;
+    let rig = Rig::new(ONE_POOL);
+    rig.store_token("o", "r", TOKEN);
+    rig.hold_jobs();
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            conn.until_runner_runs().await;
+            rig.mark_running();
+            rig.backend.state.borrow_mut().remove_error = Some(
+                marshal_cli::runtime::backend::BackendError::new("the engine refused"),
+            );
+            conn.ok("stop_all").await;
+            assert!(!conn.status().await.leftovers.is_empty());
+            rig.backend.state.borrow_mut().remove_error = None;
+
+            // the image is missing, so nothing is started and nothing is removed
+            rig.backend
+                .state
+                .borrow_mut()
+                .image_answers
+                .push_back(ImageCheck::Missing);
+            conn.ok("start_all").await;
+            let snapshot = conn.until_state("stopped").await;
+            assert_eq!(
+                snapshot.agent.reason.as_ref().unwrap().code,
+                "image_unusable"
+            );
+            assert!(!snapshot.leftovers.is_empty(), "{snapshot:#?}");
+
+            // a start that gets to the pools prepares them, which removes what is stale
+            conn.ok("start_all").await;
+            conn.until_runner_runs().await;
+            assert!(conn.status().await.leftovers.is_empty());
+            rig.mark_running();
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn a_big_snapshot_is_cut_to_the_message_limit_and_says_what_it_left_out() {
     let pools = 40;
     let rig = Rig::new(&many_pools(pools, 16));

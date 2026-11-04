@@ -1066,7 +1066,9 @@ never a command. An image warning is data, not text: a `code`
 (`not_built_by_marshal`, `packages_old`, `image_old`, `runner_old` or
 `runner_may_be_newer`) with `days` or `version` where they apply, so the app words it.
 `leftovers` lists every container name of a failed removal call, which can name more
-containers than the one that failed.
+containers than the one that failed. They stay listed until a start prepares the
+pools, which removes what is stale, so a `start_all` that stops for a missing image or
+an invalid configuration keeps them.
 
 An agent may add a runner state, an image and an image warning within version 2, so
 a reader MUST treat a state word it does not know as an unknown state and show the

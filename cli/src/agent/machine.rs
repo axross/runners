@@ -466,7 +466,6 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
     /// where that left the agent.
     async fn resume(&self, requests: &mut Requests, reply: Option<Reply>) -> Next {
         self.policy.borrow_mut().clear();
-        self.left.borrow_mut().clear();
         self.set_phase(Phase::Resuming);
         self.log.info("Resuming: reading the configuration again.");
         let (next, result) = match self.serve(requests, true, self.reload()).await {
@@ -529,6 +528,9 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                 end = &mut cycle => return self.cycle_ended(end),
                 _ = admitted.wait_for(|admitted| *admitted), if resuming => {
                     resuming = false;
+                    // the pools are prepared, which removed the stale containers that
+                    // could be, so what an earlier stop could not remove is stale now
+                    self.left.borrow_mut().clear();
                     self.set_phase(Phase::Running);
                 }
                 _ = ticker.tick(), if self.watched() => self.publish(),
