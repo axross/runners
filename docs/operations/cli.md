@@ -851,7 +851,8 @@ A fresh `start` does these in order:
    to resume instead, as below.
 2. It validates the configuration as `validate` does. An invalid one prints every
    error and exits 1, and nothing is written. With `--profile axmc` a valid
-   configuration still exits 1, because the VM backend comes in Phase 6.
+   configuration still exits 1, with the refusal that [Runtime Seam](#runtime-seam)
+   gives.
 3. It opens its log file and logs the plan summary.
 4. It contains its children, builds the HTTPS client, and opens the control
    channel. A failure of any of them, including a TLS setup failure, exits 1.
