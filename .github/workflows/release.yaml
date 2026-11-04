@@ -626,12 +626,15 @@ jobs:
           }
           check_hash "signed/marshal-${VERSION}-macos-arm64" "$MACOS_SHA256"
           check_hash "signed/marshal-${VERSION}-macos-arm64.pkg" "$MACOS_PKG_SHA256"
+      # also checks that the unsigned files are the ones the build's SHA256SUMS
+      # lists, and that the notary log is of the submission sign-macos output.
       - name: Test The Signed Package
         timeout-minutes: 10
         env:
           VERSION: ${{ needs.plan.outputs.version }}
           TEAM_ID: ${{ needs.sign-macos.outputs.team_id }}
-        run: bash .github/scripts/tests/test-signed-pkg.sh "$VERSION" unsigned signed notary/notary-log.json "$TEAM_ID"
+          SUBMISSION_ID: ${{ needs.sign-macos.outputs.submission_id }}
+        run: bash .github/scripts/tests/test-signed-pkg.sh "$VERSION" unsigned signed notary/notary-log.json "$TEAM_ID" "$SUBMISSION_ID"
 
   # writes SHA256SUMS over the set that is published: the Windows files as the
   # build made them, the macOS files as sign-macos signed them. each file must

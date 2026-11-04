@@ -6,6 +6,7 @@
 # it against stand-ins and produces each refusal.
 #
 # it refuses unless all of these hold:
+#   - the unsigned package and binary are the files the build's SHA256SUMS lists;
 #   - the signed package's identifier, version and install location equal the
 #     unsigned package's, and the identifier is app.axross.marshal;
 #   - the two bills of materials list the same paths with the same mode, owner
@@ -19,15 +20,16 @@
 #   - the package's signature is a Developer ID Installer chain of <team id> to
 #     Apple's root, stapler validates it, and spctl assesses it as notarized
 #     Developer ID;
-#   - the notary log lists the bare binary's CDHash.
+#   - the notary log is of the submission sign-macos made, by its job ID, and
+#     lists the bare binary's CDHash.
 # it then installs the signed package with installer, runs codesign --verify and
 # --version on the installed file, and removes it. every tool is called through
 # SYSTEM_BIN and SYSTEM_SBIN, whose defaults are the macOS paths. macOS ships bash
 # 3.2, so this uses nothing newer. see docs/operations/cli.md.
 set -euo pipefail
 
-if [[ $# -ne 5 ]]; then
-  echo "Usage: test-signed-pkg.sh <version> <unsigned directory> <signed directory> <notary log> <team id>" >&2
+if [[ $# -ne 6 ]]; then
+  echo "Usage: test-signed-pkg.sh <version> <unsigned directory> <signed directory> <notary log> <team id> <submission id>" >&2
   exit 2
 fi
 version="$1"
@@ -35,6 +37,7 @@ unsigned_directory="$2"
 signed_directory="$3"
 notary_log="$4"
 team="$5"
+submission="$6"
 
 : "${SYSTEM_BIN:=/usr/bin}"
 : "${SYSTEM_SBIN:=/usr/sbin}"
@@ -45,7 +48,9 @@ identifier="app.axross.marshal"
 installed="${MARSHAL_INSTALL_PATH:-/usr/local/bin/marshal}"
 macos="marshal-${version}-macos-arm64"
 macos_pkg="${macos}.pkg"
+unsigned_binary="${unsigned_directory}/${macos}"
 unsigned_pkg="${unsigned_directory}/${macos_pkg}"
+unsigned_sums="${unsigned_directory}/SHA256SUMS"
 signed_pkg="${signed_directory}/${macos_pkg}"
 signed_binary="${signed_directory}/${macos}"
 
@@ -79,7 +84,9 @@ sha256_of() {
 
 team_pattern='^[A-Z0-9]{10}$'
 [[ "$team" =~ $team_pattern ]] || fail "'${team}' is not a 10-character team ID"
-for file in "$unsigned_pkg" "$signed_pkg" "$signed_binary" "$notary_log"; do
+submission_pattern='^[0-9A-Fa-f-]{36}$'
+[[ "$submission" =~ $submission_pattern ]] || fail "'${submission}' is not a notary submission ID"
+for file in "$unsigned_binary" "$unsigned_pkg" "$unsigned_sums" "$signed_pkg" "$signed_binary" "$notary_log"; do
   [[ -f "$file" ]] || fail "${file} is not a file"
 done
 
@@ -101,6 +108,22 @@ package_attribute() {
   tr '\n' ' ' <"$1" | grep -o '<pkg-info[^>]*>' | grep -o " $2=\"[^\"]*\"" | sed -e 's/^[^=]*="//' -e 's/"$//'
 }
 
+# listed_hash <name>: the hash the build's SHA256SUMS lists for the name, which
+# exactly one line must.
+listed_hash() {
+  local lines
+  lines="$(awk -v name="$1" '$2 == name { print $1 }' "$unsigned_sums")"
+  if [[ -z "$lines" || "$lines" == *$'\n'* ]]; then
+    fail "SHA256SUMS does not list $1 exactly once"
+  fi
+  echo "$lines"
+}
+
+# lowercase <text>
+lowercase() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+}
+
 # bill_of_materials <Bom>: path, mode, user and group of every entry, sorted.
 bill_of_materials() {
   paste <("$SYSTEM_BIN/lsbom" -p f "$1") <("$SYSTEM_BIN/lsbom" -p m "$1") <("$SYSTEM_BIN/lsbom" -p U "$1") <("$SYSTEM_BIN/lsbom" -p G "$1") | LC_ALL=C sort
@@ -115,6 +138,12 @@ requirement_clauses() {
     awk '{ n = split($0, parts, / and /); for (i = 1; i <= n; i++) { gsub(/^ +| +$/, "", parts[i]); if (parts[i] != "") print parts[i] } }' |
     LC_ALL=C sort
 }
+
+echo "== the unsigned files =="
+for name in "$macos" "$macos_pkg"; do
+  want="$(listed_hash "$name")"
+  assert_equal "the unsigned ${name} is the file SHA256SUMS lists" "$(sha256_of "${unsigned_directory}/${name}")" "$want"
+done
 
 echo "== the packages =="
 "$SYSTEM_SBIN/pkgutil" --expand-full "$unsigned_pkg" "${work}/unsigned" || fail "pkgutil cannot expand the unsigned package"
@@ -183,6 +212,8 @@ assert_matches "spctl accepts the package" "$assessment" ': accepted$'
 assert_matches "spctl names the notary service as the source" "$assessment" '^source=Notarized Developer ID$'
 
 echo "== the notary log =="
+log_job="$("$SYSTEM_BIN/plutil" -extract jobId raw -o - "$notary_log" 2>/dev/null)" || fail "the notary log has no jobId"
+assert_equal "the notary log is of the submission sign-macos made" "$(lowercase "$log_job")" "$(lowercase "$submission")"
 cdhash="$(sed -n 's/^CDHash=//p' <<<"$details")"
 cdhash_pattern='^[0-9a-f]{40}$'
 [[ "$cdhash" =~ $cdhash_pattern ]] || fail "codesign printed no CDHash for the signed binary"

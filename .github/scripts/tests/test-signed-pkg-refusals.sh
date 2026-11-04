@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # runs test-signed-pkg.sh against recording stand-ins of codesign, pkgutil, lsbom,
-# xcrun, spctl, installer, sudo and shasum, and produces each refusal: a payload
+# xcrun, spctl, installer, sudo, plutil and shasum, and produces each refusal: a payload
 # that differs, another identifier, a version or install location that differs, a
 # bill of materials that differs, Scripts, two teams, an unsigned or ad-hoc
 # binary, a missing hardened runtime or timestamp, a designated requirement that
 # is not the default one, an assessment spctl does not accept, an unstapled
-# package, a missing Installer signature, and a notary log that lacks the
-# binary's CDHash. a positive control passes first, so each refusal is shown to be
+# package, a missing Installer signature, a notary log of another submission or
+# that lacks the binary's CDHash, and unsigned files that SHA256SUMS does not list. a positive control passes first, so each refusal is shown to be
 # the check named and not a failure the script always has, and every run is
 # checked for what the stand-ins saw: nothing is installed after a refusal before
 # the install, and the install is removed after a pass and after a failure.
@@ -23,6 +23,8 @@ team=ABCDE12345
 other_team=ZZZZZ99999
 identifier=app.axross.marshal
 cdhash=0123456789abcdef0123456789abcdef01234567
+submission=8c4f2a1e-0b3d-4a6e-9f7c-1d2e3f4a5b6c
+other_submission=0d9e8f7a-6b5c-4d3e-8a2b-1c0d9e8f7a6b
 macos="marshal-${version}-macos-arm64"
 macos_pkg="${macos}.pkg"
 requirement="identifier \"${identifier}\" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = ${team}"
@@ -178,6 +180,13 @@ case "$tool" in
         ;;
     esac
     ;;
+  plutil)
+    # plutil -extract <key> raw -o - <file>
+    key="$2"
+    value="$(sed -n "s/.*\"${key}\" *: *\"\([^\"]*\)\".*/\1/p" "${@: -1}" | head -n 1)"
+    [[ -n "$value" ]] || exit 1
+    echo "$value"
+    ;;
   lsbom)
     field="$2"
     column=1
@@ -237,7 +246,7 @@ case "$tool" in
 esac
 STANDIN
 chmod +x "${work}/standin"
-for tool in codesign lsbom shasum sudo xcrun; do
+for tool in codesign lsbom plutil shasum sudo xcrun; do
   ln -s "${work}/standin" "${work}/bin/${tool}"
 done
 for tool in installer pkgutil spctl; do
@@ -259,6 +268,28 @@ make_binary() {
     printf '#@ runtime=1\n#@ timestamp=1\n#@ adhoc=0\n#@ cdhash=%s\n#@ requirement=%s\n' "$cdhash" "$requirement"
     printf '%s' "$2"
   } >"$1"
+}
+
+# write_sums <unsigned directory> <change>: the build's SHA256SUMS, as it lists
+# the two macOS files and a Windows one; the change spoils one line, drops the
+# package's, lists it twice, or removes the file.
+write_sums() {
+  local directory="$1" change="$2"
+  (
+    cd "$directory"
+    printf 'windows binary\n' >"marshal-${version}-windows-x64.exe"
+    sha256sum "$macos" "$macos_pkg" "marshal-${version}-windows-x64.exe" >SHA256SUMS
+    rm "marshal-${version}-windows-x64.exe"
+    case "$change" in
+      "") ;;
+      wrong-pkg) sed -i "s/^[0-9a-f]\{64\}  ${macos_pkg}\$/$(printf '0%.0s' {1..64})  ${macos_pkg}/" SHA256SUMS ;;
+      wrong-binary) sed -i "s/^[0-9a-f]\{64\}  ${macos}\$/$(printf '0%.0s' {1..64})  ${macos}/" SHA256SUMS ;;
+      no-pkg) grep -v " ${macos_pkg}\$" SHA256SUMS >sums && mv sums SHA256SUMS ;;
+      twice) grep " ${macos_pkg}\$" SHA256SUMS >line && cat line >>SHA256SUMS && rm line ;;
+      none) rm SHA256SUMS ;;
+      *) echo "error: unknown change ${change}" >&2; exit 1 ;;
+    esac
+  )
 }
 
 # make_package <file> <binary file> <extra meta lines>
@@ -286,19 +317,22 @@ password_asked=0
 receipt_before=0
 fake_version=""
 remove_notary=0
+sums_change=""
+submission_argument="$submission"
 run_case() {
   local name="$1" want_status="$2" want_text="$3" want_install="$4" case_directory output status=0 problem=""
   case_directory="${work}/case-${name//[^a-zA-Z0-9]/-}"
   mkdir -p "${case_directory}/unsigned" "${case_directory}/signed" "${case_directory}/notary"
   make_binary "${case_directory}/unsigned/${macos}" ""
   make_package "${case_directory}/unsigned/${macos_pkg}" "${case_directory}/unsigned/${macos}" "${unsigned_meta}"
+  write_sums "${case_directory}/unsigned" "$sums_change"
   make_binary "${case_directory}/signed/${macos}" "$bin_meta"
   cp "${case_directory}/signed/${macos}" "${case_directory}/signed/payload"
   printf '%s' "$payload_extra" >>"${case_directory}/signed/payload"
   make_package "${case_directory}/signed/${macos_pkg}" "${case_directory}/signed/payload" "$signed_meta"
   rm "${case_directory}/signed/payload"
   if [[ -z "$log_text" ]]; then
-    printf '{"ticketContents":[{"path":"x.pkg/Payload/usr/local/bin/marshal","digestAlgorithm":"SHA-256","cdhash":"%s","arch":"arm64"}]}\n' "$cdhash" >"${case_directory}/notary/log.json"
+    printf '{"logFormatVersion":1,"jobId":"%s","status":"Accepted","ticketContents":[{"path":"x.pkg/Payload/usr/local/bin/marshal","digestAlgorithm":"SHA-256","cdhash":"%s","arch":"arm64"}]}\n' "$submission" "$cdhash" >"${case_directory}/notary/log.json"
   else
     printf '%s\n' "$log_text" >"${case_directory}/notary/log.json"
   fi
@@ -308,7 +342,7 @@ run_case() {
   if [[ $remove_notary -eq 1 ]]; then rm "${case_directory}/notary/log.json"; fi
   output="$(cd "$case_directory" && RECORD="${case_directory}/record" RECEIPT="${case_directory}/receipt" FAKE_VERSION="$fake_version" \
     MARSHAL_INSTALL_PATH="${case_directory}/install/marshal" SYSTEM_BIN="${work}/bin" SYSTEM_SBIN="${work}/sbin" \
-    bash "$script" "$version" unsigned signed notary/log.json "$team_argument" 2>&1)" || status=$?
+    bash "$script" "$version" unsigned signed notary/log.json "$team_argument" "$submission_argument" 2>&1)" || status=$?
   if [[ $status -ne $want_status ]]; then
     problem="exit ${status}, expected ${want_status}: ${output}"
   elif [[ "$output" != *"$want_text"* ]]; then
@@ -340,6 +374,8 @@ run_case() {
   receipt_before=0
   fake_version=""
   remove_notary=0
+  sums_change=""
+  submission_argument="$submission"
 }
 
 run_case "a genuine signed set" 0 "All signed package checks passed." yes
@@ -449,12 +485,35 @@ run_case "an assessment that is not the notarized source" 1 "spctl names the not
 signed_meta=$'#@ assess=silent\n'
 run_case "an assessment that does not say accepted" 1 "spctl accepts the package" no
 bin_meta=$'#@ cdhash=\n'
-log_text='{"ticketContents":[{"cdhash":"0123456789abcdef0123456789abcdef01234567"}]}'
+log_text="{\"jobId\":\"${submission}\",\"ticketContents\":[{\"cdhash\":\"${cdhash}\"}]}"
 run_case "a binary with no CDHash" 1 "codesign printed no CDHash for the signed binary" no
-log_text='{"ticketContents":[{"cdhash":"ffffffffffffffffffffffffffffffffffffffff"}]}'
+log_text="{\"jobId\":\"${submission}\",\"ticketContents\":[{\"cdhash\":\"ffffffffffffffffffffffffffffffffffffffff\"}]}"
 run_case "a notary log that lacks the binary's CDHash" 1 "the notary log does not list the binary's CDHash" no
-log_text="{\"ticketContents\":[{\"cdhash\":\"$(tr 'a-f' 'A-F' <<<"$cdhash")\"}]}"
+log_text="{\"jobId\":\"${submission}\",\"ticketContents\":[{\"cdhash\":\"$(tr 'a-f' 'A-F' <<<"$cdhash")\"}]}"
 run_case "a notary log that spells the CDHash in capitals" 0 "the notary log lists the binary's CDHash" yes
+log_text="{\"jobId\":\"$(tr 'a-f' 'A-F' <<<"$submission")\",\"ticketContents\":[{\"cdhash\":\"${cdhash}\"}]}"
+run_case "a notary log that spells the job ID in capitals" 0 "the notary log is of the submission sign-macos made" yes
+log_text="{\"jobId\":\"${other_submission}\",\"ticketContents\":[{\"cdhash\":\"${cdhash}\"}]}"
+run_case "a notary log of another submission" 1 "the notary log is of the submission sign-macos made: got '${other_submission}', expected '${submission}'" no
+log_text="{\"ticketContents\":[{\"cdhash\":\"${cdhash}\"}]}"
+run_case "a notary log with no job ID" 1 "the notary log has no jobId" no
+submission_argument="$other_submission"
+run_case "a submission ID other than the notary log's" 1 "the notary log is of the submission sign-macos made: got '${submission}', expected '${other_submission}'" no
+submission_argument=""
+run_case "no submission ID (sign-macos output none)" 1 "'' is not a notary submission ID" no
+submission_argument="not-an-id"
+run_case "a submission ID that is not a submission ID" 1 "'not-an-id' is not a notary submission ID" no
+
+sums_change=wrong-pkg
+run_case "an unsigned package that SHA256SUMS does not list with its hash" 1 "the unsigned ${macos_pkg} is the file SHA256SUMS lists" no
+sums_change=wrong-binary
+run_case "an unsigned binary that SHA256SUMS does not list with its hash" 1 "the unsigned ${macos} is the file SHA256SUMS lists" no
+sums_change=no-pkg
+run_case "a SHA256SUMS that does not list the unsigned package" 1 "SHA256SUMS does not list ${macos_pkg} exactly once" no
+sums_change=twice
+run_case "a SHA256SUMS that lists the unsigned package twice" 1 "SHA256SUMS does not list ${macos_pkg} exactly once" no
+sums_change=none
+run_case "a missing SHA256SUMS" 1 "unsigned/SHA256SUMS is not a file" no
 
 signed_meta=$'#@ installer_fails=1\n'
 run_case "an installer that fails" 1 "installer rejects the signed package" yes
@@ -476,13 +535,14 @@ make_binary "${existing_directory}/unsigned/${macos}" ""
 make_package "${existing_directory}/unsigned/${macos_pkg}" "${existing_directory}/unsigned/${macos}" ""
 make_binary "${existing_directory}/signed/${macos}" ""
 make_package "${existing_directory}/signed/${macos_pkg}" "${existing_directory}/signed/${macos}" ""
-printf '{"cdhash":"%s"}\n' "$cdhash" >"${existing_directory}/notary/log.json"
+printf '{"jobId":"%s","cdhash":"%s"}\n' "$submission" "$cdhash" >"${existing_directory}/notary/log.json"
+write_sums "${existing_directory}/unsigned" ""
 printf 'a manual install\n' >"${existing_directory}/install/marshal"
 : >"${existing_directory}/record"
 status=0
 output="$(cd "$existing_directory" && RECORD="${existing_directory}/record" RECEIPT="${existing_directory}/receipt" \
   MARSHAL_INSTALL_PATH="${existing_directory}/install/marshal" SYSTEM_BIN="${work}/bin" SYSTEM_SBIN="${work}/sbin" \
-  bash "$script" "$version" unsigned signed notary/log.json "$team" 2>&1)" || status=$?
+  bash "$script" "$version" unsigned signed notary/log.json "$team" "$submission" 2>&1)" || status=$?
 if [[ $status -ne 1 || "$output" != *"exists before the install"* || "$(cat "${existing_directory}/install/marshal")" != "a manual install" ]] ||
   grep -q '^installer ' "${existing_directory}/record"; then
   echo "FAIL an existing install: exit ${status}: ${output}" >&2
