@@ -348,10 +348,11 @@ record a change to either workflow, to the build call in
     holds `contents: read` and runs no repository code, checksums and attestation
     follow every signing step, no pull-request run reaches the Environment, and
     F0's and M2's signing jobs use only operating-system signing tools. W4's
-    update-signing job is the one exception: it runs `tauri-cli`'s `signer sign`,
-    built with `--locked` in a job without the Environment from a crate archive
-    whose SHA-256 equals one committed in the repository, and checked against that
-    job's output before it runs.
+    update-signing job is the one exception to that last rule: it runs `tauri-cli`'s
+    `signer sign`, built with `--locked` in a tool job without the Environment from a
+    crate archive whose SHA-256 equals one committed in the repository. The signing
+    job checks the binary it receives against the SHA-256 that the tool job outputs,
+    before it runs it.
     [CLI](../operations/cli.md#extending-the-release-workflows) names the points.
 - **The documented install blocks run against the dry run's installers on hosted
   runners.** The `Install Blocks` job in

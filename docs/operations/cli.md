@@ -1891,8 +1891,8 @@ F0 owns these. W1, W4, M2 and M4 consume them. Each is a child of roadmap
 - **M2**, "Mac app", signs the Mac app with the same identifier and team, and
   notarizes and staples its disk image, in F0's signing job. The commands and the
   layout are M2's. M2 also holds the Keychain store. Its Keychain items trust the
-  signed Marshal executable, the carrier named below, and must be created by F0's
-  stable Developer ID identity.
+  signed Marshal executable, which is the code object that carries the identifier in
+  the first contract below, and must be created by F0's stable Developer ID identity.
 - **M4**, "Mac app: login, power, updates and telemetry", updates the installed Mac
   app. Its updates keep M2's Keychain tokens working only while the identifier and the
   team stay the same.
@@ -2022,11 +2022,11 @@ these points:
 - **M2** adds steps to `sign-macos` and `verify-macos` that sign the Mac app with the
   same identifier and team, and notarize and staple its disk image. The commands and
   the layout are M2's.
-- **W4** adds its own update-signing job, which the roadmap adopted, to sign the
+- **W4** adds its own update-signing job, which roadmap [#72](https://github.com/axross/runners/issues/72) adopted, to sign the
   update archive. The archive's signature is W4's contract.
 - **M4** may sign the Mac's update archive in W4's update-signing job.
 
-Every extension keeps these five rules:
+Every extension keeps these rules:
 
 - only signing jobs declare the Environment;
 - a signing job holds `contents: read` and runs no repository code;
@@ -2034,11 +2034,12 @@ Every extension keeps these five rules:
 - no pull-request run reaches the Environment;
 - F0's and M2's signing jobs use only operating-system signing tools.
 
-W4's update-signing job is the one exception. It runs `tauri-cli`'s `signer sign`. A
-tool job without the Environment builds that binary with `--locked` from a crate
-archive whose SHA-256 must equal one committed in the repository. The signing job
-checks the binary against the tool job's output before running it. F0's later
-revision sets how the job sits beside F0's jobs.
+W4's update-signing job is the one exception to the last rule. It runs `tauri-cli`'s
+`signer sign`. A tool job without the Environment builds that binary with `--locked`
+from a crate archive whose SHA-256 must equal one committed in the repository. The
+signing job checks the binary it receives against the SHA-256 that the tool job
+outputs, before running it. A later revision of F0's plan, before W1's installer pull
+request, sets how the job sits beside F0's jobs.
 
 An extension adds its jobs or steps to `check-release-shape.mjs` and its test in its
 own pull request, under REVIEW.md's release lens and the maintainer's review. The
