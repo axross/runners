@@ -12,10 +12,14 @@
 // against a hostile one. what keeps pull requests away from the Environment is
 // the maintainer's branch rule and the fact that release.yaml runs only on
 // dispatch. it reads the commands a signing script runs, a trap's body
-// included, but not what its commands are told to do: the programs of awk and
-// sed, the tests inside `[[ ]]`, an option name built at run time, a custom
-// `shell:`, and any environment variable other than PATH and BASH_ENV can
-// still run code it does not see. a later signing job or step (W4, M2) is
+// included, but not what its commands are told to do, so these can still run
+// code it does not see:
+//   - the programs of awk and sed, and the tests inside `[[ ]]`;
+//   - an option or variable name built at run time, such as `find "$option"` or
+//     `read -r "$name"` and `printf -v "$name"`;
+//   - an assignment through `${PATH:=...}`, and any environment variable other
+//     than PATH, BASH_ENV and ENV.
+// a later signing job or step (W4, M2) is
 // added to this check in its own pull request, under REVIEW.md's release lens.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -138,6 +142,21 @@ const EXPORT_BLOCK = new RegExp(
 );
 const GUARD_CONTEXT = "every new job";
 const LIMITS = { "sign-macos": 60, "verify-macos": 20, "assemble-signed": 10 };
+// GitHub reads the names of its status functions without regard to case, so
+// `Always()` and `always ( )` are the function too.
+const STATUS_FUNCTION = /\b(always|failure|cancelled|success)\s*\(\s*\)/i;
+const FAILURE_FUNCTION = /\b(always|failure|cancelled)\s*\(\s*\)/i;
+// the `with:` keys the artifact actions may take in sign-macos. any other, such
+// as `repository`, `run-id` or `github-token`, could point them elsewhere.
+const ARTIFACT_INPUTS = {
+  "actions/download-artifact": ["name", "path"],
+  "actions/upload-artifact": [
+    "name",
+    "path",
+    "retention-days",
+    "if-no-files-found",
+  ],
+};
 
 function read(path) {
   return readFileSync(join(root, path), "utf8");
@@ -262,7 +281,8 @@ for (const [file, doc] of Object.entries(workflows)) {
 
 // only sign-macos reads a signing secret, whether by name, through the whole
 // `secrets` context, or by passing all of them (`secrets: inherit`) to a called
-// workflow. this reads the parsed documents, not the scripts' text.
+// workflow. every workflow file is read, and none but release.yaml's sign-macos
+// is exempt. this reads the parsed documents, not the scripts' text.
 const SECRET_READ = /\bsecrets\s*(?:\.\s*MACOS_|\[)|\(\s*secrets\s*\)/i;
 function secretReads(value, path = "") {
   if (typeof value === "string") {
@@ -283,9 +303,7 @@ function secretReads(value, path = "") {
   }
   return [];
 }
-for (const file of ["release.yaml", "release-build.yaml"]) {
-  const doc = workflows[file];
-  if (!doc) continue;
+for (const [file, doc] of Object.entries(workflows)) {
   const rest = { ...doc, jobs: { ...doc.jobs } };
   if (file === "release.yaml") delete rest.jobs[SIGNING_JOB];
   for (const use of secretReads(rest)) {
@@ -307,6 +325,22 @@ function codeLines(script) {
     .split("\n")
     .filter((line) => !line.trimStart().startsWith("#"));
 }
+
+// the commands that assign to a variable given by name, and `for`, which does the
+// same, when they start a command: `read PATH`, `export PATH`, `local ENV`. the
+// plain `NAME=` forms are matched separately.
+const COMMAND_START =
+  "(?:^|[;&|({]|\\b(?:then|do|else)\\b)[ \\t]*(?:[A-Za-z_]\\w*=\\S*[ \\t]+)*(?:(?:command|builtin)[ \\t]+)?";
+const PROTECTED_NAME =
+  "(?<![A-Za-z0-9_$\\{])[\"']?(PATH|BASH_ENV|ENV)[\"']?(?![A-Za-z0-9_])";
+const NAMING_COMMAND = new RegExp(
+  `${COMMAND_START}(read|mapfile|readarray|getopts|declare|typeset|local|export|readonly|for|select)\\b[^;&|\\n]*?${PROTECTED_NAME}`,
+  "gm",
+);
+const PRINTF_TO_VARIABLE = new RegExp(
+  `${COMMAND_START}printf\\b[^;&|\\n]*?[ \\t]-v[ \\t]*${PROTECTED_NAME}`,
+  "gm",
+);
 
 const TOOL_PATH = /^\$\{?SYSTEM_S?BIN\}?\/[A-Za-z0-9_]+$/;
 // the character that stands for one character of a blanked string. no command
@@ -374,6 +408,10 @@ function skeleton(script) {
       } else if (source.startsWith("$((", i)) {
         const end = source.indexOf("))", i);
         if (end === -1) throw new Error("an unterminated arithmetic expansion");
+        // the expansion is replaced by `0` below, which would hide a command.
+        if (/\$\(|`/.test(source.slice(i + 3, end))) {
+          throw new Error("an arithmetic expansion that contains a command");
+        }
         out += "0";
         i = end + 2;
       } else if (char === "$" && source[i + 1] === "(") {
@@ -529,6 +567,16 @@ function checkSigningJob() {
   }
   if (signing["runs-on"] !== "macos-latest")
     problem(`${where} must run on macos-latest`);
+  // a shell other than the default could read a file first or run its own
+  // program, and the job's scripts are read as bash.
+  for (const [scope, defaults] of [
+    ["the workflow", release.defaults],
+    [SIGNING_JOB, signing.defaults],
+  ]) {
+    if (defaults?.run && "shell" in defaults.run) {
+      problem(`${where}: ${scope} sets defaults.run.shell`);
+    }
+  }
 
   const scripts = [];
   for (const step of stepsOf(signing)) {
@@ -541,10 +589,22 @@ function checkSigningJob() {
         problem(
           `${where}: step "${label}" uses ${step.uses}; only ${SIGNING_ACTIONS.join(" and ")} are allowed`,
         );
-      } else if (!/@v\d+$/.test(step.uses)) {
-        problem(`${where}: step "${label}" uses ${step.uses}, not a major tag`);
+      } else {
+        if (!/@v\d+$/.test(step.uses)) {
+          problem(
+            `${where}: step "${label}" uses ${step.uses}, not a major tag`,
+          );
+        }
+        for (const key of Object.keys(step.with ?? {})) {
+          if (!ARTIFACT_INPUTS[action].includes(key)) {
+            problem(
+              `${where}: step "${label}" gives ${action} the input ${key}; only ${ARTIFACT_INPUTS[action].join(", ")} are allowed`,
+            );
+          }
+        }
       }
     }
+    if ("shell" in step) problem(`${where}: step "${label}" sets shell`);
     if (typeof step.run === "string") {
       if (step.run.includes("${{"))
         problem(`${where}: step "${label}" expands \${{ }} inside run`);
@@ -625,6 +685,16 @@ function checkSigningJob() {
     )) {
       problem(`${where}: the script of step "${label}" assigns ${match[1]}`);
     }
+    for (const match of code.matchAll(NAMING_COMMAND)) {
+      problem(
+        `${where}: the script of step "${label}" names ${match[2]} to ${match[1]}, which could assign it`,
+      );
+    }
+    for (const match of code.matchAll(PRINTF_TO_VARIABLE)) {
+      problem(
+        `${where}: the script of step "${label}" names ${match[1]} to printf -v, which assigns it`,
+      );
+    }
 
     // commands.
     let analysis;
@@ -673,7 +743,7 @@ function checkSigningJob() {
   // the only steps that may run after a failure.
   for (const step of stepsOf(signing)) {
     const condition = text(step.if);
-    if (!/\b(always|failure|cancelled|success)\(\)/.test(condition)) continue;
+    if (!STATUS_FUNCTION.test(condition)) continue;
     const isCleanup =
       typeof step.run === "string" &&
       step.run.split("\n")[0] === "# sign-macos: cleanup";
@@ -945,7 +1015,7 @@ function checkNewJobs() {
   for (const [id, job] of Object.entries(jobs)) {
     if ("continue-on-error" in job)
       problem(`release.yaml ${id} sets continue-on-error`);
-    if (/\b(always|failure|cancelled)\(\)/.test(text(job.if))) {
+    if (FAILURE_FUNCTION.test(text(job.if))) {
       problem(
         `release.yaml ${id} has a job-level condition that can run it after a failure: ${job.if}`,
       );
@@ -955,10 +1025,7 @@ function checkNewJobs() {
         problem(
           `release.yaml ${id}: step "${text(step.name)}" sets continue-on-error`,
         );
-      if (
-        id !== SIGNING_JOB &&
-        /\b(always|failure|cancelled)\(\)/.test(text(step.if))
-      ) {
+      if (id !== SIGNING_JOB && FAILURE_FUNCTION.test(text(step.if))) {
         problem(
           `release.yaml ${id}: step "${text(step.name)}" can run after a failure`,
         );

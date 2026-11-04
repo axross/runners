@@ -4,12 +4,14 @@
 # cause). every change is one the release record forbids: the signing job's
 # permissions, an action it uses, a checkout, a `${{ }}` inside run, a package
 # manager or fetch or repository file, a tool called by name, a command that is
-# quoted, expanded, run by a trap or by find, or found through PATH, BASH_ENV,
-# GITHUB_PATH or GITHUB_ENV, the stand-in prefixes, pkgbuild's arguments; an
-# Environment in another job, in a `.yml` workflow, or reachable from a pull
-# request; a signing secret read outside sign-macos; a signing job without its
-# guard or its place in the chain; and a way past a failed job. a change the test cannot find in the files fails the
-# test, so it cannot go stale and pass.
+# quoted, expanded, run by a trap or by find or hidden in an arithmetic expansion,
+# or found through PATH, BASH_ENV, GITHUB_PATH or GITHUB_ENV (set or read into),
+# a shell of its own, an artifact action's other inputs, the stand-in prefixes,
+# pkgbuild's arguments; an Environment in another job, in a `.yml` workflow, or
+# reachable from a pull request; a signing secret read outside sign-macos, in any workflow; a signing
+# job without its guard or its place in the chain; and a way past a failed job,
+# whatever the case of its status function. a change the test cannot find in the
+# files fails the test, so it cannot go stale and pass.
 # shellcheck disable=SC2016,SC1003 # the texts the changes find and replace are literal, not expansions.
 set -euo pipefail
 
@@ -213,6 +215,34 @@ expect_fail "sign-macos with find -exec spelled in two quoted parts" "runs find 
   "$release" $'find unsigned -mindepth 1 -maxdepth 1 |' $'find unsigned -mindepth 1 -maxdepth 1 -e"xec" npm ci {} \';\' |'
 expect_fail "sign-macos with find -delete" "runs find with -delete" \
   "$release" $'find unsigned -mindepth 1 -maxdepth 1 |' $'find unsigned -mindepth 1 -maxdepth 1 -delete |'
+# an arithmetic expansion is not read as commands, so it may not hold one.
+expect_fail "sign-macos with a command substitution inside an arithmetic expansion" "cannot be analysed: an arithmetic expansion that contains a command" \
+  "$release" "$import_echo" $'          count=$(( $(npm ci) + 1 ))\n'"$import_echo"
+expect_fail "sign-macos with a backtick inside an arithmetic expansion" "cannot be analysed: an arithmetic expansion that contains a command" \
+  "$release" "$import_echo" $'          count=$(( `npm ci` + 1 ))\n'"$import_echo"
+# a command that names PATH, BASH_ENV or ENV can assign it without a `NAME=`.
+for naming in "read -r PATH" "read -r first BASH_ENV" "declare -n ENV" "typeset BASH_ENV" "local PATH" "export PATH" "readonly BASH_ENV" "for PATH in /tmp/fake; do :; done"; do
+  expect_fail "sign-macos with ${naming}" "which could assign it" \
+    "$release" "$import_echo" "          ${naming}"$'\n'"$import_echo"
+done
+expect_fail "sign-macos with printf -v naming PATH" "names PATH to printf -v" \
+  "$release" "$import_echo" $'          printf -v PATH %s /tmp/fake\n'"$import_echo"
+# a shell of the job's own could run a program or read a file first.
+expect_fail "a sign-macos step with a shell" "step \"Sign The Binary\" sets shell" \
+  "$release" $'      - name: Sign The Binary\n' $'      - name: Sign The Binary\n        shell: bash -e {0}\n'
+expect_fail "sign-macos with a default shell" "sign-macos sets defaults.run.shell" \
+  "$release" $'    timeout-minutes: 60\n    environment: release' $'    timeout-minutes: 60\n    defaults:\n      run:\n        shell: bash -e {0}\n    environment: release'
+expect_fail "a workflow with a default shell" "the workflow sets defaults.run.shell" \
+  "$release" $'permissions:\n  contents: read\n' $'permissions:\n  contents: read\n\ndefaults:\n  run:\n    shell: bash -e {0}\n'
+# the artifact actions may take only the inputs the job uses.
+expect_fail "sign-macos downloading from another repository" "gives actions/download-artifact the input repository" \
+  "$release" $'          name: ${{ needs.build.outputs.artifact }}\n          path: unsigned\n' $'          name: ${{ needs.build.outputs.artifact }}\n          path: unsigned\n          repository: someone/else\n'
+expect_fail "sign-macos downloading with a token" "gives actions/download-artifact the input github-token" \
+  "$release" $'          name: ${{ needs.build.outputs.artifact }}\n          path: unsigned\n' $'          name: ${{ needs.build.outputs.artifact }}\n          path: unsigned\n          github-token: ${{ github.token }}\n'
+expect_fail "sign-macos downloading another run's artifact" "gives actions/download-artifact the input run-id" \
+  "$release" $'          name: ${{ needs.build.outputs.artifact }}\n          path: unsigned\n' $'          name: ${{ needs.build.outputs.artifact }}\n          path: unsigned\n          run-id: 1\n'
+expect_fail "sign-macos uploading with an extra input" "gives actions/upload-artifact the input overwrite" \
+  "$release" $'          path: signed\n          retention-days: 14\n' $'          path: signed\n          overwrite: true\n          retention-days: 14\n'
 # nothing may change where commands are found, or what the shell runs first.
 expect_fail "a step of sign-macos that sets PATH in its env" "sets PATH or BASH_ENV" \
   "$release" $'        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n        run: |\n          # sign-macos: sign' $'        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n          PATH: /tmp/fake\n        run: |\n          # sign-macos: sign'
@@ -296,6 +326,10 @@ expect_fail "every secret read through toJSON" "only sign-macos may read a signi
   "$release" $'  attest:\n    name: Attest The Build Provenance\n' $'  attest:\n    name: Attest The Build Provenance\n    env:\n      ALL: ${{ toJSON(secrets) }}\n'
 expect_fail "secrets: inherit on the build job" "release.yaml: jobs.build.secrets passes every secret on" \
   "$release" $'    uses: ./.github/workflows/release-build.yaml\n' $'    uses: ./.github/workflows/release-build.yaml\n    secrets: inherit\n'
+expect_fail "a signing secret in a pull request workflow" "merge-checks.yaml: jobs.sneaky.env.PASSWORD reads" \
+  "$merge_checks" $'jobs:\n' $'jobs:\n  sneaky:\n    runs-on: ubuntu-latest\n    env:\n      PASSWORD: ${{ secrets.MACOS_P12_PASSWORD }}\n    steps:\n      - run: echo hi\n'
+expect_fail_new_file "every secret passed on in a .yml workflow" "extra.yml: jobs.sneaky.secrets passes every secret on" \
+  .github/workflows/extra.yml $'name: Extra\non:\n  workflow_dispatch:\njobs:\n  sneaky:\n    uses: ./.github/workflows/release-build.yaml\n    secrets: inherit\n'
 expect_fail "a signing secret in release-build.yaml" "release-build.yaml: jobs.assemble" \
   "$release_build" $'  assemble:\n    name: Assemble The Release Files\n' $'  assemble:\n    name: Assemble The Release Files\n    env:\n      PASSWORD: ${{ secrets.MACOS_P12_PASSWORD }}\n'
 
@@ -393,6 +427,13 @@ expect_fail "failure() on the sign step" "is allowed only on the clean-up and no
   "$release" $'      - name: Sign The Binary\n' $'      - name: Sign The Binary\n        if: failure()\n'
 expect_fail "always() on a step of another job" "can run after a failure" \
   "$release" $'      - name: Download The Notary Log\n' $'      - name: Download The Notary Log\n        if: always()\n'
+# GitHub reads a status function's name in any case.
+expect_fail "Always() in assemble-signed's condition" "has a job-level condition that can run it after a failure" \
+  "$release" $'    needs: [plan, build, sign-macos, verify-macos]\n'"$guard" $'    needs: [plan, build, sign-macos, verify-macos]\n    if: Always() && needs.plan.outputs.version != \'\''
+expect_fail "Always() on a step of another job" "can run after a failure" \
+  "$release" $'      - name: Download The Notary Log\n' $'      - name: Download The Notary Log\n        if: Always()\n'
+expect_fail "Always() on a signing step" "is allowed only on the clean-up and notary-log upload steps" \
+  "$release" $'      - name: Upload The Signed Files\n        uses: actions/upload-artifact@v7' $'      - name: Upload The Signed Files\n        if: ${{ ALWAYS() }}\n        uses: actions/upload-artifact@v7'
 expect_fail "a clean-up step that only runs after a success" "must have exactly one clean-up step, with \`if: always()\`" \
   "$release" $'      - name: Delete The Keychain And The Key Files\n        if: always()\n' $'      - name: Delete The Keychain And The Key Files\n'
 expect_fail "a notary log upload that only runs after a success" "must upload notary-log-macos once, with \`if: always()\`" \
