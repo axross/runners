@@ -76,7 +76,7 @@ impl fmt::Display for PlanError {
 
 impl std::error::Error for PlanError {}
 
-/// the image an axmc pool runs when the configuration names none.
+/// the image name `build --profile axmc` tags when the configuration names none.
 pub const DEFAULT_IMAGE_NAME: &str = "actions-runner:local";
 
 /// turns a valid axpc plan into pools, in the plan's order, and fails for any other

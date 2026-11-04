@@ -70,7 +70,7 @@ pub fn parse_build_vm_name(name: &str) -> Option<u64> {
 
 /// a golden VM's name,
 /// `marshal-golden-linux-g<golden VM version>-c<image contract version>-r<runner version>-<yyyyMMddHHmmss>`,
-/// which is all `start`, `status` and a job launch know of the VM without booting it.
+/// which is all that is known of the VM without booting it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GoldenVmName {
     pub golden_version: u32,

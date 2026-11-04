@@ -58,13 +58,6 @@ pub fn discarded_gap(pool: &str, vm: &str) -> Option<String> {
         .map(|text| format!("Diagnostic gap in pool {pool}, job VM {vm}: {text}"))
 }
 
-/// logs [`discarded_gap`].
-pub fn warn_discarded(log: &dyn Log, record: &DiagnosticRecord, vm: &str) {
-    if let Some(text) = discarded_gap(&record.pool, vm) {
-        log.warn(&text);
-    }
-}
-
 /// logs what a finalisation did that needs the operator's eye.
 pub fn report(log: &dyn Log, record: &DiagnosticRecord, name: &str, finalized: &Finalized) {
     if finalized.kept {

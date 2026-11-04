@@ -14,7 +14,7 @@ use super::client::{Captured, READ_TAIL, Sink, TartClient, TartError, captured, 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum VmLauncher {
     /// as a child of this process, killed when it is dropped; the VM then outlives a
-    /// CLI that is killed hard, and the next `start` deletes it.
+    /// CLI that is killed hard, and the next `build` deletes it.
     #[default]
     Direct,
     /// by the VM shim, which, when its liveness pipe closes however this process

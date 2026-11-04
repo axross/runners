@@ -1,8 +1,7 @@
 //! the host prerequisite checks: Tart's version, and Softnet's file and version. Each
 //! returns a pass, a warning or a refusal with its message. The caller decides what a
-//! refusal does: at `start` and `build` every refusal ends the command, and after
-//! `start` a missing or unanswering `tart` means Tart is unavailable, while a refused
-//! `softnet` holds its slot. `docs/operations/cli.md` describes the checks.
+//! refusal does: `build` is the only caller in this version, and every refusal ends
+//! it. `docs/operations/cli.md` describes the checks.
 
 use std::ffi::OsStr;
 use std::time::Duration;

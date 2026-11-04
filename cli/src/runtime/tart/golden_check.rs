@@ -52,7 +52,7 @@ pub fn check_golden(entries: &[VmEntry]) -> ImageCheck {
     })
 }
 
-/// the name of the golden VM a job VM is cloned from: the newest, when it runs here.
+/// the name of the golden VM to clone job VMs from: the newest, when it runs here.
 #[must_use]
 pub fn clone_source(entries: &[VmEntry]) -> Option<&str> {
     let (entry, name) = newest_golden_vm(entries)?;

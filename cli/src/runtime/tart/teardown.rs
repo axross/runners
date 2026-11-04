@@ -1,6 +1,6 @@
 //! getting rid of a VM within a budget: a graceful stop, then a forced stop if that
-//! failed, then the deletion; the same steps for a job VM at the end of its job, at
-//! the stop sequence, and for a leftover at the next `start`.
+//! failed, then the deletion; `build` uses it for its build VM and for the leftovers
+//! of an earlier build.
 
 use std::time::Duration;
 
