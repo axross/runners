@@ -779,7 +779,10 @@ machine at once, and a second agent is refused as a second `start` is. It has no
 command or flag of its own yet; `agent::run` is the entry that wires the container
 backend, GitHub, the token store, the lock, the channel and the log, and the tests
 start it through `instance-helper agent`. A later release gives it a program to run
-in.
+in. Only a debug build lets a test replace the agent's token store, channel limits,
+watched file, log size and `docker` environment; a release build ignores each
+request, as it does the roots and the GitHub address, and `tests/agent_overrides.rs`
+shows both halves and runs again in the release profile in CI.
 
 | Module              | Holds                                                                               |
 | ------------------- | ----------------------------------------------------------------------------------- |

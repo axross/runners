@@ -154,6 +154,49 @@ impl AgentOptions<'_> {
     }
 }
 
+/// the settings a debug build lets the caller replace, with a release build's always
+/// the host's.
+#[doc(hidden)]
+pub struct Applied {
+    pub max_log_bytes: u64,
+    pub environment: Vec<(OsString, OsString)>,
+    pub store: Option<Arc<dyn TokenStore>>,
+    pub limits: Limits,
+    pub executable: Option<PathBuf>,
+}
+
+/// the settings `run` uses: the options' replacements in a debug build, and in a
+/// release build only the host's own.
+#[doc(hidden)]
+#[must_use]
+pub fn applied_overrides(options: &AgentOptions<'_>) -> Applied {
+    #[allow(unused_mut)]
+    let mut applied = Applied {
+        max_log_bytes: AgentLog::default_max_bytes(),
+        environment: Vec::new(),
+        store: None,
+        limits: Limits::default(),
+        executable: std::env::current_exe().ok(),
+    };
+    #[cfg(debug_assertions)]
+    {
+        if let Some(max) = options.max_log_bytes {
+            applied.max_log_bytes = max;
+        }
+        applied.environment.clone_from(&options.docker_environment);
+        applied.store.clone_from(&options.store);
+        if let Some(replacement) = options.limits {
+            applied.limits = replacement;
+        }
+        if let Some(path) = options.executable {
+            applied.executable = Some(path.to_path_buf());
+        }
+    }
+    #[cfg(not(debug_assertions))]
+    let _ = options;
+    applied
+}
+
 /// the platform's token store: the Credential Manager on Windows, and none elsewhere
 /// until a store is added behind the interface.
 fn platform_store(log: &dyn Log) -> Option<Arc<dyn TokenStore>> {
@@ -191,13 +234,8 @@ pub fn run(options: AgentOptions<'_>, err: &mut dyn Write) -> u8 {
         }
         Err(error) => return print_error(err, &error),
     };
-    #[allow(unused_mut)]
-    let mut max_log_bytes = AgentLog::default_max_bytes();
-    #[cfg(debug_assertions)]
-    if let Some(max) = options.max_log_bytes {
-        max_log_bytes = max;
-    }
-    let log = match AgentLog::open(roots.log_directory(), max_log_bytes) {
+    let applied = applied_overrides(&options);
+    let log = match AgentLog::open(roots.log_directory(), applied.max_log_bytes) {
         Ok(log) => Rc::new(log),
         Err(error) => return print_error(err, &error),
     };
@@ -222,10 +260,7 @@ pub fn run(options: AgentOptions<'_>, err: &mut dyn Write) -> u8 {
         }
     };
     let program = resolve_program(options.docker);
-    #[allow(unused_mut)]
-    let mut environment = Vec::new();
-    #[cfg(debug_assertions)]
-    environment.clone_from(&options.docker_environment);
+    let environment = applied.environment;
     let backend = DockerBackend::new(
         DockerConfig {
             program: program.clone(),
@@ -242,23 +277,7 @@ pub fn run(options: AgentOptions<'_>, err: &mut dyn Write) -> u8 {
         environment,
         definition: options.definition.map(Path::to_path_buf),
     };
-    #[cfg(debug_assertions)]
-    let store = options.store.clone();
-    #[cfg(not(debug_assertions))]
-    let store = None;
-    let store = store.or_else(|| platform_store(&*log));
-    #[allow(unused_mut)]
-    let mut limits = Limits::default();
-    #[cfg(debug_assertions)]
-    if let Some(replacement) = options.limits {
-        limits = replacement;
-    }
-    #[allow(unused_mut)]
-    let mut executable = std::env::current_exe().ok();
-    #[cfg(debug_assertions)]
-    if let Some(path) = options.executable {
-        executable = Some(path.to_path_buf());
-    }
+    let store = applied.store.or_else(|| platform_store(&*log));
     let resident = Resident {
         backend: &backend,
         clock: &SystemClock,
@@ -274,8 +293,8 @@ pub fn run(options: AgentOptions<'_>, err: &mut dyn Write) -> u8 {
             times: StopTimes::default(),
             launch: options.launch,
         },
-        executable,
-        limits,
+        executable: applied.executable,
+        limits: applied.limits,
     };
     let ended = runtime.block_on(run_resident(resident));
     // the runtime is not waited for: on Windows a stalled client can keep a blocking
