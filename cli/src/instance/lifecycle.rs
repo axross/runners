@@ -18,9 +18,9 @@ use tokio::sync::{mpsc, oneshot, watch};
 use crate::macos::reason::sleep_reason;
 use crate::macos::watch::NetworkChange;
 use crate::profile::Profile;
-use crate::runtime::backend::{Backend, DiagnosticRecord, StopRequest};
+use crate::runtime::backend::{Backend, DiagnosticRecord, REMOVAL_WITHIN, StopRequest};
 use crate::runtime::clock::Clock;
-use crate::runtime::diagnostic::{self, Flushed};
+use crate::runtime::diagnostic::{self, Flushed, StopClock};
 use crate::runtime::log::Log;
 use crate::runtime::pool::diagnostic_records;
 use crate::runtime::scrub::scrub_error_text;
@@ -84,6 +84,15 @@ impl StopTimes {
             release_budget: release,
             ..times
         }
+    }
+
+    /// how much earlier the diagnostic column's deadlines fall so that the release
+    /// still has its budget before the exit deadline: the release takes the slack the
+    /// column leaves there first, and the column gives up the rest.
+    #[must_use]
+    pub fn diagnostic_shortening(&self) -> Duration {
+        let slack = self.exit_deadline.saturating_sub(REMOVAL_WITHIN);
+        self.release_budget.saturating_sub(slack)
     }
 }
 
@@ -902,7 +911,12 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source, M: Monitor> Instance<'a, B, K
         let start = tokio::time::Instant::now();
         tokio::join!(
             self.ordinary_steps(containers),
-            diagnostic::container_steps(self.backend, self.log, start, self.times.remove_budget)
+            diagnostic::container_steps(
+                self.backend,
+                self.log,
+                StopClock::at(start).shortened_by(self.times.diagnostic_shortening()),
+                self.times.remove_budget,
+            )
         );
         self.release_hosts().await;
     }
@@ -1005,6 +1019,30 @@ mod tests {
         assert!(
             times.stop_budget + times.remove_budget + times.release_budget <= times.exit_deadline
         );
+    }
+
+    #[test]
+    fn a_release_takes_the_slack_before_the_exit_deadline_and_the_diagnostic_column_gives_up_the_rest()
+     {
+        assert_eq!(
+            StopTimes::default().diagnostic_shortening(),
+            Duration::ZERO,
+            "a backend without hosts keeps the diagnostic column as it is"
+        );
+        assert_eq!(
+            StopTimes::reserving(Duration::from_secs(10)).diagnostic_shortening(),
+            Duration::from_secs(6),
+            "the 24 s column leaves 4 s before the 28 s deadline"
+        );
+        assert_eq!(
+            StopTimes::reserving(Duration::from_secs(4)).diagnostic_shortening(),
+            Duration::ZERO
+        );
+        let short = StopTimes {
+            exit_deadline: Duration::from_millis(200),
+            ..StopTimes::default()
+        };
+        assert_eq!(short.diagnostic_shortening(), Duration::ZERO);
     }
 
     #[test]

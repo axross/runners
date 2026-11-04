@@ -13,7 +13,9 @@ use crate::validate::{Entry, Plan, PlannedVolume, format_cpu_count};
 
 use super::backend::{Backend, DiagnosticRecord, HostRequest, JobHost, Mount, StopRequest};
 use super::board::{Board, PoolState};
-use super::diagnostic::{STOP_GRACE, STOP_WITHIN, finalize_claimed, gap_text, warn_discarded};
+use super::diagnostic::{
+    STOP_GRACE, STOP_WITHIN, StopClock, finalize_claimed, gap_text, warn_discarded,
+};
 use super::log::Log;
 use super::name::cpu_probe_name;
 use super::select::Runtime;
@@ -434,7 +436,7 @@ async fn finalize_left<B: Backend>(
         .iter()
         .filter_map(|name| retained.claim(name))
         .collect();
-    for acted in finalize_claimed(backend, log, claims, Instant::now()).await {
+    for acted in finalize_claimed(backend, log, claims, StopClock::at(Instant::now())).await {
         let removed = if acted.finalized.removed {
             "removed"
         } else {

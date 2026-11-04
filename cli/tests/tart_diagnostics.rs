@@ -28,7 +28,7 @@ use marshal_cli::runtime::backend::{
     StopRequest,
 };
 use marshal_cli::runtime::clock::Clock;
-use marshal_cli::runtime::diagnostic::{self, container_steps, finalize_at_job_end};
+use marshal_cli::runtime::diagnostic::{self, StopClock, container_steps, finalize_at_job_end};
 use marshal_cli::runtime::name::job_container_name;
 use marshal_cli::runtime::secret::Secret;
 use support::rig::{POOL, Rig, SLOT, TestClock, golden_name, host, job_vm, request};
@@ -291,7 +291,13 @@ async fn a_failed_stop_is_a_gap_and_the_export_and_the_deletion_still_run() {
     let name = ended_diagnostic_job(&rig, &record(&sink)).await;
     let claims = vec![rig.backend.retained().claim(&name).unwrap()];
 
-    let acted = diagnostic::finalize_claimed(&rig.backend, &*rig.log, claims, Instant::now()).await;
+    let acted = diagnostic::finalize_claimed(
+        &rig.backend,
+        &*rig.log,
+        claims,
+        StopClock::at(Instant::now()),
+    )
+    .await;
 
     assert_eq!(acted.len(), 1);
     assert_eq!(acted[0].finalized.export, ExportOutcome::Complete);
@@ -403,7 +409,7 @@ async fn a_forced_stop_deletes_the_diagnostic_vm_without_an_export_and_reports_t
     container_steps(
         &rig.backend,
         &*rig.log,
-        Instant::now(),
+        StopClock::at(Instant::now()),
         Duration::from_secs(5),
     )
     .await;

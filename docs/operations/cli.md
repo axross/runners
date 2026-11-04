@@ -591,7 +591,8 @@ VM, which only a leftover from an earlier run is, is stopped forcibly and delete
 backend's reserve out of its container steps. The Tart backend reserves 10 s
 (`release_budget`), so the container stop is ended at 12 s with a grace of 7 s, the
 removal takes 6 s more, and the release the remaining 10 s, which ends at 28 s, the
-exit deadline. The container backend reserves nothing, so its steps are unchanged.
+exit deadline; a diagnostic container's stop, export and removal end 6 s earlier for the
+same reason. The container backend reserves nothing, so its steps are unchanged.
 The 10 s is the CLI's: 5 s graceful, 2 s forced, 2 s deletion and 1 s listing. A VM
 the CLI could not delete within it is deleted by its [VM shim](#the-vm-shim), which
 has its own 15 s once the CLI has dropped the liveness pipe, even after the CLI has
@@ -1192,7 +1193,9 @@ stop to fit the same 28 s exit deadline: the stop call is ended at 28 - 6 - `R`
 seconds, and its grace is 5 s shorter, never longer than 15 s. With a `R` of 10 s,
 the grace is 7 s and the stop call is ended at 12 s, then the removal at 6 s
 later, then the release at 10 s later, so the three take 28 s at the most and `stop`
-still ends within 30 s. The release itself splits its budget, a graceful stop of
+still ends within 30 s. The diagnostic column ends early by the same reserve, as
+[Diagnostics](#diagnostics) describes, so a diagnostics pool's release keeps its
+whole budget too. The release itself splits its budget, a graceful stop of
 the host first and a forced stop and deletion in its last seconds; the backend
 chooses that split.
 
@@ -1725,7 +1728,13 @@ at 0 s:
 | 28.5   | answers reach their clients                           |                                                       |
 
 Both columns stay inside the 26 s container steps and the 28 s exit deadline, so
-`stop` still ends within 30 s and its 35 s wait is unchanged.
+`stop` still ends within 30 s and its 35 s wait is unchanged. A backend that reserves
+a release budget `R` (the [Tart Backend](#tart-backend) reserves 10 s) leaves the
+release the time after the container steps, so the diagnostic column's times fall
+earlier by `R` less the 4 s it leaves before the exit deadline. With an `R` of 10 s
+the stop is ended at 6 s with a grace of 4 s, each export by 12 s, and each removal
+by 18 s; the export and removal windows keep their sizes, and the release keeps its
+10 s before 28 s.
 
 **Startup.** While a pool is prepared, the CLI looks at the labelled containers of
 the pool that an earlier process left and the backend does not retain:

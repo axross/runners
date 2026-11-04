@@ -326,7 +326,9 @@ pub trait Backend {
     fn prepared_hosts(&self) -> Vec<JobHost>;
 
     /// the time the stop sequence reserves, after its container steps, to release
-    /// the prepared hosts; zero for a backend without hosts.
+    /// the prepared hosts; zero for a backend without hosts. Both columns of the
+    /// container steps, the ordinary and the diagnostic, end that much before the exit
+    /// deadline.
     fn release_budget(&self) -> Duration;
 
     /// runs one job container to its end and returns its exit code; the JIT

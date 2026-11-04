@@ -58,7 +58,8 @@ pub const BOOT_DEADLINE: Duration = Duration::from_secs(120);
 /// steps: five tenths of it go to the graceful stop, two to the forced stop, two to
 /// the deletion and one to the listing that tells a deletion that failed because the VM
 /// was already gone. With the container stop at 12 s, the removal at 6 s and this, the
-/// sequence fits the 28 s exit deadline.
+/// sequence fits the 28 s exit deadline; a diagnostic container's column ends 6 s
+/// earlier than a container backend's, which leaves this much too.
 pub const RELEASE_RESERVE: Duration = Duration::from_secs(10);
 
 /// the time bounds of the steps of a job VM's cycle, which tests shorten.
