@@ -13,8 +13,8 @@ use std::time::{Duration, Instant};
 
 use marshal_cli::agent::machine::{EXECUTABLE_CHANGED, Launch, QUIT};
 use marshal_cli::runtime::fake::Call;
-use serde_json::Value;
-use support::agent::{ONE_POOL, Rig, TOKEN, TWO_POOLS};
+use serde_json::{Value, json};
+use support::agent::{ONE_POOL, Raw, Rig, TOKEN, TWO_POOLS};
 use tokio::sync::Notify;
 
 fn running_rig() -> Rig {
@@ -116,18 +116,25 @@ async fn quit_from_the_stopped_state_frees_the_lock_within_a_second() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn quit_ends_the_agent_while_a_connection_leaves_its_message_unread() {
+async fn quit_ends_the_agent_while_a_connection_leaves_its_messages_unread() {
     let rig = running_rig();
     let rig = &rig;
     let (ended, ()) = rig
         .drive(Launch::Running, |conn| async move {
             conn.until_runner_runs().await;
-            let mut stalled = conn.another().await;
-            stalled.client.subscribe().await.unwrap();
-            // the stalled connection reads nothing more, while the agent keeps writing
-            let _ = &mut stalled.pushes;
+            // the raw stream is never read after the subscription is asked for, unlike
+            // the library's client, which drains its socket
+            let mut stalled = Raw::hello(&conn.roots).await;
+            stalled
+                .request(1, "subscribe", json!({"topic": "state"}))
+                .await;
+            for _ in 0..20 {
+                conn.set_token("o/r", TOKEN).await.unwrap();
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
             rig.mark_running();
             conn.ok("quit").await;
+            drop(stalled);
         })
         .await;
     assert_eq!(ended.reason, QUIT);

@@ -1052,23 +1052,26 @@ and `runners_wanted` still count a row left out.
 The agent tests run the agent and the test script on one runtime, behind the real
 channel, on the fake backend, clock, registrar and image builder and an in-memory
 token store, and talk to it with the library's client or by hand, line by line.
-`tests/agent_resident.rs` covers stop, start and quit (also while a connection
-leaves a message unread), launching stopped, the executable renamed, build (ready,
-failed, cancelled by a stop or a quit, `busy`, `refused`), and staying up for each
-reason, also through `start_all`, which answers `resuming`. `tests/agent_protocol.rs` covers the handshake, `welcome`, unknown methods,
-topics and fields, subscription, coalescing, heartbeats, `ending`, the limits as
-timers and a connection that stops reading. `tests/agent_tokens.rs` covers what
-`token_set` and `token_remove` do to the next registration, a skipped pool starting,
-refused tokens, and the store's kind and code in an error, a skipped pool's reason
-and the log. `tests/agent_snapshot.rs` covers the snapshot, the diagnostics, the
-leftovers, the 64 KiB cut, the stalled readers' thread count (measured on Linux only, from the runtime's
-worker threads), and that no token or
-JIT configuration reaches a connection or the log. `tests/agent_versions.rs` runs
-`stop`, `status`, `restart` and `diagnostics` against an agent and shows they exit 1
-and change nothing. `tests/agent_channel.rs` covers the socket's mode, the peer's
-user and a directory open to others on Unix. `tests/agent_channel_windows.rs` shows a pipe of a taken name is refused. `tests/agent_process.rs` runs the agent
-as a process on the fake `docker` and a GitHub stub, a second agent refused, and the
-log continued with ten files kept.
+`tests/agent_resident.rs` covers stop, start and quit (also while a subscribed
+connection reads nothing), launching stopped, the executable renamed, the resuming
+state, build (ready, failed, cancelled by a stop or a quit, `busy`, `refused`), and
+staying up for each reason, also through `start_all`, which answers `resuming`.
+`tests/agent_protocol.rs` covers the handshake, `welcome`, unknown methods, topics
+and fields, subscription, coalescing, heartbeats, `ending`, the limits as timers and
+a connection that stops reading. `tests/agent_tokens.rs` covers what `token_set` and
+`token_remove` do to the next registration, a skipped pool starting, refused tokens,
+and the store's kind and code in an error, a skipped pool's reason and the log.
+`tests/agent_snapshot.rs` covers the snapshot, the diagnostics, the leftovers, the
+64 KiB cut, that `quit` frees the lock within a second with 640 runners and four
+subscribed connections that never read, the stalled readers' thread count (measured
+on Linux only, from the runtime's worker threads), and that no token or JIT
+configuration reaches a connection or the log. `tests/agent_versions.rs` runs `stop`,
+`status`, `restart` and `diagnostics` against an agent and shows they exit 1 and
+change nothing. `tests/agent_channel.rs` covers the socket's mode, the peer's user
+and a directory open to others on Unix. `tests/agent_channel_windows.rs` shows a pipe
+of a taken name is refused. `tests/agent_process.rs` runs the agent as a process on
+the fake `docker` and a GitHub stub, a second agent refused, and the log continued
+with ten files kept.
 
 The Windows CI step `tests/ci/control-pipe-security.ps1` runs its checks against
 the `serve` mode of the helper and against `serve-agent`, which opens the agent's

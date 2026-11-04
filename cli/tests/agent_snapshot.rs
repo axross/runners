@@ -307,6 +307,6 @@ async fn quit_is_not_held_by_connections_that_never_read() {
             started.elapsed()
         })
         .await;
-    assert!(took < Duration::from_secs(2), "quit took {took:?}");
+    assert!(took < Duration::from_secs(1), "quit took {took:?}");
     assert!(rig.lock_is_free());
 }
