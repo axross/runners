@@ -1209,8 +1209,8 @@ these in order:
    5 s, and otherwise giving `start`'s message for a lock held elsewhere.
 2. It validates the configuration as `validate` does; an invalid one exits 1.
    `--profile axmc` exits 1 after validation with the refusal that
-   [Runtime Seam](#runtime-seam) gives. An image name given by digest is refused, because it
-   cannot be tagged. It prints the name it builds.
+   [Runtime Seam](#runtime-seam) gives. An image name given by digest is refused,
+   because it cannot be tagged. It prints the name it builds.
 3. It contains its children as `start` does on Windows, and opens the control
    channel. While it builds, `status` answers `state: building`, `image: <name>`,
    and `elapsed: <s> s`; a `start`, a resume, `restart`, and `diagnostics` are refused, naming

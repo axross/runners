@@ -210,17 +210,39 @@ mod tests {
         }
     }
 
-    /// exports through `transport` into a sink of its own named `name`, and returns
-    /// the exit code, the bundle's sorted file names and the bundle.
-    async fn export_with(name: &str, transport: &Scripted) -> (u8, Vec<String>, PathBuf) {
-        let sink = std::env::temp_dir().join(format!("exporter-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&sink);
+    /// a scratch directory that is removed when dropped, whether or not the test
+    /// passed.
+    struct Scratch(PathBuf);
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// what one export through a scripted transport did.
+    struct Exported {
+        code: u8,
+        /// the sorted names of the files in the one bundle the export admitted.
+        files: Vec<String>,
+        bundle: PathBuf,
+        _scratch: Scratch,
+    }
+
+    /// exports through `transport` into a sink of its own named `name`: private to
+    /// the user and named without links, as the sink checks require.
+    async fn export_with(name: &str, transport: &Scripted) -> Exported {
+        let root = std::env::temp_dir().join(format!("exporter-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let scratch = Scratch(root);
+        let sink = scratch.0.join("sink");
         std::fs::create_dir_all(&sink).unwrap();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&sink, std::fs::Permissions::from_mode(0o700)).unwrap();
         }
+        let sink = std::fs::canonicalize(sink).unwrap();
         let request = ExportRequest {
             pool: "p".to_string(),
             container: Some("p-1-x".to_string()),
@@ -241,7 +263,12 @@ mod tests {
             .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
         files.sort();
-        (code, files, sink)
+        Exported {
+            code,
+            files,
+            bundle,
+            _scratch: scratch,
+        }
     }
 
     #[tokio::test]
@@ -250,20 +277,16 @@ mod tests {
             identity: Some("identity"),
             metrics: Some(b"a=1\nfinal=observed\n"),
         };
-        let (code, files, sink) = export_with("complete", &transport).await;
-        assert_eq!(code, EXIT_COMPLETE);
-        assert_eq!(files, ["complete.txt", "identity.txt", "metrics.txt"]);
-        let bundle = std::fs::read_dir(&sink)
-            .unwrap()
-            .next()
-            .unwrap()
-            .unwrap()
-            .path();
+        let exported = export_with("complete", &transport).await;
+        assert_eq!(exported.code, EXIT_COMPLETE);
         assert_eq!(
-            std::fs::read_to_string(bundle.join("identity.txt")).unwrap(),
+            exported.files,
+            ["complete.txt", "identity.txt", "metrics.txt"]
+        );
+        assert_eq!(
+            std::fs::read_to_string(exported.bundle.join("identity.txt")).unwrap(),
             "identity of p-1-x"
         );
-        std::fs::remove_dir_all(sink).unwrap();
     }
 
     #[tokio::test]
@@ -272,10 +295,12 @@ mod tests {
             identity: Some("identity"),
             metrics: Some(b"a=1\n"),
         };
-        let (code, files, sink) = export_with("gap", &transport).await;
-        assert_eq!(code, EXIT_GAP);
-        assert_eq!(files, ["complete.txt", "identity.txt", "metrics.txt"]);
-        std::fs::remove_dir_all(sink).unwrap();
+        let exported = export_with("gap", &transport).await;
+        assert_eq!(exported.code, EXIT_GAP);
+        assert_eq!(
+            exported.files,
+            ["complete.txt", "identity.txt", "metrics.txt"]
+        );
     }
 
     #[tokio::test]
@@ -284,10 +309,9 @@ mod tests {
             identity: None,
             metrics: Some(b"final=observed\n"),
         };
-        let (code, files, sink) = export_with("no-identity", &transport).await;
-        assert_eq!(code, EXIT_FAILED);
-        assert!(files.is_empty(), "{files:?}");
-        std::fs::remove_dir_all(sink).unwrap();
+        let exported = export_with("no-identity", &transport).await;
+        assert_eq!(exported.code, EXIT_FAILED);
+        assert!(exported.files.is_empty(), "{:?}", exported.files);
     }
 
     #[tokio::test]
@@ -296,10 +320,9 @@ mod tests {
             identity: Some("identity"),
             metrics: None,
         };
-        let (code, files, sink) = export_with("no-archive", &transport).await;
-        assert_eq!(code, EXIT_FAILED);
-        assert_eq!(files, ["identity.txt"]);
-        std::fs::remove_dir_all(sink).unwrap();
+        let exported = export_with("no-archive", &transport).await;
+        assert_eq!(exported.code, EXIT_FAILED);
+        assert_eq!(exported.files, ["identity.txt"]);
     }
 
     #[test]
