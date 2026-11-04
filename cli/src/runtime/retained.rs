@@ -143,9 +143,8 @@ impl Retained {
     /// held it is gone and its evidence stands in the sink; one without a bundle stays,
     /// as the evidence it lost.
     pub fn forget_if_exported(&self, name: &str) {
-        let mut entries = self.entries.borrow_mut();
-        if entries.get(name).is_some_and(|entry| entry.bundle_admitted) {
-            entries.remove(name);
+        if self.is_exported(name) {
+            self.entries.borrow_mut().remove(name);
         }
     }
 
