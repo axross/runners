@@ -133,7 +133,7 @@ pub struct Welcome {
     pub topics: Vec<String>,
 }
 
-type Answers = Arc<Mutex<BTreeMap<u64, oneshot::Sender<Result<serde_json::Value, ErrorBody>>>>>;
+type Answers = Arc<Mutex<BTreeMap<u64, oneshot::Sender<Result<serde_json::Value, CallError>>>>>;
 
 /// a connection to the agent; requests may be made from several tasks at once, and
 /// the agent answers each connection's requests in order. `W` is the write half of
@@ -220,8 +220,7 @@ impl<W> Client<W> {
             return Err(CallError::Closed);
         }
         match answer.await {
-            Ok(Ok(result)) => Ok(result),
-            Ok(Err(body)) => Err(CallError::Agent(body)),
+            Ok(answered) => answered,
             Err(_) => Err(CallError::Closed),
         }
     }
@@ -265,7 +264,7 @@ impl<W> Client<W> {
 
 fn lock(
     answers: &Answers,
-) -> std::sync::MutexGuard<'_, BTreeMap<u64, oneshot::Sender<Result<serde_json::Value, ErrorBody>>>>
+) -> std::sync::MutexGuard<'_, BTreeMap<u64, oneshot::Sender<Result<serde_json::Value, CallError>>>>
 {
     answers
         .lock()
@@ -398,13 +397,14 @@ async fn read_messages<R: AsyncRead + Unpin>(
         }
         let bytes = std::mem::take(&mut line);
         let Ok(message) = serde_json::from_slice::<AgentMessage>(&bytes) else {
+            fail_unreadable_response(&answers, &bytes);
             continue;
         };
         match message {
             AgentMessage::Response { id, result, error } => {
                 if let Some(reply) = lock(&answers).remove(&id) {
                     let _ = reply.send(match error {
-                        Some(body) => Err(body),
+                        Some(body) => Err(CallError::Agent(body)),
                         None => Ok(result.unwrap_or(serde_json::Value::Null)),
                     });
                 }
@@ -428,6 +428,28 @@ async fn read_messages<R: AsyncRead + Unpin>(
     }
     end_answers(&answers, &closed);
     let _ = pushes.send(Push::Closed);
+}
+
+/// ends the call that a response line answers when the line has a readable id but an
+/// envelope that is not, so the call does not wait for the connection to close; the
+/// text names no content of the line.
+fn fail_unreadable_response(answers: &Answers, bytes: &[u8]) {
+    #[derive(serde::Deserialize)]
+    struct Envelope {
+        #[serde(rename = "type")]
+        kind: String,
+        id: u64,
+    }
+    let Ok(Envelope { kind, id }) = serde_json::from_slice(bytes) else {
+        return;
+    };
+    if kind == "response"
+        && let Some(reply) = lock(answers).remove(&id)
+    {
+        let _ = reply.send(Err(CallError::BadAnswer(
+            "the response could not be read".to_string(),
+        )));
+    }
 }
 
 /// marks the connection ended and fails every call that waits.
@@ -699,6 +721,44 @@ mod tests {
             "only the status and the longest were written"
         );
         assert_eq!(seen[1].len(), MAX_CLIENT_MESSAGE_BYTES);
+    }
+
+    #[tokio::test]
+    async fn a_response_that_cannot_be_read_ends_its_call_and_the_next_call_is_answered() {
+        let (near, far) = duplex(4096);
+        tokio::spawn(async move {
+            let (read, mut write) = tokio::io::split(far);
+            let mut reader = BufReader::new(read);
+            let mut line = String::new();
+            reader.read_line(&mut line).await.unwrap();
+            write
+                .write_all(b"{\"type\":\"welcome\",\"version\":2,\"methods\":[\"status\"],\"topics\":[]}\n")
+                .await
+                .unwrap();
+            // an error body without its `code`, then an answer that reads
+            for answer in [
+                &b"{\"type\":\"response\",\"id\":1,\"error\":{\"message\":\"no code\"}}\n"[..],
+                &b"{\"type\":\"response\",\"id\":2,\"result\":{}}\n"[..],
+            ] {
+                line.clear();
+                reader.read_line(&mut line).await.unwrap();
+                write.write_all(answer).await.unwrap();
+            }
+            // the connection stays open
+            std::future::pending::<()>().await;
+        });
+        let (client, _pushes) = handshake(near, &ClientInfo::default()).await.unwrap();
+        let first = timeout(
+            Duration::from_secs(5),
+            client.call("status", serde_json::Value::Null),
+        )
+        .await
+        .expect("the call waited for the connection to close");
+        assert!(matches!(first, Err(CallError::BadAnswer(_))), "{first:?}");
+        assert_eq!(
+            client.call("status", serde_json::Value::Null).await,
+            Ok(serde_json::json!({}))
+        );
     }
 
     #[tokio::test]
