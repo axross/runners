@@ -27,7 +27,7 @@ use crate::runtime::docker::resolve_program;
 use crate::runtime::log::{Log, StderrLog};
 use crate::start::{ANSWERS_WITHIN, LOCK_HELD_ELSEWHERE, signals, single_threaded_runtime};
 
-use steps::{BuildLimits, Steps};
+use steps::{BuildLimits, BuildOutput, Steps};
 
 const HOLDER_ANSWER_WITHIN: Duration = Duration::from_secs(5);
 
@@ -157,6 +157,7 @@ impl Build<'_> {
             context,
             log: self.log,
             limits: BuildLimits::default(),
+            output: BuildOutput::Inherit,
             stop: stop_receiver,
         };
         let outcome = {

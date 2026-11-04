@@ -106,3 +106,36 @@ async fn the_log_continues_in_a_new_file_and_ten_are_kept() {
     let (code, _) = agent.finish(Duration::from_secs(30)).await;
     assert_eq!(code, Some(0));
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_build_logs_its_output_masked_and_a_failure_carries_the_last_lines() {
+    let host = Host::new();
+    put_config(&host);
+    host.script("build_fails", "");
+    host.script(
+        "build_stderr",
+        &format!("step 1\nstep 2\nauthentication used {TOKEN}\nstep 4 failed\n"),
+    );
+    let stub = stub();
+    let agent = AgentProcess::spawn(&host, &stub.address, &["--stopped"]);
+    let conn = Conn::open(&agent.roots).await;
+    conn.set_token("o/r", TOKEN).await.unwrap();
+    conn.ok("build").await;
+    let snapshot = conn.until_state("stopped").await;
+    let reason = snapshot.agent.reason.unwrap();
+    assert_eq!(reason.code, "image_build_failed");
+    assert!(
+        reason.message.contains("step 4 failed"),
+        "{}",
+        reason.message
+    );
+    assert!(reason.message.contains("<masked>"), "{}", reason.message);
+    assert!(!reason.message.contains(TOKEN));
+    conn.ok("quit").await;
+    let (code, _) = agent.finish(Duration::from_secs(30)).await;
+    assert_eq!(code, Some(0));
+    let log = log_text(&host);
+    assert!(log.contains("docker build: fake build output"), "{log}");
+    assert!(log.contains("docker build: step 2"), "{log}");
+    assert!(!log.contains(TOKEN), "the token reached the log");
+}

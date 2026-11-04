@@ -2,13 +2,15 @@
 //! name changes only at the commit, the final retag, so a stop before it keeps the
 //! previous image; see `docs/operations/cli.md`.
 
+use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::ffi::OsString;
 use std::future::Future;
 use std::pin::pin;
 use std::process::Stdio;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::watch;
 use tokio::time::Instant;
 
@@ -51,6 +53,51 @@ impl Default for BuildLimits {
     }
 }
 
+/// writes each line `reader` yields to the log as a build line, and keeps the last
+/// few, with the log's masks applied, for the error of a failed build.
+async fn forward_lines<R: AsyncRead + Unpin>(
+    reader: R,
+    log: &dyn Log,
+    tail: &RefCell<VecDeque<String>>,
+) {
+    let mut reader = BufReader::new(reader);
+    loop {
+        let mut bytes = Vec::new();
+        let mut limited = (&mut reader).take(BUILD_LINE_BYTES);
+        match limited.read_until(b'\n', &mut bytes).await {
+            Ok(0) | Err(_) => return,
+            Ok(_) => {}
+        }
+        let text = String::from_utf8_lossy(&bytes);
+        let line = text.trim_end_matches(['\r', '\n']);
+        if line.trim().is_empty() {
+            continue;
+        }
+        log.info(&format!("docker build: {line}"));
+        let mut tail = tail.borrow_mut();
+        if tail.len() == BUILD_TAIL_LINES {
+            tail.pop_front();
+        }
+        tail.push_back(log.masks().apply(line.trim()));
+    }
+}
+
+/// where the output of `docker build` goes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuildOutput {
+    /// the program's own standard output and error, which is what `build` shows.
+    Inherit,
+    /// each line goes through the log, so its masks apply, and the last few lines go
+    /// into the error of a failed build.
+    Log,
+}
+
+/// the longest line of a build's output the log keeps.
+const BUILD_LINE_BYTES: u64 = 8 * 1024;
+
+/// the last lines of a failed build's output the error carries.
+const BUILD_TAIL_LINES: usize = 5;
+
 struct Output {
     succeeded: bool,
     stdout: String,
@@ -85,6 +132,7 @@ pub struct Steps<'a> {
     pub context: Vec<u8>,
     pub log: &'a dyn Log,
     pub limits: BuildLimits,
+    pub output: BuildOutput,
     /// when a stop was asked for; it is set once.
     pub stop: watch::Receiver<Option<Instant>>,
 }
@@ -280,21 +328,26 @@ impl Steps<'_> {
     }
 
     /// runs the one `docker build`, streaming the context to its standard input and
-    /// its output to the terminal.
+    /// its output to the terminal or the log.
     async fn build_image(&self, temporary: &str, built: u64) -> Result<(), String> {
         let mut command = client_command(
             &self.program,
             &self.environment,
             &build_arguments(temporary, built),
         );
-        command
-            .stdin(Stdio::piped())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit());
+        let logged = self.output == BuildOutput::Log;
+        command.stdin(Stdio::piped());
+        if logged {
+            command.stdout(Stdio::piped()).stderr(Stdio::piped());
+        } else {
+            command.stdout(Stdio::inherit()).stderr(Stdio::inherit());
+        }
         let mut child = command
             .spawn()
             .map_err(|error| format!("the docker client could not start: {error}"))?;
         let stdin = child.stdin.take();
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
         let context = &self.context;
         // a client that ends early closes the pipe; its exit code says why
         let feed = async move {
@@ -303,15 +356,32 @@ impl Steps<'_> {
                 let _ = stdin.shutdown().await;
             }
         };
-        let (_, status) = tokio::join!(feed, child.wait());
+        let tail = RefCell::new(VecDeque::new());
+        let forward_out = async {
+            if let Some(stdout) = stdout {
+                forward_lines(stdout, self.log, &tail).await;
+            }
+        };
+        let forward_err = async {
+            if let Some(stderr) = stderr {
+                forward_lines(stderr, self.log, &tail).await;
+            }
+        };
+        let (_, _, _, status) = tokio::join!(feed, forward_out, forward_err, child.wait());
         let status = status.map_err(|error| format!("the docker client failed: {error}"))?;
         if status.success() {
             Ok(())
         } else {
-            Err(format!(
+            let mut message = format!(
                 "docker build exited with code {}",
                 status.code().unwrap_or(-1)
-            ))
+            );
+            let tail = tail.into_inner();
+            if !tail.is_empty() {
+                let lines: Vec<String> = tail.into_iter().collect();
+                message.push_str(&format!("; its last output: {}", lines.join(" | ")));
+            }
+            Err(message)
         }
     }
 
@@ -518,6 +588,7 @@ mod tests {
             context: Vec::new(),
             log,
             limits,
+            output: BuildOutput::Inherit,
             stop,
         };
         steps.run().await

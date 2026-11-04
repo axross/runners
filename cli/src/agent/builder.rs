@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use tokio::sync::watch;
 use tokio::time::Instant;
 
-use crate::build::steps::{BuildLimits, Steps};
+use crate::build::steps::{BuildLimits, BuildOutput, Steps};
 use crate::image::archive::context_archive;
 use crate::image::definition::resolve_definition;
 use crate::runtime::log::Log;
@@ -50,6 +50,7 @@ impl ImageBuilder for DockerImageBuilder {
             context,
             log,
             limits: BuildLimits::default(),
+            output: BuildOutput::Log,
             stop,
         }
         .run()
