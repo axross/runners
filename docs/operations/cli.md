@@ -2,16 +2,19 @@
 
 The Rust command line tool under [`cli/`](../../cli): what `validate` accepts and
 prints, how it stays equal to the PowerShell validator, the shared fixtures both
-read, the runtime layer that runs a host's pools (the container backend, JIT
-registration, CPU placement, and the slot loop), the instance layer that keeps
+read, the runtime layer that runs a host's pools (the container backend and the Tart
+VM backend, JIT registration, CPU placement, and the slot loop, and on the Mac the
+host prerequisites and the sleep and network signals), the instance layer that keeps
 `start` to one instance per machine (the instance state, the single-instance lock,
 and the control channel), the image contract every runner image declares and the
-check of it, running a host with `build`, `start`, `stop`, `restart`, `status`, and
-`diagnostics`, the diagnostic containers a diagnostics-enabled pool runs and their
+check of it, running a host with `build` (the runner image on axpc, the golden VM on
+axmc), `start`, `stop`, `restart`, `status`, and
+`diagnostics`, the diagnostic containers and VMs a diagnostics-enabled pool runs and their
 export, the toolchain and the gates that cover it, how a release is built and
 installed, and why its name is fixed. The
-binary is `marshal`, and axpc runs its pools with it, as
-[Windows Runner Host](./windows-runner-host.md) describes. The PowerShell
+binary is `marshal`. axpc runs its pools with it, as
+[Windows Runner Host](./windows-runner-host.md) describes, and axmc runs its Linux
+pools with it in Tart VMs, as [macOS Runner Host](./macos-runner-host.md) describes. The PowerShell
 supervisor and rebuild task under
 [`hosts/windows-docker-desktop/`](../../hosts/windows-docker-desktop) stay only as
 that document's rollback path, and the CLI must not be started beside them.
@@ -78,14 +81,14 @@ A profile names a host. The shared rules and messages are the PowerShell
 validator's. The profile decides the fields, the platform labels, the routing
 label, the path form, and the extra checks.
 
-| Aspect                  | `axpc` (Windows, Docker Desktop)                                         | `axmc` (macOS host)                                                                       |
-| ----------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| Platform labels         | `self-hosted, linux, x64`                                                | `self-hosted, linux, ARM64` for `os: linux`; `self-hosted, macOS, ARM64` for `macos`      |
-| Routing label           | `axpc`, the default when `labels` is absent or empty; a list replaces it | `axmc`, with the same default and replacement                                             |
-| Paths                   | Drive-letter or UNC                                                      | Absolute POSIX: start with `/`, no control characters, no empty, `.`, or `..` parts       |
-| Root fields             | `imageName` (required), `repositories`                                   | `budget` (required), `repositories`, `imageName` (optional; its use is undecided)         |
-| Entry fields            | The existing schema, with `volumes`                                      | The same without `volumes`, plus `os` and `diskGb`, both required                         |
-| Foreign platform labels | Accepted and listed, such as `ARM64`                                     | Rejected: another host's or OS's platform label, such as `macOS` on a Linux pool or `x64` |
+| Aspect                  | `axpc` (Windows, Docker Desktop)                                         | `axmc` (macOS host)                                                                                     |
+| ----------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| Platform labels         | `self-hosted, linux, x64`                                                | `self-hosted, linux, ARM64` for `os: linux`; `self-hosted, macOS, ARM64` for `macos`                    |
+| Routing label           | `axpc`, the default when `labels` is absent or empty; a list replaces it | `axmc`, with the same default and replacement                                                           |
+| Paths                   | Drive-letter or UNC                                                      | Absolute POSIX: start with `/`, no control characters, no empty, `.`, or `..` parts                     |
+| Root fields             | `imageName` (required), `repositories`                                   | `budget` (required), `repositories`, `imageName` (optional; it names the runner image in the golden VM) |
+| Entry fields            | The existing schema, with `volumes`                                      | The same without `volumes`, plus `os` and `diskGb`, both required                                       |
+| Foreign platform labels | Accepted and listed, such as `ARM64`                                     | Rejected: another host's or OS's platform label, such as `macOS` on a Linux pool or `x64`               |
 
 On `axmc`, `os` is `linux` or `macos`, `diskGb` is the per-VM disk cap, and
 `budget` holds `cpus`, `memoryGb`, and `diskGb`. A VM has whole vCPUs, so `cpus`
@@ -254,6 +257,7 @@ PowerShell supervisor, and where it differs the difference is listed here.
 | `runtime::tart::list`, `tart::names`                     | The reader of `tart list --format json`, and the VM names, parsers and matchers                              |
 | `runtime::tart::backend`                                 | The Tart backend: the slot cycle's host steps, the probes, the job container, and the release                |
 | `tart::golden_check`, `tart::guest`                      | The golden VM check from VM names alone, and the commands run in a booted VM through the guest agent         |
+| `tart::boot`                                             | The wait for a booted VM's guest agent and the boot failure text, shared by a job VM and the build VM        |
 | `tart::hold`, `tart::teardown`, `vm_shim`                | The holder of a VM's `tart run`, the stop-and-delete within a budget, and the VM shim                        |
 | `golden`, `golden::pins`, `golden::key`, `golden::steps` | The golden VM's pins, the check of Docker's signing key, the launcher and the guest calls that provision it  |
 | `macos::version`                                         | The tested Tart and Softnet versions, the readers of their `--version`, and the sorting                      |
@@ -727,7 +731,7 @@ included.
 
 A debug build replaces the owner and mode read from Softnet's file with
 `MARSHAL_TEST_SOFTNET_OWNER_MODE=<user ID>:<octal mode>`, such as `0:4755`, for the
-process tests of later slices, because CI cannot create a root-owned file. The
+process tests, because CI cannot create a root-owned file. The
 file's type is still read, links followed. A release build ignores the variable, and
 a debug build refuses a malformed value. `Check`'s tests are in
 `cli/tests/host_prerequisites.rs`, against the fake `tart` and `fake-softnet`
@@ -767,7 +771,7 @@ installed before the comparison passes.
 The launcher reads the JIT configuration from standard input to its end, sets
 `ACTIONS_RUNNER_INPUT_JITCONFIG` in the environment of the `docker` client it
 then `exec`s with its own arguments, and refuses an empty input or one over 64 KiB
-with exit code 64, without printing the input. The Tart runtime will call it as
+with exit code 64, without printing the input. The Tart backend calls it as
 `tart exec -i <vm> /usr/local/bin/marshal-launch <docker run arguments>`.
 
 `golden::steps::build_vm_docker_command` is the prefix the build uses to run `docker`
@@ -887,7 +891,15 @@ pool's quota, affinity, memory, disk and default image, and
 `instance_state.rs` and `core_restart.rs` the release at a stop and at a core
 failure. `image_check.rs` drives the image check through the fake backend,
 the instance, and the real backend against `fake-docker`. The diagnostics tests are
-listed under [Diagnostics](#diagnostics). `tart_backend.rs` runs the
+listed under [Diagnostics](#diagnostics). `tart_client.rs` runs the `tart` client
+against the fake `tart`: the exact argument lists, a run's options and Softnet rules,
+the environment and the standard output every call gets, the JIT configuration
+reaching the guest on standard input only, the 64 KiB cut, the budgets, and the VM
+names and the listing reader. `golden_provisioning.rs` runs the golden VM's guest
+calls against the fake `tart` in their order, with a key of another fingerprint
+stopping them before anything is installed, and `golden_launcher.rs` runs the
+launcher as a shell script against a stand-in `docker` (Unix only).
+`tart_backend.rs` runs the
 [Tart Backend](#tart-backend) against the fake `tart`, which forwards a guest
 command to `fake-docker` as the launcher would, and `fake-softnet`, through the rig
 in `tests/support/rig.rs`: availability and the golden VM check, the cleanup of
@@ -1060,7 +1072,7 @@ one.
   sleep reason.
 - **The stop.** The reason ends the instance's running as `stop` does: the core is
   asked to stop, and the container steps and the release of every prepared job host
-  run in the 28 s stop sequence, with the state `stopping`. The instance then moves
+  run within the stop sequence's 28 s exit deadline, with the state `stopping`. The instance then moves
   to `stopped` with the reason, which `status` shows as `reason:` and the `start`
   terminal as `The instance is stopped: <reason>.`. A `stop` that arrives during the
   sequence ends the instance instead. The restart policy counts nothing, and only
@@ -1123,10 +1135,10 @@ running instance refuses a resume too.
   each read finds the checkout above it as the first validation did; the
   canonical path is kept only to compare with a resume's.
 - A resume and a `restart` check the host prerequisites, on axmc, and then the
-  image after the file validates, before the instance answers. A prerequisite that
-  refuses leaves the instance stopped with the refusal's message as its reason; the
-  instance also checks them once before its first run, and a refusal there ends the
-  instance, so `start` exits 1.
+  image, after the file validates and before the instance answers. A prerequisite
+  that refuses leaves the instance stopped with the refusal's message as its reason;
+  the instance also checks them once before its first run, and a refusal there ends
+  the instance, so `start` exits 1.
 - On axmc, a sleep and its wake, or a change of the primary network on two checks
   in a row, stops every runner as `stop` does, runs the container steps and the
   release of every job host, and leaves the instance stopped with the signal's
@@ -1138,13 +1150,13 @@ running instance refuses a resume too.
   the rest.
 - On axmc the instance holds off idle sleep while it is running or resuming and
   while it is stopping, and releases the hold on entering stopped.
-- A resume and a `restart` check the image after the file validates, before the
-  instance answers. An image that cannot run jobs leaves the instance stopped,
-  with a reason that names the image and says to run `marshal stop`, then
+- An image that cannot run jobs, which on axmc includes a missing or mismatched
+  golden VM, leaves the instance stopped on a resume or a `restart`, with a reason
+  that names the image and says to run `marshal stop`, then
   `marshal build --config <path>`, then `marshal start --config <path>`, because
-  `build` is refused while the instance exists. When Docker does not answer the
-  check, the instance answers as before and runs the core, which checks again once
-  Docker answers and moves the instance to stopped with that reason.
+  `build` is refused while the instance exists. When the engine does not answer the
+  check, Docker or Tart, the instance answers as before and runs the core, which
+  checks again once it answers and moves the instance to stopped with that reason.
 
 The container steps stop every ordinary container the backend has started and not
 seen end, in one `docker stop` call with a grace of 15 s, ended at 20 s, and then
@@ -1395,6 +1407,14 @@ wait, and the container steps and the check fit inside `restart`'s 35 s.
 | Missing            | Inspect fails, and the listing succeeds with empty output                    |
 | Docker unavailable | Any other failure, or the 4 s running out                                    |
 
+On axmc the check reads the golden VM instead, from the VM names alone, as the
+[Tart Backend](#tart-backend) describes: a matching golden VM carries this CLI's
+golden VM version and image contract version, a missing one is `missing`, and any
+other is mismatched. Their messages are
+`the golden VM <name> has golden VM version <g> and image contract <m>, but this CLI needs golden VM version <G> and image contract <n>`
+and `the golden VM is missing; this CLI needs one with golden VM version <G> and image contract <n>`.
+A `tart list` that fails or overruns the same 4 s is the unavailable outcome.
+
 Docker unavailable is never a mismatch. A mismatched image's message is
 `the image <name> has image contract <m>, but this CLI needs image contract <n>`,
 and a missing one's is
@@ -1440,6 +1460,9 @@ the warnings nor an unknown age block a start.
   check Docker does not answer leaves the latest answer in place;
 - `image-built: <d> days ago`, or `unknown`;
 - `runner: <version>, released <d> days ago`, or `unknown`;
+- on axmc, `golden-vm: <name>` once a golden VM exists, and `mismatch (golden VM
+version <g> and image contract <m>, CLI golden VM version <G> and image contract
+<n>)` in place of the mismatch above;
 - one `warning: <text>` line per freshness warning.
 
 `image-built` and `runner` read `unknown` before the first check Docker answers, and
@@ -1451,20 +1474,22 @@ when the image is missing or its labels are missing or malformed.
 runtime layer, and `stop`, `restart`, `status`, and `diagnostics` talk to it from another terminal
 over the control channel. `build` builds the runner image, and the same clients
 talk to it. axpc runs its pools with `start` and builds its image with `build`, as
-[Windows Runner Host](./windows-runner-host.md) describes. Neither may run beside the
+[Windows Runner Host](./windows-runner-host.md) describes; axmc does the same with Tart
+VMs, and `build` there makes the golden VM, as [macOS Runner Host](./macos-runner-host.md)
+describes. Neither may run beside the
 PowerShell supervisor or its rebuild task, which that document's rollback restores:
 `start`'s stale cleanup removes the supervisor's job containers, and the scripts do
 not take the instance lock.
 
-| Module                   | Holds                                                                                                |
-| ------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `start`                  | `start`: the lock, validation, the log file, containment, the channel, the instance, and its signals |
-| `build`                  | `build`: the lock, validation, the channel, its states, and its `docker` steps and their aborts      |
-| `control`                | The clients `stop`, `restart`, `status`, and `diagnostics`                                           |
-| `shim`                   | The Unix shim between `start` and one job container's `docker run` client                            |
-| `diagnostics`            | The exporter child, listed under The Runtime Layer                                                   |
-| `instance::runtime_core` | The runtime core, listed under The Instance Layer                                                    |
-| `instance::log_file`     | The log, listed under The Instance Layer                                                             |
+| Module                   | Holds                                                                                                                |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `start`                  | `start`: the lock, validation, the log file, containment, the channel, the instance, and its signals                 |
+| `build`, `build::golden` | `build`: the lock, validation, the channel, its states, and its `docker` steps and their aborts; the golden VM build |
+| `control`                | The clients `stop`, `restart`, `status`, and `diagnostics`                                                           |
+| `shim`                   | The Unix shim between `start` and one job container's `docker run` client                                            |
+| `diagnostics`            | The exporter child, listed under The Runtime Layer                                                                   |
+| `instance::runtime_core` | The runtime core, listed under The Instance Layer                                                                    |
+| `instance::log_file`     | The log, listed under The Instance Layer                                                                             |
 
 ### Start
 
@@ -2310,10 +2335,11 @@ which removes the image it builds. The Windows and macOS hosted runners have no
 Linux Docker daemon, and each test fails rather than skips when one is missing.
 One more step runs on Linux and macOS, `tests/ci/other-user-lock.sh`, and one on
 Windows, `tests/ci/control-pipe-security.ps1` under PowerShell 7; What the Instance
-Tests Cover says what each shows. The `fake-docker` and `instance-helper` helpers are
+Tests Cover says what each shows. The `fake-docker`, `fake-tart`, `fake-softnet`,
+`fake-macos` and `instance-helper` helpers are
 further binaries in the package (`cli/helpers/`, `test = false`) that only the tests
 and those steps run, and `default-run = "marshal"` keeps `cargo run` on the CLI.
-`instance-helper` does nothing in a release build. A release MUST NOT ship either
+`instance-helper` does nothing in a release build. A release MUST NOT ship any
 helper; [Releases](#releases) says how the release build keeps them out. Tests find fixtures relative to the
 crate's manifest directory, and the checkout-rule tests build a temporary directory
 with the marker files at test time. The advisory check, `cargo deny --locked check advisories`,
@@ -2390,8 +2416,9 @@ through `vswhere` among the MSVC tools the build links with. It fails unless
 `dumpbin` listed the binary's dependencies, `KERNEL32.dll` among them, so a run that
 read nothing cannot pass.
 
-A release never ships `fake-docker` or `instance-helper`. The release-profile tests
-build both into `target/release`, so the build names `marshal` alone and copies only
+A release never ships a helper: `fake-docker`, `fake-tart`, `fake-softnet`,
+`fake-macos` or `instance-helper`. The release-profile tests build them into
+`target/release`, so the build names `marshal` alone and copies only
 that file out, each leg's artifact holds that one file, and the assemble job, the
 attest job, and the release gate refuse a set of files that holds anything else.
 
