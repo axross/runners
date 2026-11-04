@@ -25,11 +25,32 @@ use super::{BINARY, TempDir};
 /// otherwise.
 pub const SET_UP_SOFTNET: &str = "0:4755";
 
+/// the name of the directory a diagnostics-enabled pool exports into.
+const SINK: &str = "diagnostics";
+
+/// creates the sink private to the user, as the exporter requires.
+fn make_sink(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    fs::create_dir(path).unwrap();
+    fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
+}
+
 /// one pool of a configuration.
 pub struct Pool {
     pub name: &'static str,
     pub os: &'static str,
     pub slots: u32,
+    /// whether the pool has diagnostics on, into the host's private `diagnostics`
+    /// directory.
+    pub diagnostics: bool,
+}
+
+impl Pool {
+    /// the same pool with diagnostics on.
+    pub const fn diagnostic(mut self) -> Self {
+        self.diagnostics = true;
+        self
+    }
 }
 
 pub const fn linux(name: &'static str, slots: u32) -> Pool {
@@ -37,6 +58,7 @@ pub const fn linux(name: &'static str, slots: u32) -> Pool {
         name,
         os: "linux",
         slots,
+        diagnostics: false,
     }
 }
 
@@ -45,6 +67,7 @@ pub const fn macos(name: &'static str, slots: u32) -> Pool {
         name,
         os: "macos",
         slots,
+        diagnostics: false,
     }
 }
 
@@ -69,6 +92,9 @@ impl MacHost {
         let path = softnet.path_with_system(&["bin"]);
         for directory in ["tart", "state"] {
             fs::create_dir_all(root.path().join(directory)).unwrap();
+        }
+        if pools.iter().any(|pool| pool.diagnostics) {
+            make_sink(&root.path().join(SINK));
         }
         let config = root.write("host.json", config_for(root.path(), pools).as_bytes());
         for pool in pools {
@@ -110,6 +136,20 @@ impl MacHost {
     pub fn with_tart_program(mut self, program: &str) -> Self {
         self.tart_program = program.into();
         self
+    }
+
+    /// the private directory of a pool with diagnostics on.
+    pub fn sink(&self) -> PathBuf {
+        self.root.path().join(SINK)
+    }
+
+    /// the bundles in the sink, sorted.
+    pub fn bundles(&self) -> Vec<PathBuf> {
+        let mut found: Vec<PathBuf> = fs::read_dir(self.sink())
+            .map(|entries| entries.map(|entry| entry.unwrap().path()).collect())
+            .unwrap_or_default();
+        found.sort();
+        found
     }
 
     pub fn tart_dir(&self) -> PathBuf {
@@ -296,11 +336,19 @@ fn config_for(root: &Path, pools: &[Pool]) -> String {
         .map(|pool| {
             format!(
                 r#"{{"owner":"o","repository":"{name}","name":"{name}","os":"{os}","slots":{slots},
-                "tokenPath":"{token}","cpus":2,"memoryGb":4,"diskGb":30}}"#,
+                "tokenPath":"{token}","cpus":2,"memoryGb":4,"diskGb":30{diagnostics}}}"#,
                 name = pool.name,
                 os = pool.os,
                 slots = pool.slots,
                 token = root.join(format!("{}.token", pool.name)).display(),
+                diagnostics = if pool.diagnostics {
+                    format!(
+                        r#","diagnostics":true,"diagnosticDirectory":"{}""#,
+                        root.join(SINK).display()
+                    )
+                } else {
+                    String::new()
+                },
             )
         })
         .collect();
