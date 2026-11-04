@@ -69,6 +69,14 @@ impl KeyringTokenStore {
             .map_err(|error| self.failed(&error))
     }
 
+    /// the attributes the store keeps for the repository's existing entry, such as the
+    /// Credential Manager's `persistence`; they hold no token.
+    pub fn attributes(&self, key: &RepositoryKey) -> Result<HashMap<String, String>, StoreError> {
+        self.entry(key)?
+            .get_attributes()
+            .map_err(|error| self.failed(&error))
+    }
+
     fn failed(&self, error: &Error) -> StoreError {
         let (kind, code) = (self.classifier)(error);
         StoreError::with(kind, code, format!("the credential store failed: {error}"))
@@ -126,6 +134,19 @@ mod tests {
         assert_eq!(store.get(&key).unwrap().unwrap().expose(), "ghp_fake");
         store.remove(&key).unwrap();
         assert!(store.get(&key).unwrap().is_none());
+    }
+
+    #[test]
+    fn the_attributes_of_a_missing_entry_are_a_failure_and_hold_no_token() {
+        let store = store();
+        let key = RepositoryKey::of("o", "r");
+        store
+            .set(&key, &Secret::new("ghp_fake".to_string()))
+            .unwrap();
+        let attributes = store.attributes(&key).unwrap_or_default();
+        assert!(attributes.values().all(|value| !value.contains("ghp_fake")));
+        store.remove(&key).unwrap();
+        assert!(store.attributes(&key).is_err());
     }
 
     #[test]

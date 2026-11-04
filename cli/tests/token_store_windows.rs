@@ -36,6 +36,7 @@ fn listed(target: &str) -> String {
 fn a_token_is_a_local_machine_credential_that_round_trips_and_goes() {
     let store = credential_manager().unwrap();
     let key = RepositoryKey::of(&format!("Marshal-Test-{}", std::process::id()), "Repo");
+    let _cleanup = Cleanup(key.clone());
     let target = target_name(&key);
     assert!(target.starts_with("app.axross.marshal:github.com/marshal-test-"));
 
@@ -43,10 +44,15 @@ fn a_token_is_a_local_machine_credential_that_round_trips_and_goes() {
     store.set(&key, &Secret::new(FAKE.to_string())).unwrap();
     assert_eq!(store.get(&key).unwrap().unwrap().expose(), FAKE);
 
-    // local persistence: the enterprise persistence roams with the profile
+    // local persistence: the enterprise persistence roams with the profile; the store
+    // reports it as an attribute, and cmdkey shows the same
+    let attributes = store.attributes(&key).unwrap();
+    assert_eq!(
+        attributes.get("persistence").map(String::as_str),
+        Some("Local")
+    );
     let text = listed(&target);
     assert!(text.contains(&target), "{text}");
-    assert!(text.contains("Local machine persistence"), "{text}");
     assert!(!text.contains(FAKE));
 
     // setting again replaces the token
