@@ -7,7 +7,8 @@
     the hosted Windows runner runs elevated, so a plain step cannot show whether
     the documented check block or the MSI needs administrator rights. this script
     creates a local user outside the Administrators group and runs a task as that
-    user with a limited run level. the task runs the documented check block from
+    user with a limited run level, after granting that user the batch logon right
+    the task scheduler needs to start it. the task runs the documented check block from
     docs/operations/cli.md against the dry run's real MSI, with only gh stubbed,
     then installs the MSI with msiexec /i, runs the installed binary, and runs the
     documented uninstall block. the outcome is printed on lines that start with
@@ -38,6 +39,7 @@ $ReleaseDirectory = (Resolve-Path -LiteralPath $ReleaseDirectory).Path
 $UserName = 'marshalstd'
 $TaskName = 'marshal-standard-user-test'
 $Staging = Join-Path $env:PUBLIC 'marshal-standard-user'
+$PolicyDirectory = Join-Path $(if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [System.IO.Path]::GetTempPath() }) 'marshal-standard-user-policy'
 $MsiName = "marshal-$Version-windows-x64.msi"
 
 function Write-Measured {
@@ -53,6 +55,114 @@ function Get-RandomPassword {
     $random.Dispose()
     $body = -join ($bytes | ForEach-Object { $characters[$_ % $characters.Length] })
     return "Aa1!$body"
+}
+
+function Invoke-Secedit {
+    param([Parameter(Mandatory = $true)][string[]]$Arguments, [Parameter(Mandatory = $true)][string]$LogPath)
+    if (Test-Path -LiteralPath $LogPath) { Remove-Item -LiteralPath $LogPath -Force }
+    & secedit.exe @Arguments /log $LogPath | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        $logText = if (Test-Path -LiteralPath $LogPath) { (Get-Content -LiteralPath $LogPath) -join "`n" } else { '' }
+        throw "secedit $($Arguments -join ' ') exited $LASTEXITCODE; log: $logText"
+    }
+}
+
+# the holders of one user right in an exported policy, as the entries of its line
+# (a SID with a leading *, or an account name); empty when the policy has no such line.
+function Get-RightHolder {
+    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Lines, [Parameter(Mandatory = $true)][string]$Right)
+    foreach ($line in $Lines) {
+        if ($line -match "^$Right\s*=\s*(.*)$") {
+            return @($Matches[1].Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' })
+        }
+    }
+    return @()
+}
+
+function Export-UserRight {
+    param([Parameter(Mandatory = $true)][string]$Directory, [Parameter(Mandatory = $true)][string]$Name)
+    $path = Join-Path $Directory "$Name.inf"
+    if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
+    Invoke-Secedit -Arguments @('/export', '/cfg', $path, '/areas', 'USER_RIGHTS') -LogPath (Join-Path $Directory "$Name.log")
+    return $path
+}
+
+# adds the user to "Log on as a batch job" (SeBatchLogonRight) and proves it with a second export.
+# the right is held by Administrators by default, not by Users, and a task registered with a
+# user name and password logs on as a batch job, so without it the task is registered but never starts.
+# it only lets the test launch a process as the user; a person installing logs on interactively.
+function Grant-BatchLogonRight {
+    param([Parameter(Mandatory = $true)][string]$Sid, [Parameter(Mandatory = $true)][string]$Account, [Parameter(Mandatory = $true)][string]$Directory)
+    New-Item -ItemType Directory -Force -Path $Directory | Out-Null
+    $exported = Export-UserRight -Directory $Directory -Name 'before'
+    $lines = New-Object 'System.Collections.Generic.List[string]'
+    $lines.AddRange([string[]]@(Get-Content -LiteralPath $exported))
+    $entry = "*$Sid"
+    $right = -1
+    $section = -1
+    for ($index = 0; $index -lt $lines.Count; $index++) {
+        if ($right -lt 0 -and $lines[$index] -match '^SeBatchLogonRight\s*=') { $right = $index }
+        if ($section -lt 0 -and $lines[$index].Trim() -eq '[Privilege Rights]') { $section = $index }
+    }
+    if ($right -ge 0) {
+        $current = ($lines[$right] -replace '^SeBatchLogonRight\s*=\s*', '').Trim()
+        $lines[$right] = if ($current -eq '') { "SeBatchLogonRight = $entry" } else { "SeBatchLogonRight = $current,$entry" }
+    } else {
+        if ($section -lt 0) {
+            $lines.Add('[Privilege Rights]')
+            $section = $lines.Count - 1
+        }
+        $lines.Insert($section + 1, "SeBatchLogonRight = $entry")
+    }
+    $template = Join-Path $Directory 'grant.inf'
+    Set-Content -LiteralPath $template -Value $lines -Encoding Unicode
+    Invoke-Secedit -Arguments @('/configure', '/db', (Join-Path $Directory 'grant.sdb'), '/cfg', $template, '/areas', 'USER_RIGHTS') -LogPath (Join-Path $Directory 'grant.log')
+
+    $after = @(Get-Content -LiteralPath (Export-UserRight -Directory $Directory -Name 'after'))
+    foreach ($name in 'SeBatchLogonRight', 'SeDenyBatchLogonRight') {
+        Write-Output "user right $name = $(@(Get-RightHolder -Lines $after -Right $name) -join ',')"
+    }
+    # an export lists a local account by its SID or, on some systems, by name, so either proves the grant.
+    $holders = @(Get-RightHolder -Lines $after -Right 'SeBatchLogonRight')
+    if (@($entry, $Account, "$env:COMPUTERNAME\$Account" | Where-Object { $holders -contains $_ }).Count -eq 0) { throw "SeBatchLogonRight does not hold $entry after the grant" }
+}
+
+# one best-effort diagnostic: a failure to gather it is printed and never replaces the failure being reported.
+function Write-Diagnostic {
+    param([Parameter(Mandatory = $true)][string]$Title, [Parameter(Mandatory = $true)][scriptblock]$Gather, [object[]]$Arguments = @())
+    Write-Output "-- $Title --"
+    try { Write-Output ((& $Gather @Arguments | Out-String).TrimEnd()) } catch { Write-Output "(not available: $($_.Exception.Message))" }
+}
+
+# the task, its principal and settings, and the scheduler and logon events since $Since. it prints
+# no password and no task XML; the principal and settings are read as properties.
+function Write-TaskDiagnostic {
+    param([Parameter(Mandatory = $true)][string]$Name, [Parameter(Mandatory = $true)][string]$Account, [Parameter(Mandatory = $true)][datetime]$Since)
+    Write-Output '== the standard user task diagnostics =='
+    Write-Diagnostic 'task info' -Arguments $Name -Gather {
+        param($task)
+        Get-ScheduledTaskInfo -TaskName $task | Format-List LastRunTime, LastTaskResult, NumberOfMissedRuns, NextRunTime
+    }
+    Write-Diagnostic 'task principal' -Arguments $Name -Gather {
+        param($task)
+        (Get-ScheduledTask -TaskName $task).Principal | Format-List UserId, LogonType, RunLevel
+    }
+    Write-Diagnostic 'task settings' -Arguments $Name -Gather {
+        param($task)
+        (Get-ScheduledTask -TaskName $task).Settings | Format-List DisallowStartIfOnBatteries, StopIfGoingOnBatteries, Enabled, ExecutionTimeLimit
+    }
+    Write-Diagnostic 'Task Scheduler operational events for the task' -Arguments $Name, $Since -Gather {
+        param($task, $from)
+        $found = @(Get-WinEvent -FilterHashtable @{ LogName = 'Microsoft-Windows-TaskScheduler/Operational'; StartTime = $from } -ErrorAction SilentlyContinue |
+            Where-Object { $_.Message -like "*$task*" } | Select-Object -First 30)
+        if ($found.Count -eq 0) { '(no events; the log may be disabled)' } else { $found | Format-List TimeCreated, Id, Message }
+    }
+    Write-Diagnostic "Security events 4625 (failed logons) for $Account" -Arguments $Account, $Since -Gather {
+        param($user, $from)
+        $found = @(Get-WinEvent -FilterHashtable @{ LogName = 'Security'; Id = 4625; StartTime = $from } -ErrorAction SilentlyContinue |
+            Where-Object { $_.Message -like "*$user*" } | Select-Object -First 5)
+        if ($found.Count -eq 0) { '(no events)' } else { $found | Format-List TimeCreated, Id, Message }
+    }
 }
 
 # the task script. it runs as the standard user under Windows PowerShell 5.1,
@@ -123,6 +233,7 @@ try {
     $administrators = Get-LocalGroup -SID 'S-1-5-32-544'
     $members = @(Get-LocalGroupMember -Group $administrators | ForEach-Object { $_.Name })
     if (@($members | Where-Object { $_ -like "*\$UserName" }).Count -ne 0) { throw "$UserName is an administrator" }
+    Grant-BatchLogonRight -Sid (Get-LocalUser -Name $UserName).SID.Value -Account $UserName -Directory $PolicyDirectory
 
     if (Test-Path -LiteralPath $Staging) { Remove-Item -LiteralPath $Staging -Recurse -Force }
     New-Item -ItemType Directory -Force -Path $Staging | Out-Null
@@ -135,22 +246,38 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "icacls exited $LASTEXITCODE" }
 
     $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $Staging 'run.ps1')`""
-    $null = Register-ScheduledTask -TaskName $TaskName -Action $action -User "$env:COMPUTERNAME\$UserName" -Password $password -RunLevel Limited
+    # the defaults of a task registered without settings do not start it on battery power.
+    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
+    $testStart = Get-Date
+    # best effort: the operational log is off by default, and the diagnostics read it when the task does not start.
+    try { & wevtutil.exe sl Microsoft-Windows-TaskScheduler/Operational /e:true | Out-Null } catch { Write-Output "(could not enable the Task Scheduler operational log: $($_.Exception.Message))" }
+    $null = Register-ScheduledTask -TaskName $TaskName -Action $action -Settings $settings -User "$env:COMPUTERNAME\$UserName" -Password $password -RunLevel Limited
     Start-ScheduledTask -TaskName $TaskName
     $logPath = Join-Path $Staging 'result.log'
     # a task that has not run yet is Ready too, with the last result 267011
     # (SCHED_S_TASK_HAS_NOT_RUN), so the wait ends on the task's RESULT line, or on
     # a task that is no longer running and has a result, such as one that never started the script.
+    # a task that is still in that state with no log after $startGrace seconds is not going to start.
     $notRunYet = 267011
-    $deadline = (Get-Date).AddMinutes(8)
+    $startGrace = 90
+    $started = Get-Date
+    $deadline = $started.AddMinutes(8)
     do {
         Start-Sleep -Seconds 5
         $state = (Get-ScheduledTask -TaskName $TaskName).State
         $info = Get-ScheduledTaskInfo -TaskName $TaskName
         $logText = if (Test-Path -LiteralPath $logPath) { (Get-Content -LiteralPath $logPath) -join "`n" } else { '' }
         $finished = $logText -match '(?m)^RESULT:' -or ($state -ne 'Running' -and $info.LastTaskResult -ne $notRunYet)
-    } while (-not $finished -and (Get-Date) -lt $deadline)
-    if (-not $finished) { throw "the standard user task did not finish within 8 minutes; task state: $state; last task result: $($info.LastTaskResult); log: $logText" }
+        $neverStarted = -not $finished -and $info.LastTaskResult -eq $notRunYet -and $state -ne 'Running' -and -not (Test-Path -LiteralPath $logPath) -and ((Get-Date) - $started).TotalSeconds -ge $startGrace
+    } while (-not $finished -and -not $neverStarted -and (Get-Date) -lt $deadline)
+    if ($neverStarted) {
+        Write-TaskDiagnostic -Name $TaskName -Account $UserName -Since $testStart
+        throw "the standard user task did not start within $startGrace seconds; task state: $state; last task result: $($info.LastTaskResult)"
+    }
+    if (-not $finished) {
+        Write-TaskDiagnostic -Name $TaskName -Account $UserName -Since $testStart
+        throw "the standard user task did not finish within 8 minutes; task state: $state; last task result: $($info.LastTaskResult); log: $logText"
+    }
     Write-Output '== the standard user run =='
     Write-Output $logText
     Write-Output "task state: $state; last task result: $($info.LastTaskResult)"
@@ -161,6 +288,7 @@ try {
     if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) { Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false }
     if (Get-LocalUser -Name $UserName -ErrorAction SilentlyContinue) { Remove-LocalUser -Name $UserName }
     if (Test-Path -LiteralPath $Staging) { Remove-Item -LiteralPath $Staging -Recurse -Force -ErrorAction SilentlyContinue }
+    if (Test-Path -LiteralPath $PolicyDirectory) { Remove-Item -LiteralPath $PolicyDirectory -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
 # the CI shell wrapper exits with the last native exit code, which a stop that reported "no instance" leaves at 1.
