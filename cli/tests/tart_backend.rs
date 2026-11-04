@@ -454,6 +454,134 @@ async fn a_release_that_fails_keeps_the_host_and_the_next_preparation_deletes_th
     assert_eq!(rig.tart_calls_of("clone").len(), 2);
 }
 
+/// ends the `tart run` of the prepared VM with SIGKILL, as a killed shim leaves it:
+/// the process is gone and the VM still runs.
+async fn kill_the_holder(rig: &Rig) {
+    let run = rig.tart_calls_of("run");
+    let status = std::process::Command::new("kill")
+        .args(["-9", &run[0].pid.to_string()])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let number = rig
+        .fake
+        .invocations()
+        .iter()
+        .position(|call| call.arguments.first().map(String::as_str) == Some("run"))
+        .unwrap();
+    assert!(rig.fake.ended_within(number, Duration::from_secs(5)));
+    // the backend sees the holder end through its waiter task
+    tokio::time::sleep(Duration::from_millis(300)).await;
+}
+
+/// runs `act` once the container `name` exists in its VM and drops the run when `act`
+/// ends, so an `act` that releases the VM ends the job with it.
+async fn during_run<A: std::future::Future>(rig: &Rig, name: &str, act: A) -> A::Output {
+    let spec = spec(name, None);
+    let jit = Secret::new(JIT.to_string());
+    let started = Instant::now();
+    let run = rig.backend.run_container(&spec, &jit);
+    let act = async {
+        while !rig.containers().contains(&name.to_string()) {
+            assert!(started.elapsed() < Duration::from_secs(10), "it never ran");
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        act.await
+    };
+    tokio::select! {
+        _ = run => panic!("the container ended on its own"),
+        output = act => output,
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_vm_whose_holder_was_killed_is_stopped_forcibly_once_and_then_deleted() {
+    let rig = Rig::new();
+    prepared(&rig).await;
+    let vm = job_vm();
+    kill_the_holder(&rig).await;
+    assert!(
+        rig.fake
+            .vms()
+            .iter()
+            .any(|fields| fields[0] == vm && fields[1] == "running"),
+        "the VM outlived its holder"
+    );
+
+    rig.backend
+        .release_job_host(&host(), Duration::from_secs(10))
+        .await
+        .unwrap();
+
+    assert_eq!(rig.fake.vm_names(), [golden_name()]);
+    assert!(rig.backend.prepared_hosts().is_empty());
+    let calls = rig.tart_calls();
+    let teardown: Vec<&str> = subcommands(&calls)
+        .into_iter()
+        .filter(|subcommand| matches!(*subcommand, "stop" | "delete"))
+        .collect();
+    assert_eq!(
+        teardown,
+        ["delete", "stop", "delete"],
+        "no graceful stop, one forced stop between the two deletions"
+    );
+    let stops = rig.tart_calls_of("stop");
+    assert_eq!(stops[0].arguments, ["stop", &vm, "--timeout", "0"]);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_failing_container_removal_during_a_held_release_is_not_an_error() {
+    let rig = Rig::new();
+    prepared(&rig).await;
+    rig.docker_script("run_mode", "hold");
+    rig.docker_script("rm_fails", "");
+    rig.fake.script("hang-delete", "");
+    let name = container_name();
+    let both = async {
+        let job = host();
+        let release = rig.backend.release_job_host(&job, Duration::from_secs(3));
+        let removal = async {
+            let started = Instant::now();
+            while rig.tart_calls_of("delete").is_empty() {
+                assert!(started.elapsed() < Duration::from_secs(5), "no deletion");
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            rig.backend
+                .remove_containers(std::slice::from_ref(&name), Duration::from_secs(2))
+                .await
+        };
+        tokio::join!(release, removal)
+    };
+    let (release, removal) = during_run(&rig, &name, both).await;
+    assert!(
+        release.is_err(),
+        "the deletion hangs, so the release ends at its budget"
+    );
+    assert_eq!(removal, Ok(()), "the VM takes the container with it");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_failing_container_removal_with_no_release_is_an_error() {
+    let rig = Rig::new();
+    prepared(&rig).await;
+    rig.docker_script("run_mode", "hold");
+    rig.docker_script("rm_fails", "");
+    let name = container_name();
+    let removal_then_release = async {
+        let removal = rig
+            .backend
+            .remove_containers(std::slice::from_ref(&name), Duration::from_secs(2))
+            .await;
+        rig.backend
+            .release_job_host(&host(), Duration::from_secs(10))
+            .await
+            .unwrap();
+        removal
+    };
+    let removal = during_run(&rig, &name, removal_then_release).await;
+    assert!(removal.is_err(), "nothing was releasing the VM");
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn a_preparation_that_is_dropped_is_still_counted_and_released() {
     let rig = Rig::new();

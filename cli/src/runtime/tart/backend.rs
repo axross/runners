@@ -547,7 +547,10 @@ impl<C: Clock> TartBackend<C> {
             .await
             .map(drop);
         // the container's worker releases its VM as soon as the container ends, and
-        // the VM takes the container with it
+        // the VM takes the container with it, so a removal that fails then costs
+        // nothing. Every caller that reaches here, the stop sequence's container
+        // steps, is followed by `release_hosts`, which is why only a failure with no
+        // release under way is an error
         if removed.is_err() && self.vm_is_released_or_releasing(&vm) {
             return Ok(());
         }

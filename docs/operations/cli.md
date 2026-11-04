@@ -579,8 +579,10 @@ VM, which only a leftover from an earlier run is, is stopped forcibly and delete
   fails, deletes it, and, when the deletion fails, lists the VMs to see whether it
   is already gone. The budget is split in tenths: 5 for the graceful stop (its
   `--timeout` is a second less, so Tart ends its own wait first), 2 for the forced
-  stop (`stop --timeout 0`), 2 for the deletion and 1 for the listing. A VM that
-  never ran is deleted without a stop;
+  stop (`stop --timeout 0`), 2 for the deletion and 1 for the listing. A VM whose
+  holder has ended is deleted without a graceful stop, and a deletion that fails
+  then is retried once after a forced stop, because a killed VM shim leaves its
+  `tart run` running and Tart refuses to delete a running VM;
 - it is idempotent and safe to run twice at once: the second waits for the first
   and finds the host released;
 - a release that succeeds forgets the host, its containers, and the holder of its

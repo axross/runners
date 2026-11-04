@@ -13,7 +13,9 @@ use super::list::VmSource;
 /// how the VM is stopped before it is deleted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stop {
-    /// the VM never ran, so there is nothing to stop.
+    /// the process that held the VM has ended, or never ran it, so nothing is asked
+    /// to stop it; a deletion that fails then is tried once more after a forced stop,
+    /// for a holder that was killed and left its `tart run` running.
     NotStarted,
     /// ask it to shut down, and stop it forcibly when that fails.
     Graceful,
@@ -82,7 +84,14 @@ pub async fn tear_down(
             let _ = client.force_stop(vm, steps.graceful.max(steps.force)).await;
         }
     }
-    let Err(error) = client.delete(vm, steps.delete).await else {
+    let mut deleted = client.delete(vm, steps.delete).await;
+    if deleted.is_err() && stop == Stop::NotStarted {
+        // a holder that ended may have left its `tart run` child running, as when the
+        // shim was killed, and Tart refuses to delete a running VM
+        let _ = client.force_stop(vm, steps.force).await;
+        deleted = client.delete(vm, steps.delete).await;
+    }
+    let Err(error) = deleted else {
         return Ok(());
     };
     if is_gone(client, vm, steps.verify).await {
