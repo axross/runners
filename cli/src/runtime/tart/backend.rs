@@ -723,10 +723,12 @@ impl<C: Clock> Backend for TartBackend<C> {
         }
         let host = Rc::new(Host::default());
         self.hosts.borrow_mut().insert(key, host.clone());
+        // the gate can stay closed for as long as the Mac has no network, so the
+        // prerequisites are checked after it, never before
+        self.network_gate.wait_until_open().await;
         if let Some(reason) = self.wait_for_prerequisites().await {
             return HostPreparation::Held(reason);
         }
-        self.network_gate.wait_until_open().await;
         match self.boot(request, &host).await {
             Ok(()) => HostPreparation::Ready,
             Err(error) => HostPreparation::Failed(error),

@@ -15,6 +15,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use marshal_cli::macos::gate::NetworkGate;
 use marshal_cli::macos::softnet::OwnerMode;
 use marshal_cli::runtime::backend::{HostRequest, JobHost};
 use marshal_cli::runtime::clock::Clock;
@@ -102,6 +103,8 @@ pub struct Setup {
     pub tart: Option<String>,
     /// the program the backend runs as its exporter child.
     pub exporter: Option<PathBuf>,
+    /// the network gate the backend waits at, open when there is none.
+    pub gate: Option<NetworkGate>,
 }
 
 impl Default for Setup {
@@ -116,6 +119,7 @@ impl Default for Setup {
             softnet: true,
             tart: None,
             exporter: None,
+            gate: None,
         }
     }
 }
@@ -164,6 +168,14 @@ impl Rig {
         })
     }
 
+    /// a host whose backend waits at this network gate.
+    pub fn with_gate(gate: NetworkGate) -> Self {
+        Self::build(&Setup {
+            gate: Some(gate),
+            ..Setup::default()
+        })
+    }
+
     /// a host whose `tart` is this program.
     pub fn with_tart_program(program: &str) -> Self {
         Self::build(&Setup {
@@ -191,7 +203,7 @@ impl Rig {
         fake.script("docker_program", FAKE_DOCKER);
         fs::create_dir_all(fake.dir.path().join("docker")).unwrap();
         let log = Rc::new(MemoryLog::default());
-        let backend = TartBackend::new(
+        let mut backend = TartBackend::new(
             fake.client.clone(),
             setup.launcher.clone(),
             setup.timings,
@@ -200,6 +212,9 @@ impl Rig {
         )
         .with_softnet_owner_mode(setup.owner_mode)
         .with_exporter(setup.exporter.clone(), None);
+        if let Some(gate) = &setup.gate {
+            backend = backend.with_network_gate(gate.clone());
+        }
         Self {
             fake,
             softnet,

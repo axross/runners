@@ -514,15 +514,16 @@ golden VM whose old runner asks for a rebuild.
 
 1. A host this slot could not release earlier is released first, within 30 s, so a
    slot never owns two VMs. Its failure fails the preparation.
-2. The prerequisites run: Tart's version, then Softnet's file and version, as
-   [Host Prerequisites](#host-prerequisites) maps their causes. A Tart that is
+2. When the instance's signals have recorded no primary network, the preparation
+   waits at the network gate first; a stop ends the wait. Then the prerequisites run:
+   Tart's version, then Softnet's file and version, as
+   [Host Prerequisites](#host-prerequisites) maps their causes, so a boot after a long
+   wait uses a check made after it. A Tart that is
    missing or does not answer warns `Tart is not available (<message>) - waiting.`
    and tries again every 5 s; a refusal of Tart's version or of Softnet is `Held`
    with the refusal's text. The versions in use are logged once, as
    `Using Tart <v> and Softnet <v>.`, and again when they change; each warning is
    logged once until it changes.
-   When the instance's signals have recorded no primary network, the preparation
-   then waits at the network gate before anything is cloned; a stop ends the wait.
 3. The newest golden VM that runs here is listed and cloned to
    `marshal-job-<pool>-<slot>-<yyyyMMddHHmmssfff>`. The name is recorded before the
    clone runs, so a clone that fails halfway is still deleted.
@@ -1098,8 +1099,9 @@ one.
   `start` or `restart` resumes; nothing resumes on its own.
 - **No primary network.** `begin` closes the `NetworkGate` in `macos::gate`, and the
   first reading opens it when a primary network is recorded. The Tart backend waits
-  at the gate in `prepare_job_host`, after the host prerequisites and before the
-  clone, so the slot cycle keeps its order and a slot that waits has cloned nothing.
+  at the gate in `prepare_job_host`, before the host prerequisites, so the boot that
+  follows a wait of any length uses a check made after it, and a slot that waits has
+  cloned nothing.
   Without a default route the gate stays closed until a network has held for two
   checks, and `status` shows
   `network: waiting for a network (no IPv4 default route)`. A stop ends the wait, as

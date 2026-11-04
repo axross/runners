@@ -1,7 +1,8 @@
 //! the gate that keeps a job VM from being cloned while no primary network is
 //! recorded. The signal monitor closes it when the instance begins to run and opens it
-//! once a primary network is recorded; the Tart backend waits at it between the host
-//! prerequisite check and the clone of a slot's job VM.
+//! once a primary network is recorded; the Tart backend waits at it before the host
+//! prerequisite check, so the clone of a slot's job VM follows a check made after the
+//! wait.
 
 use std::rc::Rc;
 

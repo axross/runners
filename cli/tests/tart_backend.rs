@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 
 use marshal_cli::image::check::{GoldenCheck, ImageCheck, freshness_warnings};
 use marshal_cli::image::contract::CONTRACT_VERSION;
+use marshal_cli::macos::gate::NetworkGate;
 use marshal_cli::profile::Profile;
 use marshal_cli::runtime::backend::{
     Backend, ContainerSpec, CpuRequest, DiagnosticRecord, HostPreparation, StopRequest,
@@ -779,6 +780,37 @@ async fn a_missing_softnet_or_a_softnet_that_is_not_set_up_holds_the_slot() {
         );
         assert_eq!(rig.tart_calls(), [["--version"]], "{text}");
     }
+}
+
+/// the prerequisites are checked after the network gate opens, so a Softnet that went
+/// away while the gate was closed holds the slot instead of booting on a stale check.
+#[tokio::test(flavor = "current_thread")]
+async fn a_softnet_that_went_missing_while_the_gate_was_closed_holds_the_slot_once_it_opens() {
+    let gate = NetworkGate::new();
+    gate.close();
+    let rig = Rig::with_gate(gate.clone());
+    let softnet = rig.softnet.root.path().join("bin").join("softnet");
+    let job = request();
+    let preparing = rig.backend.prepare_job_host(&job);
+    let opening = async {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(
+            rig.tart_calls().is_empty(),
+            "nothing runs while it is closed"
+        );
+        fs::remove_file(&softnet).unwrap();
+        gate.open();
+    };
+
+    let (preparation, ()) = tokio::join!(preparing, opening);
+
+    let reason = held(preparation);
+    assert!(
+        reason.starts_with("Softnet was not found on PATH"),
+        "{reason}"
+    );
+    assert!(rig.tart_calls_of("clone").is_empty());
+    assert!(rig.tart_calls_of("run").is_empty());
 }
 
 #[tokio::test(flavor = "current_thread")]
