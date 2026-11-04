@@ -1519,9 +1519,10 @@ no cross-compilation, in one leg that:
    and runs the installer tests there;
 8. on the macOS leg, runs the "Check The Signing Tools" step, which holds no secret
    and prints a `MEASURED: signing tools:` line with the path of each tool that
-   `sign-macos` and `verify-macos` call. It fails the leg if one is missing or
-   does not take the flags those jobs use, so a tool that moves on a new runner
-   image fails a pull request before it fails a release;
+   `sign-macos` and `verify-macos` call. It fails the leg if one is missing, and
+   runs `base64` and `shasum`, the only two it runs, against the flags those jobs use,
+   so a tool that moves on a new runner image fails a pull request before it fails a
+   release;
 9. hands the SHA-256 of the binary and of the installer to the next job as job
    outputs, and uploads those two files by name.
 
@@ -1651,8 +1652,10 @@ needs `plan` directly:
 
 Every signing step comes before `release`, so a signing, notarization or
 verification failure stops the run before any tag is pushed. The jobs and their
-`needs` chain are the contract that W1, W4 and M2 extend
-([Extending the Release Workflows](#extending-the-release-workflows)), and
+`needs` chain are the contract that W1, W4 and M2, other children of roadmap
+[#72](https://github.com/axross/runners/issues/72), extend
+([Extending the Release Workflows](#extending-the-release-workflows); [The Signing
+Contracts](#the-signing-contracts) says what each of them is), and
 `mise run check:release-shape` fails if they drift from it.
 
 The runner image's definition is embedded in the binary (see [Build](#build)), so a
@@ -1673,8 +1676,8 @@ approval of the first one is the decision to sign.
 `attest` then needs `plan` and `assemble-signed`, and `release` needs `plan` and
 `attest`. Both read `marshal-release-signed`, and `marshal-release` stays the
 unsigned build set. `attest` keeps `id-token: write` and `attestations: write`
-alone. The kept uploads, the signed files and the notary log, last 14 days and hold
-no secret.
+alone. The kept uploads, the signed files, the notary log and `marshal-release-signed`,
+last 14 days and hold no secret.
 
 `sign-macos` is the one job that declares an Environment or reads a signing secret.
 It holds only `contents: read`, checks nothing out, and uses no action but
@@ -1682,13 +1685,14 @@ It holds only `contents: read`, checks nothing out, and uses no action but
 file and no package manager, and it fetches nothing: its steps are the job's own
 definition in `release.yaml`, which the maintainer's approval covers, and its only
 network use is the artifact transfer and Apple's timestamp, notary and ticket
-services. Each tool is called by its absolute system path, `/usr/bin/` for
+services. Each signing tool is called by its absolute system path, `/usr/bin/` for
 `security`, `codesign`, `pkgbuild`, `openssl`, `plutil`, `shasum` and `xcrun`, and
-`/usr/sbin/` for `pkgutil`, so nothing earlier on `PATH` can stand in for one. The
-scripts read the two prefixes from `SYSTEM_BIN` and `SYSTEM_SBIN`, whose defaults are
-those literal paths and which only the stand-in test overrides; the shape check
-requires the defaults and rejects either name as an `env:` key anywhere. Its steps
-run in this order:
+`/usr/sbin/` for `pkgutil`, so nothing earlier on `PATH` can stand in for one. Its
+other commands are shell built-ins and macOS base utilities, such as `base64` and
+`mktemp`, called by name. The scripts read the two prefixes from `SYSTEM_BIN` and
+`SYSTEM_SBIN`, whose defaults are those literal paths and which only the stand-in
+test overrides; the shape check requires the defaults and rejects either name as an
+`env:` key anywhere. Its steps run in this order:
 
 1. It downloads `marshal-release`, the build's set.
 2. It refuses, before importing anything, unless:
@@ -1743,9 +1747,13 @@ steps run with `if: always()`, and no other step in the job may.
 
 No secret is printed. Secret values reach the scripts only through `env:` and files
 written with mode 0600 under the runner's temporary directory, and each line of the
-`.p8` is masked as well. The password arguments of `security` are the one exception to
-"never passed on a command line", because the tool has no non-interactive alternative
-and the runner is discarded after the job; the maintainer allowed it at the plan gate.
+`.p8` is masked as well. The password arguments of `security` are the one exception for
+a credential to "never passed on a command line", because the tool has no
+non-interactive alternative and the runner is discarded after the job; the maintainer
+allowed it at the plan gate. The API key's ID and issuer ID also reach `notarytool` as
+`--key-id` and `--issuer` arguments. They identify the key and are not credentials, and
+they are stored as secrets so that GitHub masks them in the log; the `.p8` key goes by
+a file path.
 [Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
 records it.
 
@@ -1783,7 +1791,19 @@ pull request fixes it.
 
 ### The Signing Contracts
 
-F0 owns these. W1, W4, K2 and M2 consume them.
+F0 owns these. W1, W4, K2 and M2 consume them. Each is a child of roadmap
+[#72](https://github.com/axross/runners/issues/72), as F0 is:
+
+- **F0** is the installers and the release signing this section describes.
+- **W1** is the child that adds its installer to the release, and chooses its app's
+  bundle identifier.
+- **W4** is the child that adds an update feed, with a signed update archive.
+- **K2** is the child whose Keychain items trust the Developer ID-signed `marshal`
+  under the identifier below.
+- **M2** is the child that adds an app bundle and a disk image, and signs the bundled
+  command line with the same identifier and team.
+
+The contracts F0 owns are these:
 
 - **The identifier** is `app.axross.marshal`, and it never changes. The signed binary
   carries it, whether bare or inside the package, and the package's own identifier is
@@ -1828,7 +1848,8 @@ F0 owns these. W1, W4, K2 and M2 consume them.
   refuses on the empty secrets, before it imports anything.
   [Development Workflow](./development-workflow.md#before-the-first-release) has the
   maintainer create the Environment first.
-- **Certificate lifetime.** The Developer ID certificates last one year. Software
+- **Certificate lifetime.** The Developer ID certificates are expected to last one
+  year, and the maintainer confirms the dates from the certificates. Software
   signed with a secure timestamp keeps working after its certificate expires.
   Whether an older release's package still installs after its Installer certificate
   has expired is unconfirmed, and bears on rolling back to it.
@@ -1850,7 +1871,11 @@ codesign -d -r- /usr/local/bin/marshal
 ```
 
 - `pkgutil --check-signature` is expected to show a Developer ID Installer
-  certificate of the maintainer's team, chained to Apple's root.
+  certificate of the maintainer's team, chained to Apple's root. An operator who wants
+  the team checked compares the team ID it shows with the one this document records
+  once the first signed release has fixed it. Gatekeeper does not do that check: it
+  accepts a package signed with any Developer ID and notarized, and blocks one that is
+  unsigned, not notarized, or whose signature or notarization is revoked.
 - `spctl --assess --type install -vv` is expected to print `accepted` with
   `source=Notarized Developer ID`. One unanswered report says macOS 26.3 rejected a
   notarized, stapled package; if a genuine release shows that, it is a defect to
@@ -1868,8 +1893,9 @@ points:
 
 - **W1** adds its installer to the build legs and to the release set. That changes
   the five-file set, so the same change updates it across `release-build.yaml`,
-  `assemble-release.sh`, `attest`, `verify-release.sh` and its test, and
-  `.releaserc.json`.
+  `assemble-release.sh`, `sign-macos`'s file check, `assemble-signed`, `attest`,
+  `verify-release.sh` and its test, `.releaserc.json`, `check-release-shape.mjs`,
+  `test-sign-macos.sh` and `test-release-shape.sh`.
 - **M2** adds steps to `sign-macos` and `verify-macos` for the app and the disk image,
   and signs the bundled command line with the same identifier and team.
 - **W4** adds a job, or steps under the Environment, that sign the update archive.
@@ -2015,8 +2041,9 @@ to create `/usr/local/bin` when it is absent. What it does to an existing
 The block opens with two assignment lines: `version`, and `file`, the path of the
 downloaded installer, for example in the browser's download folder. Edit those two
 lines, then paste the block whole into one shell. It does not check the macOS
-package's signature; Gatekeeper checks it when the package opens. It downloads
-`SHA256SUMS` with `gh`, then refuses unless:
+package's signature; Gatekeeper assesses it when the package opens, but accepts any
+Developer ID signature that is notarized, so it does not tie the package to the
+maintainer's team. It downloads `SHA256SUMS` with `gh`, then refuses unless:
 
 1. the installer's SHA-256 matches the line of `SHA256SUMS` for the file name the
    version gives, whatever the downloaded file is called;
@@ -2307,10 +2334,10 @@ On Windows, in PowerShell 5.1 or 7:
   refuses a lower version while a newer one is installed, with the message "A newer
   version of marshal is already installed.", and the installed version stays, so
   uninstall first.
-  The Developer ID certificates last one year, and whether a notarized pkg still
-  installs once its Installer certificate has expired is not confirmed, so a rollback
-  through an older release's pkg may fail. The bare-binary route to `v0.1.0` and a
-  newer release stay available.
+  The Developer ID certificates are expected to last one year, and whether a
+  notarized pkg still installs once its Installer certificate has expired is not
+  confirmed, so a rollback through an older release's pkg may fail. The bare-binary
+  route to `v0.1.0` and a newer release stay available.
 - **Roll back to `v0.1.0`.** Uninstall, then use the [bare-binary
   blocks](#rolling-back-to-v010) and add the install directory to the user's `PATH`
   by hand, as the manual install always needed. On Windows, add
