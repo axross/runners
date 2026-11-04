@@ -91,8 +91,8 @@ mod tests {
 
     #[test]
     fn simple_folding_equates_the_declared_pairs() {
-        // simple case folding equates each of these with its partner, though other
-        // comparisons call them different; docs/operations/cli.md states the rule.
+        // simple case folding equates each of these with its partner;
+        // docs/operations/cli.md states the rule.
         assert!(eq_folded("\u{17f}", "s"));
         assert!(eq_folded("\u{17f}", "S"));
         assert!(eq_folded("\u{345}", "\u{3b9}"));

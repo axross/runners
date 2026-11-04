@@ -158,6 +158,7 @@ fn final_observed(metrics: &Path) -> Option<bool> {
         .read_to_end(&mut bytes)
         .ok()?;
     Some(bytes.split(|byte| *byte == b'\n').any(|line| {
+        // ignoring case, as the smoke export's -notmatch does
         line.strip_suffix(b"\r")
             .unwrap_or(line)
             .eq_ignore_ascii_case(FINAL_OBSERVED.as_bytes())
