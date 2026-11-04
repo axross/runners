@@ -765,6 +765,7 @@ before any pool runs and before each job.
 | `image::archive`    | The build context: a ustar archive of the definition, written by the CLI itself          |
 | `image::check`      | The image check's format and outcomes, the refusal, the freshness warnings, and `status` |
 | `image::runner`     | The runner record: each declared runner version's release date and osx-arm64 SHA-256     |
+| `image::macos_base` | The macOS base record and its age warnings                                               |
 
 ### Labels
 
@@ -877,8 +878,8 @@ when the image is missing or its labels are missing or malformed.
 ## macOS VM Pools
 
 An axmc pool with `os: "macos"` runs its jobs in macOS virtual machines. This
-section states what `validate` accepts for such a pool, and the runner record that
-the golden macOS VM will use. The macOS VM runtime is not
+section states what `validate` accepts for such a pool, and the runner and base
+records that the golden macOS VM will use. The macOS VM runtime is not
 implemented yet, so `start` and `build` still refuse axmc, as Runtime Seam says.
 The pool rules apply to a pool with `os: "macos"` under the axmc profile only;
 axpc and axmc Linux pools accept what they accepted before.
@@ -1015,6 +1016,31 @@ verification of a golden macOS VM whose runner is behind. `declared_runner` in
 
 No command reads the variable yet, because the macOS golden VM's build does not
 exist; `declared_runner` takes the value from its caller, and the tests pin it.
+
+### The Base Record
+
+`MACOS_BASE` in `cli/src/image/macos_base.rs` holds the macOS base the golden
+macOS VM will be built from:
+
+| Field           | Holds                                                                                            |
+| --------------- | ------------------------------------------------------------------------------------------------ |
+| `digest`        | The base's manifest digest; the reference is `ghcr.io/cirruslabs/macos-tahoe-base@<digest>`      |
+| `macos_version` | The macOS version the base ships, or none while it is not recorded                               |
+| `published`     | The day the base was published, from the manifest's `org.cirruslabs.tart.upload-time` annotation |
+| `retired`       | The digests of earlier pins, the only bases a build removes from Tart's cache; empty so far      |
+
+The registry tags only `latest`, so the digest is the only fixed reference, and a
+base bump records the digest, the version, and the date together. The macOS
+version is not recorded yet: `BASE_MACOS_VERSION` is a placeholder until the first
+Mac check supplies it, and a test pins the placeholder so that recording the
+version updates the test too.
+
+`base_age_warnings` returns the base's age warnings as of a given time, from the
+whole days since `published`. Under 30 days there is none, from 30 days the first
+and from 60 days the second replaces it, and both thresholds are inclusive, as the
+runner's are. Each tells the maintainer to bump the base pin and rebuild the
+golden macOS VM, because rebuilding alone does not update macOS. Nothing calls it
+yet: `status` shows no base age until the golden macOS VM does.
 
 ## Running a Host
 

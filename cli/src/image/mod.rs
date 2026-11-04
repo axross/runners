@@ -8,4 +8,5 @@ pub mod contract;
 pub mod definition;
 #[cfg(test)]
 mod dockerfile;
+pub mod macos_base;
 pub mod runner;
