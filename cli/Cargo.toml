@@ -47,12 +47,15 @@ serde = { version = "1.0.229", default-features = false, features = ["std", "der
 tokio = { version = "1.54.1", default-features = false, features = ["rt", "time", "sync", "io-util", "process", "macros", "net", "signal"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider"] }
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
+serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
+keyring-core = { version = "1.0.1", default-features = false }
 
 # the instance lock and control channel are named pipes on Windows: interprocess
 # owns the pipe calls, winsafe reads the current user's SID, and win32job puts
 # `start` in a Job Object that kills its children when it ends.
 [target.'cfg(windows)'.dependencies]
-interprocess = { version = "2.4.7", default-features = false }
+interprocess = { version = "2.4.7", default-features = false, features = ["tokio"] }
+windows-native-keyring-store = { version = "1.1.0", default-features = false }
 winsafe = { version = "0.0.29", default-features = false, features = ["advapi"] }
 win32job = { version = "2.0.3", default-features = false }
 

@@ -17,7 +17,7 @@ use super::log::{Log, Masked};
 use super::name::job_container_name;
 use super::pool::SlotSpec;
 use super::registration::{JitRequest, Registrar};
-use super::token::read_token;
+use super::token::{TokenFiles, TokenSource};
 
 /// the delay after a slot's first failure.
 pub const INITIAL_BACKOFF: Duration = Duration::from_secs(5);
@@ -132,8 +132,52 @@ pub async fn run_slot<B: Backend, K: Clock, R: Registrar>(
     registrar: &R,
     log: &dyn Log,
     board: &Board,
+    stop: watch::Receiver<bool>,
+) {
+    let services = Services {
+        backend,
+        clock,
+        registrar,
+        tokens: &TokenFiles,
+        log,
+        board,
+    };
+    run_slot_with(slot, &services, stop).await;
+}
+
+/// what a slot's loop works with.
+pub struct Services<'a, B, K, R> {
+    pub backend: &'a B,
+    pub clock: &'a K,
+    pub registrar: &'a R,
+    /// where each registration reads its token.
+    pub tokens: &'a dyn TokenSource,
+    pub log: &'a dyn Log,
+    pub board: &'a Board,
+}
+
+impl<B, K, R> Clone for Services<'_, B, K, R> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<B, K, R> Copy for Services<'_, B, K, R> {}
+
+/// [`run_slot`] with its token source among its services.
+pub async fn run_slot_with<B: Backend, K: Clock, R: Registrar>(
+    slot: &SlotSpec,
+    services: &Services<'_, B, K, R>,
     mut stop: watch::Receiver<bool>,
 ) {
+    let Services {
+        backend,
+        clock,
+        registrar,
+        tokens,
+        log,
+        board,
+    } = *services;
     let report = Report {
         log,
         board,
@@ -177,7 +221,7 @@ pub async fn run_slot<B: Backend, K: Clock, R: Registrar>(
 
         let name = job_container_name(&slot.pool, slot.number, clock.now());
         let registration = async {
-            let token = read_token(&slot.token_path).map_err(|error| error.to_string())?;
+            let token = tokens.token(&slot.owner, &slot.repository, &slot.token_path)?;
             log.mask(&token);
             registrar
                 .request_jit(&JitRequest {
