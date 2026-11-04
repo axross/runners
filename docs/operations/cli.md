@@ -993,7 +993,7 @@ and `print_entry` in `arp.tproj/arp.c` write in Apple's `network_cmds`:
 - `arp -n <router>` prints one line per entry,
   `? (<router>) at <address> on <interface> [ifscope] [permanent] [published (proxy only)] [<type>]`.
   The address is six lowercase hexadecimal bytes of one or two digits each, as `%x`
-  writes them (`0:a:95:1:2:3`). A line of another form refuses the whole answer;
+  writes them (`0:0:5e:0:53:1`). A line of another form refuses the whole answer;
   `(incomplete)` and `-- no entry` give no address; entries on other interfaces are
   ignored; entries on the route's interface that disagree give no address. An
   address that cannot be read leaves the reading with the router and no hardware
