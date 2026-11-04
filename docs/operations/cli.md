@@ -688,6 +688,17 @@ it.
   A socket path longer than the operating system allows is a startup failure.
   The client checks the directory before it connects, so it does not talk to a
   socket another user placed.
+- **Windows, the agent's client.** The library's client of protocol version 2 reads
+  the process ID of the pipe's server right after it connects and before it sends
+  anything, opens that process, and compares its user's SID with the current
+  user's. A server of another account, a process that cannot be opened or read, or
+  any failed call is a refusal, `ServerNotThisUser`: the client drops the
+  connection without sending a byte, so a `token_set` never reaches a squatter of
+  another account. The check names no command and no token. A squatter of the same
+  user is not told apart, and a process ID reused between the connection and the
+  check is a short window; both are accepted on a single-user host.
+  The commands of `start`, which speak version 1, are unchanged and still reach
+  whatever holds the pipe, as the cost above says.
 
 On both systems an ending instance first drops its request queue, so a request
 still waiting is answered that the instance is ending, then stops accepting and
@@ -1076,7 +1087,7 @@ configuration reaches a connection or the log. `tests/agent_versions.rs` runs `s
 `status`, `restart` and `diagnostics` against an agent and shows they exit 1 and
 change nothing. `tests/agent_channel.rs` covers the socket's mode, the peer's user
 and a directory open to others on Unix. `tests/agent_channel_windows.rs` shows a pipe
-of a taken name is refused. `tests/agent_process.rs` runs the agent as a process on
+of a taken name is refused and a client passes the check of the server's user. `tests/agent_process.rs` runs the agent as a process on
 the fake `docker` and a GitHub stub, a second agent refused, and the log continued
 with ten files kept.
 

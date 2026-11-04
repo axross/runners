@@ -55,3 +55,19 @@ async fn a_second_agent_channel_on_the_same_name_is_a_startup_failure() {
         .expect("a second channel opened on one name");
     assert!(matches!(error, ChannelError::NameTaken(_)), "{error}");
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_client_connecting_to_a_real_agent_passes_the_check_of_the_server_s_user() {
+    let root = TempDir::new();
+    let roots = Roots::for_tests(root.path());
+    let lock = InstanceLock::acquire(&roots).unwrap();
+    let (calls, _requests) = mpsc::unbounded_channel();
+    let (_sender, snapshots) = watch::channel(Arc::new(Snapshot::default()));
+    let _channel = AgentChannel::open(&lock, &roots, calls, snapshots, Limits::default()).unwrap();
+    // the server is this process, which runs as this user, so the check lets it through
+    let (client, _pushes) =
+        marshal_cli::agent::connect(&roots, &marshal_cli::agent::wire::ClientInfo::default())
+            .await
+            .expect("the client refused the agent of its own user");
+    assert_eq!(client.welcome.version, 2);
+}

@@ -600,6 +600,10 @@ built: its names, modes, and checks.
 - The control channel is per user: only the instance's own user can reach it, and
   no remote client can. Another user who takes this user's pipe name first stops
   the channel from opening, which is also accepted on a single-user host.
+  On Windows the agent's client does not rely on the name alone: it checks that the
+  process serving the pipe runs as the current user before it sends a byte, and a
+  server it cannot show to be that user is refused. `start`'s commands do not
+  check, and a squatted name there is the accepted cost above.
 - No request carries a configuration path for the instance to read, and no
   response carries a token or a JIT configuration. A resume names a path only so
   the instance can compare it with the one it started with.
@@ -643,7 +647,12 @@ named and used.
   response, an event, a snapshot, an error, or a log line. An error about a token
   names its cause, such as an empty or too long token, and never the params. A
   store failure names its kind and the platform's code, which hold no token. The
-  request is only as private as the channel: only the agent's user can send it.
+  request is only as private as the channel: only the agent's user can send it, and
+  on Windows the client sends it only after it has checked that the pipe's server
+  runs as that user, so a squatter of another account receives nothing and a failure
+  to verify is a refusal. The residual risks are a squatter of the same user, which
+  is accepted on a single-user host, and the tiny window in which a process ID is
+  reused between the connection and the check.
 - A token longer than 1280 UTF-16 code units or empty is refused before it reaches the
   store, so a client cannot fill the store with arbitrary data.
 

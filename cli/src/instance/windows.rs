@@ -30,6 +30,22 @@ pub fn current_user_sid() -> io::Result<String> {
     let token = w::HPROCESS::GetCurrentProcess()
         .OpenProcessToken(co::TOKEN::QUERY)
         .map_err(|error| failed("OpenProcessToken", error))?;
+    token_user_sid(&token)
+}
+
+/// the security identifier of the user the process `pid` runs as; fails when the
+/// process or its token cannot be opened for reading, as a process of another account
+/// cannot.
+pub fn process_user_sid(pid: u32) -> io::Result<String> {
+    let process = w::HPROCESS::OpenProcess(co::PROCESS::QUERY_LIMITED_INFORMATION, false, pid)
+        .map_err(|error| failed("OpenProcess", error))?;
+    let token = process
+        .OpenProcessToken(co::TOKEN::QUERY)
+        .map_err(|error| failed("OpenProcessToken", error))?;
+    token_user_sid(&token)
+}
+
+fn token_user_sid(token: &w::HACCESSTOKEN) -> io::Result<String> {
     let information = token
         .GetTokenInformation(co::TOKEN_INFORMATION_CLASS::User)
         .map_err(|error| failed("GetTokenInformation", error))?;

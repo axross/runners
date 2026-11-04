@@ -49,6 +49,9 @@ pub enum ConnectError {
     Refused(ErrorBody),
     /// the agent answered with something that is not protocol version 2.
     NotProtocol,
+    /// on Windows, the server of the pipe could not be shown to run as this user, so
+    /// nothing was sent to it.
+    ServerNotThisUser,
     Failed(String),
 }
 
@@ -59,6 +62,9 @@ impl fmt::Display for ConnectError {
             Self::NotAnswering => f.write_str("the agent did not answer in time"),
             Self::Refused(body) => write!(f, "the agent refused the connection: {}", body.message),
             Self::NotProtocol => f.write_str("what answered is not a protocol version 2 agent"),
+            Self::ServerNotThisUser => {
+                f.write_str("what answers is not shown to run as this user, so nothing was sent")
+            }
             Self::Failed(detail) => write!(f, "the agent could not be reached: {detail}"),
         }
     }
@@ -260,6 +266,13 @@ async fn read_line<R: AsyncRead + Unpin>(reader: &mut BufReader<R>) -> Option<Ve
         Ok(count) if count > 0 && line.last() == Some(&b'\n') => Some(line),
         _ => None,
     }
+}
+
+/// whether the server's user, when it could be read, is the current user; an unread
+/// user is not.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn same_user(server: Option<&str>, current: &str) -> bool {
+    server.is_some_and(|server| server.eq_ignore_ascii_case(current))
 }
 
 /// says hello on `stream` and waits for the agent's answer.
@@ -468,9 +481,9 @@ pub mod platform {
     use interprocess::os::windows::named_pipe::tokio::DuplexPipeStream;
 
     use crate::instance::roots::Roots;
-    use crate::instance::windows::current_user_sid;
+    use crate::instance::windows::{current_user_sid, process_user_sid};
 
-    use super::ConnectError;
+    use super::{ConnectError, same_user};
 
     pub type Stream = DuplexPipeStream<pipe_mode::Bytes>;
 
@@ -478,12 +491,25 @@ pub mod platform {
     /// about to be free.
     const ERROR_PIPE_BUSY: i32 = 231;
 
+    /// lets the connection through only when the process serving it runs as `sid`; a
+    /// pipe of that name could be held by another account's process, and a request
+    /// such as `token_set` must not reach it. Any doubt is a refusal, and the stream
+    /// is dropped before a byte is sent.
+    fn verified(stream: Stream, sid: &str) -> Result<Stream, ConnectError> {
+        let server = stream.server_process_id().and_then(process_user_sid).ok();
+        if same_user(server.as_deref(), sid) {
+            Ok(stream)
+        } else {
+            Err(ConnectError::ServerNotThisUser)
+        }
+    }
+
     pub async fn connect(roots: &Roots) -> Result<Stream, ConnectError> {
         let sid = current_user_sid().map_err(|error| ConnectError::Failed(error.to_string()))?;
         let name = roots.control_pipe_name(&sid);
         loop {
             match Stream::connect_by_path(OsStr::new(&name)).await {
-                Ok(stream) => return Ok(stream),
+                Ok(stream) => return verified(stream, &sid),
                 Err(error) if error.raw_os_error() == Some(ERROR_PIPE_BUSY) => {
                     tokio::time::sleep(Duration::from_millis(10)).await;
                 }
@@ -520,6 +546,28 @@ mod tests {
 
     use super::*;
     use crate::agent::snapshot::{RunnerState, WarningKind};
+
+    #[test]
+    fn a_server_is_this_users_only_when_its_user_was_read_and_is_the_same() {
+        let me = "S-1-5-21-1-2-3-1001";
+        assert!(same_user(Some(me), me));
+        assert!(same_user(Some("s-1-5-21-1-2-3-1001"), me));
+        assert!(!same_user(Some("S-1-5-21-1-2-3-1002"), me));
+        assert!(!same_user(Some("S-1-5-21-1-2-3-100"), me));
+        assert!(
+            !same_user(None, me),
+            "a user that cannot be read is refused"
+        );
+    }
+
+    #[test]
+    fn the_refusal_to_trust_a_server_names_no_command_and_no_token() {
+        let text = ConnectError::ServerNotThisUser.to_string();
+        assert!(
+            !text.contains("docker") && !text.contains("token"),
+            "{text}"
+        );
+    }
 
     #[tokio::test]
     async fn a_line_that_is_not_protocol_version_2_is_not_a_welcome() {
