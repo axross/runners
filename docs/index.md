@@ -59,12 +59,14 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
 - [operations/cli.md](./operations/cli.md) - the CLI under `cli/`: what `validate`
   accepts and prints for the axpc and axmc host profiles, the validation rules and
   the shared fixtures, the runtime layer
-  (container backend, JIT registration, CPU placement, and the slot loop), the
+  (the container backend, the runtime seam, the Tart backend, JIT registration,
+  CPU placement, the slot loop, and the signal source), the
   instance layer (instance state, single-instance lock, and control channel),
   the image contract (its labels, the image check, and freshness), building the
   runner image with `build`, running a host with `start`, `stop`, `restart`,
   `status`, and `diagnostics` (the log, containment, the stop sequence, and the
-  diagnostic containers and their export), the toolchain and Rust
+  diagnostic containers and VMs and their export), the axmc host's prerequisites,
+  its VM shim, golden VM provisioning, and the golden VM build, the toolchain and Rust
   gates, the release build and its dry run, signing the macOS files, installing
   from the MSI or the pkg, the optional check of a download, migrating, updating,
   uninstalling, and rolling back (including to the bare-binary `v0.1.0`), the
@@ -75,8 +77,8 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
 
 ## Glossary
 
-- [glossary.md](./glossary.md) - runner, image, host, CLI, golden VM, job VM,
-  Softnet, agent-host, and change-loop vocabulary.
+- [glossary.md](./glossary.md) - runner, image, host, CLI, golden VM, build VM,
+  job VM, Softnet, agent-host, and change-loop vocabulary.
 
 For what this project is, how to start it, and the commands it has, see
 [`README.md`](../README.md). [`AGENTS.md`](../AGENTS.md) is the working agreement
