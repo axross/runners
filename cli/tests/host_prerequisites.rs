@@ -14,8 +14,10 @@ use std::ffi::OsString;
 use std::time::{Duration, Instant};
 
 use marshal_cli::macos::prerequisites::{
-    Cause, Check, Refusal, VERSION_BUDGET, check_tart, check_tart_within,
+    Cause, Check, HOST_DOCUMENT, INSTALL_SECTION, Refusal, SIGNED_IN_SECTION, SOFTNET_SECTION,
+    VERSION_BUDGET, check_tart, check_tart_within,
 };
+use support::repository_root;
 use support::tart::Fake;
 
 const BUDGET: Duration = Duration::from_secs(20);
@@ -33,6 +35,27 @@ fn refusal(check: Check) -> Refusal {
 #[test]
 fn each_version_read_is_bounded_to_five_seconds() {
     assert_eq!(VERSION_BUDGET, Duration::from_secs(5));
+}
+
+/// the messages send the operator to the host document by these titles, so the
+/// document must keep them.
+#[test]
+fn the_host_document_has_the_title_and_the_sections_the_messages_name() {
+    let path = repository_root().join("docs/operations/macos-runner-host.md");
+    let document = std::fs::read_to_string(&path).unwrap();
+    let lines: Vec<&str> = document.lines().collect();
+    let titles: Vec<&str> = lines
+        .iter()
+        .filter_map(|line| line.strip_prefix("# "))
+        .collect();
+    assert_eq!(titles, [HOST_DOCUMENT], "{}", path.display());
+    for section in [INSTALL_SECTION, SOFTNET_SECTION, SIGNED_IN_SECTION] {
+        assert!(
+            lines.contains(&format!("## {section}").as_str()),
+            "{} has no `## {section}` heading",
+            path.display()
+        );
+    }
 }
 
 #[tokio::test(flavor = "current_thread")]
