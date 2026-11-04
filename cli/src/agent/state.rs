@@ -6,6 +6,7 @@ use std::time::SystemTime;
 use crate::image::check::ImageCheck;
 use crate::validate::Plan;
 
+use super::api::Method;
 use super::snapshot::{BuildInfo, Reason as WireReason};
 
 /// why the agent is stopped; the codes are an open set on the wire.
@@ -71,6 +72,45 @@ impl Phase {
     }
 }
 
+/// what a request that changes the agent's state does in a phase.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Action {
+    /// begins the transition the method asks for.
+    Begin,
+    /// stops the runners, or abandons or cancels what is under way, and ends stopped.
+    Stop,
+    /// does what [`Action::Stop`] does and then ends the agent.
+    Quit,
+    /// the agent is already where the method asks it to be.
+    NoChange,
+    /// another transition is under way.
+    Busy,
+    /// the state does not allow the method.
+    Refuse(&'static str),
+}
+
+/// why `build` is refused while the runners run.
+pub const BUILD_WHILE_RUNNING: &str =
+    "the runners are running; stop them before building the image";
+
+impl Phase {
+    /// what the lifecycle method `method` does here: the one table every handler of
+    /// a phase follows, so they cannot differ.
+    #[must_use]
+    pub fn action(&self, method: &Method) -> Action {
+        match (self, method) {
+            (Self::Stopped(_), Method::StartAll | Method::Build) => Action::Begin,
+            (Self::Stopped(_) | Self::Stopping | Self::Quitting, Method::StopAll)
+            | (Self::Running, Method::StartAll) => Action::NoChange,
+            (Self::Running, Method::Build) => Action::Refuse(BUILD_WHILE_RUNNING),
+            (_, Method::StartAll | Method::Build) => Action::Busy,
+            (_, Method::StopAll) => Action::Stop,
+            (_, Method::Quit) => Action::Quit,
+            _ => Action::Refuse("the method is not available"),
+        }
+    }
+}
+
 /// what the agent keeps between its transitions.
 #[derive(Debug)]
 pub struct Inner {
@@ -99,6 +139,43 @@ impl Inner {
             build: None,
             restart_due: None,
             image: None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// the table of the resident states in `docs/operations/cli.md`, row by row, in the
+    /// order stop all, start all, build, quit.
+    #[test]
+    fn each_phase_answers_the_lifecycle_methods_as_the_documented_table_says() {
+        use Action::{Begin, Busy, NoChange, Quit, Refuse, Stop};
+        let rows = [
+            (
+                Phase::Running,
+                [Stop, NoChange, Refuse(BUILD_WHILE_RUNNING), Quit],
+            ),
+            (
+                Phase::Stopped(Reason::by_you()),
+                [NoChange, Begin, Begin, Quit],
+            ),
+            (Phase::Resuming, [Stop, Busy, Busy, Quit]),
+            (Phase::Building, [Stop, Busy, Busy, Quit]),
+            (Phase::Stopping, [NoChange, Busy, Busy, Quit]),
+            (Phase::Quitting, [NoChange, Busy, Busy, Quit]),
+        ];
+        for (phase, expected) in rows {
+            let methods = [
+                Method::StopAll,
+                Method::StartAll,
+                Method::Build,
+                Method::Quit,
+            ];
+            for (method, expected) in methods.iter().zip(expected) {
+                assert_eq!(phase.action(method), expected, "{phase:?} {method:?}");
+            }
         }
     }
 }

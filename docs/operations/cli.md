@@ -807,8 +807,18 @@ transition is answered at once, never queued behind it. It starts `running` or
 
 A request that arrives while the agent is `resuming`, `stopping`, `building` or
 `quitting` and is not one of `status`, `token_set` and `token_remove`, a stop or a
-quit, is answered `busy`. A `stop_all` during a resume or a build takes effect
-and answers `stopped`, and a `quit` during any transition ends the agent.
+quit, is answered `busy`. The agent is `resuming` from the moment it begins to read
+the configuration until the runners' pools are admitted, so a `start_all` or a
+`build` in that time is `busy`, not answered as if the runners ran. One table in the
+code decides all of it, for every phase; this is what it says:
+
+| State      | `stop_all`                           | `start_all` | `build`                                          | `quit`                     |
+| ---------- | ------------------------------------ | ----------- | ------------------------------------------------ | -------------------------- |
+| `running`  | Stops, then `stopped` (by you)       | No change   | `refused`                                        | Stops, then the agent ends |
+| `stopped`  | No change                            | `resuming`  | `building`, or `refused` without a configuration | The agent ends             |
+| `resuming` | Abandons it, then `stopped` (by you) | `busy`      | `busy`                                           | Abandons it, then ends     |
+| `building` | Cancels it, then `stopped` (by you)  | `busy`      | `busy`                                           | Cancels it, then ends      |
+| `stopping` | No change                            | `busy`      | `busy`                                           | Ends after the stop        |
 
 The agent stays up when something is wrong; it stops its runners and says why in the
 snapshot, as the reason of the `stopped` state:
@@ -823,7 +833,10 @@ snapshot, as the reason of the `stopped` state:
 | `restart_limit`         | The runtime core failed too often, under the same restart policy `start` has |
 | `image_build_failed`    | A `build` failed; the build's message is in the snapshot                     |
 
-A `build` that succeeds changes no reason: the agent is stopped for the reason it
+After a `build` that succeeds the agent checks the image once more, as part of the
+build's own outcome: the check refreshes the snapshot's `images` entry with the new
+image's labels and warnings, and it does not change the `outcome`, which is the
+build's. A `build` that succeeds changes no reason: the agent is stopped for the reason it
 had before, and the outcome is only in `agent.build`. A `start_all` answers
 `resuming`, which stays true until the pools are admitted: the snapshot's `state`
 becomes `running` once they are, or `stopped` with one of the reasons above when

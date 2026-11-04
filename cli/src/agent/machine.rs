@@ -34,7 +34,7 @@ use super::api::{ApiError, ApiResult, Call, Method};
 use super::builder::ImageBuilder;
 use super::core::AgentCore;
 use super::snapshot::{BuildInfo, MAX_SNAPSHOT_BYTES, Snapshot};
-use super::state::{Inner, Phase, Reason};
+use super::state::{Action, Inner, Phase, Reason};
 use super::tokens::StoreTokens;
 use super::view::{View, millis};
 use super::wire::ErrorCode;
@@ -441,20 +441,21 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                         Ok(result) => {
                             let _ = reply.send(result);
                         }
-                        Err(Method::StartAll) => return Next::Resume(Some(reply)),
-                        Err(Method::Build) => return Next::Build(reply),
-                        Err(Method::StopAll) => {
-                            let _ = reply.send(Ok(self.state_result()));
-                        }
-                        Err(Method::Quit) => {
-                            self.exit.set(Some(QUIT));
-                            self.set_phase(Phase::Quitting);
-                            let _ = reply.send(Ok(self.state_result()));
-                            return Next::Exit;
-                        }
-                        Err(_) => {
-                            let _ = reply.send(refused("the method is not available"));
-                        }
+                        Err(method) => match self.action(&method) {
+                            Action::Begin if matches!(method, Method::Build) => {
+                                return Next::Build(reply);
+                            }
+                            Action::Begin => return Next::Resume(Some(reply)),
+                            Action::Quit => {
+                                self.exit.set(Some(QUIT));
+                                self.set_phase(Phase::Quitting);
+                                let _ = reply.send(Ok(self.state_result()));
+                                return Next::Exit;
+                            }
+                            other => {
+                                let _ = reply.send(self.answer(other));
+                            }
+                        },
                     }
                 }
             }
@@ -541,26 +542,20 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                         Ok(result) => {
                             let _ = reply.send(result);
                         }
-                        Err(Method::StartAll) => {
-                            let _ = reply.send(Ok(self.state_result()));
-                        }
-                        Err(Method::Build) => {
-                            let _ = reply.send(refused(
-                                "the runners are running; stop them before building the image",
-                            ));
-                        }
-                        Err(method @ (Method::StopAll | Method::Quit)) => {
-                            if matches!(method, Method::Quit) {
-                                self.exit.set(Some(QUIT));
+                        Err(method) => match self.action(&method) {
+                            action @ (Action::Stop | Action::Quit) => {
+                                if action == Action::Quit {
+                                    self.exit.set(Some(QUIT));
+                                }
+                                self.wind_down(&stop, cycle, requests).await;
+                                let next = self.after_stop(Reason::by_you());
+                                let _ = reply.send(Ok(self.state_result()));
+                                return next;
                             }
-                            self.wind_down(&stop, cycle, requests).await;
-                            let next = self.after_stop(Reason::by_you());
-                            let _ = reply.send(Ok(self.state_result()));
-                            return next;
-                        }
-                        Err(_) => {
-                            let _ = reply.send(refused("the method is not available"));
-                        }
+                            other => {
+                                let _ = reply.send(self.answer(other));
+                            }
+                        },
                     }
                 }
             }
@@ -653,7 +648,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                 call = requests.recv(), if open => match call {
                     None => open = false,
                     Some(call) => {
-                        if self.answer_busy(call, abortable) && abortable {
+                        if self.answer_busy(call) && abortable {
                             return None;
                         }
                     }
@@ -664,19 +659,34 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
 
     /// answers a call that arrives during a transition; true when it asks to stop or
     /// to end.
-    fn answer_busy(&self, Call { method, reply }: Call, abortable: bool) -> bool {
+    fn answer_busy(&self, Call { method, reply }: Call) -> bool {
         let (result, asks) = match self.simple(method) {
             Ok(result) => (result, false),
-            Err(Method::StopAll) if abortable => (Ok(json!({ "state": "stopped" })), true),
-            Err(Method::StopAll) => (Ok(self.state_result()), false),
-            Err(Method::Quit) => {
-                self.exit.set(Some(QUIT));
-                (Ok(json!({ "state": "quitting" })), true)
-            }
-            Err(_) => (self.busy(), false),
+            Err(method) => match self.action(&method) {
+                Action::Stop => (Ok(json!({ "state": "stopped" })), true),
+                Action::Quit => {
+                    self.exit.set(Some(QUIT));
+                    (Ok(json!({ "state": "quitting" })), true)
+                }
+                other => (self.answer(other), false),
+            },
         };
         let _ = reply.send(result);
         asks
+    }
+
+    /// what the agent is doing now decides what a lifecycle method does.
+    fn action(&self, method: &Method) -> Action {
+        self.inner.borrow().phase.action(method)
+    }
+
+    /// the answer to a method that changes nothing.
+    fn answer(&self, action: Action) -> ApiResult {
+        match action {
+            Action::Busy => self.busy(),
+            Action::Refuse(message) => refused(message),
+            _ => Ok(self.state_result()),
+        }
     }
 
     /// runs the core, and runs it again after each failure until the policy gives up
@@ -795,18 +805,18 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                         Ok(result) => {
                             let _ = reply.send(result);
                         }
-                        Err(Method::StopAll) => {
-                            cancelled |= self.cancel_build(&stop);
-                            waiting.push(reply);
-                        }
-                        Err(Method::Quit) => {
-                            self.exit.set(Some(QUIT));
-                            cancelled |= self.cancel_build(&stop);
-                            waiting.push(reply);
-                        }
-                        Err(_) => {
-                            let _ = reply.send(self.busy());
-                        }
+                        Err(method) => match self.action(&method) {
+                            action @ (Action::Stop | Action::Quit) => {
+                                if action == Action::Quit {
+                                    self.exit.set(Some(QUIT));
+                                }
+                                cancelled |= self.cancel_build(&stop);
+                                waiting.push(reply);
+                            }
+                            other => {
+                                let _ = reply.send(self.answer(other));
+                            }
+                        },
                     },
                 },
             }

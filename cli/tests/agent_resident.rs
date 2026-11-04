@@ -8,12 +8,14 @@
 )]
 mod support;
 
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use marshal_cli::agent::machine::{EXECUTABLE_CHANGED, Launch, QUIT};
 use marshal_cli::runtime::fake::Call;
 use serde_json::Value;
 use support::agent::{ONE_POOL, Rig, TOKEN, TWO_POOLS};
+use tokio::sync::Notify;
 
 fn running_rig() -> Rig {
     let rig = Rig::new(ONE_POOL);
@@ -367,6 +369,94 @@ async fn a_started_agent_is_running_once_its_pools_are_up() {
             conn.ok("quit").await;
         })
         .await;
+}
+
+// resuming ---------------------------------------------------------------------------
+
+/// which part of resuming the fake Docker holds: the image check that comes first, or
+/// the wait for Docker that comes after the configuration is read.
+#[derive(Clone, Copy, Debug)]
+enum Held {
+    ImageCheck,
+    Availability,
+}
+
+fn resuming_rig(held: Held) -> Rig {
+    let rig = Rig::new(ONE_POOL);
+    rig.store_token("o", "r", TOKEN);
+    rig.hold_jobs();
+    let gate = Some(Rc::new(Notify::new()));
+    let mut state = rig.backend.state.borrow_mut();
+    match held {
+        Held::ImageCheck => state.image_gate = gate,
+        Held::Availability => state.available_gate = gate,
+    }
+    drop(state);
+    rig
+}
+
+const HELD: [Held; 2] = [Held::ImageCheck, Held::Availability];
+
+#[tokio::test(flavor = "current_thread")]
+async fn start_all_and_build_are_busy_while_the_agent_resumes() {
+    for held in HELD {
+        let rig = resuming_rig(held);
+        let rig = &rig;
+        let (_, ()) = rig
+            .drive(Launch::Running, |conn| async move {
+                conn.until_state("resuming").await;
+                assert_eq!(
+                    conn.code("start_all", Value::Null).await,
+                    "busy",
+                    "{held:?}"
+                );
+                let error = match conn.call("build", Value::Null).await {
+                    Err(marshal_cli::agent::CallError::Agent(body)) => body,
+                    other => panic!("{held:?}: build was not refused: {other:?}"),
+                };
+                assert_eq!(error.code, "busy", "{held:?}");
+                assert!(error.message.contains("resuming"), "{}", error.message);
+                // what does not change the state is still answered
+                assert_eq!(conn.status().await.agent.state, "resuming");
+                conn.ok("quit").await;
+            })
+            .await;
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn stop_all_abandons_a_resume_and_leaves_the_agent_stopped_by_you() {
+    for held in HELD {
+        let rig = resuming_rig(held);
+        let rig = &rig;
+        let (_, ()) = rig
+            .drive(Launch::Running, |conn| async move {
+                conn.until_state("resuming").await;
+                assert_eq!(conn.ok("stop_all").await["state"], "stopped", "{held:?}");
+                let snapshot = conn.status().await;
+                assert_eq!(snapshot.agent.state, "stopped", "{held:?}");
+                assert_eq!(snapshot.agent.reason.unwrap().code, "by_you");
+                assert_eq!(ran(rig), 0, "{held:?}: a job container was run");
+                conn.ok("quit").await;
+            })
+            .await;
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn quit_abandons_a_resume_and_ends_the_agent() {
+    for held in HELD {
+        let rig = resuming_rig(held);
+        let rig = &rig;
+        let (ended, ()) = rig
+            .drive(Launch::Running, |conn| async move {
+                conn.until_state("resuming").await;
+                assert_eq!(conn.ok("quit").await["state"], "quitting", "{held:?}");
+            })
+            .await;
+        assert_eq!(ended.reason, QUIT, "{held:?}");
+        assert!(rig.lock_is_free(), "{held:?}");
+    }
 }
 
 // build ----------------------------------------------------------------------------
