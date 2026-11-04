@@ -290,7 +290,8 @@ record a change to either workflow, to the build call in
   - **The Environment `release`** is created and maintained by the maintainer.
     Deployment branches are selected branches, `main` only and no tags. Required
     reviewers are the maintainer, with "Prevent self-review" off, because the
-    maintainer is the only reviewer and the roadmap requires self-approval. "Allow
+    maintainer is the only reviewer and [the roadmap](https://github.com/axross/runners/issues/72)
+    requires self-approval. "Allow
     administrators to bypass" is off. The maintainer reports the settings on the
     tracking issue, because agents cannot read them.
   - **Its secrets** are the six Environment secrets `MACOS_APPLICATION_P12_BASE64`,
@@ -301,9 +302,11 @@ record a change to either workflow, to the build call in
     added for signing.
   - **`sign-macos` holds `contents: read`**, checks nothing out, runs no repository
     file and no package manager, and uses no action but `actions/download-artifact`
-    and `actions/upload-artifact`. It fetches no tool or certificate. Each tool it
-    calls is called by its absolute system path, and the Developer ID G2
-    intermediate it imports is embedded and checked against the pin under
+    and `actions/upload-artifact`. It fetches no tool or certificate. Each signing
+    tool it calls is called by its absolute system path, so nothing earlier on
+    `PATH` can stand in for one; its other commands are shell built-ins and macOS
+    base utilities, such as `base64` and `mktemp`, called by name. The Developer ID
+    G2 intermediate it imports is embedded and checked against the pin under
     [Pinning Convention](#pinning-convention). Every context value reaches its
     scripts through `env:`. The job's inline steps are not repository code: they are
     the job's own definition in `release.yaml`, which the maintainer's approval
@@ -330,7 +333,10 @@ record a change to either workflow, to the build call in
     line of the `.p8` is masked. The keychain and those files are deleted whether the
     job passes or fails, and the notary log, which holds no secret, is uploaded.
     The certificates' subjects name the maintainer's Apple developer account and
-    team, as every Developer ID signature does; nothing of that is committed.
+    team, as every Developer ID signature does; nothing of that is committed, except
+    that a later documentation change records the team ID and the exact designated
+    requirement in the CLI document, as the exception under [Nothing Identifying or
+    Secret Is Committed](#nothing-identifying-or-secret-is-committed) describes.
   - **Extensions** by later work add their signing jobs or steps to the shape check
     and keep these rules: only signing jobs declare the Environment, a signing job
     holds `contents: read` and runs no repository code, checksums and attestation
@@ -470,7 +476,8 @@ Residual risks, accepted:
   approve a signed release. The rule above, which now covers approving a deployment,
   is the control, and a second reviewer is not an option here.
 - **A certificate or membership lapse stops signing.** The Developer ID certificates
-  last one year, and `sign-macos` refuses an expired one and warns within 90 days.
+  are expected to last one year, which the maintainer confirms from the certificates'
+  dates, and `sign-macos` refuses an expired one and warns within 90 days.
   Signatures made with a secure timestamp stay valid after the certificate expires.
   Whether an older release's package still installs after its Installer certificate
   expires is not confirmed, and Apple's pages disagree, which bears on rolling back
@@ -538,14 +545,22 @@ Residual risks, accepted:
   check as optional. The release job's npm tree can replace published files (the
   first risk above), and an operator who skips the check opens whatever the release
   page then holds. On Windows that is a file nothing has checked. On macOS,
-  Gatekeeper checks the package's signature when it opens. Signing the MSI, or
-  making the check required again, is the remedy in a later change.
+  Gatekeeper blocks a package that is unsigned, not notarized, or whose signature or
+  notarization is revoked, when it opens. It accepts a package signed with any
+  Developer ID and notarized, so it does not tie the package to the maintainer's
+  team. An operator who wants the team checked reads `pkgutil --check-signature` and
+  compares the team ID, once the CLI document records it after the first signed
+  release. Signing the MSI, or making the check required again, is the remedy in a
+  later change.
 - **A replaced installer can run code.** A replaced MSI could carry a custom action
   that runs code as the user, or ask for elevation behind a prompt the procedure
   has taught operators to pass. A replaced pkg could carry scripts that run as root
-  once the administrator password is entered, but Gatekeeper blocks a replaced pkg
-  that is not signed by the maintainer's team when it opens, and the same holds for
-  one whose notarization is revoked. That is expected, not yet observed on a Mac. The
+  once the administrator password is entered. Gatekeeper blocks a replaced pkg that is
+  unsigned or not notarized when it opens, and the same holds for one whose signature
+  or notarization is revoked, but it accepts one signed with any Developer ID and
+  notarized, so it does not tie the pkg to the maintainer's team; reading the team ID
+  with `pkgutil --check-signature` does, once the CLI document records it. That is
+  expected, not yet observed on a Mac. The
   genuine installers carry neither a script nor a custom action that runs code, and
   the build tests that they do not.
 - **On axpc, code running as the operator can read what the operator can**,
@@ -960,7 +975,11 @@ environment or supplied at run time. The exceptions are the two default runner l
 and `axmc`, which a host adds when `labels` is absent or empty and which are
 committed by the maintainer's decision: `axpc` names the Windows Docker Desktop
 host and `axmc` the macOS host. Every other host, consumer, or machine value stays
-a parameter.
+a parameter. The one further exception is the macOS signing team ID and the exact
+designated requirement, which a documentation change records in the CLI document
+after the first signed release as the contract text for later work. The team ID is
+public in every signed file, so recording it discloses nothing; it is not an account
+credential.
 
 [`.gitignore`](../../.gitignore) excludes `settings.local.json`, `.env.local`,
 token files, and private keys so that a local working file cannot be committed by
@@ -971,9 +990,12 @@ maintainer. `sign-macos` reads six Environment secrets of the `release` Environm
 `MACOS_NOTARY_KEY_P8`, `MACOS_NOTARY_KEY_ID` and `MACOS_NOTARY_ISSUER_ID`, and one
 Environment variable that is not secret, `MACOS_TEAM_ID`; the maintainer creates
 them, and no value is committed. A secret value is never echoed, passed on a command
-line, or written into an image layer or build cache. The one exception is the
-password arguments of `security` in `sign-macos`, which have no non-interactive
-alternative and whose runner is discarded after the job.
+line, or written into an image layer or build cache. The one exception for a
+credential is the password arguments of `security` in `sign-macos`, which have no
+non-interactive alternative and whose runner is discarded after the job. The API
+key's ID and issuer ID also reach `notarytool` as arguments, but they identify the
+key and are not credentials, and they are stored as secrets so that GitHub masks
+them in the log; the `.p8` key itself goes by a file path.
 
 ## The Review Gate Admits One Bot Identity by Login, Not Association
 

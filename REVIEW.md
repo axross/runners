@@ -179,8 +179,10 @@ Codex review uses its native priority label.
   directory without a stated need are findings.
 - **Secrets stay out of logs and images.** A secret is never echoed, passed on
   a command line that a process listing exposes, written into an image layer
-  (`ENV`, `ARG`, `COPY`), or left in a build cache. The one recorded exception is
-  `security`'s password arguments in `sign-macos` (see
+  (`ENV`, `ARG`, `COPY`), or left in a build cache. The one recorded exception for a
+  credential is `security`'s password arguments in `sign-macos`; the notary API key's
+  ID and issuer ID also reach `notarytool` as arguments, because they identify the key
+  and are not credentials (see
   [Security](docs/conventions/security.md#nothing-identifying-or-secret-is-committed)).
 
 ## Language lenses
@@ -229,13 +231,14 @@ Apply the lens for each kind of file in the diff.
   secret read by any job but `sign-macos`; `sign-macos` holding more than
   `contents: read`, running a checkout, an action besides `actions/download-artifact` and
   `actions/upload-artifact`, a package manager, a fetch, a file from the repository,
-  or a `${{ }}` inside `run:`, or calling a tool by anything but its system path; a
+  or a `${{ }}` inside `run:`, or calling a signing tool by anything but its system path; a
   signing step that a later job can pass without, such as `continue-on-error`, a
   job-level `always()`, `!cancelled()` or `failure()`, or a step-level `always()`
   beyond the clean-up and the notary-log upload; an attest or release job that reads
   the unsigned set or does not follow every signing step; a secret printed, or passed
   on a command line apart from `security`'s password arguments in `sign-macos`, the
-  one exception Security records; a change to the identifier `app.axross.marshal`, the
+  one exception for a credential that Security records, and the notary key's ID and
+  issuer ID that `notarytool` takes as arguments; a change to the identifier `app.axross.marshal`, the
   team pin, or the G2 intermediate's pin without its source and the record's update;
   and a signing job or step added without being added to `check-release-shape.mjs` and
   its test. A change that relaxes the record, or touches the signing job, needs the
