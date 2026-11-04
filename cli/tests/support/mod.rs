@@ -12,6 +12,8 @@ pub mod docker;
 pub mod host;
 pub mod instance;
 pub mod macos;
+#[cfg(unix)]
+pub mod rig;
 pub mod softnet;
 pub mod stub;
 pub mod tart;

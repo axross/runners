@@ -28,6 +28,9 @@
 //!
 //! a `hold` job container stays until its entry leaves `containers` or exits, then
 //! exits 137, so `rm -f`, `stop` and `kill` end it as they would end a real one;
+//! with `FAKE_DOCKER_WATCH_PARENT` set, as the fake `tart` sets it when it runs this
+//! program for `tart exec`, it also ends when its parent process ends, as a command
+//! in a VM ends when the guest agent's call is cancelled;
 //! a `longline` job container prints one line of [`LONG_LINE_BYTES`] bytes, the
 //! letters `a` to `z` in turn, then exits as an ordinary job does. every wait is
 //! bounded, so a test that fails does not leave the helper running.
@@ -541,7 +544,9 @@ fn job(dir: &Path, name: &str, diagnostic: bool) -> Result<u8, String> {
         print_long_line(&mut std::io::stdout());
     }
     let code = if text(dir, "run_mode").as_deref() == Some("hold") {
-        sleep_while(|| running(dir, name));
+        let parent = parent_id();
+        let watching = std::env::var_os("FAKE_DOCKER_WATCH_PARENT").is_some();
+        sleep_while(|| running(dir, name) && (!watching || parent_id() == parent));
         137
     } else {
         let exit = text(dir, "run_exit")
@@ -551,6 +556,17 @@ fn job(dir: &Path, name: &str, diagnostic: bool) -> Result<u8, String> {
         exit
     };
     Ok(code)
+}
+
+/// the process that started this one, which changes to another when that one ends.
+#[cfg(unix)]
+fn parent_id() -> u32 {
+    std::os::unix::process::parent_id()
+}
+
+#[cfg(not(unix))]
+fn parent_id() -> u32 {
+    0
 }
 
 fn print_long_line(out: &mut impl Write) {

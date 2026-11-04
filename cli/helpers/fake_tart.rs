@@ -20,15 +20,22 @@
 //!   prints them in the shape Tart prints, including its escaped slashes;
 //! - `exec` records its command in the arguments, reads its standard input to the
 //!   end and writes it to `inv-<n>.stdin` only with `-i`, prints `exec_stdout`, and
-//!   exits with `exec_exit`. It runs nothing, and a later slice that needs the inner
-//!   command's effects scripts them in those files. It refuses `-t`, and a VM that
-//!   is not running;
+//!   exits with `exec_exit`. It refuses `-t`, and a VM that is not running. With a
+//!   `docker_program` file that names the fake `docker`, it instead runs that program
+//!   in the VM's place for a command that starts with `docker`, or with the launcher
+//!   `/usr/local/bin/marshal-launch`: the program gets the command's arguments, its
+//!   `FAKE_DOCKER_DIR` is the `docker` directory beside this one, shared by all VMs,
+//!   and it exits when this call ends. The launcher's standard input becomes the
+//!   program's `ACTIONS_RUNNER_INPUT_JITCONFIG`, as the real launcher does, and an
+//!   empty one fails with exit code 64;
 //! - `run` marks its VM running and holds until the VM is no longer running, then
 //!   exits 0. `run_mode` set to `exit` makes it print `run_error` to standard error
 //!   and exit with `run_exit` (default 1) without starting anything;
 //! - `stop` refuses a VM that is not running, and with `stop_slow` present waits
 //!   its `--timeout` seconds first, as Tart waits for a VM that ignores the
-//!   interrupt;
+//!   interrupt; with `stop_ignored` present a stop with a timeout above zero waits
+//!   that long and then fails without stopping the VM, and only a stop with no
+//!   timeout stops it;
 //! - `delete` refuses a running VM and a VM that does not exist;
 //! - any subcommand called `<sub>` (`version` for `--version`) fails with `fail-<sub>` present, printing the
 //!   file's text, or a default one, to standard error; hangs with `hang-<sub>`
@@ -42,11 +49,12 @@ use std::fmt::Write as _;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
+use std::process::{Command, ExitCode, Stdio};
 use std::time::{Duration, Instant};
 
-use fake_support::{exists, record, scripted, sleep_while, text};
+use fake_support::{JIT_VARIABLE, exists, record, scripted, sleep_while, text};
 
+const LAUNCHER: &str = "/usr/local/bin/marshal-launch";
 const RECORDED_VARIABLES: [&str; 2] = ["TART_NO_AUTO_PRUNE", "PATH"];
 const DEFAULT_VERSION: &str = "2.41.1\n";
 const MAX_STDIN_BYTES: u64 = 1024 * 1024;
@@ -305,19 +313,22 @@ fn exec(dir: &Path, stem: &Path, rest: &[&str]) -> Result<u8, String> {
         }
         rest = tail;
     }
-    let Some((name, _command)) = rest.split_first() else {
+    let Some((name, command)) = rest.split_first() else {
         return Err("exec without a VM".to_string());
     };
+    let mut input = Vec::new();
     if interactive {
-        let mut input = Vec::new();
         let _ = std::io::stdin()
             .take(MAX_STDIN_BYTES)
             .read_to_end(&mut input);
-        fs::write(stem.with_extension("stdin"), input).map_err(|error| error.to_string())?;
+        fs::write(stem.with_extension("stdin"), &input).map_err(|error| error.to_string())?;
     }
     if !load(dir).iter().any(|vm| vm.name == *name && vm.running()) {
         let _ = writeln!(std::io::stderr(), "Error: the VM {name} is not running");
         return Ok(1);
+    }
+    if let Some(code) = forward_to_docker(dir, command, &input)? {
+        return Ok(code);
     }
     if let Some(output) = text(dir, "exec_stdout") {
         let _ = writeln!(std::io::stdout(), "{output}");
@@ -327,10 +338,62 @@ fn exec(dir: &Path, stem: &Path, rest: &[&str]) -> Result<u8, String> {
         .unwrap_or(0))
 }
 
+/// runs the fake `docker` for a `docker` or launcher command when the script names
+/// one; `None` for any other command.
+fn forward_to_docker(dir: &Path, command: &[&str], input: &[u8]) -> Result<Option<u8>, String> {
+    let Some(program) = text(dir, "docker_program") else {
+        return Ok(None);
+    };
+    let (jit, arguments) = match command.split_first() {
+        Some((&"docker", arguments)) => (None, arguments),
+        Some((&LAUNCHER, arguments)) => {
+            // the launcher's `$(...)` drops trailing newlines
+            let jit = String::from_utf8_lossy(input)
+                .trim_end_matches('\n')
+                .to_string();
+            if jit.is_empty() {
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "marshal-launch: standard input held no jit configuration"
+                );
+                return Ok(Some(64));
+            }
+            (Some(jit), arguments)
+        }
+        _ => return Ok(None),
+    };
+    let docker_dir = dir.join("docker");
+    fs::create_dir_all(&docker_dir).map_err(|error| error.to_string())?;
+    let mut docker = Command::new(program);
+    docker
+        .args(arguments)
+        .env("FAKE_DOCKER_DIR", &docker_dir)
+        .env("FAKE_DOCKER_WATCH_PARENT", "1")
+        .env_remove(JIT_VARIABLE)
+        .stdin(Stdio::null());
+    if let Some(jit) = jit {
+        docker.env(JIT_VARIABLE, jit);
+    }
+    let status = docker.status().map_err(|error| error.to_string())?;
+    Ok(Some(
+        status
+            .code()
+            .and_then(|code| u8::try_from(code).ok())
+            .unwrap_or(137),
+    ))
+}
+
 fn stop(dir: &Path, name: &str, seconds: &str) -> Result<u8, String> {
     let running = load(dir).iter().any(|vm| vm.name == name && vm.running());
     if !running {
         let _ = writeln!(std::io::stderr(), "Error: the VM {name} is not running");
+        return Ok(1);
+    }
+    if exists(dir, "stop_ignored") && seconds != "0" {
+        let wait = Duration::from_secs(seconds.parse().map_err(|_| "a bad timeout")?);
+        let started = Instant::now();
+        sleep_while(|| started.elapsed() < wait);
+        let _ = writeln!(std::io::stderr(), "Error: the VM {name} did not stop");
         return Ok(1);
     }
     if exists(dir, "stop_slow") {
