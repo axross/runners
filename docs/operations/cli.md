@@ -873,6 +873,10 @@ marked `docker build:`; a line is cut at 8 KiB, and the last five lines, masked,
 end the message of a failed build. `marshal build` itself still passes the build's
 output on to its terminal.
 
+A log that cannot write or continue its file stops, and the agent goes on without
+it. It tries to open a new file again when a line arrives, at most every 30 s, and
+writes one line in the new file that says how many lines were not written.
+
 ### The Token Store
 
 `token_store` is the one place the agent keeps a repository's token. The interface
