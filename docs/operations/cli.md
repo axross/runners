@@ -1875,25 +1875,37 @@ pull request fixes it.
 
 ### The Signing Contracts
 
-F0 owns these. W1, W4, K2 and M2 consume them. Each is a child of roadmap
+F0 owns these. W1, W4, K2, M2 and M4 consume them. Each is a child of roadmap
 [#72](https://github.com/axross/runners/issues/72), as F0 is:
 
 - **F0**, "Installers and release signing", is the child this section describes.
-- **W1**, "Windows tray app, first release", adds its installer to the release set,
-  and chooses its app's bundle identifier.
-- **W4**, "Automatic updates, on Windows", signs the update archive.
+- **W1**, "Windows tray app, first release", adds its installer to the release set.
+  Its app's bundle identifier is the identifier below, because the app and its agent
+  are one code object. W1 owns that use.
+- **W4**, "Automatic updates, on Windows", signs the update archive. The archive's
+  signature is W4's contract. W4 signs it under that contract, and adds that job or
+  those steps under the rules in
+  [Extending the Release Workflows](#extending-the-release-workflows).
 - **K2**, "Tokens in the operating system's store", has Keychain items that trust the
-  Developer ID-signed `marshal` under the identifier below.
-- **M2**, "Mac app", adds steps for the app and the disk image, and signs the bundled
-  command line with the same identifier and team.
+  signed Marshal executable, the carrier named below.
+- **M2**, "Mac app", signs the Mac app with the same identifier and team, and
+  notarizes and staples its disk image, in F0's signing job. The commands and the
+  layout are M2's.
+- **M4**, "Mac app: login, power, updates and telemetry", updates the installed Mac
+  app. Its updates keep K2's Keychain tokens working only while the identifier and the
+  team stay the same.
 
 The contracts F0 owns are these:
 
-- **The identifier** is `app.axross.marshal`, and it never changes. The signed binary
-  carries it, whether bare or inside the package, and the package's own identifier is
-  the same string. W1 chooses its app's bundle identifier, which names a different
-  code object. Changing the identifier or the team breaks the Keychain trust that K2
-  and M2 rely on, so a change goes through a roadmap revision.
+- **The identifier** is `app.axross.marshal`, and it never changes. One code object
+  carries it: the `marshal` binary until W1's installer pull request, and from M2 on
+  the Mac app bundle's signature, through its main executable. From M2 on,
+  `verify-macos` reads the designated requirement from the signed app, and K2's trust
+  matches it. M2's first release compares the app's requirement with the one recorded
+  for `marshal`, and records any difference. The package's own identifier is the same
+  string. On Windows nothing is signed, so the identifier binds only the Mac. Changing
+  the identifier or the team breaks the Keychain trust that K2 and M2 rely on, so a
+  change goes through a roadmap revision.
 - **The designated requirement** is the default one for a Developer ID signature: this
   identifier, `anchor apple generic`, the Developer ID intermediate and leaf markers,
   and `certificate leaf[subject.OU]` equal to the team ID. Two forms of it are known,
@@ -2001,9 +2013,14 @@ points:
   `test-msi-standard-user.ps1` name the one installer they install, so they change
   only if W1's installer replaces or renames it; `test-signed-pkg-refusals.sh` uses
   one Windows file name only as a fixture for an unlisted file, and needs no change.
-- **M2** adds steps to `sign-macos` and `verify-macos` for the app and the disk image,
-  and signs the bundled command line with the same identifier and team.
-- **W4** adds a job, or steps under the Environment, that sign the update archive.
+  W1's installer pull request replaces the release's files. From it on, the release
+  carries W1's Windows app and installer and no macOS file until M2's disk image, and
+  no macOS command line is built or signed.
+- **M2** adds steps to `sign-macos` and `verify-macos` that sign the Mac app with the
+  same identifier and team, and notarize and staple its disk image. The commands and
+  the layout are M2's.
+- **W4** adds a job, or steps under the Environment, that sign the update archive. The
+  archive's signature is W4's contract.
 
 Every extension keeps these rules:
 
