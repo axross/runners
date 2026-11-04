@@ -330,8 +330,10 @@ selection is `Runtime::of_pool` in `runtime::select`:
 | axmc | `os: "linux"`      | The VM runtime, a Tart VM per job; selected, but not implemented |
 | axmc | `os: "macos"`      | None                                                             |
 
-The backend above is the Docker Desktop runtime, and the runtime core drives it
-only through the backend seam. No code implements the VM runtime yet, so a
+The backend above is the Docker Desktop runtime. The runtime core drives the
+containers through the backend seam, apart from the engine poll interval it shares
+with `runtime::docker`, and `start` and the shim construct the Docker backend
+directly. No code implements the VM runtime yet, so a
 configuration that selects it, or selects none for a pool, is validated and then
 refused:
 
@@ -361,8 +363,10 @@ deadline do not depend on the transport. Its first transport, `DockerCopy`, runs
 
 A unit test in `runtime::select` pins the table. `start_command.rs` and
 `build_command.rs` pin the two refusal texts and their exit code, and
-`start_command.rs` also refuses a configuration of macOS pools alone. A unit test in
-`diagnostics::exporter` writes a bundle through a scripted transport, and the
+`start_command.rs` also refuses a configuration of Linux and macOS pools and one of
+macOS pools alone. Unit tests in `diagnostics::exporter` write a complete bundle, a
+gap, and the failed bundles of an unreadable identity and a failed archive through a
+scripted transport, and the
 diagnostics tests listed under [Diagnostics](#diagnostics) run the exporter through
 `DockerCopy` with unchanged expectations.
 

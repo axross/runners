@@ -24,8 +24,8 @@ pub trait EvidenceTransport {
     fn read_identity(&self, source: &str) -> impl Future<Output = Option<String>>;
 
     /// streams `source`'s evidence archive into `sink` through the strict archive
-    /// reader, and returns `None` when the transfer or the archive failed; the sink is
-    /// dropped as soon as the archive is read.
+    /// reader, and returns `None` when the transfer or the archive failed; the sink
+    /// is dropped, and its file closed, before the call returns.
     fn copy_archive<S: EntrySink>(
         &self,
         source: &str,
