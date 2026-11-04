@@ -25,8 +25,8 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   repository runs its own jobs on GitHub-hosted runners only, the cache-poisoning
   threat model for shared runner storage, per-repository isolation on a runner
   host, the release record for the CLI's dispatch-only release workflow, the accepted
-  LAN-egress risk, what is never committed, and why the review
-  gate admits one bot identity by login.
+  LAN-egress risk, what the TOML configuration holds and never echoes, what
+  is never committed, and why the review gate admits one bot identity by login.
 - [conventions/documentation.md](./conventions/documentation.md) - which
   document a change to each runner surface invalidates, and what the
   documentation checks cover.
@@ -48,7 +48,9 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   the previous `marshal` release.
 - [operations/cli.md](./operations/cli.md) - the CLI under `cli/`: what `validate`
   accepts and prints for the axpc and axmc host profiles, the validation rules and
-  the shared fixtures, the runtime layer
+  the shared fixtures, the TOML configuration format (schema version 1, its
+  extension rule, its problems, the rule set shared with JSON, the conversion from
+  JSON, and the write path that keeps comments) and its fixtures, the runtime layer
   (container backend, JIT registration, CPU placement, and the slot loop), the
   instance layer (instance state, single-instance lock, and control channel),
   the image contract (its labels, the image check, and freshness), building the
