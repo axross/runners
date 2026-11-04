@@ -24,9 +24,10 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   downloads are pinned, least-privilege workflow permissions, why this public
   repository runs its own jobs on GitHub-hosted runners only, the cache-poisoning
   threat model for shared runner storage, per-repository isolation on a runner
-  host, the release record for the CLI's dispatch-only release workflow, the accepted
-  LAN-egress risk, what the TOML configuration holds and never echoes, what
-  is never committed, and why the review gate admits one bot identity by login.
+  host, the release record for the CLI's dispatch-only release workflow and its
+  signing Environment, the accepted LAN-egress risk, what the TOML
+  configuration holds and never echoes, what is never committed, and why the
+  review gate admits one bot identity by login.
 - [conventions/documentation.md](./conventions/documentation.md) - which
   document a change to each runner surface invalidates, and what the
   documentation checks cover.
@@ -35,7 +36,8 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
 
 - [operations/development-workflow.md](./operations/development-workflow.md) -
   the change loop, the delivery grant, branch naming, bumping the runner, cutting
-  a release, and the independent review route.
+  a release and renewing its signing certificates, and the independent review
+  route.
 - [operations/agent-sessions.md](./operations/agent-sessions.md) - how Claude
   Code and Amp sessions start, their hooks, the plan-gate delivery confirmation,
   subagents, and telemetry.
@@ -57,8 +59,11 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   runner image with `build`, running a host with `start`, `stop`, `restart`,
   `status`, and `diagnostics` (the log, containment, the stop sequence, and the
   diagnostic containers and their export), the toolchain and Rust
-  gates, the release build and its dry run, installing, updating, and rolling
-  back from a release, the allowed dependencies, and why the CLI's name is fixed.
+  gates, the release build and its dry run, signing the macOS files, installing from
+  the MSI or the pkg,
+  the optional check of a download, migrating, updating, uninstalling, and rolling
+  back (including to the bare-binary `v0.1.0`), the tests of those blocks, the
+  allowed dependencies, and why the CLI's name is fixed.
 - [operations/agent-skills.md](./operations/agent-skills.md) - installing and
   refreshing the skills from `axross/skills`, the drift checks, and the register
   of deviations and gaps.

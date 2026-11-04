@@ -20,3 +20,6 @@ release/package-lock.json
 tests/host-configuration/rust/raw/
 
 cli/target/
+
+# Prettier has no XML parser, and fails on a WiX source.
+*.wxs
