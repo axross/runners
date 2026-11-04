@@ -149,6 +149,11 @@ async fn a_token_set_through_the_agent_reaches_the_credential_manager_and_a_regi
     let key = &key;
     let (_, ()) = rig
         .drive(Launch::Running, |conn| async move {
+            // the only pool has no token, so the agent stops at launch; a token set
+            // later does not start a stopped agent, a `start_all` does
+            let stopped = conn.until_state("stopped").await;
+            assert_eq!(stopped.agent.reason.unwrap().code, "no_pool_started");
+
             // too long a token is refused and stores nothing
             let long = "a".repeat(MAX_TOKEN_UTF16_UNITS + 1);
             match conn.set_token(key.as_str(), &long).await {
@@ -159,7 +164,9 @@ async fn a_token_set_through_the_agent_reaches_the_credential_manager_and_a_regi
 
             conn.set_token(key.as_str(), FAKE).await.unwrap();
             assert_eq!(store.get(key).unwrap().unwrap().expose(), FAKE);
-            // the pool had no token; it starts on this one, read from the store
+            assert_eq!(conn.status().await.agent.state, "stopped");
+            // the pool starts on the stored token, read from the store
+            conn.ok("start_all").await;
             conn.until_runner_runs().await;
             assert_eq!(rig.registered_with(), vec![FAKE.to_string()]);
 
