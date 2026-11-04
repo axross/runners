@@ -137,18 +137,18 @@ CLI's instance lock.
 
 Install `marshal` from a release by opening its MSI, with the Windows procedure in
 [CLI](./cli.md#installing-updating-and-rolling-back), never by building it on the
-host. Download `marshal-<version>-windows-x64.msi` from the release page and, if
-you choose, run the optional check block on it first; that block refuses a file
-whose checksum, commit on main, attestation from `release.yaml` on main, or binary
-version does not verify, and installs nothing. If the host runs a manual install from
+host. Download `marshal-<version>-windows-x64.msi` from the release page and, if you
+choose, run the optional check block on it first; that block refuses a file whose
+checksum, commit on main, attestation from `release.yaml` on main, or binary version
+does not verify, and installs nothing. If the host runs a manual install from
 `v0.1.0`, run the migration block in that procedure first: it stops the instance and
 removes the copied `marshal.exe` and its `Path` entry. Otherwise stop a running
-instance. Then open the MSI. It installs `marshal.exe` at `%LOCALAPPDATA%\Programs\marshal\marshal.exe`
-for your user, which is expected to need no UAC prompt but is not yet measured,
-adds that directory to your user `Path`, and lists `marshal` under **Settings,
-Apps**. Close every terminal window, open a new one, and confirm that
-`marshal --version` prints `marshal <version>`; a new tab in a window that was
-already open can keep the old environment.
+instance. Then open the MSI. It installs `marshal.exe` at
+`%LOCALAPPDATA%\Programs\marshal\marshal.exe` for your user, which is expected to
+need no UAC prompt but is not yet measured, adds that directory to your user `Path`,
+and lists `marshal` under **Settings, Apps**. Close every terminal window, open a
+new one, and confirm that `marshal --version` prints `marshal <version>`; a new tab
+in a window that was already open can keep the old environment.
 
 Uninstall from **Settings, Apps** or with the uninstall block, which leaves the logs
 under `%LOCALAPPDATA%\marshal\logs\`.
