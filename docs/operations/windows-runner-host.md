@@ -1013,20 +1013,21 @@ Hub. No inbound port is needed.
 ## Rolling Back marshal
 
 Roll back when a `marshal` release misbehaves on the host. Rolling back means
-installing the previous release: it needs an earlier release to go back to, so a
-host on the first release has none, and a fault in it is fixed forward in a new
-release. Pick a quiet time, because the install stops the instance and a job in
-flight fails.
+uninstalling the installed release and installing the previous one: it needs an
+earlier release to go back to, so a host on the first release has none, and a fault
+in it is fixed forward in a new release. Pick a quiet time, because the uninstall
+stops the instance and a job in flight fails.
 
 1. If the release you go back to may not finalise a diagnostic container as the
    installed one does, recover the marked containers before replacing the binary:
    run steps 1 to 3 of
    [Recover before disabling diagnostics](#recover-before-disabling-diagnostics),
    then `marshal stop`.
-2. Install the previous release with the Windows procedure in
-   [CLI](./cli.md#installing-updating-and-rolling-back), setting its `version` to
-   that release. It stops a running instance first and refuses to go on if the
-   instance does not stop; see [Recovery](#recovery).
+2. Roll back with the Windows procedure in
+   [CLI](./cli.md#updating-repairing-uninstalling-and-rolling-back): uninstall, then
+   install the previous release's MSI, because the MSI refuses a lower version while
+   a newer one is installed. The uninstall block stops a running instance and
+   refuses to go on if the instance does not stop; see [Recovery](#recovery).
 3. Run `marshal validate --config C:\path\to\runner-host.json`. The previous
    release must accept the configuration file, and a field only the newer release
    knows is rejected, naming the field. Edit the file back before going on.
