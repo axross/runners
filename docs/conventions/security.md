@@ -685,9 +685,9 @@ how a bundle is written.
   exports, and the cases where it removes a container without an export.
 - A diagnostic VM on axmc is the exception, by design: the VM is the retained
   container, and it is deleted without an export in three cases only, a forced
-  stop (a second SIGINT), a crashed `start` whose VM shim deletes it, and a
-  leftover at the next `start`. Each reports a diagnostic gap that names only the
-  pool, the VM, and the gap. The paragraph "Evidence a VM loses" in the
+  stop (a second SIGINT), a `start` that ends while it still holds the VM, whose VM
+  shim deletes it, and a leftover at the next `start`. Each reports a diagnostic
+  gap that names only the pool, the VM or container, and the gap. The paragraph "Evidence a VM loses" in the
   [Tart backend](../operations/cli.md#tart-backend) section of the CLI document
   owns the cases.
 

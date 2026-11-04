@@ -286,8 +286,8 @@ Apply the lens for each kind of file in the diff.
   removes one without trying its export while its clock allows, or finalises one
   the backend already retains with a later plan's settings, is a finding. A
   diagnostic VM on axmc is deleted without an export by design in exactly three
-  cases: a second SIGINT, a crashed `start` (the VM shim), and a leftover at the
-  next `start`, each reporting the diagnostic gap. A fourth export-less deletion
+  cases: a second SIGINT, a `start` that ends while it still holds the VM (the VM
+  shim), and a leftover at the next `start`, each reporting the diagnostic gap. A fourth export-less deletion
   of a VM, or any of the three that reports no gap, is a finding (see
   [CLI](docs/operations/cli.md#tart-backend), the paragraph "Evidence a VM
   loses"). The sink checks refuse and never create, repair,

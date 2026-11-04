@@ -599,7 +599,10 @@ same reason. The container backend reserves nothing, so its steps are unchanged.
 The 10 s is the CLI's: 5 s graceful, 2 s forced, 2 s deletion and 1 s listing. A VM
 the CLI could not delete within it is deleted by its [VM shim](#the-vm-shim), which
 has its own 15 s once the CLI has dropped the liveness pipe, even after the CLI has
-exited. A VM that neither deleted is a leftover, and the next `start` deletes it.
+exited. The worst path is 12 s + 6 s + 10 s = 28 s, with no slack, so a double fault,
+a `tart` call that hangs to its bound, can leave a VM for its shim, which deletes it
+within 15 s after `start` exits, or for the next `start`. A VM that neither deleted
+is a leftover, and the next `start` deletes it.
 
 **Leftovers.** At the start of a pool's preparation, `list_pool_containers` finds
 the local VMs named `marshal-job-<pool>-<slot>-<17 digits>` for the configured
@@ -632,9 +635,12 @@ today's.
 
 **Evidence a VM loses.** A diagnostic VM is deleted without an export in three
 cases: a second SIGINT, which skips the export and deletes the VM where a container
-would be killed and kept; a crashed `start`, whose [VM shim](#the-vm-shim) deletes
-the VM when the liveness pipe closes; and the next `start`, which deletes a
-leftover. Each reports the loss with today's gap wording,
+would be killed and kept; a `start` that ends while it still holds the VM, whose
+[VM shim](#the-vm-shim) deletes it when the liveness pipe closes; and the next
+`start`, which deletes a leftover. The shim also deletes a VM that the CLI's release
+could not delete before `start` exited; for a diagnostic VM the export was attempted
+in the stop sequence before that release, so this is not a fourth case. Each reports
+the loss with today's gap wording,
 `Diagnostic gap in pool <pool>, job VM <vm>: <text>`, or, for a forced stop,
 `container <name>` in place of the VM. A forced stop keeps the container names in
 its result, so `start` exits 1 as for a kept container and its last line says that
@@ -1203,11 +1209,13 @@ stop to fit the same 28 s exit deadline: the stop call is ended at 28 - 6 - `R`
 seconds, and its grace is 5 s shorter, never longer than 15 s. With a `R` of 10 s,
 the grace is 7 s and the stop call is ended at 12 s, then the removal at 6 s
 later, then the release at 10 s later, so the three take 28 s at the most and `stop`
-still ends within 30 s. The diagnostic column ends early by the same reserve, as
-[Diagnostics](#diagnostics) describes, so a diagnostics pool's release keeps its
-whole budget too. The release itself splits its budget, a graceful stop of
-the host first and a forced stop and deletion in its last seconds; the backend
-chooses that split.
+still ends within 30 s. That leaves no slack: a `tart` call that hangs to its bound
+in a double fault leaves its VM to the VM shim or the next `start`, as
+[The release budget split](#tart-backend) describes. The diagnostic column ends
+early by the same reserve, as [Diagnostics](#diagnostics) describes, so a
+diagnostics pool's release keeps its whole budget too. The release itself splits
+its budget, a graceful stop of the host first and a forced stop and deletion in its
+last seconds; the backend chooses that split.
 
 The runtime core is the part that runs the pools. It fails when it ends, with an
 error, a panic, or neither, while no stop was asked for. The instance polls it
@@ -1561,9 +1569,10 @@ build honours any of them: in the release profile `tests/base_address.rs` shows
 that the client stays `docker`, `tests/build_definition.rs` that `build` keeps
 the embedded definition, and `tests/release_overrides.rs` that the client stays
 `tart`, the `route`, `arp` and `caffeinate` programs stay the system's, the
-signals are not read from a directory, and Softnet's file is judged as it is. The tests name the fake client rather than put it first on `PATH`,
-because Windows searches the program's directory and the system directories before
-`PATH`, so a real `docker.exe` in `System32` would win.
+signals are not read from a directory, and Softnet's file is judged as it is.
+The tests name the fake client rather than put it first on `PATH`, because Windows
+searches the program's directory and the system directories before `PATH`, so a
+real `docker.exe` in `System32` would win.
 
 A `start` that finds the lock held changes nothing. It canonicalises its
 configuration path, sends `resume <profile> <path>`, and waits up to 10 s:
@@ -1744,7 +1753,9 @@ release the time after the container steps, so the diagnostic column's times fal
 earlier by `R` less the 4 s it leaves before the exit deadline. With an `R` of 10 s
 the stop is ended at 6 s with a grace of 4 s, each export by 12 s, and each removal
 by 18 s; the export and removal windows keep their sizes, and the release keeps its
-10 s before 28 s.
+10 s before 28 s, with no slack after it, so a VM that the release could not delete
+in a double fault is deleted by its VM shim within 15 s after `start` exits, or by
+the next `start`.
 
 **Startup.** While a pool is prepared, the CLI looks at the labelled containers of
 the pool that an earlier process left and the backend does not retain:
@@ -2093,8 +2104,8 @@ within 15 s as one `teardown` budget (7.5 s, 3 s, 3 s and 1.5 s for a listing). 
 The exit deadline of 28 s from the stop applies as it does on axpc, and at it `build`
 exits 1, naming that the VM shim or the next build deletes the build VM. The rename has
 the same grace as axpc's retag: when a stop arrives during it, `tart rename` gets up to
-5 s from the stop, and then a listing, within 4 s, says whether the golden name exists.
-If it does, the build has committed and `build` exits 0; if it does not, the build VM is
+5 s from the stop, its client is then ended, and a listing, within 4 s, says whether
+the golden name exists. If it does, the build has committed and `build` exits 0; if it does not, the build VM is
 deleted and `build` exits 1; if the listing fails, the exit is 1 with "commit unknown"
 and the golden name to look for. After the rename, a stop skips the rest of the
 clean-up, and `build` exits 0.
