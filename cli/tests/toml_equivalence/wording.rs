@@ -99,7 +99,6 @@ fn message(json: &str, profile: Profile) -> String {
                     text = word(from, to, text);
                 }
             }
-            // the other host's name is never in a message of this one
             word(host.0, host.1, text)
         })
         .collect::<Vec<_>>()

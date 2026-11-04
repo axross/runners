@@ -299,7 +299,6 @@ fn a_file_that_breaks_the_hosts_rules_is_refused_with_the_reason_and_no_text() {
          imageName: required field is missing; repositories: must list at least one repository"
     );
 
-    // an axpc file is no axmc file
     assert!(matches!(
         convert(WINDOWS_FILE.as_bytes(), Profile::Axmc),
         Err(ConversionFailure::SourceRejected(_))
