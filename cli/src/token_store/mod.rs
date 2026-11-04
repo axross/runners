@@ -14,7 +14,7 @@ use std::fmt;
 use crate::runtime::secret::Secret;
 use crate::validate::patterns::{is_owner, is_repository};
 
-pub use keyring::{EntryName, KeyringTokenStore, Naming};
+pub use keyring::{Classified, EntryName, KeyringTokenStore, Naming};
 pub use memory::MemoryTokenStore;
 
 /// the most characters a token may have: the Credential Manager keeps a password in
@@ -69,20 +69,84 @@ impl fmt::Display for RepositoryKey {
     }
 }
 
-/// why the store could not do what was asked; the text never holds a token.
+/// what a store failure asks of the caller, the one thing every platform's failures
+/// have in common; the set may grow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StoreErrorKind {
+    /// the store needs the user, such as a locked keychain that the user can unlock.
+    NeedsUser,
+    /// the item refuses access to this program.
+    AccessRefused,
+    Other,
+}
+
+impl StoreErrorKind {
+    /// the word the agent names the kind with.
+    #[must_use]
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::NeedsUser => "needs_user",
+            Self::AccessRefused => "access_refused",
+            Self::Other => "other",
+        }
+    }
+}
+
+/// why the store could not do what was asked: a kind, the platform's own code when it
+/// gave one, and words; none of them ever holds a token.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StoreError(String);
+pub struct StoreError {
+    kind: StoreErrorKind,
+    code: Option<i64>,
+    message: String,
+}
 
 impl StoreError {
+    /// a failure of kind [`StoreErrorKind::Other`] with no code.
     #[must_use]
     pub fn new(message: impl Into<String>) -> Self {
-        Self(message.into())
+        Self::with(StoreErrorKind::Other, None, message)
+    }
+
+    #[must_use]
+    pub fn with(kind: StoreErrorKind, code: Option<i64>, message: impl Into<String>) -> Self {
+        Self {
+            kind,
+            code,
+            message: message.into(),
+        }
+    }
+
+    #[must_use]
+    pub fn kind(&self) -> StoreErrorKind {
+        self.kind
+    }
+
+    /// the platform's code, such as a Windows error number.
+    #[must_use]
+    pub fn code(&self) -> Option<i64> {
+        self.code
+    }
+
+    /// the words, without the kind and the code.
+    #[must_use]
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
+    /// the words with the kind and the code, as the agent shows a failure.
+    #[must_use]
+    pub fn describe(&self) -> String {
+        match self.code {
+            Some(code) => format!("{} (kind {}, code {code})", self.message, self.kind.word()),
+            None => format!("{} (kind {})", self.message, self.kind.word()),
+        }
     }
 }
 
 impl fmt::Display for StoreError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
+        f.write_str(&self.message)
     }
 }
 
@@ -134,6 +198,14 @@ pub fn accepted_token(text: &str) -> Result<Secret, TokenRefusal> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_failure_is_described_with_its_kind_and_code() {
+        let error = StoreError::with(StoreErrorKind::AccessRefused, Some(1312), "no");
+        assert_eq!(error.describe(), "no (kind access_refused, code 1312)");
+        assert_eq!(StoreError::new("x").describe(), "x (kind other)");
+        assert_eq!(error.to_string(), "no");
+    }
 
     #[test]
     fn a_key_is_the_owner_and_name_in_lower_case() {

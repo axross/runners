@@ -11,7 +11,7 @@ use super::{RepositoryKey, StoreError, TokenStore};
 #[derive(Default)]
 struct Held {
     tokens: BTreeMap<RepositoryKey, String>,
-    failure: Option<String>,
+    failure: Option<StoreError>,
 }
 
 /// tokens kept in memory; it never writes a token anywhere, and its `Debug` form
@@ -36,7 +36,13 @@ impl MemoryTokenStore {
 
     /// makes every later call fail with `message` until it is called with `None`.
     pub fn fail_with(&self, message: Option<&str>) {
-        self.held().failure = message.map(str::to_string);
+        self.held().failure = message.map(StoreError::new);
+    }
+
+    /// makes every later call fail with `error`, of whatever kind, until it is called
+    /// with `None`.
+    pub fn fail_with_error(&self, error: Option<StoreError>) {
+        self.held().failure = error;
     }
 
     /// the repositories that have a token.
@@ -46,9 +52,7 @@ impl MemoryTokenStore {
     }
 
     fn checked(held: &Held) -> Result<(), StoreError> {
-        held.failure
-            .as_ref()
-            .map_or(Ok(()), |message| Err(StoreError::new(message)))
+        held.failure.clone().map_or(Ok(()), Err)
     }
 }
 

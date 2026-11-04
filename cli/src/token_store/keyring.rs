@@ -9,7 +9,7 @@ use keyring_core::{Entry, Error};
 
 use crate::runtime::secret::Secret;
 
-use super::{RepositoryKey, StoreError, TokenStore};
+use super::{RepositoryKey, StoreError, StoreErrorKind, TokenStore};
 
 /// how one repository's entry is named in a store.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,16 +23,38 @@ pub struct EntryName {
 /// names a repository's entry.
 pub type Naming = fn(&RepositoryKey) -> EntryName;
 
+/// what a store's failure means to the caller: its kind and the platform's code.
+pub type Classified = (StoreErrorKind, Option<i64>);
+
+/// sorts a failure; a store with codes of its own gives its own.
+pub type Classifier = fn(&Error) -> Classified;
+
+fn unclassified(_: &Error) -> Classified {
+    (StoreErrorKind::Other, None)
+}
+
 /// tokens in a `keyring-core` store, one entry per repository.
 pub struct KeyringTokenStore {
     store: Arc<CredentialStore>,
     naming: Naming,
+    classifier: Classifier,
 }
 
 impl KeyringTokenStore {
     #[must_use]
     pub fn new(store: Arc<CredentialStore>, naming: Naming) -> Self {
-        Self { store, naming }
+        Self {
+            store,
+            naming,
+            classifier: unclassified,
+        }
+    }
+
+    /// reads each failure's kind and code with `classifier`.
+    #[must_use]
+    pub fn classifying(mut self, classifier: Classifier) -> Self {
+        self.classifier = classifier;
+        self
     }
 
     fn entry(&self, key: &RepositoryKey) -> Result<Entry, StoreError> {
@@ -44,13 +66,13 @@ impl KeyringTokenStore {
             .collect();
         self.store
             .build(&name.service, &name.user, Some(&modifiers))
-            .map_err(failed)
+            .map_err(|error| self.failed(&error))
     }
-}
 
-/// the store's own words; a `keyring-core` error never carries the secret.
-fn failed(error: Error) -> StoreError {
-    StoreError::new(format!("the credential store failed: {error}"))
+    fn failed(&self, error: &Error) -> StoreError {
+        let (kind, code) = (self.classifier)(error);
+        StoreError::with(kind, code, format!("the credential store failed: {error}"))
+    }
 }
 
 impl TokenStore for KeyringTokenStore {
@@ -58,20 +80,20 @@ impl TokenStore for KeyringTokenStore {
         match self.entry(key)?.get_password() {
             Ok(token) => Ok(Some(Secret::new(token))),
             Err(Error::NoEntry) => Ok(None),
-            Err(error) => Err(failed(error)),
+            Err(error) => Err(self.failed(&error)),
         }
     }
 
     fn set(&self, key: &RepositoryKey, token: &Secret) -> Result<(), StoreError> {
         self.entry(key)?
             .set_password(token.expose())
-            .map_err(failed)
+            .map_err(|error| self.failed(&error))
     }
 
     fn remove(&self, key: &RepositoryKey) -> Result<(), StoreError> {
         match self.entry(key)?.delete_credential() {
             Ok(()) | Err(Error::NoEntry) => Ok(()),
-            Err(error) => Err(failed(error)),
+            Err(error) => Err(self.failed(&error)),
         }
     }
 }
@@ -120,5 +142,35 @@ mod tests {
             )
             .unwrap_err();
         assert!(!error.to_string().contains("ghp_fake"), "{error}");
+    }
+
+    #[test]
+    fn a_failure_carries_the_kind_and_code_the_classifier_gives() {
+        let store =
+            KeyringTokenStore::new(keyring_core::mock::Store::new().unwrap(), |key| EntryName {
+                modifiers: vec![("persistence", "Local".to_string())],
+                ..by_key(key)
+            })
+            .classifying(|_| (StoreErrorKind::NeedsUser, Some(-25308)));
+        let error = store
+            .set(
+                &RepositoryKey::of("o", "r"),
+                &Secret::new("ghp_fake".to_string()),
+            )
+            .unwrap_err();
+        assert_eq!(error.kind(), StoreErrorKind::NeedsUser);
+        assert_eq!(error.code(), Some(-25308));
+        assert!(!error.describe().contains("ghp_fake"));
+    }
+
+    #[test]
+    fn a_store_without_a_classifier_reports_other_with_no_code() {
+        let store =
+            KeyringTokenStore::new(keyring_core::mock::Store::new().unwrap(), |key| EntryName {
+                modifiers: vec![("persistence", "Local".to_string())],
+                ..by_key(key)
+            });
+        let error = store.get(&RepositoryKey::of("o", "r")).unwrap_err();
+        assert_eq!((error.kind(), error.code()), (StoreErrorKind::Other, None));
     }
 }
