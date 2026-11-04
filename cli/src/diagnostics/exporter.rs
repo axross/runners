@@ -13,10 +13,11 @@ use tokio::sync::oneshot;
 use tokio::time::Instant;
 
 use crate::runtime::diagnostic::BUNDLE_QUOTA;
+use crate::runtime::tart::{TartClient, TartConfig};
 
 use super::archive::{EntrySink, MAX_METRICS_BYTES, METRICS_FILE};
 use super::sink::{checked_sink, count_bundles, create_bundle, create_file};
-use super::transport::{DockerCopy, EvidenceTransport};
+use super::transport::{DockerCopy, EvidenceTransport, VmCopy};
 use super::{
     ADMITTED, BUNDLES, EXIT_COMPLETE, EXIT_FAILED, EXIT_GAP, EXIT_SINK_FULL, ExportRequest,
 };
@@ -27,16 +28,26 @@ pub const COMPLETE_TEXT: &str = "export complete; evidence remains untrusted and
 /// the line of `metrics.txt` the collector writes once it observed the runner's end.
 const FINAL_OBSERVED: &str = "final=observed";
 
-/// runs the exporter for `request` and returns its exit code.
+/// runs the exporter for `request` and returns its exit code; `client` is `docker`,
+/// or `tart` when the request names a VM, and selects the transport.
 #[must_use]
-pub fn run(request: &ExportRequest, docker: &OsStr) -> ExitCode {
+pub fn run(request: &ExportRequest, client: &OsStr) -> ExitCode {
     let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
     else {
         return ExitCode::from(EXIT_FAILED);
     };
-    let code = runtime.block_on(supervise(request, &DockerCopy::new(docker)));
+    let code = match &request.vm {
+        Some(vm) => {
+            let tart = TartClient::new(TartConfig {
+                program: client.to_os_string(),
+                ..TartConfig::default()
+            });
+            runtime.block_on(supervise(request, &VmCopy::new(&tart, vm)))
+        }
+        None => runtime.block_on(supervise(request, &DockerCopy::new(client))),
+    };
     // a blocking thread stuck in the sink is left behind; the process ends anyway
     runtime.shutdown_background();
     ExitCode::from(code)
@@ -246,6 +257,7 @@ mod tests {
         let request = ExportRequest {
             pool: "p".to_string(),
             container: Some("p-1-x".to_string()),
+            vm: None,
             directory: sink.to_string_lossy().into_owned(),
             raw_records: false,
             checkout: None,

@@ -98,6 +98,7 @@ fn command() -> Command {
                 .arg(Arg::new("pool").long("pool").required(true))
                 .arg(Arg::new("directory").long("directory").required(true))
                 .arg(Arg::new("container").long("container"))
+                .arg(Arg::new("vm").long("vm"))
                 .arg(
                     Arg::new("raw-records")
                         .long("raw-records")
@@ -234,6 +235,7 @@ fn run_export(matches: &ArgMatches) -> ExitCode {
     let request = ExportRequest {
         pool: pool.clone(),
         container: matches.get_one::<String>("container").cloned(),
+        vm: matches.get_one::<String>("vm").cloned(),
         directory: directory.clone(),
         raw_records: matches.get_flag("raw-records"),
         checkout: matches.get_one::<PathBuf>("checkout").cloned(),

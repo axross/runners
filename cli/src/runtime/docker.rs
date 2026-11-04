@@ -2,8 +2,8 @@
 //! trusts a client's output to be short or valid text; `docs/operations/cli.md`
 //! describes the argument lists, budgets and the shim.
 
-use std::cell::{Cell, RefCell};
-use std::collections::{BTreeMap, BTreeSet};
+use std::cell::RefCell;
+use std::collections::BTreeSet;
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -14,7 +14,7 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
 use tokio::process::{Child, Command};
 
 use crate::affinity::{MAX_CPU_LIST_BYTES, select_cpus};
-use crate::diagnostics::{ADMITTED, BUNDLES, ExportRequest, outcome_of_exit};
+use crate::diagnostics::ExportRequest;
 use crate::image::check::{
     IMAGE_CHECK_BUDGET, ImageCheck, ImageLabels, MAX_INSPECT_BYTES, checked_reference,
 };
@@ -31,6 +31,7 @@ use super::docker_args::{
     probe_find_arguments, probe_run_arguments, remove_arguments, stop_arguments,
     volume_chown_arguments, volume_create_arguments,
 };
+use super::exports::Exports;
 use super::log::Log;
 use super::retained::Retained;
 use super::scrub::scrub_error_text;
@@ -44,13 +45,7 @@ const MAX_LINE_BYTES: u64 = 64 * 1024;
 /// the Windows flag that gives a client its own process group, so a console Ctrl+C
 /// does not reach it.
 #[cfg(windows)]
-const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-
-/// how long an exporter gets to end after its liveness pipe closes at the export
-/// deadline, before it is killed.
-pub const EXPORTER_TERMINATION: Duration = Duration::from_secs(1);
-
-const MAX_EXPORTER_LINE_BYTES: u64 = 64;
+pub(crate) const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
 
 /// the time bounds on the clients other than a job container's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -185,17 +180,13 @@ pub(crate) fn client_command(
     command
 }
 
-/// the admission lock of one pool and sink, held by an export until its child has
-/// created the bundle.
-type Admission = Rc<tokio::sync::Mutex<()>>;
-
 pub struct DockerBackend<C> {
     config: DockerConfig,
     clock: C,
     log: Rc<dyn Log>,
     running: RefCell<BTreeSet<String>>,
     retained: Retained,
-    admissions: RefCell<BTreeMap<(String, String), Admission>>,
+    exports: Exports,
 }
 
 /// removes a container from the running set when its run ends, a dropped future
@@ -227,13 +218,14 @@ impl Drop for RunningGuard<'_> {
 
 impl<C: Clock> DockerBackend<C> {
     pub fn new(config: DockerConfig, clock: C, log: Rc<dyn Log>) -> Self {
+        let exports = Exports::new(config.exporter.clone(), config.checkout.clone());
         Self {
             config,
             clock,
             log,
             running: RefCell::new(BTreeSet::new()),
             retained: Retained::default(),
-            admissions: RefCell::new(BTreeMap::new()),
+            exports,
         }
     }
 
@@ -449,114 +441,14 @@ impl<C: Clock> DockerBackend<C> {
 }
 
 impl<C: Clock> DockerBackend<C> {
-    fn admission(&self, record: &DiagnosticRecord) -> Admission {
-        self.admissions
-            .borrow_mut()
-            .entry((record.pool.clone(), record.directory.clone()))
-            .or_default()
-            .clone()
-    }
-
-    /// the exporter request for `record`'s sink; no `container` only counts its
-    /// bundles.
-    fn export_request(
-        &self,
-        record: &DiagnosticRecord,
-        container: Option<String>,
-        deadline: tokio::time::Instant,
-    ) -> ExportRequest {
-        ExportRequest {
-            pool: record.pool.clone(),
-            container,
-            directory: record.directory.clone(),
-            raw_records: record.raw_records,
-            checkout: self.config.checkout.clone(),
-            deadline: deadline.saturating_duration_since(tokio::time::Instant::now()),
-        }
-    }
-
-    /// starts the exporter child for `request` with a liveness pipe as its standard
-    /// input, closing which ends it, so it can kill its own clients first; its
-    /// standard error is this process's, and it writes only a panic's location there.
-    fn exporter(&self, request: &ExportRequest) -> Option<Child> {
-        let program = self.config.exporter.as_ref()?;
-        let mut command = Command::new(program);
-        command
-            .args(request.arguments(&self.config.program))
-            .env_remove(JIT_VARIABLE)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .kill_on_drop(false);
+    /// the command that runs the exporter child for `request` with `docker` as its
+    /// client.
+    fn exporter(&self, request: &ExportRequest) -> Option<Command> {
+        let mut command = self.exports.command(request, &self.config.program)?;
         for (name, value) in &self.config.environment {
             command.env(name, value);
         }
-        #[cfg(unix)]
-        command.process_group(0);
-        #[cfg(windows)]
-        command.creation_flags(CREATE_NEW_PROCESS_GROUP);
-        command.spawn().ok()
-    }
-
-    /// runs the exporter child for `request` until it ends or `deadline` passes;
-    /// `admission` is released once the child has created the bundle or ended.
-    async fn run_exporter(
-        &self,
-        request: &ExportRequest,
-        deadline: tokio::time::Instant,
-        mut admission: Option<tokio::sync::MutexGuard<'_, ()>>,
-    ) -> Exported {
-        let Some(mut child) = self.exporter(request) else {
-            return Exported::FAILED;
-        };
-        let liveness = child.stdin.take();
-        let stdout = child.stdout.take();
-        let (admitted, bundles) = (Cell::new(false), Cell::new(None));
-        let reading = async {
-            if let Some(stdout) = stdout {
-                let mut reader = BufReader::new(stdout);
-                loop {
-                    let mut line = Vec::new();
-                    let read = (&mut reader)
-                        .take(MAX_EXPORTER_LINE_BYTES)
-                        .read_until(b'\n', &mut line)
-                        .await
-                        .unwrap_or(0);
-                    if read == 0 {
-                        break;
-                    }
-                    let text = String::from_utf8_lossy(&line);
-                    let text = text.trim_end();
-                    if text == ADMITTED {
-                        admitted.set(true);
-                        admission.take();
-                    } else if let Some(count) = text.strip_prefix(BUNDLES) {
-                        bundles.set(count.parse().ok());
-                    }
-                }
-            }
-            admission.take();
-            child.wait().await.ok()
-        };
-        let outcome = match tokio::time::timeout_at(deadline, reading).await {
-            Ok(Some(status)) => outcome_of_exit(status.code()),
-            Ok(None) => ExportOutcome::Failed,
-            Err(_) => {
-                drop(liveness);
-                if tokio::time::timeout(EXPORTER_TERMINATION, child.wait())
-                    .await
-                    .is_err()
-                {
-                    let _ = child.kill().await;
-                }
-                ExportOutcome::Failed
-            }
-        };
-        Exported {
-            outcome,
-            admitted: admitted.get(),
-            bundles: bundles.get(),
-        }
+        Some(command)
     }
 }
 
@@ -876,12 +768,15 @@ impl<C: Clock> Backend for DockerBackend<C> {
         record: &DiagnosticRecord,
         deadline: tokio::time::Instant,
     ) -> Exported {
-        let lock = self.admission(record);
+        let lock = self.exports.admission(record);
         let Ok(admission) = tokio::time::timeout_at(deadline, lock.lock()).await else {
             return Exported::FAILED;
         };
-        let request = self.export_request(record, Some(name.to_string()), deadline);
-        self.run_exporter(&request, deadline, Some(admission)).await
+        let request = self
+            .exports
+            .request(record, Some(name.to_string()), None, deadline);
+        let command = self.exporter(&request);
+        self.exports.run(command, deadline, Some(admission)).await
     }
 
     async fn count_bundles(
@@ -889,8 +784,9 @@ impl<C: Clock> Backend for DockerBackend<C> {
         record: &DiagnosticRecord,
         deadline: tokio::time::Instant,
     ) -> Option<u32> {
-        let request = self.export_request(record, None, deadline);
-        let counted = self.run_exporter(&request, deadline, None).await;
+        let request = self.exports.request(record, None, None, deadline);
+        let command = self.exporter(&request);
+        let counted = self.exports.run(command, deadline, None).await;
         counted
             .bundles
             .filter(|_| counted.outcome == ExportOutcome::Complete)

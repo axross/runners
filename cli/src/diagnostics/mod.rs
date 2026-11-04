@@ -43,6 +43,10 @@ pub struct ExportRequest {
     pub pool: String,
     /// the container to export, or `None` to only count the pool's bundles.
     pub container: Option<String>,
+    /// the job VM the container runs in, when its evidence is read through that
+    /// VM's guest agent: the client is then `tart`, else `docker`. A count reads no
+    /// evidence, so it serves with either.
+    pub vm: Option<String>,
     /// the sink, as the configuration names it.
     pub directory: String,
     pub raw_records: bool,
@@ -53,10 +57,10 @@ pub struct ExportRequest {
 }
 
 impl ExportRequest {
-    /// the arguments that run this request with `docker` as the client, after the
-    /// program itself.
+    /// the arguments that run this request with `client` as the client, `docker` or,
+    /// for a VM, `tart`, after the program itself.
     #[must_use]
-    pub fn arguments(&self, docker: &OsStr) -> Vec<OsString> {
+    pub fn arguments(&self, client: &OsStr) -> Vec<OsString> {
         let mut arguments: Vec<OsString> = vec![
             EXPORT_COMMAND.into(),
             "--pool".into(),
@@ -66,6 +70,9 @@ impl ExportRequest {
         ];
         if let Some(container) = &self.container {
             arguments.extend(["--container".into(), container.clone().into()]);
+        }
+        if let Some(vm) = &self.vm {
+            arguments.extend(["--vm".into(), vm.clone().into()]);
         }
         if self.raw_records {
             arguments.push("--raw-records".into());
@@ -78,7 +85,7 @@ impl ExportRequest {
             "--deadline-ms".into(),
             millis.to_string().into(),
             "--".into(),
-            docker.to_os_string(),
+            client.to_os_string(),
         ]);
         arguments
     }
@@ -115,6 +122,7 @@ mod tests {
         let request = ExportRequest {
             pool: "d".to_string(),
             container: Some("d-1-x".to_string()),
+            vm: None,
             directory: "C:\\diag".to_string(),
             raw_records: true,
             checkout: Some(PathBuf::from("/checkout")),
@@ -142,6 +150,42 @@ mod tests {
                 "17500",
                 "--",
                 "docker"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_vm_request_names_the_vm_before_the_deadline_and_the_tart_client_last() {
+        let request = ExportRequest {
+            pool: "d".to_string(),
+            container: Some("d-1-x".to_string()),
+            vm: Some("marshal-job-d-1-20260101000000000".to_string()),
+            directory: "/diag".to_string(),
+            raw_records: false,
+            checkout: None,
+            deadline: Duration::from_millis(1_000),
+        };
+        let words: Vec<String> = request
+            .arguments(OsStr::new("tart"))
+            .iter()
+            .map(|word| word.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            words,
+            [
+                "export",
+                "--pool",
+                "d",
+                "--directory",
+                "/diag",
+                "--container",
+                "d-1-x",
+                "--vm",
+                "marshal-job-d-1-20260101000000000",
+                "--deadline-ms",
+                "1000",
+                "--",
+                "tart"
             ]
         );
     }
