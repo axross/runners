@@ -472,7 +472,7 @@ fn docker_that_fails_to_answer_ends_the_build_at_once() {
 }
 
 #[test]
-fn the_axmc_profile_validates_then_exits_1_naming_phase_6_and_a_usage_error_exits_2() {
+fn the_axmc_profile_validates_then_refuses_to_build_a_golden_vm_and_a_usage_error_exits_2() {
     let host = host();
     let fixture =
         repository_root().join("tests/host-configuration/rust/accepted/axmc-defaults.json");
@@ -484,7 +484,10 @@ fn the_axmc_profile_validates_then_exits_1_naming_phase_6_and_a_usage_error_exit
         .unwrap();
     let (_, stderr) = texts(&output);
     assert_eq!(output.status.code(), Some(1), "{stderr}");
-    assert!(stderr.contains("comes in Phase 6"), "{stderr}");
+    assert_eq!(
+        stderr.trim_end(),
+        "error: the configuration is valid, but this version of marshal cannot build axmc's golden VM yet"
+    );
     assert_eq!(host.client(&["build"]).status.code(), Some(2));
     assert_eq!(
         host.client(&["build", "--config", "x", "--profile", "other"])
