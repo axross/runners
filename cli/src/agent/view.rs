@@ -166,16 +166,16 @@ impl View<'_> {
                 let label = format!("{} slot {number}", entry.name);
                 match slots.iter().find(|row| row.name == label) {
                     Some(row) => {
-                        let (state, workload) = match &row.state {
-                            SlotState::Registering => ("registering", None),
-                            SlotState::BackingOff => ("backing_off", None),
-                            SlotState::Running(name) => ("running", Some(name.clone())),
+                        let (state, workload, reason) = match &row.state {
+                            SlotState::Registering => ("registering", None, None),
+                            SlotState::BackingOff(why) => ("backing_off", None, Some(why.clone())),
+                            SlotState::Running(name) => ("running", Some(name.clone()), None),
                         };
                         RunnerInfo {
                             slot: number,
                             state: state.to_string(),
                             workload,
-                            reason: None,
+                            reason,
                             since: millis(row.since),
                         }
                     }

@@ -169,9 +169,11 @@ impl Steps<'_> {
             }
         };
         if let Some(reason) = failed {
-            return Err(format!(
-                "`docker info` failed ({reason}), so nothing was built"
-            ));
+            return Err(if self.output == BuildOutput::Log {
+                format!("Docker could not report its state ({reason}), so nothing was built")
+            } else {
+                format!("`docker info` failed ({reason}), so nothing was built")
+            });
         }
         if let Stoppable::Stopped = self.stoppable(self.remove_leftovers()).await {
             return self.abort_before_commit(None).await;
@@ -209,11 +211,19 @@ impl Steps<'_> {
             }
             Retag::Unknown(cut_short) => {
                 self.remove_temporary(&temporary).await;
-                Err(format!(
-                    "commit unknown: {cut_short}, and its labels could not be read; \
-                     `docker image inspect {}` tells which image it is",
-                    self.image
-                ))
+                Err(if self.output == BuildOutput::Log {
+                    format!(
+                        "commit unknown: {cut_short}, and its labels could not be read; \
+                         the image {} may be the previous one or the new one",
+                        self.image
+                    )
+                } else {
+                    format!(
+                        "commit unknown: {cut_short}, and its labels could not be read; \
+                         `docker image inspect {}` tells which image it is",
+                        self.image
+                    )
+                })
             }
         }
     }
@@ -373,7 +383,12 @@ impl Steps<'_> {
             Ok(())
         } else {
             let mut message = format!(
-                "docker build exited with code {}",
+                "{} exited with code {}",
+                if logged {
+                    "the image build"
+                } else {
+                    "docker build"
+                },
                 status.code().unwrap_or(-1)
             );
             let tail = tail.into_inner();

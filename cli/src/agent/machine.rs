@@ -783,7 +783,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                 () = sleep_until(deadline.unwrap_or_else(Instant::now)), if deadline.is_some() => {
                     break Err(format!(
                         "the build did not end within {} s of the stop, so what still runs is \
-                         ended now; `docker image inspect {image}` tells which image the name holds",
+                         ended now; the image {image} may hold the previous image or the new one",
                         self.settings.times.exit_deadline.as_secs()
                     ));
                 }

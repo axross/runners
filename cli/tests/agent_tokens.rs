@@ -59,6 +59,8 @@ async fn after_token_remove_the_next_registration_fails_and_the_runner_backs_off
                         .is_some_and(|runner| runner.state == "backing_off")
                 })
                 .await;
+            let reason = snapshot.pools[0].runners[0].reason.clone().unwrap();
+            assert!(reason.contains("no token"), "{reason}");
             assert!(
                 rig.log.lines().iter().any(|line| line.contains("no token")),
                 "the log says why"
@@ -222,7 +224,7 @@ async fn a_skipped_pool_and_a_failed_registration_name_the_stores_kind_and_code(
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn a_registration_whose_store_fails_names_the_kind_and_code_in_the_log() {
+async fn a_registration_whose_store_fails_names_the_kind_and_code_in_the_runner_and_the_log() {
     let rig = Rig::new(ONE_POOL);
     rig.store_token("o", "r", TOKEN);
     rig.hold_jobs();
@@ -244,7 +246,10 @@ async fn a_registration_whose_store_fails_names_the_kind_and_code_in_the_log() {
                         .is_some_and(|runner| runner.state == "backing_off")
                 })
                 .await;
-            drop(snapshot);
+            let reason = snapshot.pools[0].runners[0].reason.clone().unwrap();
+            assert!(reason.contains("access_refused"), "{reason}");
+            assert!(reason.contains("code 5"), "{reason}");
+            assert!(!reason.contains(TOKEN));
             let line = rig
                 .log
                 .lines()
@@ -291,6 +296,43 @@ async fn a_token_path_that_names_no_file_does_not_stop_the_pool() {
         .drive(Launch::Running, |conn| async move {
             let snapshot = conn.until_runner_runs().await;
             assert!(snapshot.configuration.problems.is_empty());
+            rig.mark_running();
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_github_rejection_is_the_reason_of_the_runner_that_backs_off() {
+    let rig = Rig::new(ONE_POOL);
+    rig.store_token("o", "r", TOKEN);
+    rig.hold_jobs();
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            conn.until_runner_runs().await;
+            rig.registrar.results.borrow_mut().push_front(Err(
+                marshal_cli::runtime::registration::RegistrationError::new(
+                    "GitHub answered 403: Resource not accessible by personal access token",
+                ),
+            ));
+            rig.end_jobs().await;
+            let snapshot = conn
+                .until("the runner backing off", |s| {
+                    s.pools
+                        .first()
+                        .and_then(|pool| pool.runners.first())
+                        .is_some_and(|runner| runner.state == "backing_off")
+                })
+                .await;
+            let runner = &snapshot.pools[0].runners[0];
+            let reason = runner.reason.clone().unwrap();
+            assert!(reason.contains("403"), "{reason}");
+            assert!(reason.contains("Resource not accessible"), "{reason}");
+            assert!(!reason.contains("docker"), "{reason}");
+            // it registers again after the backoff, and the reason goes with the state
+            conn.until_runner_runs().await;
+            assert!(conn.status().await.pools[0].runners[0].reason.is_none());
             rig.mark_running();
             conn.ok("quit").await;
         })

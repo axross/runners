@@ -34,7 +34,8 @@ impl fmt::Display for PoolState {
 pub enum SlotState {
     /// probing its CPUs and asking GitHub for a registration.
     Registering,
-    BackingOff,
+    /// waiting to try again, for this reason (scrubbed, and with the log's masks applied).
+    BackingOff(String),
     /// running the job container of this name.
     Running(String),
 }
@@ -43,7 +44,7 @@ impl fmt::Display for SlotState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Registering => f.write_str("registering"),
-            Self::BackingOff => f.write_str("backing off"),
+            Self::BackingOff(_) => f.write_str("backing off"),
             Self::Running(name) => write!(f, "running container {name}"),
         }
     }
@@ -215,7 +216,10 @@ mod tests {
             "waiting for Docker"
         );
         assert_eq!(PoolState::Preparing.to_string(), "preparing");
-        assert_eq!(SlotState::BackingOff.to_string(), "backing off");
+        assert_eq!(
+            SlotState::BackingOff("why".to_string()).to_string(),
+            "backing off"
+        );
         assert_eq!(SlotState::Registering.to_string(), "registering");
     }
 }

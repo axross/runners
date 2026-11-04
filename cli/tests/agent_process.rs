@@ -131,6 +131,7 @@ async fn a_build_logs_its_output_masked_and_a_failure_carries_the_last_lines() {
     );
     assert!(reason.message.contains("<masked>"), "{}", reason.message);
     assert!(!reason.message.contains(TOKEN));
+    assert!(!reason.message.contains("docker "), "{}", reason.message);
     conn.ok("quit").await;
     let (code, _) = agent.finish(Duration::from_secs(30)).await;
     assert_eq!(code, Some(0));

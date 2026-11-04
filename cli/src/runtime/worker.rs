@@ -17,6 +17,7 @@ use super::log::{Log, Masked};
 use super::name::job_container_name;
 use super::pool::SlotSpec;
 use super::registration::{JitRequest, Registrar};
+use super::scrub::scrub_error_text;
 use super::token::{TokenFiles, TokenSource};
 
 /// the delay after a slot's first failure.
@@ -117,7 +118,9 @@ async fn back_off<K: Clock>(
         report.label,
         backoff.current().as_secs()
     ));
-    report.state(SlotState::BackingOff);
+    report.state(SlotState::BackingOff(
+        report.log.masks().apply(&scrub_error_text(reason, "")),
+    ));
     sleep_or_stop(clock, stop, backoff.fail()).await
 }
 

@@ -107,7 +107,7 @@ impl marshal_cli::runtime::clock::Clock for PacedClock {
 
     async fn sleep(&self, duration: Duration) {
         self.0.sleep(duration).await;
-        tokio::time::sleep(Duration::from_millis(2)).await;
+        tokio::time::sleep(Duration::from_millis(60)).await;
     }
 }
 
