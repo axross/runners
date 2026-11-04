@@ -248,6 +248,41 @@ for (const [file, doc] of Object.entries(workflows)) {
   }
 }
 
+// ---- the signing secrets -------------------------------------------------
+
+// only sign-macos reads a signing secret, whether by name, through the whole
+// `secrets` context, or by passing all of them (`secrets: inherit`) to a called
+// workflow. this reads the parsed documents, not the scripts' text.
+const SECRET_READ = /\bsecrets\s*(?:\.\s*MACOS_|\[)|\(\s*secrets\s*\)/i;
+function secretReads(value, path = "") {
+  if (typeof value === "string") {
+    return SECRET_READ.test(value) ? [`${path} reads ${value.trim()}`] : [];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) =>
+      secretReads(item, `${path}[${index}]`),
+    );
+  }
+  if (value && typeof value === "object") {
+    return Object.entries(value).flatMap(([key, item]) => {
+      const here = path === "" ? key : `${path}.${key}`;
+      return key === "secrets" && item === "inherit"
+        ? [`${here} passes every secret on`]
+        : secretReads(item, here);
+    });
+  }
+  return [];
+}
+for (const file of ["release.yaml", "release-build.yaml"]) {
+  const doc = workflows[file];
+  if (!doc) continue;
+  const rest = { ...doc, jobs: { ...doc.jobs } };
+  if (file === "release.yaml") delete rest.jobs[SIGNING_JOB];
+  for (const use of secretReads(rest)) {
+    problem(`${file}: ${use}; only ${SIGNING_JOB} may read a signing secret`);
+  }
+}
+
 // ---- sign-macos ----------------------------------------------------------
 
 const scriptsOf = (job) =>

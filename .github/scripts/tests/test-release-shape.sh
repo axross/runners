@@ -5,7 +5,8 @@
 # permissions, an action it uses, a checkout, a `${{ }}` inside run, a package
 # manager or fetch or repository file, a tool called by name, the stand-in
 # prefixes, pkgbuild's arguments; an Environment in another job, in a `.yml`
-# workflow, or reachable from a pull request; a signing job without its guard or its place in the chain; and
+# workflow, or reachable from a pull request; a signing secret read outside
+# sign-macos; a signing job without its guard or its place in the chain; and
 # a way past a failed job. a change the test cannot find in the files fails the
 # test, so it cannot go stale and pass.
 # shellcheck disable=SC2016,SC1003 # the texts the changes find and replace are literal, not expansions.
@@ -218,6 +219,22 @@ expect_fail "build-pkg.sh with another install location" "pkgbuild's arguments d
   "$build_pkg" '--install-location / \' '--install-location /opt \'
 expect_fail "build-pkg.sh with another staging mode" "the package script's staging lines differ from build-pkg.sh's" \
   "$build_pkg" 'chmod 0755 "$stage"' 'chmod 0750 "$stage"'
+
+echo "-- the signing secrets --"
+expect_fail "a signing secret in attest" "only sign-macos may read a signing secret" \
+  "$release" $'  attest:\n    name: Attest The Build Provenance\n' $'  attest:\n    name: Attest The Build Provenance\n    env:\n      PASSWORD: ${{ secrets.MACOS_P12_PASSWORD }}\n'
+expect_fail "a signing secret in verify-macos's step" "release.yaml: jobs.verify-macos.steps[5].env.P8 reads" \
+  "$release" $'      - name: Test The Signed Package\n        timeout-minutes: 10\n        env:\n' $'      - name: Test The Signed Package\n        timeout-minutes: 10\n        env:\n          P8: ${{ secrets.MACOS_NOTARY_KEY_P8 }}\n'
+expect_fail "a signing secret in the workflow's env" "release.yaml: env.P12 reads" \
+  "$release" $'permissions:\n  contents: read\n' $'permissions:\n  contents: read\n\nenv:\n  P12: ${{ secrets.MACOS_INSTALLER_P12_BASE64 }}\n'
+expect_fail "a signing secret read by bracket" "only sign-macos may read a signing secret" \
+  "$release" $'  attest:\n    name: Attest The Build Provenance\n' $'  attest:\n    name: Attest The Build Provenance\n    env:\n      PASSWORD: ${{ secrets[\'MACOS_P12_PASSWORD\'] }}\n'
+expect_fail "every secret read through toJSON" "only sign-macos may read a signing secret" \
+  "$release" $'  attest:\n    name: Attest The Build Provenance\n' $'  attest:\n    name: Attest The Build Provenance\n    env:\n      ALL: ${{ toJSON(secrets) }}\n'
+expect_fail "secrets: inherit on the build job" "release.yaml: jobs.build.secrets passes every secret on" \
+  "$release" $'    uses: ./.github/workflows/release-build.yaml\n' $'    uses: ./.github/workflows/release-build.yaml\n    secrets: inherit\n'
+expect_fail "a signing secret in release-build.yaml" "release-build.yaml: jobs.assemble" \
+  "$release_build" $'  assemble:\n    name: Assemble The Release Files\n' $'  assemble:\n    name: Assemble The Release Files\n    env:\n      PASSWORD: ${{ secrets.MACOS_P12_PASSWORD }}\n'
 
 echo "-- the Environment elsewhere --"
 expect_fail "an Environment on attest" "job attest declares an environment" \
