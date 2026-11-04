@@ -11,10 +11,12 @@ names it. The sections below say what holds today and what a later change adds.
 is reviewed against are in [Security](../conventions/security.md). The Windows
 equivalent is [Windows Runner Host](./windows-runner-host.md).
 
-**Today.** `marshal` checks the host prerequisites below, but `marshal start` and
-`marshal build` with `--profile axmc` still refuse to run: the configuration is
-validated, and the VM runtime they will use is not wired in yet. The procedures
-below that run Tart, Softnet or `marshal` on a Mac have not been run there yet; see
+**Today.** `marshal` checks the host prerequisites below, and the library holds the
+VM runtime that will use them: a job VM per job, cloned from the golden VM, with the
+run contract's Docker commands run inside it. But `marshal start` and `marshal build`
+with `--profile axmc` still refuse to run: the configuration is validated, and the
+VM runtime is not wired into them yet. The procedures below that run Tart, Softnet
+or `marshal` on a Mac have not been run there yet; see
 [Verification Status](#verification-status).
 
 ## Installing Tart and Softnet
@@ -90,8 +92,10 @@ afterwards does not stop the runners. SSH and headless use are out of scope.
 Since macOS 15, Apple's Virtualization framework starts a VM only while the user's
 login keychain is unlocked. Without it, Tart's documentation lists errors such as
 `SecKeyCreateRandomKey_ios failed`, `Failed to generate keypair` and `Interaction is
-not allowed with the Security Server`. A boot failure that `marshal` logs names this
-section, since a locked login keychain is the documented cause. FileVault rules out
+not allowed with the Security Server`. A boot failure that `marshal` logs, whether
+`tart run` ended or the guest agent did not answer in 120 s, names this section,
+since a locked login keychain is the documented cause. The slot then deletes the
+failed VM and tries again on its backoff, so unlocking the keychain is enough. FileVault rules out
 automatic login, so after a restart, sign in at the screen and then run `marshal
 start` again.
 
@@ -111,9 +115,25 @@ version>-<yyyyMMddHHmmss>`. A build VM is
 - **Reading it.** The golden VM's name records its versions and build time, so they
   are read from `tart list` without booting it.
 
-The base image and its digest, the launcher's input (the JIT configuration on
-standard input), and the clone, resource, boot, Softnet and deletion steps of a
-slot's cycle are added here with the commands that use them.
+- **A slot's cycle** (the [Tart Backend](./cli.md#tart-backend) in the CLI
+  document has the budgets and texts). It clones the newest golden VM that runs
+  here to a job VM, sizes it to the pool's `cpus`, `memoryGb` and `diskGb`, and
+  boots it with `tart run` on Softnet. It waits up to 120 s for the guest agent,
+  and then for the Docker Engine, and runs the CPU probe. It runs the job with
+  `tart exec -i <vm> /usr/local/bin/marshal-launch <docker run arguments>`, with the
+  JIT configuration on standard input only. When the job ends, it stops the VM and
+  deletes it, so no job VM outlives its job.
+- **The guest user.** The guest agent runs commands as `admin`, the golden VM's
+  user, which the golden VM puts in the `docker` group, so `docker` needs no
+  `sudo`. The source for this is the unit file `packaging/tart-guest-agent.service`
+  (`User=admin`) of [cirruslabs/tart-guest-agent](https://github.com/cirruslabs/tart-guest-agent)
+  at commit `6d4bd9c`.
+- **Leftovers.** At `start`, each job VM of a configured pool that an earlier run
+  left behind is stopped and deleted, and its diagnostic evidence, if the pool
+  collects it, is not exported.
+
+The base image and its digest and the steps of the golden VM's build are added here
+with the command that uses them.
 
 ## Building the Golden VM
 
@@ -160,4 +180,7 @@ the maintainer's Mac, and their evidence is posted on
 [#74](https://github.com/axross/runners/issues/74). What is checked without a Mac:
 the version parsing and sorting of both programs, and the judgment of Softnet's file
 and the search for it on `PATH`, against fake `tart` and `softnet` programs in the
-CLI's tests.
+CLI's tests; and the VM runtime's slot cycle, probes, run arguments, release and VM
+shim, against fake `tart`, `docker` and `softnet` programs. The guest user comes from
+the guest agent's source and has not been seen on a running VM. No real Tart VM, guest
+agent or Softnet has run under `marshal`.

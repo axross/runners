@@ -252,6 +252,9 @@ PowerShell supervisor, and where it differs the difference is listed here.
 | `runtime::docker`, `runtime::docker_args`                | The container backend and the exact `docker` argument lists                                                 |
 | `runtime::tart`, `tart::args`, `tart::client`            | The `tart` client: the exact argument lists, and the bounded process wrapper                                |
 | `runtime::tart::list`, `tart::names`                     | The reader of `tart list --format json`, and the VM names, parsers and matchers                             |
+| `runtime::tart::backend`                                 | The Tart backend: the slot cycle's host steps, the probes, the job container, and the release               |
+| `tart::golden_check`, `tart::guest`                      | The golden VM check from VM names alone, and the commands run in a booted VM through the guest agent        |
+| `tart::hold`, `tart::teardown`, `vm_shim`                | The holder of a VM's `tart run`, the stop-and-delete within a budget, and the VM shim                       |
 | `golden`, `golden::pins`, `golden::key`, `golden::steps` | The golden VM's pins, the check of Docker's signing key, the launcher and the guest calls that provision it |
 | `macos::version`                                         | The tested Tart and Softnet versions, the readers of their `--version`, and the sorting                     |
 | `macos::softnet`                                         | Finding Softnet on `PATH` as Tart does, the judgment of its file, and its version read                      |
@@ -288,8 +291,8 @@ finalisation, the same for every backend, decides whether to export and removes
 the container after it. The JIT
 configuration reaches the backend as a `Secret`, whose `Debug` form is redacted and
 which has no `Display`. The container backend passes it as an environment variable
-by name; a later backend that runs the containers in a virtual machine can pass it
-another way. A fake backend implements the same seam for the tests of the code
+by name; the [Tart Backend](#tart-backend), which runs the containers in a virtual
+machine, passes it on the standard input of the launcher in the VM. A fake backend implements the same seam for the tests of the code
 above it.
 
 The backend also provides two values the runtime core would otherwise take from the
@@ -404,7 +407,7 @@ selection is `Runtime::of_pool` in `runtime::select`:
 | Host | Pool               | Runtime                                                          |
 | ---- | ------------------ | ---------------------------------------------------------------- |
 | axpc | every pool (Linux) | The Docker Desktop container runtime, the backend above          |
-| axmc | `os: "linux"`      | The VM runtime, a Tart VM per job; selected, but not implemented |
+| axmc | `os: "linux"`      | The VM runtime, a Tart VM per job; built, but no command runs it |
 | axmc | `os: "macos"`      | None                                                             |
 
 The backend above is the Docker Desktop runtime. The runtime core takes nothing from
@@ -419,10 +422,10 @@ vCPUs, the pool's `memoryGb` and the pool's `diskGb`, and the job container's CP
 quota and affinity cover all of the host's vCPUs, 0 to `cpus` - 1, with its memory
 limit equal to the host's memory. The image defaults to `actions-runner:local` when
 `imageName` is absent. `start` and the core apply that default, and `validate` and
-its summary do not. A plan with a macOS pool is not made into pools. No code
-implements the VM runtime yet, so a
-configuration that selects it, or selects none for a pool, is validated and then
-refused:
+its summary do not. A plan with a macOS pool is not made into pools. The VM runtime
+is the [Tart Backend](#tart-backend), but `start` and `build` do not construct it
+yet, so a configuration that selects it, or selects none for a pool, is validated and
+then refused:
 
 - `start --profile axmc` exits 1 after taking the lock and validating, before it
   opens a log file or calls an engine. It prints:
@@ -457,11 +460,168 @@ scripted transport, and the
 diagnostics tests listed under [Diagnostics](#diagnostics) run the exporter through
 `DockerCopy` with unchanged expectations.
 
+### Tart Backend
+
+`runtime::tart::backend::TartBackend` is the VM runtime. It gives each job a VM
+cloned from the golden VM, runs the run contract's Docker commands inside it, and
+deletes it. `start` and `build` do not construct it yet, so no command reaches it;
+the tests build it through `cli/tests/support/rig.rs` against the fake `tart`,
+`docker` and `softnet`. The `tart` client library under it is documented where its
+parts are: [Host Prerequisites](#host-prerequisites),
+[Golden VM Provisioning](#golden-vm-provisioning), and the argument lists in
+`tart::args`.
+
+**Availability.** `wait_until_available` runs `tart list` and, while it fails, warns
+`Tart is not responding yet (not installed, or not answering) - waiting.` and tries
+again every 5 s. A Tart that does not answer is therefore never a failure of the
+runtime core. `check_image` runs the same listing within the image check's budget and
+reads the golden VM from the VM names alone ([The Image Contract](#the-image-contract)
+describes the check's outcomes). A listing that fails or overruns is
+`Unavailable`, which registers nothing and goes into the backoff.
+
+**The golden VM check.** `tart::golden_check` reads `tart list --format json` and no
+VM's contents. A golden VM's name,
+`marshal-golden-linux-g<golden VM version>-c<image contract version>-r<runner version>-<yyyyMMddHHmmss>`,
+records what the image's labels record, so nothing boots. The newest golden VM by its
+build second decides, whatever its versions. It matches when its golden VM version
+and image contract version are this CLI's, and a runner version that differs is not a
+mismatch, as for an image. It feeds the image check's outcomes, so the texts and
+refusals are today's, naming the golden VM instead of an image: no golden VM is
+missing, and one built for another golden VM version or contract version is
+mismatched and asks for a rebuild. A unit test in `image::check` pins the case of a
+golden VM whose old runner asks for a rebuild.
+
+**A slot's cycle.** `prepare_job_host` takes these steps and answers `Ready`,
+`Failed`, or `Held`:
+
+1. A host this slot could not release earlier is released first, within 30 s, so a
+   slot never owns two VMs. Its failure fails the preparation.
+2. The prerequisites run: Tart's version, then Softnet's file and version, as
+   [Host Prerequisites](#host-prerequisites) maps their causes. A Tart that is
+   missing or does not answer warns `Tart is not available (<message>) - waiting.`
+   and tries again every 5 s; a refusal of Tart's version or of Softnet is `Held`
+   with the refusal's text. The versions in use are logged once, as
+   `Using Tart <v> and Softnet <v>.`, and again when they change; each warning is
+   logged once until it changes.
+3. The newest golden VM that runs here is listed and cloned to
+   `marshal-job-<pool>-<slot>-<yyyyMMddHHmmssfff>`. The name is recorded before the
+   clone runs, so a clone that fails halfway is still deleted.
+4. The clone is sized with `tart set --cpu <vcpus> --memory <MB> --disk-size <GB>`
+   from the pool's `cpus`, `memoryGb` and `diskGb`.
+5. `tart run` (headless, with Softnet) is started by the [VM shim](#the-vm-shim),
+   and the backend asks the guest agent whether it answers, every second with each
+   question bounded at 5 s, until it does, `tart run` ends, or the 120 s boot
+   deadline passes.
+
+A boot that fails is `Failed`, with the text
+`boot failure: <tart run for the job VM <vm> ended with exit code N (<Tart's own error>) | the guest agent of the job VM <vm> did not answer by the boot deadline (<last error>)>; a locked login keychain is the documented cause, see the "The Signed-In Session" section of the macOS Runner Host document`.
+The section is [The Signed-In Session](./macos-runner-host.md#the-signed-in-session).
+
+**Probes.** `select_cpuset` finds the slot's VM from the probe's name, waits up to
+60 s for the Docker Engine in it (`docker info` every 2 s, each call bounded at
+10 s), and then runs the CPU probe's `docker run` through the guest agent within the
+30 s the probe has. The output is read as the container backend reads it, capped at
+64 KiB, ASCII only, and selected with the same function, so a VM's affinity is chosen
+from the VM's own CPUs. A probe that fails registers nothing, and the cycle releases
+the VM. The VM has the pool's whole `cpus` as vCPUs, so the quota and the affinity of
+the job container cover all of them and its memory limit equals the VM's.
+
+**The job container.** `run_container` runs
+`tart exec -i <vm> /usr/local/bin/marshal-launch <docker run arguments>` where the
+arguments are the container backend's own `docker run` list: `--pull never`, the
+name, quota, affinity and memory options, and `-e ACTIONS_RUNNER_INPUT_JITCONFIG`
+with no value. The JIT configuration is written to the client's standard input and
+the pipe is closed. It is in no argument list, in no environment variable of `tart`,
+and in no log line. The launcher reads it from standard input, exports it, and
+`exec`s `docker`. Standard output and error are forwarded to the log line by line
+and masked, as for the container backend. A volume is refused in a VM
+(`volumes are not supported in virtual machines`), and `validate` already refuses
+one on axmc. The text a guest command returns to the backend is cut at 64 KiB.
+
+**Which user runs it.** `tart exec` reaches the guest agent,
+[cirruslabs/tart-guest-agent](https://github.com/cirruslabs/tart-guest-agent) at
+commit `6d4bd9c`. Its systemd unit, `packaging/tart-guest-agent.service`, sets
+`User=admin`, and `internal/rpc/exec.go` starts the command as the agent's own user
+with no user switch, in a process group of its own that it kills when the call is
+cancelled. A command therefore runs as `admin`. The golden VM adds `admin` to the
+`docker` group, which applies from the agent's start, so `docker` runs without
+`sudo` and the backend never calls it.
+
+**Stop and release.** `stop_containers` and `kill_containers` run one `docker stop
+--time <n>` or `docker kill` per VM through the guest agent, all in parallel, and
+`remove_containers` runs `docker rm -f` in the container's VM. A name that is a job
+VM, which only a leftover from an earlier run is, is stopped forcibly and deleted.
+`release_job_host` gets rid of the slot's VM within the budget it is given:
+
+- with a VM that is running, it asks for a graceful stop, stops it forcibly when that
+  fails, deletes it, and, when the deletion fails, lists the VMs to see whether it
+  is already gone. The budget is split in tenths: 5 for the graceful stop (its
+  `--timeout` is a second less, so Tart ends its own wait first), 2 for the forced
+  stop (`stop --timeout 0`), 2 for the deletion and 1 for the listing. A VM that
+  never ran is deleted without a stop;
+- it is idempotent and safe to run twice at once: the second waits for the first
+  and finds the host released;
+- a release that succeeds forgets the host, its containers, and the holder of its
+  `tart run`. A release that fails or runs out of its budget keeps all of them, so
+  the next preparation of the slot or the next release deletes the VM.
+
+**The release budget split.** The stop sequence of [Stopping](#stopping) takes the
+backend's reserve out of its container steps. The Tart backend reserves 10 s
+(`release_budget`), so the container stop is ended at 12 s with a grace of 7 s, the
+removal takes 6 s more, and the release the remaining 10 s, which ends at 28 s, the
+exit deadline. The container backend reserves nothing, so its steps are unchanged.
+The 10 s is the CLI's: 5 s graceful, 2 s forced, 2 s deletion and 1 s listing. A VM
+the CLI could not delete within it is deleted by its [VM shim](#the-vm-shim), which
+has its own 15 s once the CLI has dropped the liveness pipe, even after the CLI has
+exited. A VM that neither deleted is a leftover, and the next `start` deletes it.
+
+**Leftovers.** At the start of a pool's preparation, `list_pool_containers` finds
+the local VMs named `marshal-job-<pool>-<slot>-<17 digits>` for the configured
+pools, and the runtime removes them, each by a forced stop and a deletion
+(`deletes_leftovers_unexported`). Nothing is exported from a leftover VM. The log
+says `Deleting job VM '<name>' left over from an earlier run.`; for a
+diagnostics-enabled pool, it also says that its diagnostic evidence is gone, in
+today's gap wording. Only the pool's own VMs are matched, so another pool's, a
+golden VM and a build VM are left alone.
+
+**Diagnostics.** The bookkeeping for a diagnostics-enabled pool is in place: a
+diagnostic container is recorded as retained when it starts, and the runtime
+finalises it, exporting before it removes the container, and releases the host
+only after that, as the [worker's order](#names-and-the-slot-loop) has it. The
+backend has no way to read a VM's evidence yet, so `export_diagnostic` answers a
+failure and `count_bundles` answers nothing, and a finalisation warns of the gap
+and removes the container; no export is faked. What remains is an
+`EvidenceTransport` over the guest agent (`tart exec <vm> docker inspect` and
+`docker cp`, read by the strict archive reader), the export and the count of a
+pool's bundles through it, and, for a retained VM, keeping it until its export has
+run.
+
+### The VM Shim
+
+The VM shim is the CLI run again as the hidden `marshal vm-shim --name <vm> -- <tart>`
+on Unix. It starts `tart run` for the VM, with the arguments of `tart::args`, in a
+process group of its own. Its standard input is the read end of a liveness pipe whose
+write end only the CLI holds. It holds no lock: the instance lock is never passed to
+it, and a test shows the lock free while a shim lives.
+
+- When `tart run` ends while the pipe is open, the shim relays what Tart printed, its
+  standard error and then its standard output, to its own standard output, and exits
+  with Tart's code. It deletes nothing, so the VM is kept for the next start.
+- When the pipe closes, the shim stops the VM (`stop --timeout 5` within 8 s, then
+  `stop --timeout 0` within 3 s when that fails), deletes it within 4 s, and exits 0.
+  It exits 1 when the deletion fails or the 15 s run out. None of its `tart` calls
+  prunes, which `TART_NO_AUTO_PRUNE=1` sets.
+
+The shim takes any VM name, so the build command can hold a build VM the same way.
+`HeldVm` is the CLI's end: it starts the shim, keeps the write end of the pipe, and
+closes it when it is dropped.
+
 ### Host Prerequisites
 
 The axmc runtime runs two programs it does not ship: `tart`, and `softnet`, which
 Tart runs. `macos::prerequisites` checks both and returns a `Check`: a pass, a
-warning, or a refusal that carries a `Cause` and its message. No command calls it
+warning, or a refusal that carries a `Cause` and its message. The
+[Tart Backend](#tart-backend) calls it before each boot, and no command calls it
 yet. The tested versions are constants in `macos::version`, Tart 2.41.1 and Softnet
 0.25.0, and the host document records them in
 [Installing Tart and Softnet](./macos-runner-host.md#installing-tart-and-softnet);
@@ -503,7 +663,10 @@ cannot start is `Missing`, a program that does not answer within the bound is
 up is `Setup`. A missing `tart` or `softnet` at `start` or `build` is refused naming
 the install section. A `tart` that does not answer, or goes missing after `start`, is
 Tart unavailable and its slots wait. A `softnet` that does not answer counts as a
-refusal.
+refusal. The Tart backend maps the causes this way before each boot: a Tart that is
+`Missing` or `NotAnswering` makes the slot wait, a Tart `Version` refusal holds the
+slot, and every refusal of Softnet holds it, a missing or unanswering `softnet`
+included.
 
 A debug build replaces the owner and mode read from Softnet's file with
 `MARSHAL_TEST_SOFTNET_OWNER_MODE=<user ID>:<octal mode>`, such as `0:4755`, for the
@@ -663,13 +826,25 @@ pool's quota, affinity, memory, disk and default image, and
 `instance_state.rs` and `core_restart.rs` the release at a stop and at a core
 failure. `image_check.rs` drives the image check through the fake backend,
 the instance, and the real backend against `fake-docker`. The diagnostics tests are
-listed under [Diagnostics](#diagnostics). `real_docker.rs` runs a container and the
+listed under [Diagnostics](#diagnostics). `tart_backend.rs` runs the
+[Tart Backend](#tart-backend) against the fake `tart`, which forwards a guest
+command to `fake-docker` as the launcher would, and `fake-softnet`, through the rig
+in `tests/support/rig.rs`: availability and the golden VM check, the cleanup of
+leftovers, each step of a slot's cycle and its failures, the boot failure text, the
+probes, the JIT configuration reaching the guest on standard input alone, the run
+arguments, bounded and masked output, the stop and release within their budgets,
+and a release run twice at once. `vm_shim.rs` runs the VM shim as a real process,
+for a job VM and for a build VM, and `tart_slot.rs` runs the slot loop on the
+backend with the fake programs, for the order of a cycle and what each failure does
+to the VM and the registration. Both are Unix only. `real_docker.rs` runs a container and the
 probe through a real Docker daemon on Linux, and exports a container's small
 `metrics.txt` through the exporter child from a real `docker cp` stream; it is
 `#[ignore]`d for a local `cargo test`, and CI runs it in its own step, where it
 fails when Docker or the image is missing. Not verified by these tests: a real
-Docker daemon outside that CI step, the TLS handshake with GitHub, and Windows and
-macOS runtime behaviour beyond what the hosted runners show. The handshake and a
+Docker daemon outside that CI step, a real Tart, Softnet and guest agent (the fakes
+stand in for them, and the guest user comes from the agent's source, not from a
+run), the TLS handshake with GitHub, and Windows and macOS runtime behaviour beyond
+what the hosted runners show. The handshake and a
 real registration are verified on axpc instead, on the maintainer's report, as the
 TLS paragraph above says.
 
@@ -1250,7 +1425,10 @@ default action; the others still stop the instance.
    later; alongside, each diagnostic container is exported and removed by 24 s.
 3. At 28 s whatever still runs is dropped. A `docker` client is killed; on Unix a
    job container's shim sees its liveness pipe close, removes its container, or
-   ends a diagnostic one and keeps it, within 5 s, and ends.
+   ends a diagnostic one and keeps it, within 5 s, and ends. A VM backend reserves
+   10 s of the 28 s to release its job VMs, which ends the container steps earlier,
+   as the [Tart Backend](#tart-backend) describes, and a VM its release could not
+   delete is deleted by its VM shim within 15 s more.
 4. `start` gives the answers it has already sent, such as the one to `stop`, up to
    0.5 s to reach their clients, closes the channel, and exits, which releases the
    lock.
@@ -1638,6 +1816,10 @@ failure.
   the shim then ends its container with `docker kill` within 5 s and keeps it. The
   shim shares `start`'s standard error, and its own warnings there name containers
   only.
+- **VM shim.** A job VM's `tart run` is held by the VM shim, the CLI run again as
+  `marshal vm-shim`, with a liveness pipe of its own, as [The VM Shim](#the-vm-shim)
+  describes. It stops and deletes its VM within 15 s when the pipe closes, and
+  holds no lock.
 - **Exporter.** The exporter child under [Diagnostics](#diagnostics) has a
   liveness pipe of its own and keeps its own deadline, on every system, and on
   Windows it is also in the Job Object.
