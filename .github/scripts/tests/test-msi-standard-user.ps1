@@ -404,7 +404,7 @@ try {
     $exitCode = $null
     $process = $null
     try {
-        $process = Start-Process -FilePath powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$runScript`"" -Credential $credential -LoadUserProfile -WorkingDirectory $Staging -PassThru
+        $process = Start-Process -FilePath powershell.exe -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$runScript`"") -Credential $credential -LoadUserProfile -WorkingDirectory $Staging -PassThru
     } catch {
         $failure = "the standard user process could not be started: $($_.Exception.Message)"
     }
