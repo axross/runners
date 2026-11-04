@@ -49,9 +49,9 @@ fn warn_gap(log: &dyn Log, record: &DiagnosticRecord, name: &str, text: &str) {
     ));
 }
 
-/// the gap left by a job VM that is deleted without its export, because a forced
-/// stop, a crash, or the next start found it: the evidence in it is lost, and the
-/// pool's earlier bundles stand.
+/// the gap left by a job VM that is deleted without its export, because of a forced
+/// stop or a crash: the evidence in it is lost, and the pool's earlier bundles
+/// stand.
 #[must_use]
 pub fn discarded_gap(pool: &str, vm: &str) -> Option<String> {
     gap_text(ExportOutcome::Failed)
