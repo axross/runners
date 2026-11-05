@@ -1084,7 +1084,12 @@ Tart's default network would reach the LAN, the host and other VMs.
   (`MARSHAL_TEST_SOFTNET_OWNER_MODE`), for the tests; a release build always runs
   `tart` and judges the real file. `cli/tests/release_overrides.rs` checks this,
   and the Merge Checks step "Test That A Release Build Ignores The Debug-Only
-  Overrides" runs it in the release profile.
+  Overrides" runs it in the release profile. Likewise, only a debug build can name
+  the `route`, `arp` and `caffeinate` programs (`MARSHAL_TEST_ROUTE`,
+  `MARSHAL_TEST_ARP`, `MARSHAL_TEST_CAFFEINATE`) or script the sleep, the primary
+  network and the keep-awake hold from a directory (`MARSHAL_TEST_SIGNALS`); a
+  release build runs `/sbin/route`, `/usr/sbin/arp` and `/usr/bin/caffeinate` and
+  reads the Mac's own signals, and the same test checks both.
 - Softnet's rules make it track every flow a VM starts, in a table of 32,768
   entries that refuses new connections while full. A job that opens more than that
   within about 5 minutes has new connections refused, and the failure stays inside
