@@ -120,7 +120,7 @@ pub(crate) fn failure(message: String, ending: Ending) -> CoreFailure {
 }
 
 /// runs every worker to its end, polling each that has not ended whenever one wakes.
-pub(crate) async fn run_all<F: Future<Output = ()>>(mut workers: Vec<Pin<Box<F>>>) {
+async fn run_all<F: Future<Output = ()>>(mut workers: Vec<Pin<Box<F>>>) {
     std::future::poll_fn(|context| {
         workers.retain_mut(|worker| worker.as_mut().poll(context).is_pending());
         if workers.is_empty() {

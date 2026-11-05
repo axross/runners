@@ -17,7 +17,7 @@ use crate::runtime::name::stamp;
 /// the size at which a log file stops, its last line included.
 pub(crate) const MAX_FILE_BYTES: u64 = 10 * 1024 * 1024;
 
-pub(crate) const KEPT_FILES: usize = 10;
+const KEPT_FILES: usize = 10;
 
 const FULL_LINE: &str = "The log file reached 10 MiB, so nothing more is written to it.\n";
 
