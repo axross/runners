@@ -1,11 +1,11 @@
 //! the snapshot the agent serves: the runners and pools, the diagnostics, the leftovers
+//! of a stop, the fit to the message limit, and what it never carries.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
     clippy::indexing_slicing
 )]
-//! of a stop, the fit to the message limit, and what it never carries.
 mod support;
 
 use std::time::Duration;

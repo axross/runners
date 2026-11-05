@@ -1,11 +1,11 @@
 //! protocol version 2 on the wire: the handshake, the methods, the events and the
+//! version rules, spoken by hand and with the library's client.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
     clippy::indexing_slicing
 )]
-//! version rules, spoken by hand and with the library's client.
 mod support;
 
 use std::time::Duration;
