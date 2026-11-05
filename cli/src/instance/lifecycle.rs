@@ -15,6 +15,7 @@ use std::time::Duration;
 
 use tokio::sync::{mpsc, oneshot, watch};
 
+use crate::macos::prerequisites::{RESUME_VERSION_BUDGET, VERSION_BUDGET};
 use crate::macos::reason::sleep_reason;
 use crate::macos::watch::NetworkChange;
 use crate::profile::Profile;
@@ -206,8 +207,13 @@ pub trait Core {
 
     /// checks the host prerequisites of the pools `plan` runs once, without waiting for
     /// anything; returns the refusal's message, or `Ok` when they pass or nothing in
-    /// `plan` needs them. A core without prerequisites passes.
-    fn check_prerequisites(&self, _plan: &Plan) -> impl Future<Output = Result<(), String>> {
+    /// `plan` needs them. A core without prerequisites passes. Each program the check
+    /// runs gets `each_read` to answer.
+    fn check_prerequisites(
+        &self,
+        _plan: &Plan,
+        _each_read: Duration,
+    ) -> impl Future<Output = Result<(), String>> {
         async { Ok(()) }
     }
 
@@ -479,7 +485,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source, M: Monitor> Instance<'a, B, K
     /// every request that reaches `requests`; when the channel closes while the
     /// instance is stopped, nothing can resume it, so it ends.
     pub async fn run(&self, plan: Plan, requests: &mut Requests) -> Ended {
-        let checking = self.core.check_prerequisites(&plan);
+        let checking = self.core.check_prerequisites(&plan, VERSION_BUDGET);
         let mut next = match self.serve(requests, true, checking).await {
             None => Next::Exit,
             Some(Ok(())) => Next::Run(plan),
@@ -765,7 +771,11 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source, M: Monitor> Instance<'a, B, K
                 Ok(plan) => plan,
                 Err(problems) => return Reloaded::Invalid(problems),
             };
-            if let Err(refusal) = self.core.check_prerequisites(&plan).await {
+            if let Err(refusal) = self
+                .core
+                .check_prerequisites(&plan, RESUME_VERSION_BUDGET)
+                .await
+            {
                 return Reloaded::PrerequisiteRefused(refusal);
             }
             match self.core.check_image(&plan).await {

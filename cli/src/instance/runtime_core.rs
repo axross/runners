@@ -5,6 +5,7 @@ use std::cell::Cell;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::Poll;
+use std::time::Duration;
 
 use tokio::sync::watch;
 
@@ -173,13 +174,13 @@ impl<B: Backend, K: Clock, R: Registrar> Core for RuntimeCore<'_, B, K, R> {
         check.refusal(image).map_or(Ok(()), Err)
     }
 
-    async fn check_prerequisites(&self, plan: &Plan) -> Result<(), String> {
+    async fn check_prerequisites(&self, plan: &Plan, each_read: Duration) -> Result<(), String> {
         let runs_vms = plan
             .entries
             .iter()
             .any(|entry| Runtime::of_pool(plan.profile, entry.os) == Some(Runtime::TartVm));
         if runs_vms {
-            self.backend.check_prerequisites().await
+            self.backend.check_prerequisites(each_read).await
         } else {
             Ok(())
         }

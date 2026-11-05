@@ -538,10 +538,18 @@ pub(crate) fn hide_panic_messages() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::image::check::IMAGE_CHECK_BUDGET;
+    use crate::macos::prerequisites::RESUME_VERSION_BUDGET;
 
     #[test]
     fn a_resume_waits_ten_seconds_for_its_answer() {
         assert_eq!(RESUME_ANSWER_WITHIN, Duration::from_secs(10));
+    }
+
+    #[test]
+    fn a_resumes_reload_fits_its_wait_on_both_profiles() {
+        let axmc = RESUME_VERSION_BUDGET + IMAGE_CHECK_BUDGET;
+        assert!(axmc <= RESUME_ANSWER_WITHIN, "{axmc:?}");
     }
 
     #[test]

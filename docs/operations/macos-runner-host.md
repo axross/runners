@@ -41,8 +41,9 @@ tart --version
 softnet --version
 ```
 
-`marshal` reads both versions with `--version`, each within 5 s, at `start`,
-`restart` and `build`, and before each VM boot:
+`marshal` reads both versions with `--version`, each within 5 s, at `start` and
+`build` and before each VM boot, and each within 2 s, together, at `restart` and when
+`start` resumes a stopped instance, where a client waits for the answer:
 
 - The tested version runs.
 - A newer patch of the tested minor version runs, with a warning that names the
@@ -81,7 +82,7 @@ The listing starts with `-rwsr-xr-x` and names `root` as the owner. `marshal`
 refuses with a message that names the failing requirement when the file is a
 directory or another kind of file, is owned by another user, lacks the SUID bit, or
 can be written by its group or others. It also refuses a `softnet` that does not
-answer `--version` within 5 s.
+answer `--version` within its bound (5 s, or 2 s at a restart or a resume).
 
 **What the network allows.** Every VM boots with the two rules in
 [The Golden VM Contract](#the-golden-vm-contract), on top of Softnet's defaults. A

@@ -881,6 +881,28 @@ async fn a_softnet_that_does_not_answer_or_has_another_version_holds_the_slot() 
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn the_two_version_reads_of_the_check_before_a_run_go_together_within_the_bound_given() {
+    let rig = Rig::new();
+    rig.fake.script("hang-version", "");
+    rig.softnet.script("bin", "hang-version", "");
+    let started = Instant::now();
+    let reason = rig
+        .backend
+        .check_prerequisites(Duration::from_secs(1))
+        .await
+        .unwrap_err();
+    let waited = started.elapsed();
+    assert!(
+        reason.starts_with("\"softnet --version\" did not answer within 1 s."),
+        "{reason}"
+    );
+    assert!(
+        waited >= Duration::from_secs(1) && waited < Duration::from_millis(1700),
+        "a Tart and a Softnet that do not answer took {waited:?}"
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn a_newer_patch_runs_with_a_warning_logged_once_and_kept_for_status() {
     let rig = Rig::new();
     rig.fake.script("version_output", "2.41.3\n");

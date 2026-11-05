@@ -9,6 +9,8 @@
 
 mod support;
 
+use std::time::Duration;
+
 use marshal_cli::instance::fake::FakeCore;
 use marshal_cli::instance::lifecycle::Ending;
 use marshal_cli::instance::protocol::Outcome;
@@ -111,4 +113,34 @@ async fn a_refusal_at_a_resume_keeps_the_instance_stopped_and_a_later_pass_resum
     assert_eq!(status.field("reason"), Some(REFUSAL));
     assert_eq!(resumed.outcome, Outcome::Ok);
     assert_eq!(rig.core.prerequisites_checked.get(), 3);
+}
+
+/// a restart and a resume have a client waiting, so their check gives each program
+/// the short bound; the first run has none waiting, and its bound is unchanged.
+#[tokio::test(flavor = "current_thread")]
+async fn a_restart_and_a_resume_give_each_program_the_short_bound_and_the_first_run_the_full_one() {
+    let rig = Rig::new();
+    for _ in 0..4 {
+        rig.core.push(FakeCore::failure("worker task panicked"));
+    }
+    let (_, ()) = rig
+        .drive(|control| async move {
+            control.wait_for_state("stopped").await;
+            let resumed = control
+                .ask(support::instance::resume(Profile::Axpc, CONFIG_PATH))
+                .await;
+            assert_eq!(resumed.outcome, Outcome::Ok);
+            let restarted = control.ask(Request::Restart).await;
+            assert_eq!(restarted.outcome, Outcome::Ok);
+            control.stop().await;
+        })
+        .await;
+    assert_eq!(
+        *rig.core.prerequisite_reads.borrow(),
+        [
+            Duration::from_secs(5),
+            Duration::from_secs(2),
+            Duration::from_secs(2)
+        ]
+    );
 }

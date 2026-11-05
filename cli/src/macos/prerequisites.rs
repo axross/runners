@@ -22,6 +22,11 @@ use super::version::{
 /// how long each version read gets.
 pub const VERSION_BUDGET: Duration = Duration::from_secs(5);
 
+/// how long each version read gets in the check of a resume, whose two reads run
+/// together. With the image check's 4 s the reload takes 6 s, which fits the 7 s that
+/// `restart`'s 35 s leaves after the 28 s of container steps.
+pub const RESUME_VERSION_BUDGET: Duration = Duration::from_secs(2);
+
 /// the host document the messages send the operator to.
 pub const HOST_DOCUMENT: &str = "macOS Runner Host";
 
@@ -252,8 +257,13 @@ pub async fn check_tart_within(client: &TartClient, budget: Duration) -> Check {
 /// then its version within [`VERSION_BUDGET`]. A debug build takes the file's owner
 /// and mode from `MARSHAL_TEST_SOFTNET_OWNER_MODE` when it is set.
 pub async fn check_softnet(path: Option<&OsStr>) -> Check {
+    check_softnet_within(path, VERSION_BUDGET).await
+}
+
+/// [`check_softnet`] with the bound on the version read named.
+pub async fn check_softnet_within(path: Option<&OsStr>, budget: Duration) -> Check {
     match owner_mode_override_from_environment() {
-        Ok(owner_mode) => check_softnet_with(path, owner_mode, VERSION_BUDGET).await,
+        Ok(owner_mode) => check_softnet_with(path, owner_mode, budget).await,
         Err(message) => refuse(Cause::Setup, message),
     }
 }

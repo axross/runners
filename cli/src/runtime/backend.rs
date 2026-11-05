@@ -240,8 +240,12 @@ pub trait Backend {
 
     /// checks the host prerequisites once before anything is started, and returns the
     /// refusal's message when one refuses. A prerequisite that does not answer is
-    /// waited for later, never refused here. Only `start` and a resume call it.
-    fn check_prerequisites(&self) -> impl Future<Output = Result<(), String>> {
+    /// waited for later, never refused here. Only `start` and a resume call it, and each
+    /// program it runs gets `each_read` to answer.
+    fn check_prerequisites(
+        &self,
+        _each_read: Duration,
+    ) -> impl Future<Output = Result<(), String>> {
         async { Ok(()) }
     }
 

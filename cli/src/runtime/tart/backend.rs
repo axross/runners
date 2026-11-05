@@ -18,7 +18,8 @@ use crate::diagnostics::ExportRequest;
 use crate::image::check::{IMAGE_CHECK_BUDGET, ImageCheck};
 use crate::macos::gate::NetworkGate;
 use crate::macos::prerequisites::{
-    Cause, Check, VERSION_BUDGET, check_softnet, check_softnet_with, check_tart,
+    Cause, Check, VERSION_BUDGET, check_softnet_with, check_softnet_within, check_tart,
+    check_tart_within,
 };
 use crate::macos::softnet::OwnerMode;
 use crate::runtime::backend::{
@@ -251,13 +252,13 @@ impl<C: Clock> TartBackend<C> {
         )))
     }
 
-    /// the Softnet check, judging its file as a test says when it names an owner and
-    /// mode.
-    async fn check_softnet_once(&self) -> Check {
+    /// the Softnet check with `budget` for the version read, judging its file as a test
+    /// says when it names an owner and mode.
+    async fn check_softnet_once(&self, budget: Duration) -> Check {
         let path = self.client.config().path.as_deref();
         match self.softnet_owner_mode {
-            Some(owner_mode) => check_softnet_with(path, Some(owner_mode), VERSION_BUDGET).await,
-            None => check_softnet(path).await,
+            Some(owner_mode) => check_softnet_with(path, Some(owner_mode), budget).await,
+            None => check_softnet_within(path, budget).await,
         }
     }
 
@@ -280,7 +281,7 @@ impl<C: Clock> TartBackend<C> {
                 },
             }
         };
-        let softnet = match self.check_softnet_once().await.into_result() {
+        let softnet = match self.check_softnet_once(VERSION_BUDGET).await.into_result() {
             Ok(running) => running,
             Err(refusal) => return Some(refusal.message),
         };
@@ -630,18 +631,19 @@ impl<C: Clock> Backend for TartBackend<C> {
 
     /// refuses a `tart` or `softnet` that is missing, a version that does not run and a
     /// Softnet that is not set up or does not answer; a `tart` that does not answer is
-    /// not refused, because the slots wait for it.
-    async fn check_prerequisites(&self) -> Result<(), String> {
-        let tart = match check_tart(&self.client).await.into_result() {
+    /// not refused, because the slots wait for it. The two version reads run together,
+    /// so the check takes `each_read` at the most.
+    async fn check_prerequisites(&self, each_read: Duration) -> Result<(), String> {
+        let (tart, softnet) = tokio::join!(
+            check_tart_within(&self.client, each_read),
+            self.check_softnet_once(each_read)
+        );
+        let tart = match tart.into_result() {
             Ok(running) => Some(running),
             Err(refusal) if refusal.cause == Cause::NotAnswering => None,
             Err(refusal) => return Err(refusal.message),
         };
-        let softnet = self
-            .check_softnet_once()
-            .await
-            .into_result()
-            .map_err(|refusal| refusal.message)?;
+        let softnet = softnet.into_result().map_err(|refusal| refusal.message)?;
         if let Some((tart, warning)) = tart {
             self.note_in_use(&tart, &softnet.0, warning.into_iter().chain(softnet.1));
         }

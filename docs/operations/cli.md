@@ -742,11 +742,11 @@ the resume of a stopped instance call it before anything is started, and
 a change of either is a change of the constant, the document, and the fake programs'
 default output.
 
-| Check             | How                                                                                                                                                                                                |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Tart's version    | `tart --version` through the Tart client, within 5 s. The output is exactly three dot-separated numbers and one optional final newline                                                             |
-| Softnet's file    | The first `softnet` on the `PATH` the Tart client carries, found as Tart finds it (see below); a regular file owned by root, with the SUID bit set and no write permission for its group or others |
-| Softnet's version | `softnet --version`, run on that file, within 5 s. The output is `softnet <three numbers>-<short commit>` and one optional final newline: clap's form for Softnet's release build                  |
+| Check             | How                                                                                                                                                                                                              |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tart's version    | `tart --version` through the Tart client, within 5 s (2 s at a restart or a resume). The output is exactly three dot-separated numbers and one optional final newline                                            |
+| Softnet's file    | The first `softnet` on the `PATH` the Tart client carries, found as Tart finds it (see below); a regular file owned by root, with the SUID bit set and no write permission for its group or others               |
+| Softnet's version | `softnet --version`, run on that file, within 5 s (2 s at a restart or a resume). The output is `softnet <three numbers>-<short commit>` and one optional final newline: clap's form for Softnet's release build |
 
 Each version sorts into the tested version, which runs; a newer patch of the tested
 minor version, which runs with a warning that names the tested version; or a refusal
@@ -794,6 +794,11 @@ included; a `tart` that does not answer is not, because the slots wait for it. T
   refusal leaves the instance stopped with the refusal's message as its reason,
   exactly as an image that cannot run jobs does, and the client exits 1. The check
   runs before the image check. A restart has by then stopped every running job.
+- The check at a first `start` gives each version read 5 s. At a `restart` or a resume
+  a client is waiting, so each read gets 2 s and the two run together, which keeps the
+  reload inside the client's wait, as [The Image Check](#the-image-check) counts. A
+  `softnet` that takes longer than 2 s to answer is a refusal there, as one that takes
+  longer than 5 s is at `start`.
 - The warnings of a passing check, a newer patch of Tart or Softnet, are logged once
   and shown by `status` as `warning: <message>` lines, listed on every call, after
   the image lines, as of the latest check that passed.
@@ -1475,8 +1480,12 @@ The check reads the configured image's labels with one
 the contract, build-time, and runner labels. A name whose last path part has no tag
 is checked as `<name>:latest`, as `docker run` resolves it. When inspect fails, a
 `docker image ls --quiet <name>` tells a missing image from Docker not answering.
-Both calls share a bound of 4 s, so a resume's check fits inside `start`'s 10 s
-wait, and the container steps and the check fit inside `restart`'s 35 s.
+Both calls share a bound of 4 s. A resume's reload is the configuration read, then
+on axmc the [host prerequisites](#host-prerequisites), whose two version reads run
+together and get 2 s each, and then this check. It takes 4 s at the most on axpc and
+6 s on axmc, so it fits inside `start`'s 10 s wait. It follows the container steps of
+a `restart`, which take 28 s at the most, so it ends at 32 s on axpc and 34 s on axmc,
+inside the 35 s wait.
 
 | Outcome            | When                                                                         |
 | ------------------ | ---------------------------------------------------------------------------- |
@@ -1658,8 +1667,9 @@ answer in time.
   warning of the latest passing host prerequisite check. Pools and slots
   are listed while the runtime core runs; the image and warning lines are listed on
   every call, as of the latest check. A `build` answers `state`, `image`, and `elapsed: <s> s`.
-- `restart` waits up to 35 s for the instance to run its container steps, read its
-  file again, check the image, and answer. An invalid file or an image that cannot
+- `restart` waits up to 35 s for the instance to run its container steps (28 s at the
+  most), read its file again, check the host prerequisites (axmc only) and the image
+  (6 s at the most on axmc, 4 s on axpc), and answer. An invalid file or an image that cannot
   run jobs leaves the instance stopped, and `restart` exits 1. It is refused while
   the instance is stopping, resuming, or building.
 - `stop` asks the instance to stop, then checks about every 200 ms whether the
