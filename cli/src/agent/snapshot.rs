@@ -409,26 +409,38 @@ impl Snapshot {
     /// then the configuration problems, and last the long texts, so that a snapshot
     /// always fits and says what it left out.
     fn fit_lists(&mut self, limit: usize) {
-        self.omitted.leftovers += self.keep_most(
+        self.keep_most(
             limit,
             |s| s.leftovers.len(),
-            |s, n| {
+            |s, n, cut| {
                 s.leftovers.truncate(n);
+                s.omitted.leftovers += cut;
             },
         );
-        self.omitted.repositories += self.keep_most(
+        self.keep_most(
             limit,
             |s| s.repositories.len(),
-            |s, n| s.repositories.truncate(n),
+            |s, n, cut| {
+                s.repositories.truncate(n);
+                s.omitted.repositories += cut;
+            },
         );
-        self.omitted.images +=
-            self.keep_most(limit, |s| s.images.len(), |s, n| s.images.truncate(n));
-        let dropped = self.keep_most(
+        self.keep_most(
+            limit,
+            |s| s.images.len(),
+            |s, n, cut| {
+                s.images.truncate(n);
+                s.omitted.images += cut;
+            },
+        );
+        self.keep_most(
             limit,
             |s| s.configuration.problems.len(),
-            |s, n| s.configuration.problems.truncate(n),
+            |s, n, cut| {
+                s.configuration.problems.truncate(n);
+                s.omitted.problems += cut;
+            },
         );
-        self.omitted.problems += dropped;
         if size(self) > limit {
             for text in [&mut self.configuration.path, &mut self.agent.version] {
                 *text = text.chars().take(TEXT_CHARS).collect();
@@ -446,30 +458,32 @@ impl Snapshot {
     }
 
     /// keeps the most entries of a list, found by halving, that bring the snapshot
-    /// within `limit`, and returns how many it cut; it keeps none when none helps.
+    /// within `limit`, or none when none helps. `keep` truncates the list to the
+    /// entries kept and adds the count cut to the list's `omitted` field, so that every
+    /// trial is measured with the count it will carry.
     fn keep_most(
         &mut self,
         limit: usize,
         count: fn(&Self) -> usize,
-        truncate: fn(&mut Self, usize),
-    ) -> u32 {
+        keep: fn(&mut Self, usize, u32),
+    ) {
         let total = count(self);
         if total == 0 || size(self) <= limit {
-            return 0;
+            return;
         }
+        let cut = |kept: usize| u32::try_from(total - kept).unwrap_or(u32::MAX);
         let (mut low, mut high) = (0, total);
         while low < high {
             let middle = (low + high).div_ceil(2);
             let mut trial = self.clone();
-            truncate(&mut trial, middle);
+            keep(&mut trial, middle, cut(middle));
             if size(&trial) <= limit {
                 low = middle;
             } else {
                 high = middle - 1;
             }
         }
-        truncate(self, low);
-        u32::try_from(total - low).unwrap_or(u32::MAX)
+        keep(self, low, cut(low));
     }
 
     /// a copy that keeps the first `keep` runner rows and counts the rest as omitted,
@@ -636,6 +650,186 @@ mod tests {
         );
         assert!(snapshot.omitted.leftovers > 0);
         assert_eq!(snapshot.runners_up, 7);
+    }
+
+    /// fits `whole` to a limit that a cut of one list measured without its omitted
+    /// count would just meet, and checks that the snapshot meets it with the count.
+    fn fit_to_a_cut_written_without_its_count(
+        whole: &Snapshot,
+        cut: fn(&mut Snapshot),
+        total: usize,
+        shown_and_omitted: fn(&Snapshot) -> usize,
+    ) {
+        let mut without_count = whole.clone();
+        cut(&mut without_count);
+        let limit = size(&without_count);
+        assert!(size(whole) > limit);
+
+        let mut snapshot = whole.clone();
+        snapshot.fit(limit);
+
+        assert!(size(&snapshot) <= limit, "{} > {limit}", size(&snapshot));
+        assert_eq!(shown_and_omitted(&snapshot), total);
+    }
+
+    #[test]
+    fn a_leftover_cut_carries_its_own_omitted_count_within_the_limit() {
+        let whole = Snapshot {
+            leftovers: (0..300)
+                .map(|index| Leftover {
+                    kind: "container".to_string(),
+                    name: format!("container-{index:04}"),
+                })
+                .collect(),
+            ..Snapshot::default()
+        };
+        fit_to_a_cut_written_without_its_count(
+            &whole,
+            |s| s.leftovers.truncate(100),
+            300,
+            |s| s.leftovers.len() + s.omitted.leftovers as usize,
+        );
+    }
+
+    #[test]
+    fn a_repository_cut_carries_its_own_omitted_count_within_the_limit() {
+        let whole = Snapshot {
+            repositories: (0..300)
+                .map(|index| RepositoryInfo {
+                    repository: format!("owner/repository-{index:04}"),
+                    has_token: true,
+                    pools: Vec::new(),
+                })
+                .collect(),
+            ..Snapshot::default()
+        };
+        fit_to_a_cut_written_without_its_count(
+            &whole,
+            |s| s.repositories.truncate(100),
+            300,
+            |s| s.repositories.len() + s.omitted.repositories as usize,
+        );
+    }
+
+    #[test]
+    fn an_image_cut_carries_its_own_omitted_count_within_the_limit() {
+        let whole = Snapshot {
+            images: (0..300)
+                .map(|index| ImageInfo {
+                    name: format!("image-{index:04}"),
+                    ..ImageInfo::default()
+                })
+                .collect(),
+            ..Snapshot::default()
+        };
+        fit_to_a_cut_written_without_its_count(
+            &whole,
+            |s| s.images.truncate(100),
+            300,
+            |s| s.images.len() + s.omitted.images as usize,
+        );
+    }
+
+    #[test]
+    fn a_problem_cut_carries_its_own_omitted_count_within_the_limit() {
+        let whole = Snapshot {
+            configuration: ConfigurationInfo {
+                problems: (0..MAX_PROBLEMS)
+                    .map(|index| format!("problem {index:04}"))
+                    .collect(),
+                ..ConfigurationInfo::default()
+            },
+            ..Snapshot::default()
+        };
+        fit_to_a_cut_written_without_its_count(
+            &whole,
+            |s| s.configuration.problems.truncate(50),
+            MAX_PROBLEMS,
+            |s| s.configuration.problems.len() + s.omitted.problems as usize,
+        );
+    }
+
+    #[test]
+    fn every_limit_gives_a_snapshot_within_it_that_accounts_for_each_list() {
+        const POOLS: usize = 3;
+        const ROWS: usize = 12;
+        const LEFTOVERS: usize = 20;
+        const REPOSITORIES: usize = 15;
+        const IMAGES: usize = 8;
+        const PROBLEMS: usize = MAX_PROBLEMS + 12;
+        let whole = Snapshot {
+            pools: (0..POOLS)
+                .map(|index| pool(&format!("pool-{index}"), ROWS / POOLS))
+                .collect(),
+            leftovers: (0..LEFTOVERS)
+                .map(|index| Leftover {
+                    kind: "container".to_string(),
+                    name: format!("container-{index:04}"),
+                })
+                .collect(),
+            repositories: (0..REPOSITORIES)
+                .map(|index| RepositoryInfo {
+                    repository: format!("owner/repository-{index:04}"),
+                    has_token: true,
+                    pools: vec![format!("pool-{}", index % POOLS)],
+                })
+                .collect(),
+            images: (0..IMAGES)
+                .map(|index| ImageInfo {
+                    name: format!("image-{index:04}"),
+                    ..ImageInfo::default()
+                })
+                .collect(),
+            configuration: ConfigurationInfo {
+                problems: (0..PROBLEMS)
+                    .map(|index| format!("problem {index:04}"))
+                    .collect(),
+                ..ConfigurationInfo::default()
+            },
+            ..Snapshot::default()
+        };
+        let mut floor = whole.clone();
+        floor.fit(0);
+        let (low, high) = (size(&floor), size(&whole));
+        assert!(high - low > 1000, "{low}..{high}");
+
+        for limit in (low..=high).step_by(2) {
+            let mut snapshot = whole.clone();
+            snapshot.fit(limit);
+            let accounted = |shown: usize, omitted: u32| shown + omitted as usize;
+            assert!(size(&snapshot) <= limit, "{} > {limit}", size(&snapshot));
+            assert_eq!(
+                accounted(snapshot.pools.len(), snapshot.omitted.pools),
+                POOLS
+            );
+            assert_eq!(
+                accounted(snapshot.leftovers.len(), snapshot.omitted.leftovers),
+                LEFTOVERS,
+                "limit {limit}"
+            );
+            assert_eq!(
+                accounted(snapshot.repositories.len(), snapshot.omitted.repositories),
+                REPOSITORIES,
+                "limit {limit}"
+            );
+            assert_eq!(
+                accounted(snapshot.images.len(), snapshot.omitted.images),
+                IMAGES,
+                "limit {limit}"
+            );
+            assert_eq!(
+                accounted(
+                    snapshot.configuration.problems.len(),
+                    snapshot.omitted.problems
+                ),
+                PROBLEMS,
+                "limit {limit}"
+            );
+            if snapshot.omitted.pools == 0 {
+                let rows: usize = snapshot.pools.iter().map(|pool| pool.runners.len()).sum();
+                assert_eq!(accounted(rows, snapshot.omitted.runners), ROWS);
+            }
+        }
     }
 
     #[test]
