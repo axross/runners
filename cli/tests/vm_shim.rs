@@ -267,7 +267,7 @@ fn error_text(shim: &mut Child) -> String {
 
 const GAP: &str = "WARNING: Diagnostic gap in pool example-repo-one, job VM marshal-job-example-repo-one-2-20240305060708009: private export unavailable, incomplete, unsafe or over budget; prior evidence retained.\n";
 
-/// D4: a crash of the CLI closes the pipe; the shim of a diagnostics-enabled pool's VM
+/// A crash of the CLI closes the pipe; the shim of a diagnostics-enabled pool's VM
 /// deletes it and reports the evidence that loses, with the container's gap text.
 #[test]
 fn a_shim_that_deletes_the_vm_of_a_diagnostics_pool_reports_the_lost_evidence() {
@@ -286,7 +286,7 @@ fn a_shim_that_deletes_the_vm_of_a_diagnostics_pool_reports_the_lost_evidence() 
     assert_eq!(error_text(&mut shim), GAP);
 }
 
-/// D4: a VM that is already gone holds no evidence the shim could lose, so the shim says
+/// A VM that is already gone holds no evidence the shim could lose, so the shim says
 /// nothing; neither does the shim of a pool without diagnostics.
 #[test]
 fn a_shim_reports_nothing_for_a_vm_already_gone_or_a_pool_without_diagnostics() {

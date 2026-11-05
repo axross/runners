@@ -2,8 +2,9 @@
 //! `tart`, the fake `softnet`, the fake `docker` in the VMs and a loopback GitHub stub,
 //! with the scripted signal source (`MARSHAL_TEST_SIGNALS`) driving the sleep, the
 //! primary network and the keep-awake hold from outside. The scripted source runs the
-//! real cadence at a fiftieth of its time, so one network check is 100 ms. Each test
-//! names the acceptance criterion of plan #74 it covers.
+//! real cadence at a fiftieth of its time, so one network check is 100 ms. The tests
+//! cover what stops the instance, how a resume starts afresh, the gate that holds back
+//! the first clone and the keep-awake hold.
 #![cfg(unix)]
 #![allow(
     clippy::unwrap_used,
@@ -69,7 +70,7 @@ fn changed(from: &str, to: &str) -> String {
 
 #[test]
 fn a_wake_stops_a_running_instance_with_its_reason_deletes_every_vm_and_only_start_resumes_it() {
-    // AC: a wake moves a running instance to stopped with its reason and deletes every VM
+    // A wake moves a running instance to stopped with its reason and deletes every VM
     let host = holding_host();
     let stub = github();
     let started = host.start(&stub.address);
@@ -110,7 +111,7 @@ fn a_wake_stops_a_running_instance_with_its_reason_deletes_every_vm_and_only_sta
 #[test]
 fn a_primary_network_that_differs_stops_every_runner_naming_both_interfaces_and_a_resume_records_it_afresh()
  {
-    // AC: a primary-network difference on two checks in a row stops the instance with
+    // A primary-network difference on two checks in a row stops the instance with
     // its reason; a VPN's interface taking the default route is a change; losing the
     // default route names `none`; a resume records the network afresh
     let host = holding_host();
@@ -154,7 +155,7 @@ fn a_primary_network_that_differs_stops_every_runner_naming_both_interfaces_and_
 
 #[test]
 fn another_router_on_the_same_interface_is_a_change_and_the_same_network_is_not() {
-    // AC: the same interface and router with the same hardware address is not a change
+    // The same interface and router with the same hardware address is not a change
     let host = holding_host();
     let stub = github();
     let started = host.start(&stub.address);
@@ -179,7 +180,7 @@ fn another_router_on_the_same_interface_is_a_change_and_the_same_network_is_not(
 
 #[test]
 fn with_no_default_route_at_start_no_vm_is_cloned_and_status_waits_for_a_network() {
-    // AC: with no default route at start, no VM is cloned until one has held for two
+    // With no default route at start, no VM is cloned until one has held for two
     // checks, and `status` shows that the instance is waiting for a network
     let host = holding_host();
     host.set_network("none");
@@ -208,7 +209,7 @@ fn with_no_default_route_at_start_no_vm_is_cloned_and_status_waits_for_a_network
 
 #[test]
 fn a_stop_while_waiting_for_a_network_ends_the_instance_without_a_vm() {
-    // AC: the wait for a network holds the core, and a stop still ends it
+    // The wait for a network holds the core, and a stop still ends it
     let host = holding_host();
     host.set_network("none");
     let stub = github();
@@ -225,7 +226,7 @@ fn a_stop_while_waiting_for_a_network_ends_the_instance_without_a_vm() {
 #[test]
 fn the_keep_awake_hold_is_held_while_running_and_released_when_stopped_and_a_failed_hold_warns_and_retries()
  {
-    // AC: the hold is held while running or stopping and released when stopped; a
+    // The hold is held while running or stopping and released when stopped; a
     // failed hold warns and is retried
     let host = holding_host();
     host.fail_keep_awake(Some("keep-awake is not held (scripted)"));
@@ -262,7 +263,7 @@ fn the_keep_awake_hold_is_held_while_running_and_released_when_stopped_and_a_fai
 
 #[test]
 fn a_sleep_while_the_instance_is_stopped_is_not_a_stop_at_the_resume() {
-    // carry-over: the sleep baseline is armed again at each resume
+    // The sleep baseline is armed again at each resume
     let host = holding_host();
     let stub = github();
     let started = host.start(&stub.address);

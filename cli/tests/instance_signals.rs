@@ -1,8 +1,7 @@
 //! the signals wired into the instance, driven through the fake signal source, the fake
 //! backend, core and source and the fake clock: what stops every runner, what the
 //! reasons say, how a resume starts afresh, the gate that holds back the first clone
-//! and the keep-awake hold. Each test names the acceptance criterion of plan #74 it
-//! covers.
+//! and the keep-awake hold.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -167,7 +166,7 @@ async fn after_reads(signals: &FakeSignals, reads: u32) {
 
 #[tokio::test(flavor = "current_thread")]
 async fn a_wake_stops_a_running_instance_with_its_reason_and_deletes_every_vm() {
-    // AC: a wake moves a running instance to stopped with its reason and deletes every VM
+    // A wake moves a running instance to stopped with its reason and deletes every VM
     let setup = Signaled::new([wifi()]);
     let s = &setup;
     {
@@ -210,7 +209,7 @@ async fn a_wake_stops_a_running_instance_with_its_reason_and_deletes_every_vm() 
 
 #[tokio::test(flavor = "current_thread")]
 async fn a_network_that_differs_on_two_checks_in_a_row_stops_every_runner_with_its_reason() {
-    // AC: a primary-network difference on two checks in a row stops the instance with
+    // A primary-network difference on two checks in a row stops the instance with
     // its reason
     let setup = Signaled::new([wifi(), vpn(), vpn()]);
     let (_, status) = setup
@@ -233,7 +232,7 @@ async fn a_network_that_differs_on_two_checks_in_a_row_stops_every_runner_with_i
 
 #[tokio::test(flavor = "current_thread")]
 async fn a_difference_on_one_check_does_not_stop_the_instance() {
-    // AC: a difference on one check does not stop the instance
+    // A difference on one check does not stop the instance
     let setup = Signaled::new([wifi(), other_wifi(), wifi()]);
     let s = &setup;
     let (_, state) = setup
@@ -250,7 +249,7 @@ async fn a_difference_on_one_check_does_not_stop_the_instance() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn the_same_interface_and_router_with_the_same_hardware_address_is_not_a_change() {
-    // AC: the same interface and router with the same hardware address is not a change
+    // The same interface and router with the same hardware address is not a change
     let setup = Signaled::new([wifi(), wifi(), wifi()]);
     let s = &setup;
     let (_, state) = setup
@@ -266,7 +265,7 @@ async fn the_same_interface_and_router_with_the_same_hardware_address_is_not_a_c
 
 #[tokio::test(flavor = "current_thread")]
 async fn a_missing_hardware_address_is_not_compared() {
-    // AC: a missing hardware address is not compared
+    // A missing hardware address is not compared
     let without = network("en0", [192, 0, 2, 1], None);
     let setup = Signaled::new([wifi(), without.clone(), without, wifi()]);
     let s = &setup;
@@ -283,7 +282,7 @@ async fn a_missing_hardware_address_is_not_compared() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn a_vpn_taking_the_default_route_is_a_change() {
-    // AC: a VPN's interface taking the default route is a change
+    // A VPN's interface taking the default route is a change
     let setup = Signaled::new([wifi(), vpn(), vpn()]);
     let (_, reason) = setup
         .run(|control| async move {
@@ -298,8 +297,8 @@ async fn a_vpn_taking_the_default_route_is_a_change() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn a_routing_table_that_cannot_be_read_counts_as_no_default_route_and_names_none() {
-    // AC: a routing table that cannot be read counts as no default route (a reading
-    // that is `NoDefaultRoute`), and D14 names the new interface `none`
+    // A routing table that cannot be read counts as no default route (a reading that
+    // is `NoDefaultRoute`), and the change names the new interface `none`
     let setup = Signaled::new([wifi(), NetworkReading::NoDefaultRoute]);
     let (_, reason) = setup
         .run(|control| async move {
@@ -314,7 +313,7 @@ async fn a_routing_table_that_cannot_be_read_counts_as_no_default_route_and_name
 
 #[tokio::test(flavor = "current_thread")]
 async fn a_stopped_instance_does_not_resume_on_its_own_and_only_a_restart_resumes_it() {
-    // AC: only `start` or `restart` resumes
+    // Only `start` or `restart` resumes
     let setup = Signaled::new([wifi()]);
     let s = &setup;
     let (_, (idle, resumed)) = setup
@@ -339,7 +338,7 @@ async fn a_stopped_instance_does_not_resume_on_its_own_and_only_a_restart_resume
 
 #[tokio::test(flavor = "current_thread")]
 async fn a_resume_arms_the_sleep_baseline_again_so_a_sleep_while_stopped_is_not_a_stop() {
-    // carry-over: re-arm the sleep baseline at each resume
+    // Each resume re-arms the sleep baseline
     let setup = Signaled::new([wifi()]);
     let s = &setup;
     let (_, state) = setup
@@ -365,8 +364,8 @@ async fn a_resume_arms_the_sleep_baseline_again_so_a_sleep_while_stopped_is_not_
 
 #[tokio::test(flavor = "current_thread")]
 async fn a_resume_records_the_primary_network_afresh() {
-    // carry-over: a new network watch at each resume; the record of the network that
-    // changed is not kept
+    // Each resume starts a new network watch; the record of the network that changed is
+    // not kept
     let setup = Signaled::new([wifi(), vpn(), vpn()]);
     let s = &setup;
     let (_, state) = setup
@@ -387,7 +386,7 @@ async fn a_resume_records_the_primary_network_afresh() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn with_no_default_route_the_gate_stays_closed_until_a_network_has_held_for_two_checks() {
-    // AC: with no default route at start, no VM is cloned until one has held for two
+    // With no default route at start, no VM is cloned until one has held for two
     // checks, and `status` shows that the instance is waiting for a network
     let setup = Signaled::new([
         NetworkReading::NoDefaultRoute,
@@ -425,7 +424,7 @@ async fn with_no_default_route_the_gate_stays_closed_until_a_network_has_held_fo
 
 #[tokio::test(flavor = "current_thread")]
 async fn a_network_at_start_opens_the_gate_at_once() {
-    // AC: the gate is closed only without a default route at start
+    // The gate is closed only without a default route at start
     let setup = Signaled::new([wifi()]);
     let monitor = setup.monitor();
     monitor.begin();
@@ -444,7 +443,7 @@ async fn a_network_at_start_opens_the_gate_at_once() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn the_keep_awake_hold_is_held_while_running_and_stopping_and_released_when_stopped() {
-    // AC: the keep-awake hold is held while running or stopping and released when
+    // The keep-awake hold is held while running or stopping and released when
     // stopped
     let setup = Signaled::new([wifi()]);
     let s = &setup;
@@ -469,7 +468,7 @@ async fn the_keep_awake_hold_is_held_while_running_and_stopping_and_released_whe
 
 #[tokio::test(flavor = "current_thread")]
 async fn the_hold_is_released_on_entering_stopped_and_taken_again_by_a_resume() {
-    // AC: released when stopped; D7: a resume holds it again
+    // The hold is released when stopped, and a resume holds it again
     let setup = Signaled::new([wifi()]);
     let s = &setup;
     let (_, (stopped, resumed)) = setup
@@ -493,7 +492,7 @@ async fn the_hold_is_released_on_entering_stopped_and_taken_again_by_a_resume() 
 
 #[tokio::test(flavor = "current_thread")]
 async fn a_hold_that_cannot_be_taken_warns_in_the_log_and_status_and_is_retried() {
-    // AC: a failed hold warns and is retried
+    // A failed hold warns and is retried
     let setup = Signaled::new([wifi()]);
     let s = &setup;
     setup

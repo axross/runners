@@ -1,12 +1,12 @@
 //! a diagnostics-enabled axmc Linux pool under `start` as real processes: the fake
 //! `tart`, the fake `softnet`, the fake `docker` in the VMs, a loopback GitHub stub, and
-//! this CLI run again as the exporter child and as the VM shim. Each test names the
-//! acceptance criterion (AC: "The VM transport exports the diagnostic variant's evidence
-//! within the bundle limits, token-free; the stop timeline's gaps behave as for
-//! containers; and `diagnostics` finalises a retained VM as it does a container") or
-//! the decision (D4: a diagnostic VM is deleted without export at a forced stop, at a
-//! crash through the shim and at the next `start`, and the lost evidence is reported
-//! with today's gap wording and exit-code rules) it checks.
+//! this CLI run again as the exporter child and as the VM shim. The tests cover the VM
+//! transport exporting the diagnostic variant's evidence within the bundle limits,
+//! token-free; the stop timeline's gaps behaving as for containers; `diagnostics`
+//! finalising a retained VM as it does a container; and a diagnostic VM deleted without
+//! an export at a forced stop, at a crash through the shim and at the next `start`, with
+//! the lost evidence reported in today's gap wording and exit-code rules (the paragraph
+//! "Evidence a VM loses" in the Tart Backend section of docs/operations/cli.md).
 #![cfg(unix)]
 #![allow(
     clippy::unwrap_used,
@@ -101,7 +101,7 @@ fn stop(host: &MacHost, started: Started) -> support::host::Finished {
     started.finish(Duration::from_secs(40))
 }
 
-/// AC: at job end the exporter child reads the evidence from the VM through the guest
+/// At job end the exporter child reads the evidence from the VM through the guest
 /// agent into the private directory, token-free, and the VM is deleted after it.
 #[test]
 fn a_finished_job_exports_its_evidence_from_the_vm_and_then_deletes_the_vm() {
@@ -148,7 +148,7 @@ fn a_finished_job_exports_its_evidence_from_the_vm_and_then_deletes_the_vm() {
     assert!(!everything.contains("Diagnostic gap"), "{everything}");
 }
 
-/// AC: the stop timeline. A graceful stop exports a running diagnostic job's evidence
+/// A graceful stop exports a running diagnostic job's evidence
 /// before its VM goes, although the slot's worker ends as soon as the container does.
 #[test]
 fn a_graceful_stop_exports_the_running_jobs_evidence_before_its_vm_is_deleted() {
@@ -176,7 +176,7 @@ fn a_graceful_stop_exports_the_running_jobs_evidence_before_its_vm_is_deleted() 
     assert!(copy < delete, "{calls:?}");
 }
 
-/// D4: a second SIGINT deletes the diagnostic VM without an export, reports the lost
+/// A second SIGINT deletes the diagnostic VM without an export, reports the lost
 /// evidence with the container's gap text, and `start` exits 1 naming the container.
 #[test]
 fn a_forced_stop_deletes_the_diagnostic_vm_without_an_export_and_exits_1() {
@@ -217,7 +217,7 @@ fn a_forced_stop_deletes_the_diagnostic_vm_without_an_export_and_exits_1() {
     );
 }
 
-/// D4: the next `start` deletes a leftover diagnostic VM of a configured pool without
+/// The next `start` deletes a leftover diagnostic VM of a configured pool without
 /// an export, and reports the lost evidence with the container's gap text.
 #[test]
 fn the_next_start_deletes_a_leftover_diagnostic_vm_without_an_export_and_reports_the_gap() {
@@ -253,7 +253,7 @@ fn the_next_start_deletes_a_leftover_diagnostic_vm_without_an_export_and_reports
     );
 }
 
-/// D4: a killed `start` closes the VM shim's pipe; the shim deletes the VM and reports
+/// A killed `start` closes the VM shim's pipe; the shim deletes the VM and reports
 /// the lost evidence with the container's gap text on the standard error it shares.
 #[test]
 fn a_killed_start_has_its_shim_delete_the_diagnostic_vm_and_report_the_gap() {
@@ -283,7 +283,7 @@ fn a_killed_start_has_its_shim_delete_the_diagnostic_vm_and_report_the_gap() {
     assert!(host.bundles().is_empty());
 }
 
-/// AC: `diagnostics` finalises a retained VM as it does a container. A VM whose
+/// `diagnostics` finalises a retained VM as it does a container. A VM whose
 /// deletion failed stays retained, and `diagnostics` reports it, then deletes it once
 /// Tart can.
 #[test]

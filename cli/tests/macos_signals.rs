@@ -157,7 +157,7 @@ destination: default
 
 #[test]
 fn a_route_whose_gateway_is_a_link_leaves_through_that_interface_without_a_router() {
-    // carry-over from the signal seam: a point-to-point route can print `link#<index>`
+    // A point-to-point route can print `link#<index>`
     // or a hardware address as its gateway, and such a route still holds the default
     let vpn = |gateway: &str| {
         format!(

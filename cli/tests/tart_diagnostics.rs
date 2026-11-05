@@ -1,12 +1,12 @@
 //! finalising a diagnostic container that runs in a job VM through the Tart backend:
 //! the exporter child (this CLI run again) reads the evidence with `tart exec <vm>
 //! docker inspect` and `docker cp` against the fake `tart` and the fake `docker`, and
-//! writes it into a real sink; then the VM is deleted. Each test names the acceptance
-//! criterion (AC: "The VM transport exports the diagnostic variant's evidence within
-//! the bundle limits, token-free; the stop timeline's gaps behave as for containers;
-//! and `diagnostics` finalises a retained VM as it does a container") or the decision
-//! (D4: a diagnostic VM is deleted without export at a forced stop, a crash and the
-//! next `start`) it checks.
+//! writes it into a real sink; then the VM is deleted. The tests cover the VM transport
+//! exporting the diagnostic variant's evidence within the bundle limits, token-free; the
+//! stop timeline's gaps behaving as for containers; `diagnostics` finalising a retained
+//! VM as it does a container; and a diagnostic VM deleted without an export at a forced
+//! stop, a crash and the next `start` (the paragraph "Evidence a VM loses" in the Tart
+//! Backend section of docs/operations/cli.md).
 #![cfg(unix)]
 #![allow(
     clippy::unwrap_used,
@@ -130,8 +130,8 @@ fn contains(haystack: &[u8], needle: &str) -> bool {
         .any(|window| window == needle.as_bytes())
 }
 
-/// AC: the VM transport exports the diagnostic variant's evidence, token-free, and
-/// the finalisation then deletes the VM.
+/// The VM transport exports the diagnostic variant's evidence, token-free, and the
+/// finalisation then deletes the VM.
 #[tokio::test(flavor = "current_thread")]
 async fn a_finalisation_exports_the_evidence_through_the_guest_agent_token_free_then_deletes_the_vm()
  {
@@ -201,7 +201,7 @@ async fn a_finalisation_exports_the_evidence_through_the_guest_agent_token_free_
     }
 }
 
-/// AC: an archive the strict reader or a bundle limit refuses is refused as for a
+/// An archive the strict reader or a bundle limit refuses is refused as for a
 /// container: a partial bundle without its completion marker, a gap, and the VM is
 /// deleted all the same.
 #[tokio::test(flavor = "current_thread")]
@@ -239,7 +239,7 @@ async fn a_malformed_or_oversized_archive_is_refused_as_for_a_container_and_the_
     }
 }
 
-/// AC: a final observation that is missing is a gap with a complete bundle, and a full
+/// A final observation that is missing is a gap with a complete bundle, and a full
 /// sink is refused with the container's text, whatever carries the evidence.
 #[tokio::test(flavor = "current_thread")]
 async fn a_missing_final_observation_and_a_full_sink_are_the_gaps_a_container_has() {
@@ -280,8 +280,7 @@ async fn a_missing_final_observation_and_a_full_sink_are_the_gaps_a_container_ha
     assert_eq!(rig.fake.vm_names(), [golden_name()], "the VM goes anyway");
 }
 
-/// AC: the stop timeline's gaps. A stop that fails is a gap, and the export and the
-/// deletion still run.
+/// A stop that fails is a gap, and the export and the deletion still run.
 #[tokio::test(flavor = "current_thread")]
 async fn a_failed_stop_is_a_gap_and_the_export_and_the_deletion_still_run() {
     let rig = Rig::exporting();
@@ -312,8 +311,8 @@ async fn a_failed_stop_is_a_gap_and_the_export_and_the_deletion_still_run() {
     assert_eq!(rig.fake.vm_names(), [golden_name()]);
 }
 
-/// AC: the stop timeline's gaps. A container whose export cannot begin by 18 s is
-/// removed, and its VM deleted, with a gap.
+/// A container whose export cannot begin by 18 s is removed, and its VM deleted, with a
+/// gap.
 #[tokio::test(flavor = "current_thread")]
 async fn a_clock_that_leaves_no_time_to_begin_the_export_skips_it_and_still_deletes_the_vm() {
     let rig = Rig::exporting();
@@ -338,7 +337,7 @@ async fn a_clock_that_leaves_no_time_to_begin_the_export_skips_it_and_still_dele
     );
 }
 
-/// AC: `diagnostics` finalises a retained VM as it does a container: it exports the
+/// `diagnostics` finalises a retained VM as it does a container: it exports the
 /// evidence, deletes the VM, and counts the pool's bundles.
 #[tokio::test(flavor = "current_thread")]
 async fn diagnostics_finalises_a_retained_vm_by_exporting_it_and_deleting_it() {
@@ -394,7 +393,7 @@ async fn a_vm_holding_evidence_waits_for_its_finalisation_and_a_finalised_one_do
     assert!(rig.backend.prepared_hosts().is_empty());
 }
 
-/// D4: a forced stop deletes the diagnostic VM without an export and reports the lost
+/// A forced stop deletes the diagnostic VM without an export and reports the lost
 /// evidence with the container's gap text; the container stays among those kept, which
 /// is what makes `start` exit 1.
 #[tokio::test(flavor = "current_thread")]
@@ -456,7 +455,7 @@ async fn a_forced_stop_deletes_the_diagnostic_vm_without_an_export_and_reports_t
     );
 }
 
-/// D4: a forced stop in the window between an export that was admitted and the
+/// A forced stop in the window between an export that was admitted and the
 /// removal that follows it reports no lost evidence for that container, and still
 /// reports the container whose bundle was never admitted.
 #[tokio::test(flavor = "current_thread")]
