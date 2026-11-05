@@ -89,6 +89,18 @@ enum Next {
     Exit,
 }
 
+/// what is left of a call for the handler of a phase.
+enum Routed {
+    /// the call is answered.
+    Answered,
+    /// the method begins a transition, and the reply waits for it.
+    Begin(Method, Reply),
+    /// the method stops what runs; the reply waits for the stop.
+    Stop(Reply),
+    /// the method ends the agent, and the exit is set; the reply waits for the stop.
+    Quit(Reply),
+}
+
 enum CycleEnd {
     StopRequested,
     LimitReached,
@@ -440,29 +452,20 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                     return Next::Exit;
                 }
                 call = requests.recv() => {
-                    let Some(Call { method, reply }) = call else {
-                        self.exit.set(Some(QUIT));
+                    let Some(call) = call else {
+                        self.requests_closed();
                         return Next::Exit;
                     };
-                    match self.simple(method) {
-                        Ok(result) => {
-                            let _ = reply.send(result);
+                    match self.route(call) {
+                        Routed::Answered => {}
+                        Routed::Begin(Method::Build, reply) => return Next::Build(reply),
+                        Routed::Begin(_, reply) => return Next::Resume(Some(reply)),
+                        Routed::Quit(reply) => {
+                            self.set_phase(Phase::Quitting);
+                            self.reply_state(reply);
+                            return Next::Exit;
                         }
-                        Err(method) => match self.action(&method) {
-                            Action::Begin if matches!(method, Method::Build) => {
-                                return Next::Build(reply);
-                            }
-                            Action::Begin => return Next::Resume(Some(reply)),
-                            Action::Quit => {
-                                self.exit.set(Some(QUIT));
-                                self.set_phase(Phase::Quitting);
-                                let _ = reply.send(Ok(self.state_result()));
-                                return Next::Exit;
-                            }
-                            other => {
-                                let _ = reply.send(self.answer(other));
-                            }
-                        },
+                        Routed::Stop(reply) => self.reply_state(reply),
                     }
                 }
             }
@@ -542,29 +545,20 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                 }
                 _ = ticker.tick(), if self.watched() => self.publish(),
                 call = requests.recv() => {
-                    let Some(Call { method, reply }) = call else {
-                        self.exit.set(Some(QUIT));
+                    let Some(call) = call else {
+                        self.requests_closed();
                         self.wind_down(&stop, cycle, requests).await;
                         return self.after_stop(Reason::by_you());
                     };
-                    match self.simple(method) {
-                        Ok(result) => {
-                            let _ = reply.send(result);
+                    match self.route(call) {
+                        Routed::Answered => {}
+                        Routed::Stop(reply) | Routed::Quit(reply) => {
+                            self.wind_down(&stop, cycle, requests).await;
+                            let next = self.after_stop(Reason::by_you());
+                            self.reply_state(reply);
+                            return next;
                         }
-                        Err(method) => match self.action(&method) {
-                            action @ (Action::Stop | Action::Quit) => {
-                                if action == Action::Quit {
-                                    self.exit.set(Some(QUIT));
-                                }
-                                self.wind_down(&stop, cycle, requests).await;
-                                let next = self.after_stop(Reason::by_you());
-                                let _ = reply.send(Ok(self.state_result()));
-                                return next;
-                            }
-                            other => {
-                                let _ = reply.send(self.answer(other));
-                            }
-                        },
+                        Routed::Begin(_, reply) => self.reply_state(reply),
                     }
                 }
             }
@@ -668,20 +662,56 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
 
     /// answers a call that arrives during a transition; true when it asks to stop or
     /// to end.
-    fn answer_busy(&self, Call { method, reply }: Call) -> bool {
-        let (result, asks) = match self.simple(method) {
-            Ok(result) => (result, false),
-            Err(method) => match self.action(&method) {
-                Action::Stop => (Ok(json!({ "state": "stopped" })), true),
-                Action::Quit => {
-                    self.exit.set(Some(QUIT));
-                    (Ok(json!({ "state": "quitting" })), true)
-                }
-                other => (self.answer(other), false),
-            },
+    fn answer_busy(&self, call: Call) -> bool {
+        match self.route(call) {
+            Routed::Answered => false,
+            Routed::Stop(reply) => {
+                let _ = reply.send(Ok(json!({ "state": "stopped" })));
+                true
+            }
+            Routed::Quit(reply) => {
+                let _ = reply.send(Ok(json!({ "state": "quitting" })));
+                true
+            }
+            Routed::Begin(_, reply) => {
+                self.reply_state(reply);
+                false
+            }
+        }
+    }
+
+    /// answers a call the way every phase does, so that a handler keeps only what it
+    /// does itself with the methods that change the agent's state: a stateless method
+    /// and a refusal are answered here, a quit has set the exit.
+    fn route(&self, Call { method, reply }: Call) -> Routed {
+        let method = match self.simple(method) {
+            Ok(result) => {
+                let _ = reply.send(result);
+                return Routed::Answered;
+            }
+            Err(method) => method,
         };
-        let _ = reply.send(result);
-        asks
+        match self.action(&method) {
+            Action::Begin => Routed::Begin(method, reply),
+            Action::Stop => Routed::Stop(reply),
+            Action::Quit => {
+                self.exit.set(Some(QUIT));
+                Routed::Quit(reply)
+            }
+            other => {
+                let _ = reply.send(self.answer(other));
+                Routed::Answered
+            }
+        }
+    }
+
+    /// the callers are gone, so the agent ends as if it had been asked to quit.
+    fn requests_closed(&self) {
+        self.exit.set(Some(QUIT));
+    }
+
+    fn reply_state(&self, reply: Reply) {
+        let _ = reply.send(Ok(self.state_result()));
     }
 
     /// what the agent is doing now decides what a lifecycle method does.
@@ -805,22 +835,13 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                 _ = ticker.tick(), if self.watched() => self.publish(),
                 call = requests.recv(), if open => match call {
                     None => open = false,
-                    Some(Call { method, reply }) => match self.simple(method) {
-                        Ok(result) => {
-                            let _ = reply.send(result);
+                    Some(call) => match self.route(call) {
+                        Routed::Answered => {}
+                        Routed::Stop(reply) | Routed::Quit(reply) => {
+                            cancelled |= self.cancel_build(&stop);
+                            waiting.push(reply);
                         }
-                        Err(method) => match self.action(&method) {
-                            action @ (Action::Stop | Action::Quit) => {
-                                if action == Action::Quit {
-                                    self.exit.set(Some(QUIT));
-                                }
-                                cancelled |= self.cancel_build(&stop);
-                                waiting.push(reply);
-                            }
-                            other => {
-                                let _ = reply.send(self.answer(other));
-                            }
-                        },
+                        Routed::Begin(_, reply) => self.reply_state(reply),
                     },
                 },
             }
