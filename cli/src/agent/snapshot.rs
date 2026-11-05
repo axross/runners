@@ -825,10 +825,16 @@ mod tests {
                 PROBLEMS,
                 "limit {limit}"
             );
-            if snapshot.omitted.pools == 0 {
-                let rows: usize = snapshot.pools.iter().map(|pool| pool.runners.len()).sum();
-                assert_eq!(accounted(rows, snapshot.omitted.runners), ROWS);
-            }
+            let rows: usize = snapshot.pools.iter().map(|pool| pool.runners.len()).sum();
+            assert_eq!(
+                accounted(rows, snapshot.omitted.runners),
+                ROWS,
+                "limit {limit}"
+            );
+            assert!(
+                snapshot.omitted.pools == 0 || rows == 0,
+                "a pool went while a row was left, at limit {limit}"
+            );
         }
     }
 
