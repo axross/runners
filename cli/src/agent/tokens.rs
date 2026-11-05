@@ -76,7 +76,6 @@ impl StoreTokens {
         let store = self.store.as_ref().ok_or_else(no_store)?;
         store.remove(key)?;
         self.known.borrow_mut().insert(key.clone(), false);
-        self.changed.send_modify(|count| *count += 1);
         Ok(())
     }
 
@@ -139,17 +138,19 @@ mod tests {
     }
 
     #[test]
-    fn setting_and_removing_update_what_the_snapshot_knows_and_fire_the_change() {
+    fn setting_and_removing_update_what_the_snapshot_knows_but_only_setting_fires_a_change() {
         let (tokens, _) = tokens();
-        let changes = tokens.changes();
+        let mut changes = tokens.changes();
         assert!(!tokens.has_token(&key()));
         tokens
             .set(&key(), &Secret::new("fake".to_string()))
             .unwrap();
         assert!(tokens.has_token(&key()));
         assert!(changes.has_changed().unwrap());
+        changes.borrow_and_update();
         tokens.remove(&key()).unwrap();
         assert!(!tokens.has_token(&key()));
+        assert!(!changes.has_changed().unwrap());
     }
 
     #[test]
