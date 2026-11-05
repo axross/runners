@@ -12,6 +12,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use marshal_cli::agent::machine::{EXECUTABLE_CHANGED, Launch, QUIT};
+use marshal_cli::agent::{AgentOptions, run};
 use marshal_cli::instance::lifecycle::StopTimes;
 use marshal_cli::runtime::fake::Call;
 use serde_json::{Value, json};
@@ -191,13 +192,37 @@ async fn the_agent_logs_when_it_cannot_watch_its_executable() {
     );
 }
 
+fn log_files(rig: &Rig) -> Vec<std::ffi::OsString> {
+    std::fs::read_dir(rig.roots.log_directory())
+        .map(|entries| entries.map(|entry| entry.unwrap().file_name()).collect())
+        .unwrap_or_default()
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn a_second_agent_is_refused_while_the_first_holds_the_lock() {
     let rig = Rig::new(ONE_POOL);
     let rig = &rig;
     let (_, ()) = rig
         .drive(Launch::Stopped, |conn| async move {
-            assert!(!rig.lock_is_free());
+            let before = conn.status().await;
+            let logs = log_files(rig);
+            let root = rig.root.path().to_path_buf();
+
+            let (code, stderr) = tokio::task::spawn_blocking(move || {
+                let mut options = AgentOptions::new(Launch::Stopped);
+                options.test_root = Some(&root);
+                let mut stderr = Vec::new();
+                let code = run(options, &mut stderr);
+                (code, String::from_utf8(stderr).unwrap())
+            })
+            .await
+            .unwrap();
+
+            assert_eq!(code, 1, "{stderr}");
+            assert!(stderr.contains("instance lock"), "{stderr}");
+            assert_eq!(log_files(rig), logs, "the refused agent wrote a log");
+            assert!(!rig.lock_is_free(), "the first agent still holds the lock");
+            assert_eq!(conn.status().await, before);
             conn.ok("quit").await;
         })
         .await;
