@@ -61,6 +61,18 @@ pub enum Check {
     Refuse(Refusal),
 }
 
+impl Check {
+    /// the version and the warning, if any, of a program that runs, or the refusal;
+    /// each caller keeps its own policy for the refusals it can wait out.
+    pub fn into_result(self) -> Result<(String, Option<String>), Refusal> {
+        match self {
+            Self::Pass { version } => Ok((version, None)),
+            Self::Warn { version, message } => Ok((version, Some(message))),
+            Self::Refuse(refusal) => Err(refusal),
+        }
+    }
+}
+
 fn refuse(cause: Cause, message: String) -> Check {
     Check::Refuse(Refusal { cause, message })
 }

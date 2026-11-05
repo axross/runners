@@ -266,10 +266,9 @@ impl<C: Clock> TartBackend<C> {
     /// for here, as the core waits for Docker.
     async fn wait_for_prerequisites(&self) -> Option<String> {
         let tart = loop {
-            match check_tart(&self.client).await {
-                Check::Pass { version } => break (version, None),
-                Check::Warn { version, message } => break (version, Some(message)),
-                Check::Refuse(refusal) => match refusal.cause {
+            match check_tart(&self.client).await.into_result() {
+                Ok(running) => break running,
+                Err(refusal) => match refusal.cause {
                     Cause::Missing | Cause::NotAnswering => {
                         self.log.warn(&format!(
                             "Tart is not available ({}) - waiting.",
@@ -281,10 +280,9 @@ impl<C: Clock> TartBackend<C> {
                 },
             }
         };
-        let softnet = match self.check_softnet_once().await {
-            Check::Pass { version } => (version, None),
-            Check::Warn { version, message } => (version, Some(message)),
-            Check::Refuse(refusal) => return Some(refusal.message),
+        let softnet = match self.check_softnet_once().await.into_result() {
+            Ok(running) => running,
+            Err(refusal) => return Some(refusal.message),
         };
         self.note_in_use(
             &tart.0,
@@ -634,17 +632,16 @@ impl<C: Clock> Backend for TartBackend<C> {
     /// Softnet that is not set up or does not answer; a `tart` that does not answer is
     /// not refused, because the slots wait for it.
     async fn check_prerequisites(&self) -> Result<(), String> {
-        let tart = match check_tart(&self.client).await {
-            Check::Pass { version } => Some((version, None)),
-            Check::Warn { version, message } => Some((version, Some(message))),
-            Check::Refuse(refusal) if refusal.cause == Cause::NotAnswering => None,
-            Check::Refuse(refusal) => return Err(refusal.message),
+        let tart = match check_tart(&self.client).await.into_result() {
+            Ok(running) => Some(running),
+            Err(refusal) if refusal.cause == Cause::NotAnswering => None,
+            Err(refusal) => return Err(refusal.message),
         };
-        let softnet = match self.check_softnet_once().await {
-            Check::Pass { version } => (version, None),
-            Check::Warn { version, message } => (version, Some(message)),
-            Check::Refuse(refusal) => return Err(refusal.message),
-        };
+        let softnet = self
+            .check_softnet_once()
+            .await
+            .into_result()
+            .map_err(|refusal| refusal.message)?;
         if let Some((tart, warning)) = tart {
             self.note_in_use(&tart, &softnet.0, warning.into_iter().chain(softnet.1));
         }
