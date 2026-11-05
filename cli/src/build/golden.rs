@@ -289,17 +289,34 @@ impl GoldenBuild<'_> {
         .await
     }
 
-    /// runs one guest call and returns what it printed, a failure naming `what`.
-    async fn guest(&self, vm: &str, call: &GuestCall, what: &str) -> Result<Captured, String> {
+    /// runs `command` in the VM and returns what it printed; the error begins with
+    /// `failure`, whether the client failed or the command did.
+    async fn exec_checked(
+        &self,
+        vm: &str,
+        command: &[String],
+        input: Option<&[u8]>,
+        budget: Duration,
+        failure: &str,
+    ) -> Result<Captured, String> {
         let answer = self
             .client
-            .exec(vm, &call.command, call.input.as_deref(), call.budget)
+            .exec(vm, command, input, budget)
             .await
-            .map_err(|error| format!("{what} failed: {}", text_of(&error)))?;
-        if answer.succeeded() {
-            return Ok(answer);
-        }
-        Err(format!("{what} failed: {}", answer.error_text()))
+            .map_err(|error| format!("{failure}: {}", text_of(&error)))?;
+        answer.checked(failure).map_err(|error| error.to_string())
+    }
+
+    /// runs one guest call and returns what it printed, a failure naming `what`.
+    async fn guest(&self, vm: &str, call: &GuestCall, what: &str) -> Result<Captured, String> {
+        self.exec_checked(
+            vm,
+            &call.command,
+            call.input.as_deref(),
+            call.budget,
+            &format!("{what} failed"),
+        )
+        .await
     }
 
     async fn step(
@@ -349,15 +366,14 @@ impl GoldenBuild<'_> {
         budget: Duration,
         failure: &str,
     ) -> Result<Captured, String> {
-        let answer = self
-            .client
-            .exec(vm, &build_vm_docker_command(arguments), None, budget)
-            .await
-            .map_err(|error| format!("{failure}: {}", text_of(&error)))?;
-        if answer.succeeded() {
-            return Ok(answer);
-        }
-        Err(format!("{failure}: {}", answer.error_text()))
+        self.exec_checked(
+            vm,
+            &build_vm_docker_command(arguments),
+            None,
+            budget,
+            failure,
+        )
+        .await
     }
 
     /// builds the runner image under the temporary tag as axpc does, checks its contract
