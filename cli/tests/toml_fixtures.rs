@@ -481,7 +481,7 @@ fn a_diagnostic_directory_inside_the_checkout_is_placed_on_its_line() {
 }
 
 #[test]
-fn a_file_of_many_undefined_keys_is_read_in_linear_time() {
+fn a_file_of_many_undefined_keys_has_every_one_reported() {
     let mut document = String::from("schema_version = 1\nrouting_label = \"axpc\"\n");
     let mut count = 0;
     while document.len() < 1_000_000 {
@@ -498,7 +498,7 @@ fn a_file_of_many_undefined_keys_is_read_in_linear_time() {
 }
 
 #[test]
-fn a_long_line_of_many_inline_values_is_read_in_linear_time() {
+fn a_long_line_of_many_inline_values_has_every_one_reported() {
     let mut document = String::from(
         "schema_version = 1\nrouting_label = \"axpc\"\nimage_name = \"example-image:tag\"\n[[pool]]\nname = \"alpha\"\nrepository = \"octo/hello\"\nrunners = 1\nlabels = [",
     );
