@@ -63,9 +63,9 @@ longer: 1,500 entries in one repository with 50 labels each take about 3 s. Coll
 entries grow the error output with the square too, because every error is reported:
 8,000 entries in one repository with the default labels print about 32 million error
 lines and use about 8.4 GB of memory, and several collisions per pair or shorter entries
-(the 1 MiB limit fits about 11,900) give more. The 1 MiB limit bounds both. A TOML pool is shorter than a JSON entry, so the limit
-admits more of them; TOML Problems gives the figures. Real configurations are expected
-to have about ten entries.
+(the 1 MiB limit fits about 11,900) give more. The 1 MiB limit bounds both. A TOML
+pool is shorter than a JSON entry, so the limit admits more of them; TOML Problems
+gives the figures. Real configurations are expected to have about ten entries.
 
 Known limitation: when `validate` cannot write its output, for example a closed
 pipe, it exits 1, the same code as a rejected configuration. The behaviour is
@@ -370,7 +370,7 @@ distinct values, fit beside the three header keys, and `validate_toml` takes abo
 4.8 s on them on a release build in a 4-CPU cloud container when none collide.
 Colliding pools cost far more, because every problem is reported: 6,000 pools in one
 repository (about 0.29 MB) take about 11 s and 4.4 GB of memory, and about 21,600 of
-them, the most that fit, abort with a failed memory allocation under an 8 GB
+them, the most that fit, abort with a failed memory allocation under an 8 GiB
 address-space limit. As for JSON, the 1 MiB limit is the only bound.
 
 **Order.** The order is the one under Error Order, with the TOML key names:
