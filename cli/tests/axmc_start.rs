@@ -406,6 +406,46 @@ fn a_refusal_after_start_holds_the_slot_while_another_slots_job_finishes_and_it_
     );
 }
 
+/// the slot's wait for its VM's Docker Engine is not raced against the stop, so it
+/// must end when the stop releases the VM, not at the 28 s exit deadline.
+#[test]
+fn a_stop_while_a_slot_waits_for_its_vms_docker_engine_ends_far_before_the_exit_deadline() {
+    let host = holding_host(&[linux("linuxone", 1)]);
+    host.docker_script("info_failures", "100000");
+    let stub = github();
+    let started = host.start(&stub.address);
+    let waiting = Instant::now();
+    while !support::docker::invocations(&host.docker_dir())
+        .iter()
+        .any(|call| call.arguments == ["info"])
+    {
+        assert!(
+            waiting.elapsed() < RUNNING_WITHIN,
+            "the slot never asked the VM's engine: {}",
+            host.log_text()
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
+    let requested = Instant::now();
+    let stop = host.client(&["stop"]);
+    assert_eq!(stop.status.code(), Some(0), "{:?}", texts(&stop));
+    let finished = started.finish(Duration::from_secs(40));
+
+    let took = requested.elapsed();
+    assert!(
+        took < Duration::from_secs(15),
+        "the stop took {took:?}, as long as the wait for the engine"
+    );
+    assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
+    let log = host.log_text();
+    assert!(
+        !log.contains("did not finish within") && !finished.stderr.contains("did not finish"),
+        "the stop ran into its exit deadline:\n{log}"
+    );
+    assert_eq!(host.vm_names().len(), 1, "only the golden VM is left");
+}
+
 /// plan criterion: a VM that ignores the graceful stop is stopped forcibly and
 /// deleted by the 30 s deadline.
 #[test]

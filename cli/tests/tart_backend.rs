@@ -1016,6 +1016,43 @@ async fn an_engine_that_is_slow_is_waited_for_and_one_that_never_answers_is_an_e
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn a_release_that_begins_during_the_engine_wait_ends_the_wait_at_once() {
+    let rig = Rig::with(
+        VmLauncher::Direct,
+        timings(|timings| timings.engine_wait = Duration::from_secs(30)),
+    );
+    prepared(&rig).await;
+    rig.docker_script("info_failures", "100000");
+    let started = Instant::now();
+    let release = async {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        rig.backend
+            .release_job_host(&host(), Duration::from_secs(10))
+            .await
+            .unwrap();
+    };
+    let request = probe_request();
+    let (selected, ()) = tokio::join!(rig.backend.select_cpuset(&request), release);
+    assert_eq!(
+        selected.unwrap_err().to_string(),
+        "CPU discovery: the job VM was released.",
+        "{:?}",
+        rig.log.lines()
+    );
+    let waited = started.elapsed();
+    assert!(
+        waited < Duration::from_secs(10),
+        "the wait ran on after the release: {waited:?}"
+    );
+    assert!(
+        rig.log_lines("WARN: ")
+            .iter()
+            .any(|line| line.contains("CPU discovery: the job VM was released.")),
+        "the reason is logged"
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn a_cpu_set_needs_a_prepared_vm() {
     let rig = Rig::new();
     assert!(rig.backend.select_cpuset(&probe_request()).await.is_err());

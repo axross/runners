@@ -579,14 +579,16 @@ A boot that fails is `Failed`, with the text
 `boot failure: <tart run for the job VM <vm> ended with exit code N (<Tart's own error>) | the guest agent of the job VM <vm> did not answer by the boot deadline (<last error>)>; a locked login keychain is the documented cause, see the "The Signed-In Session" section of the macOS Runner Host document`.
 The section is [The Signed-In Session](./macos-runner-host.md#the-signed-in-session).
 
-**Probes.** `select_cpuset` finds the slot's VM from the probe's name, waits up to
+**Probes.** `select_cpuset` finds the slot's VM from the probe's name and waits up to
 60 s for the Docker Engine in it (`docker info` every 2 s, each call bounded at
-10 s), and then runs the CPU probe's `docker run` through the guest agent within the
-30 s the probe has. The output is read as the container backend reads it, capped at
-64 KiB, ASCII only, and selected with the same function, so a VM's affinity is chosen
-from the VM's own CPUs. A probe that fails registers nothing, and the cycle releases
-the VM. The VM has the pool's whole `cpus` as vCPUs, so the quota and the affinity of
-the job container cover all of them and its memory limit equals the VM's.
+10 s). The wait ends early, with `CPU discovery: the job VM was released.`, once the
+VM's release has begun. A stop ends it this way: the slot does not watch for the
+stop here, and the release that the stop sequence runs deletes the VM. Then it runs the CPU probe's `docker run` through the guest agent within the 30 s the
+probe has. The output is read as the container backend reads it, capped at 64 KiB,
+ASCII only, and selected with the same function, so a VM's affinity is chosen from the
+VM's own CPUs. A probe that fails registers nothing, and the cycle releases the VM. The
+VM has the pool's whole `cpus` as vCPUs, so the quota and the affinity of the job
+container cover all of them and its memory limit equals the VM's.
 
 **The job container.** `run_container` runs
 `tart exec -i <vm> /usr/local/bin/marshal-launch <docker run arguments>` where the

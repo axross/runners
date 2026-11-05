@@ -372,7 +372,9 @@ impl<C: Clock> TartBackend<C> {
         wait_for_agent(&self.client, &self.clock, wait, vm, held).await
     }
 
-    /// waits until the Docker Engine in the VM answers.
+    /// waits until the Docker Engine in the VM answers, the VM's release begins, or the
+    /// wait runs out. The slot's stop does not end this wait, because the release the
+    /// stop sequence starts deletes the VM, which no answer follows.
     async fn wait_for_engine(&self, vm: &str) -> Result<(), BackendError> {
         let deadline = Instant::now() + self.timings.engine_wait;
         loop {
@@ -382,6 +384,9 @@ impl<C: Clock> TartBackend<C> {
                 .is_ok_and(|captured| captured.succeeded());
             if answered {
                 return Ok(());
+            }
+            if self.vm_is_released_or_releasing(vm) {
+                return Err(BackendError::new("CPU discovery: the job VM was released."));
             }
             if Instant::now() + self.timings.engine_poll >= deadline {
                 return Err(BackendError::new(format!(
