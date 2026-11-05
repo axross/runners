@@ -15,7 +15,7 @@ use crate::diagnostics::{EXPORT_COMMAND, ExportRequest};
 use crate::profile::Profile;
 use crate::start::{StartRequest, start};
 use crate::summary::plan_summary;
-use crate::validate::{Failure, Plan, validate};
+use crate::validate::{CheckoutRule, Failure, Plan, validate_with};
 
 /// the largest configuration `validate` reads; it only stops a mistaken or hostile
 /// path from being read whole.
@@ -355,6 +355,13 @@ pub(crate) struct Loaded {
 
 /// reads the file and validates it for `profile`.
 pub(crate) fn load_plan(config: &Path, profile: Profile) -> Loaded {
+    load_plan_under(config, profile, false)
+}
+
+/// reads the file and validates it for `profile`; with `at_sink`, each diagnostic
+/// directory is also compared with the checkout at or above it, as the agent's
+/// configuration lives outside any checkout.
+pub(crate) fn load_plan_under(config: &Path, profile: Profile, at_sink: bool) -> Loaded {
     let bytes = match read_limited(config) {
         Ok(bytes) => bytes,
         Err(error) => {
@@ -373,7 +380,12 @@ pub(crate) fn load_plan(config: &Path, profile: Profile) -> Loaded {
         }
     };
     let checkout = checkout::find(config);
-    let validation = validate(&bytes, profile, checkout.as_deref());
+    let rule = if at_sink {
+        CheckoutRule::AboveAndAtSink(checkout.as_deref())
+    } else {
+        CheckoutRule::Above(checkout.as_deref())
+    };
+    let validation = validate_with(&bytes, profile, rule);
     let outcome = validation.outcome.map_err(|failure| match failure {
         Failure::Unreadable(problem) => {
             LoadError::Unreadable(format!("Host configuration is not valid JSON: {problem}"))

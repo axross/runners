@@ -5,7 +5,9 @@ prints, the rules it applies, the shared fixtures its tests read, the runtime la
 that runs a host's pools (the container backend, JIT registration, CPU placement,
 and the slot loop), the instance layer that keeps
 `start` to one instance per machine (the instance state, the single-instance lock,
-and the control channel), the image contract every runner image declares and the
+and the control channel), the resident agent that takes the instance's place and its
+protocol version 2 (the state it keeps, the token store, the messages, and the
+snapshot), the image contract every runner image declares and the
 check of it, running a host with `build`, `start`, `stop`, `restart`, `status`, and
 `diagnostics`, the diagnostic containers a diagnostics-enabled pool runs and their
 export, the toolchain and the gates that cover it, how a release is built,
@@ -135,10 +137,32 @@ summary on standard output is the same with or without a checkout. The rule appl
 both profiles but can only bite where the profile's path form matches the
 operating system: axpc on Windows, axmc on Linux and macOS.
 
+For the agent the checkout is found from the sink itself. The agent's configuration
+lives outside any checkout, so the checkout above the file would never exist: the
+agent compares each `diagnosticDirectory` with the first directory at or above that
+directory that holds both `.git` and `cli/Cargo.toml`, found the same way, lexically
+and without resolving a link, and with the same per-profile case rule. Because it looks
+from the sink, which directories hold `.git` follows the volume: on a volume that
+ignores case, such as macOS's default one, a case variant of the checkout's path finds
+the checkout and is refused, while on Linux it is another directory. It also applies
+the checkout above its configuration file where one exists. A sink at or under either
+is a configuration problem, `repositories[n].diagnosticDirectory: must be outside the
+checkout`, in the snapshot, and the agent stops for `invalid_configuration`. The agent
+looks from a sink only when the path is one of the host it runs on, so a Windows path
+read on another host is not compared. Because the sink's own place was examined, the
+agent writes no note that the rule was skipped. `start`, `validate` and `build` are
+unchanged: their checkout stays the one above the configuration file.
+`tests/checkout_rule_agent.rs` covers a sink inside a checkout, outside one, a sibling
+prefix, a case variant (accepted on Linux, refused on macOS), and the unchanged rule of
+`start`.
+
 Known limitation: the axmc comparison is case-sensitive, while macOS's default APFS
-volume is case-insensitive. A `diagnosticDirectory` that differs from the checkout
-only in case therefore passes the rule even though it names the same directory. The
-validator cannot know a volume's case sensitivity, so it does not guess.
+volume is case-insensitive. For `start` and `validate`, whose checkout is the one above
+the configuration file, a `diagnosticDirectory` that differs from the checkout only in
+case therefore passes the rule even though it names the same directory. The validator
+cannot know a volume's case sensitivity, so it does not guess. The agent is not
+affected on such a volume: its lookup starts at the sink, and the volume itself answers
+for the case variant.
 
 ## Validation Rules
 
@@ -543,7 +567,8 @@ backend and clock, and a helper process.
 | `instance::source`                        | The instance's own configuration file, read again at a restart or a resume                  |
 | `instance::lock`, `instance::roots`       | The single-instance lock, and where the lock and the channel live                           |
 | `instance::channel`, `instance::protocol` | The control channel's server and client, and its text protocol                              |
-| `instance::windows`                       | The current user's security identifier and the descriptor that admits only that user        |
+| `instance::windows`                       | The current user's security identifier, the only-user descriptor, and the pipe's options    |
+| `instance::steps`                         | The container steps of a stop, shared by the foreground instance and the agent              |
 | `private`                                 | The Unix checks for a private directory and a private file, and the current user ID         |
 | `instance::runtime_core`                  | The runtime core `start` runs: pool preparation and every slot's loop                       |
 | `instance::log_file`                      | The log `start` writes through, its file, the file's cap, and the files kept                |
@@ -685,12 +710,29 @@ it.
   A socket path longer than the operating system allows is a startup failure.
   The client checks the directory before it connects, so it does not talk to a
   socket another user placed.
+- **Windows, the agent's client.** The library's client of protocol version 2 reads
+  the process ID of the pipe's server right after it connects and before it sends
+  anything, opens that process, and compares its user's SID with the current
+  user's. A server of another account, a process that cannot be opened or read, or
+  any failed call is a refusal, `ServerNotThisUser`: the client drops the
+  connection without sending a byte, so a `token_set` never reaches a squatter of
+  another account. The check names no command and no token. A squatter of the same
+  user is not told apart, and a process ID reused between the connection and the
+  check is a short window; both are accepted on a single-user host.
+  The commands of `start`, which speak version 1, are unchanged and still reach
+  whatever holds the pipe, as the cost above says.
 
 On both systems an ending instance first drops its request queue, so a request
 still waiting is answered that the instance is ending, then stops accepting and
 waits up to 0.5 s for every connection it accepted to end, so an answer it has
 given, such as `stop`'s, is written before the process exits. A connection still
 sending its request does not hold the exit longer than that.
+
+The agent opens this same channel with the same names, descriptor, modes and
+peer checks, but serves protocol version 2 on its own runtime without a thread per
+connection, so its connection limits are timers on every operating system; see
+[The Agent](#the-agent). A version 1 request reaches an agent as a first line that
+is not `hello` and is refused as `unsupported_protocol`.
 
 The protocol is UTF-8 lines. A request is one line of at most 16 KiB: `status`,
 `stop`, `restart`, `diagnostics`, or `resume <profile> <path>`, where the path is
@@ -736,7 +778,8 @@ On the Linux and macOS hosted runners, `tests/ci/other-user-lock.sh` copies the
 helper to a directory under `/tmp`, holds the lock in a debug-only root there, and
 runs the copy as `nobody` through `sudo`; it fails unless `nobody` is refused with
 the "held" exit code. On the Windows hosted runner,
-`tests/ci/control-pipe-security.ps1` has the helper open the control pipe, connects
+`tests/ci/control-pipe-security.ps1` has the helper open the control pipe, once as
+the instance's channel (`serve`) and once as the agent's (`serve-agent`), connects
 to it, reads the live pipe's descriptor through .NET, and fails unless the access
 control list is protected and holds one entry, allowing the current user full
 access. Neither crate the CLI uses reads a live pipe's descriptor without `unsafe`,
@@ -746,6 +789,394 @@ verified on axpc
 ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)):
 neither check was run there, by the maintainer's decision.
 Not verified: macOS and Windows behaviour beyond what the hosted runners show.
+
+## The Agent
+
+The library also holds the resident agent: the instance in a form that stays up and
+is told what to do, instead of being started by a terminal and stopped by it. It is
+the same process model as `start`: the agent takes the same single-instance lock,
+opens the same control channel, writes a log in the same directory and, on Windows,
+runs inside the same kind of Job Object, so `start` and the agent never run on one
+machine at once, and a second agent is refused as a second `start` is. It has no
+command or flag of its own yet; `agent::run` is the entry that wires the container
+backend, GitHub, the token store, the lock, the channel and the log, and the tests
+start it through `instance-helper agent`. A later release gives it a program to run
+in. Only a debug build lets a test replace the agent's token store, channel limits,
+watched file, log size and `docker` environment; a release build ignores each
+request, as it does the roots and the GitHub address, and `tests/agent_overrides.rs`
+shows both halves and runs again in the release profile in CI.
+
+| Module              | Holds                                                                               |
+| ------------------- | ----------------------------------------------------------------------------------- |
+| `agent::machine`    | The agent's state, and what each request, failure and changed executable does to it |
+| `agent::core`       | The pools' slots, with each token read from the store and late pools started        |
+| `agent::state`      | Where the agent is, why it is stopped, and what it knows of its configuration       |
+| `agent::tokens`     | The pools' token source, read from the store, and the changes that start late pools |
+| `agent::view`       | The snapshot, built from the state, the board, the retained record and the tokens   |
+| `agent::api`        | The methods a connection can call and the errors they answer with                   |
+| `agent::wire`       | The messages of protocol version 2 and the version and size constants               |
+| `agent::server`     | One connection: handshake, requests, subscription, heartbeat, `ending` and timers   |
+| `agent::channel`    | The pipe or socket the agent listens on, and the public client                      |
+| `agent::snapshot`   | The value of the `state` topic and its fit to the message limit                     |
+| `agent::log`        | The log file that is continued in a new file at 10 MiB                              |
+| `agent::executable` | The check that the file the agent started from is still the same file               |
+| `agent::builder`    | The seam the agent builds the runner image through                                  |
+| `agent::run`        | `run_resident` on its seams, and `run` with Docker, GitHub and the platform's store |
+| `token_store`       | The token store interface, the in-memory store, and the Windows Credential Manager  |
+
+### Agent State
+
+The agent is `running`, `resuming`, `stopping`, `stopped`, `building`, or
+`quitting`, and one task owns the state, so a request that arrives during a
+transition is answered at once, never queued behind it. It starts `running` or
+`stopped` as the caller asks.
+
+| Method         | Answer                                                                                                                                                                    |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `status`       | The snapshot, in any state                                                                                                                                                |
+| `start_all`    | Stopped: reads the configuration again and checks the image, then answers `resuming`, or `stopped` with the reason it could not. Running: the state it is in              |
+| `stop_all`     | Running: runs the stop sequence (the same grace, budget and exit deadline of 28 s as `stop`) and answers `stopped` when it is done. Stopped: `stopped`                    |
+| `build`        | Stopped: answers `building` with the start time once the build began, and the snapshot tells the rest. Running: `refused`. A configuration that cannot be used: `refused` |
+| `quit`         | Runs the stop sequence if runners run, cancels a build, answers `quitting`, and ends the agent; the lock is free within a second of the answer                            |
+| `token_set`    | Stores the repository's token in any state                                                                                                                                |
+| `token_remove` | Removes it in any state                                                                                                                                                   |
+
+A request that arrives while the agent is `resuming`, `stopping`, `building` or
+`quitting` and is not one of `status`, `token_set` and `token_remove`, a stop or a
+quit, is answered `busy`. The agent is `resuming` from the moment it begins to read
+the configuration until the runners' pools are admitted, so a `start_all` or a
+`build` in that time is `busy`, not answered as if the runners ran. One table in the
+code decides all of it, for every phase; this is what it says:
+
+| State      | `stop_all`                           | `start_all` | `build`                                          | `quit`                     |
+| ---------- | ------------------------------------ | ----------- | ------------------------------------------------ | -------------------------- |
+| `running`  | Stops, then `stopped` (by you)       | No change   | `refused`                                        | Stops, then the agent ends |
+| `stopped`  | No change                            | `resuming`  | `building`, or `refused` without a configuration | The agent ends             |
+| `resuming` | Abandons it, then `stopped` (by you) | `busy`      | `busy`                                           | Abandons it, then ends     |
+| `building` | Cancels it, then `stopped` (by you)  | `busy`      | `busy`                                           | Cancels it, then ends      |
+| `stopping` | No change                            | `busy`      | `busy`                                           | Ends after the stop        |
+
+The agent stays up when something is wrong; it stops its runners and says why in the
+snapshot, as the reason of the `stopped` state:
+
+| Reason code             | When                                                                         |
+| ----------------------- | ---------------------------------------------------------------------------- |
+| `by_you`                | A `stop_all`, a `quit`, or an agent launched stopped                         |
+| `no_configuration`      | There is no file at the configuration path                                   |
+| `invalid_configuration` | The file is not valid for the axpc profile; the problems are in the snapshot |
+| `image_unusable`        | The image is missing, or its contract version is not this CLI's              |
+| `no_pool_started`       | No pool could start, such as every pool without a token                      |
+| `restart_limit`         | The runtime core failed too often, under the same restart policy `start` has |
+| `image_build_failed`    | A `build` failed; the build's message is in the snapshot                     |
+
+The answer to a `start_all` follows the configuration read and the image check; it
+is not sent first. The check is one `docker image inspect` and, when that fails, one
+`docker image ls`, which share a bound of 4 s (the image check budget), so the answer
+comes within about that time and the pools are admitted after it. A client that
+needs a sooner answer bounds its own call and watches the `state` topic for the
+rest.
+
+After a `build` that succeeds the agent checks the image once more, as part of the
+build's own outcome: the check refreshes the snapshot's `images` entry with the new
+image's labels and warnings, and it does not change the `outcome`, which is the
+build's. A `build` that succeeds and is not
+cancelled leaves the agent stopped by you (`by_you`), whatever it was stopped for
+before, since the build read the configuration again and the snapshot's problems
+and pools are those of that read. Its outcome, `ready`, is only in `agent.build`,
+and the refreshed image entry is in `images`: "stopped with the image ready", in
+the state table above, is that outcome and not a reason. A build that fails
+stops the agent for `image_build_failed`, and a cancelled one is stopped by you.
+The app's rule to restart the agent when the last state it heard was stopped by you
+is unchanged. A `start_all` answers
+`resuming`, which stays true until the pools are admitted: the snapshot's `state`
+becomes `running` once they are, or `stopped` with one of the reasons above when
+they could not be.
+
+The set is open: a reader keeps a code it does not know as text. A pool skipped for
+want of a token does not stop the others: it is listed `skipped` with its reason,
+and when a token for its repository is set, it starts without a restart. When no
+pool is left running, the agent is stopped for `no_pool_started`, and each pool
+keeps its reason in the snapshot, listed `stopped`.
+
+The agent ends by itself when the file it started from is moved, renamed, replaced
+or deleted, so it never goes on running a program that is no longer the installed
+one. It tells the file by its size, its times and its identity on the volume (device
+and inode on Unix; volume serial number and file index on Windows, read through a
+handle opened for no access with every share mode, so neither the running program nor
+an installer is blocked). It looks once a second and ends within 5 s, after the same stop sequence as
+`quit`; the `ending` message names the reason `executable_changed`, where a `quit`
+names `quit`. The agent does not handle a sign-out or a shutdown: it gets no event
+for them, as `start` gets none on Windows, and the next agent removes what they left.
+
+The configuration is `config.json` in the `marshal` folder of `%LOCALAPPDATA%` on
+Windows and in `~/Library/Application Support/marshal/` on macOS, a folder that must
+be a directory owned by the user with mode `0700`, the folder the socket is in. A
+debug build can move it with a test root. The agent reads the file when it starts
+running and at each `start_all` and `build`, with the axpc profile; it does not
+read a token file, and the `tokenPath` of each entry, which the commands of `start`
+still read, is checked by `validate` and ignored by the agent.
+
+The agent's log is a file in the same private directory as `start`'s. It is
+continued in a new file when it reaches 10 MiB, so no line is lost to the limit, and
+the newest ten files are kept. Every token and JIT configuration is masked in it, and
+nothing goes to a terminal, since the agent has none: a failure before the log opens
+goes to standard error, and everything after goes to the log. A `docker build` the
+agent runs has its output read line by line into the log, each line masked and
+marked `docker build:`; a line is cut at 8 KiB, and the last five lines, masked and
+each cut at 70 characters, end the message of a failed build, so the 500-character cut
+of the message never takes the newest line. `marshal build` itself still passes the build's
+output on to its terminal.
+
+A log that cannot write or continue its file stops, and the agent goes on without
+it. It tries to open a new file again when a line arrives, at most every 30 s, and
+writes one line in the new file that says how many lines were not written.
+
+### The Token Store
+
+`token_store` is the one place the agent keeps a repository's token. The interface
+names no operating system: `get`, `set` and `remove` by a repository key, which is
+`owner/name` in lower case, so `Axross/Runners` and `axross/runners` are one token.
+A token is trimmed, then refused when it is empty or longer than 1280 UTF-16 code
+units, which keeps it inside the Credential Manager's 2560 bytes.
+
+- **Windows.** The Credential Manager of the current user, through
+  `windows-native-keyring-store`, as one generic credential per repository named
+  `app.axross.marshal:github.com/<owner>/<name>`, with the token as UTF-16 and with
+  local persistence. The crate's default persistence is the enterprise one, which
+  roams with the user's profile, so the store asks for the local one.
+  `tests/token_store_windows.rs` sets, reads and removes a real credential, reads
+  its persistence back from the store's `persistence` attribute, round-trips a token of 1280 UTF-16 units and
+  a non-ASCII, non-BMP one, and sends a `token_set` through an agent whose store is
+  the Credential Manager to a registration; only the Windows CI job runs it.
+- **macOS and Linux.** There is no store yet. The agent runs with none, every pool is
+  skipped with the reason "no token store", a `token_set` is refused as
+  `store_failed`, and the agent is stopped for `no_pool_started`. A Keychain store can
+  later sit behind the same interface by naming its entries, as the Windows store
+  does.
+- **Tests.** An in-memory store, which can be made to fail with each kind of error.
+
+A store failure has a kind, which says what it asks of the caller, and the platform's
+own code when it gave one. The kinds are `needs_user`, such as a locked keychain the
+user can unlock, `access_refused`, when the item refuses this program, and `other`.
+The Credential Manager's failures are all `other`, with the Windows error number in
+the code. The kind and the code appear in the `store_failed` error (see Errors), in
+the reason of a pool skipped because the store failed (`the token store failed: ...
+(kind needs_user, code 1312)`), and in the log line of a registration that failed
+for the same reason. None of them ever holds a token.
+
+The agent reads a token from the store when a pool is admitted and again at each
+registration, so a `token_set` takes effect at the next registration, and a
+`token_remove` makes the next registration fail and its slot back off with "no
+token". A running job container keeps the JIT configuration it was started with.
+
+`has_token` in the snapshot is the store's answer as of the last configuration
+read, not a live reading: it refreshes only on a configuration read, a `token_set`
+or a `token_remove`.
+
+### Protocol Version 2
+
+Protocol version 2 is served only by the agent, on the channel of the instance layer
+with its access rules: only the agent's user reaches it, as [Control
+Channel](#control-channel) describes. A message is one JSON object on one line. A
+client message is at most 16 KiB and an agent message at most 64 KiB, line break
+included. The first line a client sends MUST be `hello`; anything else, including
+`start`'s version 1 requests, is answered with `unsupported_protocol` and the
+connection is closed, so today's commands exit 1 against an agent and change
+nothing. A later slice of version 2 may add methods, topics, error codes and fields
+but never rename or remove one.
+
+| Message     | Fields                                                                                               |
+| ----------- | ---------------------------------------------------------------------------------------------------- |
+| `hello`     | `versions` (the versions the client speaks), `client` (`name`, `version`), which the agent ignores   |
+| `welcome`   | `version` (2), `agent` (`version`), `methods`, `topics`                                              |
+| `request`   | `id` (an integer of the client's own), `method`, `params`                                            |
+| `response`  | `id`, then `result` or `error`                                                                       |
+| `error`     | `error`, for what answers no request: a failed handshake, `busy`, or a message that is not a request |
+| `event`     | `topic` (`state`), `seq`, `value` (the snapshot)                                                     |
+| `heartbeat` | `seq`, the last event's                                                                              |
+| `ending`    | `reason`: `quit` or `executable_changed`                                                             |
+
+A reader ignores a message type, a field and a topic it does not know, and calls only
+the methods `welcome` lists. The library's `Client` does so, refuses a `welcome` that is not version 2, and
+subscribes only to a topic `welcome` listed, reports a result it cannot read, and a `response` whose
+envelope it cannot read but whose `id` it can, as `BadAnswer`, not as a closed connection, and refuses a request longer than 16 KiB
+with `TooLong` before writing anything, so the connection stays usable. Its wire, snapshot, `Push`, `CallError` and
+`ConnectError` types are `#[non_exhaustive]`, so a later slice can add a field or a
+variant without breaking a program that uses them; `tests/agent_protocol.rs` shows it
+against unknown methods, topics and fields.
+
+The agent answers one connection's requests in order and several connections at once.
+
+| Method         | Params                | Result                                                             |
+| -------------- | --------------------- | ------------------------------------------------------------------ |
+| `status`       | none                  | The snapshot                                                       |
+| `subscribe`    | `topic`: `state`      | `{"topic":"state"}`; the first event follows at once               |
+| `start_all`    | none                  | `{state}`, `resuming` while the pools are admitted                 |
+| `stop_all`     | none                  | `{state}`                                                          |
+| `build`        | none                  | `{state, started}`, `started` in milliseconds since the Unix epoch |
+| `quit`         | none                  | `{state}`                                                          |
+| `token_set`    | `repository`, `token` | `{repository}`, the key it was stored under                        |
+| `token_remove` | `repository`          | `{repository}`                                                     |
+
+`token_set` is the one message that carries a secret: the token travels only in its
+`token` param, from the client to the agent, and the agent never sends, logs or
+repeats it. Its error text never quotes the params.
+
+Errors have a stable `code`, an open set, and a `message` in plain text:
+
+| Code                   | Meaning                                                                                                                                  |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `unsupported_protocol` | The first line was not a `hello` that lists version 2; `versions` lists what the agent serves                                            |
+| `busy`                 | The agent is in a transition that does not take the method, or has its most connections                                                  |
+| `unknown_method`       | The agent has no such method                                                                                                             |
+| `invalid_request`      | The params are not what the method takes, or the message is not a request; a malformed request with a readable `id` is answered under it |
+| `subscription_limit`   | The agent has its most subscriptions                                                                                                     |
+| `token_invalid`        | The token is empty or too long                                                                                                           |
+| `store_failed`         | The token store could not do it; `store` holds `kind` and `code`                                                                         |
+| `refused`              | The agent's state does not allow the method                                                                                              |
+
+A subscription gets the snapshot at once as an event with `seq` 1, then an event
+with the whole snapshot after each change, at most one per 250 ms: changes within a
+window are merged into one event, so a client never sees an intermediate state it did
+not ask for. `seq` rises by one with each event of the connection. After 15 s without
+an event the agent sends a `heartbeat` with the last `seq`, and the library's client
+reads 45 s of silence on a subscribed connection as a lost agent. A `Client::call`
+fails with `Closed` once the connection has ended but waits as long as the agent
+takes on one that stays open, so a caller that needs a bound wraps it in its own
+timeout. Dropping a call, as that timeout does, is safe: the client has queued the
+request whole for a task that writes it to the end, and discards the answer.
+Before the agent ends it sends `ending` to every connection, one still in
+its handshake included, and waits up to 0.5 s for them to end; an
+answer already given, such as `quit`'s, is written before the `ending`.
+
+The limits are timers on the agent's own runtime on every operating system, so a
+silent or stalled client holds no task of its own past them. A thread is held only
+where the pipe crate needs one, which is measured on Linux only (the stalled readers'
+test counts the runtime's worker threads there, and finds none held); the Windows
+case is next to the table.
+
+The limits:
+
+| Limit         | Value                                                                                                                |
+| ------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Connections   | 16; a 17th is told `busy` and closed; beyond 32 connections open or waiting for `busy`, one is closed with no answer |
+| Subscriptions | 4; a 5th is told `subscription_limit` and the connection stays                                                       |
+| Handshake     | 5 s from connect to `hello`                                                                                          |
+| Idle          | 60 s without a message, for a connection with no subscription and no request pending                                 |
+| Write         | 5 s for one message, or the connection is closed                                                                     |
+
+On Windows the pipe is created as the first instance of the name with the descriptor
+`D:P(A;;GA;;;<user SID>)` and with remote clients rejected, as for `start`, but it
+is served by the pipe crate's asynchronous listener on the agent's runtime, so the
+limits above are the same there as on macOS. Both channels take the pipe's options
+from one function, so they cannot differ. The pipe crate flushes a pipe on a blocking
+thread that waits until the peer has read everything, and that wait cannot be
+cancelled. So the agent flushes only the messages that end a connection (`ending`,
+and the error that answers a refused or failed handshake), each in at most the write
+limit, and abandons a connection's write half when the connection ends for any
+reason, so the crate does not park it on a waiting thread. A client that never reads
+and never closes can still keep one such thread for each of those final messages.
+The agent leaves its runtime without waiting for blocking tasks, so neither the exit
+nor the release of the lock waits for such a thread, and
+`tests/agent_quit_stalled.rs` runs the agent as a process on every platform and
+shows a `quit` ends it within a second or so while a subscribed client reads
+nothing. On Unix the socket has the checks of
+[Control Channel](#control-channel).
+
+### The Snapshot
+
+The snapshot is what `status` returns and what the `state` topic carries. It comes
+from local state the agent already keeps; it reads nothing from Docker or GitHub, and
+never holds a token or a JIT configuration. Every field is optional for a reader, and
+a reader ignores one it does not know.
+
+| Field                          | Holds                                                                                                 |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `agent`                        | `version`, `state`, `reason` (`code`, `message`), `since`, `build`, `restart_due`                     |
+| `agent.build`                  | `started`, `outcome` (`building`, `ready`, `failed`, `cancelled`), `finished`, `message`              |
+| `configuration`                | `path` and `problems`, at most 100                                                                    |
+| `runners_up`, `runners_wanted` | Totals over the listed pools, kept when rows are left out; 0 while `restart_due` is set               |
+| `repositories`                 | Each repository (`owner/name` in lower case), `has_token` and its pools                               |
+| `pools`                        | `name`, `repository`, `state`, `reason`, `has_token`, `runners_up`, `slots`, `runners`, `diagnostics` |
+| `pools[].runners`              | `slot`, `state`, `workload`, `reason`, `since`                                                        |
+| `pools[].diagnostics`          | `limit`, `written`, `in_sink`, `containers`, `findings`, `manual_recovery`                            |
+| `leftovers`                    | What a stop could not remove, `kind` (today `container`) and `name`                                   |
+| `images`                       | Each image the agent tracks (today the runner image): `name`, `lines`, `warnings`                     |
+| `omitted`                      | How many `runners`, `problems`, `pools`, `repositories`, `leftovers` and `images` it left out         |
+
+When the runtime core fails, the agent starts it again after 10, 30 and 60 s for the
+first, second and third failure within 10 minutes, and stops for `restart_limit` at the
+fourth. While it waits, `agent.restart_due` holds the time it restarts, the agent's
+state stays `running`, and `pools` is empty, so `runners_up` and `runners_wanted` read
+0 for the wait, because the core's rows are not kept across a failure. A stopped agent
+lists its pools again. `repositories` is still listed.
+
+A pool is `waiting_for_docker`, `preparing`, `running`, `skipped` or `stopped`. A
+runner is `running`, `registering`, `backing_off` or `stopped`. The `reason` of a
+runner is plain text that says more about its state, such as what a state means that
+the reader may not know. A backing-off runner gives the reason it backs off: a token
+store failure's kind and code, or what GitHub answered, scrubbed of any token and
+never a command. An image warning is data, not text: a `code`
+(`not_built_by_marshal`, `packages_old`, `image_old`, `runner_old` or
+`runner_may_be_newer`) with `days` or `version` where they apply, so the app words it.
+`leftovers` lists every container name of a failed removal call, which can name more
+containers than the one that failed. They stay listed until a start prepares the
+pools, which removes what is stale, so a `start_all` that stops for a missing image or
+an invalid configuration keeps them.
+
+An agent may add a runner state, an image and an image warning within version 2, so
+a reader MUST treat a state word it does not know as an unknown state and show the
+runner's `reason`, MUST list an image it does not know, and MUST ignore a warning
+code it does not know. The library's `RunnerState`, `RunnerInfo::kind`,
+`ImageWarning::kind` and `ImageInfo::known_warnings` do so, and a unit test of the
+client shows an event with a state and a warning from a later agent.
+
+A snapshot is cut to at most 64 KiB less the message's envelope. When it is larger
+it first lists no more than 100 configuration problems, then leaves out runner rows
+from the end, as many as it must and no more, then pools from the end, then
+leftovers, repositories, images and configuration problems from their ends, and says
+how many in `omitted`. Last of all the long texts, the configuration path and the
+agent's version, reason and build message, are cut to 512 characters. `runners_up`
+and `runners_wanted` still count a row left out.
+
+### What the Agent Tests Cover
+
+The agent tests run the agent and the test script on one runtime, behind the real
+channel, on the fake backend, clock, registrar and image builder and an in-memory
+token store, and talk to it with the library's client or by hand, line by line.
+`tests/agent_resident.rs` covers stop, start and quit (also while a subscribed
+connection reads nothing), launching stopped, the executable renamed, the resuming
+state, build (ready, failed, cancelled by a stop or a quit, `busy`, `refused`), and
+staying up for each reason, also through `start_all`, which answers `resuming`, that
+`token_set` and `token_remove` are answered while it resumes, builds and stops, and the
+core's restarts: the `restart_due` window with its empty pool list, and the stop for
+`restart_limit`. The restart waits are the fake clock's, with a real pause of 400 ms
+each so the script can look at the window.
+`tests/agent_protocol.rs` covers the handshake, `welcome`, unknown methods, topics
+and fields, subscription, coalescing, heartbeats, `ending`, the limits as timers and
+a connection that stops reading. `tests/agent_tokens.rs` covers what `token_set` and
+`token_remove` do to the next registration, a skipped pool starting, refused tokens,
+and the store's kind and code in an error, a skipped pool's reason and the log.
+`tests/agent_snapshot.rs` covers the snapshot, the diagnostics, the leftovers, the
+64 KiB cut, that `quit` frees the lock within a second with 640 runners and four
+subscribed connections that never read, the stalled readers' thread count (measured
+on Linux only, from the runtime's worker threads) and, in
+`tests/agent_quit_stalled.rs`, that the process ends within a second or so of a
+`quit` with a stalled subscriber, and that no token or JIT
+configuration reaches a connection or the log. `tests/agent_versions.rs` runs `stop`,
+`status`, `restart` and `diagnostics` against an agent and shows they exit 1 and
+change nothing. `tests/agent_channel.rs` covers the socket's mode, the peer's user
+and a directory open to others on Unix. `tests/agent_channel_windows.rs` shows a pipe
+of a taken name is refused and a client passes the check of the server's user. `tests/agent_process.rs` runs the agent as a process on
+the fake `docker` and a GitHub stub, a second agent refused, and the log continued
+with ten files kept.
+
+The Windows CI step `tests/ci/control-pipe-security.ps1` runs its checks against
+the `serve` mode of the helper and against `serve-agent`, which opens the agent's
+channel, so the agent's pipe is read back with the same descriptor. The real
+Credential Manager test and the connection limits on Windows and macOS run in CI only.
+Not verified here: the agent on Windows and macOS beyond what the hosted runners show,
+and the remote-client rejection, as for `start`.
 
 ## The Image Contract
 
@@ -2979,8 +3410,11 @@ maintainer fixes it there.
 | `bumpalo`, `combine`, `jni`, `jni-macros`, `jni-sys`, `jni-sys-macros`, `js-sys`, `rustc_version`, `rustls-platform-verifier-android`, `rustversion`, `same-file`, `semver`, `simd_cesu8`, `simdutf8`, `thiserror` 2, `thiserror-impl` 2, `walkdir`, `wasm-bindgen`, `wasm-bindgen-futures`, `wasm-bindgen-macro`, `wasm-bindgen-macro-support`, `wasm-bindgen-shared`, `web-sys`, `winapi-util`, `windows-targets`, `windows_aarch64_gnullvm`, `windows_aarch64_msvc`, `windows_i686_gnu`, `windows_i686_gnullvm`, `windows_i686_msvc`, `windows_x86_64_gnu`, `windows_x86_64_gnullvm`, and `windows_x86_64_msvc` | Platform verifier and `getrandom` code for Android, WebAssembly, and other Windows targets, which the lockfile records and none of the three CI targets builds                                                                                                                                                                 | MIT OR Apache-2.0 (`same-file`, `walkdir`, and `winapi-util` are Unlicense OR MIT)          |
 | `wasi`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | A WebAssembly dependency of `getrandom`, not built on the CI targets                                                                                                                                                                                                                                                           | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT                                         |
 | `webpki-root-certs`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Bundled roots the platform verifier uses on WebAssembly, not built on the CI targets                                                                                                                                                                                                                                           | CDLA-Permissive-2.0                                                                         |
-| `interprocess`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | The Windows named pipes behind the single-instance lock and the control channel, with default features off; it builds on Windows only                                                                                                                                                                                          | 0BSD OR Apache-2.0                                                                          |
+| `interprocess`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | The Windows named pipes behind the single-instance lock and the control channel, with default features off and, for the agent's asynchronous pipe, its `tokio` feature; it builds on Windows only                                                                                                                              | 0BSD OR Apache-2.0                                                                          |
 | `recvmsg`, `doctest-file`, and `widestring`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Dependencies of `interprocess`: a receive helper, a procedural macro that includes example files in documentation, and wide-string types for Windows paths                                                                                                                                                                     | 0BSD for `recvmsg` and `doctest-file`, MIT OR Apache-2.0 for `widestring`                   |
+| `serde_json`, `zmij`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | The agent's protocol messages and snapshot, in JSON, with only the `std` feature; `zmij` formats its floating-point numbers                                                                                                                                                                                                    | MIT OR Apache-2.0 for `serde_json`, MIT for `zmij`                                          |
+| `keyring-core`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | The interface of a credential store, which the token store adapts and a platform's store implements, with default features off                                                                                                                                                                                                 | MIT OR Apache-2.0                                                                           |
+| `windows-native-keyring-store` and `byteorder`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | The Windows Credential Manager behind the token store, with default features off, and the byte-order helper it uses for the UTF-16 token; they build on Windows only                                                                                                                                                           | MIT OR Apache-2.0 for the store, Unlicense OR MIT for `byteorder`                           |
 | `winsafe`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | The current user's security identifier, with only the `advapi` feature; it builds on Windows only                                                                                                                                                                                                                              | MIT                                                                                         |
 | `win32job`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | The Job Object that ends each job container's `docker run` client with `start`; it builds on Windows only (see [Containment](#containment))                                                                                                                                                                                    | MIT OR Apache-2.0                                                                           |
 | `windows`, `windows-core`, `windows-collections`, `windows-future`, `windows-numerics`, `windows-threading`, `windows-result`, `windows-strings`, and `windows-link` 0.1                                                                                                                                                                                                                                                                                                                                                                                                                                           | The Windows API bindings `win32job` uses; they build on Windows only                                                                                                                                                                                                                                                           | MIT OR Apache-2.0                                                                           |
@@ -2990,11 +3424,18 @@ maintainer fixes it there.
 optional, but the CLI's feature set (`std` and `unicode-perl`, no `perf`) does not
 build them. They are accepted under their MIT alternative, so the Unlicense is not
 on the allowlist and need not be.
+`serde_json`, `keyring-core`, `windows-native-keyring-store`, and the `tokio`
+feature of `interprocess` were added with the agent (issue #73).
+Their dependencies in the lockfile are `zmij` and `byteorder`, and `serde_json` also
+brings `itoa` and `memchr`, which the table already lists. `byteorder` is accepted
+under its MIT alternative, like `memchr`.
 
-The JSON parser is in the crate, not a dependency. The rules under Validation Rules
-need order-preserving objects, the last-position duplicate rule, case-conflict
-errors, and number literals kept as text. The crate owns that parser, and the
-fixtures pin it.
+The validator's JSON parser is in the crate, not a dependency. The rules under
+Validation Rules need order-preserving objects, the last-position duplicate rule,
+case-conflict errors, and number literals kept as text. The crate owns that parser,
+and the fixtures pin it. `serde_json` is for the agent's protocol only: the messages
+of version 2 are serialised and parsed with it, with only its `std` feature, and the
+validator never uses it.
 
 The reader implements serde's `Deserializer`, so a type that derives `Deserialize`
 can be read from the parsed tree. A failed read is an error, never a panic, and
@@ -3004,9 +3445,10 @@ reach the tree's own value type as text; any other target sees an `i64`, `u64`,
 ASCII case only when the caller asks, and only for struct fields. The validator
 reads each configuration object (root, entry, volume, and budget) into a derived
 type of wrapped fields, and keeps lists and nested objects raw so a wrong container
-type is reported with its path. Nothing implements or derives `Serialize`: the
-validator writes no JSON, and the registration body is written by hand (see
-[Registration](#registration)).
+type is reported with its path. Nothing in the validator implements or derives
+`Serialize`: it writes no JSON, and the registration body is written by hand (see
+[Registration](#registration)). The agent's messages derive `Serialize` and
+`Deserialize` for `serde_json`.
 
 Allowed licences are `MIT`, `Apache-2.0`, `Unicode-3.0`, `ISC`, `BSD-3-Clause`, and `0BSD`; a
 crate whose licence is an `OR` expression is accepted when one alternative is on that

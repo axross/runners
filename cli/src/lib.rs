@@ -2,6 +2,7 @@
 //! `docs/operations/cli.md`.
 
 pub mod affinity;
+pub mod agent;
 pub mod build;
 pub mod checkout;
 pub mod command;
@@ -20,4 +21,5 @@ pub mod runtime;
 pub mod shim;
 pub mod start;
 pub mod summary;
+pub mod token_store;
 pub mod validate;

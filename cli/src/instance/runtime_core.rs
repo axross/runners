@@ -68,24 +68,36 @@ impl<'a, B: Backend, K: Clock, R: Registrar> RuntimeCore<'a, B, K, R> {
     /// checks the image until Docker answers the check, then logs its freshness
     /// warnings, or fails when it cannot run jobs.
     async fn verify_image(&self, image: &str) -> Result<(), CoreFailure> {
-        loop {
-            let check = check_image(self.backend, &self.board, image).await;
-            if let Some(refusal) = check.refusal(image) {
-                return Err(failure(refusal, Ending::ImageRefused));
-            }
-            let ImageCheck::Unavailable(reason) = check else {
-                for warning in freshness_warnings(&check, self.clock.now()) {
-                    self.log.warn(&format!("Image freshness: {warning}."));
-                }
-                return Ok(());
-            };
-            self.log.warn(&format!(
-                "{reason}, so the image {image} is checked again in {} s.",
-                DOCKER_POLL_INTERVAL.as_secs()
-            ));
-            self.clock.sleep(DOCKER_POLL_INTERVAL).await;
-            self.backend.wait_until_available().await;
+        verify_image(self.backend, self.clock, self.log, &self.board, image).await
+    }
+}
+
+/// checks the image until Docker answers the check, then logs its freshness
+/// warnings, or fails when it cannot run jobs.
+pub(crate) async fn verify_image<B: Backend, K: Clock>(
+    backend: &B,
+    clock: &K,
+    log: &dyn Log,
+    board: &Board,
+    image: &str,
+) -> Result<(), CoreFailure> {
+    loop {
+        let check = check_image(backend, board, image).await;
+        if let Some(refusal) = check.refusal(image) {
+            return Err(failure(refusal, Ending::ImageRefused));
         }
+        let ImageCheck::Unavailable(reason) = check else {
+            for warning in freshness_warnings(&check, clock.now()) {
+                log.warn(&format!("Image freshness: {warning}."));
+            }
+            return Ok(());
+        };
+        log.warn(&format!(
+            "{reason}, so the image {image} is checked again in {} s.",
+            DOCKER_POLL_INTERVAL.as_secs()
+        ));
+        clock.sleep(DOCKER_POLL_INTERVAL).await;
+        backend.wait_until_available().await;
     }
 }
 
@@ -99,7 +111,7 @@ impl Drop for Cleared<'_> {
     }
 }
 
-fn failure(message: String, ending: Ending) -> CoreFailure {
+pub(crate) fn failure(message: String, ending: Ending) -> CoreFailure {
     CoreFailure {
         message,
         containers: Vec::new(),
