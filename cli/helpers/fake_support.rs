@@ -1,4 +1,4 @@
-//! what the fake `tart` and the fake `softnet` share: recording each call into a
+//! what the fake `tart`, `softnet` and `docker` share: recording each call into a
 //! directory, reading its script files, and the scripted hang, failure and flood.
 
 use std::fmt::Write as _;
@@ -20,6 +20,17 @@ pub fn record(
     arguments: &[String],
     variables: &[&str],
 ) -> Result<(PathBuf, fs::File), String> {
+    let (stem, alive) = claim_invocation(dir)?;
+    fs::write(stem.with_extension("env"), environment_lines(variables))
+        .map_err(|error| error.to_string())?;
+    publish_arguments(&stem, arguments)?;
+    Ok((stem, alive))
+}
+
+/// claims the next `inv-<n>` stem, takes the exclusive lock on its `.alive` file
+/// and writes its `.pid` and `.pgid`; the caller writes the rest and then
+/// [`publish_arguments`].
+pub fn claim_invocation(dir: &Path) -> Result<(PathBuf, fs::File), String> {
     for number in 0..100_000 {
         let stem = dir.join(format!("inv-{number:06}"));
         let claimed = fs::OpenOptions::new()
@@ -35,9 +46,6 @@ pub fn record(
         fs::write(stem.with_extension("pid"), std::process::id().to_string())
             .map_err(|error| error.to_string())?;
         record_process_group(&stem);
-        fs::write(stem.with_extension("env"), environment_lines(variables))
-            .map_err(|error| error.to_string())?;
-        publish_arguments(&stem, arguments)?;
         return Ok((stem, alive));
     }
     Err("no invocation number".to_string())
@@ -45,7 +53,7 @@ pub fn record(
 
 /// renames the arguments into place as `.argv`, so a call a test can name already
 /// holds its lock and has written the rest; a reader never sees them half written.
-fn publish_arguments(stem: &Path, arguments: &[String]) -> Result<(), String> {
+pub fn publish_arguments(stem: &Path, arguments: &[String]) -> Result<(), String> {
     let pending = stem.with_extension("argv.tmp");
     fs::write(&pending, arguments.join("\0")).map_err(|error| error.to_string())?;
     fs::rename(&pending, stem.with_extension("argv")).map_err(|error| error.to_string())

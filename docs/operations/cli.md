@@ -973,10 +973,11 @@ listed under [Diagnostics](#diagnostics). `tart_client.rs` runs the `tart` clien
 against the fake `tart`: the exact argument lists, a run's options and Softnet rules,
 the environment and the standard output every call gets, the JIT configuration
 reaching the guest on standard input only, the 64 KiB cut, the budgets, and the VM
-names and the listing reader. `golden_provisioning.rs` runs the golden VM's guest
-calls against the fake `tart` in their order, with a key of another fingerprint
-stopping them before anything is installed, and `golden_launcher.rs` runs the
-launcher as a shell script against a stand-in `docker` (Unix only).
+names and the listing reader. `host_prerequisites.rs` runs the prerequisite checks
+against the fake `tart` and `fake-softnet`. `golden_provisioning.rs` runs the golden
+VM's guest calls against the fake `tart` in their order, with a key of another
+fingerprint stopping them before anything is installed, and `golden_launcher.rs` runs
+the launcher as a shell script against a stand-in `docker` (Unix only).
 `tart_backend.rs` runs the
 [Tart Backend](#tart-backend) against the fake `tart`, which forwards a guest
 command to `fake-docker` as the launcher would, and `fake-softnet`, through the rig

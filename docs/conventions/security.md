@@ -1079,7 +1079,12 @@ Tart's default network would reach the LAN, the host and other VMs.
   root, and Homebrew installs a new binary without the bit at each upgrade, so the
   check runs at every boot rather than once. `marshal` never handles a root-owned
   file itself, and a `softnet` that does not answer `--version` counts as a
-  refusal.
+  refusal. Only a debug build can name the `tart` client (`MARSHAL_TEST_TART`) or
+  replace the owner and mode read from Softnet's file
+  (`MARSHAL_TEST_SOFTNET_OWNER_MODE`), for the tests; a release build always runs
+  `tart` and judges the real file. `cli/tests/release_overrides.rs` checks this,
+  and the Merge Checks step "Test That A Release Build Ignores The Debug-Only
+  Overrides" runs it in the release profile.
 - Softnet's rules make it track every flow a VM starts, in a table of 32,768
   entries that refuses new connections while full. A job that opens more than that
   within about 5 minutes has new connections refused, and the failure stays inside
