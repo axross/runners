@@ -395,11 +395,7 @@ impl Snapshot {
                 high = middle - 1;
             }
         }
-        let keep = low;
-        let mut cut = self.with_rows(keep);
-        self.omitted.runners += u32::try_from(rows - keep).unwrap_or(u32::MAX);
-        cut.omitted = self.omitted.clone();
-        *self = cut;
+        *self = self.with_rows(low);
         while size(self) > limit && !self.pools.is_empty() {
             self.pools.pop();
             self.omitted.pools += 1;
@@ -476,7 +472,8 @@ impl Snapshot {
         u32::try_from(total - low).unwrap_or(u32::MAX)
     }
 
-    /// a copy that keeps the first `keep` runner rows.
+    /// a copy that keeps the first `keep` runner rows and counts the rest as omitted,
+    /// so that measuring it measures the count it will carry.
     fn with_rows(&self, keep: usize) -> Self {
         let mut left = keep;
         let mut copy = self.clone();
@@ -485,6 +482,13 @@ impl Snapshot {
             pool.runners.truncate(take);
             left -= take;
         }
+        let cut = self
+            .pools
+            .iter()
+            .map(|pool| pool.runners.len())
+            .sum::<usize>()
+            - keep;
+        copy.omitted.runners += u32::try_from(cut).unwrap_or(u32::MAX);
         copy
     }
 }
@@ -561,6 +565,30 @@ mod tests {
             size(&one_more) > MAX_SNAPSHOT_BYTES || kept == 1200,
             "one more row would not fit"
         );
+    }
+
+    #[test]
+    fn a_cut_that_fits_only_without_its_own_omitted_count_drops_one_more_row_not_a_pool() {
+        let whole = Snapshot {
+            pools: vec![pool("first", 50), pool("second", 50)],
+            ..Snapshot::default()
+        };
+        // the cut of 60 rows, written out with the count it carries: two digits
+        let mut sixty = whole.clone();
+        sixty.pools[1].runners.truncate(10);
+        sixty.omitted.runners = 40;
+        let limit = size(&sixty) - 1;
+        assert!(size(&whole) > limit);
+
+        let mut snapshot = whole.clone();
+        snapshot.fit(limit);
+
+        assert!(size(&snapshot) <= limit);
+        assert_eq!(snapshot.omitted.pools, 0, "no pool goes while a row can");
+        assert_eq!(snapshot.pools.len(), 2);
+        let shown: usize = snapshot.pools.iter().map(|pool| pool.runners.len()).sum();
+        assert_eq!(shown, 59, "one row fewer than the cut that is a byte over");
+        assert_eq!(shown + snapshot.omitted.runners as usize, 100);
     }
 
     #[test]
