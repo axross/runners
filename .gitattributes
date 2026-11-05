@@ -1,3 +1,4 @@
 *.sh text eol=lf
 Dockerfile text eol=lf
 tests/host-configuration/rust/raw/** -text
+tests/host-configuration/toml/** text eol=lf

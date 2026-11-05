@@ -1803,7 +1803,11 @@ would strip a stored mark.
 
 The TOML format has three sets of fixtures, which the tests read through
 `validate_toml`. The TOML problems are new, so they have fixtures of their own,
-beside the JSON ones and not in place of them.
+beside the JSON ones and not in place of them. `.gitattributes` pins everything under
+`tests/host-configuration/toml/` to LF (`text eol=lf`), unlike the `-text` raw JSON
+fixtures, because the tests compare these files' bytes and columns and a checkout
+that converts them to CRLF, as a Windows one can, would break them. The tests that
+need CRLF build it from the stored text.
 
 - **Hand-written TOML.** [`tests/host-configuration/toml/`](../../tests/host-configuration/toml)
   holds `accepted/` and `rejected/` documents and one `expectations.json`, read by
