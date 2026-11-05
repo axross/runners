@@ -33,33 +33,10 @@ pub struct HeldVm {
 impl HeldVm {
     /// starts `tart run` for the local VM `vm` the way `launcher` says.
     pub fn start(client: &TartClient, launcher: &VmLauncher, vm: &str) -> Result<Self, TartError> {
-        Self::start_for(client, launcher, vm, None)
-    }
-
-    /// starts `tart run` for the job VM `vm` of the diagnostics-enabled pool `pool`: a
-    /// shim that deletes the VM because the CLI is gone reports the evidence that
-    /// loses.
-    pub fn start_diagnostic(
-        client: &TartClient,
-        launcher: &VmLauncher,
-        vm: &str,
-        pool: &str,
-    ) -> Result<Self, TartError> {
-        Self::start_for(client, launcher, vm, Some(pool))
-    }
-
-    fn start_for(
-        client: &TartClient,
-        launcher: &VmLauncher,
-        vm: &str,
-        diagnostic_pool: Option<&str>,
-    ) -> Result<Self, TartError> {
-        #[cfg(not(unix))]
-        let _ = diagnostic_pool;
         let mut command = match launcher {
             VmLauncher::Direct => client.run_command(vm)?,
             #[cfg(unix)]
-            VmLauncher::Shim(program) => shim_command(client, program, vm, diagnostic_pool),
+            VmLauncher::Shim(program) => shim_command(client, program, vm),
         };
         let child = command.spawn().map_err(TartError::Unavailable)?;
         Ok(Self::hold(child))
@@ -146,15 +123,9 @@ impl Drop for HeldVm {
 /// the command that runs the VM shim for `vm`: this program again, as the hidden
 /// `marshal vm-shim --name <vm> -- <tart>`, in a process group of its own, with the
 /// liveness pipe as its standard input, Tart's output relayed on its standard
-/// output, and its own warnings on this process's standard error. For a VM of a
-/// diagnostics-enabled pool it also gets that pool's name.
+/// output, and this process's standard error as its own.
 #[cfg(unix)]
-fn shim_command(
-    client: &TartClient,
-    shim: &std::path::Path,
-    vm: &str,
-    diagnostic_pool: Option<&str>,
-) -> tokio::process::Command {
+fn shim_command(client: &TartClient, shim: &std::path::Path, vm: &str) -> tokio::process::Command {
     use std::process::Stdio;
 
     use tokio::process::Command;
@@ -167,11 +138,6 @@ fn shim_command(
         .arg(crate::vm_shim::VM_SHIM_COMMAND)
         .arg("--name")
         .arg(vm);
-    if let Some(pool) = diagnostic_pool {
-        command
-            .arg(crate::vm_shim::DIAGNOSTIC_POOL_OPTION)
-            .arg(pool);
-    }
     command
         .arg("--")
         .arg(&config.program)
