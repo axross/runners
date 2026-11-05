@@ -26,7 +26,7 @@ use crate::instance::channel::{ChannelServer, exchange};
 use crate::instance::lock::{InstanceLock, LockError};
 use crate::instance::protocol::{Incoming, Request, Response};
 use crate::instance::roots::Roots;
-use crate::profile::Profile;
+use crate::profile::{Profile, host_refusal};
 use crate::runtime::docker::resolve_program;
 use crate::runtime::log::{Log, StderrLog};
 use crate::runtime::pool::DEFAULT_IMAGE_NAME;
@@ -58,9 +58,7 @@ pub struct BuildRequest<'a> {
 /// runs `build` and returns its exit code; Docker is reached only after the lock,
 /// validation and the tag check.
 pub fn build(request: &BuildRequest<'_>, err: &mut dyn Write) -> u8 {
-    if cfg!(windows)
-        && let Some(refusal) = request.profile.refusal_on_windows()
-    {
+    if let Some(refusal) = host_refusal(request.profile, cfg!(windows)) {
         return print_error(err, &refusal);
     }
     let roots = match Roots::resolve(request.test_root) {
