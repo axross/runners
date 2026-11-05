@@ -5,14 +5,11 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
-use std::marker::PhantomData;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use tokio::io::{
-    AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader, WriteHalf,
-};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
@@ -136,9 +133,8 @@ pub struct Welcome {
 type Answers = Arc<Mutex<BTreeMap<u64, oneshot::Sender<Result<serde_json::Value, CallError>>>>>;
 
 /// a connection to the agent; requests may be made from several tasks at once, and
-/// the agent answers each connection's requests in order. `W` is the write half of
-/// the connection, which a task of the client owns.
-pub struct Client<W> {
+/// the agent answers each connection's requests in order.
+pub struct Client {
     pub welcome: Welcome,
     /// whole request lines for the writing task, which writes each to the end even
     /// when the call that queued it is dropped.
@@ -152,10 +148,9 @@ pub struct Client<W> {
     closed: Arc<AtomicBool>,
     reading: JoinHandle<()>,
     writing: JoinHandle<()>,
-    write_half: PhantomData<fn() -> W>,
 }
 
-impl<W> Drop for Client<W> {
+impl Drop for Client {
     fn drop(&mut self) {
         self.reading.abort();
         self.writing.abort();
@@ -175,7 +170,7 @@ impl Drop for Waiting<'_> {
     }
 }
 
-impl<W> Client<W> {
+impl Client {
     /// sends `method` with `params` and waits for its result. A call fails with
     /// [`CallError::Closed`] once the connection has ended, but it waits as long as the
     /// agent takes on a connection that stays open, so a caller that needs a bound
@@ -292,7 +287,7 @@ fn same_user(server: Option<&str>, current: &str) -> bool {
 async fn handshake<S>(
     stream: S,
     client: &ClientInfo,
-) -> Result<(Client<WriteHalf<S>>, mpsc::UnboundedReceiver<Push>), ConnectError>
+) -> Result<(Client, mpsc::UnboundedReceiver<Push>), ConnectError>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
@@ -362,7 +357,6 @@ where
         closed,
         reading,
         writing,
-        write_half: PhantomData,
     };
     Ok((client, receiver))
 }
@@ -563,13 +557,7 @@ pub mod platform {
 pub async fn connect(
     roots: &Roots,
     client: &ClientInfo,
-) -> Result<
-    (
-        Client<WriteHalf<platform::Stream>>,
-        mpsc::UnboundedReceiver<Push>,
-    ),
-    ConnectError,
-> {
+) -> Result<(Client, mpsc::UnboundedReceiver<Push>), ConnectError> {
     let stream = timeout(CONNECT_TIMEOUT, platform::connect(roots))
         .await
         .map_err(|_| ConnectError::NoAgent)??;

@@ -260,7 +260,7 @@ impl Rig {
 
 /// a client connection, with what the agent pushed on it.
 pub struct Conn {
-    pub client: Client<WriteHalf<RawStream>>,
+    pub client: Client,
     pub pushes: mpsc::UnboundedReceiver<Push>,
     pub roots: Roots,
 }
