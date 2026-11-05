@@ -906,7 +906,7 @@ Residual risks, accepted on a single-user host:
   ends by itself; on Windows the Job Object ends them when `start` ends. They carry
   no JIT configuration.
 
-## The TOML Configuration Holds No Token and Echoes No Value
+## The TOML Configuration Holds No Token and Quotes No Line
 
 A configuration file is untrusted input, and an operator can paste a token into one
 by mistake. [CLI](../operations/cli.md) owns the format, its problems, and the write
@@ -923,8 +923,10 @@ path; these are the properties it keeps.
 - The write path replaces the file in one step: a flushed temporary file in the same
   folder, renamed over `config.toml`. A reader sees the old file or the new one and
   never part of one. On Unix the temporary file is created with mode 0600, and the new
-  file takes the old file's mode. Its errors carry a path and an error kind, or the
-  name of the edit, and no text from the file.
+  file takes the old file's mode. A file error carries a path and an error kind, and an
+  edit that cannot apply is named by the edit alone. A result that breaks the rules
+  carries the validator's problems, which quote only what the first residual risk
+  below describes.
 - The clean-up of leftover temporary files removes only regular files named exactly
   like a temporary file of the write path, so it cannot remove a file the operator
   keeps beside the configuration.

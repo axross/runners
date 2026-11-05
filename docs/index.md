@@ -26,8 +26,8 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   threat model for shared runner storage, per-repository isolation on a runner
   host, the release record for the CLI's dispatch-only release workflow and its
   signing Environment, the accepted LAN-egress risk, what the TOML
-  configuration holds and never echoes, what is never committed, and why the
-  review gate admits one bot identity by login.
+  configuration holds and what its problems quote, what is never committed, and
+  why the review gate admits one bot identity by login.
 - [conventions/documentation.md](./conventions/documentation.md) - which
   document a change to each runner surface invalidates, and what the
   documentation checks cover.
