@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::image::check::{Freshness, freshness_findings, status_fields};
 use crate::runtime::backend::ExportOutcome;
-use crate::runtime::board::{Board, PoolState, SlotState};
+use crate::runtime::board::{Board, PoolState, Row, SlotState};
 use crate::runtime::diagnostic::BUNDLE_QUOTA;
 use crate::runtime::retained::Retained;
 use crate::token_store::RepositoryKey;
@@ -19,6 +19,12 @@ use super::snapshot::{
 };
 use super::state::{Inner, Phase};
 use super::tokens::StoreTokens;
+
+type RowsByName<'a, T> = BTreeMap<&'a str, &'a Row<T>>;
+
+fn by_name<T>(rows: &[Row<T>]) -> RowsByName<'_, T> {
+    rows.iter().map(|row| (row.name.as_str(), row)).collect()
+}
 
 /// everything a snapshot is read from.
 pub struct View<'a> {
@@ -120,7 +126,14 @@ impl View<'_> {
         if let Some(plan) = &inner.plan {
             snapshot.repositories = self.repositories(&plan.entries);
             if inner.restart_due.is_none() {
-                snapshot.pools = plan.entries.iter().map(|entry| self.pool(entry)).collect();
+                let pool_rows = self.board.pool_rows();
+                let slot_rows = self.board.slot_rows();
+                let (pools, slots) = (by_name(&pool_rows), by_name(&slot_rows));
+                snapshot.pools = plan
+                    .entries
+                    .iter()
+                    .map(|entry| self.pool(entry, &pools, &slots))
+                    .collect();
             }
         }
         snapshot.runners_up = snapshot.pools.iter().map(|pool| pool.runners_up).sum();
@@ -146,25 +159,24 @@ impl View<'_> {
             .collect()
     }
 
-    fn pool(&self, entry: &Entry) -> PoolInfo {
+    fn pool(
+        &self,
+        entry: &Entry,
+        pools: &RowsByName<'_, PoolState>,
+        slots: &RowsByName<'_, SlotState>,
+    ) -> PoolInfo {
         let key = RepositoryKey::of(&entry.owner, &entry.repository);
-        let row = self
-            .board
-            .pool_rows()
-            .into_iter()
-            .find(|row| row.name == entry.name);
-        let (state, reason) = match row.map(|row| row.state) {
+        let (state, reason) = match pools.get(entry.name.as_str()).map(|row| &row.state) {
             Some(PoolState::WaitingForDocker) => ("waiting_for_docker", None),
             Some(PoolState::Preparing) => ("preparing", None),
             Some(PoolState::Running) => ("running", None),
-            Some(PoolState::Skipped(reason)) => ("skipped", Some(reason)),
+            Some(PoolState::Skipped(reason)) => ("skipped", Some(reason.clone())),
             None => ("stopped", self.inner.skips.get(&entry.name).cloned()),
         };
-        let slots = self.board.slot_rows();
         let runners: Vec<RunnerInfo> = (1..=entry.slots)
             .map(|number| {
                 let label = format!("{} slot {number}", entry.name);
-                match slots.iter().find(|row| row.name == label) {
+                match slots.get(label.as_str()) {
                     Some(row) => {
                         let (state, workload, reason) = match &row.state {
                             SlotState::Registering => ("registering", None, None),
