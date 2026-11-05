@@ -66,22 +66,27 @@
 //! - `export` stands in for an exporter child that ignores its liveness pipe: it
 //!   waits without reading its standard input.
 
+// the fake `docker` records and waits as the other fakes do, and has no use for their
+// scripted hang, failure and flood or their `.env` file.
+#[allow(dead_code)]
+mod fake_support;
+
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use marshal_cli::image::contract::{
     BUILT_LABEL, CONTRACT_LABEL, CONTRACT_VERSION, RUNNER_RELEASED_LABEL, RUNNER_VERSION_LABEL,
 };
 use marshal_cli::image::definition::declared_label;
 
-const JIT_VARIABLE: &str = "ACTIONS_RUNNER_INPUT_JITCONFIG";
+use fake_support::{JIT_VARIABLE, claim_invocation, exists, publish_arguments, sleep_while, text};
+
 const PROBE_LABEL: &str = "runners.cpu-probe=1";
 const DIAGNOSTIC_LABEL: &str = "runners.diagnostic-lifecycle=1";
 const EXITED: &str = "exited";
-const LONGEST_WAIT: Duration = Duration::from_secs(60);
 const LONG_LINE_BYTES: usize = 150_000;
 
 fn main() -> ExitCode {
@@ -125,64 +130,16 @@ fn run() -> Result<u8, String> {
 }
 
 fn record(dir: &Path, arguments: &[String]) -> Result<fs::File, String> {
-    for number in 0..100_000 {
-        let stem = dir.join(format!("inv-{number:06}"));
-        let claimed = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(stem.with_extension("claim"));
-        if claimed.is_err() {
-            continue;
-        }
-        let alive =
-            fs::File::create(stem.with_extension("alive")).map_err(|error| error.to_string())?;
-        alive.lock().map_err(|error| error.to_string())?;
-        fs::write(stem.with_extension("pid"), std::process::id().to_string())
-            .map_err(|error| error.to_string())?;
-        record_process_group(&stem);
-        if let Some(value) = std::env::var_os(JIT_VARIABLE) {
-            fs::write(
-                stem.with_extension("jit"),
-                value.to_string_lossy().as_bytes(),
-            )
-            .map_err(|error| error.to_string())?;
-        }
-        publish_arguments(&stem, arguments)?;
-        return Ok(alive);
+    let (stem, alive) = claim_invocation(dir)?;
+    if let Some(value) = std::env::var_os(JIT_VARIABLE) {
+        fs::write(
+            stem.with_extension("jit"),
+            value.to_string_lossy().as_bytes(),
+        )
+        .map_err(|error| error.to_string())?;
     }
-    Err("no invocation number".to_string())
-}
-
-/// renames the arguments into place as `.argv`, so a call a test can name already
-/// holds its lock and has written the rest; a reader never sees them half written.
-fn publish_arguments(stem: &Path, arguments: &[String]) -> Result<(), String> {
-    let pending = stem.with_extension("argv.tmp");
-    fs::write(&pending, arguments.join("\0")).map_err(|error| error.to_string())?;
-    fs::rename(&pending, stem.with_extension("argv")).map_err(|error| error.to_string())
-}
-
-/// records the process group this call runs in, where `ps` can tell it.
-#[cfg(unix)]
-fn record_process_group(stem: &Path) {
-    let output = std::process::Command::new("ps")
-        .args(["-o", "pgid=", "-p", &std::process::id().to_string()])
-        .output();
-    if let Ok(output) = output {
-        let _ = fs::write(stem.with_extension("pgid"), output.stdout);
-    }
-}
-
-#[cfg(not(unix))]
-fn record_process_group(_stem: &Path) {}
-
-fn exists(dir: &Path, flag: &str) -> bool {
-    dir.join(flag).exists()
-}
-
-fn text(dir: &Path, file: &str) -> Option<String> {
-    fs::read_to_string(dir.join(file))
-        .ok()
-        .map(|text| text.trim().to_string())
+    publish_arguments(&stem, arguments)?;
+    Ok(alive)
 }
 
 fn failing(dir: &Path, flag: &str) -> u8 {
@@ -580,13 +537,6 @@ fn print_long_line(out: &mut impl Write) {
     let _ = out.write_all(&line);
     let _ = out.write_all(b"\n");
     let _ = out.flush();
-}
-
-fn sleep_while(mut condition: impl FnMut() -> bool) {
-    let started = Instant::now();
-    while condition() && started.elapsed() < LONGEST_WAIT {
-        std::thread::sleep(Duration::from_millis(20));
-    }
 }
 
 #[derive(Clone)]
