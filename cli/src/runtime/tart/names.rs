@@ -119,14 +119,6 @@ impl GoldenVmName {
             built_seconds: seconds_of(built)?,
         })
     }
-
-    /// whether all three versions in the name are this CLI's.
-    #[must_use]
-    pub fn matches_this_cli(&self) -> bool {
-        self.golden_version == GOLDEN_VM_VERSION
-            && self.contract_version == CONTRACT_VERSION
-            && declared_label(RUNNER_VERSION_LABEL) == Some(self.runner_version.as_str())
-    }
 }
 
 impl fmt::Display for GoldenVmName {

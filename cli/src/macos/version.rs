@@ -116,13 +116,6 @@ pub enum Standing {
     OtherRelease,
 }
 
-impl Standing {
-    #[must_use]
-    pub fn runs(self) -> bool {
-        matches!(self, Self::Tested | Self::NewerPatch)
-    }
-}
-
 #[must_use]
 pub fn standing(found: Version, tested: Version) -> Standing {
     if (found.major, found.minor) != (tested.major, tested.minor) {
@@ -245,8 +238,6 @@ mod tests {
             standing(Version::new(2, 41, 4_000), tested),
             Standing::NewerPatch
         );
-        assert!(Standing::Tested.runs());
-        assert!(Standing::NewerPatch.runs());
     }
 
     #[test]
@@ -266,7 +257,5 @@ mod tests {
         ] {
             assert_eq!(standing(other, tested), Standing::OtherRelease, "{other}");
         }
-        assert!(!Standing::OlderPatch.runs());
-        assert!(!Standing::OtherRelease.runs());
     }
 }

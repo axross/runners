@@ -17,12 +17,13 @@ use std::time::{Duration, Instant};
 
 use marshal_cli::build::golden::{GoldenBuild, GoldenTimings};
 use marshal_cli::golden::pins::RETIRED_BASE_PINS;
-use marshal_cli::image::contract::CONTRACT_VERSION;
+use marshal_cli::image::contract::{CONTRACT_VERSION, RUNNER_VERSION_LABEL};
+use marshal_cli::image::definition::declared_label;
 use marshal_cli::macos::softnet::OwnerMode;
 use marshal_cli::runtime::fake::MemoryLog;
 use marshal_cli::runtime::tart::VmLauncher;
 use marshal_cli::runtime::tart::boot::AgentWait;
-use marshal_cli::runtime::tart::names::GoldenVmName;
+use marshal_cli::runtime::tart::names::{GOLDEN_VM_VERSION, GoldenVmName};
 
 use super::docker::FAKE_DOCKER;
 use super::softnet::Host as SoftnetHost;
@@ -41,6 +42,18 @@ pub fn old_golden() -> String {
     GoldenVmName::current(std::time::UNIX_EPOCH + Duration::from_secs(OLD_BUILT_SECONDS))
         .unwrap()
         .to_string()
+}
+
+/// asserts that `name` is a golden VM name whose three versions are this CLI's.
+pub fn assert_names_this_cli(name: &str) {
+    let parsed = GoldenVmName::parse(name).unwrap();
+    assert_eq!(parsed.golden_version, GOLDEN_VM_VERSION, "{name}");
+    assert_eq!(parsed.contract_version, CONTRACT_VERSION, "{name}");
+    assert_eq!(
+        Some(parsed.runner_version.as_str()),
+        declared_label(RUNNER_VERSION_LABEL),
+        "{name}"
+    );
 }
 
 /// the time bounds of a test: every wait is short.

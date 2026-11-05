@@ -20,7 +20,9 @@ use marshal_cli::image::contract::BUILT_LABEL;
 use marshal_cli::image::contract::CONTRACT_VERSION;
 use marshal_cli::runtime::tart::VmLauncher;
 use marshal_cli::runtime::tart::names::{GoldenVmName, parse_build_vm_name};
-use support::golden::{IMAGE, KEY_LISTING, OLD_BUILT_SECONDS, Rig, big_stack, old_golden};
+use support::golden::{
+    IMAGE, KEY_LISTING, OLD_BUILT_SECONDS, Rig, assert_names_this_cli, big_stack, old_golden,
+};
 use support::host::{send_signal, texts};
 
 const LEFTOVER: &str = "marshal-build-linux-20240101000000000";
@@ -103,8 +105,7 @@ fn the_build_runs_its_calls_in_order_and_commits_by_renaming() {
         let target = renamed[0]
             .strip_prefix(&format!("rename {build_vm} "))
             .unwrap();
-        let golden = GoldenVmName::parse(target).unwrap();
-        assert!(golden.matches_this_cli(), "{target}");
+        assert_names_this_cli(target);
         assert_eq!(rig.local_vms(), [target.to_string()]);
         assert_eq!(rig.build_vms(), Vec::<String>::new());
         let log = rig.log.lines().join("\n");
@@ -685,7 +686,7 @@ fn the_commit_deletes_every_other_golden_vm_and_only_the_retired_pins_from_the_c
         rig.run().await.unwrap();
         let golden = rig.golden_vms();
         assert_eq!(golden.len(), 1, "{golden:?}");
-        assert!(GoldenVmName::parse(&golden[0]).unwrap().matches_this_cli());
+        assert_names_this_cli(&golden[0]);
         assert!(rig.local_vms().contains(&"unrelated-vm".to_string()));
         let mut cache = rig.oci_images();
         cache.sort();
@@ -832,7 +833,7 @@ fn marshal_build_under_the_vm_shim_makes_the_golden_vm_named_by_the_default_imag
     );
     let golden = rig.golden_vms();
     assert_eq!(golden.len(), 1, "{golden:?}");
-    assert!(GoldenVmName::parse(&golden[0]).unwrap().matches_this_cli());
+    assert_names_this_cli(&golden[0]);
     assert_eq!(rig.build_vms(), Vec::<String>::new());
     let tag = rig
         .fake
