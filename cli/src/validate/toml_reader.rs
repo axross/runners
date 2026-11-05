@@ -55,6 +55,10 @@ impl Reader for TomlReader<'_> {
         None
     }
 
+    fn carries_settings(&self) -> bool {
+        true
+    }
+
     fn may_omit_os_and_volumes(&self) -> bool {
         true
     }

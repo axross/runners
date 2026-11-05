@@ -46,6 +46,10 @@ impl Reader for JsonReader {
         Some(self.profile.routing_label())
     }
 
+    fn carries_settings(&self) -> bool {
+        false
+    }
+
     fn may_omit_os_and_volumes(&self) -> bool {
         false
     }

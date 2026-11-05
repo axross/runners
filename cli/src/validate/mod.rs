@@ -157,7 +157,7 @@ fn validate_tree(
 fn read_root(root: &Value, cx: &mut Context) -> Option<Plan> {
     let profile = cx.profile;
     let reader = cx.reader;
-    let has_settings = reader.routing_label().is_none();
+    let has_settings = reader.carries_settings();
     if has_settings
         && settings::check_schema_version(root, &mut cx.errors) == settings::Schema::Newer
     {
@@ -373,6 +373,10 @@ mod tests {
     impl Reader for OtherFormat {
         fn routing_label(&self) -> Option<&str> {
             Some("custom")
+        }
+
+        fn carries_settings(&self) -> bool {
+            false
         }
 
         fn may_omit_os_and_volumes(&self) -> bool {

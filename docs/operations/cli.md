@@ -442,6 +442,8 @@ words, byte for byte, which the shared fixtures pin. The TOML reader renders the
 and words above. What differs by format is what the reader supplies, through the
 `Reader` trait:
 
+- whether the file carries its own settings, `schema_version`, `routing_label`, and
+  `[lifecycle]`: TOML does, and JSON does not;
 - the routing label: the profile's for JSON, and the file's `routing_label` for TOML;
 - whether a pool may omit `os` and `volumes`, and whether a Windows pool has an `os`;
 - whether the owner and the repository are one key or two;

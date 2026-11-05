@@ -13,6 +13,10 @@ pub trait Reader {
     /// format fixes it; `None` when the file sets it and the rules read it.
     fn routing_label(&self) -> Option<&str>;
 
+    /// whether the file carries its own settings: `schema_version`, `routing_label`,
+    /// and `[lifecycle]`, which the rules then read and a plan records.
+    fn carries_settings(&self) -> bool;
+
     /// whether a pool may leave out `os` and `volumes`, taking Linux and none.
     fn may_omit_os_and_volumes(&self) -> bool;
 
