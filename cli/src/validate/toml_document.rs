@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::ops::Range;
 
-use toml_edit::{Document, Item, Table as TomlTable, Value as TomlValue};
+use toml_edit::{Document, Item, Table as TomlTable, TomlError, Value as TomlValue};
 
 use crate::command::MAX_CONFIG_BYTES;
 use crate::json::{Number, Object, Value};
@@ -82,13 +82,7 @@ pub(super) fn read(bytes: &[u8]) -> Result<Layout, String> {
     };
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let lines = Lines::new(text);
-    let document = Document::parse(text).map_err(|error| {
-        let (line, column) = lines.position(error.span().map_or(0, |span| span.start));
-        format!(
-            "line {line}, column {column}: syntax error: {}",
-            error.message()
-        )
-    })?;
+    let document = Document::parse(text).map_err(|error| syntax_error(&lines, &error))?;
     let builder = Builder { lines: &lines };
     let (tree, root) = builder.table(
         document
@@ -99,6 +93,21 @@ pub(super) fn read(bytes: &[u8]) -> Result<Layout, String> {
         1,
     );
     Ok(Layout { tree, root })
+}
+
+/// the fixed text of a syntax error. the parser gives a key or a table header nested
+/// past its limit no span, and no position is better than a false one.
+fn syntax_error(lines: &Lines, error: &TomlError) -> String {
+    match error.span() {
+        Some(span) => {
+            let (line, column) = lines.position(span.start);
+            format!(
+                "line {line}, column {column}: syntax error: {}",
+                error.message()
+            )
+        }
+        None => format!("syntax error: {}", error.message()),
+    }
 }
 
 /// the byte offset where each line of the text starts.

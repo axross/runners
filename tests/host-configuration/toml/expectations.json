@@ -579,6 +579,13 @@
     "contains": [],
     "lacks": ["ghp_", "0123456789abcdefghij"]
   },
+  "rejected/syntax-dotted-key-too-deep.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["syntax error: recursion limit"],
+    "contains": [],
+    "lacks": []
+  },
   "rejected/syntax-duplicate-key.toml": {
     "profile": "axmc",
     "outcome": "reject",
@@ -656,6 +663,13 @@
     "profile": "axpc",
     "outcome": "reject",
     "problems": ["line 7, column 2: syntax error: duplicate key"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/syntax-table-header-too-deep.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["syntax error: recursion limit"],
     "contains": [],
     "lacks": []
   },

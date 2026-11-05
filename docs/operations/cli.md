@@ -349,15 +349,19 @@ newer Marshal wrote the file, and no other problem.
 bytes are not a TOML document: a file over the size limit, one that is not UTF-8, and
 a syntax error are each the only problem. Their forms are:
 
-| Problem                  | Form                                                                       |
-| ------------------------ | -------------------------------------------------------------------------- |
-| Any rule                 | `line <n>: <key path>: <problem>`                                          |
-| A syntax error           | `line <n>, column <c>: syntax error: <the parser's fixed message>`         |
-| A file that is not UTF-8 | `line <n>, column <c>: the file is not valid UTF-8`, at the first bad byte |
-| A file over 1 MiB        | `line 1: the file is larger than 1048576 bytes (1 MiB)`                    |
+| Problem                         | Form                                                                       |
+| ------------------------------- | -------------------------------------------------------------------------- |
+| Any rule                        | `line <n>: <key path>: <problem>`                                          |
+| A syntax error                  | `line <n>, column <c>: syntax error: <the parser's fixed message>`         |
+| A syntax error with no position | `syntax error: <the parser's fixed message>`                               |
+| A file that is not UTF-8        | `line <n>, column <c>: the file is not valid UTF-8`, at the first bad byte |
+| A file over 1 MiB               | `line 1: the file is larger than 1048576 bytes (1 MiB)`                    |
 
 Columns count characters from 1, and a CRLF file gives the same problems at the same
-lines as its LF copy.
+lines as its LF copy. A syntax error names its line and column when the parser gives a
+position. One the parser cannot place, such as a dotted key or a table header nested
+past its limit, names none, because a position the parser did not give would be
+false.
 
 **Order.** The order is the one under Error Order, with the TOML key names:
 
@@ -410,8 +414,8 @@ new and are pinned by their own fixtures, under Fixtures and Tests.
 **Syntax and type problems quote nothing.** A syntax error and a wrong-type problem carry only the
 key path, the line, the column, and fixed text, so a token pasted into the file by
 mistake is not repeated. The syntax error is built from the parser's message, which
-is fixed text, and its byte span, from which the line and the column are counted. It
-never uses the parser's own display text, which quotes the source line. Two kinds of
+is fixed text, and its byte span when it has one, from which the line and the column
+are counted. It never uses the parser's own display text, which quotes the source line. Two kinds of
 problem still show something the file holds: an unknown key is named as it is
 written, which is how it is found, and a rule that compares a value names it, such as
 a duplicate label, a platform label, a name that collides, or a suffix. A token in a
@@ -1805,8 +1809,9 @@ beside the JSON ones and not in place of them.
   holds `accepted/` and `rejected/` documents and one `expectations.json`, read by
   `cli/tests/toml_fixtures.rs`. These are the cases only TOML has: syntax errors,
   `schema_version`, `routing_label`, `[lifecycle]`, letter case, duplicates, wrong
-  types including a date, nesting deeper than the parser allows, the problem order,
-  the lines, and a token-shaped value or key. Each expectation names the profile
+  types including a date, nesting deeper than the parser allows, which is placed for
+  an array or an inline table and is not for a dotted key or a table header, the
+  problem order, the lines, and a token-shaped value or key. Each expectation names the profile
   (`axpc` for Windows, `axmc` for macOS), the outcome, the problems whole, with their
   lines and in order, and `contains` and `lacks` strings checked against the problems
   and, for an accepted file, a description of its plan. An unknown or misspelled key
