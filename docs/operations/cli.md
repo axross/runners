@@ -358,10 +358,10 @@ a syntax error are each the only problem. Their forms are:
 | A file over 1 MiB               | `line 1: the file is larger than 1048576 bytes (1 MiB)`                    |
 
 Columns count characters from 1, and a CRLF file gives the same problems at the same
-lines as its LF copy. A syntax error names its line and column when the parser gives a
-position. One the parser cannot place, such as a dotted key or a table header nested
-past its limit, names none, because a position the parser did not give would be
-false.
+lines and columns as its LF copy, a syntax error at the end of a line included. A
+syntax error names its line and column when the parser gives a position. One the
+parser cannot place, such as a dotted key or a table header nested past its limit,
+names none, because a position the parser did not give would be false.
 
 **Order.** The order is the one under Error Order, with the TOML key names:
 

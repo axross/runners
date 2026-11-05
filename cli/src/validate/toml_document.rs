@@ -130,8 +130,10 @@ impl<'a> Lines<'a> {
             .max(1)
     }
 
-    /// the line and the column in characters, both counted from 1.
+    /// the line and the column in characters, both counted from 1. a line break is one
+    /// position, so a CRLF file and its LF copy give the same pair.
     fn position(&self, offset: usize) -> (usize, usize) {
+        let offset = self.break_start(offset);
         let line = self.line_of(offset);
         let start = line
             .checked_sub(1)
@@ -145,6 +147,20 @@ impl<'a> Lines<'a> {
                 before.chars().count()
             });
         (line, column + 1)
+    }
+
+    /// the offset of the `\r` when `offset` is at the `\n` of a CRLF break, and `offset`
+    /// otherwise.
+    fn break_start(&self, offset: usize) -> usize {
+        let bytes = self.text.as_bytes();
+        match offset.checked_sub(1) {
+            Some(before)
+                if bytes.get(offset) == Some(&b'\n') && bytes.get(before) == Some(&b'\r') =>
+            {
+                before
+            }
+            _ => offset,
+        }
     }
 
     fn line(&self, span: Option<Range<usize>>, fallback: usize) -> usize {

@@ -334,6 +334,7 @@ fn crlf_line_endings_give_the_same_problems_at_the_same_lines() {
         "missing-keys-name-the-table-header.toml",
         "syntax-table-never-closed.toml",
         "pools-clash-routing.toml",
+        "syntax-unterminated-string.toml",
     ] {
         let text = fs::read_to_string(root.join("rejected").join(name)).unwrap();
         let unix = text.replace("\r\n", "\n");
@@ -341,6 +342,34 @@ fn crlf_line_endings_give_the_same_problems_at_the_same_lines() {
         assert_eq!(
             problems(unix.as_bytes(), Profile::Axpc),
             problems(windows.as_bytes(), Profile::Axpc),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn a_syntax_error_at_a_line_break_has_the_same_column_with_either_ending() {
+    for (name, text, expected) in [
+        (
+            "basic string",
+            "a = \"x\n",
+            "line 1, column 7: syntax error: invalid basic string, expected `\"`",
+        ),
+        (
+            "literal string",
+            "a = 'x\n",
+            "line 1, column 7: syntax error: invalid literal string, expected `'`",
+        ),
+    ] {
+        let windows = text.replace('\n', "\r\n");
+        assert_eq!(
+            problems(text.as_bytes(), Profile::Axpc),
+            [expected],
+            "{name}"
+        );
+        assert_eq!(
+            problems(windows.as_bytes(), Profile::Axpc),
+            [expected],
             "{name}"
         );
     }
