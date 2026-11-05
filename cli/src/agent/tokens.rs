@@ -38,12 +38,6 @@ impl StoreTokens {
         }
     }
 
-    /// whether there is a store at all.
-    #[must_use]
-    pub fn available(&self) -> bool {
-        self.store.is_some()
-    }
-
     /// fires when a token was set, so a pool skipped for want of one may start.
     #[must_use]
     pub fn changes(&self) -> watch::Receiver<u64> {

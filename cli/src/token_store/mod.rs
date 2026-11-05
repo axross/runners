@@ -128,12 +128,6 @@ impl StoreError {
         self.code
     }
 
-    /// the words, without the kind and the code.
-    #[must_use]
-    pub fn message(&self) -> &str {
-        &self.message
-    }
-
     /// the words with the kind and the code, as the agent shows a failure.
     #[must_use]
     pub fn describe(&self) -> String {
