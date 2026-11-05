@@ -1859,7 +1859,10 @@ categories are:
 - **A number TOML cannot hold,** such as the `1e400` literal, which the TOML reader
   reports as a syntax error.
 - **`tokenPath` and token files.** The TOML format has neither, so a fixture whose
-  problem is about one is not translated.
+  problem is about one is not translated. `rust/rejected/axmc-budget-errors-come-last.json`
+  is one, so the hand-written `rejected/macos-clashes-come-before-budget-totals.toml`
+  pins for TOML that the clashes between pools come before the budget totals, though
+  the budget's line is the earlier one.
 
 ## Toolchain and Gates
 

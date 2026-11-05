@@ -226,6 +226,18 @@
     "contains": [],
     "lacks": []
   },
+  "rejected/macos-clashes-come-before-budget-totals.toml": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "problems": [
+      "line 18: pool[1].name: name 'alpha' collides with 'alpha' at pool[0]; set a distinct name on one pool",
+      "line 18: pool[1].labels: ambiguous same-repository routing; labels 'axmc' also appear at pool[0]",
+      "line 6: budget: macOS pools total 3 VMs (the sum of their runners), above the limit of 2",
+      "line 6: budget: pools total 1080 GB of disk (the sum of runners times disk_gb), above the budget of 200 GB"
+    ],
+    "contains": [],
+    "lacks": []
+  },
   "rejected/macos-disk-gb-missing.toml": {
     "profile": "axmc",
     "outcome": "reject",
