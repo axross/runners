@@ -115,11 +115,20 @@ impl std::error::Error for EditError {}
 
 /// the file as it was read, which a change is made from and compared with just before
 /// the file is replaced.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ConfigFile {
     path: PathBuf,
     bytes: Vec<u8>,
     permissions: fs::Permissions,
+}
+
+impl fmt::Debug for ConfigFile {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ConfigFile")
+            .field("path", &self.path)
+            .field("bytes", &format_args!("{} bytes", self.bytes.len()))
+            .finish_non_exhaustive()
+    }
 }
 
 impl ConfigFile {

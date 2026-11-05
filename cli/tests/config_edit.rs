@@ -681,6 +681,21 @@ fn a_file_that_is_gone_after_it_was_read_is_refused_as_changed() {
 }
 
 #[test]
+fn the_debug_form_of_a_read_file_shows_its_path_and_size_and_none_of_its_content() {
+    let content = format!("# a-pasted-secret-value\n{SAMPLE}");
+    let config = Config::new(&content);
+    let read = ConfigFile::read(&config.path).unwrap();
+    let shown = format!("{read:?}");
+    assert!(shown.contains(&format!("{:?}", config.path)), "{shown}");
+    assert!(
+        shown.contains(&format!("{} bytes", content.len())),
+        "{shown}"
+    );
+    assert!(!shown.contains("a-pasted-secret-value"), "{shown}");
+    assert!(!shown.contains("image_name"), "{shown}");
+}
+
+#[test]
 fn a_missing_file_and_a_folder_that_vanished_are_file_errors() {
     let dir = TempDir::new();
     let missing = dir.path().join("config.toml");

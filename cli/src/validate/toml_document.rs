@@ -24,7 +24,7 @@ pub(super) struct Layout {
 }
 
 /// where the file holds a key and the keys and list items under it.
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub(super) struct Spot {
     pub line: usize,
     pub items: Vec<Spot>,
