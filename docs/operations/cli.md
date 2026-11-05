@@ -691,8 +691,8 @@ against the fake `tart` and `fake-softnet`. `golden_provisioning.rs` runs the go
 VM's guest calls against the fake `tart` in their order, with a key of another
 fingerprint stopping them before anything is installed, and `golden_launcher.rs` runs
 the launcher as a shell script against a stand-in `docker` (Unix only). `vm_shim.rs`
-runs the VM shim as a real process, for a build VM and for a diagnostics pool's VM
-(Unix only). `real_docker.rs` runs a container and the
+runs the VM shim as a real process, for a job VM and for a build VM (Unix only).
+`real_docker.rs` runs a container and the
 probe through a real Docker daemon on Linux, and exports a container's small
 `metrics.txt` through the exporter child from a real `docker cp` stream; it is
 `#[ignore]`d for a local `cargo test`, and CI runs it in its own step, where it
