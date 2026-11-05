@@ -24,7 +24,7 @@ use crate::instance::source::FileSource;
 use crate::macos::gate::NetworkGate;
 use crate::macos::monitor::{Cadence, SignalMonitor};
 use crate::macos::signals::Signals;
-use crate::profile::Profile;
+use crate::profile::{Profile, host_refusal};
 use crate::runtime::backend::Backend;
 use crate::runtime::clock::SystemClock;
 use crate::runtime::docker::{DockerBackend, DockerConfig, JobLauncher, resolve_program};
@@ -65,9 +65,7 @@ pub struct StartRequest<'a> {
 /// runs `start` and returns its exit code; messages before the log file opens go to
 /// `err`, and every line after goes through the log.
 pub fn start(request: &StartRequest<'_>, err: &mut dyn Write) -> u8 {
-    if cfg!(windows)
-        && let Some(refusal) = request.profile.refusal_on_windows()
-    {
+    if let Some(refusal) = host_refusal(request.profile, cfg!(windows)) {
         return print_error(err, &refusal);
     }
     let roots = match Roots::resolve(request.test_root) {

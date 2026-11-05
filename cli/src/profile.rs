@@ -83,16 +83,6 @@ impl Profile {
         }
     }
 
-    /// why this profile cannot run on a Windows host, when it cannot: the axmc profile
-    /// runs Tart, which exists only on macOS.
-    #[must_use]
-    pub fn refusal_on_windows(self) -> Option<&'static str> {
-        match self {
-            Self::Axpc => None,
-            Self::Axmc => Some("the axmc profile runs only on macOS"),
-        }
-    }
-
     #[must_use]
     pub fn name(self) -> &'static str {
         match self {
@@ -165,6 +155,17 @@ impl Os {
     }
 }
 
+/// why `profile` cannot run on this host, when it cannot: the axmc profile runs Tart,
+/// which exists only on macOS, so a Windows host refuses it. `windows` says whether the
+/// host is Windows, which lets every platform test the decision.
+#[must_use]
+pub fn host_refusal(profile: Profile, windows: bool) -> Option<&'static str> {
+    match profile {
+        Profile::Axmc if windows => Some("the axmc profile runs only on macOS"),
+        Profile::Axpc | Profile::Axmc => None,
+    }
+}
+
 impl fmt::Display for Profile {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.name())
@@ -183,17 +184,16 @@ mod tests {
 
     #[test]
     fn only_the_axmc_profile_is_refused_on_windows() {
-        assert_eq!(Profile::Axpc.refusal_on_windows(), None);
+        assert_eq!(host_refusal(Profile::Axpc, true), None);
         assert_eq!(
-            Profile::Axmc.refusal_on_windows(),
+            host_refusal(Profile::Axmc, true),
             Some("the axmc profile runs only on macOS")
         );
     }
 
     #[test]
-    fn start_and_build_both_refuse_through_it() {
-        for command in [include_str!("start.rs"), include_str!("build/mod.rs")] {
-            assert!(command.contains("profile.refusal_on_windows()"));
-        }
+    fn no_profile_is_refused_off_windows() {
+        assert_eq!(host_refusal(Profile::Axpc, false), None);
+        assert_eq!(host_refusal(Profile::Axmc, false), None);
     }
 }

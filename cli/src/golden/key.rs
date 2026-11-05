@@ -136,7 +136,7 @@ fn fingerprint_of(record: &str) -> Result<&str, KeyCheckError> {
 mod tests {
     use super::*;
 
-    const REAL_LISTING: &str = include_str!("fixtures/docker-key-listing.txt");
+    const KEY_LISTING: &str = include_str!("fixtures/docker-key-listing.txt");
     const OTHER_FINGERPRINT: &str = "0123456789ABCDEF0123456789ABCDEF01234567";
 
     fn refused(listing: &str) -> KeyCheckError {
@@ -145,12 +145,12 @@ mod tests {
 
     #[test]
     fn accepts_the_listing_gpg_printed_for_the_recorded_key() {
-        assert!(check_key_listing(REAL_LISTING).is_ok());
+        assert!(check_key_listing(KEY_LISTING).is_ok());
     }
 
     #[test]
     fn refuses_another_primary_key_and_names_it() {
-        let listing = REAL_LISTING.replacen(DOCKER_KEY_FINGERPRINT, OTHER_FINGERPRINT, 1);
+        let listing = KEY_LISTING.replacen(DOCKER_KEY_FINGERPRINT, OTHER_FINGERPRINT, 1);
         assert_eq!(
             refused(&listing),
             KeyCheckError::Mismatch {
@@ -162,7 +162,7 @@ mod tests {
 
     #[test]
     fn the_subkey_fingerprint_is_not_the_primary_key() {
-        let listing = REAL_LISTING.replacen(
+        let listing = KEY_LISTING.replacen(
             DOCKER_KEY_FINGERPRINT,
             "D3306A018370199E527AE7997EA0A9C3F273FCD8",
             1,
@@ -172,7 +172,7 @@ mod tests {
 
     #[test]
     fn the_recorded_fingerprint_on_a_subkey_alone_is_refused() {
-        let listing = REAL_LISTING
+        let listing = KEY_LISTING
             .replacen(DOCKER_KEY_FINGERPRINT, OTHER_FINGERPRINT, 1)
             .replacen(
                 "D3306A018370199E527AE7997EA0A9C3F273FCD8",
@@ -188,8 +188,8 @@ mod tests {
             "pub:-:4096:1:AAAAAAAAAAAAAAAA:1:::-:::scESC:::::::\nfpr:::::::::{OTHER_FINGERPRINT}:\n"
         );
         for listing in [
-            format!("{REAL_LISTING}{second}"),
-            format!("{second}{REAL_LISTING}"),
+            format!("{KEY_LISTING}{second}"),
+            format!("{second}{KEY_LISTING}"),
         ] {
             assert!(matches!(refused(&listing), KeyCheckError::Malformed(_)));
         }
@@ -197,14 +197,14 @@ mod tests {
 
     #[test]
     fn refuses_what_is_not_the_form_gpg_prints() {
-        let without_newline = REAL_LISTING.trim_end_matches('\n');
-        let lowercase = REAL_LISTING.replacen(
+        let without_newline = KEY_LISTING.trim_end_matches('\n');
+        let lowercase = KEY_LISTING.replacen(
             DOCKER_KEY_FINGERPRINT,
             &DOCKER_KEY_FINGERPRINT.to_lowercase(),
             1,
         );
-        let truncated_fingerprint = REAL_LISTING.replacen(DOCKER_KEY_FINGERPRINT, "9DC8", 1);
-        let extra_field = REAL_LISTING.replacen(
+        let truncated_fingerprint = KEY_LISTING.replacen(DOCKER_KEY_FINGERPRINT, "9DC8", 1);
+        let extra_field = KEY_LISTING.replacen(
             &format!("{DOCKER_KEY_FINGERPRINT}:"),
             &format!("{DOCKER_KEY_FINGERPRINT}::x"),
             1,
@@ -216,8 +216,8 @@ mod tests {
             "pub:-:4096:1:8D81803C0EBFCD88:1487788586:::-:::escaESCA::::::23::0:\n",
             "uid:-::::1487792064::::Docker Release::::::::::0:\nfpr:::::::::9DC858229FC7DD38854AE2D88D81803C0EBFCD88:\n",
             without_newline,
-            &REAL_LISTING.replace('\n', "\r\n"),
-            &REAL_LISTING.replacen("uid:", "sig:", 1),
+            &KEY_LISTING.replace('\n', "\r\n"),
+            &KEY_LISTING.replacen("uid:", "sig:", 1),
             &lowercase,
             &truncated_fingerprint,
             &extra_field,
@@ -233,7 +233,7 @@ mod tests {
     #[test]
     fn refuses_a_listing_over_the_bound_before_reading_it() {
         let padding = "uid:-::::1::::x::::::::::0:\n".repeat(MAX_LISTING_BYTES / 28 + 1);
-        let listing = format!("{REAL_LISTING}{padding}");
+        let listing = format!("{KEY_LISTING}{padding}");
         assert_eq!(refused(&listing), KeyCheckError::TooLarge);
     }
 

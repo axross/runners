@@ -17,12 +17,13 @@ use std::time::{Duration, Instant};
 
 use marshal_cli::build::golden::{GoldenBuild, GoldenTimings};
 use marshal_cli::golden::pins::RETIRED_BASE_PINS;
-use marshal_cli::image::contract::CONTRACT_VERSION;
+use marshal_cli::image::contract::{CONTRACT_VERSION, RUNNER_VERSION_LABEL};
+use marshal_cli::image::definition::declared_label;
 use marshal_cli::macos::softnet::OwnerMode;
 use marshal_cli::runtime::fake::MemoryLog;
 use marshal_cli::runtime::tart::VmLauncher;
 use marshal_cli::runtime::tart::boot::AgentWait;
-use marshal_cli::runtime::tart::names::GoldenVmName;
+use marshal_cli::runtime::tart::names::{GOLDEN_VM_VERSION, GoldenVmName};
 
 use super::docker::FAKE_DOCKER;
 use super::softnet::Host as SoftnetHost;
@@ -30,7 +31,7 @@ use super::tart::{FAKE_TART, Fake};
 use super::{BINARY, TempDir, repository_root};
 
 pub const IMAGE: &str = "actions-runner:local";
-pub const REAL_LISTING: &str = include_str!("../../src/golden/fixtures/docker-key-listing.txt");
+pub const KEY_LISTING: &str = include_str!("../../src/golden/fixtures/docker-key-listing.txt");
 pub const OWNER_MODE: &str = "0:4755";
 
 /// when the old golden VM was built, in seconds since the epoch.
@@ -41,6 +42,18 @@ pub fn old_golden() -> String {
     GoldenVmName::current(std::time::UNIX_EPOCH + Duration::from_secs(OLD_BUILT_SECONDS))
         .unwrap()
         .to_string()
+}
+
+/// asserts that `name` is a golden VM name whose three versions are this CLI's.
+pub fn assert_names_this_cli(name: &str) {
+    let parsed = GoldenVmName::parse(name).unwrap();
+    assert_eq!(parsed.golden_version, GOLDEN_VM_VERSION, "{name}");
+    assert_eq!(parsed.contract_version, CONTRACT_VERSION, "{name}");
+    assert_eq!(
+        Some(parsed.runner_version.as_str()),
+        declared_label(RUNNER_VERSION_LABEL),
+        "{name}"
+    );
 }
 
 /// the time bounds of a test: every wait is short.
@@ -122,7 +135,7 @@ impl Rig {
         rig.docker_script("build_contract", &CONTRACT_VERSION.to_string());
         rig.fake.script(
             "exec_stdout-marshal-list-key",
-            REAL_LISTING.trim_end_matches('\n'),
+            KEY_LISTING.trim_end_matches('\n'),
         );
         rig
     }

@@ -23,6 +23,7 @@ use marshal_cli::runtime::tart::args::{
 use marshal_cli::runtime::tart::client::{
     TART_PROGRAM, TEST_TART_VARIABLE, program_from_environment,
 };
+use marshal_cli::runtime::tart::golden_check::clone_source;
 use marshal_cli::runtime::tart::list::{MAX_ENTRIES, parse_vm_list};
 use marshal_cli::runtime::tart::names::{
     GOLDEN_VM_VERSION, GoldenVmName, build_vm_name, golden_vms, is_job_vm_of_pools, job_vm_name,
@@ -631,7 +632,6 @@ fn the_golden_vm_name_records_the_versions_and_the_build_second() {
         GoldenVmName::parse(&current.to_string()),
         Some(current.clone())
     );
-    assert!(current.matches_this_cli());
 
     let parsed = GoldenVmName::parse(GOLDEN).unwrap();
     assert_eq!(parsed.golden_version, 1);
@@ -642,28 +642,25 @@ fn the_golden_vm_name_records_the_versions_and_the_build_second() {
 }
 
 #[test]
-fn a_golden_vm_name_with_another_version_reads_but_does_not_match_this_cli() {
-    let mut other = GoldenVmName::current(at(0)).unwrap();
-    other.golden_version += 1;
-    assert!(
-        !GoldenVmName::parse(&other.to_string())
-            .unwrap()
-            .matches_this_cli()
-    );
-    let mut other = GoldenVmName::current(at(0)).unwrap();
-    other.contract_version += 1;
-    assert!(
-        !GoldenVmName::parse(&other.to_string())
-            .unwrap()
-            .matches_this_cli()
-    );
-    let mut other = GoldenVmName::current(at(0)).unwrap();
-    other.runner_version = "0.0.1".to_string();
-    assert!(
-        !GoldenVmName::parse(&other.to_string())
-            .unwrap()
-            .matches_this_cli()
-    );
+fn a_golden_vm_name_with_another_version_reads_back_and_only_another_runner_version_still_runs_here()
+ {
+    let current = GoldenVmName::current(at(0)).unwrap();
+    let mut other_golden = current.clone();
+    other_golden.golden_version += 1;
+    let mut other_contract = current.clone();
+    other_contract.contract_version += 1;
+    let mut other_runner = current.clone();
+    other_runner.runner_version = "0.0.1".to_string();
+    for (other, runs_here) in [
+        (other_golden, false),
+        (other_contract, false),
+        (other_runner, true),
+    ] {
+        let name = other.to_string();
+        assert_eq!(GoldenVmName::parse(&name).as_ref(), Some(&other), "{name}");
+        assert_ne!(other, current, "{name}");
+        assert_eq!(clone_source(&[local(&name)]).is_some(), runs_here, "{name}");
+    }
 }
 
 #[test]
@@ -847,7 +844,7 @@ fn the_newest_golden_vm_wins_even_when_its_versions_are_not_this_cli() {
     ];
     let (_, name) = newest_golden_vm(&entries).unwrap();
     assert_eq!(name.golden_version, 9);
-    assert!(!name.matches_this_cli());
+    assert_ne!(name.golden_version, GOLDEN_VM_VERSION);
 }
 
 #[test]

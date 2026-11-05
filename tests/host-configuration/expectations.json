@@ -340,6 +340,14 @@
     ],
     "lacks": []
   },
+  "rust/rejected/axmc-linux-disk-too-small.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].diskGb: must be at least 20 on a Linux pool, the golden VM's disk size"
+    ],
+    "lacks": ["repositories[1]", "budget"]
+  },
   "rust/rejected/axmc-memory-over-budget.json": {
     "profile": "axmc",
     "outcome": "reject",

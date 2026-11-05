@@ -173,7 +173,7 @@ mod tests {
     use crate::golden::key::check_key_listing;
     use crate::runtime::docker_args::JIT_VARIABLE;
 
-    const REAL_LISTING: &str = include_str!("fixtures/docker-key-listing.txt");
+    const KEY_LISTING: &str = include_str!("fixtures/docker-key-listing.txt");
 
     const SCRIPTS: [(&str, &str); 7] = [
         ("launcher", LAUNCHER),
@@ -190,7 +190,7 @@ mod tests {
     }
 
     fn verified() -> VerifiedKey {
-        check_key_listing(REAL_LISTING).unwrap()
+        check_key_listing(KEY_LISTING).unwrap()
     }
 
     #[test]
