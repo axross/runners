@@ -1,4 +1,4 @@
-//! what runs inside a booted VM through its guest agent. `tart exec`
+//! what the backend runs inside a booted VM through its guest agent. `tart exec`
 //! commands run as the agent's user, `admin`, whose `docker` group the golden VM
 //! gives it, so `docker` needs no `sudo`; every captured answer is cut at
 //! [`MAX_OUTPUT_BYTES`](super::MAX_OUTPUT_BYTES) and read as data.

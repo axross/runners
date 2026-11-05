@@ -25,9 +25,10 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   repository runs its own jobs on GitHub-hosted runners only, the cache-poisoning
   threat model for shared runner storage, per-repository isolation on a runner
   host, the release record for the CLI's dispatch-only release workflow and its
-  signing Environment, the accepted LAN-egress risk, Softnet's confinement of the
-  golden VM build's network and its SUID check, and the pinned Tart, Softnet, and
-  golden VM base, what is never committed, and why the review
+  signing Environment, the accepted LAN-egress risk, the axmc Linux runtime's per-job
+  VM, CPU placement in it, Softnet and its SUID check, the accepted host-facing
+  surface, and the pinned Tart, Softnet, and golden VM base, what is never committed,
+  and why the review
   gate admits one bot identity by login.
 - [conventions/documentation.md](./conventions/documentation.md) - which
   document a change to each runner surface invalidates, and what the
@@ -50,25 +51,26 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   recovery, health checks, rebuilding and updating, recovery, and rolling back to
   the previous `marshal` release.
 - [operations/macos-runner-host.md](./operations/macos-runner-host.md) -
-  preparing the Mac, the axmc host, for Linux runners in Tart VMs with the CLI:
-  installing Tart and Softnet at the tested versions, setting up Softnet's SUID bit,
-  the signed-in session, the golden VM contract, building the golden VM, the host
-  configuration, and the verification status.
+  running Linux runners in Tart VMs on the Mac, the axmc host, with the CLI: installing
+  Tart and Softnet at the tested versions, setting up Softnet's SUID bit, the
+  signed-in session, the golden VM contract, building the golden VM, running the
+  host, sleep, wake and network changes, removing the VMs of a pool no longer
+  configured, and the verification status.
 - [operations/cli.md](./operations/cli.md) - the CLI under `cli/`: what `validate`
   accepts and prints for the axpc and axmc host profiles, the validation rules and
   the shared fixtures, the runtime layer
-  (container backend, JIT registration, CPU placement, and the slot loop), the
+  (the container backend, the runtime seam, the Tart backend, JIT registration,
+  CPU placement, the slot loop, and the signal source), the
   instance layer (instance state, single-instance lock, and control channel),
   the image contract (its labels, the image check, and freshness), building the
   runner image with `build`, running a host with `start`, `stop`, `restart`,
   `status`, and `diagnostics` (the log, containment, the stop sequence, and the
-  diagnostic containers and their export), the axmc host's prerequisites, its VM
-  shim, golden VM provisioning, and the golden VM build, the toolchain and Rust
+  diagnostic containers and VMs and their export), the axmc host's prerequisites,
+  its VM shim, golden VM provisioning, and the golden VM build, the toolchain and Rust
   gates, the release build and its dry run, signing the macOS files, installing
   from the MSI or the pkg, the optional check of a download, migrating, updating,
   uninstalling, and rolling back (including to the bare-binary `v0.1.0`), the
-  tests of those blocks, the allowed dependencies, and why the CLI's name is
-  fixed.
+  tests of those blocks, the allowed dependencies, and why the CLI's name is fixed.
 - [operations/agent-skills.md](./operations/agent-skills.md) - installing and
   refreshing the skills from `axross/skills`, the drift checks, and the register
   of deviations and gaps.
@@ -76,7 +78,7 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
 ## Glossary
 
 - [glossary.md](./glossary.md) - runner, image, host, CLI, golden VM, build VM,
-  Softnet, agent-host, and change-loop vocabulary.
+  job VM, Softnet, agent-host, and change-loop vocabulary.
 
 For what this project is, how to start it, and the commands it has, see
 [`README.md`](../README.md). [`AGENTS.md`](../AGENTS.md) is the working agreement

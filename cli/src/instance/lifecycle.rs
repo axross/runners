@@ -5,6 +5,7 @@
 //! refused until the transition ends.
 
 use std::cell::{Cell, RefCell};
+use std::convert::Infallible;
 use std::fmt;
 use std::future::Future;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -14,10 +15,13 @@ use std::time::Duration;
 
 use tokio::sync::{mpsc, oneshot, watch};
 
+use crate::macos::prerequisites::{RESUME_VERSION_BUDGET, VERSION_BUDGET};
+use crate::macos::reason::sleep_reason;
+use crate::macos::watch::NetworkChange;
 use crate::profile::Profile;
-use crate::runtime::backend::{Backend, DiagnosticRecord, StopRequest};
+use crate::runtime::backend::{Backend, DiagnosticRecord, REMOVAL_WITHIN, StopRequest};
 use crate::runtime::clock::Clock;
-use crate::runtime::diagnostic::{self, Flushed};
+use crate::runtime::diagnostic::{self, Flushed, StopClock};
 use crate::runtime::log::Log;
 use crate::runtime::pool::diagnostic_records;
 use crate::runtime::scrub::scrub_error_text;
@@ -38,6 +42,9 @@ pub struct StopTimes {
     /// the removal of what remains is ended at this budget, so the container steps
     /// take 26 s at the most.
     pub remove_budget: Duration,
+    /// the release of the prepared job hosts, which follows the container steps and
+    /// is ended at this budget; zero when the backend has no hosts.
+    pub release_budget: Duration,
     /// counted from the stop request; whatever still runs then is dropped, which
     /// kills the clients, and the instance ends.
     pub exit_deadline: Duration,
@@ -49,8 +56,44 @@ impl Default for StopTimes {
             grace: Duration::from_secs(15),
             stop_budget: Duration::from_secs(20),
             remove_budget: Duration::from_secs(6),
+            release_budget: Duration::ZERO,
             exit_deadline: Duration::from_secs(28),
         }
+    }
+}
+
+/// the time a stop gives the container stop call to kill what ignores its grace.
+const KILL_MARGIN: Duration = Duration::from_secs(5);
+
+impl StopTimes {
+    /// the times for a backend that reserves `release` of the sequence to release its
+    /// job hosts: the container stop gives up the time, so that the stop, the removal
+    /// and the release together fit the exit deadline. No release leaves the default
+    /// times as they are.
+    #[must_use]
+    pub fn reserving(release: Duration) -> Self {
+        let times = Self::default();
+        let stop_budget = times.stop_budget.min(
+            times
+                .exit_deadline
+                .saturating_sub(times.remove_budget)
+                .saturating_sub(release),
+        );
+        Self {
+            grace: times.grace.min(stop_budget.saturating_sub(KILL_MARGIN)),
+            stop_budget,
+            release_budget: release,
+            ..times
+        }
+    }
+
+    /// how much earlier the diagnostic column's deadlines fall so that the release
+    /// still has its budget before the exit deadline: the release takes the slack the
+    /// column leaves there first, and the column gives up the rest.
+    #[must_use]
+    pub fn diagnostic_shortening(&self) -> Duration {
+        let slack = self.exit_deadline.saturating_sub(REMOVAL_WITHIN);
+        self.release_budget.saturating_sub(slack)
     }
 }
 
@@ -64,6 +107,13 @@ pub enum StopReason {
     /// the configured image's contract is not this CLI's, or the image is missing;
     /// the text says which and how to rebuild it.
     Image(String),
+    /// a host prerequisite refused at a restart or a resume; the text is the
+    /// refusal, which names the host document's section.
+    Prerequisite(String),
+    /// the Mac slept, or woke: a wake is when the instance learns of the sleep.
+    Slept,
+    /// the primary network differed from its record on two checks in a row.
+    NetworkChanged(NetworkChange),
 }
 
 impl fmt::Display for StopReason {
@@ -78,7 +128,9 @@ impl fmt::Display for StopReason {
                 super::restart::DELAYS.len() + 1,
                 WINDOW.as_secs() / 60
             ),
-            Self::Image(reason) => f.write_str(reason),
+            Self::Image(reason) | Self::Prerequisite(reason) => f.write_str(reason),
+            Self::Slept => f.write_str(&sleep_reason()),
+            Self::NetworkChanged(change) => f.write_str(&change.reason()),
         }
     }
 }
@@ -119,6 +171,9 @@ pub enum Ending {
     /// the instance, at a later run it stops it, and it is never counted as a
     /// failure.
     ImageRefused,
+    /// a host prerequisite refused before the first run of the core, so the instance
+    /// ended without starting anything.
+    PrerequisiteRefused,
 }
 
 /// how the runtime core ended when no stop was asked for.
@@ -150,6 +205,18 @@ pub trait Core {
     /// the next run checks again.
     fn check_image(&self, plan: &Plan) -> impl Future<Output = Result<(), String>>;
 
+    /// checks the host prerequisites of the pools `plan` runs once, without waiting for
+    /// anything; returns the refusal's message, or `Ok` when they pass or nothing in
+    /// `plan` needs them. A core without prerequisites passes. Each program the check
+    /// runs gets `each_read` to answer.
+    fn check_prerequisites(
+        &self,
+        _plan: &Plan,
+        _each_read: Duration,
+    ) -> impl Future<Output = Result<(), String>> {
+        async { Ok(()) }
+    }
+
     /// what the core is doing now, as `status` fields.
     fn report(&self) -> Vec<(&'static str, String)>;
 }
@@ -159,6 +226,57 @@ pub trait Core {
 pub trait Source {
     /// the validated plan, or every problem that stops it from being one.
     fn load(&self) -> impl Future<Output = Result<Plan, Vec<String>>>;
+}
+
+/// the signals that stop every runner, and the keep-awake hold, which the instance
+/// runs beside its core. The instance asks it to `begin` each time it starts to run,
+/// including after a resume, and polls [`watch`](Monitor::watch) while it runs.
+pub trait Monitor {
+    /// arms a new run, before the core starts: the sleep baseline is set again, and a
+    /// primary network is recorded afresh by the next [`watch`](Monitor::watch).
+    fn begin(&self);
+
+    /// watches the clocks and the primary network until one of them stops every
+    /// runner, and returns why. It never ends otherwise, and dropping it ends the
+    /// watch.
+    fn watch(&self) -> impl Future<Output = StopReason>;
+
+    /// keeps the keep-awake hold in order while the instance is not running its
+    /// core: resuming, and stopping until teardown ends. It never ends.
+    fn maintain(&self) -> impl Future<Output = Infallible>;
+
+    /// takes the keep-awake hold, as the instance begins to run or resume.
+    fn hold(&self);
+
+    /// ends the keep-awake hold, as the instance stops.
+    fn release(&self);
+
+    /// what the monitor reports to `status`.
+    fn report(&self) -> Vec<(&'static str, String)>;
+}
+
+/// the monitor of a profile that has no signals.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NoMonitor;
+
+impl Monitor for NoMonitor {
+    fn begin(&self) {}
+
+    fn watch(&self) -> impl Future<Output = StopReason> {
+        std::future::pending()
+    }
+
+    fn maintain(&self) -> impl Future<Output = Infallible> {
+        std::future::pending()
+    }
+
+    fn hold(&self) {}
+
+    fn release(&self) {}
+
+    fn report(&self) -> Vec<(&'static str, String)> {
+        Vec::new()
+    }
 }
 
 /// what the instance was started with.
@@ -200,6 +318,7 @@ enum CycleEnd {
 enum Reloaded {
     Run(Plan),
     Invalid(Vec<String>),
+    PrerequisiteRefused(String),
     ImageRefused(String),
 }
 
@@ -268,12 +387,13 @@ fn flushed_response(flushed: &Flushed) -> Response {
     )
 }
 
-pub struct Instance<'a, B, K, C, S> {
+pub struct Instance<'a, B, K, C, S, M = NoMonitor> {
     settings: Settings,
     backend: &'a B,
     clock: &'a K,
     core: &'a C,
     source: &'a S,
+    monitor: &'a M,
     log: &'a dyn Log,
     times: StopTimes,
     state: RefCell<State>,
@@ -288,6 +408,7 @@ pub struct Instance<'a, B, K, C, S> {
 }
 
 impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
+    /// an instance without signals, as axpc runs.
     #[must_use]
     pub fn new(
         settings: Settings,
@@ -303,8 +424,9 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
             clock,
             core,
             source,
+            monitor: &NoMonitor,
             log,
-            times: StopTimes::default(),
+            times: StopTimes::reserving(backend.release_budget()),
             state: RefCell::new(State::Running),
             policy: RefCell::new(RestartPolicy::default()),
             exit_requested: Cell::new(false),
@@ -316,6 +438,31 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
         }
     }
 
+    /// the instance with the signals of `monitor`.
+    #[must_use]
+    pub fn with_monitor<M: Monitor>(self, monitor: &'a M) -> Instance<'a, B, K, C, S, M> {
+        Instance {
+            settings: self.settings,
+            backend: self.backend,
+            clock: self.clock,
+            core: self.core,
+            source: self.source,
+            monitor,
+            log: self.log,
+            times: self.times,
+            state: self.state,
+            policy: self.policy,
+            exit_requested: self.exit_requested,
+            containers_removed: self.containers_removed,
+            core_has_run: self.core_has_run,
+            ending: self.ending,
+            force: self.force,
+            enabled: self.enabled,
+        }
+    }
+}
+
+impl<'a, B: Backend, K: Clock, C: Core, S: Source, M: Monitor> Instance<'a, B, K, C, S, M> {
     /// the instance with other stop times, so a test can reach the exit deadline
     /// quickly; a debug build only.
     #[cfg(debug_assertions)]
@@ -338,12 +485,22 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
     /// every request that reaches `requests`; when the channel closes while the
     /// instance is stopped, nothing can resume it, so it ends.
     pub async fn run(&self, plan: Plan, requests: &mut Requests) -> Ended {
-        let mut next = Next::Run(plan);
+        let checking = self.core.check_prerequisites(&plan, VERSION_BUDGET);
+        let mut next = match self.serve(requests, true, checking).await {
+            None => Next::Exit,
+            Some(Ok(())) => Next::Run(plan),
+            Some(Err(refusal)) => {
+                self.log.warn(&format!("The instance ends: {refusal}"));
+                self.ending.set(Ending::PrerequisiteRefused);
+                Next::Exit
+            }
+        };
         loop {
             next = match next {
                 Next::Run(plan) => self.running(&plan, requests).await,
                 Next::Idle => self.stopped(requests).await,
                 Next::Exit => {
+                    self.monitor.release();
                     return Ended {
                         containers_removed: self.containers_removed.get(),
                         ending: self.ending.get(),
@@ -354,7 +511,15 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
         }
     }
 
+    /// moves the instance to `state`; the keep-awake hold follows the state: held
+    /// when running or resuming, kept through stopping, and released on entering
+    /// stopped.
     fn set_state(&self, state: State) {
+        match &state {
+            State::Running | State::Resuming => self.monitor.hold(),
+            State::Stopped(_) => self.monitor.release(),
+            State::Stopping => {}
+        }
         *self.state.borrow_mut() = state;
     }
 
@@ -367,7 +532,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
         response = response
             .with("config", &self.settings.config_path)
             .with("profile", self.settings.profile.name());
-        for (name, value) in self.core.report() {
+        for (name, value) in self.core.report().into_iter().chain(self.monitor.report()) {
             response = response.with(name, &value);
         }
         response
@@ -400,6 +565,8 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
             .retained()
             .retain_unmanaged(|pool| plan.entries.iter().any(|entry| entry.name == pool));
         let (stop, stop_receiver) = watch::channel(false);
+        self.monitor.begin();
+        let mut watching = Box::pin(self.monitor.watch());
         let mut cycle = Box::pin(self.core_cycle(plan, stop_receiver));
         let mut flush: Flush<'_> = None;
         let mut open = true;
@@ -455,6 +622,16 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
                         return Next::Exit;
                     }
                     return next;
+                }
+                reason = &mut watching => {
+                    self.log.warn(&format!("Stopping every runner: {reason}."));
+                    self.wind_down(&stop, cycle, flush, requests).await;
+                    if self.exit_requested.get() {
+                        return Next::Exit;
+                    }
+                    self.log.warn(&format!("The instance is stopped: {reason}."));
+                    self.set_state(State::Stopped(reason));
+                    return Next::Idle;
                 }
                 incoming = requests.recv(), if open => {
                     let Some(incoming) = incoming else {
@@ -584,7 +761,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
     }
 
     /// reads and validates the instance's own configuration again, clears the core's
-    /// failure count, checks its image, and answers `reply`.
+    /// failure count, checks the host prerequisites and the image, and answers `reply`.
     async fn resume(&self, requests: &mut Requests, reply: oneshot::Sender<Response>) -> Next {
         self.policy.borrow_mut().clear();
         self.set_state(State::Resuming);
@@ -594,6 +771,13 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
                 Ok(plan) => plan,
                 Err(problems) => return Reloaded::Invalid(problems),
             };
+            if let Err(refusal) = self
+                .core
+                .check_prerequisites(&plan, RESUME_VERSION_BUDGET)
+                .await
+            {
+                return Reloaded::PrerequisiteRefused(refusal);
+            }
             match self.core.check_image(&plan).await {
                 Ok(()) => Reloaded::Run(plan),
                 Err(refusal) => Reloaded::ImageRefused(refusal),
@@ -611,6 +795,9 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
             Some(Reloaded::Invalid(problems)) => self.stay_stopped(
                 StopReason::InvalidConfiguration(scrub_error_text(&problems.join("; "), "")),
             ),
+            Some(Reloaded::PrerequisiteRefused(refusal)) => {
+                self.stay_stopped(StopReason::Prerequisite(refusal))
+            }
             Some(Reloaded::ImageRefused(refusal)) => self.stay_stopped(self.image_reason(&refusal)),
         };
         let _ = reply.send(response);
@@ -637,10 +824,12 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
         work: impl Future<Output = T>,
     ) -> Option<T> {
         let mut work = pin!(work);
+        let mut upkeep = pin!(self.monitor.maintain());
         let mut open = true;
         loop {
             tokio::select! {
                 output = &mut work => return Some(output),
+                never = &mut upkeep => match never {},
                 incoming = requests.recv(), if open => match incoming {
                     None => open = false,
                     Some(incoming) => {
@@ -707,7 +896,7 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
                     self.container_steps(failure.containers).await;
                     return CycleEnd::NothingToRun;
                 }
-                Ending::NothingToRun | Ending::Ordinary => {}
+                Ending::NothingToRun | Ending::Ordinary | Ending::PrerequisiteRefused => {}
             }
             self.log
                 .warn(&format!("The runtime core failed: {message}"));
@@ -732,8 +921,36 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source> Instance<'a, B, K, C, S> {
         let start = tokio::time::Instant::now();
         tokio::join!(
             self.ordinary_steps(containers),
-            diagnostic::container_steps(self.backend, self.log, start, self.times.remove_budget)
+            diagnostic::container_steps(
+                self.backend,
+                self.log,
+                StopClock::at(start).shortened_by(self.times.diagnostic_shortening()),
+                self.times.remove_budget,
+            )
         );
+        self.release_hosts().await;
+    }
+
+    /// releases every job host still prepared, all at once, once the containers are
+    /// stopped: a worker releases its own host when its run ends, so what remains is
+    /// the host of a worker that is still busy or that a panic took.
+    async fn release_hosts(&self) {
+        let budget = self.times.release_budget;
+        let releases: Vec<_> = self
+            .backend
+            .prepared_hosts()
+            .into_iter()
+            .map(|host| async move {
+                if let Err(error) = self.backend.release_job_host(&host, budget).await {
+                    self.log.warn(&format!(
+                        "Releasing the job host of {} slot {} failed: {error}",
+                        host.pool, host.slot
+                    ));
+                    self.containers_removed.set(false);
+                }
+            })
+            .collect();
+        diagnostic::join_all(releases).await;
     }
 
     /// stops the containers in one call, and removes whatever remains in another; a
@@ -785,9 +1002,64 @@ mod tests {
                 grace: Duration::from_secs(15),
                 stop_budget: Duration::from_secs(20),
                 remove_budget: Duration::from_secs(6),
+                release_budget: Duration::ZERO,
                 exit_deadline: Duration::from_secs(28),
             }
         );
+    }
+
+    #[test]
+    fn a_backend_without_hosts_keeps_the_default_times() {
+        assert_eq!(StopTimes::reserving(Duration::ZERO), StopTimes::default());
+    }
+
+    #[test]
+    fn a_release_of_ten_seconds_shortens_the_container_stop_to_fit_the_exit_deadline() {
+        let times = StopTimes::reserving(Duration::from_secs(10));
+        assert_eq!(
+            times,
+            StopTimes {
+                grace: Duration::from_secs(7),
+                stop_budget: Duration::from_secs(12),
+                remove_budget: Duration::from_secs(6),
+                release_budget: Duration::from_secs(10),
+                exit_deadline: Duration::from_secs(28),
+            }
+        );
+        assert!(
+            times.stop_budget + times.remove_budget + times.release_budget <= times.exit_deadline
+        );
+    }
+
+    #[test]
+    fn a_release_takes_the_slack_before_the_exit_deadline_and_the_diagnostic_column_gives_up_the_rest()
+     {
+        assert_eq!(
+            StopTimes::default().diagnostic_shortening(),
+            Duration::ZERO,
+            "a backend without hosts keeps the diagnostic column as it is"
+        );
+        assert_eq!(
+            StopTimes::reserving(Duration::from_secs(10)).diagnostic_shortening(),
+            Duration::from_secs(6),
+            "the 24 s column leaves 4 s before the 28 s deadline"
+        );
+        assert_eq!(
+            StopTimes::reserving(Duration::from_secs(4)).diagnostic_shortening(),
+            Duration::ZERO
+        );
+        let short = StopTimes {
+            exit_deadline: Duration::from_millis(200),
+            ..StopTimes::default()
+        };
+        assert_eq!(short.diagnostic_shortening(), Duration::ZERO);
+    }
+
+    #[test]
+    fn a_release_larger_than_the_sequence_leaves_the_stop_no_time_and_does_not_underflow() {
+        let times = StopTimes::reserving(Duration::from_secs(60));
+        assert_eq!(times.stop_budget, Duration::ZERO);
+        assert_eq!(times.grace, Duration::ZERO);
     }
 
     #[test]

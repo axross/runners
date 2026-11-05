@@ -14,9 +14,9 @@ use std::time::{Duration, Instant};
 
 use marshal_cli::image::contract::{CONTRACT_VERSION, RUNNER_VERSION_LABEL};
 use marshal_cli::image::definition::declared_label;
+use support::TempDir;
 use support::host::{Host, JIT, Started, TOKEN, registered, texts};
 use support::stub::{Reply, Stub};
-use support::{TempDir, repository_root};
 
 /// long enough for a fresh instance to prepare its pool and run its container.
 const RUNNING_WITHIN: Duration = Duration::from_secs(20);
@@ -81,52 +81,6 @@ fn an_invalid_configuration_exits_1_and_changes_nothing() {
     assert!(stderr.contains("Invalid host configuration"), "{stderr}");
     assert!(host.invocations().is_empty());
     assert!(host.log_files().is_empty(), "no log file before validation");
-}
-
-const AXMC_START_REFUSAL: &str =
-    "the configuration is valid, but this version of marshal cannot run axmc's VM pools yet";
-
-/// runs `start --profile axmc` on the accepted `fixture` with `replace` applied to its
-/// text, and checks that it refused with exit code 1 before reaching any engine.
-fn assert_axmc_start_refused(fixture: &str, replace: Option<(&str, &str)>) {
-    let host = Host::new();
-    let path = repository_root()
-        .join("tests/host-configuration/rust/accepted")
-        .join(fixture);
-    let mut text = fs::read_to_string(path).unwrap();
-    if let Some((from, to)) = replace {
-        assert!(text.contains(from), "{from} is not in {fixture}");
-        text = text.replace(from, to);
-    }
-    let config = host.root.write("axmc.json", text.as_bytes());
-    let output = host
-        .command(&["start", "--profile", "axmc", "--config"])
-        .arg(&config)
-        .output()
-        .unwrap();
-    let (_, stderr) = texts(&output);
-    assert_eq!(output.status.code(), Some(1), "{stderr}");
-    assert_eq!(stderr.trim_end(), format!("error: {AXMC_START_REFUSAL}"));
-    assert!(host.invocations().is_empty());
-    assert!(
-        host.log_files().is_empty(),
-        "no log file before the refusal"
-    );
-}
-
-#[test]
-fn the_axmc_profile_validates_and_then_refuses_to_run_its_vm_pools() {
-    assert_axmc_start_refused("axmc-defaults.json", None);
-}
-
-#[test]
-fn an_axmc_configuration_of_linux_and_macos_pools_is_refused_whole_for_now() {
-    assert_axmc_start_refused("axmc-os-labels.json", None);
-}
-
-#[test]
-fn an_axmc_configuration_of_macos_pools_alone_is_refused_the_same_way() {
-    assert_axmc_start_refused("axmc-defaults.json", Some(("\"linux\"", "\"macos\"")));
 }
 
 #[test]
@@ -351,6 +305,20 @@ fn stop_on_an_instance_with_no_container_gets_its_answer_and_exits_0() {
     let (stop_out, stop_err) = texts(&stop);
     assert_eq!(stop.status.code(), Some(0), "{stop_err}");
     assert!(stop_out.contains("The instance has stopped."), "{stop_out}");
+    let finished = started.finish(Duration::from_secs(5));
+    assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
+}
+
+#[test]
+fn a_pool_waits_for_docker_in_status_until_docker_answers() {
+    let host = Host::new();
+    host.script("info_failures", "1000");
+    let stub = Stub::start(vec![Reply::status("500 Internal Server Error", "no")]);
+    let started = host.start(&stub);
+    let status = host.wait_for_status(": waiting for Docker", RUNNING_WITHIN);
+    assert!(!status.contains("Tart"), "{status}");
+    let stop = host.client(&["stop"]);
+    assert_eq!(stop.status.code(), Some(0), "{:?}", texts(&stop));
     let finished = started.finish(Duration::from_secs(5));
     assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
 }

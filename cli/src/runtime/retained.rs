@@ -73,11 +73,7 @@ impl Claim<'_> {
     /// whether a bundle was already admitted for the container.
     #[must_use]
     pub fn exported(&self) -> bool {
-        self.retained
-            .entries
-            .borrow()
-            .get(&self.name)
-            .is_some_and(|entry| entry.bundle_admitted)
+        self.retained.is_exported(&self.name)
     }
 
     pub fn mark_exported(&self) {
@@ -143,10 +139,28 @@ impl Retained {
         self.entries.borrow().contains_key(name)
     }
 
+    /// forgets the container if a bundle was admitted for it, because the host that
+    /// held it is gone and its evidence stands in the sink; one without a bundle stays,
+    /// as the evidence it lost.
+    pub fn forget_if_exported(&self, name: &str) {
+        if self.is_exported(name) {
+            self.entries.borrow_mut().remove(name);
+        }
+    }
+
     /// every retained container, by name.
     #[must_use]
     pub fn names(&self) -> Vec<String> {
         self.entries.borrow().keys().cloned().collect()
+    }
+
+    /// whether a bundle was already admitted for a retained container.
+    #[must_use]
+    pub fn is_exported(&self, name: &str) -> bool {
+        self.entries
+            .borrow()
+            .get(name)
+            .is_some_and(|entry| entry.bundle_admitted)
     }
 
     /// the record of a retained container.

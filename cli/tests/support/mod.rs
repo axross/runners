@@ -8,11 +8,16 @@
     clippy::indexing_slicing
 )]
 
+#[cfg(unix)]
+pub mod axmc;
 pub mod docker;
 #[cfg(unix)]
 pub mod golden;
 pub mod host;
 pub mod instance;
+pub mod macos;
+#[cfg(unix)]
+pub mod rig;
 pub mod softnet;
 pub mod stub;
 pub mod tart;
@@ -168,6 +173,7 @@ pub fn slot_spec(token: PathBuf) -> marshal_cli::runtime::pool::SlotSpec {
         cpu_count: 2,
         cpu_offset: 2,
         memory_gb: 16,
+        disk_gb: None,
         mounts: vec![marshal_cli::runtime::backend::Mount {
             volume: "example-repo-one-npm".to_string(),
             target: "/home/runner/.npm".to_string(),
@@ -187,7 +193,7 @@ pub async fn prepare_pools<B: marshal_cli::runtime::backend::Backend>(
 ) -> Result<Vec<marshal_cli::runtime::pool::PoolSpec>, marshal_cli::runtime::pool::NoPoolStartable>
 {
     use marshal_cli::runtime::pool::{NoPoolStartable, admit_pools, prepare_admitted};
-    let admitted = admit_pools(pools, log, board);
+    let admitted = admit_pools(pools, backend.engine_name(), log, board);
     if admitted.is_empty() {
         return Err(NoPoolStartable);
     }
