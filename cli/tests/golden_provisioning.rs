@@ -18,7 +18,7 @@ use marshal_cli::golden::steps::{
 use support::tart::{Fake, Invocation};
 
 const VM: &str = "marshal-build-linux-20240305060708009";
-const REAL_LISTING: &str = include_str!("../src/golden/fixtures/docker-key-listing.txt");
+const KEY_LISTING: &str = include_str!("../src/golden/fixtures/docker-key-listing.txt");
 
 async fn run(fake: &Fake, call: &GuestCall) -> String {
     let answer = fake
@@ -63,7 +63,7 @@ fn script_names(calls: &[Invocation]) -> Vec<String> {
 async fn the_calls_run_in_order_with_the_launcher_and_the_source_on_standard_input() {
     let fake = Fake::new();
     fake.seed(&[(VM, "running", "local")]);
-    fake.script("exec_stdout", REAL_LISTING.trim_end_matches('\n'));
+    fake.script("exec_stdout", KEY_LISTING.trim_end_matches('\n'));
 
     provision(&fake).await.unwrap();
 
@@ -102,7 +102,7 @@ async fn the_calls_run_in_order_with_the_launcher_and_the_source_on_standard_inp
 async fn a_key_with_another_fingerprint_stops_the_build_before_anything_is_installed() {
     let fake = Fake::new();
     fake.seed(&[(VM, "running", "local")]);
-    let mismatched = REAL_LISTING.replacen(
+    let mismatched = KEY_LISTING.replacen(
         DOCKER_KEY_FINGERPRINT,
         "0123456789ABCDEF0123456789ABCDEF01234567",
         1,

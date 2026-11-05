@@ -30,7 +30,7 @@ use super::tart::{FAKE_TART, Fake};
 use super::{BINARY, TempDir, repository_root};
 
 pub const IMAGE: &str = "actions-runner:local";
-pub const REAL_LISTING: &str = include_str!("../../src/golden/fixtures/docker-key-listing.txt");
+pub const KEY_LISTING: &str = include_str!("../../src/golden/fixtures/docker-key-listing.txt");
 pub const OWNER_MODE: &str = "0:4755";
 
 /// when the old golden VM was built, in seconds since the epoch.
@@ -122,7 +122,7 @@ impl Rig {
         rig.docker_script("build_contract", &CONTRACT_VERSION.to_string());
         rig.fake.script(
             "exec_stdout-marshal-list-key",
-            REAL_LISTING.trim_end_matches('\n'),
+            KEY_LISTING.trim_end_matches('\n'),
         );
         rig
     }

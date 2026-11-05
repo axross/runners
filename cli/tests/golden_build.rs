@@ -20,7 +20,7 @@ use marshal_cli::image::contract::BUILT_LABEL;
 use marshal_cli::image::contract::CONTRACT_VERSION;
 use marshal_cli::runtime::tart::VmLauncher;
 use marshal_cli::runtime::tart::names::{GoldenVmName, parse_build_vm_name};
-use support::golden::{IMAGE, OLD_BUILT_SECONDS, REAL_LISTING, Rig, big_stack, old_golden};
+use support::golden::{IMAGE, KEY_LISTING, OLD_BUILT_SECONDS, Rig, big_stack, old_golden};
 use support::host::{send_signal, texts};
 
 const LEFTOVER: &str = "marshal-build-linux-20240101000000000";
@@ -381,7 +381,7 @@ fn a_failed_shutdown_or_rename_deletes_the_build_vm_and_keeps_the_old_golden_vm(
 #[test]
 fn a_key_with_another_fingerprint_fails_before_anything_is_installed() {
     big_stack(|| async {
-        let wrong = REAL_LISTING.replace(
+        let wrong = KEY_LISTING.replace(
             DOCKER_KEY_FINGERPRINT,
             "0000000000000000000000000000000000000000",
         );
