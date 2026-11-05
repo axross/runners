@@ -140,6 +140,19 @@ fn command() -> Command {
                     .value_parser(value_parser!(OsString)),
             ),
     );
+    #[cfg(unix)]
+    let command = command.subcommand(
+        Command::new(crate::vm_shim::VM_SHIM_COMMAND)
+            .hide(true)
+            .arg(Arg::new("name").long("name").required(true))
+            .arg(
+                Arg::new("client")
+                    .required(true)
+                    .num_args(1)
+                    .last(true)
+                    .value_parser(value_parser!(OsString)),
+            ),
+    );
     command
 }
 
@@ -177,8 +190,21 @@ pub fn run(
         Some((EXPORT_COMMAND, export_matches)) => run_export(export_matches),
         #[cfg(unix)]
         Some((crate::shim::SHIM_COMMAND, shim_matches)) => run_shim(shim_matches),
+        #[cfg(unix)]
+        Some((crate::vm_shim::VM_SHIM_COMMAND, shim_matches)) => run_vm_shim(shim_matches),
         _ => ExitCode::from(EXIT_USAGE),
     }
+}
+
+#[cfg(unix)]
+fn run_vm_shim(matches: &ArgMatches) -> ExitCode {
+    let (Some(name), Some(program)) = (
+        matches.get_one::<String>("name"),
+        matches.get_one::<OsString>("client"),
+    ) else {
+        return ExitCode::from(EXIT_USAGE);
+    };
+    crate::vm_shim::run(name, program)
 }
 
 #[cfg(unix)]

@@ -1,9 +1,9 @@
 name: Merge Checks
 
 # the repository's own CI: the gates behind mise run check, the CLI tests on
-# Linux, Windows, and macOS, the image build, the release dry run, and the
-# documented install blocks against the dry run's installers. GitHub-hosted
-# runners only, because this repository is public; see
+# Linux, Windows, and macOS, the image build and its build-only arm64 twin, the
+# release dry run, and the documented install blocks against the dry run's
+# installers. GitHub-hosted runners only, because this repository is public; see
 # docs/conventions/security.md.
 
 on:
@@ -98,7 +98,7 @@ jobs:
         if: runner.os == 'Linux'
         env:
           MARSHAL_EXPECT_RELEASE: "1"
-        run: cargo test --locked --release --test base_address --test instance_roots --test build_definition
+        run: cargo test --locked --release --test base_address --test instance_roots --test build_definition --test release_overrides
       # the real-Docker tests need the base stage and a daemon; the Windows and macOS
       # hosted runners have no Linux daemon, and a missing daemon or image fails each
       # test, so it cannot be skipped unseen. the image is never pushed, so the job
@@ -222,3 +222,18 @@ jobs:
       # modified by an earlier job.
       - name: Smoke Test Runner Image
         run: bash images/actions-runner/tests/smoke-test.sh actions-runner:ci
+
+  # build only, on the hosted Linux arm64 runner: the axmc golden VM builds the
+  # same Dockerfile for linux/arm64. the smoke tests assume x86_64, so none runs
+  # here. no registry login and no push, so the job holds no credential.
+  image-arm64:
+    name: Build Runner Image On Arm64
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Build Runner Image
+        run: docker build --platform linux/arm64 --tag actions-runner:ci-arm64 images/actions-runner

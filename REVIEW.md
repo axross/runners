@@ -89,8 +89,9 @@ Run the following checks on every review and raise findings within their scope:
 - **Public-repository safety** - this repository is public and is meant to hold
   nothing that identifies a person or a machine. Verify the
   [safety lenses](#public-repository-safety-lenses) below for every changed
-  file, and apply the [language lenses](#language-lenses) for each kind of file
-  in the diff.
+  file, apply the [VM runtime lenses](#vm-runtime-lenses) to a change of the
+  axmc Tart client or golden VM build, and apply the [language lenses](#language-lenses)
+  for each kind of file in the diff.
 - **Refactoring opportunities** - examine changed code, scripts, workflow
   definitions, and documentation for concrete ways to simplify
   responsibilities, remove duplication, or reduce unnecessary complexity. Report
@@ -186,6 +187,58 @@ Codex review uses its native priority label.
   ID. The `.p8` key reaches `notarytool` only as a file path. Any other change to how
   the key's ID, issuer ID or `.p8` reaches `notarytool` is a finding to raise (see
   [Security](docs/conventions/security.md#nothing-identifying-or-secret-is-committed)).
+
+## VM runtime lenses
+
+These lenses apply to a change of the axmc Tart client and golden VM build:
+`cli/src/runtime/tart/`, `cli/src/macos/`, `cli/src/golden/`, the golden VM's
+provisioning assets, and the macOS host document. Each is a hard project rule. The
+Softnet lens is owned by
+[Security](docs/conventions/security.md#softnet-confines-a-job-vms-network) and the
+pin lens by
+[Security](docs/conventions/security.md#tart-softnet-and-the-golden-vm-are-pinned).
+The others are this review's checks for the build VM, set by
+[The Golden VM Contract](docs/operations/macos-runner-host.md#the-golden-vm-contract)
+and [The Golden VM Build](docs/operations/cli.md#the-golden-vm-build). Claude review
+labels a violation Important; Codex review uses its native priority label.
+
+- **No JIT configuration in an argument list.** The JIT configuration reaches the
+  guest only on the standard input of a `tart exec -i` call, never with `-t`, and
+  inside the VM only the launcher puts it in the Docker client's environment. It is
+  never an argument of `tart`, `tart exec`, the launcher or `docker`, never a log
+  line, and never part of the VM's image.
+- **Guest output is bounded.** Every guest-agent call's captured output is cut off
+  at a fixed bound (64 KiB), and the CLI never parses it beyond its expected form.
+  An unbounded read of a guest call, or a parse that trusts its shape, is a
+  finding.
+- **Deletion on every failure path.** Every exit from a build after its build VM
+  exists deletes that VM: an error, a boot failure, a stop and an interrupt. At the
+  28 s exit deadline the shim or the next build deletes it, and after the rename it is
+  the golden VM. A new early return, `?` or `break` between the clone and the
+  deletion is checked for it. The shim deletes the VM when the liveness pipe closes,
+  and no shim or other child inherits the instance lock.
+- **The Softnet check and rules on every boot.** Every `tart run` follows a Softnet
+  file check and a version check, and carries the two Softnet rules from
+  [Security](docs/conventions/security.md#softnet-confines-a-job-vms-network) and no
+  other network option. A boot path that skips the check, a cached result, a
+  `marshal` that sets Softnet's SUID bit, and a fallback to Tart's default network
+  are findings.
+- **No shared directory, clipboard, audio, USB accessories or Rosetta.** Every
+  `tart run` turns off graphics, the clipboard, audio and USB accessories, and
+  carries no `--dir` and no `--rosetta`. Every Tart call sets `TART_NO_AUTO_PRUNE`,
+  gets `marshal`'s `PATH`, and has a standard output that is not a terminal.
+- **Names and cleanup stay exact.** Cleanup in `build` matches only build VMs by
+  their name form, and only `build` and its shim delete build VMs, while `build`
+  alone deletes old golden VMs. A looser match could delete a VM `marshal` does not
+  own.
+- **Pins hold.** The base image is pinned by digest, the current pin is never on
+  the retired list, Docker Engine comes from Docker's apt repository at pinned
+  versions after the signing key's fingerprint is checked, and the tested Tart and
+  Softnet versions agree between the CLI and the host document.
+
+The Dockerfile lens's rule against `apt-get upgrade` is about the runner image. The
+golden VM's provisioning upgrades the base's Ubuntu packages on purpose, so a
+rebuild picks up security fixes; that is not a finding.
 
 ## Language lenses
 

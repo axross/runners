@@ -2,7 +2,7 @@
   "budget": {
     "cpus": 8,
     "memoryGb": 32,
-    "diskGb": 150
+    "diskGb": 190
   },
   "repositories": [
     {

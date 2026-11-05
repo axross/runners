@@ -29,6 +29,20 @@ path = "helpers/fake_docker.rs"
 test = false
 doc = false
 
+# a stand-in for the `tart` client, for the same reason as fake-docker.
+[[bin]]
+name = "fake-tart"
+path = "helpers/fake_tart.rs"
+test = false
+doc = false
+
+# a stand-in for `softnet`, for the same reason as fake-docker.
+[[bin]]
+name = "fake-softnet"
+path = "helpers/fake_softnet.rs"
+test = false
+doc = false
+
 # a stand-in for a second process, for the lock and channel tests and the CI step
 # that runs it as another user. a release must not ship it.
 [[bin]]

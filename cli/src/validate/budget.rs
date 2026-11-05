@@ -30,7 +30,7 @@ pub fn read_budget(budget: &Field, errors: &mut Errors) -> Option<Budget> {
     let node = fields::read_object::<BudgetFields>(value, "budget", &BUDGET_FIELDS, errors)?;
 
     let cpus = fields::required(&node.cpus, "budget.cpus", errors)
-        .and_then(|value| limits::cpu_count(value, "budget.cpus", errors));
+        .and_then(|value| limits::whole_cpu_count(value, "budget.cpus", errors));
     let memory_gb =
         fields::required(&node.memory_gb, "budget.memoryGb", errors).and_then(|value| {
             limits::read_bounded_integer(value, "budget.memoryGb", MAX_BUDGET_MEMORY_GB, errors)
@@ -45,6 +45,10 @@ pub fn read_budget(budget: &Field, errors: &mut Errors) -> Option<Budget> {
     })
 }
 
+/// the disk beyond the slot VMs that any Linux pool needs, for the golden VM and Tart's
+/// image cache.
+pub const LINUX_DISK_RESERVE_GB: u64 = 40;
+
 /// what the pools use together: the sum over the pools of slots times the limit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Usage {
@@ -52,6 +56,7 @@ pub struct Usage {
     pub cpu_nanos: u128,
     pub memory_gb: u64,
     pub disk_gb: u64,
+    pub disk_reserve_gb: u64,
 }
 
 #[must_use]
@@ -61,6 +66,7 @@ pub fn usage(entries: &[Entry]) -> Usage {
         cpu_nanos: 0,
         memory_gb: 0,
         disk_gb: 0,
+        disk_reserve_gb: 0,
     };
     for entry in entries {
         let slots = u64::from(entry.slots);
@@ -70,7 +76,11 @@ pub fn usage(entries: &[Entry]) -> Usage {
         total.cpu_nanos += u128::from(entry.slots) * limits::nanos(entry.cpus);
         total.memory_gb += slots * u64::from(entry.memory_gb);
         total.disk_gb += slots * u64::from(entry.disk_gb.unwrap_or(0));
+        if entry.os == Some(Os::Linux) {
+            total.disk_reserve_gb = LINUX_DISK_RESERVE_GB;
+        }
     }
+    total.disk_gb += total.disk_reserve_gb;
     total
 }
 
@@ -102,8 +112,16 @@ pub fn check_budget(entries: &[Entry], budget: Option<&Budget>, errors: &mut Err
         ));
     }
     if used.disk_gb > u64::from(budget.disk_gb) {
+        let reserve = if used.disk_reserve_gb == 0 {
+            String::new()
+        } else {
+            format!(
+                ", plus {} GB for the golden VM and Tart's image cache",
+                used.disk_reserve_gb
+            )
+        };
         errors.add(format!(
-            "budget: pools total {} GB of disk (the sum of slots times diskGb), above the budget of {} GB",
+            "budget: pools total {} GB of disk (the sum of slots times diskGb{reserve}), above the budget of {} GB",
             used.disk_gb, budget.disk_gb
         ));
     }

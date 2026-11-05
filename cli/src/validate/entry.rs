@@ -9,7 +9,9 @@ use crate::profile::{Os, Profile};
 use super::Context;
 use super::fields::{self, Errors, Field};
 use super::labels::registration_labels;
-use super::limits::{self, DEFAULT_CPUS, DEFAULT_MEMORY_GB, MAX_DISK_GB, MAX_MEMORY_GB, MAX_SLOTS};
+use super::limits::{
+    self, DEFAULT_CPUS, DEFAULT_MEMORY_GB, MAX_DISK_GB, MAX_MEMORY_GB, MAX_SLOTS, MIN_LINUX_DISK_GB,
+};
 use super::paths;
 use super::patterns;
 use super::plan::{Entry, PlannedVolume};
@@ -102,11 +104,11 @@ pub fn read_entry(value: &Value, path: &str, cx: &mut Context) -> Option<Entry> 
             limits::read_bounded_integer(value, &format!("{path}.slots"), MAX_SLOTS, &mut cx.errors)
         });
     let name = read_name(&node.name, path, &mut cx.errors);
-    let cpus = read_cpus(&node.cpus, path, &mut cx.errors);
+    let cpus = read_cpus(&node.cpus, path, profile, &mut cx.errors);
     let memory_gb = read_memory(&node.memory_gb, path, &mut cx.errors);
     let disk_gb = match profile {
         Profile::Axpc => Some(None),
-        Profile::Axmc => read_disk(&node.disk_gb, path, &mut cx.errors).map(Some),
+        Profile::Axmc => read_disk(&node.disk_gb, path, os, &mut cx.errors).map(Some),
     };
     let (diagnostics, raw_records) = read_diagnostic_flags(&node, path, &mut cx.errors);
     let diagnostic_directory =
@@ -210,10 +212,14 @@ fn read_name(name: &Field, path: &str, errors: &mut Errors) -> Option<String> {
     Some(name.to_string())
 }
 
-fn read_cpus(cpus: &Field, path: &str, errors: &mut Errors) -> Option<f64> {
-    match cpus.get() {
-        None => Some(DEFAULT_CPUS),
-        Some(value) => limits::cpu_count(value, &format!("{path}.cpus"), errors),
+fn read_cpus(cpus: &Field, path: &str, profile: Profile, errors: &mut Errors) -> Option<f64> {
+    let Some(value) = cpus.get() else {
+        return Some(DEFAULT_CPUS);
+    };
+    let field = format!("{path}.cpus");
+    match profile {
+        Profile::Axpc => limits::cpu_count(value, &field, errors),
+        Profile::Axmc => limits::whole_cpu_count(value, &field, errors),
     }
 }
 
@@ -224,10 +230,17 @@ fn read_memory(memory_gb: &Field, path: &str, errors: &mut Errors) -> Option<u32
     limits::read_bounded_integer(value, &format!("{path}.memoryGb"), MAX_MEMORY_GB, errors)
 }
 
-fn read_disk(disk_gb: &Field, path: &str, errors: &mut Errors) -> Option<u32> {
+fn read_disk(disk_gb: &Field, path: &str, os: Option<Os>, errors: &mut Errors) -> Option<u32> {
     let field = format!("{path}.diskGb");
     let value = fields::required(disk_gb, &field, errors)?;
-    limits::read_bounded_integer(value, &field, MAX_DISK_GB, errors)
+    let disk = limits::read_bounded_integer(value, &field, MAX_DISK_GB, errors)?;
+    if os == Some(Os::Linux) && disk < MIN_LINUX_DISK_GB {
+        errors.add(format!(
+            "{field}: must be at least {MIN_LINUX_DISK_GB} on a Linux pool, the golden VM's disk size"
+        ));
+        return None;
+    }
+    Some(disk)
 }
 
 /// returns the two diagnostic switches, each false when absent or not a boolean.

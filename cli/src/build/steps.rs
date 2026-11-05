@@ -87,7 +87,7 @@ pub struct Steps<'a> {
     pub stop: watch::Receiver<Option<Instant>>,
 }
 
-fn unix_seconds(time: SystemTime) -> u64 {
+pub(super) fn unix_seconds(time: SystemTime) -> u64 {
     time.duration_since(UNIX_EPOCH)
         .map_or(0, |since| since.as_secs())
 }
@@ -168,18 +168,9 @@ impl Steps<'_> {
         }
     }
 
-    /// completes when a stop is asked for, with its time; never, when the sender is
-    /// gone without one.
+    /// completes when a stop is asked for, with its time.
     async fn stopped(&self) -> Instant {
-        let mut stop = self.stop.clone();
-        loop {
-            if let Some(at) = *stop.borrow_and_update() {
-                return at;
-            }
-            if stop.changed().await.is_err() {
-                return std::future::pending().await;
-            }
-        }
+        super::stop_requested(&self.stop).await
     }
 
     /// runs `work` until it ends or a stop is asked for, which drops it, killing the

@@ -28,7 +28,7 @@ pub const DIAGNOSTIC_FLAG: &str = "--diagnostic";
 
 const REMOVE_BUDGET: Duration = Duration::from_secs(5);
 
-const CANNOT_RUN: u8 = 125;
+pub(crate) const CANNOT_RUN: u8 = 125;
 
 /// the exit code after the pipe closed and the container was removed, or ended.
 const CLI_GONE: u8 = 0;
@@ -52,7 +52,7 @@ pub fn run(name: &str, diagnostic: bool, program: &OsStr, arguments: &[OsString]
 }
 
 /// waits on a thread of its own for standard input to end, the liveness pipe closing.
-fn input_closed() -> oneshot::Receiver<()> {
+pub(crate) fn input_closed() -> oneshot::Receiver<()> {
     let (closed, receiver) = oneshot::channel();
     std::thread::spawn(move || {
         let _ = std::io::copy(&mut std::io::stdin(), &mut std::io::sink());
@@ -62,7 +62,7 @@ fn input_closed() -> oneshot::Receiver<()> {
 }
 
 /// the client's exit code, or 128 plus the signal that ended it.
-fn exit_code(status: &ExitStatus) -> u8 {
+pub(crate) fn exit_code(status: &ExitStatus) -> u8 {
     let code = status
         .code()
         .or_else(|| status.signal().map(|signal| 128 + signal))

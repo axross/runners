@@ -580,7 +580,7 @@ async fn end_client(child: &mut Child, limit: Duration) {
 /// forwards each line a container prints to the log until its stream ends; a line
 /// longer than [`MAX_LINE_BYTES`] goes in pieces, each cut where it splits no masked
 /// secret.
-async fn forward_lines<R: AsyncRead + Unpin>(stream: Option<R>, log: &dyn Log) {
+pub(crate) async fn forward_lines<R: AsyncRead + Unpin>(stream: Option<R>, log: &dyn Log) {
     let Some(stream) = stream else {
         return;
     };
