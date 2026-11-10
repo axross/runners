@@ -11,6 +11,7 @@ pub mod de;
 pub mod diagnostics;
 pub mod edit;
 pub mod fold;
+pub mod host_config;
 pub mod image;
 pub mod instance;
 pub mod json;
