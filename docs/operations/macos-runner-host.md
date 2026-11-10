@@ -258,9 +258,9 @@ is the configuration to copy. It holds placeholders only: replace the owners,
 repositories, names and token paths, and keep the files outside any checkout. Each
 entry is a pool of `slots` runners for one repository:
 
-- `os` is `linux` or `macos`, and `diskGb` is the per-VM disk cap. A Linux VM has
-  whole vCPUs, so `cpus` is an integer from 1 to 64, and `diskGb` is at least 20, the
-  golden VM's disk size.
+- `os` is `linux` or `macos`, and `diskGb` is the per-VM disk cap. A VM has whole
+  vCPUs, so `cpus` is an integer from 1 to 64 on every pool, and a Linux pool's
+  `diskGb` is at least 20, the golden VM's disk size.
 - `labels` replaces the routing label `axmc`. A Linux runner registers with
   `self-hosted`, `linux`, `ARM64` and the routing label, so a workflow routes a job
   with `runs-on: [axmc, linux]`.
@@ -271,10 +271,11 @@ entry is a pool of `slots` runners for one repository:
   one fine-grained token per repository with the Administration permission. On macOS
   the file must be a regular file owned by you with mode `0600`: `chmod 600 <file>`.
 - `budget` holds the Mac's `cpus`, `memoryGb` and `diskGb` for all pools together.
-  The disk total counts every slot's `diskGb` plus a fixed 40 GB for the golden VM
-  and Tart's image cache. The example's two slots of 4 vCPUs, 8 GB and 40 GB fit its
-  budget of 8 CPUs, 16 GB and 120 GB exactly. [CLI](./cli.md#profiles) has every
-  rule, its message, and the migration from the earlier rules.
+  The disk total counts every slot's `diskGb`, plus a fixed 40 GB for the golden VM
+  and Tart's image cache when any pool is Linux. The example's two slots of 4
+  vCPUs, 8 GB and 40 GB fit its budget of 8 CPUs, 16 GB and 120 GB exactly.
+  [CLI](./cli.md#profiles) has every rule, its message, and the migration from the
+  earlier rules.
 
 `marshal validate --config <path> --profile axmc` checks a file on any machine.
 
