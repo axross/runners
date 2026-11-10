@@ -61,7 +61,8 @@
 //!   its directory entry and `metrics.txt`, whose text is `metrics_text` when that
 //!   file exists and ends with `final=observed` otherwise; `cp_mode` (`raw`, which
 //!   adds `raw-1.log`, `gap`, without the final observation, `bad`, with a
-//!   traversal name, `fail`, `hang`, `slow`, which waits 2 s first) changes it;
+//!   traversal name, `fail`, `hang`, which also ends with its parent when
+//!   `FAKE_DOCKER_WATCH_PARENT` is set, `slow`, which waits 2 s first) changes it;
 //! - `kill_fails` fails a `kill`;
 //! - `export` stands in for an exporter child that ignores its liveness pipe: it
 //!   waits without reading its standard input.
@@ -403,7 +404,9 @@ fn copy(dir: &Path, source: &str) -> Result<u8, String> {
     match mode.as_str() {
         "fail" => return Ok(1),
         "hang" => {
-            sleep_while(|| true);
+            let parent = parent_id();
+            let watching = std::env::var_os("FAKE_DOCKER_WATCH_PARENT").is_some();
+            sleep_while(|| !watching || parent_id() == parent);
             return Ok(1);
         }
         "slow" => std::thread::sleep(Duration::from_secs(2)),
