@@ -183,7 +183,7 @@ fn route_output_in_any_other_form_is_refused() {
         String::new(),
         "route: writing to routing socket: not in table\n".to_string(),
         "   route to: default\n".to_string(),
-        with("route to: default", "route to: 8.8.8.8"),
+        with("route to: default", "route to: 192.0.2.8"),
         with("gateway: 192.0.2.1", "gateway: fe80::1%en0"),
         with("gateway: 192.0.2.1", "gateway: link#"),
         with("gateway: 192.0.2.1", "gateway: link#x"),
