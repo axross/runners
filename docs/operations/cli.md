@@ -709,11 +709,11 @@ it, and a test shows the lock free while a shim lives.
 
 - When `tart run` ends while the pipe is open, the shim relays what Tart printed, its
   standard error and then its standard output, to its own standard output, and exits
-  with Tart's code. It deletes nothing, because the CLI is still there and deletes the
-  VM itself: a job VM when its slot releases it, and a build VM when the build fails
-  (one that shut down cleanly is renamed to the golden name instead). A VM the CLI could
-  not delete is left to the next `start`, for a job VM, or the next `build`, for a build
-  VM.
+  with Tart's code, or 128 plus the signal number when a signal ended it. It deletes
+  nothing, because the CLI is still there and deletes the VM itself: a job VM when its
+  slot releases it, and a build VM when the build fails (one that shut down cleanly is
+  renamed to the golden name instead). A VM the CLI could not delete is left to the next
+  `start`, for a job VM, or the next `build`, for a build VM.
 - When the pipe closes, the shim stops the VM (`stop --timeout 5` within 8 s, then
   `stop --timeout 0` within 3 s when that fails), deletes it within 4 s, and exits 0.
   It exits 1 when the deletion fails or the 15 s run out. A shim started for a
@@ -2161,8 +2161,12 @@ the same grace as axpc's retag: when a stop arrives during it, `tart rename` get
 5 s from the stop, its client is then ended, and a listing, within 4 s, says whether
 the golden name exists. If it does, the build has committed and `build` exits 0; if it does not, the build VM is
 deleted and `build` exits 1; if the listing fails, the exit is 1 with "commit unknown"
-and the golden name to look for. After the rename, a stop skips the rest of the
-clean-up, and `build` exits 0.
+and the golden name to look for. The build VM is still deleted by its own name, which
+removes it if the rename did not happen. If it did, there is no such VM to delete, and
+with the listing failing too the deletion cannot be confirmed, so `build` warns that the
+next build deletes it if it is still there. The 5 s grace, the 4 s listing and the 15 s
+clean-up fit inside the 28 s deadline, and a unit test holds the constants to that. After
+the rename, a stop skips the rest of the clean-up, and `build` exits 0.
 
 **A CLI that dies.** A build VM is held by a [VM shim](#the-vm-shim), so a CLI that is
 killed, or crashes, leaves its build VM to the shim, which stops and deletes it within

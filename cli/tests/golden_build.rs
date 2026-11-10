@@ -545,8 +545,17 @@ fn a_stop_during_a_rename_that_took_effect_keeps_the_new_golden_vm() {
     });
 }
 
+/// the warnings the build logged about a build VM it could not delete.
+fn deletion_warnings(rig: &Rig) -> Vec<String> {
+    rig.log
+        .lines()
+        .into_iter()
+        .filter(|line| line.starts_with("WARN: deleting the VM "))
+        .collect()
+}
+
 #[test]
-fn a_stop_during_a_rename_with_no_listing_is_a_commit_unknown_that_keeps_the_build_vm() {
+fn a_stop_during_a_rename_with_no_listing_is_a_commit_unknown_that_deletes_the_build_vm() {
     big_stack(|| async {
         let rig = Rig::new();
         let error = stopped_during_a_hanging_rename(&rig, |rig, _| {
@@ -555,7 +564,50 @@ fn a_stop_during_a_rename_with_no_listing_is_a_commit_unknown_that_keeps_the_bui
         .await
         .unwrap_err();
         assert!(error.starts_with("commit unknown:"), "{error}");
-        assert_eq!(rig.build_vms().len(), 1, "{:?}", rig.build_vms());
+        assert_eq!(rig.build_vms(), Vec::<String>::new());
+        assert_eq!(rig.golden_vms(), [old_golden()]);
+        let warnings = deletion_warnings(&rig);
+        assert!(warnings.is_empty(), "{warnings:?}");
+    });
+}
+
+#[test]
+fn a_commit_unknown_that_did_commit_deletes_the_build_name_and_keeps_the_golden_vm() {
+    big_stack(|| async {
+        let rig = Rig::new();
+        let error = stopped_during_a_hanging_rename(&rig, |rig, golden| {
+            rig.fake.script("fail-list", "listing went wrong");
+            rig.fake.seed(&[
+                (&old_golden(), "stopped", "local"),
+                (golden, "stopped", "local"),
+            ]);
+        })
+        .await
+        .unwrap_err();
+        assert!(error.starts_with("commit unknown:"), "{error}");
+        let renames = rig.calls_starting("rename ");
+        let build = renames[0].split(' ').nth(1).unwrap();
+        let golden = renames[0].split(' ').nth(2).unwrap();
+        let deletions = rig.calls_starting("delete ");
+        assert!(
+            deletions
+                .iter()
+                .any(|call| call.split(' ').nth(1) == Some(build)),
+            "the build name was not deleted: {deletions:?}"
+        );
+        assert!(
+            deletions.iter().all(|call| !call.contains(golden)),
+            "the golden name was deleted: {deletions:?}"
+        );
+        assert!(rig.golden_vms().iter().any(|name| name == golden));
+        assert_eq!(rig.golden_vms().len(), 2, "{:?}", rig.golden_vms());
+        let warnings = deletion_warnings(&rig);
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(warnings[0].contains(build), "{warnings:?}");
+        assert!(
+            warnings[0].ends_with("the next build deletes it if it is still there."),
+            "{warnings:?}"
+        );
     });
 }
 

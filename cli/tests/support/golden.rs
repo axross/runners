@@ -27,7 +27,7 @@ use marshal_cli::runtime::tart::names::{GOLDEN_VM_VERSION, GoldenVmName};
 
 use super::docker::FAKE_DOCKER;
 use super::softnet::Host as SoftnetHost;
-use super::tart::{FAKE_TART, Fake};
+use super::tart::{FAKE_TART, Fake, invocations};
 use super::{BINARY, TempDir, repository_root};
 
 pub const IMAGE: &str = "actions-runner:local";
@@ -182,22 +182,14 @@ impl Rig {
             .collect()
     }
 
-    /// the arguments of every call recorded so far. A call that is still being recorded
-    /// has an empty argument file, because the fake writes the arguments last, so this
-    /// stops there and can be called while the build runs.
+    /// the arguments of every call recorded so far. A call still being recorded has no
+    /// argument file yet, because the fake publishes it last by rename, so this stops
+    /// there and can be called while the build runs.
     fn arguments(&self) -> Vec<Vec<String>> {
-        let mut found = Vec::new();
-        for number in 0.. {
-            let file = self.fake.dir.path().join(format!("inv-{number:06}.argv"));
-            let Ok(text) = fs::read_to_string(file) else {
-                break;
-            };
-            if text.is_empty() {
-                break;
-            }
-            found.push(text.split('\0').map(str::to_string).collect());
-        }
-        found
+        invocations(self.fake.dir.path())
+            .into_iter()
+            .map(|call| call.arguments)
+            .collect()
     }
 
     /// the position of the first call that starts with `prefix`.
