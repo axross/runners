@@ -446,8 +446,8 @@ fn a_stop_while_a_slot_waits_for_its_vms_docker_engine_ends_far_before_the_exit_
     assert_eq!(host.vm_names().len(), 1, "only the golden VM is left");
 }
 
-/// plan criterion: a VM that ignores the graceful stop is stopped forcibly and
-/// deleted by the 30 s deadline.
+/// the graceful stop is tried first and, when the VM ignores it, a forced stop
+/// follows and the VM is deleted, all within the stop sequence's 30 s.
 #[test]
 fn a_vm_that_ignores_the_graceful_stop_is_stopped_forcibly_and_deleted_within_30_seconds() {
     let host = holding_host(&[linux("linuxone", 1)]);

@@ -100,7 +100,7 @@ pub const NO_POOL_CAN_START: &str =
     "No pool can start, because macOS VM pools are not supported yet";
 
 /// the names of the pools of `plan` that have no runtime on its host: on axmc, the
-/// macOS pools, until M3. An axpc plan skips none.
+/// macOS pools, which have no runtime yet. An axpc plan skips none.
 #[must_use]
 pub fn skipped_pools(plan: &Plan) -> Vec<&str> {
     plan.entries

@@ -496,7 +496,7 @@ async fn a_forced_stop_in_an_exported_containers_removal_window_reports_no_gap_f
     );
 }
 
-/// N2: an export that succeeded and a removal that failed leave the container
+/// an export that succeeded and a removal that failed leave the container
 /// retained, and the release that then deletes its VM leaves nothing to report as
 /// lost, because the bundle stands in the sink.
 #[tokio::test(flavor = "current_thread")]
