@@ -8,7 +8,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
-use crate::instance::log_file::{LogFileError, MAX_FILE_BYTES, create_log_file};
+use crate::instance::log_file::{LogFileError, MAX_FILE_BYTES, RawLog, create_log_file};
 use crate::runtime::log::{Log, Masks};
 use crate::runtime::name::stamp;
 
@@ -58,7 +58,7 @@ impl AgentLog {
         };
         log.info(&format!("Logging to {}.", raw.path.display()));
         if let Some(failure) = raw.pruning_failed {
-            log.warn(&format!("An old log file could not be removed: {failure}"));
+            log.warn(&pruning_warning(&failure));
         }
         Ok(log)
     }
@@ -75,9 +75,13 @@ impl AgentLog {
         self.current.borrow().path.clone()
     }
 
-    fn emit(&self, prefix: &str, line: &str) {
+    fn record(&self, prefix: &str, line: &str) -> String {
         let line = self.masks.apply(line);
-        let text = format!("{} {prefix}{line}\n", stamp(SystemTime::now()));
+        format!("{} {prefix}{line}\n", stamp(SystemTime::now()))
+    }
+
+    fn emit(&self, prefix: &str, line: &str) {
+        let text = self.record(prefix, line);
         let mut current = self.current.borrow_mut();
         if current.file.is_none() && !self.reopen(&mut current) {
             current.lost = current.lost.saturating_add(1);
@@ -125,10 +129,7 @@ impl AgentLog {
             current.retry_at = Instant::now() + self.retry_every;
             return false;
         };
-        current.file = Some(raw.file);
-        current.path = raw.path;
-        current.written = 0;
-        current.named = at;
+        self.continue_with(current, raw, at);
         let notice = format!(
             "{} Logging recovered; {} lines were not written while it was stopped.\n",
             stamp(SystemTime::now()),
@@ -148,11 +149,27 @@ impl AgentLog {
             self.stop(current);
             return;
         };
+        self.continue_with(current, raw, at);
+    }
+
+    /// continues the log in the new file `raw`, named at `at`, and says in it when an
+    /// old file could not be removed; the caller holds the borrow of `current`, so the
+    /// line is written through it and not through [`Log::warn`].
+    fn continue_with(&self, current: &mut Current, raw: RawLog, at: SystemTime) {
         current.file = Some(raw.file);
         current.path = raw.path;
         current.written = 0;
         current.named = at;
+        if let Some(failure) = raw.pruning_failed {
+            let warning = self.record("WARNING: ", &pruning_warning(&failure));
+            self.write(current, &warning);
+        }
     }
+}
+
+/// the line that says an old log file could not be removed.
+fn pruning_warning(failure: &str) -> String {
+    format!("An old log file could not be removed: {failure}")
 }
 
 impl Log for AgentLog {
@@ -262,6 +279,31 @@ mod tests {
         assert!(!text.contains("too early"), "{text}");
         fs::remove_dir_all(&directory).unwrap();
         fs::remove_file(&blocked).unwrap();
+    }
+
+    #[test]
+    fn an_old_file_that_could_not_be_removed_is_reported_in_the_file_that_continues_the_log() {
+        let directory = scratch("prune-warning");
+        let log = AgentLog::open(&directory, 4096).unwrap();
+        let path = directory.join("continued.log");
+        let raw = RawLog {
+            file: File::create(&path).unwrap(),
+            path: path.clone(),
+            pruning_failed: Some("the old file is busy".to_string()),
+        };
+        let at = SystemTime::now() + Duration::from_secs(1);
+        // as `emit` calls it, with the file's borrow held
+        log.continue_with(&mut log.current.borrow_mut(), raw, at);
+        log.info("after the roll");
+        assert_eq!(log.path(), path);
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(
+            text.contains(" WARNING: An old log file could not be removed: the old file is busy\n"),
+            "{text}"
+        );
+        assert!(text.contains("after the roll"), "{text}");
+        assert!(text.find("WARNING").unwrap() < text.find("after the roll").unwrap());
+        fs::remove_dir_all(&directory).unwrap();
     }
 
     #[test]

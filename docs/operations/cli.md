@@ -918,7 +918,8 @@ still read, is checked by `validate` and ignored by the agent.
 
 The agent's log is a file in the same private directory as `start`'s. It is
 continued in a new file when it reaches 10 MiB, so no line is lost to the limit, and
-the newest ten files are kept. Every token and JIT configuration is masked in it, and
+the newest ten files are kept, and a warning in the file being written says when an
+old one could not be removed. Every token and JIT configuration is masked in it, and
 nothing goes to a terminal, since the agent has none: a failure before the log opens
 goes to standard error, and everything after goes to the log. A `docker build` the
 agent runs has its output read line by line into the log, each line masked and
