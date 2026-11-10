@@ -358,7 +358,7 @@ async fn quit_is_not_held_by_connections_that_never_read() {
         ..Limits::default()
     });
     let rig = &rig;
-    let (_, took) = rig
+    let (_, sent) = rig
         .drive(Launch::Running, |conn| async move {
             conn.until("all runners up", |s| s.runners_up == 640).await;
             let mut stalled = Vec::new();
@@ -376,12 +376,16 @@ async fn quit_is_not_held_by_connections_that_never_read() {
                 tokio::time::sleep(Duration::from_millis(15)).await;
             }
             rig.mark_running();
-            let started = std::time::Instant::now();
+            let sent = std::time::Instant::now();
             conn.ok("quit").await;
             drop(stalled);
-            started.elapsed()
+            sent
         })
         .await;
-    assert!(took < Duration::from_secs(1), "quit took {took:?}");
+    let ended_in = rig.ended_within(sent);
+    assert!(
+        ended_in < Duration::from_secs(1),
+        "the agent ended {ended_in:?} after quit was sent"
+    );
     assert!(rig.lock_is_free());
 }

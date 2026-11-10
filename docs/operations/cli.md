@@ -1162,9 +1162,9 @@ a connection that stops reading. `tests/agent_tokens.rs` covers what `token_set`
 `token_remove` do to the next registration, a skipped pool starting, refused tokens,
 and the store's kind and code in an error, a skipped pool's reason and the log.
 `tests/agent_snapshot.rs` covers the snapshot, the diagnostics, the leftovers, the
-64 KiB cut, that `quit` frees the lock within a second with 640 runners and four
-subscribed connections that never read, the stalled readers' thread count (measured
-on Linux only, from the runtime's worker threads) and, in
+64 KiB cut, that the agent ends and frees the lock within a second of `quit` with 640
+runners and four subscribed connections that never read, the stalled readers' thread
+count (measured on Linux only, from the runtime's worker threads) and, in
 `tests/agent_quit_stalled.rs`, that the process ends within a second or so of a
 `quit` with a stalled subscriber, and that no token or JIT
 configuration reaches a connection or the log. `tests/agent_versions.rs` runs `stop`,

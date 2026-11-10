@@ -134,6 +134,7 @@ pub struct Rig {
     /// a store the agent uses in place of the in-memory one, as the Credential Manager.
     pub other_store: RefCell<Option<Arc<dyn TokenStore>>>,
     lock: RefCell<Option<InstanceLock>>,
+    ended_at: Cell<Option<Instant>>,
 }
 
 impl Rig {
@@ -167,6 +168,7 @@ impl Rig {
             no_store: Cell::new(false),
             other_store: RefCell::new(None),
             lock: RefCell::new(Some(lock)),
+            ended_at: Cell::new(None),
         }
     }
 
@@ -183,6 +185,15 @@ impl Rig {
 
     pub fn write_config(&self, config: &str) {
         std::fs::write(self.root.path().join("config.json"), config).unwrap();
+    }
+
+    /// how long after `since` the agent had ended and released the lock; the instant is
+    /// taken inside `drive`, where the script's own waits do not count.
+    pub fn ended_within(&self, since: Instant) -> Duration {
+        self.ended_at
+            .get()
+            .expect("the rig was not driven")
+            .saturating_duration_since(since)
     }
 
     /// whether the lock is free now that the agent has ended.
@@ -222,39 +233,43 @@ impl Rig {
             .borrow_mut()
             .take()
             .expect("the rig was driven before");
-        let resident = Resident {
-            backend: &self.backend,
-            clock: &self.clock,
-            registrar: &self.registrar,
-            builder: &self.builder,
-            store: (!self.no_store.get()).then(|| {
-                self.other_store
-                    .borrow()
-                    .clone()
-                    .unwrap_or_else(|| self.store.clone() as Arc<dyn TokenStore>)
-            }),
-            log: &self.log,
-            roots: &self.roots,
-            lock: &lock,
-            settings: Settings {
-                version: "test".to_string(),
-                config_path: self.root.path().join("config.json"),
-                times: self.times.get(),
-                launch,
-            },
-            executable: self.executable.borrow().clone(),
-            limits: self.limits.get(),
+        let agent = async {
+            let resident = Resident {
+                backend: &self.backend,
+                clock: &self.clock,
+                registrar: &self.registrar,
+                builder: &self.builder,
+                store: (!self.no_store.get()).then(|| {
+                    self.other_store
+                        .borrow()
+                        .clone()
+                        .unwrap_or_else(|| self.store.clone() as Arc<dyn TokenStore>)
+                }),
+                log: &self.log,
+                roots: &self.roots,
+                lock: &lock,
+                settings: Settings {
+                    version: "test".to_string(),
+                    config_path: self.root.path().join("config.json"),
+                    times: self.times.get(),
+                    launch,
+                },
+                executable: self.executable.borrow().clone(),
+                limits: self.limits.get(),
+            };
+            let ended = run_resident(resident).await;
+            drop(lock);
+            self.ended_at.set(Some(Instant::now()));
+            ended
         };
         let both = async {
             let script = async { script(Conn::open(&self.roots).await).await };
-            let (ended, value) = tokio::join!(run_resident(resident), script);
+            let (ended, value) = tokio::join!(agent, script);
             (ended.unwrap(), value)
         };
-        let outcome = tokio::time::timeout(Duration::from_secs(60), both)
+        tokio::time::timeout(Duration::from_secs(60), both)
             .await
-            .expect("the agent and the script did not both finish in a minute");
-        drop(lock);
-        outcome
+            .expect("the agent and the script did not both finish in a minute")
     }
 }
 

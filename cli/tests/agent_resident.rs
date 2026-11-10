@@ -103,17 +103,21 @@ async fn an_agent_launched_stopped_runs_nothing_until_it_is_told_to() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn quit_from_the_stopped_state_frees_the_lock_within_a_second() {
+async fn quit_from_the_stopped_state_ends_the_agent_and_frees_the_lock_within_a_second() {
     let rig = Rig::new(ONE_POOL);
     let rig = &rig;
-    let (_, took) = rig
+    let (_, sent) = rig
         .drive(Launch::Stopped, |conn| async move {
-            let started = Instant::now();
+            let sent = Instant::now();
             conn.ok("quit").await;
-            started.elapsed()
+            sent
         })
         .await;
-    assert!(took < Duration::from_secs(1), "quit took {took:?}");
+    let ended_in = rig.ended_within(sent);
+    assert!(
+        ended_in < Duration::from_secs(1),
+        "the agent ended {ended_in:?} after quit was sent"
+    );
     assert!(rig.lock_is_free());
 }
 
