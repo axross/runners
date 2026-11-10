@@ -10,7 +10,7 @@ use tokio::process::Child;
 use crate::golden::pins::LAUNCHER_PATH;
 use crate::runtime::scrub::scrub_error_text;
 
-use super::client::{Captured, TartClient, TartError};
+use super::client::{TartClient, TartError};
 
 /// the guest agent of one VM.
 #[derive(Debug, Clone, Copy)]
@@ -39,18 +39,6 @@ impl<'a> Guest<'a> {
             return Ok(());
         }
         Err(answer.error_text())
-    }
-
-    /// runs `docker` with `arguments` in the VM within `budget` and returns what it
-    /// printed whatever its exit code.
-    pub async fn docker(
-        &self,
-        arguments: &[String],
-        budget: Duration,
-    ) -> Result<Captured, TartError> {
-        let mut command = vec!["docker".to_string()];
-        command.extend(arguments.iter().cloned());
-        self.client.exec(self.vm, &command, None, budget).await
     }
 
     /// starts the launcher in the VM with the arguments of a `docker run`, for a
