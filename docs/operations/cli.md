@@ -461,9 +461,10 @@ it, and a test shows the lock free while a shim lives.
 
 - When `tart run` ends while the pipe is open, the shim relays what Tart printed, its
   standard error and then its standard output, to its own standard output, and exits
-  with Tart's code. It deletes nothing itself. The CLI that holds the pipe sees
-  `tart run` end and deletes the VM, as [The Golden VM Build](#the-golden-vm-build)
-  says, so the VM is not kept.
+  with Tart's code, or 128 plus the signal number when a signal ended it. It deletes
+  nothing itself. The CLI that holds the pipe sees `tart run` end and decides what
+  becomes of the VM: the build deletes it after a failure and renames it to the golden
+  name after its own shutdown, as [The Golden VM Build](#the-golden-vm-build) says.
 - When the pipe closes, the shim stops the VM (`stop --timeout 5` within 8 s, then
   `stop --timeout 0` within 3 s when that fails), deletes it within 4 s, and exits 0.
   It exits 1 when the deletion fails or the 15 s run out. None of its `tart` calls
