@@ -855,7 +855,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                 },
             }
         };
-        let reason = self.build_ended(&image, outcome, cancelled).await;
+        let reason = self.build_ended(requests, &image, outcome, cancelled).await;
         let next = self.after_stop(reason);
         for reply in waiting {
             let _ = reply.send(Ok(self.state_result()));
@@ -891,9 +891,11 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
     }
 
     /// records how the build ended and the image it left, and says why the agent is
-    /// stopped.
+    /// stopped; the image is checked while calls are still answered, and a stop or a
+    /// quit abandons the check.
     async fn build_ended(
         &self,
+        requests: &mut Requests,
         image: &str,
         outcome: Result<(), String>,
         cancelled: bool,
@@ -916,7 +918,12 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             }
         };
         if word == "ready" {
-            check_image(self.backend, &self.board, image).await;
+            self.serve(
+                requests,
+                true,
+                check_image(self.backend, &self.board, image),
+            )
+            .await;
         }
         if let Some(build) = self.inner.borrow_mut().build.as_mut() {
             build.outcome = word.to_string();

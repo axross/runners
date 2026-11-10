@@ -8,6 +8,7 @@
 )]
 mod support;
 
+use std::future::Future;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
@@ -16,7 +17,7 @@ use marshal_cli::agent::{AgentOptions, run};
 use marshal_cli::instance::lifecycle::StopTimes;
 use marshal_cli::runtime::fake::Call;
 use serde_json::{Value, json};
-use support::agent::{ONE_POOL, Raw, Rig, TOKEN, TWO_POOLS};
+use support::agent::{Conn, ONE_POOL, Raw, Rig, TOKEN, TWO_POOLS};
 use tokio::sync::Notify;
 
 fn running_rig() -> Rig {
@@ -524,6 +525,116 @@ async fn build_reports_building_with_its_start_and_ends_ready() {
         })
         .await;
     assert_eq!(*rig.builder.images.borrow(), ["actions-runner:local"]);
+}
+
+/// a rig whose build ends ready once released, and whose image check after it waits
+/// for a permit that no test gives.
+fn image_check_after_a_build_rig() -> Rig {
+    let rig = Rig::new(ONE_POOL);
+    rig.builder.hold.set(true);
+    rig.backend.state.borrow_mut().image_gate = Some(Rc::new(Notify::new()));
+    rig
+}
+
+/// starts a build, lets it end ready and waits until the image check that follows is
+/// waiting.
+async fn until_the_image_check_after_a_build_waits(conn: &Conn, rig: &Rig) {
+    conn.ok("build").await;
+    rig.builder.release.notify_one();
+    let started = Instant::now();
+    while rig.backend.state.borrow().image_checks.is_empty() {
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "the image was not checked after the build"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+/// `future`'s output, or a failure when the agent has not answered within a second.
+async fn answered_within_a_second<T>(what: &str, future: impl Future<Output = T>) -> T {
+    tokio::time::timeout(Duration::from_secs(1), future)
+        .await
+        .unwrap_or_else(|_| panic!("{what} was not answered within a second"))
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn status_shows_the_build_while_the_image_is_checked_after_a_build() {
+    let rig = image_check_after_a_build_rig();
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Stopped, |conn| async move {
+            until_the_image_check_after_a_build_waits(&conn, rig).await;
+            let snapshot = answered_within_a_second("status", conn.client.status())
+                .await
+                .unwrap();
+            assert_eq!(snapshot.agent.state, "building");
+            assert_eq!(snapshot.agent.build.unwrap().outcome, "building");
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn start_all_and_build_are_busy_while_the_image_is_checked_after_a_build() {
+    let rig = image_check_after_a_build_rig();
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Stopped, |conn| async move {
+            until_the_image_check_after_a_build_waits(&conn, rig).await;
+            for method in ["start_all", "build"] {
+                let code = answered_within_a_second(method, conn.code(method, Value::Null)).await;
+                assert_eq!(code, "busy", "{method}");
+            }
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn quit_ends_the_agent_within_a_second_while_the_image_is_checked_after_a_build() {
+    let rig = image_check_after_a_build_rig();
+    let rig = &rig;
+    let (ended, sent) = rig
+        .drive(Launch::Stopped, |conn| async move {
+            until_the_image_check_after_a_build_waits(&conn, rig).await;
+            let sent = Instant::now();
+            let answer = answered_within_a_second("quit", conn.call("quit", Value::Null))
+                .await
+                .unwrap();
+            assert_eq!(answer["state"], "quitting");
+            sent
+        })
+        .await;
+    assert_eq!(ended.reason, QUIT);
+    let ended_in = rig.ended_within(sent);
+    assert!(
+        ended_in < Duration::from_secs(1),
+        "the agent ended {ended_in:?} after quit was sent"
+    );
+    assert!(rig.lock_is_free());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn stop_all_abandons_the_image_check_after_a_build_and_leaves_the_agent_stopped_by_you() {
+    let rig = image_check_after_a_build_rig();
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Stopped, |conn| async move {
+            until_the_image_check_after_a_build_waits(&conn, rig).await;
+            let answer = answered_within_a_second("stop_all", conn.call("stop_all", Value::Null))
+                .await
+                .unwrap();
+            assert_eq!(answer["state"], "stopped");
+            let snapshot = conn.status().await;
+            assert_eq!(snapshot.agent.state, "stopped");
+            assert_eq!(snapshot.agent.reason.unwrap().code, "by_you");
+            let build = snapshot.agent.build.unwrap();
+            assert_eq!(build.outcome, "ready");
+            assert!(build.finished.is_some());
+            conn.ok("quit").await;
+        })
+        .await;
 }
 
 /// what a successful build leaves, whatever the agent was stopped for before it.
