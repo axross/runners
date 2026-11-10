@@ -2,11 +2,12 @@
 //! the exporter child (this CLI run again) reads the evidence with `tart exec <vm>
 //! docker inspect` and `docker cp` against the fake `tart` and the fake `docker`, and
 //! writes it into a real sink; then the VM is deleted. The tests cover the VM transport
-//! exporting the diagnostic variant's evidence within the bundle limits, token-free; the
-//! stop timeline's gaps behaving as for containers; `diagnostics` finalising a retained
-//! VM as it does a container; and a diagnostic VM deleted without an export at a forced
-//! stop, a crash and the next `start` (the paragraph "Evidence a VM loses" in the Tart
-//! Backend section of docs/operations/cli.md).
+//! exporting the diagnostic variant's evidence within the bundle limits, token-free; a
+//! hung copy ending with the export's deadline and its `tart exec` client with the
+//! exporter; the stop timeline's gaps behaving as for containers; `diagnostics`
+//! finalising a retained VM as it does a container; and a diagnostic VM deleted without
+//! an export at a forced stop, a crash and the next `start` (the paragraph "Evidence a
+//! VM loses" in the Tart Backend section of docs/operations/cli.md).
 #![cfg(unix)]
 #![allow(
     clippy::unwrap_used,
@@ -109,6 +110,14 @@ fn position(calls: &[Vec<String>], matches: impl Fn(&[String]) -> bool) -> usize
         .unwrap_or_else(|| panic!("no such call in {calls:?}"))
 }
 
+/// whether `call` is `tart exec <vm> docker <word> ...`.
+fn runs_in_vm(call: &[String], vm: &str, word: &str) -> bool {
+    call.first().map(String::as_str) == Some("exec")
+        && call.get(1).map(String::as_str) == Some(vm)
+        && call.get(2).map(String::as_str) == Some("docker")
+        && call.get(3).map(String::as_str) == Some(word)
+}
+
 /// every file of `directory`, read, with its path.
 fn texts(directory: &Path) -> Vec<(PathBuf, Vec<u8>)> {
     let mut found = Vec::new();
@@ -168,14 +177,8 @@ async fn a_finalisation_exports_the_evidence_through_the_guest_agent_token_free_
 
     let vm = job_vm();
     let calls = rig.tart_calls();
-    let in_vm = |call: &[String], word: &str| {
-        call.first().map(String::as_str) == Some("exec")
-            && call.get(1) == Some(&vm)
-            && call.get(2).map(String::as_str) == Some("docker")
-            && call.get(3).map(String::as_str) == Some(word)
-    };
-    let inspect = position(&calls, |call| in_vm(call, "inspect"));
-    let copy = position(&calls, |call| in_vm(call, "cp"));
+    let inspect = position(&calls, |call| runs_in_vm(call, &vm, "inspect"));
+    let copy = position(&calls, |call| runs_in_vm(call, &vm, "cp"));
     let delete = position(&calls, |call| call == ["delete", &vm]);
     assert!(inspect < copy && copy < delete, "{calls:?}");
     assert_eq!(
@@ -335,6 +338,42 @@ async fn a_clock_that_leaves_no_time_to_begin_the_export_skips_it_and_still_dele
             .all(|call| call.get(3).map(String::as_str) != Some("cp")),
         "{calls:?}"
     );
+}
+
+/// a `docker cp` that hangs in the VM ends the export at its deadline, and the
+/// `tart exec` client that runs it ends with the exporter.
+#[tokio::test(flavor = "current_thread")]
+async fn a_copy_that_hangs_in_the_vm_ends_the_export_at_its_deadline_and_its_tart_client_with_it() {
+    let rig = Rig::exporting();
+    let scratch = TempDir::new();
+    let sink = private_sink(&scratch);
+    let name = ended_diagnostic_job(&rig, &record(&sink)).await;
+    rig.docker_script("cp_mode", "hang");
+    let claim = rig.backend.retained().claim(&name).unwrap();
+    let started = Instant::now() - Duration::from_secs(15);
+
+    let begun = Instant::now();
+    let finalized = diagnostic::finalize(&rig.backend, &claim, Deadlines::from(started)).await;
+    let took = begun.elapsed();
+
+    assert_eq!(finalized.export, ExportOutcome::Failed);
+    assert!(finalized.removed);
+    assert!(
+        took >= Duration::from_millis(2_500),
+        "the export ended after {took:?}, before the hung copy could have held it to its deadline"
+    );
+    assert!(
+        took < Duration::from_secs(5),
+        "the hung copy held the finalisation past its deadlines: {took:?}"
+    );
+    let vm = job_vm();
+    let copy = position(&rig.tart_calls(), |call| runs_in_vm(call, &vm, "cp"));
+    assert!(
+        rig.fake.ended_within(copy, Duration::from_secs(2)),
+        "the tart exec client of the copy outlived its export"
+    );
+    let bundle = &bundles(&sink)[0];
+    assert!(!files(bundle).contains(&"complete.txt".to_string()));
 }
 
 /// `diagnostics` finalises a retained VM as it does a container: it exports the

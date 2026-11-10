@@ -2,7 +2,8 @@
 //! `tart`, the fake `softnet`, the fake `docker` in the VMs, a loopback GitHub stub, and
 //! this CLI run again as the exporter child and as the VM shim. The tests cover the VM
 //! transport exporting the diagnostic variant's evidence within the bundle limits,
-//! token-free; the stop timeline's gaps behaving as for containers; `diagnostics`
+//! token-free; a killed `start` ending the exporter's `tart exec` clients with the
+//! exporter; the stop timeline's gaps behaving as for containers; `diagnostics`
 //! finalising a retained VM as it does a container; and a diagnostic VM deleted without
 //! an export at a forced stop, at a crash through the shim and at the next `start`, with
 //! the lost evidence reported in today's gap wording and exit-code rules (the paragraph
@@ -26,6 +27,7 @@ use support::axmc::{MacHost, linux};
 use support::docker::{FAKE_DOCKER, invocations};
 use support::host::{JIT, Started, TOKEN, registered, send_signal, texts};
 use support::stub::{Reply, Stub};
+use support::tart::ended_within;
 
 const RUNNING_WITHIN: Duration = Duration::from_secs(30);
 const GAP: &str =
@@ -281,6 +283,41 @@ fn a_killed_start_has_its_shim_delete_the_diagnostic_vm_and_report_the_gap() {
         "{vm_line}"
     );
     assert!(host.bundles().is_empty());
+}
+
+/// A `start` killed while its exporter copies evidence out of the VM closes the
+/// exporter's liveness pipe, so the exporter ends, and the `tart exec` client of its
+/// `docker cp` ends with it.
+#[test]
+fn a_killed_start_ends_its_exporters_tart_exec_clients_with_the_exporter() {
+    let host = host();
+    host.docker_script("cp_mode", "hang");
+    let stub = one_job();
+    let mut started = host.start(&stub.address);
+    let name = running_container(&host);
+    end_job(&host, &name);
+    let copy_call = |host: &MacHost| {
+        host.tart_calls().iter().position(|call| {
+            call.first().map(String::as_str) == Some("exec")
+                && call.get(2).map(String::as_str) == Some("docker")
+                && call.get(3).map(String::as_str) == Some("cp")
+        })
+    };
+    wait_until("the copy runs in the VM", RUNNING_WITHIN, || {
+        copy_call(&host).is_some()
+    });
+    let copy = copy_call(&host).unwrap();
+
+    started.kill();
+    assert!(
+        started.wait_for_stderr_to_close(Duration::from_secs(30)),
+        "the exporter outlived its instance"
+    );
+
+    assert!(
+        ended_within(&host.tart_dir(), copy, Duration::from_secs(2)),
+        "the tart exec client of the copy outlived the exporter"
+    );
 }
 
 /// `diagnostics` finalises a retained VM as it does a container. A VM whose
