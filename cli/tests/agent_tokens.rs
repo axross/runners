@@ -203,6 +203,45 @@ async fn a_store_failure_names_its_kind_and_code_and_never_the_token() {
         .await;
 }
 
+/// the reason and the warning of an admission skip, word for word, so that the agent's
+/// admission and `start`'s say the same thing.
+#[tokio::test(flavor = "current_thread")]
+async fn a_pool_skipped_for_want_of_a_token_says_why_in_the_snapshot_and_the_log() {
+    for (store_error, why) in [
+        (None, "no token"),
+        (
+            Some(StoreError::with(
+                StoreErrorKind::NeedsUser,
+                Some(1312),
+                "the vault is locked",
+            )),
+            "the token store failed: the vault is locked (kind needs_user, code 1312)",
+        ),
+    ] {
+        let rig = Rig::new(ONE_POOL);
+        rig.store.fail_with_error(store_error);
+        let rig = &rig;
+        let (_, ()) = rig
+            .drive(Launch::Running, |conn| async move {
+                let snapshot = conn.until_state("stopped").await;
+                assert_eq!(
+                    snapshot.pools[0].reason.as_deref(),
+                    Some(format!("repositories[0]: {why}.").as_str())
+                );
+                conn.ok("quit").await;
+            })
+            .await;
+        let expected = format!(
+            "WARN: repositories[0] (o/r) is not started and gets no slots: repositories[0]: {why}."
+        );
+        assert!(
+            rig.log.lines().contains(&expected),
+            "{expected}\n{:?}",
+            rig.log.lines()
+        );
+    }
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn a_skipped_pool_and_a_failed_registration_name_the_stores_kind_and_code() {
     let rig = Rig::new(ONE_POOL);
