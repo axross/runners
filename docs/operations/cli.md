@@ -1925,8 +1925,9 @@ The `rust` job in
 [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) runs format check,
 clippy, and tests on Linux, Windows, and macOS; the axpc checkout-rule cases that
 need drive-letter paths run only on Windows. Four more steps run on Linux only: the
-base-address, instance-roots, and build-definition tests again with `--release` and
-`MARSHAL_EXPECT_RELEASE=1`, which makes each fail if built in the wrong profile;
+base-address, instance-roots, build-definition, and agent-overrides tests again with
+`--release` and `MARSHAL_EXPECT_RELEASE=1`, which makes each fail if built in the
+wrong profile;
 `docker build --target base` of
 [`images/actions-runner`](../../images/actions-runner), tagged and never pushed;
 the `real_docker` test with `--ignored`, pointed at that tag by
@@ -2013,9 +2014,9 @@ no cross-compilation, in one leg that:
 1. fails unless `rustc`'s host target is the one in the table, so a change of
    runner image fails the build instead of shipping the wrong architecture;
 2. writes the version with `set-release-version.sh`;
-3. runs the base-address, instance-roots, and build-definition tests with
-   `--release` and `MARSHAL_EXPECT_RELEASE=1`, the same tests the Linux `rust` job
-   runs, on the target itself;
+3. runs the base-address, instance-roots, build-definition, and agent-overrides
+   tests with `--release` and `MARSHAL_EXPECT_RELEASE=1`, the same tests the Linux
+   `rust` job runs, on the target itself;
 4. builds `cargo build --locked --release --bin marshal`;
 5. fails unless the binary's `--version` prints `marshal <version>`, with the
    version its caller passed;
