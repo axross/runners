@@ -122,7 +122,7 @@ impl ImageCheck {
         }
     }
 
-    pub(crate) fn labels(&self) -> Option<&ImageLabels> {
+    fn labels(&self) -> Option<&ImageLabels> {
         match self {
             Self::Matching(labels) | Self::Mismatched(labels) => Some(labels),
             Self::Missing | Self::Unavailable(_) => None,
