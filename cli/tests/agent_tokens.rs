@@ -243,7 +243,7 @@ async fn a_pool_skipped_for_want_of_a_token_says_why_in_the_snapshot_and_the_log
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn a_skipped_pool_and_a_failed_registration_name_the_stores_kind_and_code() {
+async fn a_pool_skipped_because_the_store_failed_names_the_stores_kind_and_code() {
     let rig = Rig::new(ONE_POOL);
     rig.store.fail_with_error(Some(StoreError::with(
         StoreErrorKind::NeedsUser,

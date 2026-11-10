@@ -377,7 +377,7 @@ async fn an_idle_connection_is_closed_and_a_subscribed_one_is_not() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn a_connection_that_stops_reading_is_closed_and_costs_no_thread() {
+async fn a_connection_that_stops_reading_costs_no_thread_and_leaves_the_others_answered() {
     let rig = Rig::new(ONE_POOL);
     rig.limits.set(Limits {
         write: Duration::from_millis(300),
