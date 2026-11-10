@@ -169,6 +169,46 @@ async fn a_subscription_gets_the_snapshot_at_once_and_an_event_for_each_change()
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn a_subscriber_that_arrives_while_the_agent_is_idle_gets_each_change_within_a_second() {
+    let rig = Rig::new(ONE_POOL);
+    rig.store_token("o", "r", TOKEN);
+    rig.hold_jobs();
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            conn.until_runner_runs().await;
+            // the next registration fails, so the runner's new state is lasting
+            conn.client.token_remove("o/r").await.unwrap();
+            let mut watcher = conn.another().await;
+            watcher.client.subscribe().await.unwrap();
+            let Push::Event { seq, .. } = watcher.push().await else {
+                panic!("the snapshot comes first");
+            };
+            assert_eq!(seq, 1);
+
+            // no call follows on any connection: a call would make the agent look
+            // for subscribers again
+            rig.end_jobs().await;
+            let waited = async {
+                loop {
+                    let Push::Event { snapshot, .. } = watcher.push().await else {
+                        continue;
+                    };
+                    if snapshot.pools[0].runners[0].state == "backing_off" {
+                        return;
+                    }
+                }
+            };
+            tokio::time::timeout(Duration::from_secs(1), waited)
+                .await
+                .expect("the runner's new state was not pushed within a second");
+            rig.mark_running();
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn events_are_coalesced_to_one_in_a_window() {
     let rig = Rig::new(ONE_POOL);
     rig.limits.set(Limits {

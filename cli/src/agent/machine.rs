@@ -274,6 +274,15 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
         self.snapshots.receiver_count() > 1
     }
 
+    /// publishes on a tick when someone subscribes. `select!` reads a branch
+    /// precondition once, so the check cannot sit on the tick's branch: a
+    /// subscriber that arrives while the loop waits would never be served.
+    fn refresh(&self) {
+        if self.watched() {
+            self.publish();
+        }
+    }
+
     /// returns when the executable has changed, once, and sets the exit.
     async fn exit_asked(&self) {
         if self.exit.get().is_some() {
@@ -543,7 +552,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                     self.left.borrow_mut().clear();
                     self.set_phase(Phase::Running);
                 }
-                _ = ticker.tick(), if self.watched() => self.publish(),
+                _ = ticker.tick() => self.refresh(),
                 call = requests.recv() => {
                     let Some(call) = call else {
                         self.requests_closed();
@@ -647,7 +656,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                         return None;
                     }
                 }
-                _ = ticker.tick(), if self.watched() => self.publish(),
+                _ = ticker.tick() => self.refresh(),
                 call = requests.recv(), if open => match call {
                     None => open = false,
                     Some(call) => {
@@ -832,7 +841,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                     ));
                 }
                 () = self.exit_asked() => cancelled |= self.cancel_build(&stop),
-                _ = ticker.tick(), if self.watched() => self.publish(),
+                _ = ticker.tick() => self.refresh(),
                 call = requests.recv(), if open => match call {
                     None => open = false,
                     Some(call) => match self.route(call) {

@@ -1153,7 +1153,8 @@ core's restarts: the `restart_due` window with its empty pool list, and the stop
 `restart_limit`. The restart waits are the fake clock's, with a real pause of 400 ms
 each so the script can look at the window.
 `tests/agent_protocol.rs` covers the handshake, `welcome`, unknown methods, topics
-and fields, subscription, coalescing, heartbeats, `ending`, the limits as timers and
+and fields, subscription (also by a client that arrives while the agent is idle),
+coalescing, heartbeats, `ending`, the limits as timers and
 a connection that stops reading. `tests/agent_tokens.rs` covers what `token_set` and
 `token_remove` do to the next registration, a skipped pool starting, refused tokens,
 and the store's kind and code in an error, a skipped pool's reason and the log.
