@@ -55,8 +55,9 @@ impl Default for BuildLimits {
 
 /// writes each line `reader` yields to the log as a build line, and keeps the last
 /// few, with the log's masks applied, for the error of a failed build; a line longer
-/// than [`BUILD_LINE_BYTES`] is cut, marked with `...`, and the rest of it dropped, so
-/// it is logged once and its masks apply to it whole.
+/// than [`BUILD_LINE_BYTES`] is cut before any masked value the cut would split,
+/// marked with `...`, and the rest of it dropped, so it is logged once and no part of
+/// a masked value is kept.
 async fn forward_lines<R: AsyncRead + Unpin>(
     reader: R,
     log: &dyn Log,
@@ -73,13 +74,15 @@ async fn forward_lines<R: AsyncRead + Unpin>(
         }
         let reached_limit = bytes.last() != Some(&b'\n') && bytes.len() as u64 == BUILD_LINE_BYTES;
         let dropped = reached_limit && drop_rest_of_line(&mut reader).await.unwrap_or(false);
+        if dropped {
+            bytes.truncate(bytes.len() - log.held_back(&bytes));
+        }
         let text = String::from_utf8_lossy(&bytes);
         let mut line = text.trim_end_matches(['\r', '\n']).to_string();
-        if line.trim().is_empty() {
-            continue;
-        }
         if dropped {
             line.push_str("...");
+        } else if line.trim().is_empty() {
+            continue;
         }
         log.info(&format!("docker build: {line}"));
         let mut tail = tail.borrow_mut();
@@ -131,8 +134,9 @@ pub enum BuildOutput {
     Log,
 }
 
-/// the longest line of a build's output the log keeps; a longer line is cut here and
-/// marked with `...`, and the rest of it is dropped.
+/// the longest line of a build's output the log keeps; a longer line is cut here, or
+/// before a masked value the cut would split, and marked with `...`, and the rest of
+/// it is dropped.
 const BUILD_LINE_BYTES: u64 = 8 * 1024;
 
 /// the last lines of a failed build's output the error carries.
@@ -587,6 +591,7 @@ mod tests {
     use super::*;
     use crate::image::contract::BUILT_LABEL;
     use crate::runtime::fake::MemoryLog;
+    use crate::runtime::secret::Secret;
 
     const IMAGE: &str = "runner:local";
 
@@ -756,6 +761,53 @@ mod tests {
             tail,
             vec![format!("{}...", "x".repeat(70)), "short".to_string()]
         );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_masked_value_across_the_cut_of_a_build_line_leaves_no_part_of_it_in_the_log() {
+        let secret = "jit-0123456789abcdef";
+        let mut output = "x".repeat(8 * 1024 - 5).into_bytes();
+        output.extend_from_slice(secret.as_bytes());
+        output.extend_from_slice(b"\nshort\n");
+        let log = MemoryLog::default();
+        log.mask(&Secret::new(secret.to_string()));
+        let tail = RefCell::new(VecDeque::new());
+        forward_lines(output.as_slice(), &log, &tail).await;
+        let lines = log.lines();
+        assert_eq!(lines.len(), 2, "{} records", lines.len());
+        assert!(
+            lines[0].ends_with("..."),
+            "{}",
+            &lines[0][lines[0].len() - 8..]
+        );
+        assert!(
+            !lines[0].contains("jit-"),
+            "{}",
+            &lines[0][lines[0].len() - 8..]
+        );
+        assert_eq!(lines[1], "INFO: docker build: short");
+        let tail: Vec<String> = tail.into_inner().into();
+        assert_eq!(
+            tail,
+            vec![format!("{}...", "x".repeat(70)), "short".to_string()]
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_masked_value_that_fills_the_kept_text_of_a_build_line_still_records_the_cut() {
+        let secret = "s".repeat(8 * 1024 + 10);
+        let mut output = secret.clone().into_bytes();
+        output.extend_from_slice(b"\nnext\n");
+        let log = MemoryLog::default();
+        log.mask(&Secret::new(secret));
+        let tail = RefCell::new(VecDeque::new());
+        forward_lines(output.as_slice(), &log, &tail).await;
+        assert_eq!(
+            log.lines(),
+            vec!["INFO: docker build: ...", "INFO: docker build: next"]
+        );
+        let tail: Vec<String> = tail.into_inner().into();
+        assert_eq!(tail, vec!["...".to_string(), "next".to_string()]);
     }
 
     #[tokio::test(flavor = "current_thread")]
