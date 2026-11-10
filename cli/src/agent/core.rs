@@ -13,15 +13,14 @@ use tokio::sync::watch;
 use crate::instance::lifecycle::{CoreFailure, Ending};
 use crate::instance::runtime_core::{failure, verify_image};
 use crate::runtime::backend::Backend;
-use crate::runtime::board::{Board, PoolState};
+use crate::runtime::board::Board;
 use crate::runtime::clock::Clock;
 use crate::runtime::log::Log;
 use crate::runtime::pool::{
-    NoPoolStartable, PoolSpec, SlotSpec, pools_from_plan, prepare_admitted,
+    NoPoolStartable, PoolSpec, SlotSpec, admit_pool, pools_from_plan, prepare_admitted,
 };
 use crate::runtime::registration::Registrar;
 use crate::runtime::worker::{Services, run_slot_with, wait_for_stop};
-use crate::token_store::RepositoryKey;
 use crate::validate::Plan;
 
 use super::tokens::StoreTokens;
@@ -54,25 +53,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
 
     /// the pool's token is there, or the pool is skipped with the reason.
     fn admit(&self, pool: &PoolSpec) -> bool {
-        match self
-            .tokens
-            .read(&RepositoryKey::of(&pool.owner, &pool.repository))
-        {
-            Ok(token) => {
-                self.log.mask(&token);
-                self.board.set_pool(&pool.name, PoolState::WaitingForDocker);
-                true
-            }
-            Err(reason) => {
-                let reason = format!("{}: {reason}.", pool.path);
-                self.log.warn(&format!(
-                    "{} is not started and gets no slots: {reason}",
-                    pool.describe()
-                ));
-                self.board.set_pool(&pool.name, PoolState::Skipped(reason));
-                false
-            }
-        }
+        admit_pool(pool, self.tokens, self.log, self.board)
     }
 
     fn workers(&self, pool: &PoolSpec, stop: &watch::Receiver<bool>) -> Vec<Worker<'a>> {
