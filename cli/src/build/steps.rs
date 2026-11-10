@@ -10,7 +10,7 @@ use std::pin::pin;
 use std::process::Stdio;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::watch;
 use tokio::time::Instant;
 
@@ -54,24 +54,32 @@ impl Default for BuildLimits {
 }
 
 /// writes each line `reader` yields to the log as a build line, and keeps the last
-/// few, with the log's masks applied, for the error of a failed build.
+/// few, with the log's masks applied, for the error of a failed build; a line longer
+/// than [`BUILD_LINE_BYTES`] is cut, marked with `...`, and the rest of it dropped, so
+/// it is logged once and its masks apply to it whole.
 async fn forward_lines<R: AsyncRead + Unpin>(
     reader: R,
     log: &dyn Log,
     tail: &RefCell<VecDeque<String>>,
 ) {
     let mut reader = BufReader::new(reader);
+    let mut bytes = Vec::new();
     loop {
-        let mut bytes = Vec::new();
+        bytes.clear();
         let mut limited = (&mut reader).take(BUILD_LINE_BYTES);
         match limited.read_until(b'\n', &mut bytes).await {
             Ok(0) | Err(_) => return,
             Ok(_) => {}
         }
+        let reached_limit = bytes.last() != Some(&b'\n') && bytes.len() as u64 == BUILD_LINE_BYTES;
+        let dropped = reached_limit && drop_rest_of_line(&mut reader).await.unwrap_or(false);
         let text = String::from_utf8_lossy(&bytes);
-        let line = text.trim_end_matches(['\r', '\n']);
+        let mut line = text.trim_end_matches(['\r', '\n']).to_string();
         if line.trim().is_empty() {
             continue;
+        }
+        if dropped {
+            line.push_str("...");
         }
         log.info(&format!("docker build: {line}"));
         let mut tail = tail.borrow_mut();
@@ -79,6 +87,26 @@ async fn forward_lines<R: AsyncRead + Unpin>(
             tail.pop_front();
         }
         tail.push_back(cut_line(&log.masks().apply(line.trim())));
+    }
+}
+
+/// reads and discards the rest of the current line, up to and including its newline or
+/// the end of the output, in the reader's own buffer; true when any of it came before
+/// the newline.
+async fn drop_rest_of_line<R: AsyncBufRead + Unpin>(reader: &mut R) -> std::io::Result<bool> {
+    let mut dropped = false;
+    loop {
+        let buffered = reader.fill_buf().await?;
+        if buffered.is_empty() {
+            return Ok(dropped);
+        }
+        if let Some(newline) = buffered.iter().position(|byte| *byte == b'\n') {
+            reader.consume(newline + 1);
+            return Ok(dropped || newline > 0);
+        }
+        dropped = true;
+        let all = buffered.len();
+        reader.consume(all);
     }
 }
 
@@ -103,7 +131,8 @@ pub enum BuildOutput {
     Log,
 }
 
-/// the longest line of a build's output the log keeps.
+/// the longest line of a build's output the log keeps; a longer line is cut here and
+/// marked with `...`, and the rest of it is dropped.
 const BUILD_LINE_BYTES: u64 = 8 * 1024;
 
 /// the last lines of a failed build's output the error carries.
@@ -707,5 +736,48 @@ mod tests {
             log.lines()
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_build_line_longer_than_the_limit_is_cut_once_not_split() {
+        let mut output = "x".repeat(20 * 1024).into_bytes();
+        output.extend_from_slice(b"\nshort\n");
+        let log = MemoryLog::default();
+        let tail = RefCell::new(VecDeque::new());
+        forward_lines(output.as_slice(), &log, &tail).await;
+        let lines = log.lines();
+        assert_eq!(lines.len(), 2, "{} records", lines.len());
+        let cut = lines[0].strip_prefix("INFO: docker build: ").unwrap();
+        assert!(cut.ends_with("..."), "{}", &cut[cut.len() - 8..]);
+        assert!(cut.trim_end_matches("...").len() <= 8 * 1024);
+        assert_eq!(lines[1], "INFO: docker build: short");
+        let tail: Vec<String> = tail.into_inner().into();
+        assert_eq!(
+            tail,
+            vec![format!("{}...", "x".repeat(70)), "short".to_string()]
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_build_line_cut_by_the_end_of_the_output_ends_the_forwarding() {
+        let output = "y".repeat(20 * 1024).into_bytes();
+        let log = MemoryLog::default();
+        let tail = RefCell::new(VecDeque::new());
+        forward_lines(output.as_slice(), &log, &tail).await;
+        assert_eq!(log.lines().len(), 1, "{:?}", log.lines().len());
+        assert_eq!(tail.borrow().len(), 1);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_build_line_of_exactly_the_limit_is_not_marked_as_cut() {
+        let mut output = "z".repeat(8 * 1024).into_bytes();
+        output.extend_from_slice(b"\nnext\n");
+        let log = MemoryLog::default();
+        let tail = RefCell::new(VecDeque::new());
+        forward_lines(output.as_slice(), &log, &tail).await;
+        let lines = log.lines();
+        assert_eq!(lines.len(), 2, "{} records", lines.len());
+        assert!(!lines[0].ends_with("..."));
+        assert_eq!(lines[1], "INFO: docker build: next");
     }
 }

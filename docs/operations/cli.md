@@ -922,8 +922,9 @@ the newest ten files are kept. Every token and JIT configuration is masked in it
 nothing goes to a terminal, since the agent has none: a failure before the log opens
 goes to standard error, and everything after goes to the log. A `docker build` the
 agent runs has its output read line by line into the log, each line masked and
-marked `docker build:`; a line is cut at 8 KiB, and the last five lines, masked and
-each cut at 70 characters, end the message of a failed build, so the 500-character cut
+marked `docker build:`; a longer line is cut at 8 KiB, marked with `...`, and the rest
+of it dropped, so it is logged once and its masks apply to it whole, and the last five
+lines, masked and each cut at 70 characters, end the message of a failed build, so the 500-character cut
 of the message never takes the newest line. `marshal build` itself still passes the build's
 output on to its terminal.
 
