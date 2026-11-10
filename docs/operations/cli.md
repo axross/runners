@@ -1492,8 +1492,8 @@ console close can leave one too. The next `build` removes it.
 On axmc, exit 0 means the golden VM holds the new image, and exit 1 a refused, failed or
 stopped build that left the golden VM as it was, with two exceptions. An exit at the 28 s
 deadline can leave the build VM behind, and a "commit unknown" exit does not say whether
-the rename happened. [The Golden VM Build](#the-golden-vm-build) describes both under
-Stop and failure.
+the rename happened, though it tries to delete the build VM by its name either way.
+[The Golden VM Build](#the-golden-vm-build) describes both under Stop and failure.
 
 #### The Golden VM Build
 
@@ -1579,8 +1579,12 @@ the same grace as axpc's retag: when a stop arrives during it, `tart rename` get
 5 s from the stop, its client is then ended, and a listing, within 4 s, says whether
 the golden name exists. If it does, the build has committed and `build` exits 0; if it does not, the build VM is
 deleted and `build` exits 1; if the listing fails, the exit is 1 with "commit unknown"
-and the golden name to look for. After the rename, a stop skips the rest of the
-clean-up, and `build` exits 0.
+and the golden name to look for. The build VM is still deleted by its own name, which
+removes it if the rename did not happen. If it did, there is no such VM to delete, and
+with the listing failing too the deletion cannot be confirmed, so `build` warns that the
+next build deletes it if it is still there. The 5 s grace, the 4 s listing and the 15 s
+clean-up fit inside the 28 s deadline, and a unit test holds the constants to that. After
+the rename, a stop skips the rest of the clean-up, and `build` exits 0.
 
 **A CLI that dies.** A build VM is held by a [VM shim](#the-vm-shim), so a CLI that is
 killed, or crashes, leaves its build VM to the shim, which stops and deletes it within

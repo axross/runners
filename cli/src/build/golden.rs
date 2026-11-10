@@ -582,11 +582,12 @@ impl GoldenBuild<'_> {
             }
             Ok(Ok(_)) => Err(Abort::Stopped),
             _ => {
-                session.vm = None;
+                // the build VM stays recorded: deleting it by its own name is safe whether or
+                // not the rename took effect, and never reaches the golden name
                 Err(Abort::CommitUnknown(format!(
                     "commit unknown: the rename was stopped and the VMs could not be listed; \
-                     `tart list` shows whether {golden} exists, and the next build deletes \
-                     the build VM {vm} if it still does"
+                     `tart list` shows whether {golden} exists, and the build VM {vm} is also \
+                     deleted by its own name, with a warning if that fails"
                 )))
             }
         }
@@ -650,8 +651,9 @@ impl GoldenBuild<'_> {
             _ => Stop::NotStarted,
         };
         if let Err(error) = tear_down(&self.client, vm, stop, self.timings.cleanup).await {
-            self.log
-                .warn(&format!("{error}; the next build deletes it."));
+            self.log.warn(&format!(
+                "{error}; the next build deletes it if it is still there."
+            ));
         }
         if let Some(held) = &session.held {
             held.close_liveness();

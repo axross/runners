@@ -324,3 +324,18 @@ impl Build<'_> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_stop_in_the_rename_finishes_its_cleanup_inside_the_exit_deadline() {
+        let timings = GoldenTimings::default();
+        let after_stop = timings.commit_grace_after_stop + timings.commit_listing + timings.cleanup;
+        assert!(
+            after_stop < EXIT_DEADLINE_AFTER_STOP,
+            "{after_stop:?} is not inside {EXIT_DEADLINE_AFTER_STOP:?}"
+        );
+    }
+}
