@@ -478,8 +478,8 @@ impl TartClient {
 
     /// the command that runs `command` in the running VM `name` through the guest
     /// agent, not yet started: standard input and error null, standard output piped
-    /// for the caller to stream, and the client killed when the command is dropped,
-    /// which ends it in the VM. The caller reads the whole output and bounds it.
+    /// for the caller to stream, and the client killed when the command is dropped.
+    /// The caller reads the whole output and bounds it.
     pub fn exec_command(&self, name: &str, command: &[String]) -> Result<Command, TartError> {
         let mut command = self.command(&exec_arguments(operand(name)?, false, command));
         command.stdin(Stdio::null()).stderr(Stdio::null());
@@ -489,7 +489,7 @@ impl TartClient {
     /// starts `tart exec -i` of `command` in the running VM `name` with its standard
     /// input, output and error piped, for a command that outlives a bounded call; the
     /// caller writes the input and closes it, reads the output, and the client is
-    /// killed when the returned child is dropped, which ends the command in the VM.
+    /// killed when the returned child is dropped.
     pub fn spawn_exec(&self, name: &str, command: &[String]) -> Result<Child, TartError> {
         let arguments = exec_arguments(operand(name)?, true, command);
         let mut command = self.command(&arguments);

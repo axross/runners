@@ -328,8 +328,9 @@ Apply the lens for each kind of file in the diff.
   finding (see [CLI](docs/operations/cli.md#tart-backend), the paragraph "Evidence a
   VM loses"). The sink checks refuse and never create, repair, or relax, and a new
   log line, warning, or channel answer names only the pool, the container, and the
-  gap, never bundle contents. The exporter child and each of its `docker` clients
-  end by their deadline and with `start`; a new wait in that path that has no bound,
+  gap, never bundle contents. The exporter child and each of its clients, the
+  `docker` clients on axpc and the `tart exec` clients on axmc, end by their
+  deadline and with `start`; a new wait in that path that has no bound,
   or that polls for liveness instead of a closed pipe or a process handle, is a
   finding (see [CLI](docs/operations/cli.md#diagnostics) and
   [Security](docs/conventions/security.md#diagnostic-evidence-stays-private)).

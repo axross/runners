@@ -29,8 +29,8 @@
 //! a `hold` job container stays until its entry leaves `containers` or exits, then
 //! exits 137, so `rm -f`, `stop` and `kill` end it as they would end a real one;
 //! with `FAKE_DOCKER_WATCH_PARENT` set, as the fake `tart` sets it when it runs this
-//! program for `tart exec`, it also ends when its parent process ends, as a command
-//! in a VM ends when the guest agent's call is cancelled;
+//! program for `tart exec`, it also ends when its parent process ends, so a test that
+//! kills the fake client leaves no command behind;
 //! a `longline` job container prints one line of [`LONG_LINE_BYTES`] bytes, the
 //! letters `a` to `z` in turn, then exits as an ordinary job does. every wait is
 //! bounded, so a test that fails does not leave the helper running.

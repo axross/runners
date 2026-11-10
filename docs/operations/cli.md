@@ -1858,7 +1858,9 @@ hidden
 `marshal export --pool <pool> --directory <sink> [--container <name>] [--vm <name>] [--raw-records] [--checkout <path>] --deadline-ms <ms> -- <docker or tart>`.
 Without `--container` it only counts the pool's bundles. With `--vm` it reads the
 evidence from that VM through `tart exec`, with the program after `--` as `tart`; the
-bundle, its files, limits, and exit codes are the same.
+bundle, its files, limits, and exit codes are the same. Its clients are then `tart exec`
+clients that run `docker` in the VM, and the Isolation item below applies to them as
+it does to the `docker` clients.
 
 - **Sink checks.** Before each bundle the child checks the sink. It must be an
   existing directory outside the checkout above the configuration, judged by the
@@ -1899,15 +1901,17 @@ bundle, its files, limits, and exit codes are the same.
   during a graceful stop. Its standard input is a liveness pipe from the instance,
   and the instance passes it the export deadline that remains. The child keeps that
   deadline itself, and ends when it passes or when its standard input closes,
-  killing its `docker` clients first. Each client runs in a process group of its
-  own, with the JIT variable cleared and its standard error discarded, and every file
-  system call runs on a thread of its own, so a hung sink cannot keep the child from
-  ending. At the export deadline the instance closes the liveness pipe, and kills
+  killing its clients first: on axpc its `docker` clients, and on axmc its `tart exec`
+  clients, which run `docker` in the VM. Each client runs in a process group of its
+  own, killed when its call is dropped, with the JIT variable cleared and its standard
+  error discarded, and every file system call runs on a thread of its own, so a hung
+  sink cannot keep the child from ending. At the export deadline the instance closes the liveness pipe, and kills
   the child 1 s later only if it has not ended. On Windows the child also inherits
   `start`'s Job Object. So the child outlives neither its deadline nor its
   instance, and its clients end with it whenever it ends on its own. A child killed
   1 s after its pipe closed cannot kill its clients: on Unix they run until each
-  ends by itself, and on Windows until `start` ends and its Job Object closes.
+  ends by itself, which is what the `tart exec` clients of axmc do, since macOS has
+  no Job Object, and on Windows until `start` ends and its Job Object closes.
 - **Exit codes.** 0 is a complete bundle, or a count; 3 a complete bundle with a
   gap; 4 a full sink; and 1 anything else, a refused sink, a failed copy, an archive
   outside the subset, a deadline, or a closed pipe. Containment needs no exit code
@@ -1976,16 +1980,19 @@ and `cp` with a scripted archive or a stall, and stand in for the exporter child
   macOS a first SIGINT during an export, a second SIGINT, and a hard kill;
 - `tart_diagnostics.rs` runs the Tart backend and the real exporter child against the
   fake `tart` and the fake `docker` in its VMs: the bundle exported through the guest
-  agent, token-free, before the VM is deleted; a malformed or oversized archive, a
-  missing final observation, a full sink, a failed stop and a clock with no time left
-  to begin the export, each with the container's gap; `diagnostics` finalising a
-  retained VM; a VM kept for its finalisation at a stop; a forced stop that deletes
-  the VM without an export and reports the gap; and a VM already gone;
+  agent, token-free, before the VM is deleted; a copy that hangs in the VM, which ends
+  the export at its deadline and its `tart exec` client with the exporter; a
+  malformed or oversized archive, a missing final observation, a full sink, a failed
+  stop and a clock with no time left to begin the export, each with the container's
+  gap; `diagnostics` finalising a retained VM; a VM kept for its finalisation at a
+  stop; a forced stop that deletes the VM without an export and reports the gap; and
+  a VM already gone;
 - `axmc_diagnostics.rs` runs `start`, `stop`, and `diagnostics` as processes on an
   axmc host with a diagnostics-enabled Linux pool: a finished job exported and its VM
   deleted, a graceful stop that exports a running job first, a second SIGINT, the
   next `start` deleting a leftover, a killed `start` whose shim deletes the VM and
-  reports the gap, and `diagnostics` finalising a VM whose deletion failed;
+  reports the gap, a killed `start` whose exporter ends with the `tart exec` client of
+  its copy, and `diagnostics` finalising a VM whose deletion failed;
 - `sink.rs`'s unit tests refuse a sink that is missing, under a link, inside the
   checkout, also when the checkout is named through a link, or not private, and on Windows one that is or lies under a junction or
   a directory symbolic link.

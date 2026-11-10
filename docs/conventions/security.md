@@ -876,9 +876,11 @@ owns how the log is written and masked and how its children are contained.
   keeps it, rather than removing it, so its evidence survives for the next
   finalisation. A forced stop and the Windows console close do the same on purpose.
 - Each export runs in an exporter child that ends at its deadline or when its
-  liveness pipe from `start` closes, and kills its own `docker` clients first. Its
-  clients run in process groups of their own with the JIT variable cleared, and on
-  Windows the child is also in `start`'s Job Object. `start` closes the pipe at the
+  liveness pipe from `start` closes, and kills its own clients first: on axpc its
+  `docker` clients, and on axmc its `tart exec` clients, which run `docker` in the
+  VM. Its clients run in process groups of their own, killed when their call is
+  dropped, with the JIT variable cleared, and on Windows the child is also in
+  `start`'s Job Object. `start` closes the pipe at the
   export deadline and kills the child 1 s later if it has not ended, so the child
   outlives neither its deadline nor `start`.
 - The log directory and its files are per user and private to that user.
@@ -900,9 +902,10 @@ Residual risks, accepted on a single-user host:
   already ended with its job. On Windows a hard kill of `start` leaves
   a diagnostic job running, as it does an ordinary one, until the next `start`.
 - An exporter child that `start` has to kill, because it did not end within 1 s of
-  its pipe closing, cannot kill its `docker` clients. On Unix they run until each
-  ends by itself; on Windows the Job Object ends them when `start` ends. They carry
-  no JIT configuration.
+  its pipe closing, cannot kill its clients: its `docker` clients on axpc, and its
+  `tart exec` clients on axmc, which run `docker` in the VM. On Unix they run until
+  each ends by itself, and macOS has no Job Object; on Windows the Job Object ends
+  them when `start` ends. They carry no JIT configuration.
 
 ## Diagnostic Evidence Stays Private
 
