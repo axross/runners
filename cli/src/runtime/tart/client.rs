@@ -283,11 +283,6 @@ pub struct RunningVm {
 }
 
 impl RunningVm {
-    #[must_use]
-    pub fn id(&self) -> Option<u32> {
-        self.child.id()
-    }
-
     /// waits for the client to end, and then for its output to be read to the end,
     /// for at most [`READ_TAIL`] longer, so a client that failed at once has its
     /// error in [`output`](Self::output).
@@ -299,11 +294,6 @@ impl RunningVm {
             }
         }
         status
-    }
-
-    /// the client's status if it has ended.
-    pub fn try_wait(&mut self) -> io::Result<Option<ExitStatus>> {
-        self.child.try_wait()
     }
 
     /// kills the client and waits for it.
@@ -336,11 +326,6 @@ impl TartClient {
     #[must_use]
     pub fn new(config: TartConfig) -> Self {
         Self { config }
-    }
-
-    #[must_use]
-    pub fn limits(&self) -> TartLimits {
-        self.config.limits
     }
 
     /// a call's command: the Docker client's, with `TART_NO_AUTO_PRUNE` set, this
