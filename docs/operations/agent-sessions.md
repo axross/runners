@@ -260,11 +260,10 @@ first archive.
   session that resumes the run and lacks that exchange in its own conversation
   asks once, before archiving, even when run state records an earlier
   confirmation.
-- MUST, when the human declines, still run the review rounds, leave the child
-  threads unarchived, and name each one in the completion
-  report with that reason and the archive steps in the Amp review child thread
-  section of [Development Workflow](./development-workflow.md). A recorded
-  decline carries forward, so no later session asks again.
+- MUST, when the human declines, still run the review rounds and leave the
+  child threads unarchived, handing each one over as the Amp review child
+  thread section of [Development Workflow](./development-workflow.md)
+  describes. A recorded decline carries forward, so no later session asks again.
 - MUST NOT read this confirmation as covering any other thread, or as granting
   any delivery effect the standing grant does not name.
 

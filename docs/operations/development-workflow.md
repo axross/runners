@@ -1022,10 +1022,11 @@ has settled or been stopped, archive that round's child too when the plan-gate
 archive confirmation allows it.
 
 A child left unarchived does not invalidate a verified review. When the
-maintainer declined the plan-gate archive confirmation, or the archive fails,
-give the maintainer the thread's URL, the reason it remains, and the steps: open
-it on ampcode.com and choose **Archive** in its More Actions menu, or run
-`amp threads archive` with its thread ID. Report the remaining thread. On
+maintainer declined the plan-gate archive confirmation, the archive fails, or a
+failed round's child is still working when the run stops, give the maintainer
+the thread's URL, the reason it remains, and the steps: open it on ampcode.com
+and choose **Archive** in its More Actions menu, or run `amp threads archive`
+with its thread ID. Report the remaining thread. On
 resume, check what each recorded child posted and whether it is archived before
 starting another child or counting another round.
 
