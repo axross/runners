@@ -7,9 +7,9 @@ use std::time::Duration;
 
 use super::key::VerifiedKey;
 use super::pins::{
-    DOCKER_ARCHITECTURE, DOCKER_COMPONENT, DOCKER_KEY_PATH, DOCKER_KEY_URL, DOCKER_PACKAGES,
-    DOCKER_REPOSITORY_URI, DOCKER_SOURCES_PATH, DOCKER_SUITE, GUEST_USER, LAUNCHER_PATH,
-    PackagePin,
+    DOCKER_ARCHITECTURE, DOCKER_COMPONENT, DOCKER_GROUP_ID, DOCKER_KEY_PATH, DOCKER_KEY_URL,
+    DOCKER_PACKAGES, DOCKER_REPOSITORY_URI, DOCKER_SOURCES_PATH, DOCKER_SUITE, GUEST_USER,
+    LAUNCHER_PATH, PackagePin,
 };
 
 /// the launcher the golden VM runs `docker` through.
@@ -107,9 +107,10 @@ pub fn docker_sources() -> String {
     )
 }
 
-/// step 4: installs the apt source, then the four packages at their pinned versions,
-/// holds them, and adds the guest user to the `docker` group, which takes effect
-/// when the guest agent next starts. It takes the proof that the key passed the
+/// step 4: installs the apt source, creates the `docker` group with
+/// [`DOCKER_GROUP_ID`], installs the four packages at their pinned versions, holds
+/// them, and adds the guest user to the group, which takes effect when the guest
+/// agent next starts. It takes the proof that the key passed the
 /// check, so nothing from Docker's repository is installed before that.
 #[must_use]
 pub fn install_docker_call(_key: &VerifiedKey) -> GuestCall {
@@ -117,7 +118,8 @@ pub fn install_docker_call(_key: &VerifiedKey) -> GuestCall {
         .iter()
         .map(PackagePin::apt_specification)
         .collect();
-    let mut arguments = vec![DOCKER_SOURCES_PATH, GUEST_USER];
+    let docker_gid = DOCKER_GROUP_ID.to_string();
+    let mut arguments = vec![DOCKER_SOURCES_PATH, GUEST_USER, docker_gid.as_str()];
     arguments.extend(packages.iter().map(String::as_str));
     script_call(
         true,
@@ -243,6 +245,7 @@ mod tests {
                     "marshal-install-docker",
                     "/etc/apt/sources.list.d/docker.sources",
                     "admin",
+                    "123",
                     "docker-ce=5:29.9.3-1~ubuntu.24.04~noble",
                     "docker-ce-cli=5:29.9.3-1~ubuntu.24.04~noble",
                     "containerd.io=2.4.2-3~ubuntu.24.04~noble",

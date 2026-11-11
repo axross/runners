@@ -618,7 +618,7 @@ fn build_vm_names_are_linux_and_the_time() {
 fn the_golden_vm_name_records_the_versions_and_the_build_second() {
     let runner = declared_label(RUNNER_VERSION_LABEL).unwrap();
     let current = GoldenVmName::current(at(1_709_618_828_999)).unwrap();
-    assert_eq!(GOLDEN_VM_VERSION, 1);
+    assert_eq!(GOLDEN_VM_VERSION, 2);
     assert_eq!(current.golden_version, GOLDEN_VM_VERSION);
     assert_eq!(current.contract_version, CONTRACT_VERSION);
     assert_eq!(current.runner_version, runner);
