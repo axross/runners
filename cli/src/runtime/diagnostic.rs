@@ -10,7 +10,8 @@ use std::time::Duration;
 use tokio::time::Instant;
 
 use super::backend::{
-    Backend, Deadlines, DiagnosticRecord, ExportOutcome, Finalized, REMOVAL_WITHIN, StopRequest,
+    Backend, Deadlines, DiagnosticRecord, EXPORT_WITHIN, ExportOutcome, Finalized, REMOVAL_WITHIN,
+    StopRequest,
 };
 use super::log::Log;
 use super::retained::Claim;
@@ -20,6 +21,57 @@ pub const STOP_GRACE: Duration = Duration::from_secs(10);
 
 /// from the clock start to the end of that stop.
 pub const STOP_WITHIN: Duration = Duration::from_secs(12);
+
+/// the time `docker stop` is left after its grace to kill what ignores it.
+const STOP_KILL_MARGIN: Duration = Duration::from_secs(2);
+
+/// the clock of one stop sequence's diagnostic column: its start, and how much of
+/// the column's usual times a backend that reserves the end of the sequence for
+/// releasing its hosts takes back. The stop gives the time up, so the export and
+/// removal windows keep their sizes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StopClock {
+    start: Instant,
+    shortened: Duration,
+}
+
+impl StopClock {
+    /// the usual times, counted from `start`.
+    #[must_use]
+    pub fn at(start: Instant) -> Self {
+        Self {
+            start,
+            shortened: Duration::ZERO,
+        }
+    }
+
+    /// the clock with every deadline `shortened` earlier.
+    #[must_use]
+    pub fn shortened_by(self, shortened: Duration) -> Self {
+        Self { shortened, ..self }
+    }
+
+    /// from the start to the end of the stop.
+    #[must_use]
+    pub fn stop_within(&self) -> Duration {
+        STOP_WITHIN.saturating_sub(self.shortened)
+    }
+
+    /// the grace the stop gives each container: Docker's default unless the stop is
+    /// shortened past it.
+    #[must_use]
+    pub fn grace(&self) -> Duration {
+        STOP_GRACE.min(self.stop_within().saturating_sub(STOP_KILL_MARGIN))
+    }
+
+    #[must_use]
+    pub fn deadlines(&self) -> Deadlines {
+        Deadlines {
+            export: self.start + EXPORT_WITHIN.saturating_sub(self.shortened),
+            removal: self.start + REMOVAL_WITHIN.saturating_sub(self.shortened),
+        }
+    }
+}
 
 /// the bundles a pool's sink may hold, partial ones included.
 pub const BUNDLE_QUOTA: u32 = 10;
@@ -47,6 +99,22 @@ fn warn_gap(log: &dyn Log, record: &DiagnosticRecord, name: &str, text: &str) {
         "Diagnostic gap in pool {}, container {name}: {text}",
         record.pool
     ));
+}
+
+/// the gap left by a job VM that is deleted without its export, because a forced
+/// stop, a crash, or the next start found it: the evidence in it is lost, and the
+/// pool's earlier bundles stand.
+#[must_use]
+pub fn discarded_gap(pool: &str, vm: &str) -> Option<String> {
+    gap_text(ExportOutcome::Failed)
+        .map(|text| format!("Diagnostic gap in pool {pool}, job VM {vm}: {text}"))
+}
+
+/// logs [`discarded_gap`].
+pub fn warn_discarded(log: &dyn Log, record: &DiagnosticRecord, vm: &str) {
+    if let Some(text) = discarded_gap(&record.pool, vm) {
+        log.warn(&text);
+    }
 }
 
 /// logs what a finalisation did that needs the operator's eye.
@@ -181,13 +249,13 @@ pub struct Acted {
 }
 
 /// stops the claimed containers in one call ended at 12 s, then finalises each on
-/// the clock that started at `start`, logging what needs the operator's eye; a
-/// failed stop is a gap, and the export and removal are still attempted.
+/// `clock`, logging what needs the operator's eye; a failed stop is a gap, and the
+/// export and removal are still attempted.
 pub async fn finalize_claimed<B: Backend>(
     backend: &B,
     log: &dyn Log,
     claims: Vec<Claim<'_>>,
-    start: Instant,
+    clock: StopClock,
 ) -> Vec<Acted> {
     if claims.is_empty() {
         return Vec::new();
@@ -196,11 +264,11 @@ pub async fn finalize_claimed<B: Backend>(
         .iter()
         .map(|claim| claim.name().to_string())
         .collect();
-    let budget = (start + STOP_WITHIN).saturating_duration_since(Instant::now());
+    let budget = (clock.start + clock.stop_within()).saturating_duration_since(Instant::now());
     let stopped = backend
         .stop_containers(&StopRequest {
             names,
-            grace: STOP_GRACE,
+            grace: clock.grace(),
             budget,
         })
         .await;
@@ -214,7 +282,7 @@ pub async fn finalize_claimed<B: Backend>(
             );
         }
     }
-    let deadlines = Deadlines::from(start);
+    let deadlines = clock.deadlines();
     let finalized = join_all(
         claims
             .iter()
@@ -239,40 +307,42 @@ pub async fn finalize_claimed<B: Backend>(
         .collect()
 }
 
-/// waits until no other path holds the container, then finalises it on the clock
-/// that started at `start` if it is still retained.
+/// waits until no other path holds the container, then finalises it on `clock` if it
+/// is still retained.
 async fn finalize_once_released<B: Backend>(
     backend: &B,
     log: &dyn Log,
     name: &str,
-    start: Instant,
+    clock: StopClock,
 ) {
     let retained = backend.retained();
     retained.released(&[name.to_string()]).await;
     if let Some(claim) = retained.claim(name) {
-        finalize_claimed(backend, log, vec![claim], start).await;
+        finalize_claimed(backend, log, vec![claim], clock).await;
     }
 }
 
-/// the diagnostic column of the stop sequence's container steps, on the clock that
-/// started at `start`: it finalises every retained container nobody holds, waits
-/// for those another path is finalising and finalises any it left retained; a
-/// forced stop, at any point, ends every retained container with `docker kill`
-/// within `kill_budget` and keeps it.
+/// the diagnostic column of the stop sequence's container steps, on `clock`: it
+/// finalises every retained container nobody holds, waits for those another path
+/// is finalising and finalises any it left retained; a forced stop, at any point,
+/// ends every retained container with `docker kill` within `kill_budget` and keeps
+/// it, or, for a backend whose hosts hold the evidence, only reports the evidence
+/// the release of the hosts then loses, which a container with its bundle admitted
+/// has not lost.
 pub async fn container_steps<B: Backend>(
     backend: &B,
     log: &dyn Log,
-    start: Instant,
+    clock: StopClock,
     kill_budget: Duration,
 ) {
     let retained = backend.retained();
     let mut forced = retained.forced();
     let steps = async {
         let (claims, held) = retained.claim_free();
-        let finalizing = finalize_claimed(backend, log, claims, start);
+        let finalizing = finalize_claimed(backend, log, claims, clock);
         let waiting = join_all(
             held.iter()
-                .map(|name| finalize_once_released(backend, log, name, start))
+                .map(|name| finalize_once_released(backend, log, name, clock))
                 .collect(),
         );
         tokio::join!(finalizing, waiting);
@@ -287,6 +357,20 @@ pub async fn container_steps<B: Backend>(
     }
     let names = retained.names();
     if names.is_empty() {
+        return;
+    }
+    if backend.deletes_leftovers_unexported() {
+        for name in names.iter().filter(|name| !retained.is_exported(name)) {
+            log.warn(&format!(
+                "Forced stop: the job VM of diagnostic container {name} will be deleted \
+                 without its export when the hosts are released."
+            ));
+            if let Some(record) = retained.record(name)
+                && let Some(text) = gap_text(ExportOutcome::Failed)
+            {
+                warn_gap(log, &record, name, text);
+            }
+        }
         return;
     }
     for name in &names {
@@ -351,7 +435,7 @@ pub async fn flush<B: Backend>(
 ) -> Flushed {
     let start = Instant::now();
     let retained = backend.retained();
-    let acted = finalize_claimed(backend, log, retained.claim_ended(), start).await;
+    let acted = finalize_claimed(backend, log, retained.claim_ended(), StopClock::at(start)).await;
     let unmanaged = retained.unmanaged();
     if acted.is_empty() && unmanaged.is_empty() && enabled.is_empty() {
         return Flushed {
@@ -452,6 +536,28 @@ mod tests {
         assert_eq!(STOP_GRACE, Duration::from_secs(10));
         assert_eq!(STOP_WITHIN, Duration::from_secs(12));
         assert_eq!(BUNDLE_QUOTA, 10);
+    }
+
+    #[test]
+    fn a_shortened_clock_ends_the_stop_the_export_and_the_removal_that_much_earlier() {
+        let start = Instant::now();
+        let usual = StopClock::at(start);
+        assert_eq!(usual.stop_within(), Duration::from_secs(12));
+        assert_eq!(usual.grace(), STOP_GRACE);
+        assert_eq!(usual.deadlines(), Deadlines::from(start));
+        let shortened = usual.shortened_by(Duration::from_secs(6));
+        assert_eq!(shortened.stop_within(), Duration::from_secs(6));
+        assert_eq!(shortened.grace(), Duration::from_secs(4));
+        assert_eq!(
+            shortened.deadlines(),
+            Deadlines {
+                export: start + Duration::from_secs(12),
+                removal: start + Duration::from_secs(18),
+            }
+        );
+        let spent = usual.shortened_by(Duration::from_secs(60));
+        assert_eq!(spent.stop_within(), Duration::ZERO);
+        assert_eq!(spent.grace(), Duration::ZERO);
     }
 
     #[test]

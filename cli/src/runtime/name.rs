@@ -107,6 +107,37 @@ pub fn cpu_probe_name(pool: &str, slot: u32) -> String {
     format!("{pool}-cpu-probe-{slot}")
 }
 
+/// the pool and slot a container name made by [`job_container_name`] carries, read
+/// from the end so a pool name may hold hyphens; `None` for any other text.
+#[must_use]
+pub fn slot_of_container_name(name: &str) -> Option<(&str, u32)> {
+    let (head, stamp) = name.rsplit_once('-')?;
+    if stamp.len() != DIGITS_IN_STAMP || !stamp.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let (pool, slot) = head.rsplit_once('-')?;
+    slot_number(slot)
+        .map(|slot| (pool, slot))
+        .filter(|(pool, _)| !pool.is_empty())
+}
+
+/// the pool and slot a probe name made by [`cpu_probe_name`] carries; `None` for any
+/// other text.
+#[must_use]
+pub fn slot_of_probe_name(name: &str) -> Option<(&str, u32)> {
+    let (pool, slot) = name.rsplit_once("-cpu-probe-")?;
+    slot_number(slot)
+        .map(|slot| (pool, slot))
+        .filter(|(pool, _)| !pool.is_empty())
+}
+
+fn slot_number(text: &str) -> Option<u32> {
+    if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    text.parse().ok()
+}
+
 /// whether `candidate` is the pool's name, a hyphen, a slot number, a hyphen and
 /// exactly 17 ASCII digits, and nothing else; case matters.
 #[must_use]
@@ -239,6 +270,35 @@ mod tests {
             ),
         ] {
             assert!(!is_own_container_name("example-repo-one", &name), "{what}");
+        }
+    }
+
+    #[test]
+    fn a_container_or_probe_name_gives_back_its_pool_and_slot() {
+        let stamp = "20240305060708009";
+        assert_eq!(
+            slot_of_container_name(&format!("example-repo-one-12-{stamp}")),
+            Some(("example-repo-one", 12))
+        );
+        assert_eq!(
+            slot_of_container_name(&job_container_name("a-1-2", 3, UNIX_EPOCH)),
+            Some(("a-1-2", 3))
+        );
+        for text in [
+            "example-1-2024030506070800",
+            "example-x-20240305060708009",
+            "-1-20240305060708009",
+            "example",
+            "",
+        ] {
+            assert_eq!(slot_of_container_name(text), None, "{text:?}");
+        }
+        assert_eq!(
+            slot_of_probe_name(&cpu_probe_name("a-cpu-probe-5", 2)),
+            Some(("a-cpu-probe-5", 2))
+        );
+        for text in ["a-cpu-probe-", "a-cpu-probe-x", "-cpu-probe-1", "a-1"] {
+            assert_eq!(slot_of_probe_name(text), None, "{text:?}");
         }
     }
 

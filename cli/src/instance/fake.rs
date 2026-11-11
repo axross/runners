@@ -58,6 +58,12 @@ pub struct FakeCore {
     pub image_checks: RefCell<VecDeque<Result<(), String>>>,
     /// how many times the image was checked.
     pub image_checked: Cell<usize>,
+    /// the answers to `check_prerequisites`; when they run out, every check passes.
+    pub prerequisite_checks: RefCell<VecDeque<Result<(), String>>>,
+    /// how many times the host prerequisites were checked.
+    pub prerequisites_checked: Cell<usize>,
+    /// the bound each check gave a program to answer, in order.
+    pub prerequisite_reads: RefCell<Vec<Duration>>,
 }
 
 impl FakeCore {
@@ -118,6 +124,16 @@ impl Core for FakeCore {
                 Ok(())
             }
         }
+    }
+
+    async fn check_prerequisites(&self, _plan: &Plan, each_read: Duration) -> Result<(), String> {
+        self.prerequisites_checked
+            .set(self.prerequisites_checked.get() + 1);
+        self.prerequisite_reads.borrow_mut().push(each_read);
+        self.prerequisite_checks
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or(Ok(()))
     }
 
     async fn check_image(&self, _plan: &Plan) -> Result<(), String> {

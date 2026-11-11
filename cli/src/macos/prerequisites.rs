@@ -1,7 +1,8 @@
 //! the host prerequisite checks: Tart's version, and Softnet's file and version. Each
 //! returns a pass, a warning or a refusal with its message. The caller decides what a
-//! refusal does: `build` is the only caller in this version, and every refusal ends
-//! it. `docs/operations/cli.md` describes the checks.
+//! refusal does: at `start` and `build` every refusal ends the command, and after
+//! `start` a missing or unanswering `tart` means Tart is unavailable, while a refused
+//! `softnet` holds its slot. `docs/operations/cli.md` describes the checks.
 
 use std::ffi::OsStr;
 use std::time::Duration;
@@ -20,6 +21,11 @@ use super::version::{
 
 /// how long each version read gets.
 pub const VERSION_BUDGET: Duration = Duration::from_secs(5);
+
+/// how long each version read gets in the check of a resume, whose two reads run
+/// together. With the image check's 4 s the reload takes 6 s, which fits the 7 s that
+/// `restart`'s 35 s leaves after the 28 s of container steps.
+pub const RESUME_VERSION_BUDGET: Duration = Duration::from_secs(2);
 
 /// the host document the messages send the operator to.
 pub const HOST_DOCUMENT: &str = "macOS Runner Host";
@@ -58,6 +64,18 @@ pub enum Check {
     Pass { version: String },
     Warn { version: String, message: String },
     Refuse(Refusal),
+}
+
+impl Check {
+    /// the version and the warning, if any, of a program that runs, or the refusal;
+    /// each caller keeps its own policy for the refusals it can wait out.
+    pub fn into_result(self) -> Result<(String, Option<String>), Refusal> {
+        match self {
+            Self::Pass { version } => Ok((version, None)),
+            Self::Warn { version, message } => Ok((version, Some(message))),
+            Self::Refuse(refusal) => Err(refusal),
+        }
+    }
 }
 
 fn refuse(cause: Cause, message: String) -> Check {
@@ -239,8 +257,13 @@ pub async fn check_tart_within(client: &TartClient, budget: Duration) -> Check {
 /// then its version within [`VERSION_BUDGET`]. A debug build takes the file's owner
 /// and mode from `MARSHAL_TEST_SOFTNET_OWNER_MODE` when it is set.
 pub async fn check_softnet(path: Option<&OsStr>) -> Check {
+    check_softnet_within(path, VERSION_BUDGET).await
+}
+
+/// [`check_softnet`] with the bound on the version read named.
+pub async fn check_softnet_within(path: Option<&OsStr>, budget: Duration) -> Check {
     match owner_mode_override_from_environment() {
-        Ok(owner_mode) => check_softnet_with(path, owner_mode, VERSION_BUDGET).await,
+        Ok(owner_mode) => check_softnet_with(path, owner_mode, budget).await,
         Err(message) => refuse(Cause::Setup, message),
     }
 }

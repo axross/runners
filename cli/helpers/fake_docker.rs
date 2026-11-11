@@ -29,8 +29,8 @@
 //! a `hold` job container stays until its entry leaves `containers` or exits, then
 //! exits 137, so `rm -f`, `stop` and `kill` end it as they would end a real one;
 //! with `FAKE_DOCKER_WATCH_PARENT` set, as the fake `tart` sets it when it runs this
-//! program for `tart exec`, it also ends when its parent process ends, as a command
-//! in a VM ends when the guest agent's call is cancelled;
+//! program for `tart exec`, it also ends when its parent process ends, so a test that
+//! kills the fake client leaves no command behind;
 //! a `longline` job container prints one line of [`LONG_LINE_BYTES`] bytes, the
 //! letters `a` to `z` in turn, then exits as an ordinary job does. every wait is
 //! bounded, so a test that fails does not leave the helper running.
@@ -62,7 +62,8 @@
 //!   its directory entry and `metrics.txt`, whose text is `metrics_text` when that
 //!   file exists and ends with `final=observed` otherwise; `cp_mode` (`raw`, which
 //!   adds `raw-1.log`, `gap`, without the final observation, `bad`, with a
-//!   traversal name, `fail`, `hang`, `slow`, which waits 2 s first) changes it;
+//!   traversal name, `fail`, `hang`, which also ends with its parent when
+//!   `FAKE_DOCKER_WATCH_PARENT` is set, `slow`, which waits 2 s first) changes it;
 //! - `kill_fails` fails a `kill`;
 //! - `export` stands in for an exporter child that ignores its liveness pipe: it
 //!   waits without reading its standard input.
@@ -404,7 +405,9 @@ fn copy(dir: &Path, source: &str) -> Result<u8, String> {
     match mode.as_str() {
         "fail" => return Ok(1),
         "hang" => {
-            sleep_while(|| true);
+            let parent = parent_id();
+            let watching = std::env::var_os("FAKE_DOCKER_WATCH_PARENT").is_some();
+            sleep_while(|| !watching || parent_id() == parent);
             return Ok(1);
         }
         "slow" => std::thread::sleep(Duration::from_secs(2)),

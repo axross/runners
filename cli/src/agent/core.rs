@@ -53,7 +53,13 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
 
     /// the pool's token is there, or the pool is skipped with the reason.
     fn admit(&self, pool: &PoolSpec) -> bool {
-        admit_pool(pool, self.tokens, self.log, self.board)
+        admit_pool(
+            pool,
+            self.backend.engine_name(),
+            self.tokens,
+            self.log,
+            self.board,
+        )
     }
 
     fn workers(&self, pool: &PoolSpec, stop: &watch::Receiver<bool>) -> Vec<Worker<'a>> {

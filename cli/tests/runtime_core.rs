@@ -8,6 +8,9 @@
 
 mod support;
 
+use std::time::Duration;
+
+use marshal_cli::image::check::ImageCheck;
 use marshal_cli::image::contract::CONTRACT_VERSION;
 use marshal_cli::instance::lifecycle::{Core, Ending};
 use marshal_cli::instance::runtime_core::RuntimeCore;
@@ -94,5 +97,36 @@ async fn the_core_runs_each_slot_until_the_stop_and_reports_only_the_image_after
             .contains(&("image-contract", CONTRACT_VERSION.to_string())),
         "{:?}",
         core.report()
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn the_core_waits_between_image_checks_for_the_interval_its_backend_provides() {
+    let scratch = TempDir::new();
+    scratch.write_token("token", b"ghp_coretoken\n");
+    let (mut backend, clock, registrar, log) = (
+        FakeBackend::default(),
+        FakeClock::at(START),
+        FakeRegistrar::default(),
+        MemoryLog::default(),
+    );
+    backend.engine_poll_interval = Some(Duration::from_secs(7));
+    let core = RuntimeCore::new(&backend, &clock, &registrar, &log);
+    let (stop, receiver) = stop_channel();
+    {
+        let mut state = backend.state.borrow_mut();
+        state.stop_when_exits_run_out = Some(stop);
+        state
+            .image_answers
+            .push_back(ImageCheck::Unavailable("the engine is down".to_string()));
+    }
+    core.run(&plan(&scratch), receiver).await.unwrap();
+    assert_eq!(clock.sleeps(), [Duration::from_secs(7)]);
+    assert!(
+        log.lines().iter().any(
+            |line| line.ends_with("so the image actions-runner:local is checked again in 7 s.")
+        ),
+        "{:?}",
+        log.lines()
     );
 }

@@ -12,15 +12,17 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use marshal_cli::instance::fake::CoreStep;
-use marshal_cli::instance::lifecycle::{Ending, StopTimes};
+use marshal_cli::instance::lifecycle::{Ending, Instance, StopTimes};
 use marshal_cli::instance::protocol::{Outcome, Request};
 use marshal_cli::profile::Profile;
-use marshal_cli::runtime::backend::StopRequest;
-use marshal_cli::runtime::fake::Call;
-use support::instance::{CONFIG_PATH, Rig, resume};
+use marshal_cli::runtime::backend::{DiagnosticRecord, JobHost, StopRequest};
+use marshal_cli::runtime::fake::{Call, FakeBackend, HostCall};
+use marshal_cli::validate::validate;
+use support::instance::{CONFIG, CONFIG_PATH, Rig, drive, resume};
 use tokio::sync::Notify;
 
 const JOB: &str = "r-1-20240305060708009";
+const EVIDENCE: &str = "r-2-20240305060708009";
 
 fn invalid() -> Result<marshal_cli::validate::Plan, Vec<String>> {
     Err(vec![
@@ -498,4 +500,138 @@ async fn a_core_that_ignores_the_stop_is_dropped_at_the_exit_deadline() {
         .await;
     assert!(ended.containers_removed, "the container steps had finished");
     assert_eq!(ended.ending, Ending::Ordinary);
+}
+
+fn prepared_host() -> JobHost {
+    JobHost {
+        pool: "r".to_string(),
+        slot: 1,
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_stop_releases_the_prepared_hosts_after_the_container_steps_within_its_budget() {
+    let rig = Rig::new();
+    {
+        let mut state = rig.backend.state.borrow_mut();
+        state.running = vec![JOB.to_string()];
+        state.hosts = vec![prepared_host()];
+    }
+    rig.times.set(StopTimes::reserving(Duration::from_secs(10)));
+    let (ended, _) = rig
+        .drive(|control| async move { control.stop().await })
+        .await;
+    assert!(ended.containers_removed);
+    assert_eq!(rig.backend.timeline.steps(), ["stop", "remove", "release"]);
+    assert_eq!(
+        rig.backend.state.borrow().host_calls,
+        [HostCall::Release(prepared_host(), Duration::from_secs(10))]
+    );
+    let calls = rig.backend.calls();
+    let Some(Call::StopContainers(request)) = calls.first() else {
+        panic!("{calls:?}");
+    };
+    assert_eq!(
+        (request.grace, request.budget),
+        (Duration::from_secs(7), Duration::from_secs(12)),
+        "the container stop gives up the time the release is reserved"
+    );
+}
+
+/// a diagnostic container's column of the stop timeline, for a backend that reserves
+/// ten seconds of the sequence to release its hosts: the release keeps its budget
+/// only if this column ends 10 s before the 28 s exit deadline.
+#[tokio::test(flavor = "current_thread")]
+async fn a_diagnostics_pool_stops_and_finalises_early_enough_to_leave_the_release_its_budget() {
+    let rig = Rig::new();
+    let record = DiagnosticRecord {
+        pool: "r".to_string(),
+        directory: "/var/lib/marshal/diagnostics".to_string(),
+        raw_records: false,
+    };
+    rig.backend.retained.adopt(EVIDENCE, &record);
+    {
+        let mut state = rig.backend.state.borrow_mut();
+        state.running = vec![JOB.to_string()];
+        state.hosts = vec![prepared_host()];
+    }
+    rig.times.set(StopTimes::reserving(Duration::from_secs(10)));
+    let before = tokio::time::Instant::now();
+
+    let (ended, _) = rig
+        .drive(|control| async move { control.stop().await })
+        .await;
+
+    assert!(ended.containers_removed);
+    let calls = rig.backend.calls();
+    let Some(Call::StopContainers(request)) = calls
+        .iter()
+        .find(|call| matches!(call, Call::StopContainers(request) if request.names == [EVIDENCE]))
+    else {
+        panic!("{calls:?}");
+    };
+    assert_eq!(request.grace, Duration::from_secs(4));
+    assert!(request.budget <= Duration::from_secs(6), "{request:?}");
+    let Some(Call::ExportDiagnostic(_, export_deadline)) = calls
+        .iter()
+        .find(|call| matches!(call, Call::ExportDiagnostic(..)))
+    else {
+        panic!("{calls:?}");
+    };
+    let export_window = export_deadline.duration_since(before);
+    assert!(
+        (Duration::from_secs(12)..Duration::from_secs(13)).contains(&export_window),
+        "the export ends 12 s after the stop begins, not 18 s: {export_window:?}"
+    );
+    assert_eq!(
+        rig.backend.state.borrow().host_calls,
+        [HostCall::Release(prepared_host(), Duration::from_secs(10))]
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn the_instance_reserves_the_release_budget_its_backend_names() {
+    let rig = Rig::new();
+    let mut backend = FakeBackend::default();
+    backend.release_budget = Duration::from_secs(10);
+    backend.state.borrow_mut().hosts = vec![prepared_host()];
+    let plan = validate(CONFIG.as_bytes(), Profile::Axpc, None)
+        .outcome
+        .unwrap();
+    let instance = Instance::new(
+        Rig::settings(),
+        &backend,
+        &rig.clock,
+        &rig.core,
+        &rig.source,
+        &rig.log,
+    );
+    drive(
+        &instance,
+        plan,
+        Duration::from_secs(10),
+        |control| async move { control.stop().await },
+    )
+    .await;
+    assert_eq!(
+        backend.state.borrow().host_calls,
+        [HostCall::Release(prepared_host(), Duration::from_secs(10))]
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_backend_without_hosts_runs_no_release_at_a_stop_and_keeps_the_container_times() {
+    let rig = Rig::new();
+    rig.backend.state.borrow_mut().running = vec![JOB.to_string()];
+    rig.drive(|control| async move { control.stop().await })
+        .await;
+    assert!(rig.backend.state.borrow().host_calls.is_empty());
+    let calls = rig.backend.calls();
+    let Some(Call::StopContainers(request)) = calls.first() else {
+        panic!("{calls:?}");
+    };
+    assert_eq!(
+        (request.grace, request.budget),
+        (Duration::from_secs(15), Duration::from_secs(20))
+    );
 }

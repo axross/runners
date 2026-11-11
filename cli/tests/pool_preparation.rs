@@ -9,6 +9,7 @@
 
 mod support;
 
+use marshal_cli::affinity::select_cpus;
 use marshal_cli::profile::Profile;
 use std::time::Duration;
 
@@ -16,8 +17,10 @@ use marshal_cli::runtime::backend::{Backend, BackendError, DiagnosticRecord, Sto
 use marshal_cli::runtime::board::Board;
 use marshal_cli::runtime::fake::{Call, FakeBackend, FakeContainer, MemoryLog};
 use marshal_cli::runtime::log::Log;
-use marshal_cli::runtime::pool::{NoPoolStartable, PoolSpec, pools_from_plan};
-use marshal_cli::validate::validate;
+use marshal_cli::runtime::pool::{
+    NoPoolStartable, PoolSpec, pools_from_plan, skip_warning, skipped_pools,
+};
+use marshal_cli::validate::{Plan, validate};
 use support::{TempDir, prepare_pools, write_token_file};
 
 const STAMP: &str = "20240305060708009";
@@ -388,12 +391,100 @@ async fn a_listing_a_removal_or_a_volume_failure_is_handled_per_pool() {
     assert_eq!(names(&prepared), ["charlie"]);
 }
 
+fn axmc_plan(image: &str, second_os: &str) -> Plan {
+    let config = format!(
+        r#"{{{image}"budget":{{"cpus":16,"memoryGb":32,"diskGb":300}},"repositories":[
+        {{"owner":"o","repository":"a","name":"alpha","slots":2,"tokenPath":"/t",
+          "os":"linux","cpus":4,"memoryGb":8,"diskGb":40}},
+        {{"owner":"o","repository":"b","name":"bravo","slots":1,"tokenPath":"/u",
+          "os":"{second_os}","cpus":3,"memoryGb":6,"diskGb":30}}]}}"#
+    );
+    validate(config.as_bytes(), Profile::Axmc, None)
+        .outcome
+        .unwrap()
+}
+
 #[test]
-fn a_plan_for_the_other_profile_is_not_a_container_plan() {
-    let config = br#"{"budget":{"cpus":4,"memoryGb":16,"diskGb":100},"repositories":[
-        {"owner":"o","repository":"r","name":"r","slots":1,"tokenPath":"/t","os":"linux","diskGb":20}]}"#;
-    let plan = validate(config, Profile::Axmc, None).outcome.unwrap();
-    assert!(pools_from_plan(&plan).is_err());
+fn an_axmc_macos_pool_is_skipped_and_gets_no_vm_pool() {
+    let plan = axmc_plan("", "macos");
+    assert_eq!(skipped_pools(&plan), ["bravo"]);
+    let names: Vec<_> = pools_from_plan(&plan)
+        .unwrap()
+        .into_iter()
+        .map(|pool| pool.name)
+        .collect();
+    assert_eq!(names, ["alpha"]);
+    assert_eq!(
+        skip_warning("bravo"),
+        "Skipping pool bravo: macOS VM pools are not supported yet"
+    );
+}
+
+#[test]
+fn an_axmc_plan_of_linux_pools_skips_none() {
+    assert!(skipped_pools(&axmc_plan("", "linux")).is_empty());
+}
+
+#[test]
+fn an_axmc_linux_pool_gives_each_slot_all_of_its_vms_cpus_and_its_memory_and_disk() {
+    let plan = axmc_plan("", "linux");
+    let pools = pools_from_plan(&plan).unwrap();
+    let slots: Vec<_> = pools.iter().flat_map(PoolSpec::slot_specs).collect();
+    let seen: Vec<_> = slots
+        .iter()
+        .map(|slot| {
+            (
+                slot.pool.as_str(),
+                slot.number,
+                slot.cpus.as_str(),
+                slot.cpu_count,
+                slot.cpu_offset,
+                slot.memory_gb,
+                slot.disk_gb,
+            )
+        })
+        .collect();
+    assert_eq!(
+        seen,
+        [
+            ("alpha", 1, "4", 4, 0, 8, Some(40)),
+            ("alpha", 2, "4", 4, 0, 8, Some(40)),
+            ("bravo", 1, "3", 3, 0, 6, Some(30)),
+        ]
+    );
+    for slot in &slots {
+        let all_vcpus = format!("0-{}", slot.cpu_count - 1);
+        let cpuset = select_cpus(&all_vcpus, slot.cpu_count, slot.cpu_offset).unwrap();
+        assert_eq!(cpuset, all_vcpus);
+        let request = slot.host_request();
+        assert_eq!(request.vcpus, slot.cpu_count);
+        assert_eq!(request.memory_gb, slot.memory_gb);
+        assert_eq!(request.disk_gb, slot.disk_gb);
+    }
+}
+
+#[test]
+fn an_axmc_pool_runs_the_default_image_unless_the_configuration_names_one() {
+    let default = pools_from_plan(&axmc_plan("", "linux")).unwrap();
+    assert!(
+        default
+            .iter()
+            .all(|pool| pool.image == "actions-runner:local")
+    );
+    let named = pools_from_plan(&axmc_plan(r#""imageName":"runner:custom","#, "linux")).unwrap();
+    assert!(named.iter().all(|pool| pool.image == "runner:custom"));
+}
+
+#[test]
+fn an_axmc_plan_keeps_its_summary_without_an_image_name() {
+    let plan = axmc_plan("", "linux");
+    assert_eq!(plan.image_name, None);
+    assert!(
+        marshal_cli::summary::plan_summary(&plan)
+            .iter()
+            .all(|line| !line.contains("actions-runner:local")),
+        "the default is applied by the start-side path, not by validation"
+    );
 }
 
 fn bravo_record() -> DiagnosticRecord {

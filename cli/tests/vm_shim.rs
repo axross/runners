@@ -20,7 +20,7 @@ use marshal_cli::instance::lock::InstanceLock;
 #[cfg(debug_assertions)]
 use marshal_cli::instance::roots::Roots;
 use marshal_cli::runtime::tart::{HeldVm, VmLauncher};
-use marshal_cli::vm_shim::{VM_SHIM_COMMAND, cleanup_budget};
+use marshal_cli::vm_shim::{DIAGNOSTIC_POOL_OPTION, VM_SHIM_COMMAND, cleanup_budget};
 use support::BINARY;
 #[cfg(debug_assertions)]
 use support::TempDir;
@@ -234,4 +234,89 @@ async fn no_shim_holds_the_instance_lock() {
         );
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
+}
+
+fn start_diagnostic_shim(fake: &Fake, vm: &str, pool: &str) -> Child {
+    Command::new(BINARY)
+        .arg(VM_SHIM_COMMAND)
+        .arg("--name")
+        .arg(vm)
+        .arg(DIAGNOSTIC_POOL_OPTION)
+        .arg(pool)
+        .arg("--")
+        .arg(FAKE_TART)
+        .env("FAKE_TART_DIR", fake.dir.path())
+        .env("PATH", &fake.path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap()
+}
+
+/// the standard error of a shim that has ended.
+fn error_text(shim: &mut Child) -> String {
+    let mut text = String::new();
+    shim.stderr
+        .take()
+        .unwrap()
+        .read_to_string(&mut text)
+        .unwrap();
+    text
+}
+
+const GAP: &str = "WARNING: Diagnostic gap in pool example-repo-one, job VM marshal-job-example-repo-one-2-20240305060708009: private export unavailable, incomplete, unsafe or over budget; prior evidence retained.\n";
+
+/// A crash of the CLI closes the pipe; the shim of a diagnostics-enabled pool's VM
+/// deletes it and reports the evidence that loses, with the container's gap text.
+#[test]
+fn a_shim_that_deletes_the_vm_of_a_diagnostics_pool_reports_the_lost_evidence() {
+    let fake = Fake::new();
+    fake.seed(&[(JOB_VM, "stopped", "local")]);
+    let mut shim = start_diagnostic_shim(&fake, JOB_VM, "example-repo-one");
+    wait_until("the VM running", Duration::from_secs(10), || {
+        running(&fake, JOB_VM)
+    });
+
+    drop(shim.stdin.take());
+    let status = wait_for_exit(&mut shim, cleanup_budget() + Duration::from_secs(5));
+
+    assert_eq!(status.code(), Some(0));
+    assert!(fake.vm_names().is_empty());
+    assert_eq!(error_text(&mut shim), GAP);
+}
+
+/// A VM that is already gone holds no evidence the shim could lose, so the shim says
+/// nothing; neither does the shim of a pool without diagnostics.
+#[test]
+fn a_shim_reports_nothing_for_a_vm_already_gone_or_a_pool_without_diagnostics() {
+    let fake = Fake::new();
+    fake.seed(&[(JOB_VM, "stopped", "local")]);
+    let mut shim = start_diagnostic_shim(&fake, JOB_VM, "example-repo-one");
+    wait_until("the VM running", Duration::from_secs(10), || {
+        running(&fake, JOB_VM)
+    });
+    // the CLI's own release stops the VM, which ends `tart run`, and deletes it
+    for arguments in [&["stop", JOB_VM, "--timeout", "0"][..], &["delete", JOB_VM]] {
+        let output = Command::new(FAKE_TART)
+            .args(arguments)
+            .env("FAKE_TART_DIR", fake.dir.path())
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{arguments:?}");
+    }
+    drop(shim.stdin.take());
+    wait_for_exit(&mut shim, cleanup_budget() + Duration::from_secs(5));
+    assert_eq!(error_text(&mut shim), "");
+
+    let fake = Fake::new();
+    fake.seed(&[(JOB_VM, "stopped", "local")]);
+    let mut shim = start_shim(&fake, JOB_VM);
+    wait_until("the VM running", Duration::from_secs(10), || {
+        running(&fake, JOB_VM)
+    });
+    drop(shim.stdin.take());
+    wait_for_exit(&mut shim, cleanup_budget() + Duration::from_secs(5));
+    assert!(fake.vm_names().is_empty());
+    assert_eq!(error_text(&mut shim), "");
 }

@@ -167,7 +167,7 @@ impl View<'_> {
     ) -> PoolInfo {
         let key = RepositoryKey::of(&entry.owner, &entry.repository);
         let (state, reason) = match pools.get(entry.name.as_str()).map(|row| &row.state) {
-            Some(PoolState::WaitingForDocker) => ("waiting_for_docker", None),
+            Some(PoolState::WaitingForEngine(_)) => ("waiting_for_docker", None),
             Some(PoolState::Preparing) => ("preparing", None),
             Some(PoolState::Running) => ("running", None),
             Some(PoolState::Skipped(reason)) => ("skipped", Some(reason.clone())),
@@ -181,6 +181,7 @@ impl View<'_> {
                         let (state, workload, reason) = match &row.state {
                             SlotState::Registering => ("registering", None, None),
                             SlotState::BackingOff(why) => ("backing_off", None, Some(why.clone())),
+                            SlotState::Held(why) => ("held", None, Some(why.clone())),
                             SlotState::Running(name) => ("running", Some(name.clone()), None),
                         };
                         RunnerInfo {
@@ -293,5 +294,69 @@ impl View<'_> {
             lines,
             warnings,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::profile::Profile;
+    use crate::validate::Plan;
+
+    fn entry() -> Entry {
+        Entry {
+            path: String::new(),
+            owner: "owner".to_string(),
+            repository: "repository".to_string(),
+            name: "pool".to_string(),
+            slots: 2,
+            token_path: String::new(),
+            labels: Vec::new(),
+            cpus: 1.0,
+            memory_gb: 8,
+            volumes: Vec::new(),
+            diagnostics: false,
+            diagnostic_directory: None,
+            diagnostic_raw_records: false,
+            os: None,
+            disk_gb: None,
+        }
+    }
+
+    fn runners(board: &Board) -> Vec<RunnerInfo> {
+        let mut inner = Inner::new(Phase::Running);
+        inner.plan = Some(Plan {
+            profile: Profile::Axmc,
+            image_name: None,
+            entries: vec![entry()],
+            budget: None,
+        });
+        let retained = Retained::default();
+        let tokens = StoreTokens::new(None);
+        let snapshot = View {
+            version: "test",
+            inner: &inner,
+            config_path: "config.json",
+            board,
+            retained: &retained,
+            tokens: &tokens,
+            left: &[],
+            now: SystemTime::now(),
+        }
+        .snapshot();
+        snapshot.pools.into_iter().next().unwrap().runners
+    }
+
+    #[test]
+    fn a_held_slot_is_the_runner_state_held_with_its_reason() {
+        let board = Board::default();
+        board.set_slot("pool slot 1", SlotState::Held("no disk".to_string()));
+        board.set_slot("pool slot 2", SlotState::BackingOff("failed".to_string()));
+        let runners = runners(&board);
+        assert_eq!(runners[0].state, "held");
+        assert_eq!(runners[0].reason.as_deref(), Some("no disk"));
+        assert_eq!(runners[0].workload, None);
+        assert_eq!(runners[1].state, "backing_off");
+        assert_eq!(runners[1].reason.as_deref(), Some("failed"));
     }
 }

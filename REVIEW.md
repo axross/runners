@@ -90,8 +90,8 @@ Run the following checks on every review and raise findings within their scope:
   nothing that identifies a person or a machine. Verify the
   [safety lenses](#public-repository-safety-lenses) below for every changed
   file, apply the [VM runtime lenses](#vm-runtime-lenses) to a change of the
-  axmc Tart client or golden VM build, and apply the [language lenses](#language-lenses)
-  for each kind of file in the diff.
+  axmc Linux VM runtime, and apply the [language lenses](#language-lenses) for
+  each kind of file in the diff.
 - **Refactoring opportunities** - examine changed code, scripts, workflow
   definitions, and documentation for concrete ways to simplify
   responsibilities, remove duplication, or reduce unnecessary complexity. Report
@@ -190,17 +190,12 @@ Codex review uses its native priority label.
 
 ## VM runtime lenses
 
-These lenses apply to a change of the axmc Tart client and golden VM build:
-`cli/src/runtime/tart/`, `cli/src/macos/`, `cli/src/golden/`, the golden VM's
-provisioning assets, and the macOS host document. Each is a hard project rule. The
-Softnet lens is owned by
-[Security](docs/conventions/security.md#softnet-confines-a-job-vms-network) and the
-pin lens by
-[Security](docs/conventions/security.md#tart-softnet-and-the-golden-vm-are-pinned).
-The others are this review's checks for the build VM, set by
-[The Golden VM Contract](docs/operations/macos-runner-host.md#the-golden-vm-contract)
-and [The Golden VM Build](docs/operations/cli.md#the-golden-vm-build). Claude review
-labels a violation Important; Codex review uses its native priority label.
+These lenses apply to a change of the axmc Linux VM runtime: `cli/src/runtime/tart/`,
+`cli/src/macos/`, `cli/src/golden/`, the golden VM's provisioning assets, and the
+macOS host document. Each is a hard project rule, owned by
+[Security](docs/conventions/security.md#a-linux-job-on-axmc-runs-in-a-per-job-vm)
+and the sections after it. Claude review labels a violation Important; Codex review
+uses its native priority label.
 
 - **No JIT configuration in an argument list.** The JIT configuration reaches the
   guest only on the standard input of a `tart exec -i` call, never with `-t`, and
@@ -209,14 +204,18 @@ labels a violation Important; Codex review uses its native priority label.
   line, and never part of the VM's image.
 - **Guest output is bounded.** Every guest-agent call's captured output is cut off
   at a fixed bound (64 KiB), and the CLI never parses it beyond its expected form.
-  An unbounded read of a guest call, or a parse that trusts its shape, is a
-  finding.
-- **Deletion on every failure path.** Every exit from a build after its build VM
-  exists deletes that VM: an error, a boot failure, a stop and an interrupt. At the
-  28 s exit deadline the shim or the next build deletes it, and after the rename it is
-  the golden VM. A new early return, `?` or `break` between the clone and the
-  deletion is checked for it. The shim deletes the VM when the liveness pipe closes,
-  and no shim or other child inherits the instance lock.
+  The one exception is the diagnostics export's `docker cp` archive, which
+  `VmCopy` streams; the strict archive reader and the bundle limits bound it
+  instead. An unbounded read of any other guest call, or a parse that trusts its
+  shape, is a finding.
+- **Deletion on every failure path.** Every exit from a slot's cycle after the
+  clone, and from a build until its rename, deletes that VM within a budget: an
+  error, a failed probe, a boot failure, a stop, an interrupt and a timeout. After
+  the rename the build VM is the golden VM and is not deleted. A new early return,
+  `?` or `break` between the clone and the deletion is checked for it. The shim
+  deletes the VM when the liveness pipe closes, which covers a CLI that ended at the
+  exit deadline or died, and a VM neither deleted is left to the next `start` or
+  `build`. No shim or other child inherits the instance lock.
 - **The Softnet check and rules on every boot.** Every `tart run` follows a Softnet
   file check and a version check, and carries the two Softnet rules from
   [Security](docs/conventions/security.md#softnet-confines-a-job-vms-network) and no
@@ -227,10 +226,10 @@ labels a violation Important; Codex review uses its native priority label.
   `tart run` turns off graphics, the clipboard, audio and USB accessories, and
   carries no `--dir` and no `--rosetta`. Every Tart call sets `TART_NO_AUTO_PRUNE`,
   gets `marshal`'s `PATH`, and has a standard output that is not a terminal.
-- **Names and cleanup stay exact.** Cleanup in `build` matches only build VMs by
-  their name form, and only `build` and its shim delete build VMs, while `build`
-  alone deletes old golden VMs. A looser match could delete a VM `marshal` does not
-  own.
+- **Names and cleanup stay exact.** Cleanup at `start` matches only the job VMs of
+  configured pools by their name form, so it never deletes a golden VM or a build
+  VM. Only `build` deletes golden VMs, and only `build` and a build VM's own shim
+  delete a build VM. A looser match could delete a VM `marshal` does not own.
 - **Pins hold.** The base image is pinned by digest, the current pin is never on
   the retired list, Docker Engine comes from Docker's apt repository at pinned
   versions after the signing key's fingerprint is checked, and the tested Tart and
@@ -321,13 +320,19 @@ Apply the lens for each kind of file in the diff.
   a container an earlier process left: no record exists, so a startup with the
   pool's diagnostics on adopts it with the pool's current settings. A path that
   removes one without trying its export while its clock allows, or finalises one
-  the backend already retains with a later plan's settings, is a finding. The sink checks refuse and never create, repair,
-  or relax, and a new log line, warning, or channel answer names only the pool,
-  the container, and the gap, never bundle contents. The exporter child and each
-  of its `docker` clients end by their deadline and with `start`; a new wait in
-  that path that has no bound, or that polls for liveness instead of a closed pipe
-  or a process handle, is a finding (see
-  [CLI](docs/operations/cli.md#diagnostics) and
+  the backend already retains with a later plan's settings, is a finding. A
+  diagnostic VM on axmc is deleted without an export by design in exactly three
+  cases: a second SIGINT, a `start` that ends while it still holds the VM (the VM
+  shim), and a leftover at the next `start`, each reporting the diagnostic gap. A
+  fourth export-less deletion of a VM, or any of the three that reports no gap, is a
+  finding (see [CLI](docs/operations/cli.md#tart-backend), the paragraph "Evidence a
+  VM loses"). The sink checks refuse and never create, repair, or relax, and a new
+  log line, warning, or channel answer names only the pool, the container, and the
+  gap, never bundle contents. The exporter child and each of its clients, the
+  `docker` clients on axpc and the `tart exec` clients on axmc, end by their
+  deadline and with `start`; a new wait in that path that has no bound,
+  or that polls for liveness instead of a closed pipe or a process handle, is a
+  finding (see [CLI](docs/operations/cli.md#diagnostics) and
   [Security](docs/conventions/security.md#diagnostic-evidence-stays-private)).
 - **Image contract.** A change to the run contract, which is the argument lists,
   the launcher, and the labels the CLI reads, or to what the runner image must

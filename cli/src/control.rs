@@ -158,6 +158,9 @@ fn stop(roots: &Roots, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::image::check::IMAGE_CHECK_BUDGET;
+    use crate::instance::lifecycle::StopTimes;
+    use crate::macos::prerequisites::RESUME_VERSION_BUDGET;
 
     #[test]
     fn the_clients_wait_5_35_30_and_35_seconds() {
@@ -165,6 +168,19 @@ mod tests {
         assert_eq!(RESTART_ANSWER_WITHIN, Duration::from_secs(35));
         assert_eq!(DIAGNOSTICS_ANSWER_WITHIN, Duration::from_secs(30));
         assert_eq!(STOP_WAIT, Duration::from_secs(35));
+    }
+
+    #[test]
+    fn a_restarts_container_steps_and_reload_fit_its_wait_on_both_profiles() {
+        let steps = StopTimes::default().exit_deadline;
+        assert!(
+            steps + IMAGE_CHECK_BUDGET <= RESTART_ANSWER_WITHIN,
+            "axpc reloads with the image check"
+        );
+        assert!(
+            steps + RESUME_VERSION_BUDGET + IMAGE_CHECK_BUDGET <= RESTART_ANSWER_WITHIN,
+            "axmc reads the versions, which run together, before the image check"
+        );
     }
 
     fn printed(response: &Response) -> (u8, String, String) {

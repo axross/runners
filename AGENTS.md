@@ -15,8 +15,8 @@ example host configuration, and the CLI under `cli/`, a Rust command line tool
 that validates a host configuration, builds its runner image with `build`, and
 runs a host's pools with `start`, `stop`, `restart`, `status`, and `diagnostics`.
 The axpc host runs its pools with the CLI. The axmc host, an Apple silicon Mac,
-has `build` make the golden VM that its Linux pools will run in; `start` does not
-run its pools yet. The agent-host configuration is still planned.
+runs its Linux pools with the CLI in Tart VMs, and `build` makes their golden VM;
+the agent-host configuration is still planned.
 [README.md](./README.md) owns project commands; [docs/index.md](./docs/index.md)
 indexes conventions, operations, and the glossary. mise pins the toolchain, and
 Prettier, markdownlint, shellcheck, hadolint, actionlint, PSScriptAnalyzer,
@@ -218,5 +218,5 @@ adds the document that owns its procedure and the row that routes to it.
 | Which document a change to a runner surface invalidates, and the documentation checks                                                                                                                | [Documentation](./docs/conventions/documentation.md)                                                                                                                                                             |
 | Runner image (`images/actions-runner/`), the Windows host configuration (`hosts/windows-docker-desktop/`), tokens, updating, rolling back, and recovery                                              | [Windows Runner Host](./docs/operations/windows-runner-host.md), with the per-repository isolation rules in [Security](./docs/conventions/security.md)                                                           |
 | The CLI (`cli/`), its commands, its profiles (`axpc`, `axmc`), the shared fixtures (`tests/host-configuration/`), and its Rust toolchain and gates                                                   | [CLI](./docs/operations/cli.md), with [Security](./docs/conventions/security.md) for labels, paths, and the dependency surface                                                                                   |
-| The macOS host (`hosts/macos/`): Tart, Softnet, the golden VM, the axmc host configuration, and the Tart client behind the golden VMs (`cli/src/runtime/tart/`, `cli/src/macos/`, `cli/src/golden/`) | [macOS Runner Host](./docs/operations/macos-runner-host.md), with [Security](./docs/conventions/security.md) for the golden VMs, Softnet, and the pins, and [CLI](./docs/operations/cli.md) for the runtime seam |
+| The macOS host (`hosts/macos/`): Tart, Softnet, the golden VM, the axmc host configuration, and the runtime that runs its Linux pools (`cli/src/runtime/tart/`, `cli/src/macos/`, `cli/src/golden/`) | [macOS Runner Host](./docs/operations/macos-runner-host.md), with [Security](./docs/conventions/security.md) for the per-job VM, Softnet, and the pins, and [CLI](./docs/operations/cli.md) for the runtime seam |
 | Planned agent-host configuration (`agent-hosts/{claude-code,amp}/`)                                                                                                                                  | The operations document that change adds; until then [Security](./docs/conventions/security.md) and [REVIEW.md](./REVIEW.md)                                                                                     |

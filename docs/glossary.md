@@ -155,24 +155,44 @@ in the pool's private sink, then removes it. Until then it is retained with the
 settings it ran with. See
 [operations/cli.md](./operations/cli.md#diagnostics).
 
+**Runtime Seam** - the boundary in the **CLI** between the **Runtime Core** and
+whatever a job runs in. The core keeps the configuration, registration, backoff and
+the stop sequence; the runtime behind the seam waits for its engine, checks its
+image, prepares and releases a job's host, runs the job, and exports diagnostics. A
+pool's operating system, on the **Host Profile**'s host, selects the runtime: a
+Docker Desktop container on axpc, a **Job VM** for a Linux pool on axmc. See
+[operations/cli.md](./operations/cli.md#runtime-seam).
+
 **Golden VM** - the Tart Ubuntu VM that `build --profile axmc` makes on the macOS
-host and that a VM per job will be cloned from. It holds Docker Engine, the launcher
-and the **Runner Image**, and its name records its golden VM version, the **Image
+host and every **Job VM** is cloned from. It holds Docker Engine, the launcher and
+the **Runner Image**, and its name records its golden VM version, the **Image
 Contract Version**, the runner version and the build time, so they are read without
 booting it. Only `build` deletes it. See
 [operations/macos-runner-host.md](./operations/macos-runner-host.md#the-golden-vm-contract).
+
+**Job VM** - the VM that runs one job of an axmc Linux **Execution Pool**: a clone
+of the **Golden VM**, named `marshal-job-<pool>-<slot>-<time>`, booted on
+**Softnet** with no shared directory, clipboard, audio, USB accessories or Rosetta,
+and deleted when its job ends. A **Slot**'s Job VM is booted and idle while its
+runner waits for a job. See [conventions/security.md](./conventions/security.md#a-linux-job-on-axmc-runs-in-a-per-job-vm).
 
 **Build VM** - the temporary VM, named `marshal-build-linux-<time>`, in which
 `build --profile axmc` makes a new **Golden VM**. It is renamed to the golden name
 only when complete, and a failed or interrupted build deletes it, so the previous
 Golden VM stays in place.
 
-**Softnet** - the program Tart runs to filter a VM's network. It lets a VM
+**Softnet** - the program Tart runs to filter a VM's network. It lets a **Job VM**
 send only to globally routable IPv4 addresses and to its gateway, and `marshal`
 passes it rules that leave the gateway only DNS and block all multicast. Its
-privilege is a SUID bit on its binary, which `marshal` checks before it boots a VM
-and never sets. See
+privilege is a SUID bit on its binary, which `marshal` checks before every boot and
+never sets. See
 [operations/macos-runner-host.md](./operations/macos-runner-host.md#setting-up-softnet).
+
+**Primary Network** - on the macOS host, the interface that holds the IPv4 default
+route, that route's router, and the router's hardware address. The instance records
+it when it starts running and stops every runner when it differs on two checks in a
+row. It is IPv4 only, because **Softnet** carries only IPv4, and it names
+interfaces, never network names or addresses.
 
 **Host Profile** - the host a **Host Configuration** is checked for: `axpc`, the
 Windows machine with Docker Desktop, or `axmc`, the macOS machine. A profile fixes

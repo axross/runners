@@ -14,8 +14,9 @@ use super::contract::{
 };
 
 /// the bound on both clients of one image check together, the inspect and, when it
-/// fails, the listing; re-validation and the check fit in a resuming `start`'s 10 s
-/// wait, and the container steps and the check in `restart`'s 35 s.
+/// fails, the listing. A resume's reload, the configuration read, the host
+/// prerequisites (axmc only, `RESUME_VERSION_BUDGET`) and this check, fits a resuming
+/// `start`'s 10 s wait, and after the 28 s of container steps it fits `restart`'s 35 s.
 pub const IMAGE_CHECK_BUDGET: std::time::Duration = std::time::Duration::from_secs(4);
 
 /// the most bytes of an inspect's output read.

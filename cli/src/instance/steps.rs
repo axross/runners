@@ -8,7 +8,7 @@ use std::cell::{Cell, RefCell};
 use tokio::sync::watch;
 
 use crate::runtime::backend::{Backend, StopRequest};
-use crate::runtime::diagnostic;
+use crate::runtime::diagnostic::{self, StopClock};
 use crate::runtime::log::Log;
 
 use super::lifecycle::StopTimes;
@@ -27,14 +27,42 @@ pub struct Steps<'a, B> {
     pub left: Option<&'a RefCell<Vec<String>>>,
 }
 
-/// stops and removes `containers`, and finalises the diagnostic containers on their
-/// own clock.
+/// stops and removes `containers`, finalises the diagnostic containers on their own
+/// clock, and then releases the hosts still prepared.
 pub async fn container_steps<B: Backend>(steps: &Steps<'_, B>, containers: Vec<String>) {
     let start = tokio::time::Instant::now();
     tokio::join!(
         ordinary_steps(steps, containers),
-        diagnostic::container_steps(steps.backend, steps.log, start, steps.times.remove_budget)
+        diagnostic::container_steps(
+            steps.backend,
+            steps.log,
+            StopClock::at(start).shortened_by(steps.times.diagnostic_shortening()),
+            steps.times.remove_budget,
+        )
     );
+    release_hosts(steps).await;
+}
+
+/// releases every job host still prepared, all at once, once the containers are
+/// stopped: a worker releases its own host when its run ends, so what remains is the
+/// host of a worker that is still busy or that a panic took.
+async fn release_hosts<B: Backend>(steps: &Steps<'_, B>) {
+    let budget = steps.times.release_budget;
+    let releases: Vec<_> = steps
+        .backend
+        .prepared_hosts()
+        .into_iter()
+        .map(|host| async move {
+            if let Err(error) = steps.backend.release_job_host(&host, budget).await {
+                steps.log.warn(&format!(
+                    "Releasing the job host of {} slot {} failed: {error}",
+                    host.pool, host.slot
+                ));
+                steps.containers_removed.set(false);
+            }
+        })
+        .collect();
+    diagnostic::join_all(releases).await;
 }
 
 /// stops the containers in one call, and removes whatever remains in another; a

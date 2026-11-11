@@ -98,6 +98,7 @@ fn command() -> Command {
                 .arg(Arg::new("pool").long("pool").required(true))
                 .arg(Arg::new("directory").long("directory").required(true))
                 .arg(Arg::new("container").long("container"))
+                .arg(Arg::new("vm").long("vm"))
                 .arg(
                     Arg::new("raw-records")
                         .long("raw-records")
@@ -145,6 +146,7 @@ fn command() -> Command {
         Command::new(crate::vm_shim::VM_SHIM_COMMAND)
             .hide(true)
             .arg(Arg::new("name").long("name").required(true))
+            .arg(Arg::new("diagnostic-pool").long("diagnostic-pool"))
             .arg(
                 Arg::new("client")
                     .required(true)
@@ -204,7 +206,8 @@ fn run_vm_shim(matches: &ArgMatches) -> ExitCode {
     ) else {
         return ExitCode::from(EXIT_USAGE);
     };
-    crate::vm_shim::run(name, program)
+    let pool = matches.get_one::<String>("diagnostic-pool");
+    crate::vm_shim::run(name, program, pool.map(String::as_str))
 }
 
 #[cfg(unix)]
@@ -234,6 +237,7 @@ fn run_export(matches: &ArgMatches) -> ExitCode {
     let request = ExportRequest {
         pool: pool.clone(),
         container: matches.get_one::<String>("container").cloned(),
+        vm: matches.get_one::<String>("vm").cloned(),
         directory: directory.clone(),
         raw_records: matches.get_flag("raw-records"),
         checkout: matches.get_one::<PathBuf>("checkout").cloned(),
