@@ -224,7 +224,9 @@ rules in [CLI](./cli.md#version-rules) require.
 Esc closes the first of these that is open and does nothing more: a tooltip balloon,
 then a confirmation dialog, then an open token form or removal question, and only then
 hides the window. The page clears a token field as soon as it calls `set_token`,
-whatever the outcome, and keeps the token in no variable. It also clears every open
+whatever the outcome, and keeps the token in no variable; `save-token.test.mjs` loads
+the page over a stand-in for the document and drives that path with a call that
+resolves and one that rejects. It also clears every open
 token field when the window hides, by any route, so a token half typed is not left in
 a page nobody can see; the form stays open and empty.
 

@@ -5,57 +5,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-class Element {
-  constructor(tag) {
-    this.tag = tag;
-    this.attributes = new Map();
-    this.listeners = new Map();
-    this.children = [];
-    this.value = "";
-    this.textContent = "";
-  }
-  setAttribute(name, value) {
-    this.attributes.set(name, String(value));
-  }
-  getAttribute(name) {
-    return this.attributes.get(name) ?? null;
-  }
-  removeAttribute(name) {
-    this.attributes.delete(name);
-  }
-  addEventListener(type, listener) {
-    const held = this.listeners.get(type) ?? [];
-    held.push(listener);
-    this.listeners.set(type, held);
-  }
-  dispatchEvent(event) {
-    for (const listener of this.listeners.get(event.type) ?? []) {
-      listener(event);
-    }
-    return true;
-  }
-  append(...nodes) {
-    this.children.push(...nodes);
-  }
-  find(tag) {
-    for (const child of this.children) {
-      if (child.tag === tag) {
-        return child;
-      }
-      const inside = child.find?.(tag);
-      if (inside) {
-        return inside;
-      }
-    }
-    return null;
-  }
-}
+import { installDocument } from "./document.mjs";
 
-globalThis.document = {
-  createElement: (tag) => new Element(tag),
-  createElementNS: (_namespace, tag) => new Element(tag),
-  createTextNode: (text) => ({ text }),
-};
+installDocument();
 
 const { clearTypedTokens, tokensPanel } =
   await import("../../frontend/tokens.js");
