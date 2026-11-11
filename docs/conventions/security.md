@@ -1134,9 +1134,9 @@ Residual risks, accepted on a single-user host:
   how to end `marshal-app.exe` in Task Manager, and the next start removes the
   containers it left.
 - Whether WebView2 enforces the policy, whether the agent, the exporter or one of
-  their `docker` clients shows a console window (each is created with
-  `CREATE_NO_WINDOW`, asserted at the command builders, but no check observes the
-  window), and whether the menu opens from the keyboard are shown only on axpc;
+  their `docker` clients shows a console window (the agent is created with
+  `DETACHED_PROCESS`, and the exporter and the clients with `CREATE_NO_WINDOW`, each
+  asserted at its command builder, but no check observes the window), and whether the menu opens from the keyboard are shown only on axpc;
   [App](../operations/app.md#verification-status) lists what has and has not been
   shown.
 

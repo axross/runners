@@ -1,11 +1,11 @@
 //! starting the agent from the app's own executable: never from a missing or changed
-//! file, with the agent's own argument, and detached with no console window.
+//! file, with the agent's own argument, and started detached.
 
 use std::fs;
 use std::sync::Arc;
 
 use marshal_cli::agent::Launch;
-use marshal_session::{AGENT_CREATION_FLAGS, Launcher, OwnExecutable};
+use marshal_session::{Launcher, OwnExecutable};
 
 use crate::support::{MemoryLog, temp_dir};
 
@@ -95,15 +95,4 @@ fn the_unchanged_executable_is_started_in_agent_mode_with_the_launch_as_its_argu
         log.lines()
     );
     fs::remove_dir_all(directory).unwrap();
-}
-
-#[test]
-fn on_windows_the_agent_has_no_console_window_and_a_process_group_of_its_own() {
-    const DETACHED_PROCESS: u32 = 0x0000_0008;
-    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    assert_eq!(
-        AGENT_CREATION_FLAGS,
-        DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
-    );
 }

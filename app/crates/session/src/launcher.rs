@@ -12,14 +12,21 @@ use marshal_cli::agent::executable::{Executable, Look};
 
 use crate::seam::{Launcher, Log};
 
-/// the process creation flags of the agent on Windows: detached from the app's console,
-/// if it has one, with no console window of its own, and in a process group of its own,
-/// so ending the app takes nothing else with it.
-pub const DETACHED_PROCESS: u32 = 0x0000_0008;
-pub const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-pub const AGENT_CREATION_FLAGS: u32 =
-    DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW;
+/// the Windows flag that detaches the agent from the app's console, if the app has one:
+/// the agent then has no console at all, and so no console window.
+#[cfg(any(windows, test))]
+const DETACHED_PROCESS: u32 = 0x0000_0008;
+/// the Windows flag that gives the agent a process group of its own, so ending the app
+/// takes nothing else with it.
+#[cfg(any(windows, test))]
+const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+
+/// the process creation flags of the agent on Windows. `CREATE_NO_WINDOW` is left out on
+/// purpose: Windows ignores it beside `DETACHED_PROCESS`, which already leaves the agent
+/// without a console. The `docker` clients and the exporter the agent starts get
+/// `CREATE_NO_WINDOW` from the library instead, since each of them is a console program.
+#[cfg(any(windows, test))]
+const AGENT_CREATION_FLAGS: u32 = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP;
 
 /// the app's own executable, as it was when the app started.
 pub struct OwnExecutable {
@@ -73,9 +80,10 @@ impl OwnExecutable {
     }
 }
 
-impl Launcher for OwnExecutable {
-    fn start_agent(&self, launch: Launch) -> Result<(), String> {
-        self.check()?;
+impl OwnExecutable {
+    /// the command that starts the agent: no input or output, the agent's variables, and
+    /// the flags that detach it.
+    fn agent_command(&self, launch: Launch) -> Command {
         let mut command = Command::new(&self.path);
         command
             .args(marshal_modes::agent_arguments(launch))
@@ -84,7 +92,15 @@ impl Launcher for OwnExecutable {
             .stdout(Stdio::null())
             .stderr(Stdio::null());
         detach(&mut command);
-        let mut child = command
+        command
+    }
+}
+
+impl Launcher for OwnExecutable {
+    fn start_agent(&self, launch: Launch) -> Result<(), String> {
+        self.check()?;
+        let mut child = self
+            .agent_command(launch)
             .spawn()
             .map_err(|error| format!("the process could not be started: {error}"))?;
         let log = Arc::clone(&self.log);
@@ -99,14 +115,68 @@ impl Launcher for OwnExecutable {
     }
 }
 
-#[cfg(windows)]
+/// detaches the agent from the app: its own process group on every platform, and on
+/// Windows no console. A test build records the Windows flags on every platform,
+/// because a command does not report the flags it carries.
 fn detach(command: &mut Command) {
-    use std::os::windows::process::CommandExt;
-    command.creation_flags(AGENT_CREATION_FLAGS);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(AGENT_CREATION_FLAGS);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    #[cfg(test)]
+    applied::record(AGENT_CREATION_FLAGS);
 }
 
-#[cfg(unix)]
-fn detach(command: &mut Command) {
-    use std::os::unix::process::CommandExt;
-    command.process_group(0);
+/// the creation flags `detach` applied on this thread, for a test that cannot read
+/// them back from a command.
+#[cfg(test)]
+mod applied {
+    use std::cell::Cell;
+
+    thread_local! {
+        static LAST: Cell<Option<u32>> = const { Cell::new(None) };
+    }
+
+    pub(super) fn record(flags: u32) {
+        LAST.with(|last| last.set(Some(flags)));
+    }
+
+    pub(super) fn take() -> Option<u32> {
+        LAST.with(Cell::take)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    use marshal_cli::agent::Launch;
+
+    use super::{OwnExecutable, applied};
+    use crate::seam::Log;
+
+    struct NoLog;
+    impl Log for NoLog {
+        fn info(&self, _: &str) {}
+        fn warn(&self, _: &str) {}
+    }
+
+    #[test]
+    fn on_windows_the_agent_has_no_console_and_a_process_group_of_its_own() {
+        let launcher = OwnExecutable::at(PathBuf::from("marshal-app"), Arc::new(NoLog));
+        applied::take();
+        let _ = launcher.agent_command(Launch::Running);
+        assert_eq!(
+            applied::take(),
+            Some(0x0000_0008 | 0x0000_0200),
+            "DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP, and not CREATE_NO_WINDOW, which Windows ignores beside DETACHED_PROCESS"
+        );
+    }
 }

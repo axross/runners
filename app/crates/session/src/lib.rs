@@ -14,7 +14,7 @@ mod wall;
 
 pub use choose::{Chosen, Place, Then, choose};
 pub use connect::RETRY_EVERY;
-pub use launcher::{AGENT_CREATION_FLAGS, OwnExecutable};
+pub use launcher::OwnExecutable;
 pub use library::{Agent, Library, dial_error, failure};
 pub use log::{AppLog, KEPT_FILES, MAX_FILE_BYTES};
 pub use seam::{

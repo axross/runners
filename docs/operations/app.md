@@ -52,10 +52,11 @@ The hidden modes are internal. They have no window, no icon and no console, and 
 compatibility promise: their arguments are what the app and the library pass each
 other, not an interface for a person or a script. A release build is a Windows
 subsystem executable, so the app and the modes it starts have no console of their
-own, and the agent is started with `CREATE_NO_WINDOW` (see Launch). The agent has no
-console for its children to inherit, so each `docker` client it starts and the
-exporter child get `CREATE_NO_WINDOW` as well, set by the library's two command
-builders and asserted by a unit test at each; their standard streams and process
+own, and the agent is started with `DETACHED_PROCESS` (see Launch), which leaves it
+no console. It has no console for its children to inherit, so each `docker` client it
+starts and the exporter child get `CREATE_NO_WINDOW`, set by the library's two command
+builders and asserted by a unit test at each; the agent's own flags are recorded
+and asserted by a unit test too; their standard streams and process
 groups still work, and the same flags change nothing in a terminal. Whether a
 window still appears is shown only on axpc. Only the app mode takes Tauri's single-instance lock, so a second
 launch brings the first one's window forward and starts nothing. The agent mode is
@@ -99,8 +100,9 @@ web view.
 
 - **Launch.** The app connects to this user's agent. When none answers it starts its
   own executable, by absolute path, as a plain detached child with no console window
-  (the flags `DETACHED_PROCESS`, `CREATE_NEW_PROCESS_GROUP` and `CREATE_NO_WINDOW`),
-  not through Tauri's shell plugin, so the agent outlives the app. A
+  (the flags `DETACHED_PROCESS`, which leaves it no console, and
+  `CREATE_NEW_PROCESS_GROUP`; `CREATE_NO_WINDOW` is left out because Windows ignores
+  it beside `DETACHED_PROCESS`), not through Tauri's shell plugin, so the agent outlives the app. A
   fresh launch starts the agent running its pools, because the launch is the user's
   own action. The restart after a dropped connection starts it stopped when the last
   state the app heard was "stopped by you", and running otherwise. It never starts
