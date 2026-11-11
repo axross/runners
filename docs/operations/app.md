@@ -362,6 +362,31 @@ file; the Windows job fails if it does, or if it leaves a file that is neither t
 nor ignored. Tauri links the Visual C++ runtime statically and uses the Universal C
 Runtime that Windows 11 includes.
 
+### The Build Script and the Test Manifest
+
+[`build.rs`](../../app/crates/app/build.rs) declares the commands and has
+`tauri-build` write the app's Windows resources, among them a manifest that asks for
+version 6 of the common controls. The `common-controls-v6` feature needs it: the menu
+and the web view runtime then import `TaskDialogIndirect`, which only that version
+exports, and a process gets that version only when its manifest asks. `tauri-build`
+links its resource into the binaries alone, so a test executable that links the Tauri
+runtime, as `tests/ipc.rs` does, stopped at load with `STATUS_ENTRYPOINT_NOT_FOUND`
+(`0xc0000139`) before it ran a test.
+
+When the target is Windows with the MSVC environment, which the script reads from the
+target's `CARGO_CFG_TARGET_*` variables and not from the host, `build.rs` also compiles
+a manifest holding only that dependency with `embed-resource` and links it with
+`cargo:rustc-link-arg-tests`, which Cargo gives to the integration tests, `ipc.rs` and
+`process/`. `marshal-app.exe`, the unit test of its `main.rs` and `fake-docker` keep
+the resource `tauri-build` makes, with its manifest, icon and version, and gain
+nothing. Cargo gives the library's own unit tests neither argument, so a unit test in
+`src/` that linked the Tauri runtime would stop the same way: the tests that link it
+live under `tests/`, and the library has none of its own.
+
+The feature stays on, and no test is skipped to avoid the manifest. `tauri-build` 2.7
+has no option to link its resource into every target; when a release has one, it
+replaces this second manifest and the `embed-resource` build dependency.
+
 ### The `tauri-cli` Pin
 
 [`app/tauri-cli.version`](../../app/tauri-cli.version) is the one place that sets the
@@ -450,9 +475,13 @@ does not take a build for a host that has run it:
 - **Run on every pull request:** the checks of [The App Workspace](./cli.md#the-app-workspace)
   on Linux, the Windows job's clippy, tests and `cargo tauri build --no-bundle`, and
   the mode dispatch on macOS, in the debug profile and then in the release profile.
-- **Run only by the Windows job:** the app starting its own executable in agent mode
-  and connecting to it, and quitting it; a second
-  app reusing the first's agent; the exporter child against `fake-docker`; a silent
+  The Windows job runs the tests with `--no-fail-fast`, so one test executable that
+  fails shows every other executable's result in the same run.
+- **Run only by the Windows job:** the test executables loading with the common
+  controls manifest of
+  [The Build Script and the Test Manifest](#the-build-script-and-the-test-manifest);
+  the app starting its own executable in agent mode and connecting to it, and quitting
+  it; a second app reusing the first's agent; the exporter child against `fake-docker`; a silent
   channel shown as not answering after 5 s with Quit ending only the app; a channel
   that does not answer version 2 shown as another Marshal, asked again every 5 s; an
   agent at its connection limit retried until it answers; a token reaching the agent's

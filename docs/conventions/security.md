@@ -245,9 +245,12 @@ app is built for, `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`.
   means no capability can be added while the app runs. A new feature, or one of
   those four, is a change to this list.
 - **Direct dependencies.** `tauri` 2.12, `tauri-build` 2.7 and
-  `tauri-plugin-single-instance` 2.5 for the app; `serde`, `serde_json` and `tokio`
-  for the session and the view, at versions the library already builds, so they add no
-  crate; `windows-registry` 0.6 on Windows, which reads the taskbar's mode and the
+  `tauri-plugin-single-instance` 2.5 for the app, and `embed-resource` 3.0 to build
+  it, the resource compiler `tauri-build` already builds with, which `build.rs` calls
+  to link the common controls manifest into the integration tests, so it adds no crate
+  to the tree and runs only when the target is Windows with the MSVC environment;
+  `serde`, `serde_json` and `tokio` for the session and the view, at versions the
+  library already builds, so they add no crate; `windows-registry` 0.6 on Windows, which reads the taskbar's mode and the
   time zone's bias without `unsafe` code. Its development-only dependencies are
   Tauri's `test` feature, and on Windows `interprocess`, which a test uses to squat on
   the agent's channel. The token store's crates come through the library, and

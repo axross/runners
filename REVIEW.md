@@ -333,7 +333,11 @@ Apply the lens for each kind of file in the diff.
   markup, with no inline script, remote asset or npm package. No token sits in the
   page, a view state or an event after `token_set` is called. A change to the
   policy, a capability, a permission file, `tauri.conf.json` or the element builder
-  needs the maintainer's review.
+  needs the maintainer's review. The test manifest `build.rs` links into the
+  integration tests holds only the version 6 common controls dependency and only on
+  a Windows MSVC target; another entry in it, such as an execution level, a second
+  `embed-resource` call, or a test skipped or cfg-ed out to avoid it, is a finding
+  and needs the maintainer's review.
 - **Diagnostics.** A labelled diagnostic container is removed only by a
   finalisation, which tries its export while its clock allows and uses its recorded
   settings, or by the manual recovery. The one exception to the recorded settings is
