@@ -2928,8 +2928,11 @@ the gates that cover it, so a change to the library knows what the app relies on
   advisory check cover everything its executable links, the library's crates
   included. It never runs the `marshal` binary.
 - No file under `cli/src` moves for the app. The library's additions for it are
-  small exports: the stop reason codes as `agent::StopReason`, and the handshake
-  timeout `agent::HANDSHAKE_TIMEOUT`. A later change to a public item the app uses
+  small exports: the stop reason codes as `agent::StopReason`, the handshake
+  timeout `agent::HANDSHAKE_TIMEOUT`, the registration error's marker of a token
+  GitHub rejects as `runtime::registration::REJECTED_MARK`, and the restart limit
+  as `instance::restart::WINDOW`, `DELAYS` and `STOPPING_FAILURE`, whose figures the
+  app's banners quote. A later change to a public item the app uses
   breaks the app's build, which `mise run check` and the Windows job show, so the
   change and the app move together.
 - The app reads the library for the protocol's types and client, the agent's entry

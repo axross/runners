@@ -296,14 +296,18 @@ fn stopped(context: &Context<'_>, stop: &Stop) -> Banner {
             )
         }
         Stop::RestartLimit => {
-            let heading = "Stopped: the runtime core failed 4 times within 10 minutes";
+            let heading = format!(
+                "Stopped: the runtime core failed {} times within {} minutes",
+                crate::text::RESTART_FAILURES,
+                crate::text::restart_window_minutes()
+            );
             let lead = format!("{}.", crate::text::capitalised(&log_says_why()));
             banner(
                 BannerKind::RestartLimit,
                 Tone::Error,
-                heading,
+                &heading,
                 vec![format!("{lead} Start All tries again.")],
-                spoken(heading, &lead),
+                spoken(&heading, &lead),
             )
         }
         Stop::Other(_) => {
@@ -481,7 +485,10 @@ fn lost_contact(context: &Context<'_>, last_heard_ms: u64, cause: Cause) -> Bann
 fn running(context: &Context<'_>) -> Option<Banner> {
     if let Some(due) = context.restart_due {
         let heading = format!("Restarting at {}", context.input.clock.when(due));
-        let lead = "The runtime core failed; it restarts after 10, 30 or 60 s.";
+        let lead = format!(
+            "The runtime core failed; it restarts after {}.",
+            crate::text::restart_waits()
+        );
         return Some(banner(
             BannerKind::Restarting,
             Tone::Warning,
@@ -490,7 +497,7 @@ fn running(context: &Context<'_>) -> Option<Banner> {
                 format!("{lead} {}.", crate::text::capitalised(&log_says_why())),
                 "No pools are listed until it restarts.".to_string(),
             ],
-            spoken(&heading, lead),
+            spoken(&heading, &lead),
         ));
     }
     if context.waiting_for_docker() {

@@ -6,6 +6,7 @@ use marshal_cli::agent::snapshot::{
     ImageInfo, PoolInfo, Reason, RunnerState, Snapshot, WarningKind,
 };
 use marshal_cli::agent::tokens::NO_TOKEN;
+use marshal_cli::runtime::registration::REJECTED_MARK;
 
 use crate::input::{Cause, Connection, Input, PendingKind};
 use crate::text::plain;
@@ -117,9 +118,6 @@ impl ImageStatus {
         matches!(self, Self::Missing | Self::Mismatched)
     }
 }
-
-/// the 401 GitHub answers a registration with when it does not accept the token.
-pub const REJECTED_MARK: &str = "status code does not indicate success: 401";
 
 /// whether a runner's reason for backing off is GitHub not accepting the token.
 pub fn is_rejection(reason: &str) -> bool {

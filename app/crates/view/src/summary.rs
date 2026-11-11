@@ -38,16 +38,19 @@ fn with_count(word: &str, up: u32, wanted: u32) -> String {
     }
 }
 
-fn stop_phrase(stop: &Stop) -> &'static str {
+fn stop_phrase(stop: &Stop) -> String {
     match stop {
-        Stop::ByYou => "stopped by you",
-        Stop::NoConfiguration => "stopped, there is no configuration",
-        Stop::InvalidConfiguration => "stopped, the configuration is not valid",
-        Stop::ImageUnusable => "stopped, the runner image cannot run jobs",
-        Stop::NoPoolStarted => "stopped, no pool could start",
-        Stop::RestartLimit => "stopped, the runtime core failed 4 times",
-        Stop::ImageBuildFailed => "stopped, the image build failed",
-        Stop::Other(_) => "runners stopped",
+        Stop::ByYou => "stopped by you".into(),
+        Stop::NoConfiguration => "stopped, there is no configuration".into(),
+        Stop::InvalidConfiguration => "stopped, the configuration is not valid".into(),
+        Stop::ImageUnusable => "stopped, the runner image cannot run jobs".into(),
+        Stop::NoPoolStarted => "stopped, no pool could start".into(),
+        Stop::RestartLimit => format!(
+            "stopped, the runtime core failed {} times",
+            crate::text::RESTART_FAILURES
+        ),
+        Stop::ImageBuildFailed => "stopped, the image build failed".into(),
+        Stop::Other(_) => "runners stopped".into(),
     }
 }
 
@@ -65,7 +68,7 @@ fn phrase(context: &Context<'_>) -> String {
         Resident::Quitting => with_count("quitting", up, wanted),
         Resident::Building { stopping: false } => "building the runner image".to_string(),
         Resident::Building { stopping: true } => "stopping the build".to_string(),
-        Resident::Stopped(stop) => stop_phrase(stop).to_string(),
+        Resident::Stopped(stop) => stop_phrase(stop),
         Resident::StartingMarshal => "starting".to_string(),
         Resident::NoAgent => "agent not reachable".to_string(),
         Resident::NotAnswering => "the agent is not answering".to_string(),

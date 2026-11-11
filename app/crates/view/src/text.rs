@@ -1,11 +1,35 @@
 //! helpers for the plain text the view shows. Text from the configuration, Docker or
 //! the agent is data: the view never marks it up, and the page sets it as text.
 
+use marshal_cli::instance::restart::{DELAYS, STOPPING_FAILURE, WINDOW};
+
 /// where the agent's logs are, as the window names it.
 pub const LOG_FOLDER: &str = "%LOCALAPPDATA%\\marshal\\logs\\";
 
 /// where the configuration is when the agent does not say.
 pub const DEFAULT_CONFIGURATION: &str = "%LOCALAPPDATA%\\marshal\\config.json";
+
+/// how many failures of the runtime core within the restart window stop the instance.
+pub const RESTART_FAILURES: usize = STOPPING_FAILURE;
+
+/// the restart window in whole minutes.
+#[must_use]
+pub fn restart_window_minutes() -> u64 {
+    WINDOW.as_secs() / 60
+}
+
+/// the waits before the core restarts, as the banner says them: "10, 30 or 60 s".
+#[must_use]
+pub fn restart_waits() -> String {
+    let seconds: Vec<String> = DELAYS
+        .iter()
+        .map(|wait| wait.as_secs().to_string())
+        .collect();
+    match seconds.split_last() {
+        Some((last, first)) if !first.is_empty() => format!("{} or {last} s", first.join(", ")),
+        _ => format!("{} s", seconds.join(", ")),
+    }
+}
 
 /// the prefixes GitHub gives its tokens; a word that starts with one and goes on for
 /// a token's length is replaced, in case the agent's own masking ever missed one.

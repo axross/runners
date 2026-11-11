@@ -4,11 +4,12 @@
 
 use marshal_cli::agent::snapshot::{PoolInfo, RunnerState, Snapshot};
 use marshal_cli::agent::tokens::NO_TOKEN;
+use marshal_cli::runtime::registration::REJECTED_MARK;
 use serde::Serialize;
 
 use crate::control::{Action, Confirmation, Control, Look, control};
 use crate::input::{NotSaved, TokenResult};
-use crate::state::{Context, REJECTED_MARK, Resident, is_rejection};
+use crate::state::{Context, Resident, is_rejection};
 use crate::text::{capitalised, counted, list_of, plain};
 
 /// what the store is called in the window; the Mac's Keychain store names its own.
