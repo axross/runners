@@ -118,7 +118,7 @@ jobs:
         if: runner.os == 'Linux'
         run: cargo test --locked --test real_docker_build -- --ignored
 
-  # the mode dispatch, including the Unix shim, on macOS: the app's crate for it builds
+  # the mode dispatch, including the Unix shims, on macOS: the app's crate for it builds
   # without the web view, so this job never builds the Tauri crate. Linux runs the same
   # tests in mise run check. no cache action, for the reason the rust job gives.
   app-modes:
@@ -140,6 +140,15 @@ jobs:
         run: cargo clippy --locked --package marshal-modes --all-targets -- -D warnings
       - name: Test The Mode Dispatch
         run: cargo test --locked --package marshal-modes
+      # the debug-only variables move the agent only in a debug build; this builds the
+      # same tests in the release profile, which is the only profile that runs the
+      # test that a release build ignores them. MARSHAL_EXPECT_RELEASE makes a test
+      # fail if built in the wrong profile, as in the rust job's step of the same kind,
+      # so a dropped --release cannot pass quietly.
+      - name: Test That A Release Build Ignores The Debug-Only Variables
+        env:
+          MARSHAL_EXPECT_RELEASE: "1"
+        run: cargo test --locked --release --package marshal-modes
 
   # the app's whole workspace, which needs the Windows web view and so cannot run in
   # mise run check. `tauri-cli` is installed from source at the pin in

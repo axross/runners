@@ -138,6 +138,16 @@ fn the_agent_overrides_are_read_from_the_variables_the_command_line_reads() {
 }
 
 #[test]
+fn the_profile_is_the_one_ci_asked_for() {
+    let debug_profile = cfg!(debug_assertions);
+    match std::env::var("MARSHAL_EXPECT_RELEASE").as_deref() {
+        Ok("1") => assert!(!debug_profile, "this test was built in the debug profile"),
+        Ok("0") => assert!(debug_profile, "this test was built in the release profile"),
+        _ => {}
+    }
+}
+
+#[test]
 fn no_variable_means_no_override() {
     assert_eq!(Overrides::from_lookup(lookup(&[])), Overrides::default());
 }
