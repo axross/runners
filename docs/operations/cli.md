@@ -457,8 +457,15 @@ Every client starts in its own process group: `process_group(0)` on Unix, and
 `CREATE_NEW_PROCESS_GROUP` on Windows. A Ctrl+C in the terminal then reaches the CLI
 only, which can stop the containers in order. A test reads the group of every client
 the fake `docker` sees on Linux and macOS; no safe API reads a Windows process's
-creation flags, so the Windows flag is checked by review. A client is killed when
-the future that waits for it is dropped.
+creation flags back. On Windows every client and the exporter child also get
+`CREATE_NO_WINDOW`, so a resident agent that has no console, as the app's agent has
+none, does not open a console window for each `docker` call; in a terminal it changes
+nothing. The one function that applies the flags is called by the client builder and
+by the exporter's command builder, and a test build records what each applied, so
+two unit tests assert both flags at the two builders, which every client and exporter
+call site goes through. Whether Windows shows a window is not observable here and is
+listed with the axpc checks. A client is killed when the future that waits for it is
+dropped.
 
 Every client other than a job container is bounded. A listing, a volume command,
 and an info call are bounded at 120 s. A removal and a stop take the budget their caller passes; stale cleanup removes

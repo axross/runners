@@ -51,8 +51,13 @@ argument decides its mode before Tauri starts, in the `marshal-modes` crate:
 The hidden modes are internal. They have no window, no icon and no console, and no
 compatibility promise: their arguments are what the app and the library pass each
 other, not an interface for a person or a script. A release build is a Windows
-subsystem executable, so none of the modes shows a console; the exporter's standard
-streams still work. Only the app mode takes Tauri's single-instance lock, so a second
+subsystem executable, so the app and the modes it starts have no console of their
+own, and the agent is started with `CREATE_NO_WINDOW` (see Launch). The agent has no
+console for its children to inherit, so each `docker` client it starts and the
+exporter child get `CREATE_NO_WINDOW` as well, set by the library's two command
+builders and asserted by a unit test at each; their standard streams and process
+groups still work, and the same flags change nothing in a terminal. Whether a
+window still appears is shown only on axpc. Only the app mode takes Tauri's single-instance lock, so a second
 launch brings the first one's window forward and starts nothing. The agent mode is
 kept to one by the machine-wide lock the library's agent takes, as `start` is, so
 the app and the command line never run the pools together.
@@ -430,8 +435,9 @@ does not take a build for a host that has run it:
   zone, the creation flags, the IPC origin `http://tauri.localhost`). The files are
   `app/crates/app/tests/ipc.rs` and `app/crates/app/tests/process/`; the process tests
   build only in debug, for the test variables above.
-- **Not shown by any check:** that no console window appears (the flags are tested,
-  the window is not observable without `unsafe`), WebView2 itself, a Windows contrast
+- **Not shown by any check:** that no console window appears from the agent, the
+  exporter or their `docker` clients (the flags are asserted at the command builders,
+  and the window is not observable without `unsafe`), WebView2 itself, a Windows contrast
   theme, the icon on a real taskbar and its weight at 16 px, the menu opening from the
   keyboard and where its focus goes, the icon following a mode or a scaling change
   within 2 s, a token round trip through the Credential Manager to a registration,

@@ -1130,8 +1130,10 @@ Residual risks, accepted on a single-user host:
   Marshal container or process holds only while the agent answers. The window says
   how to end `marshal-app.exe` in Task Manager, and the next start removes the
   containers it left.
-- Whether WebView2 enforces the policy, whether a hidden mode shows a console
-  window, and whether the menu opens from the keyboard are shown only on axpc;
+- Whether WebView2 enforces the policy, whether the agent, the exporter or one of
+  their `docker` clients shows a console window (each is created with
+  `CREATE_NO_WINDOW`, asserted at the command builders, but no check observes the
+  window), and whether the menu opens from the keyboard are shown only on axpc;
   [App](../operations/app.md#verification-status) lists what has and has not been
   shown.
 

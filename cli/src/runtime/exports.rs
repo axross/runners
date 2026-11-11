@@ -81,8 +81,9 @@ impl Exports {
 
     /// the command that runs the exporter child for `request` with `client`, without
     /// the JIT variable and with a liveness pipe as its standard input; its standard
-    /// error is this process's, and it writes only a panic's location there. `None`
-    /// when the backend has no program to run.
+    /// error is this process's, and it writes only a panic's location there; on
+    /// Windows it has a process group and no console window of its own. `None` when
+    /// the backend has no program to run.
     pub fn command(&self, request: &ExportRequest, client: &OsStr) -> Option<Command> {
         let mut command = Command::new(self.program.as_ref()?);
         command
@@ -94,8 +95,8 @@ impl Exports {
             .kill_on_drop(false);
         #[cfg(unix)]
         command.process_group(0);
-        #[cfg(windows)]
-        command.creation_flags(super::docker::CREATE_NEW_PROCESS_GROUP);
+        #[cfg(any(windows, test))]
+        super::docker::apply_creation_flags(&mut command);
         Some(command)
     }
 
@@ -158,5 +159,36 @@ impl Exports {
             admitted: admitted.get(),
             bundles: bundles.get(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::ffi::OsStr;
+    use std::path::PathBuf;
+    use std::time::Duration;
+
+    use super::*;
+    use crate::runtime::docker::applied;
+
+    #[test]
+    fn an_exporter_command_has_no_console_window_and_a_process_group_of_its_own_on_windows() {
+        let exports = Exports::new(Some(PathBuf::from("marshal")), None);
+        let request = ExportRequest {
+            pool: "pool".to_string(),
+            container: None,
+            vm: None,
+            directory: "sink".to_string(),
+            raw_records: false,
+            checkout: None,
+            deadline: Duration::from_secs(1),
+        };
+        applied::take();
+        assert!(exports.command(&request, OsStr::new("docker")).is_some());
+        assert_eq!(
+            applied::take(),
+            Some(0x0000_0200 | 0x0800_0000),
+            "CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW"
+        );
     }
 }
