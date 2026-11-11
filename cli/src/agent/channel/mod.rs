@@ -27,7 +27,7 @@ use super::snapshot::Snapshot;
 /// the bare stream to the agent, for the tests of the channel's limits.
 #[doc(hidden)]
 pub use client::platform::{Stream as RawStream, connect as connect_raw};
-pub use client::{CallError, Client, ConnectError, Push, Welcome, connect};
+pub use client::{CallError, Client, ConnectError, HANDSHAKE_TIMEOUT, Push, Welcome, connect};
 
 #[cfg(unix)]
 use unix::{Listener, split as platform_split};

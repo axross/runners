@@ -20,7 +20,8 @@ mod view;
 pub mod wire;
 
 pub use channel::{
-    AgentChannel, CallError, Client, ConnectError, Push, RawStream, Welcome, connect, connect_raw,
+    AgentChannel, CallError, Client, ConnectError, HANDSHAKE_TIMEOUT, Push, RawStream, Welcome,
+    connect, connect_raw,
 };
 pub use machine::{EXECUTABLE_CHANGED, Ended, Launch, QUIT};
 pub use run::{AgentOptions, Resident, run, run_resident};
