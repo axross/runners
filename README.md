@@ -17,19 +17,24 @@ procedure and states what has and has not been verified on a real host. The CLI
 checks a host configuration, its `build` command builds the runner image, its
 `start`, `stop`, `restart`, and `status` commands run a host's pools, and its
 `diagnostics` command exports what a diagnostics-enabled pool left. The axpc host
-runs its pools with a released `marshal`. The agent-host configuration is not here
-yet. Layout:
+runs its pools with a released `marshal`. On the axmc host, an Apple silicon Mac,
+`marshal` runs each Linux pool's jobs in a fresh Tart Ubuntu VM that is cloned from
+a golden VM, on Softnet, with no Docker Desktop, and `marshal build --profile axmc`
+makes the golden VM.
+[macOS Runner Host](./docs/operations/macos-runner-host.md) owns that procedure and
+states what has and has not been run on the Mac. The agent-host configuration is not
+here yet. Layout:
 
-| Path                            | Holds                                                                                                                                                     | State   |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| `images/actions-runner/`        | The runner image: GitHub's runner image plus build dependencies, pinned by digest                                                                         | Present |
-| `hosts/windows-docker-desktop/` | An example configuration for the axpc host profile, and the reference for its fields                                                                      | Present |
-| `cli/`                          | The CLI: `validate` checks a host configuration, `build` builds the runner image, and `start`, `stop`, `restart`, `status`, and `diagnostics` run a host  | Present |
-| `app/`                          | The Windows app: a notification-area icon and main window for the resident agent, which its executable also runs; [App](./docs/operations/app.md) owns it | Present |
-| `release/`                      | The pinned semantic-release tooling that `release.yaml` runs to tag and publish the CLI's releases                                                        | Present |
-| `hosts/macos/`                  | An example configuration for the macOS host profile, `axmc`                                                                                               | Present |
-| `agent-hosts/claude-code/`      | WSL 2 service units and templates for Claude Code Remote Control                                                                                          | Planned |
-| `agent-hosts/amp/`              | WSL 2 service units and templates for Amp runners                                                                                                         | Planned |
+| Path                            | Holds                                                                                                                                                           | State   |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `images/actions-runner/`        | The runner image: GitHub's runner image plus build dependencies, pinned by digest                                                                               | Present |
+| `hosts/windows-docker-desktop/` | An example configuration for the axpc host profile, and the reference for its fields                                                                            | Present |
+| `cli/`                          | The CLI: `validate` checks a host configuration, `build` builds the runner image, and `start`, `stop`, `restart`, `status`, and `diagnostics` run a host        | Present |
+| `app/`                          | The Windows app: a notification-area icon and main window for the resident agent, which its executable also runs; [App](./docs/operations/app.md) owns it       | Present |
+| `release/`                      | The pinned semantic-release tooling that `release.yaml` runs to tag and publish the CLI's releases                                                              | Present |
+| `hosts/macos/`                  | An example configuration for the macOS host profile, `axmc`, whose Linux pools run in Tart VMs; see [macOS Runner Host](./docs/operations/macos-runner-host.md) | Present |
+| `agent-hosts/claude-code/`      | WSL 2 service units and templates for Claude Code Remote Control                                                                                                | Planned |
+| `agent-hosts/amp/`              | WSL 2 service units and templates for Amp runners                                                                                                               | Planned |
 
 This repository is public. Its GitHub Actions CI and review jobs run on
 GitHub-hosted runners, never on a self-hosted one; see [Security](./docs/conventions/security.md).

@@ -96,8 +96,16 @@ async fn the_log_continues_in_a_new_file_and_ten_are_kept() {
     sorted.sort();
     sorted.dedup();
     assert_eq!(names, sorted, "the names rise with time");
-    let newest = std::fs::read_to_string(files.last().unwrap()).unwrap();
-    assert!(newest.contains("Resuming"), "{newest}");
+    // each start logs "Resuming" and then the refusal, and a roll can fall between the
+    // two: the log ends with the refusal in the newest file, and the "Resuming" before it
+    // is in that file or the one before
+    let older = std::fs::read_to_string(&files[files.len() - 2]).unwrap();
+    let newest = std::fs::read_to_string(&files[files.len() - 1]).unwrap();
+    let last = newest.lines().last().unwrap_or_default();
+    assert!(last.contains("there is no configuration"), "{newest}");
+    let tail = format!("{older}{newest}");
+    let lines: Vec<_> = tail.lines().collect();
+    assert!(lines[lines.len() - 2].contains("Resuming"), "{tail}");
     for file in &files {
         let size = std::fs::metadata(file).unwrap().len();
         assert!(size < 400 + 400, "{file:?} is {size} bytes");

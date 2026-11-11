@@ -265,7 +265,10 @@ runs `cargo tauri build --no-bundle`, fails if the build changed a tracked file 
 left a file that is neither tracked nor ignored, and keeps the built
 `marshal-app.exe` as the run's artifact. It uses no cache, so `tauri-cli` compiles
 on every run, and its timeout is 60 minutes, an estimate until a run measures it.
-The workflow's release-build
+The workflow also builds the
+runner image for linux/arm64 on the hosted `ubuntu-24.04-arm` runner, in a job of its
+own that builds and never pushes and runs no smoke test, since those assume x86_64
+([#74](https://github.com/axross/runners/issues/74)). Its release-build
 job is the release build's dry run: it calls
 [`release-build.yaml`](../../.github/workflows/release-build.yaml), which builds the
 Windows x64 and macOS arm64 release binaries on their hosted runners, runs the

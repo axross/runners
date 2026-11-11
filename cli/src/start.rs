@@ -14,20 +14,24 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::command::{EXIT_FAILED, EXIT_OK, checkout_rule_note, load_plan, print_error};
 use crate::instance::channel::{ChannelServer, ClientError, exchange};
-use crate::instance::lifecycle::{Ended, Ending, Instance, Settings};
+use crate::instance::lifecycle::{Ended, Ending, Instance, Monitor, NoMonitor, Settings};
 use crate::instance::lock::{InstanceLock, LockError};
 use crate::instance::log_file::{StartLog, open_log_file};
 use crate::instance::protocol::{Incoming, Outcome, Request};
 use crate::instance::roots::Roots;
 use crate::instance::runtime_core::RuntimeCore;
 use crate::instance::source::FileSource;
-use crate::profile::Profile;
+use crate::macos::gate::NetworkGate;
+use crate::macos::monitor::{Cadence, SignalMonitor};
+use crate::macos::signals::Signals;
+use crate::profile::{Profile, host_refusal};
 use crate::runtime::backend::Backend;
 use crate::runtime::clock::SystemClock;
 use crate::runtime::docker::{DockerBackend, DockerConfig, JobLauncher, resolve_program};
 use crate::runtime::log::Log;
 use crate::runtime::registration::{GitHubRegistrar, HttpLimits};
-use crate::runtime::select::Runtime;
+use crate::runtime::tart::client::program_from_environment;
+use crate::runtime::tart::{TartBackend, TartClient, TartConfig, TartTimings, VmLauncher};
 use crate::summary::plan_summary;
 
 const RESUME_ANSWER_WITHIN: Duration = Duration::from_secs(10);
@@ -46,11 +50,6 @@ pub(crate) const ANSWERS_WITHIN: Duration = Duration::from_millis(500);
 pub(crate) const LOCK_HELD_ELSEWHERE: &str = "the instance lock is held, by another OS user or by an instance of this user \
      that is still starting or ending; the lock does not say which";
 
-/// what `start` says when a pool's runtime is not implemented, which on axmc is every
-/// pool.
-const VM_POOLS_REFUSED: &str =
-    "the configuration is valid, but this version of marshal cannot run axmc's VM pools yet";
-
 /// what `start` was given.
 pub struct StartRequest<'a> {
     pub config: &'a Path,
@@ -66,6 +65,9 @@ pub struct StartRequest<'a> {
 /// runs `start` and returns its exit code; messages before the log file opens go to
 /// `err`, and every line after goes through the log.
 pub fn start(request: &StartRequest<'_>, err: &mut dyn Write) -> u8 {
+    if let Some(refusal) = host_refusal(request.profile, cfg!(windows)) {
+        return print_error(err, &refusal);
+    }
     let roots = match Roots::resolve(request.test_root) {
         Ok(roots) => roots,
         Err(error) => return print_error(err, &error),
@@ -86,13 +88,6 @@ pub fn start(request: &StartRequest<'_>, err: &mut dyn Write) -> u8 {
             return EXIT_FAILED;
         }
     };
-    if !plan
-        .entries
-        .iter()
-        .all(|entry| Runtime::of_pool(plan.profile, entry.os).is_some_and(Runtime::is_implemented))
-    {
-        return print_error(err, &VM_POOLS_REFUSED);
-    }
     let (canonical, config_path) = match fs::canonicalize(request.config).and_then(|canonical| {
         std::path::absolute(request.config).map(|absolute| (canonical, absolute))
     }) {
@@ -228,17 +223,68 @@ async fn run_instance(parts: Parts<'_>, plan: crate::validate::Plan) -> u8 {
         "The instance is running; stop it with Ctrl+C or `marshal stop`. Its channel is {}.",
         server.address()
     ));
-    let config = DockerConfig {
-        program: parts.docker,
-        launcher: parts.launcher,
-        exporter: parts.exporter,
-        checkout: parts.checkout,
-        ..DockerConfig::default()
-    };
-    let backend = DockerBackend::new(config, SystemClock, parts.log.clone());
-    let core = RuntimeCore::new(&backend, &SystemClock, parts.registrar, log);
+    match parts.settings.profile {
+        Profile::Axpc => {
+            let config = DockerConfig {
+                program: parts.docker.clone(),
+                launcher: parts.launcher.clone(),
+                exporter: parts.exporter.clone(),
+                checkout: parts.checkout.clone(),
+                ..DockerConfig::default()
+            };
+            let backend = DockerBackend::new(config, SystemClock, parts.log.clone());
+            serve_instance(&backend, &NoMonitor, parts, plan, server, requests, sender).await
+        }
+        Profile::Axmc => {
+            let client = TartClient::new(TartConfig {
+                program: program_from_environment(),
+                ..TartConfig::default()
+            });
+            let launcher = vm_launcher(&parts.launcher);
+            let gate = NetworkGate::new();
+            let backend = TartBackend::new(
+                client,
+                launcher,
+                TartTimings::default(),
+                SystemClock,
+                parts.log.clone(),
+            )
+            .with_exporter(parts.exporter.clone(), parts.checkout.clone())
+            .with_network_gate(gate.clone());
+            let signals = Signals::from_environment();
+            let cadence = Cadence::for_source(signals.is_scripted());
+            let log = parts.log.clone();
+            let monitor = SignalMonitor::new(signals, &SystemClock, &*log, gate, cadence);
+            serve_instance(&backend, &monitor, parts, plan, server, requests, sender).await
+        }
+    }
+}
+
+/// the launcher of job VMs that matches the one of job containers: the shim where the
+/// containers have one, else the VM as a child of this process.
+fn vm_launcher(launcher: &JobLauncher) -> VmLauncher {
+    match launcher {
+        JobLauncher::Direct => VmLauncher::Direct,
+        #[cfg(unix)]
+        JobLauncher::Shim(program) => VmLauncher::Shim(program.clone()),
+    }
+}
+
+/// runs the instance on `backend` until it ends, and returns the exit code.
+async fn serve_instance<B: Backend, M: Monitor>(
+    backend: &B,
+    monitor: &M,
+    parts: Parts<'_>,
+    plan: crate::validate::Plan,
+    server: ChannelServer,
+    requests: mpsc::UnboundedReceiver<Incoming>,
+    sender: mpsc::UnboundedSender<Incoming>,
+) -> u8 {
+    let log: &dyn Log = &*parts.log;
+    let core = RuntimeCore::new(backend, &SystemClock, parts.registrar, log);
     let source = FileSource::new(parts.config_path, parts.settings.profile, log);
-    let instance = Instance::new(parts.settings, &backend, &SystemClock, &core, &source, log);
+    let instance = Instance::new(parts.settings, backend, &SystemClock, &core, &source, log)
+        .with_monitor(monitor);
     let force = || instance.force_removal();
     let ended = {
         // the receiver ends with this block, before the channel closes
@@ -269,6 +315,10 @@ async fn run_instance(parts: Parts<'_>, plan: crate::validate::Plan) -> u8 {
             log.warn("The instance ended because its image cannot run jobs.");
             EXIT_FAILED
         }
+        Ending::PrerequisiteRefused => {
+            log.warn("The instance ended because a host prerequisite refused.");
+            EXIT_FAILED
+        }
         Ending::Ordinary if ended.containers_removed && ended.kept.is_empty() => {
             log.info("The instance has stopped.");
             EXIT_OK
@@ -283,11 +333,19 @@ async fn run_instance(parts: Parts<'_>, plan: crate::validate::Plan) -> u8 {
         }
     };
     if !ended.kept.is_empty() {
-        log.warn(&format!(
-            "The instance has stopped and kept the diagnostic containers {}; the next start \
-             with their pools' diagnostics on exports and removes them.",
-            ended.kept.join(", ")
-        ));
+        if backend.deletes_leftovers_unexported() {
+            log.warn(&format!(
+                "The instance has stopped without exporting the diagnostic containers {}; \
+                 their job VMs are deleted without an export, so their evidence is lost.",
+                ended.kept.join(", ")
+            ));
+        } else {
+            log.warn(&format!(
+                "The instance has stopped and kept the diagnostic containers {}; the next start \
+                 with their pools' diagnostics on exports and removes them.",
+                ended.kept.join(", ")
+            ));
+        }
         return EXIT_FAILED;
     }
     code
@@ -478,10 +536,18 @@ pub(crate) fn hide_panic_messages() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::image::check::IMAGE_CHECK_BUDGET;
+    use crate::macos::prerequisites::RESUME_VERSION_BUDGET;
 
     #[test]
     fn a_resume_waits_ten_seconds_for_its_answer() {
         assert_eq!(RESUME_ANSWER_WITHIN, Duration::from_secs(10));
+    }
+
+    #[test]
+    fn a_resumes_reload_fits_its_wait_on_both_profiles() {
+        let axmc = RESUME_VERSION_BUDGET + IMAGE_CHECK_BUDGET;
+        assert!(axmc <= RESUME_ANSWER_WITHIN, "{axmc:?}");
     }
 
     #[test]

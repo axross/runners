@@ -28,6 +28,9 @@
 //!
 //! a `hold` job container stays until its entry leaves `containers` or exits, then
 //! exits 137, so `rm -f`, `stop` and `kill` end it as they would end a real one;
+//! with `FAKE_DOCKER_WATCH_PARENT` set, as the fake `tart` sets it when it runs this
+//! program for `tart exec`, it also ends when its parent process ends, so a test that
+//! kills the fake client leaves no command behind;
 //! a `longline` job container prints one line of [`LONG_LINE_BYTES`] bytes, the
 //! letters `a` to `z` in turn, then exits as an ordinary job does. every wait is
 //! bounded, so a test that fails does not leave the helper running.
@@ -41,7 +44,9 @@
 //!   which `image inspect`, `image ls`, `image rm`, `build` and `tag` read and
 //!   change;
 //! - `build` writes its standard input to `inv-<n>.stdin` and tags a new image
-//!   with its `--label`s;
+//!   with its `--label`s, and with the contract label whose value is the file
+//!   `build_contract` when there is one, as the Dockerfile's `LABEL` gives a real
+//!   image;
 //! - the files `info_hangs`, `inspect_hangs`, `build_hangs` (holding `tagged` to
 //!   tag before it hangs), `build_fails`, `build_stderr` (lines a build prints to
 //!   standard error), `tag_hangs` (holding `after` to tag
@@ -57,27 +62,33 @@
 //!   its directory entry and `metrics.txt`, whose text is `metrics_text` when that
 //!   file exists and ends with `final=observed` otherwise; `cp_mode` (`raw`, which
 //!   adds `raw-1.log`, `gap`, without the final observation, `bad`, with a
-//!   traversal name, `fail`, `hang`, `slow`, which waits 2 s first) changes it;
+//!   traversal name, `fail`, `hang`, which also ends with its parent when
+//!   `FAKE_DOCKER_WATCH_PARENT` is set, `slow`, which waits 2 s first) changes it;
 //! - `kill_fails` fails a `kill`;
 //! - `export` stands in for an exporter child that ignores its liveness pipe: it
 //!   waits without reading its standard input.
+
+// the fake `docker` records and waits as the other fakes do, and has no use for their
+// scripted hang, failure and flood or their `.env` file.
+#[allow(dead_code)]
+mod fake_support;
 
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use marshal_cli::image::contract::{
     BUILT_LABEL, CONTRACT_LABEL, CONTRACT_VERSION, RUNNER_RELEASED_LABEL, RUNNER_VERSION_LABEL,
 };
 use marshal_cli::image::definition::declared_label;
 
-const JIT_VARIABLE: &str = "ACTIONS_RUNNER_INPUT_JITCONFIG";
+use fake_support::{JIT_VARIABLE, claim_invocation, exists, publish_arguments, sleep_while, text};
+
 const PROBE_LABEL: &str = "runners.cpu-probe=1";
 const DIAGNOSTIC_LABEL: &str = "runners.diagnostic-lifecycle=1";
 const EXITED: &str = "exited";
-const LONGEST_WAIT: Duration = Duration::from_secs(60);
 const LONG_LINE_BYTES: usize = 150_000;
 
 fn main() -> ExitCode {
@@ -121,60 +132,16 @@ fn run() -> Result<u8, String> {
 }
 
 fn record(dir: &Path, arguments: &[String]) -> Result<fs::File, String> {
-    for number in 0..100_000 {
-        let stem = dir.join(format!("inv-{number:06}"));
-        let argv = stem.with_extension("argv");
-        let created = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&argv);
-        let Ok(mut file) = created else {
-            continue;
-        };
-        // the arguments come last, so a call a test can name already holds its
-        // lock and has written the rest
-        let alive =
-            fs::File::create(stem.with_extension("alive")).map_err(|error| error.to_string())?;
-        alive.lock().map_err(|error| error.to_string())?;
-        fs::write(stem.with_extension("pid"), std::process::id().to_string())
-            .map_err(|error| error.to_string())?;
-        record_process_group(&stem);
-        if let Some(value) = std::env::var_os(JIT_VARIABLE) {
-            fs::write(
-                stem.with_extension("jit"),
-                value.to_string_lossy().as_bytes(),
-            )
-            .map_err(|error| error.to_string())?;
-        }
-        file.write_all(arguments.join("\0").as_bytes())
-            .map_err(|error| error.to_string())?;
-        return Ok(alive);
+    let (stem, alive) = claim_invocation(dir)?;
+    if let Some(value) = std::env::var_os(JIT_VARIABLE) {
+        fs::write(
+            stem.with_extension("jit"),
+            value.to_string_lossy().as_bytes(),
+        )
+        .map_err(|error| error.to_string())?;
     }
-    Err("no invocation number".to_string())
-}
-
-/// records the process group this call runs in, where `ps` can tell it.
-#[cfg(unix)]
-fn record_process_group(stem: &Path) {
-    let output = std::process::Command::new("ps")
-        .args(["-o", "pgid=", "-p", &std::process::id().to_string()])
-        .output();
-    if let Ok(output) = output {
-        let _ = fs::write(stem.with_extension("pgid"), output.stdout);
-    }
-}
-
-#[cfg(not(unix))]
-fn record_process_group(_stem: &Path) {}
-
-fn exists(dir: &Path, flag: &str) -> bool {
-    dir.join(flag).exists()
-}
-
-fn text(dir: &Path, file: &str) -> Option<String> {
-    fs::read_to_string(dir.join(file))
-        .ok()
-        .map(|text| text.trim().to_string())
+    publish_arguments(&stem, arguments)?;
+    Ok(alive)
 }
 
 fn failing(dir: &Path, flag: &str) -> u8 {
@@ -438,7 +405,9 @@ fn copy(dir: &Path, source: &str) -> Result<u8, String> {
     match mode.as_str() {
         "fail" => return Ok(1),
         "hang" => {
-            sleep_while(|| true);
+            let parent = parent_id();
+            let watching = std::env::var_os("FAKE_DOCKER_WATCH_PARENT").is_some();
+            sleep_while(|| !watching || parent_id() == parent);
             return Ok(1);
         }
         "slow" => std::thread::sleep(Duration::from_secs(2)),
@@ -542,7 +511,9 @@ fn job(dir: &Path, name: &str, diagnostic: bool) -> Result<u8, String> {
         print_long_line(&mut std::io::stdout());
     }
     let code = if text(dir, "run_mode").as_deref() == Some("hold") {
-        sleep_while(|| running(dir, name));
+        let parent = parent_id();
+        let watching = std::env::var_os("FAKE_DOCKER_WATCH_PARENT").is_some();
+        sleep_while(|| running(dir, name) && (!watching || parent_id() == parent));
         137
     } else {
         let exit = text(dir, "run_exit")
@@ -554,18 +525,22 @@ fn job(dir: &Path, name: &str, diagnostic: bool) -> Result<u8, String> {
     Ok(code)
 }
 
+/// the process that started this one, which changes to another when that one ends.
+#[cfg(unix)]
+fn parent_id() -> u32 {
+    std::os::unix::process::parent_id()
+}
+
+#[cfg(not(unix))]
+fn parent_id() -> u32 {
+    0
+}
+
 fn print_long_line(out: &mut impl Write) {
     let line: Vec<u8> = (b'a'..=b'z').cycle().take(LONG_LINE_BYTES).collect();
     let _ = out.write_all(&line);
     let _ = out.write_all(b"\n");
     let _ = out.flush();
-}
-
-fn sleep_while(mut condition: impl FnMut() -> bool) {
-    let started = Instant::now();
-    while condition() && started.elapsed() < LONGEST_WAIT {
-        std::thread::sleep(Duration::from_millis(20));
-    }
 }
 
 #[derive(Clone)]
@@ -776,12 +751,15 @@ fn build(dir: &Path, arguments: &[&str]) -> Result<u8, String> {
         return Ok(1);
     }
     let tag = value_after(arguments, "--tag").ok_or("a build without --tag")?;
-    let labels = arguments
+    let mut labels: Vec<(String, String)> = arguments
         .windows(2)
         .filter(|pair| pair.first() == Some(&"--label"))
         .filter_map(|pair| pair.get(1).and_then(|label| label.split_once('=')))
         .map(|(key, value)| (key.to_string(), value.to_string()))
         .collect();
+    if let Some(contract) = text(dir, "build_contract") {
+        labels.push((CONTRACT_LABEL.to_string(), contract));
+    }
     let id = format!(
         "sha256:built-{}",
         stem.file_name().unwrap_or_default().to_string_lossy()
@@ -801,12 +779,13 @@ fn build(dir: &Path, arguments: &[&str]) -> Result<u8, String> {
     Ok(0)
 }
 
-/// the stem of the newest `inv-<n>` this call recorded.
+/// the stem of the newest `inv-<n>` this call recorded. It walks the claims, as a
+/// concurrent call's arguments may not be in place yet.
 fn latest_invocation(dir: &Path) -> Result<PathBuf, String> {
     let pid = std::process::id().to_string();
     (0..100_000)
         .map(|number| dir.join(format!("inv-{number:06}")))
-        .take_while(|stem| stem.with_extension("argv").exists())
+        .take_while(|stem| stem.with_extension("claim").exists())
         .filter(|stem| {
             fs::read_to_string(stem.with_extension("pid"))
                 .ok()

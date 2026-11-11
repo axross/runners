@@ -8,14 +8,17 @@ use std::time::Duration;
 use tokio::time::Instant;
 
 use crate::affinity::{affinity_count, affinity_offset, slot_offset};
-use crate::profile::Profile;
+use crate::profile::{Os, Profile};
 use crate::validate::{Entry, Plan, PlannedVolume, format_cpu_count};
 
-use super::backend::{Backend, DiagnosticRecord, Mount, StopRequest};
+use super::backend::{Backend, DiagnosticRecord, HostRequest, JobHost, Mount, StopRequest};
 use super::board::{Board, PoolState};
-use super::diagnostic::{STOP_GRACE, STOP_WITHIN, finalize_claimed, gap_text};
+use super::diagnostic::{
+    STOP_GRACE, STOP_WITHIN, StopClock, finalize_claimed, gap_text, warn_discarded,
+};
 use super::log::Log;
-use super::name::{cpu_probe_name, is_own_container_name};
+use super::name::cpu_probe_name;
+use super::select::Runtime;
 use super::token::{TokenFiles, TokenSource};
 
 const STALE_REMOVE_BUDGET: Duration = Duration::from_secs(120);
@@ -39,6 +42,9 @@ pub struct PoolSpec {
     /// where the pool's first slot starts among the affinity positions.
     pub cpu_offset: u64,
     pub memory_gb: u32,
+    /// the disk of each slot's virtual machine; `None` on a pool that runs
+    /// containers.
+    pub disk_gb: Option<u32>,
     pub volumes: Vec<PlannedVolume>,
     /// where the pool's evidence goes, when its diagnostics are on.
     pub diagnostic: Option<DiagnosticRecord>,
@@ -59,6 +65,7 @@ pub struct SlotSpec {
     pub cpu_count: u64,
     pub cpu_offset: u64,
     pub memory_gb: u32,
+    pub disk_gb: Option<u32>,
     pub mounts: Vec<Mount>,
     pub image: String,
     pub diagnostic: Option<DiagnosticRecord>,
@@ -76,20 +83,64 @@ impl fmt::Display for PlanError {
 
 impl std::error::Error for PlanError {}
 
-/// turns a valid axpc plan into pools, in the plan's order, and fails for any other
-/// profile.
-pub fn pools_from_plan(plan: &Plan) -> Result<Vec<PoolSpec>, PlanError> {
-    let (Profile::Axpc, Some(image)) = (plan.profile, plan.image_name.as_ref()) else {
-        return Err(PlanError(
-            "the container backend runs the axpc profile only",
-        ));
-    };
-    Ok(plan
-        .entries
+/// the image an axmc pool runs when the configuration names none.
+pub const DEFAULT_IMAGE_NAME: &str = "actions-runner:local";
+
+/// the image the plan's pools run: the configured name, or on axmc the default.
+#[must_use]
+pub fn image_name(plan: &Plan) -> &str {
+    plan.image_name.as_deref().unwrap_or(DEFAULT_IMAGE_NAME)
+}
+
+/// why `start` skips an axmc macOS pool.
+pub const MACOS_POOL_SKIPPED: &str = "macOS VM pools are not supported yet";
+
+/// what `start` says when every pool of the configuration is skipped.
+pub const NO_POOL_CAN_START: &str =
+    "No pool can start, because macOS VM pools are not supported yet";
+
+/// the names of the pools of `plan` that have no runtime on its host: on axmc, the
+/// macOS pools, which have no runtime yet. An axpc plan skips none.
+#[must_use]
+pub fn skipped_pools(plan: &Plan) -> Vec<&str> {
+    plan.entries
         .iter()
-        .enumerate()
-        .map(|(index, entry)| pool_from_entry(plan, index, entry, image))
-        .collect())
+        .filter(|entry| Runtime::of_pool(plan.profile, entry.os).is_none())
+        .map(|entry| entry.name.as_str())
+        .collect()
+}
+
+/// the warning `start` logs for a skipped pool.
+#[must_use]
+pub fn skip_warning(pool: &str) -> String {
+    format!("Skipping pool {pool}: {MACOS_POOL_SKIPPED}")
+}
+
+/// turns a valid axpc plan, or the Linux pools of an axmc plan, into pools, in the
+/// plan's order; an axmc macOS pool gets none (see [`skipped_pools`]), so a plan of
+/// macOS pools alone gives no pool.
+pub fn pools_from_plan(plan: &Plan) -> Result<Vec<PoolSpec>, PlanError> {
+    match plan.profile {
+        Profile::Axpc => {
+            let Some(image) = plan.image_name.as_ref() else {
+                return Err(PlanError(
+                    "the container backend runs the axpc profile only",
+                ));
+            };
+            Ok(plan
+                .entries
+                .iter()
+                .enumerate()
+                .map(|(index, entry)| pool_from_entry(plan, index, entry, image))
+                .collect())
+        }
+        Profile::Axmc => Ok(plan
+            .entries
+            .iter()
+            .filter(|entry| entry.os == Some(Os::Linux))
+            .map(|entry| vm_pool_from_entry(entry, image_name(plan)))
+            .collect()),
+    }
 }
 
 /// the settings of a diagnostics-enabled entry's evidence.
@@ -124,12 +175,37 @@ fn pool_from_entry(plan: &Plan, index: usize, entry: &Entry, image: &str) -> Poo
         cpu_count: affinity_count(entry),
         cpu_offset: affinity_offset(&plan.entries, index),
         memory_gb: entry.memory_gb,
+        disk_gb: None,
         volumes: entry.volumes.clone(),
         diagnostic: diagnostic_record(entry),
         image: image.to_string(),
         slot_offsets: (1..=entry.slots)
             .map(|slot| slot_offset(&plan.entries, index, slot))
             .collect(),
+    }
+}
+
+/// a Linux pool of virtual machines: each slot's machine has all of the pool's
+/// whole vCPUs and memory, so the job container's quota and affinity cover vCPUs 0
+/// to `cpus` - 1 and its memory limit is the machine's.
+fn vm_pool_from_entry(entry: &Entry, image: &str) -> PoolSpec {
+    PoolSpec {
+        path: entry.path.clone(),
+        name: entry.name.clone(),
+        owner: entry.owner.clone(),
+        repository: entry.repository.clone(),
+        slots: entry.slots,
+        token_path: PathBuf::from(&entry.token_path),
+        labels: entry.labels.clone(),
+        cpus: format_cpu_count(entry.cpus),
+        cpu_count: affinity_count(entry),
+        cpu_offset: 0,
+        memory_gb: entry.memory_gb,
+        disk_gb: entry.disk_gb,
+        volumes: entry.volumes.clone(),
+        diagnostic: diagnostic_record(entry),
+        image: image.to_string(),
+        slot_offsets: (1..=entry.slots).map(|_| 0).collect(),
     }
 }
 
@@ -156,6 +232,7 @@ impl PoolSpec {
                 cpu_count: self.cpu_count,
                 cpu_offset: *offset,
                 memory_gb: self.memory_gb,
+                disk_gb: self.disk_gb,
                 mounts: self.volumes.iter().map(Mount::from).collect(),
                 image: self.image.clone(),
                 diagnostic: self.diagnostic.clone(),
@@ -175,6 +252,21 @@ impl SlotSpec {
     #[must_use]
     pub fn label(&self) -> String {
         format!("{} slot {}", self.pool, self.number)
+    }
+
+    /// the host the slot's jobs run on.
+    #[must_use]
+    pub fn host_request(&self) -> HostRequest {
+        HostRequest {
+            host: JobHost {
+                pool: self.pool.clone(),
+                slot: self.number,
+            },
+            vcpus: self.cpu_count,
+            memory_gb: self.memory_gb,
+            disk_gb: self.disk_gb,
+            diagnostic: self.diagnostic.is_some(),
+        }
     }
 }
 
@@ -199,8 +291,15 @@ fn skip(log: &dyn Log, board: &Board, pool: &PoolSpec, reason: &str) {
 }
 
 /// admits one pool: reads its token from `tokens` and masks it in `log`, or skips the
-/// pool with a warning that names why. Returns whether it was admitted.
-pub fn admit_pool(pool: &PoolSpec, tokens: &dyn TokenSource, log: &dyn Log, board: &Board) -> bool {
+/// pool with a warning that names why, and shows an admitted pool as waiting for
+/// `engine`. Returns whether it was admitted.
+pub fn admit_pool(
+    pool: &PoolSpec,
+    engine: &'static str,
+    tokens: &dyn TokenSource,
+    log: &dyn Log,
+    board: &Board,
+) -> bool {
     match tokens.token(&pool.owner, &pool.repository, &pool.token_path) {
         Err(error) => {
             skip(log, board, pool, &format!("{}: {error}.", pool.path));
@@ -208,24 +307,29 @@ pub fn admit_pool(pool: &PoolSpec, tokens: &dyn TokenSource, log: &dyn Log, boar
         }
         Ok(token) => {
             log.mask(&token);
-            board.set_pool(&pool.name, PoolState::WaitingForDocker);
+            board.set_pool(&pool.name, PoolState::WaitingForEngine(engine));
             true
         }
     }
 }
 
-/// the first step of preparing the pools, needing no Docker: returns the pools
-/// whose token file reads, skipping the others with a warning; every token read is
-/// masked in `log`.
+/// the first step of preparing the pools, needing no engine: returns the pools
+/// whose token file reads, skipping the others with a warning, and shows them as
+/// waiting for `engine`; every token read is masked in `log`.
 #[must_use]
-pub fn admit_pools(pools: Vec<PoolSpec>, log: &dyn Log, board: &Board) -> Vec<PoolSpec> {
+pub fn admit_pools(
+    pools: Vec<PoolSpec>,
+    engine: &'static str,
+    log: &dyn Log,
+    board: &Board,
+) -> Vec<PoolSpec> {
     pools
         .into_iter()
-        .filter(|pool| admit_pool(pool, &TokenFiles, log, board))
+        .filter(|pool| admit_pool(pool, engine, &TokenFiles, log, board))
         .collect()
 }
 
-/// the second step, once Docker answers: removes each admitted pool's stale
+/// the second step, once the engine answers: removes each admitted pool's stale
 /// containers, prepares its volumes, and returns the pools that can run; a pool whose
 /// stale containers cannot be listed, whose labelled one remains, or whose volumes
 /// cannot be prepared is skipped with a warning, and it fails when none is left.
@@ -273,11 +377,18 @@ async fn clear_stale_containers<B: Backend>(
         .await
         .map_err(|error| error.to_string())?;
     let mut left = Vec::new();
+    let mut undeleted = Vec::new();
     for name in listing
         .names
         .iter()
-        .filter(|name| is_own_container_name(&pool.name, name))
+        .filter(|name| backend.is_own_name(&pool.name, name))
     {
+        if backend.deletes_leftovers_unexported() {
+            if !delete_leftover_host(backend, pool, name, log).await {
+                undeleted.push(name.clone());
+            }
+            continue;
+        }
         if listing.diagnostic.contains(name) {
             if !backend.retained().contains(name) {
                 left.push(name.clone());
@@ -296,6 +407,13 @@ async fn clear_stale_containers<B: Backend>(
             ));
         }
     }
+    if !undeleted.is_empty() {
+        return Err(format!(
+            "Job VMs that an earlier run left could not be deleted ({}); entry startup refused. \
+             Delete each with tart delete, then start again.",
+            undeleted.join(", ")
+        ));
+    }
     match &pool.diagnostic {
         Some(record) => {
             finalize_left(backend, log, record, &left).await;
@@ -303,6 +421,34 @@ async fn clear_stale_containers<B: Backend>(
             Ok(())
         }
         None => refuse_left(backend, log, pool, left).await,
+    }
+}
+
+/// deletes a job host an earlier process left, without an export, because a host
+/// that outlived its process is not trusted with a pool's evidence; a diagnostics-
+/// enabled pool reports the gap that leaves; returns whether the host is gone, because
+/// a pool whose leftover remains is not started, as with a labelled container.
+async fn delete_leftover_host<B: Backend>(
+    backend: &B,
+    pool: &PoolSpec,
+    name: &str,
+    log: &dyn Log,
+) -> bool {
+    log.warn(&format!(
+        "Deleting job VM '{name}' left over from an earlier run."
+    ));
+    if let Some(record) = &pool.diagnostic {
+        warn_discarded(log, record, name);
+    }
+    match backend
+        .remove_containers(&[name.to_string()], STALE_REMOVE_BUDGET)
+        .await
+    {
+        Ok(()) => true,
+        Err(error) => {
+            log.warn(&format!("Failed to delete job VM '{name}': {error}"));
+            false
+        }
     }
 }
 
@@ -325,7 +471,7 @@ async fn finalize_left<B: Backend>(
         .iter()
         .filter_map(|name| retained.claim(name))
         .collect();
-    for acted in finalize_claimed(backend, log, claims, Instant::now()).await {
+    for acted in finalize_claimed(backend, log, claims, StopClock::at(Instant::now())).await {
         let removed = if acted.finalized.removed {
             "removed"
         } else {

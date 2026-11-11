@@ -772,7 +772,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                     self.container_steps(failure.containers).await;
                     return CycleEnd::NothingToRun;
                 }
-                Ending::Ordinary => {}
+                Ending::Ordinary | Ending::PrerequisiteRefused => {}
             }
             self.log
                 .warn(&format!("The runtime core failed: {message}"));

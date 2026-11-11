@@ -9,15 +9,25 @@
 )]
 
 pub mod agent;
+#[cfg(unix)]
+pub mod axmc;
 pub mod docker;
+#[cfg(unix)]
+pub mod golden;
 pub mod host;
 pub mod instance;
+pub mod macos;
+#[cfg(unix)]
+pub mod rig;
+pub mod softnet;
 pub mod stub;
+pub mod tart;
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 
 pub const BINARY: &str = env!("CARGO_BIN_EXE_marshal");
 
@@ -47,6 +57,9 @@ pub fn stderr(output: &Output) -> String {
 }
 
 /// a directory under the system temporary directory that is removed when dropped.
+///
+/// On Unix its path has no link in it, because the product refuses a sink or a root with a
+/// link ancestor and macOS's temporary directory sits behind one.
 pub struct TempDir {
     path: PathBuf,
 }
@@ -60,6 +73,8 @@ impl TempDir {
             COUNTER.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir_all(&path).unwrap();
+        #[cfg(unix)]
+        let path = fs::canonicalize(path).unwrap();
         Self { path }
     }
 
@@ -79,6 +94,34 @@ impl TempDir {
         let path = self.write(relative, contents);
         make_private(&path);
         path
+    }
+}
+
+/// runs `program` once, as `probe` configures it, retrying while the kernel refuses with
+/// "text file busy". A child another test thread forks keeps a just-written file open
+/// for writing until it execs, so the first run of a fresh executable can be refused;
+/// once one run starts, no writer is left. The probe's exit code is ignored.
+pub fn settle_executable(program: &Path, probe: impl Fn(&mut Command)) {
+    const BUDGET: Duration = Duration::from_secs(10);
+    let started = Instant::now();
+    loop {
+        let mut command = Command::new(program);
+        probe(&mut command);
+        let result = command
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        match result {
+            Ok(_) => return,
+            Err(error)
+                if error.kind() == std::io::ErrorKind::ExecutableFileBusy
+                    && started.elapsed() < BUDGET =>
+            {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(error) => panic!("{} could not run: {error}", program.display()),
+        }
     }
 }
 
@@ -131,6 +174,7 @@ pub fn slot_spec(token: PathBuf) -> marshal_cli::runtime::pool::SlotSpec {
         cpu_count: 2,
         cpu_offset: 2,
         memory_gb: 16,
+        disk_gb: None,
         mounts: vec![marshal_cli::runtime::backend::Mount {
             volume: "example-repo-one-npm".to_string(),
             target: "/home/runner/.npm".to_string(),
@@ -150,7 +194,7 @@ pub async fn prepare_pools<B: marshal_cli::runtime::backend::Backend>(
 ) -> Result<Vec<marshal_cli::runtime::pool::PoolSpec>, marshal_cli::runtime::pool::NoPoolStartable>
 {
     use marshal_cli::runtime::pool::{NoPoolStartable, admit_pools, prepare_admitted};
-    let admitted = admit_pools(pools, log, board);
+    let admitted = admit_pools(pools, backend.engine_name(), log, board);
     if admitted.is_empty() {
         return Err(NoPoolStartable);
     }

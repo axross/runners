@@ -97,8 +97,8 @@ pub struct RunnerInfo {
     /// counting from 1.
     #[serde(default)]
     pub slot: u32,
-    /// `running`, `registering`, `backing_off` or `stopped`; an open set, so a reader
-    /// treats a word it does not know as [`RunnerState::Unknown`].
+    /// `running`, `registering`, `backing_off`, `held` or `stopped`; an open set, so a
+    /// reader treats a word it does not know as [`RunnerState::Unknown`].
     #[serde(default)]
     pub state: String,
     /// the name of what runs the runner's job, which today is a container.
@@ -118,6 +118,7 @@ pub enum RunnerState {
     Running,
     Registering,
     BackingOff,
+    Held,
     Stopped,
     /// a state this reader does not know; the runner's reason says what it means.
     Unknown(String),
@@ -130,6 +131,7 @@ impl RunnerState {
             "running" => Self::Running,
             "registering" => Self::Registering,
             "backing_off" => Self::BackingOff,
+            "held" => Self::Held,
             "stopped" => Self::Stopped,
             other => Self::Unknown(other.to_string()),
         }
@@ -510,6 +512,16 @@ impl Snapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_runner_state_words_are_known_except_those_a_reader_has_not_met() {
+        assert_eq!(RunnerState::of("held"), RunnerState::Held);
+        assert_eq!(RunnerState::of("backing_off"), RunnerState::BackingOff);
+        assert_eq!(
+            RunnerState::of("booting_vm"),
+            RunnerState::Unknown("booting_vm".to_string())
+        );
+    }
 
     fn pool(name: &str, runners: usize) -> PoolInfo {
         PoolInfo {
