@@ -242,7 +242,7 @@ Claude review request on it, and watching its activity. See
 
 **Amp Review Child Thread** - a fresh Amp thread an Amp run starts for one
 independent-review round; it posts its own review on the pull request and is
-archived afterwards. See
+archived afterwards when the plan-gate archive confirmation allows it. See
 [operations/development-workflow.md](./operations/development-workflow.md).
 
 **Plan-Gate Archive Confirmation** - the human's answer, collected at the plan

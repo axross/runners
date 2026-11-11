@@ -818,10 +818,12 @@ the only backstop.
 ## The Independent Review
 
 The review runs in a separate context, never the authoring session, whatever
-that session calls its own assessment. The Claude and Codex routes also run
-under a separate reviewer identity. The Amp route does not: its child thread
-posts under the same GitHub operator account and runs on the same
-infrastructure as its author. The maintainer accepts context independence for
+that session calls its own assessment. The Codex route also runs under a
+separate reviewer identity, and so does the Claude route, except when a run
+posts its request through the Claude GitHub App, whose `claude[bot]` identity
+the reviewer shares (see [Security](../conventions/security.md)). The Amp route
+does not: its child thread posts under the same GitHub operator account and
+runs on the same infrastructure as its author. The maintainer accepts context independence for
 that route, a fresh thread that carries none of the author's conversation, as
 [Loop Engineering's review-workflow default](../../.claude/skills/loop-engineering/references/review-workflow.md#default-independent-review-arrangement)
 allows. A run MUST NOT count in-session
