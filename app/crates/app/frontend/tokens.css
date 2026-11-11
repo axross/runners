@@ -1,0 +1,139 @@
+/*
+ * Marshal's colour tokens, in the roles and under the names of the Juicio design
+ * system (artifact version 1792195294-f7f1), which the design record chose.
+ *
+ * The values are copied from Radix Colors, @radix-ui/colors 3.0.0, licensed MIT
+ * (colors-LICENSE.txt beside this file is the package's notice, kept as the licence
+ * requires): the accent is Iris, the neutrals are slate, and the destructive role is
+ * ruby, which is what Juicio's destructive tokens hold. Nothing here is downloaded or
+ * imported at run time.
+ *
+ * Iris takes Juicio's accent roles step for step, apart from two choices the design
+ * record makes: the brand colour (the up mark, links, the selected tab) takes step 11
+ * in both themes, and the dark theme's hovered solid takes the light theme's step 10,
+ * because dark step 10 leaves white text on it at 4.4:1.
+ *
+ * The roles by Radix step, which each theme below fills:
+ *   neutral (slate)    app 1, subtle 2, rest 3, hovered 4, selected 5, subtle border 6,
+ *                      interactive border 7, hovered border 8, unselected control 10
+ *                      (light) or 9 (dark), text low 11, text high 12
+ *   accent (iris)      app 1, rest 3, hovered 4, border 6, solid 9, hovered solid 10,
+ *                      text high 12, brand 11
+ *   destructive (ruby) rest 3, hovered 4, interactive border 7, hovered border 8,
+ *                      solid 9, text low 11, text high 12
+ */
+
+:root {
+  color-scheme: light dark;
+
+  --text-neutral-on-solid: #ffffff;
+  --text-accent-on-solid: #ffffff;
+  --text-destructive-on-solid: #ffffff;
+  --solid-accent-rest: #5b5bd6;
+  --solid-accent-hovered: #5151cd;
+  --solid-destructive-rest: #e54666;
+  --scrim: rgba(0, 0, 0, 0.7);
+  --shadow-sheet:
+    0px 4px 6px -2px rgba(0, 0, 0, 0.05), 0px 10px 15px -3px rgba(0, 0, 0, 0.1);
+  --shadow-segmented-pill:
+    0px 2px 5px 0px rgba(0, 0, 0, 0.18), 0px 1px 1px 0px rgba(0, 0, 0, 0.08);
+}
+
+:root {
+  --background-neutral-app: #fcfcfd;
+  --background-neutral-subtle: #f9f9fb;
+  --component-neutral-rest: #f0f0f3;
+  --component-neutral-hovered: #e8e8ec;
+  --component-neutral-selected: #e0e1e6;
+  --border-neutral-subtle: #d9d9e0;
+  --border-neutral-interactive: #cdced6;
+  --border-neutral-hovered: #b9bbc6;
+  --border-neutral-unselected-control: #80838d;
+  --text-neutral-low: #60646c;
+  --text-neutral-high: #1c2024;
+
+  --background-accent-app: #fdfdff;
+  --component-accent-rest: #f0f1fe;
+  --component-accent-hovered: #e6e7ff;
+  --border-accent-subtle: #cbcdff;
+  --text-accent-high: #272962;
+  --text-accent-brand: #5753c6;
+
+  --component-destructive-rest: #feeaed;
+  --component-destructive-hovered: #ffdce1;
+  --border-destructive-interactive: #efacb8;
+  --border-destructive-hovered: #e592a3;
+  --text-destructive-low: #ca244d;
+  --text-destructive-high: #64172b;
+
+  /* Juicio's list ground and card: slate 1 under white cards in the light theme */
+  --list-card-ground: #fcfcfd;
+  --list-card-fill: #ffffff;
+
+  /* Juicio's shadows that differ by theme */
+  --shadow-list-card:
+    0px 0px 20px 0px rgba(0, 0, 0, 0.06), 0px 4px 12px 0px rgba(0, 0, 0, 0.04);
+  --shadow-text-field-rest: inset 0px 1px 2px 0px rgba(0, 0, 0, 0.1);
+  --shadow-text-field-error:
+    inset 0px 1px 2px 0px rgba(0, 0, 0, 0.1),
+    0px 0px 10px 0px rgba(229, 70, 102, 0.22);
+  --text-field-focus-glow: rgba(91, 91, 214, 0.28);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background-neutral-app: #111113;
+    --background-neutral-subtle: #18191b;
+    --component-neutral-rest: #212225;
+    --component-neutral-hovered: #272a2d;
+    --component-neutral-selected: #2e3135;
+    --border-neutral-subtle: #363a3f;
+    --border-neutral-interactive: #43484e;
+    --border-neutral-hovered: #5a6169;
+    --border-neutral-unselected-control: #696e77;
+    --text-neutral-low: #b0b4ba;
+    --text-neutral-high: #edeef0;
+
+    --background-accent-app: #13131e;
+    --component-accent-rest: #202248;
+    --component-accent-hovered: #262a65;
+    --border-accent-subtle: #3d3e82;
+    --text-accent-high: #e0dffe;
+    --text-accent-brand: #b1a9ff;
+
+    --component-destructive-rest: #3a141e;
+    --component-destructive-hovered: #4e1325;
+    --border-destructive-interactive: #883447;
+    --border-destructive-hovered: #b3445a;
+    --text-destructive-low: #ff949d;
+    --text-destructive-high: #fed2e1;
+
+    --list-card-ground: #000000;
+    --list-card-fill: #18191b;
+
+    --shadow-list-card: none;
+    --shadow-text-field-rest: inset 0px 1px 2px 0px rgba(0, 0, 0, 0.55);
+    --shadow-text-field-error:
+      inset 0px 1px 2px 0px rgba(0, 0, 0, 0.55),
+      0px 0px 10px 0px rgba(229, 70, 102, 0.3);
+    --text-field-focus-glow: rgba(110, 106, 222, 0.4);
+  }
+}
+
+/* Juicio's spacing, radii and control sizes */
+:root {
+  --space-x4: 4px;
+  --space-x8: 8px;
+  --space-x12: 12px;
+  --space-x16: 16px;
+  --space-x24: 24px;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-full: 9999px;
+  --control-height: 44px;
+  --button-height: 52px;
+  --pill-action-height: 32px;
+  --dialog-max-width: 360px;
+}
