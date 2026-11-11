@@ -256,8 +256,8 @@ further step has the helper open the control pipe and reads the live pipe's secu
 descriptor back with PowerShell 7, failing unless it grants the current user alone.
 Neither step needs a new action, permission, or secret. An `app-modes` job on a macOS
 hosted runner holds `contents: read` and runs clippy and the tests of the app's
-mode-dispatch crate, which covers the Unix shim's dispatch there without building the
-web view, and an `app` job on a Windows
+mode-dispatch crate, which covers the dispatch of the Unix shims there, then runs
+that crate's tests in the release profile, without building the web view, and an `app` job on a Windows
 hosted runner holds `contents: read` and builds the app's whole workspace: it
 installs `tauri-cli` with `cargo install --locked` at the version in
 `app/tauri-cli.version`, the one place that pin is set, lints and tests every crate,

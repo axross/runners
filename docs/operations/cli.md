@@ -2934,7 +2934,7 @@ the gates that cover it, so a change to the library knows what the app relies on
   change and the app move together.
 - The app reads the library for the protocol's types and client, the agent's entry
   and options, the token store's interface and refusals, the instance roots, the
-  hidden `export` and `shim` commands, and the `Secret` type that masks a token. It
+  hidden `export`, `shim` and `vm-shim` commands, and the `Secret` type that masks a token. It
   adds no message to the protocol: a new message follows [Version Rules](#version-rules).
 - `cli/helpers/fake_docker.rs` is also built as the `fake-docker` binary of the app's
   executable package, so the app's tests can run the exporter child against a fake
@@ -2971,8 +2971,10 @@ The `app` job in [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml
 on a Windows hosted runner: clippy and the tests over the whole workspace, then
 `cargo tauri build --no-bundle`, failing if the build changed or left a file. An
 `app-modes` job runs clippy and the tests of `marshal-modes` on a macOS hosted runner,
-which covers the Unix shim's dispatch there; it never builds the Tauri crate. Linux
-runs the same dispatch tests in `mise run check`. The advisory check,
+which covers the dispatch of both Unix shims, `shim` and `vm-shim`, there, and runs the
+crate's tests again in the release profile, where the debug-only variables are
+ignored; it never builds the Tauri crate. Linux runs the dispatch tests in the debug
+profile in `mise run check`. The advisory check,
 `cargo deny --locked check advisories` in `app/`, runs in
 [`rust-advisories.yaml`](../../.github/workflows/rust-advisories.yaml) beside the CLI's
 and is not part of `mise run check`; see [Development Workflow](./development-workflow.md).

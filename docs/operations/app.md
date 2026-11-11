@@ -45,6 +45,7 @@ argument decides its mode before Tauri starts, in the `marshal-modes` crate:
 | `agent running`, `agent stopped`           | The agent: the library's resident agent, started running the pools or waiting to be told to  |
 | `export` and its arguments                 | The diagnostics exporter child, which the agent starts for a diagnostic container's evidence |
 | `shim` and its arguments                   | On Unix only, the shim a diagnostic container's `docker run` goes through                    |
+| `vm-shim` and its arguments                | On Unix only, the shim that holds one Tart VM's `tart run`, for the axmc runtime             |
 | `agent` with anything else                 | Refused with exit status 2                                                                   |
 
 The hidden modes are internal. They have no window, no icon and no console, and no
@@ -78,8 +79,9 @@ They are the names the command line's `start` reads. A release build ignores all
 them: the `marshal-modes` crate reads them only when `debug_assertions` is on, so no
 environment moves a release build's lock, channel, files, `docker` or GitHub address.
 [Security](../conventions/security.md#the-app-surface) records why. The crate has a
-test of that in the release profile, but no CI step builds the app's crates in that
-profile yet, unlike the library's own options, which a Linux step runs in it.
+test of that in the release profile, which the `app-modes` job runs on a macOS hosted
+runner with `cargo test --release`, as a Linux step runs the library's own options in
+that profile. `mise run check` runs the crate's tests in the debug profile only.
 
 ## The Agent and the App's Session
 
@@ -187,6 +189,14 @@ security policy is in [`tauri.conf.json`](../../app/crates/app/tauri.conf.json) 
 menu show for a snapshot is computed in the `marshal-view` crate, which has no
 operating system dependency; the page only draws the view it is given and sets every
 string through `textContent`.
+
+A runner row writes its state out beside a mark: "Container running" with a check,
+"Registering" with a ring, "Backing off" and "Held" with the history mark, and
+"Stopped" with a square. A backing-off or held runner shows the agent's reason under
+its state, and a held one is a runner whose job host a host prerequisite refuses, so
+its reason says which. A state the app does not know shows the runner's own reason as
+its words, with a dash, or the state's word when there is no reason, as the version
+rules in [CLI](./cli.md#version-rules) require.
 
 | File                                                | Holds                                                                                                          |
 | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
@@ -394,7 +404,7 @@ does not take a build for a host that has run it:
 
 - **Run on every pull request:** the checks of [The App Workspace](./cli.md#the-app-workspace)
   on Linux, the Windows job's clippy, tests and `cargo tauri build --no-bundle`, and
-  the mode dispatch on macOS.
+  the mode dispatch on macOS, in the debug profile and then in the release profile.
 - **Run only by the Windows job:** the app starting its own executable in agent mode
   and connecting to it, and quitting it; a second
   app reusing the first's agent; the exporter child against `fake-docker`; a silent
