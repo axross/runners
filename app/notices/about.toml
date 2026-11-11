@@ -1,0 +1,20 @@
+# cargo-about's configuration for the app's licence notices; generate.sh runs it and
+# docs/operations/cli.md describes the notices. The licences accepted are the ones
+# ../deny.toml allows or excepts, so a crate under another licence stops both.
+accepted = [
+  "MIT",
+  "Apache-2.0",
+  "Unicode-3.0",
+  "ISC",
+  "BSD-3-Clause",
+  "0BSD",
+  "MPL-2.0",
+  "Zlib",
+]
+
+# the executable links neither the build scripts' crates nor the tests'.
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+
+# the app's own crates are unpublished and carry no licence field.
+private = { ignore = true }
