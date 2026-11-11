@@ -5,7 +5,7 @@
 
 use marshal_view::{GlyphColour, IconState, TaskbarMode};
 
-use crate::provisional::SIZES;
+use crate::glyphs::SIZES;
 
 /// what reading the taskbar's mode gave.
 #[derive(Debug, Clone, PartialEq, Eq)]
