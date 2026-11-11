@@ -1,7 +1,8 @@
 # pins the lint and format toolchain, so a local run and CI use the same tool
 # versions; README.md documents the tasks and docs/operations/agent-sessions.md
-# the hooks that call them. cli/rust-toolchain.toml pins the Rust toolchain and
-# .agents/install-rust provisions it, so it is not a mise tool.
+# the hooks that call them. cli/rust-toolchain.toml pins the Rust toolchain, app/
+# names the same channel, and .agents/install-rust provisions it, so it is not a mise
+# tool.
 
 [tools]
 # release.yaml installs this Node with actions/setup-node, which Dependabot does not
@@ -73,14 +74,76 @@ depends = ["rust:require", "fetch:rust"]
 dir = "cli"
 run = "cargo deny --locked check bans licenses sources"
 
+# the app's workspace under app/ holds the platform-independent crates and the Tauri
+# crate. Only the former build without the web view's libraries, so the lint and test
+# tasks name them; the Windows job in merge-checks.yaml builds, lints and tests the
+# whole workspace.
+[tasks."fetch:app"]
+description = "Fetch the crates in app/Cargo.lock, which cargo deny reads"
+depends = ["rust:require"]
+dir = "app"
+run = "cargo fetch --locked"
+
+[tasks."format:app"]
+description = "Rewrite the app's Rust files with rustfmt"
+depends = ["rust:require"]
+dir = "app"
+run = "cargo fmt --all"
+
+[tasks."format:check:app"]
+description = "Fail when rustfmt would change a Rust file of the app"
+depends = ["rust:require"]
+dir = "app"
+run = "cargo fmt --all --check"
+
+[tasks."lint:app"]
+description = "Lint the app's platform-independent crates with clippy, warnings as errors; the Tauri crate is linted by the Windows job"
+depends = ["rust:require"]
+dir = "app"
+run = "cargo clippy --locked --package marshal-modes --package marshal-view --all-targets -- -D warnings"
+
+[tasks."test:app"]
+description = "Run the tests of the app's platform-independent crates: the mode dispatch and the view"
+depends = ["rust:require"]
+dir = "app"
+run = "cargo test --locked --package marshal-modes --package marshal-view"
+
+[tasks."deny:app"]
+description = "Check the crates the app's executable links for banned versions, unreviewed licences, and other sources, for the Windows and macOS builds; the advisory check runs in its own workflow"
+depends = ["rust:require", "fetch:app"]
+dir = "app"
+run = "cargo deny --locked check bans licenses sources"
+
+[tasks."check:app-pins"]
+description = "Check that both Rust toolchain files name one channel and that app/tauri-cli.version holds one exact version"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+channel() {
+  sed -n 's/^channel *= *"\(.*\)" *$/\1/p' "$1"
+}
+cli="$(channel cli/rust-toolchain.toml)"
+app="$(channel app/rust-toolchain.toml)"
+if [ -z "$cli" ] || [ "$cli" != "$app" ]; then
+  echo "error: cli/rust-toolchain.toml names '${cli}' and app/rust-toolchain.toml names '${app}'; they must name one channel." >&2
+  exit 1
+fi
+echo "Both toolchain files name ${cli}."
+echo "tauri-cli is pinned at $(bash .github/scripts/tauri-cli-version.sh)."
+'''
+
+[tasks."test:tauri-cli-version"]
+description = "Check the script that reads the tauri-cli pin and refuses a file that is not one exact version"
+run = "bash .github/scripts/tests/test-tauri-cli-version.sh"
+
 [tasks.format]
-description = "Rewrite Markdown, JSON, YAML, and TypeScript files with Prettier, and Rust files with rustfmt"
-depends = ["format:rust"]
+description = "Rewrite Markdown, JSON, YAML, and TypeScript files with Prettier, and Rust files with rustfmt, the app's included"
+depends = ["format:rust", "format:app"]
 run = "prettier --write ."
 
 [tasks."format:check"]
 description = "Fail when Prettier or rustfmt would change a file"
-depends = ["format:check:rust"]
+depends = ["format:check:rust", "format:check:app"]
 run = "prettier --check ."
 
 [tasks."lint:markdown"]
@@ -210,6 +273,7 @@ depends = [
   "lint:actions",
   "lint:powershell",
   "lint:rust",
+  "lint:app",
 ]
 
 [tasks."check:links"]
@@ -296,7 +360,7 @@ description = "Run the signed package check, which verify-macos runs, against st
 run = "bash .github/scripts/tests/test-signed-pkg-refusals.sh"
 
 [tasks.check]
-description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, release script tests, release shape check and its test, sign-macos, signed package and assemble tests, installer version and WiX fetch tests, install block tests, Rust tests, Rust dependency check"
+description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, release script tests, release shape check and its test, sign-macos, signed package and assemble tests, installer version and WiX fetch tests, install block tests, Rust tests, Rust dependency check, the app's toolchain and tauri-cli pin checks, tests and dependency check"
 depends = [
   "format:check",
   "lint",
@@ -316,4 +380,8 @@ depends = [
   "test:install-blocks",
   "test:rust",
   "deny:rust",
+  "check:app-pins",
+  "test:tauri-cli-version",
+  "test:app",
+  "deny:app",
 ]
