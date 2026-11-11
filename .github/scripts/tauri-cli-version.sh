@@ -2,7 +2,7 @@
 # prints the exact version of `tauri-cli` that app/tauri-cli.version pins, and
 # refuses a file that is not one plain X.Y.Z line, so a range or a prefix never
 # reaches `cargo install`. the one pin the app's CI job reads, and the release
-# build reads later; see docs/operations/cli.md.
+# build reads later; see docs/operations/app.md.
 set -euo pipefail
 
 if [[ $# -gt 1 ]]; then

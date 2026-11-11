@@ -1,5 +1,5 @@
 # cargo-about's configuration for the app's licence notices; generate.sh runs it and
-# docs/operations/cli.md describes the notices. The licences accepted are the ones
+# docs/operations/app.md describes the notices. The licences accepted are the ones
 # ../deny.toml allows or excepts, so a crate under another licence stops both.
 accepted = [
   "MIT",

@@ -10,7 +10,8 @@ The repository holds the entry files for agent sessions, the agent configuration
 for Claude Code and Amp, the project documentation, the pinned lint toolchain, and
 the first runner material: one runner image and a Rust command line tool, the CLI,
 `marshal`, that runs it for several repositories from a Windows machine with Docker
-Desktop.
+Desktop, and a Windows notification-area app that runs the same agent, which CI
+builds and nothing installs or releases yet.
 [Windows Runner Host](./docs/operations/windows-runner-host.md) owns the operator
 procedure and states what has and has not been verified on a real host. The CLI
 checks a host configuration, its `build` command builds the runner image, its
@@ -19,15 +20,16 @@ checks a host configuration, its `build` command builds the runner image, its
 runs its pools with a released `marshal`. The agent-host configuration is not here
 yet. Layout:
 
-| Path                            | Holds                                                                                                                                                    | State   |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| `images/actions-runner/`        | The runner image: GitHub's runner image plus build dependencies, pinned by digest                                                                        | Present |
-| `hosts/windows-docker-desktop/` | An example configuration for the axpc host profile, and the reference for its fields                                                                     | Present |
-| `cli/`                          | The CLI: `validate` checks a host configuration, `build` builds the runner image, and `start`, `stop`, `restart`, `status`, and `diagnostics` run a host | Present |
-| `release/`                      | The pinned semantic-release tooling that `release.yaml` runs to tag and publish the CLI's releases                                                       | Present |
-| `hosts/macos/`                  | An example configuration for the macOS host profile, `axmc`                                                                                              | Present |
-| `agent-hosts/claude-code/`      | WSL 2 service units and templates for Claude Code Remote Control                                                                                         | Planned |
-| `agent-hosts/amp/`              | WSL 2 service units and templates for Amp runners                                                                                                        | Planned |
+| Path                            | Holds                                                                                                                                                     | State   |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `images/actions-runner/`        | The runner image: GitHub's runner image plus build dependencies, pinned by digest                                                                         | Present |
+| `hosts/windows-docker-desktop/` | An example configuration for the axpc host profile, and the reference for its fields                                                                      | Present |
+| `cli/`                          | The CLI: `validate` checks a host configuration, `build` builds the runner image, and `start`, `stop`, `restart`, `status`, and `diagnostics` run a host  | Present |
+| `app/`                          | The Windows app: a notification-area icon and main window for the resident agent, which its executable also runs; [App](./docs/operations/app.md) owns it | Present |
+| `release/`                      | The pinned semantic-release tooling that `release.yaml` runs to tag and publish the CLI's releases                                                        | Present |
+| `hosts/macos/`                  | An example configuration for the macOS host profile, `axmc`                                                                                               | Present |
+| `agent-hosts/claude-code/`      | WSL 2 service units and templates for Claude Code Remote Control                                                                                          | Planned |
+| `agent-hosts/amp/`              | WSL 2 service units and templates for Amp runners                                                                                                         | Planned |
 
 This repository is public. Its GitHub Actions CI and review jobs run on
 GitHub-hosted runners, never on a self-hosted one; see [Security](./docs/conventions/security.md).
@@ -47,10 +49,11 @@ Prettier, markdownlint-cli2, shellcheck, hadolint, actionlint, PowerShell, and j
 PSScriptAnalyzer is a PowerShell module rather than a mise tool, so
 `mise run lint:powershell` downloads its pinned version from the PowerShell
 Gallery the first time it runs, and refuses it unless its SHA-256 matches the pin
-in `mise.toml`. `cargo-deny` is a mise tool too.
+in `mise.toml`. `cargo-deny` and `cargo-about` are mise tools too.
 
 The CLI needs the Rust toolchain that [`cli/rust-toolchain.toml`](./cli/rust-toolchain.toml)
-pins. Rust is not a mise tool. On Linux x86-64, run the provisioning script, then
+pins, and the app's [`app/rust-toolchain.toml`](./app/rust-toolchain.toml) names the same
+channel. Rust is not a mise tool. On Linux x86-64, run the provisioning script, then
 put `~/.cargo/bin` on `PATH`:
 
 ```bash
@@ -96,6 +99,11 @@ Run from the repository root.
 | `mise run test:install-blocks`      | Run the documented macOS install blocks of `docs/operations/cli.md` under bash with the pinned `jq` and stand-ins for `gh`, `pkgutil`, `xattr`, `cp`, `sudo`, `installer`, and `marshal`: the optional check, migration, uninstall, and bare-binary blocks, with every refusal produced and what ran and what did not asserted. The Install Blocks job in CI runs it under zsh too, and the Windows blocks under Windows PowerShell 5.1 and PowerShell 7                                                                                                                                                                                                           |
 | `mise run test:rust`                | Run the CLI's unit and integration tests, which read the shared fixtures                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `mise run deny:rust`                | `cargo deny` bans, licenses, and sources over the CLI's crates; the advisory check runs in its own workflow                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `mise run lint:app`                 | clippy over the app's platform-independent crates (the mode dispatch, the view, the session, and the icon), all targets, warnings as errors; the Tauri crate needs the web view and is linted by the Windows CI job                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `mise run test:app`                 | Run the tests of those four app crates                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `mise run deny:app`                 | `cargo deny` bans, licenses, and sources over the crates the app's executable links, for the Windows and macOS targets; the advisory check runs in its own workflow                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `mise run check:notices`            | Fail when the checked-in licence notices in `app/notices/` no longer match `app/Cargo.lock`; `mise run notices:app` writes them again                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `mise run check:app-pins`           | Fail unless the CLI's and the app's toolchain files name one channel and `app/tauri-cli.version` holds one exact version; `mise run test:tauri-cli-version` tests the script that reads it                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `mise run check`                    | Run every gate above except the writing `format`; this is what CI runs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 The installed copies under `.claude/skills/` are generated and are excluded from
