@@ -638,7 +638,7 @@ socket of the VM it runs in, so a job step can run `docker` against that VM's ow
 Docker Engine. The socket belongs to a VM that one job uses and that is deleted
 afterwards, and never to a host. The Docker runtime's list, `job_run_arguments`,
 mounts none, and `vm_job_run_arguments` adds the mount to it and to nothing else:
-the CPU probe and the volume commands still carry no mount. Tests in
+the CPU probe and the volume commands still carry no socket mount. Tests in
 `docker_backend.rs`, `tart_backend.rs` and `runtime::docker_args` hold both sides.
 The socket's group is the VM's `docker` group, which the golden VM creates with
 `golden::pins::DOCKER_GROUP_ID` and which the runner image's `docker` group matches;
