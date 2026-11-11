@@ -242,6 +242,10 @@ pub struct Session<D: Dial> {
     starts_left: u32,
     retry_at: Option<Instant>,
     end_by: Option<Instant>,
+    /// the user quit while an attempt to reach the agent was under way. The attempt may
+    /// have started the agent, so it is quit once the attempt connects, and with none to
+    /// reach the app ends alone.
+    quit_when_reached: bool,
     next_tick: Instant,
     recheck: Option<Instant>,
     ended: Option<Ended>,
@@ -279,6 +283,7 @@ impl<D: Dial> Session<D> {
             starts_left: 1,
             retry_at: None,
             end_by: None,
+            quit_when_reached: false,
             next_tick: Instant::now() + TICK,
             recheck: None,
             ended: None,
@@ -634,8 +639,16 @@ impl<D: Dial> Session<D> {
 
     fn quit(&mut self) {
         let Some(link) = self.link() else {
-            if !matches!(self.stage, Stage::Quitting) {
-                self.ended = Some(Ended::AppOnly);
+            match self.stage {
+                Stage::Quitting => {}
+                // the attempt may be starting the agent: a Quit now must not leave one
+                // behind, running the runners with no app
+                Stage::Attempting => {
+                    self.quit_when_reached = true;
+                    self.connection = Connection::Quitting;
+                    self.refresh();
+                }
+                Stage::Live | Stage::Waiting | Stage::Parked => self.ended = Some(Ended::AppOnly),
             }
             return;
         };
@@ -754,6 +767,9 @@ impl<D: Dial> Session<D> {
                 if generation == self.generation {
                     self.attempt = None;
                     self.found(attempt);
+                    if std::mem::take(&mut self.quit_when_reached) {
+                        self.quit_what_was_reached();
+                    }
                     self.refresh();
                 }
             }
@@ -819,10 +835,28 @@ impl<D: Dial> Session<D> {
         self.refresh();
     }
 
+    /// the user quit during an attempt, which has now ended: an agent it reached is
+    /// quit, and with none the app ends alone.
+    fn quit_what_was_reached(&mut self) {
+        if self.link().is_some() {
+            self.quit();
+        } else {
+            self.ended = Some(Ended::AppOnly);
+        }
+    }
+
     fn quit_answered(&mut self, outcome: Result<(), Failure>) {
         match outcome {
             Ok(()) => self.end_by = Some(Instant::now() + QUIT_LINGER),
             Err(Failure::Lost) => self.ended = Some(Ended::Quit),
+            Err(Failure::TimedOut) => {
+                // the connection is open and the agent may still be stopping, so the app
+                // stays until the agent says it is ending or the connection closes
+                self.log.warn(&format!(
+                    "The agent did not answer quit in {} s; waiting for it to end.",
+                    QUIT_WITHIN.as_secs()
+                ));
+            }
             Err(failure) => {
                 // the agent did not quit, so the app does not end and leave it running
                 self.log
@@ -848,7 +882,7 @@ where
 {
     tokio::time::timeout(limit, call)
         .await
-        .unwrap_or(Err(Failure::Lost))
+        .unwrap_or(Err(Failure::TimedOut))
 }
 
 /// whether the agent's snapshot shows what `pending` was waiting for.

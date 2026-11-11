@@ -550,3 +550,40 @@ fn the_questions_asked_before_the_actions_that_cost_something() {
         "an unavailable action asks nothing"
     );
 }
+
+#[test]
+fn the_quit_question_while_marshal_reaches_its_agent_says_it_waits_and_quits_it() {
+    let running = load("running");
+    let reaching = [
+        view_in(Connection::StartingMarshal, None),
+        view_in(
+            Connection::LostContact {
+                last_heard_ms: at(3, 50, 0),
+                cause: Cause::Dropped,
+            },
+            Some(&running),
+        ),
+    ];
+    for view in &reaching {
+        let question = menu_item(view, &Action::Quit)
+            .confirmation
+            .as_ref()
+            .expect("a question");
+        assert!(
+            question.body.contains("Quit waits for it, stops it"),
+            "{}",
+            question.body
+        );
+        assert!(
+            !question.body.contains("keep running"),
+            "an agent this app is starting is not left running: {}",
+            question.body
+        );
+    }
+    let not_answering = view_in(Connection::NotAnswering, Some(&running));
+    let question = menu_item(&not_answering, &Action::Quit)
+        .confirmation
+        .as_ref()
+        .expect("a question");
+    assert!(question.body.contains("any runners keep running"));
+}

@@ -39,8 +39,11 @@ pub enum Failure {
     },
     /// the agent refused, or failed, in its own words.
     Refused(String),
-    /// the connection ended, or the call took longer than it may.
+    /// the connection ended.
     Lost,
+    /// the call took longer than it may on a connection that is still open, so the
+    /// agent may yet do it.
+    TimedOut,
     /// the agent does not serve the method.
     NotServed(String),
     Other(String),
@@ -55,6 +58,9 @@ impl Failure {
             Self::Store { .. } => "The token store refused the request.".to_string(),
             Self::Refused(words) | Self::Other(words) => marshal_view::plain(words),
             Self::Lost => "Marshal has lost contact with the agent.".to_string(),
+            Self::TimedOut => {
+                "The agent has not answered yet. The list shows what it is doing.".to_string()
+            }
             Self::NotServed(method) => {
                 format!("This agent does not offer {}.", marshal_view::plain(method))
             }

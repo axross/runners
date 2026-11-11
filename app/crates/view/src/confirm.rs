@@ -2,6 +2,7 @@
 //! consequence, and mention running jobs only while a runner is up.
 
 use crate::control::{Action, Confirmation};
+use crate::input::Cause;
 use crate::state::{Context, Resident};
 
 const CANCEL: &str = "Cancel";
@@ -52,6 +53,17 @@ pub fn confirmation(context: &Context<'_>, action: &Action) -> Option<Confirmati
                 "Quit",
             ),
             Resident::Stopped(_) => question("Quit Marshal?", "Marshal and its agent end.", "Quit"),
+            // an attempt to reach, or to start, the agent is under way, and Quit waits for
+            // it rather than leave an agent it started behind
+            Resident::StartingMarshal
+            | Resident::LostContact {
+                cause: Cause::Dropped,
+                ..
+            } => question(
+                "Quit Marshal?",
+                "Marshal is still reaching its agent. Quit waits for it, stops it and its runners, and ends Marshal. If it cannot be reached, only Marshal ends.",
+                "Quit",
+            ),
             _ => question(
                 "Quit Marshal?",
                 "Marshal cannot reach its agent, so any runners keep running. This ends only the app.",

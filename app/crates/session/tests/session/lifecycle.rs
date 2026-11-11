@@ -408,6 +408,109 @@ async fn the_users_quit_ends_the_app_even_when_the_connection_never_closes() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_quit_while_the_agent_is_being_started_waits_for_it_and_quits_it() {
+    let (agent, connected) = Agent::new();
+    let world = World::default();
+    // the agent is started at once and its channel opens two seconds later
+    world.up_after_start(Answer::After(secs(2), Box::new(Answer::Agent(connected))));
+    let session = start(world);
+    session.wait(secs(1)).await;
+    assert_eq!(session.world.started(), [Launch::Running]);
+    assert_eq!(what(&session.screen.view()), "Starting Marshal");
+    session.handle.quit();
+    session.settle().await;
+    assert!(
+        !session.is_over(),
+        "the app does not end and leave the agent it just started running the runners"
+    );
+    assert_eq!(what(&session.screen.view()), "Quitting Marshal");
+    assert!(agent.calls().is_empty(), "there is no connection yet");
+    session.wait(secs(5)).await;
+    assert_eq!(agent.calls(), [crate::support::Called::Quit]);
+    agent.close();
+    assert_eq!(session.ended().await, Ended::Quit);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_quit_while_the_agent_is_being_started_and_never_comes_up_ends_only_the_app() {
+    let session = start(World::default());
+    session.wait(secs(1)).await;
+    assert_eq!(session.world.started(), [Launch::Running]);
+    session.handle.quit();
+    assert_eq!(session.ended().await, Ended::AppOnly);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_quit_while_the_agent_is_being_started_again_after_a_drop_quits_the_new_agent() {
+    let (first, connected) = Agent::new();
+    let world = World::default();
+    world.then(Answer::Agent(connected));
+    let session = start(world);
+    first.push(fixture("running"));
+    session.settle().await;
+    let (second, reconnected) = Agent::new();
+    session
+        .world
+        .up_after_start(Answer::After(secs(2), Box::new(Answer::Agent(reconnected))));
+    first.close();
+    session.wait(secs(1)).await;
+    assert_eq!(what(&session.screen.view()), "lost contact (dropped)");
+    session.handle.quit();
+    session.settle().await;
+    assert!(!session.is_over());
+    session.wait(secs(5)).await;
+    assert_eq!(second.calls(), [crate::support::Called::Quit]);
+    second.close();
+    assert_eq!(session.ended().await, Ended::Quit);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_quit_the_agent_is_slow_to_answer_does_not_end_the_app_while_the_connection_is_open() {
+    let (agent, connected) = Agent::new();
+    let gate = agent.hold("quit");
+    let world = World::default();
+    world.then(Answer::Agent(connected));
+    let session = start(world);
+    agent.push(fixture("running"));
+    session.settle().await;
+    session.handle.quit();
+    // past the longest quit waits, with the connection open and the answer not given
+    session.wait(secs(120)).await;
+    assert!(!session.is_over());
+    assert_eq!(what(&session.screen.view()), "Quitting Marshal");
+    assert!(
+        session
+            .log
+            .lines()
+            .iter()
+            .any(|line| line.contains("did not answer quit")),
+        "{:?}",
+        session.log.lines()
+    );
+    // the agent then says it is ending
+    agent.end("quit");
+    assert_eq!(session.ended().await, Ended::AgentEnded("quit".to_string()));
+    drop(gate);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_quit_the_agent_is_slow_to_answer_ends_the_app_when_the_connection_closes() {
+    let (agent, connected) = Agent::new();
+    let gate = agent.hold("quit");
+    let world = World::default();
+    world.then(Answer::Agent(connected));
+    let session = start(world);
+    agent.push(fixture("running"));
+    session.settle().await;
+    session.handle.quit();
+    session.wait(secs(120)).await;
+    assert!(!session.is_over());
+    agent.close();
+    assert_eq!(session.ended().await, Ended::Quit);
+    drop(gate);
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_quit_the_agent_refuses_leaves_the_app_running() {
     let (agent, connected) = Agent::new();
     agent.answer(

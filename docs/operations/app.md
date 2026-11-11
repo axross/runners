@@ -126,7 +126,18 @@ web view.
 - **Quit** stops every runner as Stop all does, cancelling a build first, then ends
   the agent and the app. After a successful quit the session can end as the agent's
   `quit` ending or as its own quit, depending on which arrives first; both end the
-  app.
+  app. A quit the agent does not answer in 45 s while the connection is open does
+  not end the app: the window keeps saying it is quitting, the log notes it, and the
+  app ends when the agent's `ending` arrives or the connection closes. An agent that
+  hangs therefore leaves the app quitting until `marshal-app.exe` is ended in Task
+  Manager. A Quit while an attempt to reach the agent is under way, at launch or
+  after a drop, may have started the agent, so it waits for the attempt: an agent it
+  reaches is quit, and with none the app ends alone.
+- **A call that takes too long.** Start all, Stop all, Build and a token call each
+  wait a bounded time for the agent's answer (40 s, and 10 s for a token). On a
+  connection that is still open a call that overruns says the agent has not
+  answered yet and leaves the list as it is, since the agent may still do it; it is
+  never reported as lost contact, which is only a connection that ended.
 - **The app ending** or being killed leaves the agent and its runners running, and
   the next launch reconnects to them.
 

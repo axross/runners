@@ -1130,9 +1130,11 @@ Residual risks, accepted on a single-user host:
   Store](#the-agent-keeps-tokens-in-the-operating-systems-store) says the same of the
   store.
 - An agent that hangs cannot be ended by Quit, so the goal that quitting leaves no
-  Marshal container or process holds only while the agent answers. The window says
-  how to end `marshal-app.exe` in Task Manager, and the next start removes the
-  containers it left.
+  Marshal container or process holds only while the agent answers. A Quit the agent
+  never answers keeps the app saying it is quitting until the agent's `ending` or the
+  connection's end, so the user ends `marshal-app.exe` in Task Manager. The window
+  says how only for an agent that does not answer its handshake. The next start
+  removes the containers it left.
 - Whether WebView2 enforces the policy, whether the agent, the exporter or one of
   their `docker` clients shows a console window (the agent is created with
   `DETACHED_PROCESS`, and the exporter and the clients with `CREATE_NO_WINDOW`, each

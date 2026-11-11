@@ -56,6 +56,36 @@ async fn an_action_the_agent_refuses_is_taken_back_and_its_words_are_returned() 
 }
 
 #[tokio::test(start_paused = true)]
+async fn an_action_that_takes_too_long_on_a_live_connection_is_not_lost_contact() {
+    let (agent, session) = connected("running").await;
+    let gate = agent.hold("stop_all");
+    let handle = session.handle.clone();
+    let call = tokio::spawn(async move { handle.act(Act::StopAll).await });
+    session.settle().await;
+    session.wait(secs(41)).await;
+    let error = call.await.unwrap().unwrap_err();
+    assert_eq!(
+        error,
+        "The agent has not answered yet. The list shows what it is doing."
+    );
+    assert_eq!(
+        what(&session.screen.view()),
+        "list",
+        "the connection is open, so contact is not lost"
+    );
+    assert!(
+        !session
+            .log
+            .lines()
+            .iter()
+            .any(|line| line.contains("lost contact")),
+        "{:?}",
+        session.log.lines()
+    );
+    drop(gate);
+}
+
+#[tokio::test(start_paused = true)]
 async fn stopping_the_build_is_the_agents_stop_all_and_shows_the_build_stopping() {
     let (agent, session) = connected("building").await;
     let gate = agent.hold("stop_all");
