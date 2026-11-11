@@ -335,7 +335,7 @@ impl<D: Dial> Session<D> {
     }
 
     fn now_ms(&self) -> u64 {
-        self.time.clock().now_ms
+        self.time.now_ms()
     }
 
     fn link(&self) -> Option<Arc<D::Link>> {

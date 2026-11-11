@@ -118,6 +118,12 @@ pub trait Launcher: Send + Sync + 'static {
 /// the time, wall-clock and local.
 pub trait TimeSource: Send + Sync + 'static {
     fn clock(&self) -> Clock;
+
+    /// the time alone in milliseconds since the Unix epoch, for a caller that needs no
+    /// local offset.
+    fn now_ms(&self) -> u64 {
+        self.clock().now_ms
+    }
 }
 
 /// the app's log; no line ever holds a token.
