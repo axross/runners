@@ -2035,6 +2035,7 @@ dependencies = [
 name = "marshal-app"
 version = "0.0.0-dev"
 dependencies = [
+ "embed-resource",
  "interprocess",
  "marshal-cli",
  "marshal-modes",

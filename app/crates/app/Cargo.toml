@@ -50,6 +50,10 @@ interprocess = { version = "2.4.7", default-features = false, features = ["tokio
 
 [build-dependencies]
 tauri-build = { version = "2.7", features = [] }
+# links the common controls manifest into the integration tests, which tauri-build does for
+# the binaries only. it is the resource compiler tauri-build already builds with, so the
+# lock file gains no crate.
+embed-resource = "3.0.12"
 
 [lints]
 workspace = true
