@@ -179,7 +179,7 @@ jobs:
       - name: Lint With Clippy
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Run Tests
-        run: cargo test --locked --workspace
+        run: cargo test --locked --workspace --no-fail-fast
       - name: Build The App
         working-directory: app/crates/app
         run: cargo tauri build --no-bundle
