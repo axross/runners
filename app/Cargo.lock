@@ -2157,6 +2157,7 @@ name = "marshal-view"
 version = "0.0.0-dev"
 dependencies = [
  "marshal-cli",
+ "serde",
  "serde_json",
 ]
 

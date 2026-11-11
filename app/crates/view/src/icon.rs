@@ -1,7 +1,13 @@
-use marshal_cli::agent::snapshot::Snapshot;
+//! the notification-area icon: which of five shapes it takes, and the colour of its
+//! glyph for the taskbar it sits on.
+
+use serde::Serialize;
+
+use crate::state::{Context, Resident};
 
 /// the five states the icon's shape tells apart.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum IconState {
     AllUp,
     SomeNotUp,
@@ -10,126 +16,81 @@ pub enum IconState {
     NotInControl,
 }
 
-/// the stop reasons that mean something went wrong; any other reason, `by_you`
-/// included, is a stop the user can read as intended.
-const ERROR_REASONS: [&str; 6] = [
-    "no_configuration",
-    "invalid_configuration",
-    "image_unusable",
-    "no_pool_started",
-    "restart_limit",
-    "image_build_failed",
-];
-
-/// the icon's state for the latest snapshot, or for none: without one, Marshal is
-/// not in control of the runners.
-#[must_use]
-pub fn icon_state(snapshot: Option<&Snapshot>) -> IconState {
-    let Some(snapshot) = snapshot else {
-        return IconState::NotInControl;
-    };
-    match snapshot.agent.state.as_str() {
-        "running" if snapshot.runners_up >= snapshot.runners_wanted => IconState::AllUp,
-        "running" | "resuming" => IconState::SomeNotUp,
-        "stopped" if stopped_by_error(snapshot) => IconState::StoppedByError,
-        _ => IconState::Stopped,
+/// the icon's state; building shows stopped, and a stop for a reason this reader does
+/// not know is not taken for an error.
+pub fn shape(context: &Context<'_>) -> IconState {
+    match &context.resident {
+        Resident::StartingMarshal
+        | Resident::NoAgent
+        | Resident::NotAnswering
+        | Resident::LockHeld
+        | Resident::LostContact { .. }
+        | Resident::Unknown(_) => IconState::NotInControl,
+        Resident::Running if context.restart_due.is_some() => IconState::SomeNotUp,
+        Resident::Running if context.wanted > 0 && context.up_settled >= context.wanted => {
+            IconState::AllUp
+        }
+        Resident::Running | Resident::Resuming | Resident::Stopping | Resident::Quitting => {
+            IconState::SomeNotUp
+        }
+        Resident::Building { .. } => IconState::Stopped,
+        Resident::Stopped(stop) if stop.is_error() => IconState::StoppedByError,
+        Resident::Stopped(_) => IconState::Stopped,
     }
 }
 
-fn stopped_by_error(snapshot: &Snapshot) -> bool {
-    snapshot
-        .agent
-        .reason
-        .as_ref()
-        .is_some_and(|reason| ERROR_REASONS.contains(&reason.code.as_str()))
+/// whether the taskbar is dark or light.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskbarMode {
+    Dark,
+    Light,
 }
 
-/// the icon's tooltip for the latest snapshot.
-#[must_use]
-pub fn tooltip(snapshot: Option<&Snapshot>) -> String {
-    let Some(snapshot) = snapshot else {
-        return "Marshal: not in control of the runners".to_string();
-    };
-    match snapshot.agent.state.as_str() {
-        "building" => "Marshal: building the runner image".to_string(),
-        "running" | "resuming" => format!(
-            "Marshal: {} of {} runners up",
-            snapshot.runners_up, snapshot.runners_wanted
-        ),
-        _ => "Marshal: runners stopped".to_string(),
+impl TaskbarMode {
+    /// the mode from Windows' `SystemUsesLightTheme` value, which the app reads from the
+    /// registry: 1 is light and 0 is dark. An absent value, or one that is neither,
+    /// cannot be read, so it is `None`.
+    #[must_use]
+    pub fn from_registry(value: Option<u32>) -> Option<Self> {
+        match value {
+            Some(0) => Some(Self::Dark),
+            Some(1) => Some(Self::Light),
+            _ => None,
+        }
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// a colour as its red, green and blue.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct Rgb(pub u8, pub u8, pub u8);
 
-    fn snapshot(state: &str, reason: Option<&str>, up: u32, wanted: u32) -> Snapshot {
-        serde_json::from_value(serde_json::json!({
-            "agent": {
-                "state": state,
-                "reason": reason.map(|code| serde_json::json!({ "code": code })),
-            },
-            "runners_up": up,
-            "runners_wanted": wanted,
-        }))
-        .expect("a snapshot")
-    }
+/// the glyph's colour.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GlyphColour {
+    White,
+    NearBlack,
+}
 
-    #[test]
-    fn no_snapshot_means_marshal_is_not_in_control() {
-        assert_eq!(icon_state(None), IconState::NotInControl);
-        assert_eq!(tooltip(None), "Marshal: not in control of the runners");
-    }
+impl GlyphColour {
+    pub const WHITE: Rgb = Rgb(0xff, 0xff, 0xff);
+    pub const NEAR_BLACK: Rgb = Rgb(0x1f, 0x1f, 0x1f);
 
-    #[test]
-    fn every_runner_up_is_all_up() {
-        let all = snapshot("running", None, 4, 4);
-        assert_eq!(icon_state(Some(&all)), IconState::AllUp);
-        assert_eq!(tooltip(Some(&all)), "Marshal: 4 of 4 runners up");
-    }
-
-    #[test]
-    fn a_runner_missing_is_some_not_up() {
-        let some = snapshot("running", None, 3, 4);
-        assert_eq!(icon_state(Some(&some)), IconState::SomeNotUp);
-        assert_eq!(tooltip(Some(&some)), "Marshal: 3 of 4 runners up");
-        let resuming = snapshot("resuming", None, 0, 4);
-        assert_eq!(icon_state(Some(&resuming)), IconState::SomeNotUp);
-    }
-
-    #[test]
-    fn a_stop_by_the_user_is_stopped() {
-        let stopped = snapshot("stopped", Some("by_you"), 0, 4);
-        assert_eq!(icon_state(Some(&stopped)), IconState::Stopped);
-        assert_eq!(tooltip(Some(&stopped)), "Marshal: runners stopped");
-    }
-
-    #[test]
-    fn every_failure_reason_is_stopped_by_an_error() {
-        for code in ERROR_REASONS {
-            let stopped = snapshot("stopped", Some(code), 0, 4);
-            assert_eq!(
-                icon_state(Some(&stopped)),
-                IconState::StoppedByError,
-                "{code}"
-            );
+    #[must_use]
+    pub fn rgb(self) -> Rgb {
+        match self {
+            Self::White => Self::WHITE,
+            Self::NearBlack => Self::NEAR_BLACK,
         }
     }
 
-    #[test]
-    fn a_reason_this_reader_does_not_know_is_not_an_error() {
-        let stopped = snapshot("stopped", Some("a_later_reason"), 0, 4);
-        assert_eq!(icon_state(Some(&stopped)), IconState::Stopped);
-    }
-
-    #[test]
-    fn a_build_shows_stopped_and_says_so() {
-        let building = snapshot("building", None, 0, 4);
-        assert_eq!(icon_state(Some(&building)), IconState::Stopped);
-        assert_eq!(
-            tooltip(Some(&building)),
-            "Marshal: building the runner image"
-        );
+    /// white on a dark taskbar, and when the mode cannot be read; near-black on a light
+    /// one.
+    #[must_use]
+    pub fn for_mode(mode: Option<TaskbarMode>) -> Self {
+        match mode {
+            Some(TaskbarMode::Light) => Self::NearBlack,
+            Some(TaskbarMode::Dark) | None => Self::White,
+        }
     }
 }
