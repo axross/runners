@@ -12,8 +12,12 @@ invoke("read_confirmation").then((question) => {
   document.getElementById("cancel").focus();
 });
 
-document.getElementById("confirm").addEventListener("click", () => answer(true));
-document.getElementById("cancel").addEventListener("click", () => answer(false));
+document
+  .getElementById("confirm")
+  .addEventListener("click", () => answer(true));
+document
+  .getElementById("cancel")
+  .addEventListener("click", () => answer(false));
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     answer(false);
