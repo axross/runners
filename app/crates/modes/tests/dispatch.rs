@@ -73,10 +73,39 @@ fn the_shim_reaches_the_library_and_is_refused_for_missing_arguments() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn the_vm_shim_runs_through_the_library_on_unix() {
+    let words = [
+        "marshal-app",
+        "vm-shim",
+        "--name",
+        "n",
+        "--diagnostic-pool",
+        "p",
+        "--",
+        "tart",
+    ];
+    assert_eq!(Mode::of(args(&words)), Mode::Command(args(&words)));
+}
+
+#[cfg(unix)]
+#[test]
+fn the_vm_shim_reaches_the_library_and_is_refused_for_missing_arguments() {
+    let mode = Mode::of(args(&["marshal-app", "vm-shim"]));
+    assert!(matches!(mode, Mode::Command(_)));
+    assert_eq!(
+        format!("{:?}", run(mode)),
+        format!("{:?}", std::process::ExitCode::from(2))
+    );
+}
+
 #[cfg(windows)]
 #[test]
-fn the_shim_is_not_a_mode_on_windows() {
-    assert_eq!(Mode::of(args(&["marshal-app", "shim"])), Mode::App);
+fn the_shims_are_not_modes_on_windows() {
+    for word in ["shim", "vm-shim"] {
+        assert_eq!(Mode::of(args(&["marshal-app", word])), Mode::App);
+    }
 }
 
 #[test]

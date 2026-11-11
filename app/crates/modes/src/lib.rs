@@ -1,6 +1,6 @@
 //! the modes the one executable runs in. Its first argument decides the mode before
 //! the app starts: the resident agent, the diagnostics exporter the agent starts, the
-//! shim on Unix, or otherwise the app. The hidden modes run the `marshal-cli` library's
+//! shims on Unix, or otherwise the app. The hidden modes run the `marshal-cli` library's
 //! entry points, have no interface and promise no compatibility.
 
 use std::ffi::{OsStr, OsString};
@@ -110,7 +110,7 @@ impl Mode {
 
 fn is_command(word: &OsString) -> bool {
     #[cfg(unix)]
-    if word == marshal_cli::shim::SHIM_COMMAND {
+    if word == marshal_cli::shim::SHIM_COMMAND || word == marshal_cli::vm_shim::VM_SHIM_COMMAND {
         return true;
     }
     word == marshal_cli::diagnostics::EXPORT_COMMAND
