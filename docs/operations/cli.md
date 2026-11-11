@@ -895,7 +895,9 @@ is unchanged. A `start_all` answers
 becomes `running` once they are, or `stopped` with one of the reasons above when
 they could not be.
 
-The set is open: a reader keeps a code it does not know as text. A pool skipped for
+The set is open: a reader keeps a code it does not know as text. The library exports
+the codes as the constants of `agent::StopReason`, so a reader compares a reason with
+them rather than repeating the words. A pool skipped for
 want of a token does not stop the others: it is listed `skipped` with its reason,
 and when a token for its repository is set, it starts without a restart. When no
 pool is left running, the agent is stopped for `no_pool_started`, and each pool
