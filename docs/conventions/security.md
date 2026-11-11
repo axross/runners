@@ -1237,8 +1237,7 @@ it. The permission is narrow:
   inside the VM, not children of it. The runner container's CPU quota, affinity and
   memory limit, which [CPU Placement Inside a Job VM](#cpu-placement-inside-a-job-vm)
   holds equal to the VM's, do not reach them, and the VM's vCPUs and memory bound them
-  instead. A job that exhausts memory meets the guest's out-of-memory killer, and the
-  VM is deleted either way.
+  instead.
 - The socket's group is the VM's `docker` group, which the golden VM creates with the
   id 123 (`golden::pins::DOCKER_GROUP_ID`). The runner image's `docker` group, which
   its `runner` user belongs to, has that id too. Docker gives a container's user the
