@@ -175,7 +175,7 @@ list of the eleven commands the app and `tests/ipc.rs` both register.
 A failed action that a confirmation started is written to the app's log, since the
 window that asked is gone by then.
 
-Two events reach the main window. The view reaches the page by the `marshal:view`
+Three events reach the main window. The view reaches the page by the `marshal:view`
 event and by the reply to `read_view`, which nothing orders against each other, so each
 carries a `revision` that grows by one with every view the session shows. The page
 draws a view only when no newer one has been drawn, and still says what an older one
@@ -186,6 +186,14 @@ that the revisions only grow.
 | ----------------- | -------------------------------------------------- | ------------------------------------------------------------------------- |
 | `marshal:view`    | `{view, announce[], revision}`                     | The view changed; each `announce` string goes to the live region in order |
 | `marshal:confirm` | `{action, question{title, body, confirm, cancel}}` | A menu choice needs a question; `action` is `stop_all` or `stop_build`    |
+| `marshal:hidden`  | none                                               | The main window is being hidden; the page clears every open token field   |
+
+The app tells the page `marshal:hidden` just before it hides the main window, from
+the one function every hide goes through: the close request, which hides the window
+instead of closing it, and the `hide_window` command that Esc calls. The page needs
+no permission beyond `core:event:allow-listen` for it. `tests/ipc.rs` shows that both
+sites emit it, and `tests/frontend/save-token.test.mjs` that the page clears its
+fields on it.
 
 The confirmation window, label `confirmation`, is 440 by 240 px and always on top. It
 opens when a menu choice needs a question and the main window is hidden or minimised, and for Quit
@@ -212,23 +220,23 @@ its reason says which. A state the app does not know shows the runner's own reas
 its words, with a dash, or the state's word when there is no reason, as the version
 rules in [CLI](./cli.md#version-rules) require.
 
-| File                                                | Holds                                                                                                             |
-| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `index.html`, `main.js`, `revision.js`              | The page, the first `read_view`, the `marshal:view` and `marshal:confirm` listeners; the order views are drawn in |
-| `render.js`, `pools.js`, `tokens.js`                | The header, tabs and footer; the pool cards, runner rows and diagnostics; the token rows                          |
-| `controls.js`, `tooltip.js`, `dialog.js`, `live.js` | Buttons that stay focusable when unavailable; the balloon; the confirmation; the live region                      |
-| `dom.js`, `icons.js`                                | The element builder, which refuses `style`, `href`, `src`, `action` and `on*` attributes, and the inline icons    |
-| `main.css`, `tokens.css`, `fonts.css`               | The window stylesheet; the colour tokens; the one place that names the font files                                 |
-| `confirmation.html`, `confirmation.js`              | The confirmation window's page, with Cancel focused                                                               |
+| File                                                | Holds                                                                                                                               |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `index.html`, `main.js`, `revision.js`              | The page, the first `read_view`, the `marshal:view`, `marshal:confirm` and `marshal:hidden` listeners; the order views are drawn in |
+| `render.js`, `pools.js`, `tokens.js`                | The header, tabs and footer; the pool cards, runner rows and diagnostics; the token rows                                            |
+| `controls.js`, `tooltip.js`, `dialog.js`, `live.js` | Buttons that stay focusable when unavailable; the balloon; the confirmation; the live region                                        |
+| `dom.js`, `icons.js`                                | The element builder, which refuses `style`, `href`, `src`, `action` and `on*` attributes, and the inline icons                      |
+| `main.css`, `tokens.css`, `fonts.css`               | The window stylesheet; the colour tokens; the one place that names the font files                                                   |
+| `confirmation.html`, `confirmation.js`              | The confirmation window's page, with Cancel focused                                                                                 |
 
 Esc closes the first of these that is open and does nothing more: a tooltip balloon,
 then a confirmation dialog, then an open token form or removal question, and only then
 hides the window. The page clears a token field as soon as it calls `set_token`,
 whatever the outcome, and keeps the token in no variable; `save-token.test.mjs` loads
 the page over a stand-in for the document and drives that path with a call that
-resolves and one that rejects. It also clears every open
-token field when the window hides, by any route, so a token half typed is not left in
-a page nobody can see; the form stays open and empty.
+resolves and one that rejects. It also clears every open token field when the app
+sends `marshal:hidden`, which it does at every place it hides the window, and when
+the web view reports the page hidden, a second route; the form stays open and empty.
 
 From `app/`, `cargo run -p marshal-view --example dump_view -- <fixture.json>` prints a
 recorded snapshot's view as JSON, with options to set the connection, a pending

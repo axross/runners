@@ -7,10 +7,11 @@
     clippy::indexing_slicing
 )]
 
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use marshal_app::commands;
 use marshal_app::state::{AppState, Asking, Latest};
+use marshal_app::{HIDDEN_EVENT, commands, on_window_event};
 use marshal_session::{
     Act, Connected, Dial, DialError, Failure, Launcher, Link, Log, Method, Present, Seams, Session,
     Shown, Then, WallClock,
@@ -20,7 +21,7 @@ use serde_json::json;
 use tauri::ipc::{CallbackFn, InvokeBody};
 use tauri::test::{INVOKE_KEY, MockRuntime, get_ipc_response, mock_builder};
 use tauri::webview::InvokeRequest;
-use tauri::{App, WebviewWindow, WebviewWindowBuilder};
+use tauri::{App, Listener, Manager, RunEvent, WebviewWindow, WebviewWindowBuilder};
 
 /// no agent ever answers, so the session sits in "no agent" and answers every read.
 struct NoOne;
@@ -285,4 +286,87 @@ fn a_confirmed_action_that_fails_is_logged_since_its_window_is_gone() {
             .any(|line| line.starts_with("The confirmed action did not run: ")),
         "{lines:?}"
     );
+}
+
+/// counts the times the page is told the main window hides.
+fn count_hidden(app: &App<MockRuntime>) -> Arc<AtomicUsize> {
+    let told = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&told);
+    app.listen_any(HIDDEN_EVENT, move |_| {
+        counted.fetch_add(1, Ordering::SeqCst);
+    });
+    told
+}
+
+#[test]
+fn the_hide_window_command_tells_the_page_and_hides_the_window() {
+    let app = app();
+    let main = window(&app, "main");
+    let told = count_hidden(&app);
+    call(&main, "hide_window", json!({})).unwrap();
+    assert_eq!(told.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn closing_the_main_window_tells_the_page_and_hides_it_instead() {
+    let (session, handle) = Session::new(Seams {
+        dial: NoOne,
+        launcher: Arc::new(Refuse),
+        present: Arc::new(Quiet),
+        time: Arc::new(WallClock::new(|| 0)),
+        log: Arc::new(Quiet),
+    });
+    tauri::async_runtime::spawn(async move {
+        session.run().await;
+    });
+    let app = mock_builder()
+        .manage(AppState::new(
+            handle,
+            Arc::new(Latest::default()),
+            Arc::new(Quiet),
+        ))
+        .on_window_event(on_window_event)
+        .build(tauri::generate_context!())
+        .expect("the app builds");
+    let told = count_hidden(&app);
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let log = Arc::clone(&seen);
+    // the mock runtime does not call the builder's window handler, so the test hands
+    // the first close request it reports to the app's own. The window is kept, so the
+    // loop goes quiet; a second request, which the test does not hand over, closes it
+    // and ends the loop.
+    app.run(move |handle, event| {
+        let mut seen = log.lock().unwrap();
+        let main = || handle.get_webview_window("main").unwrap();
+        match event {
+            RunEvent::Ready => {
+                seen.push("ready");
+                main().close().unwrap();
+            }
+            RunEvent::WindowEvent { event, .. } => {
+                seen.push("close requested");
+                if seen.len() == 2 {
+                    on_window_event(&main().as_ref().window(), &event);
+                }
+            }
+            RunEvent::MainEventsCleared => {
+                seen.push("quiet");
+                main().close().unwrap();
+            }
+            RunEvent::ExitRequested { .. } => seen.push("exit requested"),
+            _ => {}
+        }
+    });
+    assert_eq!(
+        *seen.lock().unwrap(),
+        [
+            "ready",
+            "close requested",
+            "quiet",
+            "close requested",
+            "exit requested"
+        ],
+        "the first close request left the window open"
+    );
+    assert_eq!(told.load(Ordering::SeqCst), 1);
 }

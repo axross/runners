@@ -1094,8 +1094,11 @@ the app may do with that reach. [App](../operations/app.md) owns how it works.
 - **A token passes only through `token_set`.** The window's token field is a password
   input without autocomplete or spell checking. The page clears it when the token is
   submitted, whatever the outcome, and keeps the token in no variable once it has
-  called the command. The Rust side trims it, refuses an empty one or one over 1280
-  UTF-16 code units, wraps it in the library's `Secret`, sends it once and drops it.
+  called the command. A token half typed is cleared when the window hides: the app
+  sends the page `marshal:hidden` before every hide, which needs no permission beyond
+  listening, and the page also clears on the web view's own report. The Rust side
+  trims it, refuses an empty one or one over 1280 UTF-16 code units, wraps it in the
+  library's `Secret`, sends it once and drops it.
   No view state, event, log line or error text of the app holds a token, and the app's
   log masks a word shaped like a GitHub token as defence in depth. The app never
   displays a stored token.

@@ -8,7 +8,7 @@ use marshal_session::{
 };
 use marshal_tray::{Look, SIZES, Watch, utc_offset_minutes};
 use marshal_view::{GlyphColour, IconState};
-use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, Runtime, Window, WindowEvent};
 
 use crate::confirmation::CONFIRMATION_WINDOW;
 use crate::screen::Screen;
@@ -16,6 +16,36 @@ use crate::state::{AppState, Latest};
 use crate::{commands, icon, tray};
 
 pub const MAIN_WINDOW: &str = "main";
+
+/// the event that tells the main window's page it is being hidden, so the page clears
+/// a token half typed before nobody can see it.
+pub const HIDDEN_EVENT: &str = "marshal:hidden";
+
+/// hides the main window, after telling its page, from every place the app hides it. The
+/// window is hidden even when the page could not be told.
+pub fn hide_main_window<R: Runtime>(window: &Window<R>) -> tauri::Result<()> {
+    let told = window.emit_to(MAIN_WINDOW, HIDDEN_EVENT, ());
+    window.hide()?;
+    told
+}
+
+/// what the app does with a window's events: closing the main window hides it and leaves
+/// the icon, and closing the confirmation window is a No.
+pub fn on_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
+    if let WindowEvent::CloseRequested { api, .. } = event {
+        match window.label() {
+            MAIN_WINDOW => {
+                api.prevent_close();
+                let _ = hide_main_window(window);
+            }
+            CONFIRMATION_WINDOW => {
+                // closing the window is a No
+                let _ = window.app_handle().state::<AppState>().answer();
+            }
+            _ => {}
+        }
+    }
+}
 
 /// brings the main window forward, showing it when it is hidden.
 pub fn show_main_window(app: &AppHandle) {
@@ -100,21 +130,7 @@ pub fn run() -> ExitCode {
             },
         ))
         .setup(|app| start(app.handle()))
-        .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                match window.label() {
-                    MAIN_WINDOW => {
-                        api.prevent_close();
-                        let _ = window.hide();
-                    }
-                    CONFIRMATION_WINDOW => {
-                        // closing the window is a No
-                        let _ = window.app_handle().state::<AppState>().answer();
-                    }
-                    _ => {}
-                }
-            }
-        })
+        .on_window_event(on_window_event)
         .invoke_handler(commands::handler())
         .build(tauri::generate_context!());
     match built {

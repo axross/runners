@@ -349,6 +349,11 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
+// the app says so before it hides the window, from every place it does, so a token half
+// typed is cleared whether or not the web view reports the window hidden; the change of
+// visibility is a second route to the same.
+listen("marshal:hidden", () => clearTypedTokens());
+
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
     clearTypedTokens();

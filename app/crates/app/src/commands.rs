@@ -6,6 +6,7 @@ use marshal_view::Confirmation;
 use tauri::ipc::Invoke;
 use tauri::{AppHandle, Runtime, State, Window};
 
+use crate::app::hide_main_window;
 use crate::confirmation;
 use crate::state::AppState;
 
@@ -59,7 +60,7 @@ pub async fn remove_token(state: State<'_, AppState>, repository: String) -> Res
 
 #[tauri::command]
 pub fn hide_window<R: Runtime>(window: Window<R>) -> Result<(), String> {
-    window.hide().map_err(|error| error.to_string())
+    hide_main_window(&window).map_err(|error| error.to_string())
 }
 
 /// the question the confirmation window shows.

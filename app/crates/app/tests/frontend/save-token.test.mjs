@@ -73,6 +73,7 @@ const { app, live } = Object.fromEntries(
 
 /** every call the page made, and what each one answers; a test sets `setToken`. */
 const calls = [];
+const handlers = new Map();
 let setToken = () => Promise.resolve();
 
 globalThis.window = {
@@ -86,7 +87,10 @@ globalThis.window = {
       },
     },
     event: {
-      listen: () => Promise.resolve(() => {}),
+      listen: (name, handler) => {
+        handlers.set(name, handler);
+        return Promise.resolve(() => {});
+      },
     },
   },
 };
@@ -184,3 +188,23 @@ for (const [outcome, answer, shows] of [
     );
   });
 }
+
+test("a token half typed is cleared when the app says the window hides", async () => {
+  const input = field();
+  input.value = TOKEN;
+  input.dispatchEvent({ type: "input" });
+  assert.equal(saveButton().getAttribute("aria-disabled"), "false");
+  handlers.get("marshal:hidden")({ payload: null });
+  assert.equal(input.value, "");
+  assert.equal(saveButton().getAttribute("aria-disabled"), "true");
+  assert.equal(held(TOKEN), false);
+});
+
+test("a token half typed is also cleared when the web view reports the page hidden", () => {
+  const input = field();
+  input.value = TOKEN;
+  document.hidden = true;
+  document.dispatchEvent({ type: "visibilitychange" });
+  document.hidden = false;
+  assert.equal(input.value, "");
+});
