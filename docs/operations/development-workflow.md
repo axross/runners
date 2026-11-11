@@ -331,8 +331,9 @@ An Amp review child thread can:
 - read the repository, the pull request, and files outside the diff through
   the executor and GitHub access the child thread is given
 - hold the same GitHub access as the authoring run, including its write
-  access, so the assignment's no-edit, no-push, and no-delegation limits bind
-  only as far as the host enforces them
+  access, and the Amp tools and connected services the authoring user's threads
+  hold, including starting other threads, so the assignment's no-edit,
+  no-push, and no-delegation limits bind only as far as the host enforces them
 - publish a COMMENT-type review on the pull request under the same GitHub
   operator account as the run that authored the change
 
@@ -736,8 +737,8 @@ Use the existing `<!-- ai-agent -->` marker and a readable **Run state** heading
 Identify this run by its source-session and work-target locators. Include its
 phase and review round to distinguish checkpoints in that history. Link
 preceding checkpoints when continuing a run from another session.
-[Agent Sessions](./agent-sessions.md) describes what a Claude Code run adds to
-its checkpoints.
+[Agent Sessions](./agent-sessions.md) describes what a Claude Code run and an
+Amp run add to their checkpoints.
 
 What each checkpoint preserves follows Loop Engineering's
 [Semantic Run State](../../.claude/skills/loop-engineering/references/run-state-and-reporting.md).
@@ -1001,8 +1002,7 @@ handoff of the authoring thread.
 2. Right after the child starts, checkpoint its thread URL and round in run
    state, through Save and resume run state, above.
 3. The child posts its review on the pull request in the form REVIEW.md's Amp
-   arrangement sets. Its summary identifies the child thread and the reviewed
-   commit, because the child shares the author's GitHub account.
+   arrangement sets.
 4. Wait for the child as Agent Sessions' Waiting on CI and Review describes,
    within
    [Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/independent-review.md#waiting-bound).
@@ -1016,10 +1016,10 @@ handoff of the authoring thread.
    run state.
 
 A child that cannot post, a review that does not appear, and a review that does
-not correlate all leave the review gate blocked, and the run never falls back to
-the Codex or Claude review. Record the incomplete evidence, then, once the child
-has settled or been stopped, archive that round's child too when the plan-gate
-archive confirmation allows it.
+not correlate are failures of the selected route, which block the review gate as
+The Independent Review, above, states. Record the incomplete evidence, then,
+once the child has settled or been stopped, archive that round's child too when
+the plan-gate archive confirmation allows it.
 
 A child left unarchived does not invalidate a verified review. When the
 maintainer declined the plan-gate archive confirmation, the archive fails, or a
