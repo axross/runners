@@ -990,13 +990,12 @@ handoff of the authoring thread.
 
 1. Start the child with a neutral assignment that names the repository, the
    pull request, the reviewed head commit, [`REVIEW.md`](../../REVIEW.md), and
-   the pull request body's acceptance criteria. Carry none of the author's
-   conversation, implementation notes, pre-flight ledger, or claimed verdicts.
-   Tell the child to read the actual change and surrounding code, not to edit,
-   push, or delegate, to post its review itself, and to report the review's URL,
-   the reviewed commit, and any limitations. Record in run state which of those
-   limits the host enforces; a limit stated only in the assignment is
-   instruction-only.
+   the pull request body's acceptance criteria. Beyond what Loop Engineering's
+   review workflow excludes, carry none of the author's claimed verdicts. Tell
+   the child to read the actual change and surrounding code, not to edit, push,
+   or delegate, to post its review itself, and to report the review's URL, the
+   reviewed commit, which of those limits its host enforced, and any
+   limitations. Record that answer in run state.
 2. Right after the child starts, checkpoint its thread URL and round in run
    state, through Save and resume run state, above.
 3. The child posts its review on the pull request in the form REVIEW.md's Amp
@@ -1019,15 +1018,13 @@ the Codex or Claude review. Record the incomplete evidence, then, once the child
 has settled or been stopped, archive that round's child too when the plan-gate
 archive confirmation allows it.
 
-A child left unarchived does not invalidate a verified review. When the current
-session has not collected the plan-gate archive confirmation and no recorded
-answer declined it, ask the maintainer and archive once it is given. When the
-maintainer declined, or the archive fails, give the maintainer the thread's URL,
-the reason it remains, and the steps: open it on ampcode.com and choose
-**Archive** in its More Actions menu, or run `amp threads archive` with its
-thread ID. Report the remaining thread. On resume, check what each recorded
-child posted and whether it is archived before starting another child or
-counting another round.
+A child left unarchived does not invalidate a verified review. When the
+maintainer declined the plan-gate archive confirmation, or the archive fails,
+give the maintainer the thread's URL, the reason it remains, and the steps: open
+it on ampcode.com and choose **Archive** in its More Actions menu, or run
+`amp threads archive` with its thread ID. Report the remaining thread. On
+resume, check what each recorded child posted and whether it is archived before
+starting another child or counting another round.
 
 ## Acceptance Criteria Verified Out of Tree
 
