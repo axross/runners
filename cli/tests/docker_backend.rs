@@ -323,6 +323,17 @@ async fn the_jit_configuration_reaches_only_the_run_client_through_its_environme
             assert!(!argument.contains("ghp_exampletoken"));
         }
     }
+    for invocation in &invocations {
+        assert!(
+            invocation.arguments.iter().all(|argument| {
+                !argument.contains("docker.sock")
+                    && !argument.contains("type=bind")
+                    && argument != "--privileged"
+            }),
+            "the Docker runtime mounts no socket: {:?}",
+            invocation.arguments
+        );
+    }
     let seen = registrar.seen.borrow();
     assert_eq!(
         seen[0].token, "ghp_exampletoken",
