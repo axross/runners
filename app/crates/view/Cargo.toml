@@ -1,0 +1,15 @@
+[package]
+name = "marshal-view"
+description = "What the Marshal window, menu and notification-area icon show for an agent snapshot"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+marshal-cli = { path = "../../../cli" }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+serde_json = { version = "1.0.154", default-features = false, features = ["std"] }

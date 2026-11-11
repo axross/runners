@@ -1,0 +1,24 @@
+[package]
+name = "marshal-app"
+description = "Marshal: the notification-area app, and the one executable that also runs as the agent"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+build = "build.rs"
+
+[[bin]]
+name = "marshal-app"
+path = "src/main.rs"
+
+[dependencies]
+marshal-modes = { path = "../modes" }
+marshal-view = { path = "../view" }
+tauri = { version = "2.12", features = ["tray-icon"] }
+tauri-plugin-single-instance = "2.5"
+serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
+
+[build-dependencies]
+tauri-build = { version = "2.7", features = [] }
+
+[lints]
+workspace = true
