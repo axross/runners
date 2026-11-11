@@ -101,9 +101,11 @@ architectures.
 The Docker runtime on axpc mounts no Docker socket, so the client has no engine
 there. The axmc host's job VMs mount their own VM's socket,
 `/var/run/docker.sock`, into the runner container. The socket's group is the VM's
-`docker` group, created with the id 123, and the base's `docker` group, which
-`runner` belongs to, has that id, so `runner` can use it. The Dockerfile fails the
-build if the base's group has another id. The image contract version is 2 with this
+`docker` group, which has the id of the base's `docker` group that `runner` belongs to,
+so `runner` can use it;
+[Security](../../docs/conventions/security.md#the-vm-local-docker-socket) says why that
+needs no `--group-add`. The Dockerfile fails the build if the base's group has another
+id. The image contract version is 2 with this
 client and group; [CLI](../../docs/operations/cli.md#the-image-contract) says what
 that means for a built image.
 
@@ -283,7 +285,7 @@ checks, on both architectures:
 - The Docker client: its package version, that `/usr/bin/docker` belongs to that
   package and is a binary of the image's own architecture, that the repository
   source and key are gone, that no Docker socket is present, and that `runner`
-  belongs to the `docker` group with the id 123.
+  belongs to the `docker` group with the id the golden VM gives its own.
 - Absence of image-declared volumes and entrypoints.
 - Actual host launch-contract CPU affinity for ordinary, diagnostic, and raw
   modes, compared with a quota-only control. It verifies requested Docker settings,

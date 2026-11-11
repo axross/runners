@@ -1240,11 +1240,13 @@ it. The permission is narrow:
   instead. A job that exhausts memory meets the guest's out-of-memory killer, and the
   VM is deleted either way.
 - The socket's group is the VM's `docker` group, which the golden VM creates with the
-  id 123. The runner image's `docker` group, which its `runner` user belongs to, has
-  that id too, so the runner uses the socket with no `--group-add` and no change to the
-  container's user. The match grants nothing the mount does not, since the socket is
-  root in the VM already. A base image that gave the group another id fails the image
-  build, and a VM whose `docker` group has another id fails the golden VM build.
+  id 123 (`golden::pins::DOCKER_GROUP_ID`). The runner image's `docker` group, which
+  its `runner` user belongs to, has that id too. Docker gives a container's user the
+  groups that the image's `/etc/group` lists for it, so the runner uses the socket
+  with no `--group-add` and no change to the container's user. The match grants
+  nothing the mount does not, since the socket is root in the VM already. A base
+  image that gave the group another id fails the image build, and a VM whose `docker`
+  group has another id fails the golden VM build.
 - The runner image's Docker client is pinned like the golden VM's Docker Engine; see
   [Tart, Softnet, and the Golden VM Are Pinned](#tart-softnet-and-the-golden-vm-are-pinned).
 

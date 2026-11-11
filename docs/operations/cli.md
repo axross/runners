@@ -641,16 +641,13 @@ mounts none, and `vm_job_run_arguments` adds the mount to it and to nothing else
 the CPU probe and the volume commands still carry no mount. Tests in
 `docker_backend.rs`, `tart_backend.rs` and `runtime::docker_args` hold both sides.
 The socket's group is the VM's `docker` group, which the golden VM creates with
-`golden::pins::DOCKER_GROUP_ID`, 123 (see
-[Golden VM Provisioning](#golden-vm-provisioning)). The runner image's `docker`
-group, which its `runner` user belongs to, has the same id, so the runner uses the
-socket without `--group-add`, because Docker gives a container's user the groups the
-image's `/etc/group` lists for it. The image build fails when the base's group has
-another id, and the golden VM build fails when its own does. The containers a job
-starts through the socket are siblings of the runner container inside the VM: the
-runner container's quota, affinity and memory limit do not reach them, and the VM's
-vCPUs, memory and disk bound them, as
-[Security](../conventions/security.md#the-vm-local-docker-socket) says.
+`golden::pins::DOCKER_GROUP_ID` and which the runner image's `docker` group matches;
+[Golden VM Provisioning](#golden-vm-provisioning) says where each build checks it,
+and [Security](../conventions/security.md#the-vm-local-docker-socket) says why the
+match needs no `--group-add`. The containers a job starts through the socket are
+siblings of the runner container inside the VM: the runner container's quota,
+affinity and memory limit do not reach them, and the VM's vCPUs, memory and disk
+bound them, as Security says.
 
 **Which user runs it.** `tart exec` reaches the guest agent,
 [cirruslabs/tart-guest-agent](https://github.com/cirruslabs/tart-guest-agent) at
@@ -885,8 +882,8 @@ input it takes, from scripts embedded in the binary. The calls run in this order
 1. upgrade the Ubuntu packages and install `ca-certificates`, `curl` and `gnupg`;
 2. download Docker's key to `/etc/apt/keyrings/docker.asc`;
 3. list the key with `gpg --show-keys --with-colons`;
-4. install the apt source, create the `docker` group with the id 123 and refuse a
-   group that has another, install the four packages at their pinned versions, hold
+4. install the apt source, create the `docker` group with the id `DOCKER_GROUP_ID` and
+   refuse a group that has another, install the four packages at their pinned versions, hold
    them, and add `admin` to the group (`install-docker.sh`);
 5. install the launcher, owned by root, mode 0755;
 6. lock the `admin` password and mask `ssh.service` and `ssh.socket`.
@@ -905,7 +902,7 @@ with exit code 64, without printing the input. The Tart backend calls it as
 
 The runner image's Dockerfile installs `docker-ce-cli` at the version pinned here,
 from the same repository, after the same key's fingerprint matches, and asserts that
-its `docker` group has the id 123; a unit test in `image::contract` holds the
+its `docker` group has the id `DOCKER_GROUP_ID`; a unit test in `image::contract` holds the
 Dockerfile to `golden::pins`, so the image's client and its group cannot drift from
 the golden VM's Docker Engine and group alone.
 
@@ -1933,8 +1930,8 @@ contract as Phase 2 left it, plus the diagnostic variant's use of the collector'
 path and output directory. Contract 2 adds what the VM runtime needs of the image: a
 Docker client at the version the golden VM's Docker Engine is at, installed from
 Docker's apt repository after its signing key matches a recorded fingerprint, and a
-`docker` group with the id 123, so the runner can use the VM-local socket the VM
-runtime mounts. The Docker runtime's arguments are unchanged and it still mounts no
+`docker` group with the id `DOCKER_GROUP_ID`, so the runner can use the VM-local socket
+the VM runtime mounts. The Docker runtime's arguments are unchanged and it still mounts no
 socket, but an image of contract 1 is mismatched, so axpc needs one `marshal build`
 after the release that carries contract 2. The golden VM's name records the contract,
 so a golden VM built for contract 1 is mismatched the same way.
@@ -2638,9 +2635,9 @@ does these in order:
 `actions-runner:local` (`runtime::pool::DEFAULT_IMAGE_NAME`), and `validate` and its
 summary do not change.
 
-**The Docker group.** The fourth guest call creates the `docker` group with the id 123,
-so the socket the runner container mounts is owned by the group that the runner
-image's `runner` user is in, and adds `admin` to it. A `docker` group that exists with
+**The Docker group.** The fourth guest call creates the `docker` group with the id
+`DOCKER_GROUP_ID`, so the socket the runner container mounts is owned by the group that
+the runner image's `runner` user is in, and adds `admin` to it. A `docker` group that exists with
 another id fails the build before anything is installed. The group change reaches
 `tart exec` commands only when the guest agent next starts, and the build VM is not
 restarted. The image build therefore runs `sudo -n docker`

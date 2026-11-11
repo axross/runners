@@ -167,8 +167,8 @@ defines it, in `runtime::tart`, `golden` and `build::golden`.
     `docker-buildx-plugin`) comes from Docker's apt repository at pinned package
     versions, which apt holds, after the repository's signing key has matched a
     recorded fingerprint. Docker Compose is not installed. The `docker` group is
-    created first, with the id 123, and the build fails if the group exists with
-    another id.
+    created first, with the id in `golden::pins::DOCKER_GROUP_ID`, and the build fails
+    if the group exists with another id.
   - The launcher is `/usr/local/bin/marshal-launch`, owned by root, mode 0755.
   - The `admin` password is locked and SSH is masked, so the base image's
     `admin`/`admin` login cannot be used. The guest agent does not use SSH.
@@ -176,13 +176,13 @@ defines it, in `runtime::tart`, `golden` and `build::golden`.
     is `actions-runner:local` when the configuration gives none, and carries this
     CLI's image contract.
 - **The Docker socket.** The Docker Engine in a job VM listens on
-  `/var/run/docker.sock`, owned by the `docker` group, whose id is 123. The job's
-  runner container mounts that socket, so a job step can run `docker` against the
-  VM's own engine, and the runner image's `docker` group, which its `runner` user is
-  in, has the same id. The socket belongs to the job's own VM, which is deleted when
-  the job ends; [Security](../conventions/security.md#the-vm-local-docker-socket)
-  records why that is permitted and what it does not extend to. The image's Docker
-  client is installed from the same repository, at the same version.
+  `/var/run/docker.sock`, owned by the `docker` group. The job's runner container
+  mounts that socket, so a job step can run `docker` against the VM's own engine. The
+  socket belongs to the job's own VM, which is deleted when the job ends;
+  [Security](../conventions/security.md#the-vm-local-docker-socket) records why that is
+  permitted, what it does not extend to, and why the runner needs no `--group-add`.
+  The image's Docker client is installed from the same repository, at the same
+  version.
 - **The guest user.** The guest agent runs commands as `admin`, the golden VM's
   user, which the golden VM puts in the `docker` group, so `docker` needs no `sudo`
   in a job VM. The source for this is the unit file
@@ -258,7 +258,7 @@ the freshness warnings ask for it.
 3. Pulls the base image by its digest and clones it to a new build VM, which keeps
    the base's CPUs and memory.
 4. Boots the build VM on Softnet and waits up to 120 s for its guest agent.
-5. Upgrades the Ubuntu packages, creates the `docker` group with the id 123, installs
+5. Upgrades the Ubuntu packages, creates the `docker` group with the id in `golden::pins::DOCKER_GROUP_ID`, installs
    Docker Engine at the pinned versions after checking Docker's signing key against
    its recorded fingerprint, installs the launcher, and disables the SSH login. A key whose fingerprint is not the recorded
    one fails the build before anything is installed from Docker.
@@ -573,10 +573,11 @@ of an Apple tool as the source prints it, and not on a run:
 - The guest agent runs commands as `admin`, and `admin` is in the `docker` group in a
   job VM without `sudo` (from the guest agent's source, not from a running VM).
 - In the build VM, the image build works with `sudo -n docker`, and the build creates
-  the `docker` group with the id 123 on the pinned base.
+  the `docker` group on the pinned base, which has no `docker` group with another id.
 - A job step's `docker run` works in the runner container against the VM's own Docker
-  Engine: the VM's socket is mounted, its group has the id 123, and the image's
-  `runner` user has the same group, with no `--group-add`. The Docker client in the
+  Engine: the VM's socket is mounted and the `runner` user can use it through the group
+  match that [Security](../conventions/security.md#the-vm-local-docker-socket) describes,
+  with no `--group-add`. The Docker client in the
   image is the pinned version, and the Engine accepts its API version.
 - The image build fits the golden VM's 20 GB disk, with BuildKit's cache, and the
   golden VM, its build and Tart's cache fit the 40 GB reserve; record their sizes.

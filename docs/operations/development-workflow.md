@@ -392,7 +392,7 @@ When the new runner changes something the run contract relies on, such as a path
 the user it runs as, [REVIEW.md](../../REVIEW.md) asks for the contract version to
 be raised, as [CLI](./cli.md#the-image-contract) describes. The `docker` group id
 is one such thing: the Dockerfile fails the build when a new base gives the group
-an id other than 123, which the golden VM's `docker` group has, so a bump that
+an id other than `DOCKER_GROUP_ID`, which the golden VM's `docker` group has, so a bump that
 changes it also changes `DOCKER_GROUP_ID`, the Dockerfile and the smoke test
 together, and raises the golden VM version and the contract version.
 
