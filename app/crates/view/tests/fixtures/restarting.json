@@ -6,7 +6,7 @@
     "restart_due": 1793764320000
   },
   "configuration": {
-    "path": "C:\\Users\\me\\AppData\\Local\\marshal\\config.json",
+    "path": "C:\\Users\\<user>\\AppData\\Local\\marshal\\config.json",
     "problems": []
   },
   "runners_up": 0,

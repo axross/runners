@@ -72,7 +72,7 @@ fn running_is_the_summary_the_pools_and_the_runners() {
     );
     assert_eq!(
         footer.configuration,
-        r"Configuration: C:\Users\me\AppData\Local\marshal\config.json"
+        r"Configuration: C:\Users\<user>\AppData\Local\marshal\config.json"
     );
     assert_eq!(
         footer.note,
@@ -170,13 +170,13 @@ fn no_configuration_names_the_file_and_lists_no_pools() {
     assert_eq!(
         banner.lines,
         [
-            r"C:\Users\me\AppData\Local\marshal\config.json does not exist",
+            r"C:\Users\<user>\AppData\Local\marshal\config.json does not exist",
             "Create it as Marshal's operations document describes, then choose Start All."
         ]
     );
     assert_eq!(
         banner.announcement,
-        r"Stopped: there is no configuration. C:\Users\me\AppData\Local\marshal\config.json does not exist"
+        r"Stopped: there is no configuration. C:\Users\<user>\AppData\Local\marshal\config.json does not exist"
     );
     assert_eq!(banner.tone, Tone::Error);
     let list = list(&view);
@@ -222,7 +222,7 @@ fn an_invalid_configuration_lists_each_problem_on_its_own_line() {
         [
             "repositories[1].slots: must be an integer from 1 to 16",
             "repositories[2].owner: must not be empty",
-            r"Fix C:\Users\me\AppData\Local\marshal\config.json, then choose Start All."
+            r"Fix C:\Users\<user>\AppData\Local\marshal\config.json, then choose Start All."
         ]
     );
     assert_eq!(

@@ -9,7 +9,7 @@
     }
   },
   "configuration": {
-    "path": "C:\\Users\\<i>me</i>\\config.json",
+    "path": "C:\\Users\\<i>user</i>\\config.json",
     "problems": ["repositories[0].name: <script>alert(1)</script>"]
   },
   "runners_up": 0,
