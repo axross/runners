@@ -254,6 +254,8 @@ pub struct Session<D: Dial> {
     announce: Vec<String>,
     tracker: Tracker,
     shown: Option<View>,
+    /// the revision of `shown`, which counts the views the session has shown.
+    revision: u64,
 }
 
 impl<D: Dial> Session<D> {
@@ -289,6 +291,7 @@ impl<D: Dial> Session<D> {
             announce: Vec::new(),
             tracker: Tracker::new(),
             shown: None,
+            revision: 0,
         };
         (
             session,
@@ -362,7 +365,12 @@ impl<D: Dial> Session<D> {
         announce.append(&mut self.announce);
         if self.shown.as_ref() != Some(&view) || !announce.is_empty() {
             self.shown = Some(view.clone());
-            self.present.present(&Shown { view, announce });
+            self.revision += 1;
+            self.present.present(&Shown {
+                view,
+                announce,
+                revision: self.revision,
+            });
         }
     }
 
@@ -541,9 +549,11 @@ impl<D: Dial> Session<D> {
                 if let Some(forms) = forms {
                     self.forms(forms);
                 }
+                let revision = self.revision;
                 let shown = self.shown.clone().map(|view| Shown {
                     view,
                     announce: Vec::new(),
+                    revision,
                 });
                 if let Some(shown) = shown {
                     let _ = reply.send(shown);

@@ -13,6 +13,7 @@ mod launcher;
 mod lifecycle;
 mod log;
 mod policy;
+mod revision;
 mod support;
 mod tokens;
 mod wall;

@@ -5,6 +5,7 @@ import { askConfirmation, cancelDialog, dialogOpen } from "./dialog.js";
 import { keyOf } from "./controls.js";
 import { say } from "./live.js";
 import { renderWindow } from "./render.js";
+import { newestFirst } from "./revision.js";
 import { closeTip, resetTips } from "./tooltip.js";
 
 const { invoke } = window.__TAURI__.core;
@@ -23,6 +24,9 @@ const state = {
 };
 
 const RETRY_MS = 500;
+
+/** whether a view is the newest the window has had, whichever route it came by. */
+const isCurrent = newestFirst();
 
 // ---- reading the view
 
@@ -96,9 +100,17 @@ function draw(view, focusRequest = null) {
   }
 }
 
-/** draws `view` when it differs from the one drawn, and says what the app announces. */
-function apply(view, announce = [], { focus = null } = {}) {
-  if (focus !== null || JSON.stringify(view) !== state.drawn) {
+/**
+ * draws the view `shown` carries when it differs from the one drawn, and says what the
+ * app announces. A view older than the one drawn is not drawn, but what it announces is
+ * still said: no other view carries it.
+ */
+function apply(shown, { focus = null } = {}) {
+  const { view, announce } = shown;
+  if (
+    isCurrent(shown.revision) &&
+    (focus !== null || JSON.stringify(view) !== state.drawn)
+  ) {
     draw(view, focus);
   }
   say(announce);
@@ -130,14 +142,14 @@ async function run(command, args = {}) {
   }
 }
 
-async function readView(forms) {
-  const shown = await invoke("read_view", forms ? { forms } : {});
-  return shown.view;
+/** the view the app holds, as `apply` takes it. */
+function readView(forms) {
+  return invoke("read_view", forms ? { forms } : {});
 }
 
 async function showForms(next, focus) {
   try {
-    apply(await readView(next), [], { focus });
+    apply(await readView(next), { focus });
   } catch (error) {
     fail(error);
   }
@@ -171,7 +183,7 @@ function cancelRemoval(repository) {
 async function removeToken(repository) {
   await run("remove_token", { repository });
   try {
-    apply(await readView(), [], { focus: `row:${repository}:primary` });
+    apply(await readView(), { focus: `row:${repository}:primary` });
   } catch (error) {
     fail(error);
   }
@@ -190,9 +202,9 @@ async function saveToken(repository, field) {
   field.dispatchEvent(new Event("input"));
   try {
     await sent;
-    const view = await readView();
-    const failed = rowOf(view, repository)?.form;
-    apply(view, [], {
+    const shown = await readView();
+    const failed = rowOf(shown.view, repository)?.form;
+    apply(shown, {
       focus: failed ? `field:${repository}` : `row:${repository}:primary`,
     });
   } catch (error) {
@@ -344,9 +356,7 @@ document.addEventListener("visibilitychange", () => {
 
 // ---- starting
 
-listen("marshal:view", (event) =>
-  apply(event.payload.view, event.payload.announce),
-);
+listen("marshal:view", (event) => apply(event.payload));
 
 listen("marshal:confirm", (event) => {
   const { action, question } = event.payload;
@@ -357,7 +367,7 @@ listen("marshal:confirm", (event) => {
 async function load() {
   for (;;) {
     try {
-      apply(await readView(), []);
+      apply(await readView());
       focusHeading();
       return;
     } catch {

@@ -149,15 +149,15 @@ The web view calls the Rust side through eleven commands, declared in
 its capability grants it, and two capabilities, each limited to one window, grant
 nothing else:
 
-| Command                                                    | Called by               | Does                                                                           |
-| ---------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------ |
-| `read_view(forms?)`                                        | The main window         | Returns the current view; `forms` tells the Rust side which token form is open |
-| `start_all`, `stop_all`, `build`, `stop_build`             | The main window         | The action of the same name, shown at once as pending                          |
-| `try_again`                                                | The main window         | Connects again after lost contact                                              |
-| `set_token(repository, token)`, `remove_token(repository)` | The main window         | Sends `token_set` or `token_remove`; the token is trimmed and checked first    |
-| `hide_window`                                              | The main window         | Hides the window; the icon and the agent keep running                          |
-| `read_confirmation`                                        | The confirmation window | Returns the question the menu asked                                            |
-| `answer_confirmation(accepted)`                            | The confirmation window | Runs the action or quits when `accepted`, then closes the window               |
+| Command                                                    | Called by               | Does                                                                                            |
+| ---------------------------------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------- |
+| `read_view(forms?)`                                        | The main window         | Returns the current view and its revision; `forms` tells the Rust side which token form is open |
+| `start_all`, `stop_all`, `build`, `stop_build`             | The main window         | The action of the same name, shown at once as pending                                           |
+| `try_again`                                                | The main window         | Connects again after lost contact                                                               |
+| `set_token(repository, token)`, `remove_token(repository)` | The main window         | Sends `token_set` or `token_remove`; the token is trimmed and checked first                     |
+| `hide_window`                                              | The main window         | Hides the window; the icon and the agent keep running                                           |
+| `read_confirmation`                                        | The confirmation window | Returns the question the menu asked                                                             |
+| `answer_confirmation(accepted)`                            | The confirmation window | Runs the action or quits when `accepted`, then closes the window                                |
 
 The capabilities are [`main-window.json`](../../app/crates/app/capabilities/main-window.json),
 which also grants `core:event:allow-listen` and `core:event:allow-unlisten`, and
@@ -166,11 +166,16 @@ which also grants `core:event:allow-listen` and `core:event:allow-unlisten`, and
 the capability does not grant is refused and that the granted ones are not. Quit runs
 from the menu on the Rust side and has no command.
 
-Two events reach the main window:
+Two events reach the main window. The view reaches the page by the `marshal:view`
+event and by the reply to `read_view`, which nothing orders against each other, so each
+carries a `revision` that grows by one with every view the session shows. The page
+draws a view only when no newer one has been drawn, and still says what an older one
+announces; `tests/frontend/revision.test.mjs` tests the rule, and the session tests
+that the revisions only grow.
 
 | Event             | Payload                                            | Meaning                                                                   |
 | ----------------- | -------------------------------------------------- | ------------------------------------------------------------------------- |
-| `marshal:view`    | `{view, announce[]}`                               | The view changed; each `announce` string goes to the live region in order |
+| `marshal:view`    | `{view, announce[], revision}`                     | The view changed; each `announce` string goes to the live region in order |
 | `marshal:confirm` | `{action, question{title, body, confirm, cancel}}` | A menu choice needs a question; `action` is `stop_all` or `stop_build`    |
 
 The confirmation window, label `confirmation`, is 440 by 240 px and always on top. It
@@ -198,14 +203,14 @@ its reason says which. A state the app does not know shows the runner's own reas
 its words, with a dash, or the state's word when there is no reason, as the version
 rules in [CLI](./cli.md#version-rules) require.
 
-| File                                                | Holds                                                                                                          |
-| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `index.html`, `main.js`                             | The page, the first `read_view`, the `marshal:view` and `marshal:confirm` listeners                            |
-| `render.js`, `pools.js`, `tokens.js`                | The header, tabs and footer; the pool cards, runner rows and diagnostics; the token rows                       |
-| `controls.js`, `tooltip.js`, `dialog.js`, `live.js` | Buttons that stay focusable when unavailable; the balloon; the confirmation; the live region                   |
-| `dom.js`, `icons.js`                                | The element builder, which refuses `style`, `href`, `src`, `action` and `on*` attributes, and the inline icons |
-| `main.css`, `tokens.css`, `fonts.css`               | The window stylesheet; the colour tokens; the one place that names the font files                              |
-| `confirmation.html`, `confirmation.js`              | The confirmation window's page, with Cancel focused                                                            |
+| File                                                | Holds                                                                                                             |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `index.html`, `main.js`, `revision.js`              | The page, the first `read_view`, the `marshal:view` and `marshal:confirm` listeners; the order views are drawn in |
+| `render.js`, `pools.js`, `tokens.js`                | The header, tabs and footer; the pool cards, runner rows and diagnostics; the token rows                          |
+| `controls.js`, `tooltip.js`, `dialog.js`, `live.js` | Buttons that stay focusable when unavailable; the balloon; the confirmation; the live region                      |
+| `dom.js`, `icons.js`                                | The element builder, which refuses `style`, `href`, `src`, `action` and `on*` attributes, and the inline icons    |
+| `main.css`, `tokens.css`, `fonts.css`               | The window stylesheet; the colour tokens; the one place that names the font files                                 |
+| `confirmation.html`, `confirmation.js`              | The confirmation window's page, with Cancel focused                                                               |
 
 Esc closes the first of these that is open and does nothing more: a tooltip balloon,
 then a confirmation dialog, then an open token form or removal question, and only then

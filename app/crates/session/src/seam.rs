@@ -132,12 +132,15 @@ pub trait Log: Send + Sync + 'static {
     fn warn(&self, line: &str);
 }
 
-/// what the windows, the menu and the icon are shown: the view, and what the live
-/// region says with it.
+/// what the windows, the menu and the icon are shown: the view, what the live region
+/// says with it, and the view's revision.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Shown {
     pub view: View,
     pub announce: Vec<String>,
+    /// grows by one with each view the session shows, so the page can tell a view that
+    /// is older than the one it has when the two reach it by different routes.
+    pub revision: u64,
 }
 
 /// the screen: called from the session's task whenever what is shown changes.

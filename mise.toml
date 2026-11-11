@@ -112,6 +112,10 @@ depends = ["rust:require"]
 dir = "app"
 run = "cargo test --locked --package marshal-modes --package marshal-view --package marshal-session --package marshal-tray"
 
+[tasks."test:app-frontend"]
+description = "Run the main window page's own tests with Node, which check the order it draws views in"
+run = "node --test app/crates/app/tests/frontend/*.test.mjs"
+
 [tasks."deny:app"]
 description = "Check the crates the app's executable links for banned versions, unreviewed licences, and other sources, for the Windows and macOS builds; the advisory check runs in its own workflow"
 depends = ["rust:require", "fetch:app"]
@@ -374,7 +378,7 @@ description = "Run the signed package check, which verify-macos runs, against st
 run = "bash .github/scripts/tests/test-signed-pkg-refusals.sh"
 
 [tasks.check]
-description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, release script tests, release shape check and its test, sign-macos, signed package and assemble tests, installer version and WiX fetch tests, install block tests, Rust tests, Rust dependency check, the app's toolchain and tauri-cli pin checks, licence notices, tests and dependency check"
+description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, release script tests, release shape check and its test, sign-macos, signed package and assemble tests, installer version and WiX fetch tests, install block tests, Rust tests, Rust dependency check, the app's toolchain and tauri-cli pin checks, licence notices, tests, page tests and dependency check"
 depends = [
   "format:check",
   "lint",
@@ -398,5 +402,6 @@ depends = [
   "check:notices",
   "test:tauri-cli-version",
   "test:app",
+  "test:app-frontend",
   "deny:app",
 ]

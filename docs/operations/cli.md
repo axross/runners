@@ -2961,6 +2961,7 @@ libraries, so the Check job on Linux needs none; the Windows job covers the rest
 | `format:app`, `format:check:app` | `cargo fmt --all`, and `cargo fmt --all --check`, in `app/`                                                                                  |
 | `lint:app`                       | `cargo clippy --locked --all-targets -- -D warnings` over the `marshal-modes`, `marshal-view`, `marshal-session` and `marshal-tray` packages |
 | `test:app`                       | `cargo test --locked` over the same four packages                                                                                            |
+| `test:app-frontend`              | `node --test` over the main window page's own tests, in `app/crates/app/tests/frontend/`                                                     |
 | `deny:app`                       | `cargo deny --locked check bans licenses sources` in `app/`, for `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`                         |
 | `check:notices`, `notices:app`   | Compare, or write again, the checked-in licence notices against `app/Cargo.lock`; see [App](./app.md#licence-notices)                        |
 | `check:app-pins`                 | Both toolchain files name one channel, and `app/tauri-cli.version` holds one exact version                                                   |
