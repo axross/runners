@@ -3,7 +3,8 @@
 //! shim on Unix, or otherwise the app. The hidden modes run the `marshal-cli` library's
 //! entry points, have no interface and promise no compatibility.
 
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use marshal_cli::agent::{AgentOptions, Launch};
@@ -18,6 +19,53 @@ pub const RUNNING: &str = "running";
 pub const STOPPED: &str = "stopped";
 
 const EXIT_USAGE: u8 = 2;
+
+/// the variables a debug build's agent reads to run against a scratch host, with the
+/// names the command line's `start` reads.
+pub const TEST_ROOT_VARIABLE: &str = "MARSHAL_TEST_ROOT";
+pub const TEST_DOCKER_VARIABLE: &str = "MARSHAL_TEST_DOCKER";
+pub const TEST_GITHUB_API_VARIABLE: &str = "MARSHAL_TEST_GITHUB_API";
+
+/// what a test moves in the agent: where its lock, channel, log and configuration are,
+/// which `docker` it runs and which GitHub address it calls. Only a debug build reads
+/// them, as the library's agent options do.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Overrides {
+    pub root: Option<PathBuf>,
+    pub docker: Option<OsString>,
+    pub github_api: Option<String>,
+}
+
+impl Overrides {
+    /// the overrides in this process's environment; none in a release build.
+    #[must_use]
+    pub fn from_environment() -> Self {
+        Self::from_lookup(|name| {
+            if cfg!(debug_assertions) {
+                std::env::var_os(name)
+            } else {
+                None
+            }
+        })
+    }
+
+    #[must_use]
+    pub fn from_lookup(lookup: impl Fn(&str) -> Option<OsString>) -> Self {
+        Self {
+            root: lookup(TEST_ROOT_VARIABLE).map(PathBuf::from),
+            docker: lookup(TEST_DOCKER_VARIABLE),
+            github_api: lookup(TEST_GITHUB_API_VARIABLE).and_then(|value| value.into_string().ok()),
+        }
+    }
+
+    fn options(&self, launch: Launch) -> AgentOptions<'_> {
+        let mut options = AgentOptions::new(launch);
+        options.test_root = self.root.as_deref();
+        options.docker = self.docker.as_deref().map(OsStr::new);
+        options.github_api = self.github_api.as_deref();
+        options
+    }
+}
 
 /// the arguments that start the agent from this executable.
 #[must_use]
@@ -73,10 +121,13 @@ fn is_command(word: &OsString) -> bool {
 #[must_use]
 pub fn run(mode: Mode) -> ExitCode {
     match mode {
-        Mode::Agent(launch) => ExitCode::from(marshal_cli::agent::run(
-            AgentOptions::new(launch),
-            &mut std::io::stderr(),
-        )),
+        Mode::Agent(launch) => {
+            let overrides = Overrides::from_environment();
+            ExitCode::from(marshal_cli::agent::run(
+                overrides.options(launch),
+                &mut std::io::stderr(),
+            ))
+        }
         Mode::Command(args) => {
             marshal_cli::command::run(args, &mut std::io::stdout(), &mut std::io::stderr())
         }

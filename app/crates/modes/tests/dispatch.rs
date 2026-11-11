@@ -1,7 +1,8 @@
 use std::ffi::OsString;
+use std::path::PathBuf;
 
 use marshal_cli::agent::Launch;
-use marshal_modes::{Mode, agent_arguments, run};
+use marshal_modes::{Mode, Overrides, agent_arguments, run};
 
 fn args(words: &[&str]) -> Vec<OsString> {
     words.iter().map(OsString::from).collect()
@@ -84,4 +85,36 @@ fn a_refused_mode_exits_with_the_usage_code() {
         format!("{:?}", run(Mode::Refused)),
         format!("{:?}", std::process::ExitCode::from(2))
     );
+}
+
+fn lookup(pairs: &'static [(&'static str, &'static str)]) -> impl Fn(&str) -> Option<OsString> {
+    move |name| {
+        pairs
+            .iter()
+            .find(|(key, _)| *key == name)
+            .map(|(_, value)| OsString::from(value))
+    }
+}
+
+#[test]
+fn the_agent_overrides_are_read_from_the_variables_the_command_line_reads() {
+    let overrides = Overrides::from_lookup(lookup(&[
+        ("MARSHAL_TEST_ROOT", "scratch"),
+        ("MARSHAL_TEST_DOCKER", "fake-docker"),
+        ("MARSHAL_TEST_GITHUB_API", "http://127.0.0.1:1"),
+    ]));
+    assert_eq!(overrides.root, Some(PathBuf::from("scratch")));
+    assert_eq!(overrides.docker, Some(OsString::from("fake-docker")));
+    assert_eq!(overrides.github_api.as_deref(), Some("http://127.0.0.1:1"));
+}
+
+#[test]
+fn no_variable_means_no_override() {
+    assert_eq!(Overrides::from_lookup(lookup(&[])), Overrides::default());
+}
+
+#[cfg(not(debug_assertions))]
+#[test]
+fn a_release_build_ignores_the_variables() {
+    assert_eq!(Overrides::from_environment(), Overrides::default());
 }
