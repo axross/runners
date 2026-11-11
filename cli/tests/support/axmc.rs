@@ -16,14 +16,18 @@ use std::time::{Duration, Instant, SystemTime};
 use marshal_cli::runtime::tart::names::GoldenVmName;
 
 use super::docker::FAKE_DOCKER;
-use super::host::{Started, TOKEN};
+use super::host::{Finished, Started, TOKEN, registered, texts};
 use super::softnet::Host as SoftnetHost;
+use super::stub::{Reply, Stub};
 use super::tart::FAKE_TART;
 use super::{BINARY, TempDir};
 
 /// the owner and mode the fake `softnet` file is judged to have unless a test says
 /// otherwise.
 pub const SET_UP_SOFTNET: &str = "0:4755";
+
+/// long enough for a fresh instance to boot a VM, probe it and run its container.
+pub const RUNNING_WITHIN: Duration = Duration::from_secs(30);
 
 /// the name of the directory a diagnostics-enabled pool exports into.
 const SINK: &str = "diagnostics";
@@ -78,6 +82,26 @@ pub const fn macos(name: &'static str, slots: u32) -> Pool {
         slots,
         diagnostics: false,
     }
+}
+
+/// a GitHub stub that answers its first twenty requests with a registration.
+pub fn github() -> Stub {
+    Stub::start((0..20).map(|_| registered()).collect::<Vec<Reply>>())
+}
+
+/// the containers the status shows running, by slot line.
+pub fn running_jobs(status: &str) -> Vec<String> {
+    status
+        .lines()
+        .filter(|line| line.starts_with("slot: "))
+        .filter_map(|line| line.split_once("running container "))
+        .map(|(_, name)| name.trim().to_string())
+        .collect()
+}
+
+/// whether the status shows exactly `jobs` containers running.
+pub fn running(jobs: usize) -> impl Fn(&str) -> bool {
+    move |status| running_jobs(status).len() == jobs
 }
 
 pub struct MacHost {
@@ -273,6 +297,13 @@ impl MacHost {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         Started::spawn(command)
+    }
+
+    /// runs `stop` and waits for the `start` it stops to end.
+    pub fn stop_and_finish(&self, started: Started) -> Finished {
+        let stop = self.client(&["stop"]);
+        assert_eq!(stop.status.code(), Some(0), "{:?}", texts(&stop));
+        started.finish(Duration::from_secs(40))
     }
 
     /// runs `marshal start` as a client of a stopped instance, to its end.

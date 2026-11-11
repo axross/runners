@@ -17,31 +17,13 @@ mod support;
 
 use std::time::Duration;
 
-use support::axmc::{MacHost, OTHER_WIFI_NETWORK, VPN_NETWORK, WIFI_NETWORK, linux};
-use support::host::{Finished, Started, registered, texts};
-use support::stub::{Reply, Stub};
-
-/// long enough for a fresh instance to boot a VM, probe it and run its container.
-const RUNNING_WITHIN: Duration = Duration::from_secs(30);
+use support::axmc::{
+    MacHost, OTHER_WIFI_NETWORK, RUNNING_WITHIN, VPN_NETWORK, WIFI_NETWORK, github, linux, running,
+    running_jobs,
+};
+use support::host::texts;
 
 const SLEPT: &str = "the Mac slept, so every runner was stopped";
-
-fn github() -> Stub {
-    Stub::start((0..20).map(|_| registered()).collect::<Vec<Reply>>())
-}
-
-fn running_jobs(status: &str) -> Vec<String> {
-    status
-        .lines()
-        .filter(|line| line.starts_with("slot: "))
-        .filter_map(|line| line.split_once("running container "))
-        .map(|(_, name)| name.trim().to_string())
-        .collect()
-}
-
-fn running(jobs: usize) -> impl Fn(&str) -> bool {
-    move |status| running_jobs(status).len() == jobs
-}
 
 fn holding_host() -> MacHost {
     let host = MacHost::new(&[linux("linuxone", 1)]);
@@ -51,12 +33,6 @@ fn holding_host() -> MacHost {
 
 fn stopped_because(reason: &'static str) -> impl Fn(&str) -> bool {
     move |status| status.contains("state: stopped") && status.contains(&format!("reason: {reason}"))
-}
-
-fn stop_and_finish(host: &MacHost, started: Started) -> Finished {
-    let stop = host.client(&["stop"]);
-    assert_eq!(stop.status.code(), Some(0), "{:?}", texts(&stop));
-    started.finish(Duration::from_secs(40))
 }
 
 fn assert_no_job_vm(host: &MacHost) {
@@ -97,7 +73,7 @@ fn a_wake_stops_a_running_instance_with_its_reason_deletes_every_vm_and_only_sta
     assert_eq!(again.status.code(), Some(0), "{stderr}");
     host.wait_for_status("the job again", RUNNING_WITHIN, running(1));
 
-    let finished = stop_and_finish(&host, started);
+    let finished = host.stop_and_finish(started);
     assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
     let line = format!("The instance is stopped: {SLEPT}.");
     assert!(
@@ -141,7 +117,7 @@ fn a_primary_network_that_differs_stops_every_runner_naming_both_interfaces_and_
     });
     assert_no_job_vm(&host);
 
-    let finished = stop_and_finish(&host, started);
+    let finished = host.stop_and_finish(started);
     assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
     assert!(
         finished.stderr.contains(&format!(
@@ -174,7 +150,7 @@ fn another_router_on_the_same_interface_is_a_change_and_the_same_network_is_not(
         RUNNING_WITHIN,
         move |status| status.contains("state: stopped") && status.contains(&reason),
     );
-    let finished = stop_and_finish(&host, started);
+    let finished = host.stop_and_finish(started);
     assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
 }
 
@@ -199,7 +175,7 @@ fn with_no_default_route_at_start_no_vm_is_cloned_and_status_waits_for_a_network
     assert!(!status.contains("network:"), "{status}");
     assert_eq!(host.count_of("clone"), 1);
 
-    let finished = stop_and_finish(&host, started);
+    let finished = host.stop_and_finish(started);
     assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
     assert!(
         host.log_text()
@@ -217,7 +193,7 @@ fn a_stop_while_waiting_for_a_network_ends_the_instance_without_a_vm() {
     host.wait_for_status("the wait", RUNNING_WITHIN, |status| {
         status.contains("network: waiting for a network")
     });
-    let finished = stop_and_finish(&host, started);
+    let finished = host.stop_and_finish(started);
     assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
     assert_eq!(host.count_of("clone"), 0);
     assert_no_job_vm(&host);
@@ -256,7 +232,7 @@ fn the_keep_awake_hold_is_held_while_running_and_released_when_stopped_and_a_fai
     host.wait_for_status("the job", RUNNING_WITHIN, running(1));
     host.wait_for_keep_awake("held");
 
-    let finished = stop_and_finish(&host, started);
+    let finished = host.stop_and_finish(started);
     assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
     host.wait_for_keep_awake("released");
 }
@@ -280,6 +256,6 @@ fn a_sleep_while_the_instance_is_stopped_is_not_a_stop_at_the_resume() {
     assert!(host.status().contains("state: running"));
     assert!(!host.signals_dir().join("sleep").exists());
 
-    let finished = stop_and_finish(&host, started);
+    let finished = host.stop_and_finish(started);
     assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
 }

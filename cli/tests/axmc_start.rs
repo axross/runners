@@ -13,12 +13,8 @@ mod support;
 
 use std::time::{Duration, Instant};
 
-use support::axmc::{MacHost, linux, macos};
-use support::host::{Finished, Started, registered, texts};
-use support::stub::{Reply, Stub};
-
-/// long enough for a fresh instance to boot a VM, probe it and run its container.
-const RUNNING_WITHIN: Duration = Duration::from_secs(30);
+use support::axmc::{MacHost, RUNNING_WITHIN, github, linux, macos, running, running_jobs};
+use support::host::{Finished, texts};
 
 const OLD_TART: &str = "2.41.0\n";
 const OLD_TART_TEXT: &str = "Tart 2.41.0 is older than the tested version 2.41.1.";
@@ -28,35 +24,11 @@ const SOFTNET_SECTION: &str =
     "the \"Setting Up Softnet\" section of the macOS Runner Host document";
 const SKIP_REASON: &str = "macOS VM pools are not supported yet";
 
-fn github() -> Stub {
-    Stub::start((0..20).map(|_| registered()).collect::<Vec<Reply>>())
-}
-
-/// the containers the status shows running, by slot line.
-fn running_jobs(status: &str) -> Vec<String> {
-    status
-        .lines()
-        .filter(|line| line.starts_with("slot: "))
-        .filter_map(|line| line.split_once("running container "))
-        .map(|(_, name)| name.trim().to_string())
-        .collect()
-}
-
-fn running(jobs: usize) -> impl Fn(&str) -> bool {
-    move |status| running_jobs(status).len() == jobs
-}
-
 /// a host whose job containers are held until a test ends them.
 fn holding_host(pools: &[support::axmc::Pool]) -> MacHost {
     let host = MacHost::new(pools);
     host.docker_script("run_mode", "hold");
     host
-}
-
-fn stop_and_finish(host: &MacHost, started: Started) -> Finished {
-    let stop = host.client(&["stop"]);
-    assert_eq!(stop.status.code(), Some(0), "{:?}", texts(&stop));
-    started.finish(Duration::from_secs(40))
 }
 
 fn assert_refused_before_any_vm(host: &MacHost, finished: &Finished) {
@@ -85,7 +57,7 @@ fn a_linux_and_macos_configuration_starts_only_the_linux_pools_with_one_skip_war
         );
     }
 
-    let finished = stop_and_finish(&host, started);
+    let finished = host.stop_and_finish(started);
     assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
     let log = host.log_text();
     for pool in ["macone", "mactwo"] {
@@ -256,7 +228,7 @@ fn a_tart_that_does_not_answer_at_start_makes_the_slots_wait_and_they_boot_once_
 
     host.remove_tart_script("hang-version");
     host.wait_for_status("the job", RUNNING_WITHIN, running(1));
-    let finished = stop_and_finish(&host, started);
+    let finished = host.stop_and_finish(started);
     assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
 }
 
@@ -274,7 +246,7 @@ fn a_pool_waits_for_tart_in_status_until_tart_lists_the_golden_vm() {
     host.remove_tart_script("fail-list");
     let status = host.wait_for_status("the job", RUNNING_WITHIN, running(1));
     assert!(status.contains("pool: linuxone: running"), "{status}");
-    let finished = stop_and_finish(&host, started);
+    let finished = host.stop_and_finish(started);
     assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
 }
 
@@ -291,7 +263,7 @@ fn a_newer_patch_of_tart_and_softnet_runs_with_the_warnings_in_the_log_and_in_st
     for warning in [tart, softnet] {
         assert!(status.contains(&format!("warning: {warning}")), "{status}");
     }
-    let finished = stop_and_finish(&host, started);
+    let finished = host.stop_and_finish(started);
     assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
     let log = host.log_text();
     for warning in [tart, softnet] {
@@ -345,7 +317,7 @@ fn a_refused_resume_leaves_the_instance_stopped_with_the_refusal_as_its_reason()
     assert_eq!(resumed.status.code(), Some(0), "{stderr}");
     assert!(stderr.contains("The stopped instance resumed"), "{stderr}");
     host.wait_for_status("the job", RUNNING_WITHIN, running(1));
-    let finished = stop_and_finish(&host, started);
+    let finished = host.stop_and_finish(started);
     assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
 }
 
@@ -397,7 +369,7 @@ fn a_refusal_after_start_holds_the_slot_while_another_slots_job_finishes_and_it_
     host.tart_script("version_output", "2.41.1\n");
     host.wait_for_status("both jobs again", Duration::from_secs(60), running(2));
     assert_eq!(host.count_of("clone"), 4);
-    let finished = stop_and_finish(&host, started);
+    let finished = host.stop_and_finish(started);
     assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
     assert!(
         host.log_text()

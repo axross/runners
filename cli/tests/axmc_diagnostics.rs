@@ -23,13 +23,12 @@ use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use support::axmc::{MacHost, linux};
+use support::axmc::{MacHost, RUNNING_WITHIN, linux};
 use support::docker::{FAKE_DOCKER, invocations};
-use support::host::{JIT, Started, TOKEN, registered, send_signal, texts};
+use support::host::{JIT, TOKEN, registered, send_signal, texts};
 use support::stub::{Reply, Stub};
 use support::tart::ended_within;
 
-const RUNNING_WITHIN: Duration = Duration::from_secs(30);
 const GAP: &str =
     "private export unavailable, incomplete, unsafe or over budget; prior evidence retained.";
 
@@ -97,12 +96,6 @@ fn all_text(host: &MacHost) -> String {
     text
 }
 
-fn stop(host: &MacHost, started: Started) -> support::host::Finished {
-    let stop = host.client(&["stop"]);
-    assert_eq!(stop.status.code(), Some(0), "{:?}", texts(&stop));
-    started.finish(Duration::from_secs(40))
-}
-
 /// At job end the exporter child reads the evidence from the VM through the guest
 /// agent into the private directory, token-free, and the VM is deleted after it.
 #[test]
@@ -141,7 +134,7 @@ fn a_finished_job_exports_its_evidence_from_the_vm_and_then_deletes_the_vm() {
         .unwrap();
     assert!(copy < delete, "the export comes first: {calls:?}");
 
-    let finished = stop(&host, started);
+    let finished = host.stop_and_finish(started);
     assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
     let everything = format!("{}{}{}", all_text(&host), finished.stdout, finished.stderr);
     for secret in [JIT, TOKEN] {
@@ -159,7 +152,7 @@ fn a_graceful_stop_exports_the_running_jobs_evidence_before_its_vm_is_deleted() 
     let started = host.start(&stub.address);
     let _ = running_container(&host);
 
-    let finished = stop(&host, started);
+    let finished = host.stop_and_finish(started);
 
     assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
     let bundles = host.bundles();
@@ -244,7 +237,7 @@ fn the_next_start_deletes_a_leftover_diagnostic_vm_without_an_export_and_reports
     wait_until("the leftover is deleted", RUNNING_WITHIN, || {
         !host.vm_names().contains(&leftover.to_string())
     });
-    let finished = stop(&host, started);
+    let finished = host.stop_and_finish(started);
     assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
     assert!(host.bundles().is_empty(), "nothing was exported");
     assert!(
@@ -361,6 +354,6 @@ fn diagnostics_finalises_a_retained_vm_whose_deletion_failed() {
     assert!(only_golden_vm_remains(&host), "the VM is deleted");
     assert_eq!(host.bundles().len(), 1, "it was exported once");
 
-    let finished = stop(&host, started);
+    let finished = host.stop_and_finish(started);
     assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
 }
