@@ -10,8 +10,9 @@ protocol version 2 (the state it keeps, the token store, the messages, and the
 snapshot), the image contract every runner image declares and the
 check of it, running a host with `build`, `start`, `stop`, `restart`, `status`, and
 `diagnostics`, the diagnostic containers a diagnostics-enabled pool runs and their
-export, the toolchain and the gates that cover it, how a release is built,
-signed, and installed, and why its name is fixed. The binary is `marshal`, and axpc runs its pools with it, as [Windows Runner Host](./windows-runner-host.md)
+export, the toolchain and the gates that cover it, the app's workspace that builds on
+the library and the gates it adds, how a release is built, signed, and installed, and
+why its name is fixed. The binary is `marshal`, and axpc runs its pools with it, as [Windows Runner Host](./windows-runner-host.md)
 describes, including how to roll back to the previous release.
 
 ## Running It
@@ -1979,6 +1980,72 @@ with the marker files at test time. The advisory check, `cargo deny --locked che
 fetches the RustSec database, so it runs in
 [`rust-advisories.yaml`](../../.github/workflows/rust-advisories.yaml) and not in
 `mise run check`; see [Development Workflow](./development-workflow.md).
+
+## The App Workspace
+
+[`app/`](../../app) is a second Cargo workspace beside `cli/`: the Windows
+notification-area app, which is also the executable that runs the resident agent.
+[App](./app.md) owns what it does. This section owns what the library gives it and
+the gates that cover it, so a change to the library knows what the app relies on.
+
+**Contract.**
+
+- The workspace depends on the `marshal-cli` library by path, through the crate's
+  public items only, so the app's lockfile, `cargo deny` run, licence notices and
+  advisory check cover everything its executable links, the library's crates
+  included. It never runs the `marshal` binary.
+- No file under `cli/src` moves for the app. The library's additions for it are
+  small exports: the stop reason codes as `agent::StopReason`, and the handshake
+  timeout `agent::HANDSHAKE_TIMEOUT`. A later change to a public item the app uses
+  breaks the app's build, which `mise run check` and the Windows job show, so the
+  change and the app move together.
+- The app reads the library for the protocol's types and client, the agent's entry
+  and options, the token store's interface and refusals, the instance roots, the
+  hidden `export` and `shim` commands, and the `Secret` type that masks a token. It
+  adds no message to the protocol: a new message follows [Version Rules](#version-rules).
+- `cli/helpers/fake_docker.rs` is also built as the `fake-docker` binary of the app's
+  executable package, so the app's tests can run the exporter child against a fake
+  engine. The source stays under `cli/`; the CLI's own tests build it as before.
+- The app has its own `Cargo.lock`, [`deny.toml`](../../app/deny.toml) and
+  [`rust-toolchain.toml`](../../app/rust-toolchain.toml). The toolchain file names
+  the CLI's channel, and Dependabot is set to bump both files in one pull request. The CLI's
+  `Cargo.lock`, `deny.toml`, and dependency table do not change for the app: the
+  table under Dependencies lists the CLI's crates only, and
+  [Security](../conventions/security.md#pinning-convention) holds the policy for the
+  app's own.
+- Every app crate forbids `unsafe_code` and takes the CLI's lint set through
+  `[lints] workspace = true`.
+
+**Gates.** `mise run check` covers what builds without the web view's system
+libraries, so the Check job on Linux needs none; the Windows job covers the rest.
+
+| Task                             | Runs                                                                                                                                         |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fetch:app`                      | `cargo fetch --locked` in `app/`, which `cargo deny` and `cargo about` read                                                                  |
+| `format:app`, `format:check:app` | `cargo fmt --all`, and `cargo fmt --all --check`, in `app/`                                                                                  |
+| `lint:app`                       | `cargo clippy --locked --all-targets -- -D warnings` over the `marshal-modes`, `marshal-view`, `marshal-session` and `marshal-tray` packages |
+| `test:app`                       | `cargo test --locked` over the same four packages                                                                                            |
+| `deny:app`                       | `cargo deny --locked check bans licenses sources` in `app/`, for `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`                         |
+| `check:notices`, `notices:app`   | Compare, or write again, the checked-in licence notices against `app/Cargo.lock`; see [App](./app.md#licence-notices)                        |
+| `check:app-pins`                 | Both toolchain files name one channel, and `app/tauri-cli.version` holds one exact version                                                   |
+| `test:tauri-cli-version`         | The script that reads the pin, against files that are not one exact version                                                                  |
+
+`format:check` and `lint` call the app's formatting and lint tasks, and `check` calls
+the rest, so one run covers both workspaces. The Tauri crate, `marshal-app`, needs the
+web view and is not in `lint:app` or `test:app`.
+
+The `app` job in [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) runs
+on a Windows hosted runner: clippy and the tests over the whole workspace, then
+`cargo tauri build --no-bundle`, failing if the build changed or left a file. An
+`app-modes` job runs clippy and the tests of `marshal-modes` on a macOS hosted runner,
+which covers the Unix shim's dispatch there; it never builds the Tauri crate. Linux
+runs the same dispatch tests in `mise run check`. The advisory check,
+`cargo deny --locked check advisories` in `app/`, runs in
+[`rust-advisories.yaml`](../../.github/workflows/rust-advisories.yaml) beside the CLI's
+and is not part of `mise run check`; see [Development Workflow](./development-workflow.md).
+[Development Workflow](./development-workflow.md) describes each job's permissions,
+and [App](./app.md#building-the-app) says how the app is built and which pin its
+build tool has.
 
 ## Releases
 
