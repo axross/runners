@@ -1025,10 +1025,9 @@ Tart's default network would reach the LAN, the host and other VMs.
   entries that refuses new connections while full. A VM that opens more than that
   within about 5 minutes has new connections refused.
 - The filtering rests on a reading of Softnet's source, which already contradicts
-  Tart's documentation about host access. The host run therefore probes targets
-  that answer from the Mac, and a VM that reaches any of them stops the work until
-  the maintainer decides a fallback
-  ([#74](https://github.com/axross/runners/issues/74)).
+  Tart's documentation about host access. No host run has probed it, and the
+  maintainer accepted it as unverified
+  ([#74](https://github.com/axross/runners/issues/74#issuecomment-6784246305)).
 
 ## Tart, Softnet, and the Golden VM Are Pinned
 
