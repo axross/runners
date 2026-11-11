@@ -234,7 +234,10 @@ Creating the draft pull request and pushing fixes while it is open trigger
 [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml). It runs on a
 GitHub-hosted runner with `contents: read`, checks out the pull request, and runs
 `mise run check`, which executes the pull request's own task definitions and the
-linters they call, including the CLI's Rust gates. The same workflow also runs a
+linters they call, including the CLI's Rust gates and, for the app under `app/`, its
+formatting, the lint and tests of its platform-independent crates, its cargo-deny
+run, and a check that both Rust toolchain files name one channel and that
+`app/tauri-cli.version` holds one exact version. The same workflow also runs a
 `rust` job that formats, lints, and tests the CLI on Linux, Windows, and macOS hosted
 runners, with four more steps on Linux only: the release-profile tests of the
 debug-only overrides, the test definition `build` reads among them; a build of the
@@ -250,7 +253,15 @@ helper and runs a copy of the helper as `nobody` through the hosted runner's
 passwordless `sudo`, failing unless that other user is refused the lock. On Windows a
 further step has the helper open the control pipe and reads the live pipe's security
 descriptor back with PowerShell 7, failing unless it grants the current user alone.
-Neither step needs a new action, permission, or secret. The workflow's release-build
+Neither step needs a new action, permission, or secret. An `app` job on a Windows
+hosted runner holds `contents: read` and builds the app's whole workspace: it
+installs `tauri-cli` with `cargo install --locked` at the version in
+`app/tauri-cli.version`, the one place that pin is set, lints and tests every crate,
+runs `cargo tauri build --no-bundle`, fails if the build changed a tracked file or
+left a file that is neither tracked nor ignored, and keeps the built
+`marshal-app.exe` as the run's artifact. It uses no cache, so `tauri-cli` compiles
+on every run, and its timeout is 60 minutes, an estimate until a run measures it.
+The workflow's release-build
 job is the release build's dry run: it calls
 [`release-build.yaml`](../../.github/workflows/release-build.yaml), which builds the
 Windows x64 and macOS arm64 release binaries on their hosted runners, runs the
