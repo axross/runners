@@ -27,7 +27,8 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   host, the release record for the CLI's dispatch-only release workflow and its
   signing Environment, the accepted LAN-egress risk, the axmc Linux runtime's per-job
   VM, CPU placement in it, Softnet and its SUID check, the accepted host-facing
-  surface, the pinned Tart, Softnet, and golden VM base, how the resident agent
+  surface, the VM-local Docker socket, the pinned Tart, Softnet, golden VM base, and
+  runner image Docker client, how the resident agent
   keeps tokens and receives them, what is never committed, and why the review
   gate admits one bot identity by login.
 - [conventions/documentation.md](./conventions/documentation.md) - which

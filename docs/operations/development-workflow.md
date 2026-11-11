@@ -252,8 +252,8 @@ further step has the helper open the control pipe and reads the live pipe's secu
 descriptor back with PowerShell 7, failing unless it grants the current user alone.
 Neither step needs a new action, permission, or secret. The workflow also builds the
 runner image for linux/arm64 on the hosted `ubuntu-24.04-arm` runner, in a job of its
-own that builds and never pushes and runs no smoke test, since those assume x86_64
-([#74](https://github.com/axross/runners/issues/74)). Its release-build job is the
+own that builds the image, runs the same smoke test, which expects no Android toolchain
+on arm64, and never pushes ([#74](https://github.com/axross/runners/issues/74)). Its release-build job is the
 release build's dry run: it calls
 [`release-build.yaml`](../../.github/workflows/release-build.yaml), which builds the
 Windows x64 and macOS arm64 release binaries on their hosted runners, runs the
@@ -390,7 +390,11 @@ and date read them from the two Dockerfiles.
 A runner bump changes no part of the run contract, so the contract version stays.
 When the new runner changes something the run contract relies on, such as a path or
 the user it runs as, [REVIEW.md](../../REVIEW.md) asks for the contract version to
-be raised, as [CLI](./cli.md#the-image-contract) describes.
+be raised, as [CLI](./cli.md#the-image-contract) describes. The `docker` group id
+is one such thing: the Dockerfile fails the build when a new base gives the group
+an id other than 123, which the golden VM's `docker` group has, so a bump that
+changes it also changes `DOCKER_GROUP_ID`, the Dockerfile and the smoke test
+together, and raises the golden VM version and the contract version.
 
 The CLI embeds the runner image's definition, so a host that runs the CLI builds the
 new runner only once it has a binary built after the bump. Keep the pull request's

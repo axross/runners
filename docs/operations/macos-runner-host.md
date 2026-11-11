@@ -141,7 +141,10 @@ defines it, in `runtime::tart`, `golden` and `build::golden`.
     not own.
 - **The golden VM version** is a number in the CLI (`runtime::tart::names`),
   starting at 1. It goes up whenever the base digest, the provisioning steps, the
-  launcher or the Docker Engine versions change.
+  launcher or the Docker Engine versions change. It is 2 with the `docker` group's
+  fixed id, and the golden VM's image contract version is 2 with the runner image's
+  Docker client, so a golden VM built before is refused as mismatched until
+  `marshal build` runs again.
 - **Reading it.** The golden VM's name records its golden VM version, its image
   contract version, its runner version and its build time, so `start`, `restart`,
   each job launch and `status` read them from `tart list` without booting it. The
@@ -163,13 +166,23 @@ defines it, in `runtime::tart`, `golden` and `build::golden`.
   - Docker Engine (`docker-ce`, `docker-ce-cli`, `containerd.io` and
     `docker-buildx-plugin`) comes from Docker's apt repository at pinned package
     versions, which apt holds, after the repository's signing key has matched a
-    recorded fingerprint. Docker Compose is not installed.
+    recorded fingerprint. Docker Compose is not installed. The `docker` group is
+    created first, with the id 123, and the build fails if the group exists with
+    another id.
   - The launcher is `/usr/local/bin/marshal-launch`, owned by root, mode 0755.
   - The `admin` password is locked and SSH is masked, so the base image's
     `admin`/`admin` login cannot be used. The guest agent does not use SSH.
   - The runner image is built inside the VM under the configured `imageName`, which
     is `actions-runner:local` when the configuration gives none, and carries this
     CLI's image contract.
+- **The Docker socket.** The Docker Engine in a job VM listens on
+  `/var/run/docker.sock`, owned by the `docker` group, whose id is 123. The job's
+  runner container mounts that socket, so a job step can run `docker` against the
+  VM's own engine, and the runner image's `docker` group, which its `runner` user is
+  in, has the same id. The socket belongs to the job's own VM, which is deleted when
+  the job ends; [Security](../conventions/security.md#the-vm-local-docker-socket)
+  records why that is permitted and what it does not extend to. The image's Docker
+  client is installed from the same repository, at the same version.
 - **The guest user.** The guest agent runs commands as `admin`, the golden VM's
   user, which the golden VM puts in the `docker` group, so `docker` needs no `sudo`
   in a job VM. The source for this is the unit file
@@ -197,7 +210,7 @@ defines it, in `runtime::tart`, `golden` and `build::golden`.
      and runs the CPU probe; a failed probe ends the cycle before a runner registers;
   5. registers a JIT runner, and runs the job container with `--pull never`, with
      the container's CPU quota and affinity covering all the VM's vCPUs and its
-     memory limit equal to the VM's;
+     memory limit equal to the VM's, and with the VM's Docker socket mounted;
   6. when the job ends, exports diagnostics for a diagnostics-enabled pool, stops the
      VM and deletes it, so no job VM outlives its job.
 - **Who deletes what.** A job VM is deleted by its slot, on every path out of the
@@ -245,9 +258,9 @@ the freshness warnings ask for it.
 3. Pulls the base image by its digest and clones it to a new build VM, which keeps
    the base's CPUs and memory.
 4. Boots the build VM on Softnet and waits up to 120 s for its guest agent.
-5. Upgrades the Ubuntu packages, installs Docker Engine at the pinned versions after
-   checking Docker's signing key against its recorded fingerprint, installs the
-   launcher, and disables the SSH login. A key whose fingerprint is not the recorded
+5. Upgrades the Ubuntu packages, creates the `docker` group with the id 123, installs
+   Docker Engine at the pinned versions after checking Docker's signing key against
+   its recorded fingerprint, installs the launcher, and disables the SSH login. A key whose fingerprint is not the recorded
    one fails the build before anything is installed from Docker.
 6. Builds the runner image inside the VM, from the definition embedded in `marshal`,
    with the arguments `build` gives it on axpc, under the configured `imageName`, and
@@ -507,6 +520,37 @@ golden VM stays. Its evidence, with the literal output of `tart --version` and
 `softnet --version`, is posted on #74. An item below moves to a verified statement,
 with a link to the evidence, only when a run's evidence covers it.
 
+**The host run.** Jobs come from a workflow in a private repository the maintainer
+chooses, since this repository is public and never uses self-hosted runners. After
+the routing check in [Starting, watching and stopping](#starting-watching-and-stopping),
+the run goes in this order:
+
+1. Confirm that no Docker Desktop is installed, and record the macOS version, the
+   literal output of `tart --version` and `softnet --version`, and Softnet's SUID bit
+   as [Setting Up Softnet](#setting-up-softnet) lists it.
+2. Install `marshal` from the arm64 pull request's own build, not from a release: the
+   macOS arm64 binary in the `marshal-release` artifact of that pull request's Merge
+   Checks run, named `marshal-0.0.0-dryrun.<run number>-macos-arm64`. The dry run
+   signs nothing. Check the binary against its line in `SHA256SUMS`, and record the
+   checksum and the commit the run built. A browser download carries a quarantine
+   attribute that blocks an unsigned binary; `gh run download` leaves none. An Actions
+   artifact keeps no file modes, so run `chmod 0755` on the binary, then put it at
+   `~/.local/bin/marshal`, where
+   [CLI](./cli.md#installing-updating-and-rolling-back) installs a release.
+3. Run `marshal build --config /path/to/runner-host.json`, then
+   `marshal start --config /path/to/runner-host.json`, with the sizing of
+   [the example configuration](../../hosts/macos/runner-host.example.json). Record the
+   golden VM's and Tart's cache's disk use.
+4. Run a job with `runs-on: [axmc, linux]` and a step that uses `docker run`, and
+   confirm with `tart list` that the job's VM runs while it does. Record the
+   runner's labels and the slot's turnaround. This step also covers the mount of the
+   VM's Docker socket and the match of the two `docker` groups.
+5. With no external display attached, close the lid for about 5 s during a job, and
+   switch networks during another job. Confirm that each stops the runners, with the
+   reason in `marshal status`, and that `tart list` then shows no job VM.
+6. Run `marshal stop`, then confirm with `tart list` that no job or build VM is left
+   and that the golden VM stays.
+
 **What is checked without a Mac.** The CLI's tests run against fake `tart`, `docker`,
 `softnet`, `caffeinate`, `route` and `arp` programs and a scripted signal source:
 
@@ -528,7 +572,12 @@ of an Apple tool as the source prints it, and not on a run:
 
 - The guest agent runs commands as `admin`, and `admin` is in the `docker` group in a
   job VM without `sudo` (from the guest agent's source, not from a running VM).
-- In the build VM, the image build works with `sudo -n docker`.
+- In the build VM, the image build works with `sudo -n docker`, and the build creates
+  the `docker` group with the id 123 on the pinned base.
+- A job step's `docker run` works in the runner container against the VM's own Docker
+  Engine: the VM's socket is mounted, its group has the id 123, and the image's
+  `runner` user has the same group, with no `--group-add`. The Docker client in the
+  image is the pinned version, and the Engine accepts its API version.
 - The image build fits the golden VM's 20 GB disk, with BuildKit's cache, and the
   golden VM, its build and Tart's cache fit the 40 GB reserve; record their sizes.
 - `tart delete` removes a cache entry pulled by digest, which is how `build` removes a
