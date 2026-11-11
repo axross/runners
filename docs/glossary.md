@@ -240,6 +240,15 @@ with every plan-approval question: delivery of the run's draft pull request, the
 Claude review request on it, and watching its activity. See
 [operations/agent-sessions.md](./operations/agent-sessions.md).
 
+**Amp Review Child Thread** - a fresh Amp thread an Amp run starts for one
+independent-review round; it posts its own review on the pull request and is
+archived afterwards. See
+[operations/development-workflow.md](./operations/development-workflow.md).
+
+**Plan-Gate Archive Confirmation** - the request an Amp run collects once at
+the plan gate to archive its review child threads. See
+[operations/agent-sessions.md](./operations/agent-sessions.md).
+
 **Run State** - the recoverable record of a change loop's progress, which a
 fresh session reads to resume the run. See
 [operations/development-workflow.md](./operations/development-workflow.md).

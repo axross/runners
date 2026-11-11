@@ -41,7 +41,9 @@ selected by
 ready or a reported stop naming an unmet gate, without a further prompt.
 That workflow owns the delivery sequence and handoff boundary, including when a
 run obtains a host's per-session confirmation; Agent Sessions describes
-[Claude Code's confirmation](./docs/operations/agent-sessions.md#confirming-delivery-at-the-plan-gate-in-claude-code).
+[Claude Code's confirmation](./docs/operations/agent-sessions.md#confirming-delivery-at-the-plan-gate-in-claude-code)
+and
+[Amp's archive confirmation](./docs/operations/agent-sessions.md#confirming-review-thread-cleanup-at-the-plan-gate-in-amp).
 Current host instructions and tool usage conditions still apply; for Amp, see
 [Handle Amp delivery authorization](#handle-amp-delivery-authorization); for
 Codex, see

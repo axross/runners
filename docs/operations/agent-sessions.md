@@ -242,9 +242,10 @@ follows stays under the delivery grant.
 
 An Amp run reviews through a review child thread per round, under the Amp review
 child thread section of [Development Workflow](./development-workflow.md). Amp's
-archive tool archives a thread only on the user's request, among its other
-conditions, and the route adopted in [`AGENTS.md`](../../AGENTS.md) does not
-make that request on its own. Every Amp run MUST therefore ask the human once,
+archive tool's only condition that fits this route is the user's request: its
+self-archiving option would archive the child before the run verifies the
+review, and the route adopted in [`AGENTS.md`](../../AGENTS.md) does not make
+that request on its own. Every Amp run MUST therefore ask the human once,
 within the plan-approval exchange as a separate question after the plan is
 approved, to confirm archiving the run's review child threads once each round's result is
 verified or the round has failed. A plan revision does not ask again when run
@@ -282,7 +283,7 @@ all Codex surfaces expose the same mechanisms.
 For an Amp-authored pull request, the awaited results are its required GitHub
 checks and the review its Amp review child thread posts. Wait for the child with
 Amp's thread-wait tool, then read the posted review back on the pull request;
-the child's own reply is not the result. Wait for checks with an in-session
+Development Workflow owns what counts as the result. Wait for checks with an in-session
 wait followed by sanctioned GitHub reads, or with a subscription only where the
 host and the run already permit it.
 

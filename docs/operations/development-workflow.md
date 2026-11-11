@@ -64,7 +64,9 @@ pull request creation on a per-session request, the run MUST obtain that
 request at the plan gate, or when a new session resumes the run, and MUST NOT
 stop after push to ask for it. The Confirming Delivery at the Plan Gate in Claude
 Code section of [Agent Sessions](./agent-sessions.md) describes Claude Code's
-plan-gate confirmation. The run MUST, in order:
+plan-gate confirmation, and its Confirming Review-Thread Cleanup at the Plan
+Gate in Amp section describes the archive request an Amp run collects there.
+The run MUST, in order:
 
 1. verify locally with the commands in the [README](../../README.md), run the
    advisory pre-flight (or follow its unavailability exception in Deliver a draft
@@ -96,7 +98,8 @@ above. It waits on a human only for:
 - a product, architecture, or finding-disposition decision that Loop
   Engineering requires the maintainer to make;
 - each review or check result, when the human declined watching or no
-  permitted, authorized wait mechanism delivers that result.
+  permitted, authorized wait mechanism delivers that result;
+- on Amp, the review-thread archive request, when run state records no answer.
 
 The review cap reached without convergence is a blocker. The run MUST record it
 in run state, report it, and keep the pull request draft.
@@ -325,6 +328,9 @@ An Amp review child thread can:
 - incur Amp usage charges
 - read the repository, the pull request, and files outside the diff through
   the executor and GitHub access the child thread is given
+- hold the same GitHub access as the authoring run, including its write
+  access, so the assignment's no-edit, no-push, and no-delegation limits bind
+  only as far as the host enforces them
 - publish a COMMENT-type review on the pull request under the same GitHub
   operator account as the run that authored the change
 
@@ -996,7 +1002,8 @@ handoff of the authoring thread.
    `<!-- ai-agent -->` marker, the child thread's URL, and the reviewed commit,
    which identify it as the reviewer's own result although it shares the
    author's GitHub account.
-4. Wait for the child with Amp's thread-wait tool within
+4. Wait for the child as Agent Sessions' Waiting on CI and Review describes,
+   within
    [Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/independent-review.md#waiting-bound).
    Then read the posted review back, confirm that it is submitted rather than
    pending, and correlate it with the round's child thread and the reviewed
