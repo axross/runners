@@ -3,8 +3,10 @@
 
 mod platform;
 mod provisional;
+mod surface;
 mod watch;
 
 pub use platform::{taskbar_reading, utc_offset_minutes};
 pub use provisional::{Bitmap, SIZES, bitmap};
+pub use surface::{Changes, Surface, menu_id};
 pub use watch::{Look, Polled, TaskbarReading, Watch, size_for_scale};
