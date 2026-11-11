@@ -334,6 +334,9 @@ An Amp review child thread can:
   access, and the Amp tools and connected services the authoring user's threads
   hold, including starting other threads, so the assignment's no-edit,
   no-push, and no-delegation limits bind only as far as the host enforces them
+- be steered within those tools by pull request content it reads, such as a
+  comment any GitHub user can post on this public repository, as Security
+  records for the Claude review
 - publish a COMMENT-type review on the pull request under the same GitHub
   operator account as the run that authored the change
 
