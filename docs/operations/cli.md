@@ -11,8 +11,7 @@ snapshot), the image contract every runner image declares and the
 check of it, running a host with `build`, `start`, `stop`, `restart`, `status`, and
 `diagnostics`, the diagnostic containers a diagnostics-enabled pool runs and their
 export, the toolchain and the gates that cover it, how a release is built,
-signed, and installed, and why its name is fixed. The binary is `marshal`, and
-axpc runs its pools with it, as [Windows Runner Host](./windows-runner-host.md)
+signed, and installed, and why its name is fixed. The binary is `marshal`, and axpc runs its pools with it, as [Windows Runner Host](./windows-runner-host.md)
 describes, including how to roll back to the previous release.
 
 ## Running It
@@ -798,11 +797,12 @@ the same process model as `start`: the agent takes the same single-instance lock
 opens the same control channel, writes a log in the same directory and, on Windows,
 runs inside the same kind of Job Object, so `start` and the agent never run on one
 machine at once, and a second agent is refused as a second `start` is. It has no
-command or flag of its own yet; `agent::run` is the entry that wires the container
-backend, GitHub, the token store, the lock, the channel and the log, and the tests
-start it through `instance-helper agent`. A later release gives it a program to run
-in. Only a debug build lets a test replace the agent's token store, channel limits,
-watched file, log size and `docker` environment; a release build ignores each
+command or flag of its own: `agent::run` is the entry that wires the container
+backend, GitHub, the token store, the lock, the channel and the log, and the app's
+executable runs it in its hidden agent mode, as [App](./app.md#the-executable-and-its-modes)
+describes. The CLI's tests start it through `instance-helper agent`. Only a debug
+build lets a test replace the agent's token store, channel limits, watched file, log
+size and `docker` environment; a release build ignores each
 request, as it does the roots and the GitHub address, and `tests/agent_overrides.rs`
 shows both halves and runs again in the release profile in CI.
 
@@ -990,8 +990,7 @@ client message is at most 16 KiB and an agent message at most 64 KiB, line break
 included. The first line a client sends MUST be `hello`; anything else, including
 `start`'s version 1 requests, is answered with `unsupported_protocol` and the
 connection is closed, so today's commands exit 1 against an agent and change
-nothing. A later slice of version 2 may add methods, topics, error codes and fields
-but never rename or remove one.
+nothing. [Version Rules](#version-rules) says what a later agent of version 2 may add.
 
 | Message     | Fields                                                                                               |
 | ----------- | ---------------------------------------------------------------------------------------------------- |
@@ -1090,6 +1089,28 @@ nor the release of the lock waits for such a thread, and
 shows a `quit` ends it within a second or so while a subscribed client reads
 nothing. On Unix the socket has the checks of
 [Control Channel](#control-channel).
+
+### Version Rules
+
+These rules bind every agent and every client of protocol version 2, including the
+ones other children add. The sections above describe what version 2 holds today;
+this one says how it may grow without a new version.
+
+Within version 2 an agent may add methods, topics, fields, error codes, runner
+states, images, image warnings, and the reasons a state or `ending` carries, and
+lists its methods and topics in `welcome`. A client ignores what it does not know,
+shows an unknown runner state by the runner's reason, and calls only methods listed.
+Removing one, or changing its meaning, needs version 3.
+
+So a client written against today's agent keeps working against a later agent of
+version 2, and a later client works against today's agent by calling only what
+`welcome` lists. The library's `Client` ignores an unknown message type, field and
+topic and calls and subscribes only to what `welcome` lists, and its types are
+`#[non_exhaustive]`, as Protocol Version 2 above says. The app's view crate shows a
+state or reason it does not know in words instead of failing, and an `ending` reason
+it does not know is logged and ignored, so a later reason does not end the app. A
+change that removes or reinterprets anything above is a version 3, which is a new
+framing decision for the maintainer, not an addition.
 
 ### The Snapshot
 
