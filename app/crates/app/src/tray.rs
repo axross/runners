@@ -1,46 +1,32 @@
-use tauri::AppHandle;
+//! the notification-area icon: its image, its tooltip and its menu, and what a click on
+//! it does.
+
+use marshal_session::{Chosen, Place, choose};
+use marshal_tray::{Look, bitmap, menu_id};
+use marshal_view::Menu;
 use tauri::image::Image;
-use tauri::menu::{Menu, MenuEvent, MenuItem};
+use tauri::menu::{Menu as TauriMenu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Manager};
 
-use crate::app::show_main_window;
+use crate::app::{MAIN_WINDOW, show_main_window};
+use crate::confirmation;
+use crate::state::AppState;
 
-const OPEN: &str = "open";
-const QUIT: &str = "quit";
+pub const TRAY_ID: &str = "marshal";
 
-const GLYPH_SIZE: u32 = 16;
+/// the id of the menu's first line, which is a label.
+const SUMMARY_ID: &str = "summary";
 
-/// a white ring, drawn as the decoded pixels the notification area takes, so the app
-/// links no image decoder.
-fn glyph() -> Image<'static> {
-    let centre = (GLYPH_SIZE as f32 - 1.0) / 2.0;
-    let mut pixels = Vec::with_capacity((GLYPH_SIZE * GLYPH_SIZE * 4) as usize);
-    for y in 0..GLYPH_SIZE {
-        for x in 0..GLYPH_SIZE {
-            let distance = ((x as f32 - centre).powi(2) + (y as f32 - centre).powi(2)).sqrt();
-            let alpha = if (4.5..=7.0).contains(&distance) {
-                255
-            } else {
-                0
-            };
-            pixels.extend_from_slice(&[255, 255, 255, alpha]);
-        }
-    }
-    Image::new_owned(pixels, GLYPH_SIZE, GLYPH_SIZE)
+fn image(look: Look) -> Image<'static> {
+    let drawn = bitmap(look.state, look.colour, look.size);
+    Image::new_owned(drawn.rgba, drawn.size, drawn.size)
 }
 
-pub fn create(app: &AppHandle) -> tauri::Result<()> {
-    let menu = Menu::with_items(
-        app,
-        &[
-            &MenuItem::with_id(app, OPEN, "Open Marshal", true, None::<&str>)?,
-            &MenuItem::with_id(app, QUIT, "Quit Marshal", true, None::<&str>)?,
-        ],
-    )?;
-    TrayIconBuilder::with_id("marshal")
-        .icon(glyph())
-        .tooltip(marshal_view::tooltip(None))
-        .menu(&menu)
+/// the icon with its first image, and no menu until the session shows its first view.
+pub fn create(app: &AppHandle, first: Look) -> tauri::Result<()> {
+    TrayIconBuilder::with_id(TRAY_ID)
+        .icon(image(first))
         .show_menu_on_left_click(false)
         .on_menu_event(on_menu_event)
         .on_tray_icon_event(|tray, event| {
@@ -57,10 +43,102 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+pub fn set_look(app: &AppHandle, look: Look) -> tauri::Result<()> {
+    match app.tray_by_id(TRAY_ID) {
+        Some(tray) => tray.set_icon(Some(image(look))),
+        None => Ok(()),
+    }
+}
+
+pub fn set_tooltip(app: &AppHandle, tooltip: &str) -> tauri::Result<()> {
+    match app.tray_by_id(TRAY_ID) {
+        Some(tray) => tray.set_tooltip(Some(tooltip)),
+        None => Ok(()),
+    }
+}
+
+/// a menu with each item created in its availability: Windows does not grey an item that
+/// is disabled in place, so an unavailable one is made unavailable.
+fn build_menu(app: &AppHandle, menu: &Menu) -> tauri::Result<TauriMenu<tauri::Wry>> {
+    let built = TauriMenu::new(app)?;
+    built.append(&MenuItem::with_id(
+        app,
+        SUMMARY_ID,
+        &menu.summary,
+        false,
+        None::<&str>,
+    )?)?;
+    built.append(&PredefinedMenuItem::separator(app)?)?;
+    for item in &menu.items {
+        let Some(id) = menu_id(&item.action) else {
+            continue;
+        };
+        built.append(&MenuItem::with_id(
+            app,
+            id,
+            &item.label,
+            item.available,
+            None::<&str>,
+        )?)?;
+    }
+    Ok(built)
+}
+
+pub fn set_menu(app: &AppHandle, menu: &Menu) -> tauri::Result<()> {
+    match app.tray_by_id(TRAY_ID) {
+        Some(tray) => tray.set_menu(Some(build_menu(app, menu)?)),
+        None => Ok(()),
+    }
+}
+
 fn on_menu_event(app: &AppHandle, event: MenuEvent) {
-    match event.id().as_ref() {
-        OPEN => show_main_window(app),
-        QUIT => app.exit(0),
-        _ => {}
+    let id = event.id().as_ref().to_string();
+    let app = app.clone();
+    // windows are made off the event loop's thread, which a window's creation would
+    // otherwise block
+    tauri::async_runtime::spawn(async move { run_menu_item(&app, &id).await });
+}
+
+async fn run_menu_item(app: &AppHandle, id: &str) {
+    let state = app.state::<AppState>();
+    let Some(item) = state.latest.menu().and_then(|menu| {
+        menu.items
+            .into_iter()
+            .find(|item| menu_id(&item.action) == Some(id))
+    }) else {
+        return;
+    };
+    let shown = app
+        .get_webview_window(MAIN_WINDOW)
+        .is_some_and(|window| window.is_visible().unwrap_or(false));
+    let outcome = match choose(&item, shown) {
+        Chosen::Open => {
+            show_main_window(app);
+            Ok(())
+        }
+        Chosen::Run(act) => state.handle.act(act).await,
+        Chosen::TryAgain => state.handle.try_again().await,
+        Chosen::Quit => {
+            state.handle.quit();
+            Ok(())
+        }
+        Chosen::Ask {
+            question,
+            then,
+            place: Place::MainWindow,
+        } => confirmation::ask_in_main_window(app, &question, then).map_err(|e| e.to_string()),
+        Chosen::Ask {
+            question,
+            then,
+            place: Place::OwnWindow,
+        } => {
+            confirmation::ask_in_own_window(app, &state, question, then).map_err(|e| e.to_string())
+        }
+        Chosen::Nothing => Ok(()),
+    };
+    if let Err(words) = outcome {
+        state
+            .log
+            .warn(&format!("The menu item {id} did not run: {words}"));
     }
 }

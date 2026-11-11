@@ -1,34 +1,92 @@
-use marshal_view::{IconState, icon_state, tooltip};
-use serde::Serialize;
-use tauri::Window;
+//! the commands the web view calls. Each is granted to a window by a capability, so a
+//! window calls only the ones its capability names.
 
-#[derive(Serialize)]
-pub struct View {
-    icon: &'static str,
-    tooltip: String,
-}
+use marshal_session::{Act, Forms, Shown, Then};
+use marshal_view::Confirmation;
+use tauri::{AppHandle, Runtime, State, Window};
 
-fn icon_name(state: IconState) -> &'static str {
-    match state {
-        IconState::AllUp => "all_up",
-        IconState::SomeNotUp => "some_not_up",
-        IconState::Stopped => "stopped",
-        IconState::StoppedByError => "stopped_by_error",
-        IconState::NotInControl => "not_in_control",
-    }
-}
+use crate::confirmation;
+use crate::state::AppState;
 
-/// what the window shows; the app does not talk to its agent yet, so it is not in
-/// control of the runners.
+/// the view now. `forms` says which token forms the page has open, which only the page
+/// knows; the view then shows their state.
 #[tauri::command]
-pub fn read_view() -> View {
-    View {
-        icon: icon_name(icon_state(None)),
-        tooltip: tooltip(None),
-    }
+pub async fn read_view(state: State<'_, AppState>, forms: Option<Forms>) -> Result<Shown, String> {
+    state.handle.read_view(forms).await
 }
 
 #[tauri::command]
-pub fn hide_window(window: Window) -> Result<(), String> {
+pub async fn start_all(state: State<'_, AppState>) -> Result<(), String> {
+    state.handle.act(Act::StartAll).await
+}
+
+#[tauri::command]
+pub async fn stop_all(state: State<'_, AppState>) -> Result<(), String> {
+    state.handle.act(Act::StopAll).await
+}
+
+#[tauri::command]
+pub async fn build(state: State<'_, AppState>) -> Result<(), String> {
+    state.handle.act(Act::Build).await
+}
+
+#[tauri::command]
+pub async fn stop_build(state: State<'_, AppState>) -> Result<(), String> {
+    state.handle.act(Act::StopBuild).await
+}
+
+#[tauri::command]
+pub async fn try_again(state: State<'_, AppState>) -> Result<(), String> {
+    state.handle.try_again().await
+}
+
+/// stores the token entered in the window. The token goes to the session as it arrived
+/// and nowhere else: this function keeps no copy and writes no line.
+#[tauri::command]
+pub async fn set_token(
+    state: State<'_, AppState>,
+    repository: String,
+    token: String,
+) -> Result<(), String> {
+    state.handle.set_token(repository, token).await
+}
+
+#[tauri::command]
+pub async fn remove_token(state: State<'_, AppState>, repository: String) -> Result<(), String> {
+    state.handle.remove_token(repository).await
+}
+
+#[tauri::command]
+pub fn hide_window<R: Runtime>(window: Window<R>) -> Result<(), String> {
     window.hide().map_err(|error| error.to_string())
+}
+
+/// the question the confirmation window shows.
+#[tauri::command]
+pub fn read_confirmation(state: State<'_, AppState>) -> Result<Confirmation, String> {
+    state
+        .question()
+        .ok_or_else(|| "There is nothing to confirm.".to_string())
+}
+
+/// the answer to the question: a yes does what was asked, and either answer closes the
+/// window.
+#[tauri::command]
+pub async fn answer_confirmation<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    accepted: bool,
+) -> Result<(), String> {
+    let asked = state.answer();
+    confirmation::close(&app);
+    match asked {
+        Some(asking) if accepted => match asking.then {
+            Then::Act(act) => state.handle.act(act).await,
+            Then::Quit => {
+                state.handle.quit();
+                Ok(())
+            }
+        },
+        _ => Ok(()),
+    }
 }

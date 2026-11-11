@@ -1,18 +1,83 @@
 use std::process::ExitCode;
+use std::sync::{Arc, Mutex};
 
-use tauri::{Manager, RunEvent, WindowEvent};
+use marshal_cli::instance::roots::Roots;
+use marshal_modes::Overrides;
+use marshal_session::{
+    AppLog, Library, Log, MAX_FILE_BYTES, OwnExecutable, Seams, Session, WallClock,
+};
+use marshal_tray::{Look, SIZES, Watch, utc_offset_minutes};
+use marshal_view::{GlyphColour, IconState};
+use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
 
-use crate::{commands, tray};
+use crate::confirmation::CONFIRMATION_WINDOW;
+use crate::screen::Screen;
+use crate::state::{AppState, Latest};
+use crate::{commands, icon, tray};
 
 pub const MAIN_WINDOW: &str = "main";
 
 /// brings the main window forward, showing it when it is hidden.
-pub fn show_main_window(app: &tauri::AppHandle) {
+pub fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
         let _ = window.show();
         let _ = window.unminimize();
         let _ = window.set_focus();
     }
+}
+
+/// the log when the app's own file cannot be made: the app still runs.
+struct Discard;
+
+impl Log for Discard {
+    fn info(&self, _line: &str) {}
+    fn warn(&self, _line: &str) {}
+}
+
+/// connects the session to the agent and shows it on the icon and in the window; the
+/// app ends when the session does.
+fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    let roots = Roots::resolve(Overrides::from_environment().root.as_deref())?;
+    let log: Arc<dyn Log> = match AppLog::open(roots.log_directory(), MAX_FILE_BYTES) {
+        Ok(opened) => Arc::new(opened),
+        Err(error) => {
+            eprintln!("warning: the app's log cannot be written: {error}");
+            Arc::new(Discard)
+        }
+    };
+    let launcher = OwnExecutable::current(Arc::clone(&log))?;
+    let watch = Arc::new(Mutex::new(Watch::new()));
+    let latest = Arc::new(Latest::default());
+    let screen = Screen::new(
+        app.clone(),
+        Arc::clone(&watch),
+        Arc::clone(&latest),
+        Arc::clone(&log),
+    );
+    let (session, handle) = Session::new(Seams {
+        dial: Library::new(roots, env!("CARGO_PKG_VERSION")),
+        launcher: Arc::new(launcher),
+        present: Arc::new(screen),
+        time: Arc::new(WallClock::new(utc_offset_minutes)),
+        log: Arc::clone(&log),
+    });
+    app.manage(AppState::new(handle, latest, Arc::clone(&log)));
+    tray::create(
+        app,
+        Look {
+            state: IconState::NotInControl,
+            colour: GlyphColour::White,
+            size: SIZES[0],
+        },
+    )?;
+    icon::spawn(app.clone(), watch, Arc::clone(&log));
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let ended = session.run().await;
+        log.info(&format!("The app ends: {ended:?}."));
+        app.exit(0);
+    });
+    Ok(())
 }
 
 /// runs the app until it is quit; closing the main window hides it and leaves the
@@ -25,19 +90,34 @@ pub fn run() -> ExitCode {
                 show_main_window(app);
             },
         ))
-        .setup(|app| {
-            tray::create(app.handle())?;
-            Ok(())
-        })
+        .setup(|app| start(app.handle()))
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.hide();
+                match window.label() {
+                    MAIN_WINDOW => {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    }
+                    CONFIRMATION_WINDOW => {
+                        // closing the window is a No
+                        let _ = window.app_handle().state::<AppState>().answer();
+                    }
+                    _ => {}
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
             commands::read_view,
-            commands::hide_window
+            commands::start_all,
+            commands::stop_all,
+            commands::build,
+            commands::stop_build,
+            commands::try_again,
+            commands::set_token,
+            commands::remove_token,
+            commands::hide_window,
+            commands::read_confirmation,
+            commands::answer_confirmation,
         ])
         .build(tauri::generate_context!());
     match built {

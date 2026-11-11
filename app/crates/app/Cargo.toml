@@ -5,13 +5,17 @@ version.workspace = true
 edition.workspace = true
 publish.workspace = true
 build = "build.rs"
+default-run = "marshal-app"
 
 [[bin]]
 name = "marshal-app"
 path = "src/main.rs"
 
 [dependencies]
+marshal-cli = { path = "../../../cli" }
 marshal-modes = { path = "../modes" }
+marshal-session = { path = "../session" }
+marshal-tray = { path = "../tray" }
 marshal-view = { path = "../view" }
 tauri = { version = "2.12", features = ["tray-icon"] }
 tauri-plugin-single-instance = "2.5"

@@ -3,5 +3,5 @@
   "identifier": "confirmation-window",
   "description": "What the menu's confirmation window may call",
   "windows": ["confirmation"],
-  "permissions": []
+  "permissions": ["allow-read-confirmation", "allow-answer-confirmation"]
 }

@@ -7,6 +7,13 @@
     "core:event:allow-listen",
     "core:event:allow-unlisten",
     "allow-read-view",
+    "allow-start-all",
+    "allow-stop-all",
+    "allow-build",
+    "allow-stop-build",
+    "allow-try-again",
+    "allow-set-token",
+    "allow-remove-token",
     "allow-hide-window"
   ]
 }

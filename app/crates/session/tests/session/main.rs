@@ -12,6 +12,7 @@ mod choose;
 mod launcher;
 mod lifecycle;
 mod log;
+mod policy;
 mod support;
 mod tokens;
 mod wall;
