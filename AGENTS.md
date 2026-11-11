@@ -120,8 +120,7 @@ owns, together with each route's procedure, under Loop Engineering's
 
 - **Claude Code:** request the review by posting `@claude review` as a
   top-level comment on the pull request, once per round. The phrase is quoted
-  here as reference documentation; write it only in that round's request
-  comment.
+  here as reference documentation.
 - **Amp:** request the review by starting a fresh Amp review child thread for
   each round, never reusing one, with the neutral assignment The Independent
   Review describes. The child posts its own review on the pull request; the run

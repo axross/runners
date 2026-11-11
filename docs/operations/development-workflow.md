@@ -995,7 +995,7 @@ handoff of the authoring thread.
    the child to read the actual change and surrounding code, not to edit, push,
    or delegate, to post its review itself, and to report the review's URL, the
    reviewed commit, which of those limits its host enforced, and any
-   limitations. Record that answer in run state.
+   limitations.
 2. Right after the child starts, checkpoint its thread URL and round in run
    state, through Save and resume run state, above.
 3. The child posts its review on the pull request in the form REVIEW.md's Amp
@@ -1006,7 +1006,8 @@ handoff of the authoring thread.
    [Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/independent-review.md#waiting-bound).
    Then read the posted review back, confirm that it is submitted rather than
    pending, and correlate it with the round's child thread and the reviewed
-   commit. Review coverage evidence, above, applies to the result.
+   commit. Record the child's report of which limits its host enforced in run
+   state. Review coverage evidence, above, applies to the result.
 5. Archive the child thread once its result is verified, preserving its
    history, and confirm the archive, under the plan-gate archive confirmation
    Agent Sessions describes. Record the review's URL and the archive status in

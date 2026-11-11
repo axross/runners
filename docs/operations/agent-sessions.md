@@ -250,6 +250,8 @@ plan-approval exchange as a separate question after the plan is approved, to
 confirm archiving the run's review child threads once each round's result is
 verified or the round has failed. That answer is the plan-gate archive
 confirmation. A plan revision approved in the same session does not ask again.
+A run with no plan gate, such as review-only recovery, asks once before its
+first archive.
 
 **Guidelines:**
 
