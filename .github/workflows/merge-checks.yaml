@@ -1,10 +1,10 @@
 name: Merge Checks
 
 # the repository's own CI: the gates behind mise run check, the CLI tests on
-# Linux, Windows, and macOS, the app's build on Windows, the image build, the release dry run, and the
-# documented install blocks against the dry run's installers. GitHub-hosted
-# runners only, because this repository is public; see
-# docs/conventions/security.md.
+# Linux, Windows, and macOS, the app's build on Windows and its mode dispatch on
+# macOS, the image build, the release dry run, and the documented install blocks
+# against the dry run's installers. GitHub-hosted runners only, because this
+# repository is public; see docs/conventions/security.md.
 
 on:
   pull_request:
@@ -117,6 +117,29 @@ jobs:
       - name: Run Real Docker Build Test
         if: runner.os == 'Linux'
         run: cargo test --locked --test real_docker_build -- --ignored
+
+  # the mode dispatch, including the Unix shim, on macOS: the app's crate for it builds
+  # without the web view, so this job never builds the Tauri crate. Linux runs the same
+  # tests in mise run check. no cache action, for the reason the rust job gives.
+  app-modes:
+    name: Test App Modes On macOS
+    runs-on: macos-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+        working-directory: app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install Pinned Rust Toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: Lint The Mode Dispatch With Clippy
+        run: cargo clippy --locked --package marshal-modes --all-targets -- -D warnings
+      - name: Test The Mode Dispatch
+        run: cargo test --locked --package marshal-modes
 
   # the app's whole workspace, which needs the Windows web view and so cannot run in
   # mise run check. `tauri-cli` is installed from source at the pin in
