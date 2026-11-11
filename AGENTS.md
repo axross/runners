@@ -85,7 +85,9 @@ Choose guidance from the actual session and changed surface:
 
 - **Amp:** follow the runtime's current tool contracts and consult
   [Agent sessions](./docs/operations/agent-sessions.md#amp-quality-hooks) for
-  the quality-hooks plugin and
+  the quality-hooks plugin,
+  [the plan-gate confirmation for archiving review child threads](./docs/operations/agent-sessions.md#confirming-review-thread-cleanup-at-the-plan-gate-in-amp),
+  and
   [its environment provisioning](./docs/operations/agent-sessions.md#amp-environment-provisioning)
   for the `.agents/setup` script.
 - **Codex:** follow the runtime's current tool contracts and
@@ -104,6 +106,31 @@ Choose guidance from the actual session and changed surface:
   images and host scripts, secret handling, the dependency or supply-chain
   surface (including pinned actions and tool versions), and anything that
   changes what a self-hosted runner can reach SHOULD also receive human review.
+
+## Independent review route
+
+Loop Engineering's mandatory independent review, after the draft pull request
+exists, uses the route the authoring host selects. This section is the
+project's route selection under Loop Engineering's
+[review workflow](./.claude/skills/loop-engineering/references/review-workflow.md);
+[The Independent Review](./docs/operations/development-workflow.md#the-independent-review)
+owns each route's procedure.
+
+- **Claude Code:** request the review by posting `@claude review` as a
+  top-level comment on the pull request, once per round. The phrase is quoted
+  here as reference documentation; write it only in that round's request
+  comment.
+- **Amp:** request the review by starting a fresh Amp review child thread for
+  each round, never reusing one. Give it the pull request, the reviewed commit,
+  REVIEW.md, and the acceptance criteria, and none of the authoring
+  conversation. The child posts its own review on the pull request; the run
+  verifies the posted review, then archives the child thread.
+- **Codex, and changes made without an agent:** the Codex review.
+
+A failed, silent, or unavailable route blocks the review gate and never falls
+back to another route. The advisory pre-flight and the review of plans and
+other phase deliverables keep their own routes, and neither satisfies this
+gate.
 
 ## Handle Amp delivery authorization
 

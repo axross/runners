@@ -1,7 +1,8 @@
 # Agent Sessions
 
 How agent sessions start in this project, the hooks that run during one,
-Claude Code's plan-gate delivery confirmation, host-owned CI and review waits,
+Claude Code's plan-gate delivery confirmation, Amp's plan-gate confirmation for
+archiving review child threads, host-owned CI and review waits,
 the subagents a session can delegate to, how a session's usage is tagged, and
 the environment variables recommended for cutting a Claude Code session's cost.
 Claude Code and Amp are the hosts this repository configures; they share the
@@ -237,6 +238,29 @@ follows stays under the delivery grant.
   review, then treat each review or check result as a human wait: end the
   turn and resume on the human's next message, with no scheduling.
 
+## Confirming Review-Thread Cleanup at the Plan Gate in Amp
+
+An Amp run reviews through a review child thread per round, under the Amp review
+child thread section of [Development Workflow](./development-workflow.md). Amp's
+archive tool archives a thread only on the user's request, among its other
+conditions, and the route adopted in [`AGENTS.md`](../../AGENTS.md) does not
+make that request on its own. Every Amp run MUST therefore ask the human, in
+the plan-approval exchange and as its own question once the plan is approved,
+to confirm archiving the run's review child threads once each round's result is
+verified or the round has failed. A plan revision does not ask again when run
+state already records an answer.
+
+**Guidelines:**
+
+- MUST record the answer in run state. A fresh session that resumes the run
+  and lacks that exchange in its own conversation asks once, before archiving.
+- MUST, when the human declines, still run the review rounds, leave the child
+  threads unarchived, not ask again, and name each one in the completion
+  report with that reason and the archive steps in the Amp review child thread
+  section of [Development Workflow](./development-workflow.md).
+- MUST NOT read this confirmation as covering any other thread, or as granting
+  any delivery effect the standing grant does not name.
+
 ## Waiting on CI and Review
 
 The host supplies the wait mechanism. The portable contract lives in
@@ -254,6 +278,13 @@ A permitted in-session wait followed by sanctioned GitHub reads can retrieve
 those results; a missing scheduler alone does not establish inability.
 Qualify the actual session's tools under GitHub Operation rather than assume
 all Codex surfaces expose the same mechanisms.
+
+For an Amp-authored pull request, the awaited results are its required GitHub
+checks and the review its Amp review child thread posts. Wait for the child with
+Amp's thread-wait tool, then read the posted review back on the pull request;
+the child's own reply is not the result. Wait for checks with an in-session
+wait followed by sanctioned GitHub reads, or with a subscription only where the
+host and the run already permit it.
 
 Use the current pull request head when reading check results. A connector read
 can return only a first page of workflow runs, so it cannot establish complete

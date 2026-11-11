@@ -42,7 +42,8 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   route.
 - [operations/agent-sessions.md](./operations/agent-sessions.md) - how Claude
   Code and Amp sessions start, their hooks, the plan-gate delivery confirmation,
-  subagents, and telemetry.
+  Amp's plan-gate archive confirmation for review child threads, subagents, and
+  telemetry.
 - [operations/windows-runner-host.md](./operations/windows-runner-host.md) -
   running ephemeral runners for several repositories on a Windows machine with
   Docker Desktop with the CLI: prerequisites, installing `marshal`, the
