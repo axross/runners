@@ -380,8 +380,10 @@ Two steps, per job and per slot, carry this:
   host prerequisite refuses this boot, with a reason. A held slot boots nothing,
   warns in the log, shows `held: <reason>` in `status`, and tries again on the same
   5 s doubling to 300 s schedule, and a job running on another slot is not
-  affected. A held slot is not a failure of the runtime core, and it counts for no
-  restart. An engine that does not answer is not an outcome of this step: the
+  affected. The reason `status` shows is scrubbed, joined onto one line and cut to
+  500 characters followed by `...`, as a backing-off runner's is; the log line keeps
+  the whole reason. A held slot is not a failure of the runtime core, and it counts
+  for no restart. An engine that does not answer is not an outcome of this step: the
   backend waits for it in `wait_until_available`, or reports the image check as
   unavailable, as Docker does today.
 - `release_job_host` is given a budget and gets rid of the host. It runs once after
@@ -1277,18 +1279,18 @@ worker forgets its container. How the instance ended records whether every remov
 in its life succeeded, at a stop, a restart, or a failure of the core, so a failed
 removal is still reported when a later stop has nothing to remove.
 
-**Releasing job hosts.** After the container steps, the instance releases every job
-host the backend still counts as prepared, all at once, each within the backend's
-release budget: a worker releases its own host when its run ends, so what remains
-is the host of a worker that is still busy or that a panic took. The container
-backend has no hosts and a release budget of zero, so the stop sequence above is
-unchanged. A backend that reserves a release budget `R` shortens the container
-stop to fit the same 28 s exit deadline: the stop call is ended at 28 - 6 - `R`
-seconds, and its grace is 5 s shorter, never longer than 15 s. With a `R` of 10 s,
-the grace is 7 s and the stop call is ended at 12 s, then the removal at 6 s
-later, then the release at 10 s later, so the three take 28 s at the most and `stop`
-still ends within 30 s. That leaves no slack: a `tart` call that hangs to its bound
-in a double fault leaves its VM to the VM shim or the next `start`, as
+**Releasing job hosts.** After the container steps, the instance and the agent
+release every job host the backend still counts as prepared, all at once, each
+within the backend's release budget: a worker releases its own host when its run
+ends, so what remains is the host of a worker that is still busy or that a panic
+took. The container backend has no hosts and a release budget of zero, so the stop
+sequence above is unchanged. A backend that reserves a release budget `R` shortens
+the container stop to fit the same 28 s exit deadline: the stop call is ended at
+28 - 6 - `R` seconds, and its grace is 5 s shorter, never longer than 15 s. With a
+`R` of 10 s, the grace is 7 s and the stop call is ended at 12 s, then the removal
+at 6 s later, then the release at 10 s later, so the three take 28 s at the most
+and `stop` still ends within 30 s. That leaves no slack: a `tart` call that hangs
+to its bound in a double fault leaves its VM to the VM shim or the next `start`, as
 [The release budget split](#tart-backend) describes. The diagnostic column ends
 early by the same reserve, as [Diagnostics](#diagnostics) describes, so a
 diagnostics pool's release keeps its whole budget too. The release itself splits
@@ -1790,18 +1792,22 @@ state stays `running`, and `pools` is empty, so `runners_up` and `runners_wanted
 0 for the wait, because the core's rows are not kept across a failure. A stopped agent
 lists its pools again. `repositories` is still listed.
 
-A pool is `waiting_for_docker`, `preparing`, `running`, `skipped` or `stopped`. A
-runner is `running`, `registering`, `backing_off` or `stopped`. The `reason` of a
-runner is plain text that says more about its state, such as what a state means that
-the reader may not know. A backing-off runner gives the reason it backs off: a token
-store failure's kind and code, or what GitHub answered, scrubbed of any token and
-never a command. An image warning is data, not text: a `code`
-(`not_built_by_marshal`, `packages_old`, `image_old`, `runner_old` or
-`runner_may_be_newer`) with `days` or `version` where they apply, so the app words it.
-`leftovers` lists every container name of a failed removal call, which can name more
-containers than the one that failed. They stay listed until a start prepares the
-pools, which removes what is stale, so a `start_all` that stops for a missing image or
-an invalid configuration keeps them.
+A pool is `waiting_for_docker`, `preparing`, `running`, `skipped` or `stopped`; the
+first word stands for whichever engine the pool waits for. A runner is `running`,
+`registering`, `backing_off`, `held` or `stopped`. The `reason` of a runner is plain
+text that says more about its state, such as what a state means that the reader may
+not know. A backing-off runner gives the reason it backs off: a token store
+failure's kind and code, or what GitHub answered, scrubbed of any token and never a
+command. A `held` runner is one whose job host a host prerequisite refuses, with
+that prerequisite's reason, scrubbed the same way and cut to 500 characters; it
+occurs only on axmc's Tart backend, which the agent, running axpc only today, does
+not run. An image warning is data, not text: a `code` (`not_built_by_marshal`,
+`packages_old`, `image_old`, `runner_old` or `runner_may_be_newer`) with `days` or
+`version` where they apply, so the app words it. `leftovers` lists every container
+name of a failed removal call, which can name more containers than the one that
+failed. They stay listed until a start prepares the pools, which removes what is
+stale, so a `start_all` that stops for a missing image or an invalid configuration
+keeps them.
 
 An agent may add a runner state, an image and an image warning within version 2, so
 a reader MUST treat a state word it does not know as an unknown state and show the

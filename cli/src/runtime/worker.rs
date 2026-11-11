@@ -373,7 +373,15 @@ pub async fn run_slot_with<B: Backend, K: Clock, R: Registrar>(
                 .map(|refusal| format!("{refusal}; no registration")),
         };
         if let Some(reason) = refused {
-            if back_off(&report, clock, &mut stop, &mut backoff, Pause::Failed(reason)).await {
+            if back_off(
+                &report,
+                clock,
+                &mut stop,
+                &mut backoff,
+                Pause::Failed(reason),
+            )
+            .await
+            {
                 return;
             }
             continue;

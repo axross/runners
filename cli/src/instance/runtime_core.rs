@@ -67,14 +67,14 @@ impl<'a, B: Backend, K: Clock, R: Registrar> RuntimeCore<'a, B, K, R> {
             .map_err(|NoPoolStartable| failure(NoPoolStartable.to_string(), Ending::NothingToRun))
     }
 
-    /// checks the image until Docker answers the check, then logs its freshness
+    /// checks the image until the engine answers the check, then logs its freshness
     /// warnings, or fails when it cannot run jobs.
     async fn verify_image(&self, image: &str) -> Result<(), CoreFailure> {
         verify_image(self.backend, self.clock, self.log, &self.board, image).await
     }
 }
 
-/// checks the image until Docker answers the check, then logs its freshness
+/// checks the image until the engine answers the check, then logs its freshness
 /// warnings, or fails when it cannot run jobs.
 pub(crate) async fn verify_image<B: Backend, K: Clock>(
     backend: &B,

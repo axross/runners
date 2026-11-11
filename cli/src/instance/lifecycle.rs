@@ -21,7 +21,7 @@ use crate::macos::watch::NetworkChange;
 use crate::profile::Profile;
 use crate::runtime::backend::{Backend, DiagnosticRecord, REMOVAL_WITHIN};
 use crate::runtime::clock::Clock;
-use crate::runtime::diagnostic::{self, Flushed, StopClock};
+use crate::runtime::diagnostic::{self, Flushed};
 use crate::runtime::log::Log;
 use crate::runtime::pool::diagnostic_records;
 use crate::runtime::scrub::scrub_error_text;
