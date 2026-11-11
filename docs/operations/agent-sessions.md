@@ -244,9 +244,9 @@ An Amp run reviews through a review child thread per round, under the Amp review
 child thread section of [Development Workflow](./development-workflow.md). Amp's
 archive tool archives a thread only on the user's request, among its other
 conditions, and the route adopted in [`AGENTS.md`](../../AGENTS.md) does not
-make that request on its own. Every Amp run MUST therefore ask the human, in
-the plan-approval exchange and as its own question once the plan is approved,
-to confirm archiving the run's review child threads once each round's result is
+make that request on its own. Every Amp run MUST therefore ask the human once,
+within the plan-approval exchange as a separate question after the plan is
+approved, to confirm archiving the run's review child threads once each round's result is
 verified or the round has failed. A plan revision does not ask again when run
 state already records an answer.
 

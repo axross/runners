@@ -1009,9 +1009,9 @@ handoff of the authoring thread.
 A child that cannot post, a review that does not appear, and a review that does
 not correlate all leave the review gate blocked. A private reply from the child
 or a summary the author reposts never counts as the review, and the run never
-falls back to the Codex or Claude review. Record the incomplete evidence, then
-archive that round's child too. A failed archive does not invalidate a verified
-review: when the archive request was neither given nor declined, ask the
+falls back to the Codex or Claude review. Record the incomplete evidence, then,
+once the child has settled or been stopped, archive that round's child too. A
+failed archive does not invalidate a verified review: when the archive request was neither given nor declined, ask the
 maintainer and archive once it is given; otherwise give the maintainer the
 thread's URL, the reason it remains, and the steps: open it on ampcode.com and
 choose **Archive** in its More Actions menu, or run `amp threads archive` with

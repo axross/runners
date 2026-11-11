@@ -110,20 +110,19 @@ Choose guidance from the actual session and changed surface:
 ## Independent review route
 
 Loop Engineering's mandatory independent review, after the draft pull request
-exists, uses the route the authoring host selects. This section is the
-project's route selection under Loop Engineering's
-[review workflow](./.claude/skills/loop-engineering/references/review-workflow.md);
+exists, uses the route the authoring host selects. This section summarizes the
+selection that
 [The Independent Review](./docs/operations/development-workflow.md#the-independent-review)
-owns each route's procedure.
+owns, together with each route's procedure, under Loop Engineering's
+[review workflow](./.claude/skills/loop-engineering/references/review-workflow.md).
 
 - **Claude Code:** request the review by posting `@claude review` as a
   top-level comment on the pull request, once per round. The phrase is quoted
   here as reference documentation; write it only in that round's request
   comment.
 - **Amp:** request the review by starting a fresh Amp review child thread for
-  each round, never reusing one. Give it the pull request, the reviewed commit,
-  REVIEW.md, and the acceptance criteria, and none of the authoring
-  conversation. The child posts its own review on the pull request; the run
+  each round, never reusing one, with the neutral assignment The Independent
+  Review describes. The child posts its own review on the pull request; the run
   verifies the posted review, then archives the child thread.
 - **Codex, and changes made without an agent:** the Codex review.
 

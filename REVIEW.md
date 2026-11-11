@@ -39,10 +39,10 @@ presentation and reporting-scope defaults in this file and Code Review:
   all-findings reporting, summary scope, and the tally remain required,
   including `0 important, 0 nits` for a clean round. This review is advisory,
   with no APPROVE or REQUEST_CHANGES verdict.
-- **Amp** — the Amp review child thread follows the Claude arrangement, with one
-  difference: it posts its diff-anchored inline findings and its one summary
+- **Amp** — the Amp review child thread follows the Claude arrangement, with two
+  differences. It posts its diff-anchored inline findings and its one summary
   together as a single submitted COMMENT-type review, never APPROVE or
-  REQUEST_CHANGES. The summary carries the `<!-- ai-agent -->` marker, the
+  REQUEST_CHANGES. Its summary also carries the `<!-- ai-agent -->` marker, the
   child thread's URL, and the reviewed commit, because the review is posted
   under the same GitHub account as the change it reviews.
 
