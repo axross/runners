@@ -54,7 +54,9 @@ jobs:
         working-directory: cli
         run: mise exec -- cargo deny --locked check advisories
       # the app's lockfile covers everything its executable links, `marshal-cli`'s
-      # crates included, for the Windows and macOS targets its deny.toml names.
+      # crates included, for the Windows and macOS targets its deny.toml names. it runs
+      # when the CLI's check failed too, so one advisory cannot hide the other result.
       - name: Check The App's Advisories
+        if: ${{ !cancelled() }}
         working-directory: app
         run: mise exec -- cargo deny --locked check advisories
