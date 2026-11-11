@@ -90,19 +90,7 @@ fn app() -> App<MockRuntime> {
     }));
     mock_builder()
         .manage(state)
-        .invoke_handler(tauri::generate_handler![
-            commands::read_view,
-            commands::start_all,
-            commands::stop_all,
-            commands::build,
-            commands::stop_build,
-            commands::try_again,
-            commands::set_token,
-            commands::remove_token,
-            commands::hide_window,
-            commands::read_confirmation,
-            commands::answer_confirmation,
-        ])
+        .invoke_handler(commands::handler())
         .build(tauri::generate_context!())
         .expect("the app builds")
 }

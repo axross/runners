@@ -3,6 +3,7 @@
 
 use marshal_session::{Act, Forms, Shown, Then};
 use marshal_view::Confirmation;
+use tauri::ipc::Invoke;
 use tauri::{AppHandle, Runtime, State, Window};
 
 use crate::confirmation;
@@ -89,4 +90,23 @@ pub async fn answer_confirmation<R: Runtime>(
         },
         _ => Ok(()),
     }
+}
+
+/// the handler that routes the web view's calls to the commands above, which the app
+/// and the tests that run the real capabilities register alike, so a command added here
+/// is in both.
+pub fn handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![
+        read_view,
+        start_all,
+        stop_all,
+        build,
+        stop_build,
+        try_again,
+        set_token,
+        remove_token,
+        hide_window,
+        read_confirmation,
+        answer_confirmation,
+    ]
 }
