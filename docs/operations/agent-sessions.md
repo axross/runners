@@ -245,20 +245,24 @@ child thread section of [Development Workflow](./development-workflow.md). Amp's
 archive tool's only condition that fits this route is the user's request: its
 self-archiving option would archive the child before the run verifies the
 review, and the route adopted in [`AGENTS.md`](../../AGENTS.md) does not make
-that request on its own. Every Amp run MUST therefore ask the human once,
-within the plan-approval exchange as a separate question after the plan is
-approved, to confirm archiving the run's review child threads once each round's result is
-verified or the round has failed. A plan revision does not ask again when run
-state already records an answer.
+that request on its own. Every Amp run MUST therefore ask the human, within the
+plan-approval exchange as a separate question after the plan is approved, to
+confirm archiving the run's review child threads once each round's result is
+verified or the round has failed. That answer is the plan-gate archive
+confirmation. A plan revision approved in the same session does not ask again.
 
 **Guidelines:**
 
-- MUST record the answer in run state. A fresh session that resumes the run
-  and lacks that exchange in its own conversation asks once, before archiving.
+- MUST record the answer in run state. The confirming answer applies to the
+  session that collected it, as the archive tool's condition does: a fresh
+  session that resumes the run and lacks that exchange in its own conversation
+  asks once, before archiving, even when run state records an earlier
+  confirmation.
 - MUST, when the human declines, still run the review rounds, leave the child
-  threads unarchived, not ask again, and name each one in the completion
+  threads unarchived, and name each one in the completion
   report with that reason and the archive steps in the Amp review child thread
-  section of [Development Workflow](./development-workflow.md).
+  section of [Development Workflow](./development-workflow.md). A recorded
+  decline carries forward, so no later session asks again.
 - MUST NOT read this confirmation as covering any other thread, or as granting
   any delivery effect the standing grant does not name.
 

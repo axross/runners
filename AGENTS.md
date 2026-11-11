@@ -43,7 +43,7 @@ That workflow owns the delivery sequence and handoff boundary, including when a
 run obtains a host's per-session confirmation; Agent Sessions describes
 [Claude Code's confirmation](./docs/operations/agent-sessions.md#confirming-delivery-at-the-plan-gate-in-claude-code)
 and
-[Amp's archive confirmation](./docs/operations/agent-sessions.md#confirming-review-thread-cleanup-at-the-plan-gate-in-amp).
+[Amp's plan-gate archive confirmation](./docs/operations/agent-sessions.md#confirming-review-thread-cleanup-at-the-plan-gate-in-amp).
 Current host instructions and tool usage conditions still apply; for Amp, see
 [Handle Amp delivery authorization](#handle-amp-delivery-authorization); for
 Codex, see
@@ -127,11 +127,6 @@ owns, together with each route's procedure, under Loop Engineering's
   Review describes. The child posts its own review on the pull request; the run
   verifies the posted review, then archives the child thread.
 - **Codex, and changes made without an agent:** the Codex review.
-
-A failed, silent, or unavailable route blocks the review gate and never falls
-back to another route. The advisory pre-flight and the review of plans and
-other phase deliverables keep their own routes, and neither satisfies this
-gate.
 
 ## Handle Amp delivery authorization
 

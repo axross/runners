@@ -65,7 +65,8 @@ request at the plan gate, or when a new session resumes the run, and MUST NOT
 stop after push to ask for it. The Confirming Delivery at the Plan Gate in Claude
 Code section of [Agent Sessions](./agent-sessions.md) describes Claude Code's
 plan-gate confirmation, and its Confirming Review-Thread Cleanup at the Plan
-Gate in Amp section describes the archive request an Amp run collects there.
+Gate in Amp section describes the plan-gate archive confirmation an Amp run
+collects there.
 The run MUST, in order:
 
 1. verify locally with the commands in the [README](../../README.md), run the
@@ -99,7 +100,8 @@ above. It waits on a human only for:
   Engineering requires the maintainer to make;
 - each review or check result, when the human declined watching or no
   permitted, authorized wait mechanism delivers that result;
-- on Amp, the review-thread archive request, when run state records no answer.
+- on Amp, the plan-gate archive confirmation, when the current session has not
+  collected it and no recorded answer declined it.
 
 The review cap reached without convergence is a blocker. The run MUST record it
 in run state, report it, and keep the pull request draft.
@@ -1009,20 +1011,24 @@ handoff of the authoring thread.
    pending, and correlate it with the round's child thread and the reviewed
    commit. Review coverage evidence, above, applies to the result.
 5. Archive the child thread once its result is verified, preserving its
-   history, and confirm the archive. Amp permits archiving a thread on the
-   user's request; Agent Sessions describes how a run collects that request at
-   the plan gate. Record the review's URL and the archive status in run state.
+   history, and confirm the archive, under the plan-gate archive confirmation
+   Agent Sessions describes. Record the review's URL and the archive status in
+   run state.
 
 A child that cannot post, a review that does not appear, and a review that does
 not correlate all leave the review gate blocked. A private reply from the child
 or a summary the author reposts never counts as the review, and the run never
 falls back to the Codex or Claude review. Record the incomplete evidence, then,
-once the child has settled or been stopped, archive that round's child too. A
-failed archive does not invalidate a verified review: when the archive request was neither given nor declined, ask the
-maintainer and archive once it is given; otherwise give the maintainer the
-thread's URL, the reason it remains, and the steps: open it on ampcode.com and
-choose **Archive** in its More Actions menu, or run `amp threads archive` with
-its thread ID. Report the remaining thread. On resume, check what each recorded
+once the child has settled or been stopped, archive that round's child too when
+the plan-gate archive confirmation allows it.
+
+A child left unarchived does not invalidate a verified review. When the current
+session has not collected the plan-gate archive confirmation, ask the
+maintainer and archive once it is given. When the maintainer declined, or the
+archive fails, give the maintainer the thread's URL, the reason it remains, and
+the steps: open it on ampcode.com and choose **Archive** in its More Actions
+menu, or run `amp threads archive` with its thread ID. Report the remaining
+thread. On resume, check what each recorded
 child posted and whether it is archived before starting another child or
 counting another round.
 
