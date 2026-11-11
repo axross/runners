@@ -245,9 +245,8 @@ independent-review round; it posts its own review on the pull request and is
 archived afterwards. See
 [operations/development-workflow.md](./operations/development-workflow.md).
 
-**Plan-Gate Archive Confirmation** - the human's answer, collected at the plan
-gate of each Amp session, on whether the run archives its review child threads.
-See
+**Plan-Gate Archive Confirmation** - the human's answer, first collected at the
+plan gate, on whether an Amp run archives its review child threads. See
 [operations/agent-sessions.md](./operations/agent-sessions.md).
 
 **Run State** - the recoverable record of a change loop's progress, which a

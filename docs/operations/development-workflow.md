@@ -999,11 +999,9 @@ handoff of the authoring thread.
    instruction-only.
 2. Right after the child starts, checkpoint its thread URL and round in run
    state, through Save and resume run state, above.
-3. The child posts exactly one submitted COMMENT-type review on the pull
-   request, under REVIEW.md's Amp arrangement. Its summary carries the
-   `<!-- ai-agent -->` marker, the child thread's URL, and the reviewed commit,
-   which identify it as the reviewer's own result although it shares the
-   author's GitHub account.
+3. The child posts its review on the pull request in the form REVIEW.md's Amp
+   arrangement sets. Its summary identifies the child thread and the reviewed
+   commit, because the child shares the author's GitHub account.
 4. Wait for the child as Agent Sessions' Waiting on CI and Review describes,
    within
    [Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/independent-review.md#waiting-bound).
@@ -1016,19 +1014,18 @@ handoff of the authoring thread.
    run state.
 
 A child that cannot post, a review that does not appear, and a review that does
-not correlate all leave the review gate blocked. A private reply from the child
-or a summary the author reposts never counts as the review, and the run never
-falls back to the Codex or Claude review. Record the incomplete evidence, then,
-once the child has settled or been stopped, archive that round's child too when
-the plan-gate archive confirmation allows it.
+not correlate all leave the review gate blocked, and the run never falls back to
+the Codex or Claude review. Record the incomplete evidence, then, once the child
+has settled or been stopped, archive that round's child too when the plan-gate
+archive confirmation allows it.
 
 A child left unarchived does not invalidate a verified review. When the current
-session has not collected the plan-gate archive confirmation, ask the
-maintainer and archive once it is given. When the maintainer declined, or the
-archive fails, give the maintainer the thread's URL, the reason it remains, and
-the steps: open it on ampcode.com and choose **Archive** in its More Actions
-menu, or run `amp threads archive` with its thread ID. Report the remaining
-thread. On resume, check what each recorded
+session has not collected the plan-gate archive confirmation and no recorded
+answer declined it, ask the maintainer and archive once it is given. When the
+maintainer declined, or the archive fails, give the maintainer the thread's URL,
+the reason it remains, and the steps: open it on ampcode.com and choose
+**Archive** in its More Actions menu, or run `amp threads archive` with its
+thread ID. Report the remaining thread. On resume, check what each recorded
 child posted and whether it is archived before starting another child or
 counting another round.
 
