@@ -8,7 +8,8 @@ use crate::profile::{Os, Profile};
 pub enum Runtime {
     /// a container in Docker Desktop, run by [`super::docker::DockerBackend`].
     DockerDesktop,
-    /// a virtual machine per job, cloned from the golden VM; no code runs it yet.
+    /// a virtual machine per job, cloned from the golden VM, run by
+    /// [`super::tart::TartBackend`].
     TartVm,
 }
 
@@ -22,12 +23,6 @@ impl Runtime {
             (Profile::Axmc, Some(Os::Linux)) => Some(Self::TartVm),
             (Profile::Axmc, Some(Os::Macos) | None) => None,
         }
-    }
-
-    /// whether this version of the CLI can run pools with this runtime.
-    #[must_use]
-    pub fn is_implemented(self) -> bool {
-        matches!(self, Self::DockerDesktop)
     }
 }
 
@@ -47,11 +42,5 @@ mod tests {
         );
         assert_eq!(Runtime::of_pool(Profile::Axmc, Some(Os::Macos)), None);
         assert_eq!(Runtime::of_pool(Profile::Axmc, None), None);
-    }
-
-    #[test]
-    fn only_the_docker_runtime_is_implemented() {
-        assert!(Runtime::DockerDesktop.is_implemented());
-        assert!(!Runtime::TartVm.is_implemented());
     }
 }

@@ -7,6 +7,7 @@ pub mod clock;
 pub mod diagnostic;
 pub mod docker;
 pub mod docker_args;
+pub mod exports;
 #[cfg(any(debug_assertions, test))]
 #[doc(hidden)]
 pub mod fake;
@@ -19,5 +20,6 @@ pub mod retained;
 pub mod scrub;
 pub mod secret;
 pub mod select;
+pub mod tart;
 pub mod token;
 pub mod worker;

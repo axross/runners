@@ -250,8 +250,11 @@ helper and runs a copy of the helper as `nobody` through the hosted runner's
 passwordless `sudo`, failing unless that other user is refused the lock. On Windows a
 further step has the helper open the control pipe and reads the live pipe's security
 descriptor back with PowerShell 7, failing unless it grants the current user alone.
-Neither step needs a new action, permission, or secret. The workflow's release-build
-job is the release build's dry run: it calls
+Neither step needs a new action, permission, or secret. The workflow also builds the
+runner image for linux/arm64 on the hosted `ubuntu-24.04-arm` runner, in a job of its
+own that builds and never pushes and runs no smoke test, since those assume x86_64
+([#74](https://github.com/axross/runners/issues/74)). Its release-build job is the
+release build's dry run: it calls
 [`release-build.yaml`](../../.github/workflows/release-build.yaml), which builds the
 Windows x64 and macOS arm64 release binaries on their hosted runners, runs the
 release-profile tests on each, checks each binary's `--version` and, on Windows, that

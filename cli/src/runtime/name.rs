@@ -4,6 +4,7 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub(crate) const DIGITS_IN_STAMP: usize = 17;
+pub(crate) const DIGITS_IN_SECONDS_STAMP: usize = 14;
 const LATEST_UNIX_MILLIS: u64 = 253_402_300_799_999;
 const MILLIS_PER_DAY: u64 = 86_400_000;
 
@@ -36,6 +37,37 @@ pub fn format_stamp(unix_millis: u64) -> String {
         in_day / 1000 % 60,
         in_day % 1000
     )
+}
+
+/// reads a `yyyyMMddHHmmssfff` stamp, or a `yyyyMMddHHmmss` stamp as its whole
+/// second, as milliseconds since the Unix epoch; `None` for any other text, a date
+/// that does not exist, or a year before 1970.
+#[must_use]
+pub fn parse_stamp(text: &str) -> Option<u64> {
+    let seconds_only = text.len() == DIGITS_IN_SECONDS_STAMP;
+    if !(seconds_only || text.len() == DIGITS_IN_STAMP)
+        || !text.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return None;
+    }
+    let field = |from: usize, to: usize| -> Option<u64> { text.get(from..to)?.parse().ok() };
+    let (year, month, day) = (field(0, 4)?, field(4, 6)?, field(6, 8)?);
+    let (hour, minute, second) = (field(8, 10)?, field(10, 12)?, field(12, 14)?);
+    let milli = if seconds_only { 0 } else { field(14, 17)? };
+    if year < 1970
+        || !(1..=12).contains(&month)
+        || day == 0
+        || hour > 23
+        || minute > 59
+        || second > 59
+    {
+        return None;
+    }
+    let days = days_from_civil(year, month, day);
+    if civil_from_days(days) != (year, month, day) {
+        return None;
+    }
+    Some((((days * 24 + hour) * 60 + minute) * 60 + second) * 1000 + milli)
 }
 
 /// converts days since 1970-01-01 to a proleptic Gregorian date, by Howard
@@ -73,6 +105,37 @@ pub(crate) fn days_from_civil(year: u64, month: u64, day: u64) -> u64 {
 #[must_use]
 pub fn cpu_probe_name(pool: &str, slot: u32) -> String {
     format!("{pool}-cpu-probe-{slot}")
+}
+
+/// the pool and slot a container name made by [`job_container_name`] carries, read
+/// from the end so a pool name may hold hyphens; `None` for any other text.
+#[must_use]
+pub fn slot_of_container_name(name: &str) -> Option<(&str, u32)> {
+    let (head, stamp) = name.rsplit_once('-')?;
+    if stamp.len() != DIGITS_IN_STAMP || !stamp.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let (pool, slot) = head.rsplit_once('-')?;
+    slot_number(slot)
+        .map(|slot| (pool, slot))
+        .filter(|(pool, _)| !pool.is_empty())
+}
+
+/// the pool and slot a probe name made by [`cpu_probe_name`] carries; `None` for any
+/// other text.
+#[must_use]
+pub fn slot_of_probe_name(name: &str) -> Option<(&str, u32)> {
+    let (pool, slot) = name.rsplit_once("-cpu-probe-")?;
+    slot_number(slot)
+        .map(|slot| (pool, slot))
+        .filter(|(pool, _)| !pool.is_empty())
+}
+
+fn slot_number(text: &str) -> Option<u32> {
+    if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    text.parse().ok()
 }
 
 /// whether `candidate` is the pool's name, a hyphen, a slot number, a hyphen and
@@ -129,6 +192,40 @@ mod tests {
     }
 
     #[test]
+    fn a_stamp_reads_back_as_its_milliseconds_and_a_short_one_as_its_second() {
+        for millis in [0, 1_709_618_828_009, 4_107_542_399_999, 951_782_400_000] {
+            assert_eq!(parse_stamp(&format_stamp(millis)), Some(millis));
+        }
+        assert_eq!(
+            parse_stamp("20240305060708"),
+            Some(1_709_618_828_000),
+            "a stamp without milliseconds"
+        );
+    }
+
+    #[test]
+    fn a_stamp_that_names_no_instant_does_not_read() {
+        for text in [
+            "",
+            "2024030506070800",
+            "202403050607080091",
+            "20240230060708009",
+            "20240305240000000",
+            "20240305066000000",
+            "20240305060760000",
+            "20241305060708009",
+            "20240005060708009",
+            "20240300060708009",
+            "19691231235959999",
+            "2024030506070800x",
+            "+2024030506070800",
+            "20240305060708 09",
+        ] {
+            assert_eq!(parse_stamp(text), None, "{text:?}");
+        }
+    }
+
+    #[test]
     fn a_time_before_the_epoch_is_the_epoch() {
         let before = UNIX_EPOCH - Duration::from_secs(5);
         assert_eq!(job_container_name("p", 1, before), "p-1-19700101000000000");
@@ -173,6 +270,35 @@ mod tests {
             ),
         ] {
             assert!(!is_own_container_name("example-repo-one", &name), "{what}");
+        }
+    }
+
+    #[test]
+    fn a_container_or_probe_name_gives_back_its_pool_and_slot() {
+        let stamp = "20240305060708009";
+        assert_eq!(
+            slot_of_container_name(&format!("example-repo-one-12-{stamp}")),
+            Some(("example-repo-one", 12))
+        );
+        assert_eq!(
+            slot_of_container_name(&job_container_name("a-1-2", 3, UNIX_EPOCH)),
+            Some(("a-1-2", 3))
+        );
+        for text in [
+            "example-1-2024030506070800",
+            "example-x-20240305060708009",
+            "-1-20240305060708009",
+            "example",
+            "",
+        ] {
+            assert_eq!(slot_of_container_name(text), None, "{text:?}");
+        }
+        assert_eq!(
+            slot_of_probe_name(&cpu_probe_name("a-cpu-probe-5", 2)),
+            Some(("a-cpu-probe-5", 2))
+        );
+        for text in ["a-cpu-probe-", "a-cpu-probe-x", "-cpu-probe-1", "a-1"] {
+            assert_eq!(slot_of_probe_name(text), None, "{text:?}");
         }
     }
 

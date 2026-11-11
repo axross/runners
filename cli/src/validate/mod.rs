@@ -148,8 +148,8 @@ fn read_root(root: &Value, cx: &mut Context) -> Option<Plan> {
     })
 }
 
-/// reads the image name: required on axpc, optional on axmc, where its use is
-/// undecided, and checked the same way where present.
+/// reads the image name: required on axpc, optional on axmc, where it defaults to
+/// `actions-runner:local`, and checked the same way where present.
 fn read_image_name(image_name: &Field, cx: &mut Context) -> Option<String> {
     let expectation = "a local Docker image name with a tag, such as name:tag";
     if cx.profile == Profile::Axmc {

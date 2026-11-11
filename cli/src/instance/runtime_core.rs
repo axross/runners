@@ -5,20 +5,22 @@ use std::cell::Cell;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::Poll;
+use std::time::Duration;
 
 use tokio::sync::watch;
 
 use crate::image::check::{ImageCheck, freshness_warnings};
 use crate::runtime::backend::Backend;
-use crate::runtime::board::Board;
+use crate::runtime::board::{Board, PoolState};
 use crate::runtime::clock::Clock;
-use crate::runtime::docker::DOCKER_POLL_INTERVAL;
 use crate::runtime::image::check_image;
 use crate::runtime::log::Log;
 use crate::runtime::pool::{
-    NoPoolStartable, PoolSpec, admit_pools, pools_from_plan, prepare_admitted,
+    MACOS_POOL_SKIPPED, NO_POOL_CAN_START, NoPoolStartable, PoolSpec, admit_pools, image_name,
+    pools_from_plan, prepare_admitted, skip_warning, skipped_pools,
 };
 use crate::runtime::registration::Registrar;
+use crate::runtime::select::Runtime;
 use crate::runtime::worker::{run_slot, wait_for_stop};
 use crate::validate::Plan;
 
@@ -54,7 +56,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar> RuntimeCore<'a, B, K, R> {
         pools: Vec<PoolSpec>,
         image: &str,
     ) -> Result<Vec<PoolSpec>, CoreFailure> {
-        let admitted = admit_pools(pools, self.log, &self.board);
+        let admitted = admit_pools(pools, self.backend.engine_name(), self.log, &self.board);
         if admitted.is_empty() {
             return Err(failure(NoPoolStartable.to_string(), Ending::NothingToRun));
         }
@@ -65,14 +67,14 @@ impl<'a, B: Backend, K: Clock, R: Registrar> RuntimeCore<'a, B, K, R> {
             .map_err(|NoPoolStartable| failure(NoPoolStartable.to_string(), Ending::NothingToRun))
     }
 
-    /// checks the image until Docker answers the check, then logs its freshness
+    /// checks the image until the engine answers the check, then logs its freshness
     /// warnings, or fails when it cannot run jobs.
     async fn verify_image(&self, image: &str) -> Result<(), CoreFailure> {
         verify_image(self.backend, self.clock, self.log, &self.board, image).await
     }
 }
 
-/// checks the image until Docker answers the check, then logs its freshness
+/// checks the image until the engine answers the check, then logs its freshness
 /// warnings, or fails when it cannot run jobs.
 pub(crate) async fn verify_image<B: Backend, K: Clock>(
     backend: &B,
@@ -92,11 +94,12 @@ pub(crate) async fn verify_image<B: Backend, K: Clock>(
             }
             return Ok(());
         };
+        let interval = backend.engine_poll_interval();
         log.warn(&format!(
             "{reason}, so the image {image} is checked again in {} s.",
-            DOCKER_POLL_INTERVAL.as_secs()
+            interval.as_secs()
         ));
-        clock.sleep(DOCKER_POLL_INTERVAL).await;
+        clock.sleep(interval).await;
         backend.wait_until_available().await;
     }
 }
@@ -137,9 +140,17 @@ impl<B: Backend, K: Clock, R: Registrar> Core for RuntimeCore<'_, B, K, R> {
         self.board.clear();
         self.running.set(true);
         let _cleared = Cleared(&self.board, &self.running);
+        for pool in skipped_pools(plan) {
+            self.log.warn(&skip_warning(pool));
+            self.board
+                .set_pool(pool, PoolState::Skipped(MACOS_POOL_SKIPPED.to_string()));
+        }
         let pools =
             pools_from_plan(plan).map_err(|error| failure(error.to_string(), Ending::Ordinary))?;
-        let image = plan.image_name.as_deref().unwrap_or_default();
+        if pools.is_empty() {
+            return Err(failure(NO_POOL_CAN_START.to_string(), Ending::NothingToRun));
+        }
+        let image = image_name(plan);
         self.board.expect_image(image);
         let prepared = tokio::select! {
             prepared = self.prepare(pools, image) => prepared?,
@@ -165,9 +176,7 @@ impl<B: Backend, K: Clock, R: Registrar> Core for RuntimeCore<'_, B, K, R> {
     }
 
     async fn check_image(&self, plan: &Plan) -> Result<(), String> {
-        let Some(image) = plan.image_name.as_deref() else {
-            return Ok(());
-        };
+        let image = image_name(plan);
         let check = check_image(self.backend, &self.board, image).await;
         if let ImageCheck::Unavailable(reason) = &check {
             self.log.warn(&format!(
@@ -177,6 +186,18 @@ impl<B: Backend, K: Clock, R: Registrar> Core for RuntimeCore<'_, B, K, R> {
         check.refusal(image).map_or(Ok(()), Err)
     }
 
+    async fn check_prerequisites(&self, plan: &Plan, each_read: Duration) -> Result<(), String> {
+        let runs_vms = plan
+            .entries
+            .iter()
+            .any(|entry| Runtime::of_pool(plan.profile, entry.os) == Some(Runtime::TartVm));
+        if runs_vms {
+            self.backend.check_prerequisites(each_read).await
+        } else {
+            Ok(())
+        }
+    }
+
     fn report(&self) -> Vec<(&'static str, String)> {
         let mut fields = if self.running.get() {
             self.board.fields()
@@ -184,6 +205,12 @@ impl<B: Backend, K: Clock, R: Registrar> Core for RuntimeCore<'_, B, K, R> {
             Vec::new()
         };
         fields.extend(self.board.image_fields(self.clock.now()));
+        fields.extend(
+            self.backend
+                .prerequisite_warnings()
+                .into_iter()
+                .map(|warning| ("warning", warning)),
+        );
         fields
     }
 }

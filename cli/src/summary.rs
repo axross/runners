@@ -117,8 +117,13 @@ fn axmc_summary(plan: &Plan) -> Vec<String> {
             "  memory:            {} of {} GB",
             used.memory_gb, budget.memory_gb
         ));
+        let reserve = if used.disk_reserve_gb == 0 {
+            String::new()
+        } else {
+            format!(", including a {} GB reserve", used.disk_reserve_gb)
+        };
         lines.push(format!(
-            "  disk:              {} of {} GB",
+            "  disk:              {} of {} GB{reserve}",
             used.disk_gb, budget.disk_gb
         ));
     }
