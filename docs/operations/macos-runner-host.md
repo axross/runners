@@ -311,7 +311,7 @@ entry is a pool of `slots` runners for one repository:
 
 The VMs run beside the macOS system, and Apple's licence allows two macOS guests at
 once. `validate` limits macOS pools to two VMs and does not count Linux VMs. Whether
-Linux VMs count against Apple's limit has not been found out; see
+Linux VMs count against Apple's limit is open, and no host run tests it; see
 [Verification Status](#verification-status).
 
 ### Starting, watching and stopping
@@ -490,12 +490,15 @@ hand while `marshal` runs; `build` replaces it.
 
 **Nothing in this document has been run on a Mac.** No real Tart VM, guest agent,
 Softnet, `caffeinate`, `route` or `arp` has run under `marshal`, and no claim above
-about their behaviour rests on a run. The host runs are performed on the maintainer's
-Mac, or by an agent session there, and their evidence, with the literal output of
-`tart --version` and `softnet --version`, is posted on
-[#74](https://github.com/axross/runners/issues/74). This note changes only when that
-evidence is there, and each item moves from the list below to a verified statement
-with a link to it.
+about their behaviour rests on a run. By the maintainer's decision
+[recorded on #74](https://github.com/axross/runners/issues/74#issuecomment-6784246305),
+this document's procedures were added with no host run. The one host run planned
+comes with the arm64 runner image, and checks only that a Linux job that uses
+`docker run` runs in a Tart VM with no Docker Desktop, that closing the lid or
+switching networks stops the runners, and that `stop` leaves no job VM while the
+golden VM stays. Its evidence, with the literal output of `tart --version` and
+`softnet --version`, is posted on #74. An item below moves to a verified statement,
+with a link to the evidence, only when a run's evidence covers it.
 
 **What is checked without a Mac.** The CLI's tests run against fake `tart`, `docker`,
 `softnet`, `caffeinate`, `route` and `arp` programs and a scripted signal source:
@@ -513,7 +516,7 @@ with a link to it.
 
 [CLI](./cli.md) says what each test file covers.
 
-**What the Mac run must confirm.** Each of these rests on a source or on the output
+**What no run has confirmed.** Each of these rests on a source or on the output
 of an Apple tool as the source prints it, and not on a run:
 
 - The guest agent runs commands as `admin`, and `admin` is in the `docker` group in a
@@ -536,13 +539,13 @@ of an Apple tool as the source prints it, and not on a run:
   `start` does not stop a new job's VM from booting.
 - Softnet's rules hold: from a VM, every blocked target that answers from the Mac is
   unreachable, and DNS and an HTTPS request to the internet succeed; with Softnet's
-  SUID bit removed, `start` refuses and `tart run` boots no VM. A VM that reaches a
-  blocked target stops this work until a plan revision decides the fallback.
+  SUID bit removed, `start` refuses and `tart run` boots no VM. No host run tests
+  this, and the maintainer accepted the isolation as unverified
+  ([decision record](https://github.com/axross/runners/issues/74#issuecomment-6784246305)).
 - The VM has the pool's vCPUs, memory and disk, and no shared directory, Rosetta share,
   sound card or USB device, and the `admin` password login over SSH is refused.
-- Whether Linux VMs count against Apple's limit of two VMs: three Linux VMs run at
-  once, or the limit found is recorded here, `validate` gains a rule with its
-  migration, and the example is reduced to fit.
+- Whether Linux VMs count against Apple's limit of two VMs. No host run tests it,
+  and `validate` counts only macOS VMs against the limit.
 - `stop` ends every VM within 30 s, a hard-killed `start` leaves no running job VM
   after the next `start`, and a slot's next VM is cloned, booted, probed and
   registered within 60 s of the previous VM's deletion; record the turnaround.
