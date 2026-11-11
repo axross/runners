@@ -178,7 +178,11 @@ Codex review uses its native priority label.
   per job through a just-in-time configuration. A long-lived registration
   token, a runner reused across jobs without a reset, and a container that
   runs privileged, mounts the Docker socket, or mounts the host's home
-  directory without a stated need are findings.
+  directory without a stated need are findings. The one socket that has a stated
+  need is the VM-local Docker socket that the axmc VM runtime mounts into the
+  runner container of a per-job VM; see
+  [Security](docs/conventions/security.md#the-vm-local-docker-socket). Any other
+  socket mount, and any socket mount on axpc, is a finding.
 - **Secrets stay out of logs and images.** A secret is never echoed, passed on
   a command line that a process listing exposes, written into an image layer
   (`ENV`, `ARG`, `COPY`), or left in a build cache. Two exceptions for a
@@ -226,14 +230,23 @@ uses its native priority label.
   `tart run` turns off graphics, the clipboard, audio and USB accessories, and
   carries no `--dir` and no `--rosetta`. Every Tart call sets `TART_NO_AUTO_PRUNE`,
   gets `marshal`'s `PATH`, and has a standard output that is not a terminal.
+- **The VM-local socket is the only socket.** The VM runtime's job container mounts
+  the job VM's own `/var/run/docker.sock` and nothing else of a host, and is never
+  privileged. The Docker runtime's run arguments (`job_run_arguments`) carry no
+  socket and no bind mount. A mount of any other socket, a host path, a socket on
+  axpc, a VM that serves more than one job, and a change to the socket's mount that
+  does not raise the image contract version with a new approved fingerprint are
+  findings. The image's Docker client and `docker` group id stay equal to the golden
+  VM's pins.
 - **Names and cleanup stay exact.** Cleanup at `start` matches only the job VMs of
   configured pools by their name form, so it never deletes a golden VM or a build
   VM. Only `build` deletes golden VMs, and only `build` and a build VM's own shim
   delete a build VM. A looser match could delete a VM `marshal` does not own.
 - **Pins hold.** The base image is pinned by digest, the current pin is never on
-  the retired list, Docker Engine comes from Docker's apt repository at pinned
-  versions after the signing key's fingerprint is checked, and the tested Tart and
-  Softnet versions agree between the CLI and the host document.
+  the retired list, Docker Engine, and the runner image's Docker client, come from
+  Docker's apt repository at pinned versions after the signing key's fingerprint is
+  checked, and the tested Tart and Softnet versions agree between the CLI and the
+  host document.
 
 The Dockerfile lens's rule against `apt-get upgrade` is about the runner image. The
 golden VM's provisioning upgrades the base's Ubuntu packages on purpose, so a
