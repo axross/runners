@@ -124,7 +124,8 @@ owns, together with each route's procedure, under Loop Engineering's
 - **Amp:** request the review by starting a fresh Amp review child thread for
   each round, never reusing one, with the neutral assignment The Independent
   Review describes. The child posts its own review on the pull request; the run
-  verifies the posted review, then archives the child thread.
+  verifies the posted review, then archives the child thread when the
+  plan-gate archive confirmation allows it.
 - **Codex, and changes made without an agent:** the Codex review.
 
 ## Handle Amp delivery authorization
