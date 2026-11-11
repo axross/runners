@@ -2118,15 +2118,18 @@ dependencies = [
 name = "marshal-app"
 version = "0.0.0-dev"
 dependencies = [
+ "interprocess",
  "marshal-cli",
  "marshal-modes",
  "marshal-session",
  "marshal-tray",
  "marshal-view",
  "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-single-instance",
+ "tokio",
 ]
 
 [[package]]

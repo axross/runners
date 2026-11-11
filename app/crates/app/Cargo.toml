@@ -11,6 +11,14 @@ default-run = "marshal-app"
 name = "marshal-app"
 path = "src/main.rs"
 
+# the CLI's stand-in for the docker client, built here too so the tests that start this
+# executable's exporter child can run it against a fake engine, as the CLI's own tests do.
+[[bin]]
+name = "fake-docker"
+path = "../../../cli/helpers/fake_docker.rs"
+test = false
+doc = false
+
 [dependencies]
 marshal-cli = { path = "../../../cli" }
 marshal-modes = { path = "../modes" }
@@ -20,6 +28,16 @@ marshal-view = { path = "../view" }
 tauri = { version = "2.12", features = ["tray-icon"] }
 tauri-plugin-single-instance = "2.5"
 serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
+
+[dev-dependencies]
+serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
+tauri = { version = "2.12", features = ["tray-icon", "test"] }
+tokio = { version = "1.54.1", default-features = false, features = ["rt", "time", "macros", "net", "io-util"] }
+
+# the named pipe a test squats on, as the library does, to stand in for another process
+# that holds the agent's channel.
+[target.'cfg(windows)'.dev-dependencies]
+interprocess = { version = "2.4.7", default-features = false, features = ["tokio"] }
 
 [build-dependencies]
 tauri-build = { version = "2.7", features = [] }
