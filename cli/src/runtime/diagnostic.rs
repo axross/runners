@@ -139,6 +139,7 @@ pub async fn finalize_at_job_end<B: Backend>(
     };
     let finalized = finalize(backend, &claim, Deadlines::from(ended)).await;
     report(log, claim.record(), name, &finalized);
+    backend.retained().note(claim.record(), name, &finalized);
 }
 
 /// polls every future until all have ended, and returns their outputs in order.
@@ -226,6 +227,9 @@ pub async fn finalize_claimed<B: Backend>(
         .zip(finalized)
         .map(|(claim, finalized)| {
             report(log, claim.record(), claim.name(), &finalized);
+            backend
+                .retained()
+                .note(claim.record(), claim.name(), &finalized);
             Acted {
                 name: claim.name().to_string(),
                 record: claim.record().clone(),

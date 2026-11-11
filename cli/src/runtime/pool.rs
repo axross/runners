@@ -16,7 +16,7 @@ use super::board::{Board, PoolState};
 use super::diagnostic::{STOP_GRACE, STOP_WITHIN, finalize_claimed, gap_text};
 use super::log::Log;
 use super::name::{cpu_probe_name, is_own_container_name};
-use super::token::read_token;
+use super::token::{TokenFiles, TokenSource};
 
 const STALE_REMOVE_BUDGET: Duration = Duration::from_secs(120);
 
@@ -198,23 +198,31 @@ fn skip(log: &dyn Log, board: &Board, pool: &PoolSpec, reason: &str) {
     board.set_pool(&pool.name, PoolState::Skipped(reason.to_string()));
 }
 
+/// admits one pool: reads its token from `tokens` and masks it in `log`, or skips the
+/// pool with a warning that names why. Returns whether it was admitted.
+pub fn admit_pool(pool: &PoolSpec, tokens: &dyn TokenSource, log: &dyn Log, board: &Board) -> bool {
+    match tokens.token(&pool.owner, &pool.repository, &pool.token_path) {
+        Err(error) => {
+            skip(log, board, pool, &format!("{}: {error}.", pool.path));
+            false
+        }
+        Ok(token) => {
+            log.mask(&token);
+            board.set_pool(&pool.name, PoolState::WaitingForDocker);
+            true
+        }
+    }
+}
+
 /// the first step of preparing the pools, needing no Docker: returns the pools
 /// whose token file reads, skipping the others with a warning; every token read is
 /// masked in `log`.
 #[must_use]
 pub fn admit_pools(pools: Vec<PoolSpec>, log: &dyn Log, board: &Board) -> Vec<PoolSpec> {
-    let mut admitted = Vec::new();
-    for pool in pools {
-        match read_token(&pool.token_path) {
-            Err(error) => skip(log, board, &pool, &format!("{}: {error}.", pool.path)),
-            Ok(token) => {
-                log.mask(&token);
-                board.set_pool(&pool.name, PoolState::WaitingForDocker);
-                admitted.push(pool);
-            }
-        }
-    }
-    admitted
+    pools
+        .into_iter()
+        .filter(|pool| admit_pool(pool, &TokenFiles, log, board))
+        .collect()
 }
 
 /// the second step, once Docker answers: removes each admitted pool's stale

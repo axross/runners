@@ -80,6 +80,26 @@ fn restrict(socket: &Path, uid: u32) -> Result<(), ChannelError> {
     Ok(())
 }
 
+/// creates the private socket directory when it is missing, replaces a leftover
+/// socket of the current user, binds the socket and restricts it to `0600`; the
+/// caller holds the instance lock, which is what proves no other instance owns it.
+pub(crate) fn bind_private(roots: &Roots) -> Result<(UnixListener, PathBuf), ChannelError> {
+    let uid = private::current_uid().map_err(|error| io_error("finding the user", &error))?;
+    private::ensure_private_directory(roots.channel_directory(), uid)
+        .map_err(ChannelError::Directory)?;
+    let socket = roots.socket_path();
+    remove_leftover(&socket, uid)?;
+    let listener = UnixListener::bind(&socket).map_err(|error| {
+        if error.kind() == io::ErrorKind::InvalidInput {
+            ChannelError::PathTooLong(socket.display().to_string())
+        } else {
+            io_error("binding the socket", &error)
+        }
+    })?;
+    restrict(&socket, uid)?;
+    Ok((listener, socket))
+}
+
 impl Server {
     pub fn address(&self) -> String {
         self.socket.display().to_string()
@@ -99,19 +119,7 @@ impl Server {
         requests: mpsc::UnboundedSender<Incoming>,
         peer_uid: u32,
     ) -> Result<Self, ChannelError> {
-        let uid = private::current_uid().map_err(|error| io_error("finding the user", &error))?;
-        private::ensure_private_directory(roots.channel_directory(), uid)
-            .map_err(ChannelError::Directory)?;
-        let socket = roots.socket_path();
-        remove_leftover(&socket, uid)?;
-        let listener = UnixListener::bind(&socket).map_err(|error| {
-            if error.kind() == io::ErrorKind::InvalidInput {
-                ChannelError::PathTooLong(socket.display().to_string())
-            } else {
-                io_error("binding the socket", &error)
-            }
-        })?;
-        restrict(&socket, uid)?;
+        let (listener, socket) = bind_private(roots)?;
         let connections = Arc::new(Semaphore::new(MAX_CONNECTIONS));
         let accepting = tokio::spawn(accept(
             listener,
