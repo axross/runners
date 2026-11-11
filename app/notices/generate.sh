@@ -19,6 +19,16 @@ frontend="${app}/crates/app/frontend"
 out="$(mktemp -d)"
 trap 'rm -rf "$out"' EXIT
 
+# prints a licence file this repository keeps, and fails the run when it is missing or
+# empty, so a notice cannot ship as a heading over nothing.
+licence() {
+  if [[ ! -s "$1" ]]; then
+    echo "error: app/${1#"${app}"/} is missing or empty; a notice needs its licence text." >&2
+    exit 1
+  fi
+  cat "$1"
+}
+
 # one file for each tree: the crates differ, and so does what a tree links that is
 # not a crate. $1 is the file's name, $2 the target, $3 the name of the platform.
 notices() {
@@ -45,7 +55,7 @@ notices() {
     echo "IBMPlexSans-Medium.woff2 and IBMPlexSans-SemiBold.woff2, under the SIL Open Font"
     echo "License 1.1 below. Source: https://github.com/IBM/plex"
     echo
-    cat "${frontend}/fonts/LICENSE.txt"
+    licence "${frontend}/fonts/LICENSE.txt"
     echo
     echo "PART 3. RADIX COLORS, THE COLOUR VALUES OF THE WINDOWS"
     echo "-------------------------------------------------------"
@@ -53,7 +63,7 @@ notices() {
     echo "@radix-ui/colors 3.0.0, by Radix, whose values the window's stylesheet copies."
     echo "Source: https://github.com/radix-ui/colors"
     echo
-    cat "${frontend}/colors-LICENSE.txt"
+    licence "${frontend}/colors-LICENSE.txt"
     if [[ "$platform" == "Windows" ]]; then
       echo
       echo "PART 4. THE WEBVIEW2 LOADER"
@@ -65,12 +75,12 @@ notices() {
       echo
       echo "webview2-com-sys:"
       echo
-      cat "${here}/licences/webview2-com-sys-LICENSE.txt"
+      licence "${here}/licences/webview2-com-sys-LICENSE.txt"
       echo
       echo
       echo "Microsoft.Web.WebView2 SDK 1.0.3800.47:"
       echo
-      cat "${here}/licences/webview2-loader-LICENSE.txt"
+      licence "${here}/licences/webview2-loader-LICENSE.txt"
       echo
     fi
   } >"${out}/${file}"

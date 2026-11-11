@@ -293,11 +293,14 @@ version, so another version fails the check too.
 `mise.lock` like the others, installed from its release as a prebuilt binary, so the
 notices need no compile in CI. It runs with `--frozen`, offline, so a crate that
 ships no licence file gets the licence's standard text without a copyright line.
-The crate `webview2-com-sys` ships no licence file; its MIT notice is the one at its
-published git commit. The loader's text is Microsoft's `LICENSE.txt` from the NuGet
+The crate `webview2-com-sys` ships no licence file; its MIT notice is the `LICENSE`
+at the git commit its 0.39.1 crate was published from (`edc2caf`, in
+`wravery/webview2-rs`, recorded in the crate's `.cargo_vcs_info.json`). The loader's text is Microsoft's `LICENSE.txt` from the NuGet
 package `Microsoft.Web.WebView2` 1.0.3800.47, which is the SDK that
 `webview2-com-sys` 0.39.1 bundles; it was identified by matching the SHA-256 of
-`x64/WebView2LoaderStatic.lib` across NuGet releases. When `webview2-com-sys` is
+`x64/WebView2LoaderStatic.lib` across NuGet releases. `generate.sh` fails when any
+licence file it appends, these two included, is missing or empty, so a notice cannot
+ship as a heading over nothing. When `webview2-com-sys` is
 bumped, compare the new bundled loader's SHA-256 with the NuGet releases the same
 way and, if the SDK changed, replace the loader's licence text and the version in
 `generate.sh` in the same commit.
