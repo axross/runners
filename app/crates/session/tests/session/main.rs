@@ -14,3 +14,4 @@ mod lifecycle;
 mod log;
 mod support;
 mod tokens;
+mod wall;

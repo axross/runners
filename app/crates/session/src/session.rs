@@ -20,6 +20,7 @@ use marshal_view::{
     Cause, Connection, Input, NotSaved, Pending, PendingKind, TokenResult, TokenUi, Tracker,
     Update, View, pools_started_by,
 };
+use serde::Deserialize;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio::time::{Instant, sleep_until};
@@ -60,7 +61,8 @@ pub enum Ended {
 }
 
 /// the token forms the page has open, which only the page knows.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(default)]
 pub struct Forms {
     pub editing: Option<String>,
     pub removing: Option<String>,

@@ -10,6 +10,7 @@ mod library;
 mod log;
 mod seam;
 mod session;
+mod wall;
 
 pub use choose::{Chosen, Place, Then, choose};
 pub use connect::RETRY_EVERY;
@@ -21,3 +22,4 @@ pub use seam::{
     TimeSource,
 };
 pub use session::{Act, Ended, Forms, Handle, Seams, Session};
+pub use wall::WallClock;

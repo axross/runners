@@ -2,6 +2,7 @@
 //! plain detached child with no console window, so it outlives the app. Nothing goes
 //! through Tauri's shell plugin.
 
+use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
@@ -26,6 +27,8 @@ pub struct OwnExecutable {
     /// the file as the app started from it; `None` when it could not be read then.
     started_from: Option<Executable>,
     log: Arc<dyn Log>,
+    /// variables the child is given besides this process's own; only a test sets any.
+    environment: Vec<(OsString, OsString)>,
 }
 
 impl OwnExecutable {
@@ -42,7 +45,16 @@ impl OwnExecutable {
             started_from: Executable::at(&path),
             path,
             log,
+            environment: Vec::new(),
         }
+    }
+
+    /// gives the agent these variables as well, for a test that moves it to a scratch
+    /// host.
+    #[must_use]
+    pub fn with_environment(mut self, variables: Vec<(OsString, OsString)>) -> Self {
+        self.environment = variables;
+        self
     }
 
     /// whether the file is still the one the app started from; a missing or changed file
@@ -67,6 +79,7 @@ impl Launcher for OwnExecutable {
         let mut command = Command::new(&self.path);
         command
             .args(marshal_modes::agent_arguments(launch))
+            .envs(self.environment.iter().map(|(name, value)| (name, value)))
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
