@@ -18,7 +18,7 @@ pub enum Mark {
     Check,
     /// registering: a ring.
     Ring,
-    /// backing off: the history mark.
+    /// backing off, or held: the history mark, as both try again later.
     History,
     Stop,
     /// a skipped pool's flag.
@@ -31,8 +31,8 @@ pub struct RunnerRow {
     pub slot: u32,
     /// "Runner 1".
     pub name: String,
-    /// "Container running", "Registering", "Backing off", or for a state this reader does
-    /// not know, the runner's own reason.
+    /// "Container running", "Registering", "Backing off", "Held", or for a state this
+    /// reader does not know, the runner's own reason.
     pub state: String,
     /// removed while the list is the last one heard.
     pub mark: Option<Mark>,
@@ -40,7 +40,7 @@ pub struct RunnerRow {
     pub container: Option<String>,
     /// "since 03:15".
     pub since: Option<String>,
-    /// why a runner backs off, in the agent's words.
+    /// why a runner backs off or is held, in the agent's words.
     pub detail: Option<String>,
     /// what Narrator reads: the pool, the runner and its state.
     pub label: String,
@@ -101,6 +101,7 @@ fn runner_row(context: &Context<'_>, pool: &PoolInfo, runner: &RunnerInfo) -> Ru
         RunnerState::Running => ("Container running".to_string(), Mark::Check),
         RunnerState::Registering => ("Registering".to_string(), Mark::Ring),
         RunnerState::BackingOff => ("Backing off".to_string(), Mark::History),
+        RunnerState::Held => ("Held".to_string(), Mark::History),
         RunnerState::Stopped => ("Stopped".to_string(), Mark::Stop),
         RunnerState::Unknown(word) => (
             runner

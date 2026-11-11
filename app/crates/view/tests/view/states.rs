@@ -81,6 +81,51 @@ fn running_is_the_summary_the_pools_and_the_runners() {
 }
 
 #[test]
+fn a_held_runner_says_held_with_its_reason_and_the_history_mark() {
+    let view = view_of(&load("held"));
+    let site = &list(&view).pools[1];
+    let held = &site.runners[1];
+    assert_eq!(held.state, "Held");
+    assert_eq!(held.mark, Some(Mark::History));
+    assert_eq!(held.detail.as_deref(), Some("Softnet is not set up"));
+    assert_eq!(held.container, None);
+    assert_eq!(held.since.as_deref(), Some("since 03:40"));
+    assert_eq!(held.label, "site, Runner 2, held");
+    assert_eq!(site.line, "Running · 1 of 3 up", "a held runner is not up");
+    assert_eq!(view.summary.heading, "3 of 6 runners up");
+    assert_eq!(
+        site.runners[2].state, "Backing off",
+        "a backing-off runner next to it is as before"
+    );
+}
+
+#[test]
+fn a_held_runner_is_known_so_it_is_not_shown_as_an_unknown_state() {
+    let snapshot = patched("held", |value| {
+        value["pools"][1]["runners"][1]["reason"] = serde_json::Value::Null;
+    });
+    let view = view_of(&snapshot);
+    let held = &list(&view).pools[1].runners[1];
+    assert_eq!(held.state, "Held", "the word, as the reason is missing");
+    assert_eq!(held.detail, None);
+    assert_ne!(held.mark, Some(Mark::Unknown));
+}
+
+#[test]
+fn a_held_runner_after_contact_is_lost_keeps_its_words_and_loses_its_mark() {
+    let view = view_in(
+        Connection::LostContact {
+            last_heard_ms: at(3, 50, 0),
+            cause: Cause::Dropped,
+        },
+        Some(&load("held")),
+    );
+    let held = &list(&view).pools[1].runners[1];
+    assert_eq!(held.state, "Held");
+    assert_eq!(held.mark, None);
+}
+
+#[test]
 fn every_runner_up_says_all_and_shows_the_all_up_icon() {
     let snapshot = load("all_up");
     let view = view_of(&snapshot);
