@@ -57,7 +57,7 @@ no console. It has no console for its children to inherit, so each `docker` clie
 starts and the exporter child get `CREATE_NO_WINDOW`, set by the library's two command
 builders and asserted by a unit test at each; the agent's own flags are recorded
 and asserted by a unit test too; their standard streams and process
-groups still work, and the same flags change nothing in a terminal. Whether a
+groups are unchanged, and what a terminal run does with the flag on Windows is confirmed by the Windows CI tests and on axpc (see [CLI](./cli.md#running-a-host)). Whether a
 window still appears is shown only on axpc. Only the app mode takes Tauri's single-instance lock, so a second
 launch brings the first one's window forward and starts nothing. The agent mode is
 kept to one by the machine-wide lock the library's agent takes, as `start` is, so

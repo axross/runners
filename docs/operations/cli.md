@@ -459,8 +459,11 @@ only, which can stop the containers in order. A test reads the group of every cl
 the fake `docker` sees on Linux and macOS; no safe API reads a Windows process's
 creation flags back. On Windows every client and the exporter child also get
 `CREATE_NO_WINDOW`, so a resident agent that has no console, as the app's agent has
-none, does not open a console window for each `docker` call; in a terminal it changes
-nothing. The one function that applies the flags is called by the client builder and
+none, does not open a console window for each `docker` call. This applies to the
+foreground commands too, since they share the builders. Their piped input and output
+and their process group are unchanged. How a terminal run behaves on Windows with the
+flag, including `start` and Ctrl+C, is not established here: the Windows CI tests and
+the axpc run are what confirm it. The one function that applies the flags is called by the client builder and
 by the exporter's command builder, and a test build records what each applied, so
 two unit tests assert both flags at the two builders, which every client and exporter
 call site goes through. Whether Windows shows a window is not observable here and is
