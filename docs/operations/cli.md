@@ -1117,7 +1117,7 @@ a hang and a flood. `macos_signals.rs` covers the pure judgments, and
 `macos_processes.rs` the readers, the bounds, the hold and the scripted source. Not
 verified by them: the output of a real macOS `route` and `arp`, which the samples
 copy from Apple's source (a VPN's `gateway: link#<index>` form included), and a real
-sleep; both wait for the first run on the Mac.
+sleep; both wait for a run on the Mac.
 
 #### Wiring the Signals into the Instance
 
