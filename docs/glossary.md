@@ -246,8 +246,8 @@ archived afterwards when the plan-gate archive confirmation allows it. See
 [operations/development-workflow.md](./operations/development-workflow.md).
 
 **Plan-Gate Archive Confirmation** - the human's answer, collected at the plan
-gate or, in a run without one, before its first archive, on whether an Amp run
-archives its review child threads. See
+gate, or before archiving in a run without one or in a resumed session, on
+whether an Amp run archives its review child threads. See
 [operations/agent-sessions.md](./operations/agent-sessions.md).
 
 **Run State** - the recoverable record of a change loop's progress, which a
