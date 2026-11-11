@@ -80,7 +80,7 @@ pub async fn answer_confirmation<R: Runtime>(
 ) -> Result<(), String> {
     let asked = state.answer();
     confirmation::close(&app);
-    match asked {
+    let outcome = match asked {
         Some(asking) if accepted => match asking.then {
             Then::Act(act) => state.handle.act(act).await,
             Then::Quit => {
@@ -89,7 +89,14 @@ pub async fn answer_confirmation<R: Runtime>(
             }
         },
         _ => Ok(()),
+    };
+    // the window that asked is gone, so nobody is left to show the failure
+    if let Err(words) = &outcome {
+        state
+            .log
+            .warn(&format!("The confirmed action did not run: {words}"));
     }
+    outcome
 }
 
 /// the handler that routes the web view's calls to the commands above, which the app

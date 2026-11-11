@@ -164,9 +164,11 @@ which also grants `core:event:allow-listen` and `core:event:allow-unlisten`, and
 [`confirmation-window.json`](../../app/crates/app/capabilities/confirmation-window.json).
 `tests/ipc.rs` runs both windows against Tauri's mock runtime and shows that a call
 the capability does not grant is refused and that the granted ones are not. Quit runs
-from the menu on the Rust side and has no command.
-`commands::handler` is the one list of the eleven
-commands the app and `tests/ipc.rs` both register.
+from the menu on the Rust side and has no command. `commands::handler` is the one
+list of the eleven commands the app and `tests/ipc.rs` both register.
+
+A failed action that a confirmation started is written to the app's log, since the
+window that asked is gone by then.
 
 Two events reach the main window. The view reaches the page by the `marshal:view`
 event and by the reply to `read_view`, which nothing orders against each other, so each

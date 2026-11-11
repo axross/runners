@@ -7,12 +7,12 @@
     clippy::indexing_slicing
 )]
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use marshal_app::commands;
 use marshal_app::state::{AppState, Asking, Latest};
 use marshal_session::{
-    Connected, Dial, DialError, Failure, Launcher, Link, Log, Method, Present, Seams, Session,
+    Act, Connected, Dial, DialError, Failure, Launcher, Link, Log, Method, Present, Seams, Session,
     Shown, Then, WallClock,
 };
 use marshal_view::Confirmation;
@@ -63,6 +63,29 @@ impl Log for Quiet {
     fn warn(&self, _line: &str) {}
 }
 
+/// keeps the lines the app logs.
+#[derive(Default)]
+struct Recorded(Mutex<Vec<String>>);
+
+impl Recorded {
+    fn lines(&self) -> Vec<String> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
+impl Log for Recorded {
+    fn info(&self, _line: &str) {}
+    fn warn(&self, line: &str) {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(line.to_string());
+    }
+}
+
 fn question() -> Confirmation {
     Confirmation {
         title: "Stop all runners?".to_string(),
@@ -73,6 +96,11 @@ fn question() -> Confirmation {
 }
 
 fn app() -> App<MockRuntime> {
+    app_asking(Then::Quit, Arc::new(Quiet))
+}
+
+/// an app with `then` waiting on its question, writing its log to `log`.
+fn app_asking(then: Then, log: Arc<dyn Log>) -> App<MockRuntime> {
     let (session, handle) = Session::new(Seams {
         dial: NoOne,
         launcher: Arc::new(Refuse),
@@ -83,10 +111,10 @@ fn app() -> App<MockRuntime> {
     tauri::async_runtime::spawn(async move {
         session.run().await;
     });
-    let state = AppState::new(handle, Arc::new(Latest::default()), Arc::new(Quiet));
+    let state = AppState::new(handle, Arc::new(Latest::default()), log);
     assert!(state.ask(Asking {
         question: question(),
-        then: Then::Quit,
+        then,
     }));
     mock_builder()
         .manage(state)
@@ -236,4 +264,25 @@ fn a_token_that_is_empty_is_refused_by_the_session_and_not_by_the_capability() {
     let main = window(&app, "main");
     let result = call(&main, "set_token", arguments("set_token"));
     assert!(!refused(&result), "{result:?}");
+}
+
+#[test]
+fn a_confirmed_action_that_fails_is_logged_since_its_window_is_gone() {
+    let log = Arc::new(Recorded::default());
+    let app = app_asking(Then::Act(Act::StopAll), log.clone());
+    let confirmation = window(&app, "confirmation");
+    // no agent is connected, so the action cannot run
+    let result = call(
+        &confirmation,
+        "answer_confirmation",
+        json!({ "accepted": true }),
+    );
+    assert!(result.is_err() && !refused(&result), "{result:?}");
+    let lines = log.lines();
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.starts_with("The confirmed action did not run: ")),
+        "{lines:?}"
+    );
 }
