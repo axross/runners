@@ -4,17 +4,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Marshal</title>
+    <link rel="stylesheet" href="fonts.css" />
+    <link rel="stylesheet" href="tokens.css" />
     <link rel="stylesheet" href="main.css" />
-    <script src="confirmation.js" defer></script>
+    <script type="module" src="confirmation.js"></script>
   </head>
   <body>
-    <main role="alertdialog" aria-labelledby="title" aria-describedby="body">
-      <h1 id="title"></h1>
-      <p id="body"></p>
-      <p>
-        <button id="cancel" type="button" autofocus></button>
-        <button id="confirm" type="button"></button>
-      </p>
-    </main>
+    <main id="own" class="own-window"></main>
   </body>
 </html>
