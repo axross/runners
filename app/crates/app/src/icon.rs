@@ -32,10 +32,11 @@ pub fn spawn(app: AppHandle, watch: Arc<Mutex<Watch>>, log: Arc<dyn Log>) {
                 if let Some(line) = polled.warn {
                     log.warn(&line);
                 }
-                if let Some(look) = polled.replace {
+                if polled.replace.is_some() {
                     let setting = app.clone();
+                    let watched = Arc::clone(&watch);
                     let queued = app.run_on_main_thread(move || {
-                        let _ = tray::set_look(&setting, look);
+                        let _ = tray::set_current_look(&setting, &watched);
                     });
                     if queued.is_err() {
                         // the app is closing

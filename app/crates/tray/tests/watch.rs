@@ -174,3 +174,34 @@ fn the_image_takes_the_colour_of_the_glyph() {
     assert_eq!(solid(&white), Some([255, 255, 255]));
     assert_eq!(solid(&dark), Some([0x1f, 0x1f, 0x1f]));
 }
+
+#[test]
+fn what_is_applied_later_is_the_newest_look_decided_whatever_order_looks_are_queued_in() {
+    let mut watch = Watch::new();
+    polled(&mut watch, 0, 1.0);
+    // the view's thread decides one look and the polling thread a newer one, and the
+    // older look reaches the event loop last
+    let older = watch.set_state(IconState::AllUp).expect("an image");
+    let newer = polled(&mut watch, 1, 1.0).expect("an image");
+    assert_ne!(older, newer);
+    assert_eq!(
+        watch.current(),
+        newer,
+        "the older look would be applied last"
+    );
+    assert_eq!(watch.current().state, IconState::AllUp);
+    assert_eq!(watch.current().colour, GlyphColour::NearBlack);
+}
+
+#[test]
+fn the_current_look_is_the_one_the_last_decision_returned_and_changes_nothing() {
+    let mut watch = Watch::new();
+    let decided = polled(&mut watch, 0, 1.5).expect("an image");
+    assert_eq!(watch.current(), decided);
+    assert_eq!(watch.current(), decided);
+    assert_eq!(
+        polled(&mut watch, 0, 1.5),
+        None,
+        "reading it records nothing"
+    );
+}

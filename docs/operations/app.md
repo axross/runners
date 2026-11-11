@@ -274,7 +274,10 @@ edge pixel, a mostly blank image or two states that differ by fewer than 16 whol
 pixels at 16 px, which is how the five states stay apart. The app polls the
 taskbar's mode and the primary display's scaling once a second and replaces the
 icon's image only when one changes. An unreadable or absent mode counts as dark, and
-is logged once.
+is logged once. A change is put on the icon from the event loop's thread, which reads
+the newest look decided when it runs (`Watch::current`) and not the one that queued
+it, so two looks decided on two threads and queued out of order leave the newer one
+on the icon.
 
 Two choices go beyond the design record and are the maintainer's to confirm. The
 record draws stopped by an error as a red disc with an exclamation mark; the glyph

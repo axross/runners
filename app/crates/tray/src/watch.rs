@@ -81,12 +81,20 @@ impl Watch {
         }
     }
 
-    fn look(&mut self) -> Option<Look> {
-        let look = Look {
+    /// the look the icon has now, or is about to be given: the newest one decided. Whatever
+    /// puts a look on the icon later, from another thread, reads this when it runs, so a
+    /// look decided earlier cannot replace a newer one.
+    #[must_use]
+    pub fn current(&self) -> Look {
+        Look {
             state: self.state,
             colour: GlyphColour::for_mode(self.mode),
             size: size_for_scale(self.scale),
-        };
+        }
+    }
+
+    fn look(&mut self) -> Option<Look> {
+        let look = self.current();
         if self.applied == Some(look) {
             return None;
         }

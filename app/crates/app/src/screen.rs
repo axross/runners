@@ -57,11 +57,12 @@ impl Present for Screen {
             .unwrap_or_else(PoisonError::into_inner)
             .show(&shown.view.menu, &shown.view.tooltip);
         let app = self.app.clone();
+        let watch = Arc::clone(&self.watch);
         let log = Arc::clone(&self.log);
         // the menu is built on the event loop's thread
         let queued = self.app.run_on_main_thread(move || {
             let results = [
-                look.map(|look| tray::set_look(&app, look)),
+                look.map(|_| tray::set_current_look(&app, &watch)),
                 changes.tooltip.map(|words| tray::set_tooltip(&app, &words)),
                 changes.menu.map(|menu| tray::set_menu(&app, &menu)),
             ];

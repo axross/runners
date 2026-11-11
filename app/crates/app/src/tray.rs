@@ -1,8 +1,10 @@
 //! the notification-area icon: its image, its tooltip and its menu, and what a click on
 //! it does.
 
+use std::sync::{Mutex, PoisonError};
+
 use marshal_session::{Chosen, Place, choose};
-use marshal_tray::{Look, bitmap, menu_id};
+use marshal_tray::{Look, Watch, bitmap, menu_id};
 use marshal_view::Menu;
 use tauri::image::Image;
 use tauri::menu::{Menu as TauriMenu, MenuEvent, MenuItem, PredefinedMenuItem};
@@ -43,7 +45,18 @@ pub fn create(app: &AppHandle, first: Look) -> tauri::Result<()> {
     Ok(())
 }
 
-pub fn set_look(app: &AppHandle, look: Look) -> tauri::Result<()> {
+/// puts the newest look `watch` has decided on the icon, not the one that made the
+/// caller queue this, so two looks queued out of order leave the newer on it. It runs on
+/// the event loop's thread, and the lock is not held while anything waits for that thread.
+pub fn set_current_look(app: &AppHandle, watch: &Mutex<Watch>) -> tauri::Result<()> {
+    let look = watch
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .current();
+    set_look(app, look)
+}
+
+fn set_look(app: &AppHandle, look: Look) -> tauri::Result<()> {
     match app.tray_by_id(TRAY_ID) {
         Some(tray) => tray.set_icon(Some(image(look))),
         None => Ok(()),
