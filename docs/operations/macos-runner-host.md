@@ -316,6 +316,13 @@ Linux VMs count against Apple's limit is open, and no host run tests it; see
 
 ### Starting, watching and stopping
 
+Before the first `start` on axmc, confirm that every self-hosted job in each
+repository the pools serve names a routing label: `axpc`, or `axmc` with an OS label
+such as `linux`, as in `runs-on: [axmc, linux]`. Use the label your pools carry in
+place of `axmc` when `labels` replaces it. A job that names neither, such as one that
+names only `self-hosted`, can land on axmc. Search each repository's workflows for
+`runs-on` and check every hit.
+
 Build the golden VM once, then start the pools in a terminal of the signed-in session,
 and leave it open:
 
