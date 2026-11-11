@@ -619,8 +619,8 @@ container cover all of them and its memory limit equals the VM's.
 
 **The job container.** `run_container` runs
 `tart exec -i <vm> /usr/local/bin/marshal-launch <docker run arguments>` where the
-arguments are the container backend's own `docker run` list
-(`docker_args::vm_job_run_arguments`) plus the VM's Docker socket: `--pull never`, the
+arguments are `docker_args::vm_job_run_arguments`, the container backend's own
+`docker run` list with the VM's Docker socket added: `--pull never`, the
 name, quota, affinity and memory options,
 `--mount type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock`, and
 `-e ACTIONS_RUNNER_INPUT_JITCONFIG` with no value. The JIT configuration is written to the client's standard input and
@@ -903,8 +903,10 @@ with exit code 64, without printing the input. The Tart backend calls it as
 The runner image's Dockerfile installs `docker-ce-cli` at the version pinned here,
 from the same repository, after the same key's fingerprint matches, and asserts that
 its `docker` group has the id `DOCKER_GROUP_ID`; a unit test in `image::contract` holds the
-Dockerfile to `golden::pins`, so the image's client and its group cannot drift from
-the golden VM's Docker Engine and group alone.
+Dockerfile and the smoke test to `golden::pins`: the `docker-ce-cli` pin, the key's
+fingerprint and URL, the repository's URI and suite, and the group id. So the image's
+client, key and group id cannot differ from the golden VM's `docker-ce-cli` pin, key and
+group id.
 
 `golden::steps::build_vm_docker_command` is the prefix the build uses to run `docker`
 in the build VM, `sudo -n docker`, because the `docker` group applies only from the
@@ -1032,6 +1034,10 @@ against the fake `tart` and `fake-softnet`. `golden_provisioning.rs` runs the go
 VM's guest calls against the fake `tart` in their order, with a key of another
 fingerprint stopping them before anything is installed, and `golden_launcher.rs` runs
 the launcher as a shell script against a stand-in `docker` (Unix only).
+`golden_install_docker.rs` runs the install-docker script as a real shell script
+against stand-in system tools (Unix only): a missing `docker` group is created with
+`DOCKER_GROUP_ID`, a group with that id is accepted with or without members, and a group
+with another id is refused before apt runs.
 `tart_backend.rs` runs the
 [Tart Backend](#tart-backend) against the fake `tart`, which forwards a guest
 command to `fake-docker` as the launcher would, and `fake-softnet`, through the rig
@@ -2638,7 +2644,7 @@ summary do not change.
 **The Docker group.** The fourth guest call creates the `docker` group with the id
 `DOCKER_GROUP_ID`, so the socket the runner container mounts is owned by the group that
 the runner image's `runner` user is in, and adds `admin` to it. A `docker` group that exists with
-another id fails the build before anything is installed. The group change reaches
+another id fails the build before any Docker package is installed. The group change reaches
 `tart exec` commands only when the guest agent next starts, and the build VM is not
 restarted. The image build therefore runs `sudo -n docker`
 (`golden::steps::build_vm_docker_command`), where it could instead have rebooted the VM,

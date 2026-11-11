@@ -167,8 +167,9 @@ defines it, in `runtime::tart`, `golden` and `build::golden`.
     `docker-buildx-plugin`) comes from Docker's apt repository at pinned package
     versions, which apt holds, after the repository's signing key has matched a
     recorded fingerprint. Docker Compose is not installed. The `docker` group is
-    created first, with the id in `golden::pins::DOCKER_GROUP_ID`, and the build fails
-    if the group exists with another id.
+    created after the key check and before any Docker package is installed, with the id
+    in `golden::pins::DOCKER_GROUP_ID`, and the build fails if the group exists with
+    another id.
   - The launcher is `/usr/local/bin/marshal-launch`, owned by root, mode 0755.
   - The `admin` password is locked and SSH is masked, so the base image's
     `admin`/`admin` login cannot be used. The guest agent does not use SSH.
@@ -258,10 +259,11 @@ the freshness warnings ask for it.
 3. Pulls the base image by its digest and clones it to a new build VM, which keeps
    the base's CPUs and memory.
 4. Boots the build VM on Softnet and waits up to 120 s for its guest agent.
-5. Upgrades the Ubuntu packages, creates the `docker` group with the id in `golden::pins::DOCKER_GROUP_ID`, installs
-   Docker Engine at the pinned versions after checking Docker's signing key against
-   its recorded fingerprint, installs the launcher, and disables the SSH login. A key whose fingerprint is not the recorded
-   one fails the build before anything is installed from Docker.
+5. Upgrades the Ubuntu packages, checks Docker's signing key against its recorded
+   fingerprint, creates the `docker` group with the id in `golden::pins::DOCKER_GROUP_ID`,
+   installs Docker Engine at the pinned versions, installs the launcher, and disables the
+   SSH login. A key whose fingerprint is not the recorded one fails the build before
+   anything is installed from Docker.
 6. Builds the runner image inside the VM, from the definition embedded in `marshal`,
    with the arguments `build` gives it on axpc, under the configured `imageName`, and
    checks its image contract label. The image build runs `sudo -n docker`, because

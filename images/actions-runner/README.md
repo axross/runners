@@ -92,7 +92,7 @@ the base image may already have it. The base's other Docker binaries, such as
 `dockerd`, and its `docker-buildx` plugin stay as the base ships them; the image
 needs no daemon and starts none.
 
-The key, the version and the id below are also the golden VM's, in
+The key, the version and the `docker` group id are also the golden VM's, in
 `cli/src/golden/pins.rs`, and a unit test in the CLI fails when this Dockerfile and
 those pins differ. To change the client, change both in one pull request, raise the
 golden VM version, and check the version against Docker's repository for both
