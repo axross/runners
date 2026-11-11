@@ -4,13 +4,25 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Marshal</title>
+    <link rel="stylesheet" href="fonts.css" />
+    <link rel="stylesheet" href="tokens.css" />
     <link rel="stylesheet" href="main.css" />
-    <script src="main.js" defer></script>
+    <script type="module" src="main.js"></script>
   </head>
   <body>
-    <main>
-      <h1>Marshal</h1>
-      <p id="status">Starting</p>
-    </main>
+    <div class="window">
+      <div id="live" class="vh" role="status" aria-live="polite"></div>
+      <div id="app">
+        <main class="full">
+          <div class="full-text">
+            <h1 class="heading" tabindex="-1" data-key="heading">
+              Starting Marshal
+            </h1>
+            <p class="description low">Connecting to the agent.</p>
+          </div>
+        </main>
+      </div>
+      <div id="layer"></div>
+    </div>
   </body>
 </html>
