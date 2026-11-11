@@ -1,0 +1,145 @@
+{
+  "agent": {
+    "version": "0.1.0",
+    "state": "stopped",
+    "since": 1793763660000,
+    "reason": {
+      "code": "restart_limit",
+      "message": "the runtime core failed too often within 10 minutes"
+    }
+  },
+  "configuration": {
+    "path": "C:\\Users\\me\\AppData\\Local\\marshal\\config.json",
+    "problems": []
+  },
+  "runners_up": 0,
+  "runners_wanted": 6,
+  "repositories": [
+    {
+      "repository": "owner/app",
+      "has_token": true,
+      "pools": ["app"]
+    },
+    {
+      "repository": "owner/site",
+      "has_token": true,
+      "pools": ["site"]
+    },
+    {
+      "repository": "owner/docs",
+      "has_token": true,
+      "pools": ["docs"]
+    }
+  ],
+  "pools": [
+    {
+      "name": "app",
+      "repository": "owner/app",
+      "state": "stopped",
+      "reason": null,
+      "has_token": false,
+      "runners_up": 0,
+      "slots": 2,
+      "runners": [
+        {
+          "slot": 1,
+          "state": "stopped",
+          "workload": null,
+          "reason": null,
+          "since": 1793763660000
+        },
+        {
+          "slot": 2,
+          "state": "stopped",
+          "workload": null,
+          "reason": null,
+          "since": 1793763660000
+        }
+      ],
+      "diagnostics": null
+    },
+    {
+      "name": "site",
+      "repository": "owner/site",
+      "state": "stopped",
+      "reason": null,
+      "has_token": false,
+      "runners_up": 0,
+      "slots": 3,
+      "runners": [
+        {
+          "slot": 1,
+          "state": "stopped",
+          "workload": null,
+          "reason": null,
+          "since": 1793763660000
+        },
+        {
+          "slot": 2,
+          "state": "stopped",
+          "workload": null,
+          "reason": null,
+          "since": 1793763660000
+        },
+        {
+          "slot": 3,
+          "state": "stopped",
+          "workload": null,
+          "reason": null,
+          "since": 1793763660000
+        }
+      ],
+      "diagnostics": null
+    },
+    {
+      "name": "docs",
+      "repository": "owner/docs",
+      "state": "stopped",
+      "reason": null,
+      "has_token": false,
+      "runners_up": 0,
+      "slots": 1,
+      "runners": [
+        {
+          "slot": 1,
+          "state": "stopped",
+          "workload": null,
+          "reason": null,
+          "since": 1793763660000
+        }
+      ],
+      "diagnostics": null
+    }
+  ],
+  "leftovers": [],
+  "images": [
+    {
+      "name": "actions-runner:local",
+      "lines": [
+        {
+          "name": "image",
+          "value": "actions-runner:local"
+        },
+        {
+          "name": "image-contract",
+          "value": "3"
+        },
+        {
+          "name": "image-built",
+          "value": "2 days ago"
+        },
+        {
+          "name": "runner",
+          "value": "2.338.2, released 9 days ago"
+        }
+      ],
+      "warnings": [
+        {
+          "code": "runner_may_be_newer",
+          "days": 9,
+          "version": "2.338.2"
+        }
+      ]
+    }
+  ]
+}

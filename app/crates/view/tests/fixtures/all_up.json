@@ -1,0 +1,103 @@
+{
+  "agent": {
+    "version": "0.1.0",
+    "state": "running",
+    "since": 1793762100000
+  },
+  "configuration": {
+    "path": "C:\\Users\\me\\AppData\\Local\\marshal\\config.json",
+    "problems": []
+  },
+  "runners_up": 3,
+  "runners_wanted": 3,
+  "repositories": [
+    {
+      "repository": "owner/app",
+      "has_token": true,
+      "pools": ["app"]
+    },
+    {
+      "repository": "owner/site",
+      "has_token": true,
+      "pools": ["site"]
+    }
+  ],
+  "pools": [
+    {
+      "name": "app",
+      "repository": "owner/app",
+      "state": "running",
+      "reason": null,
+      "has_token": true,
+      "runners_up": 2,
+      "slots": 2,
+      "runners": [
+        {
+          "slot": 1,
+          "state": "running",
+          "workload": "app-1-20261104031522114",
+          "reason": null,
+          "since": 1793762122000
+        },
+        {
+          "slot": 2,
+          "state": "running",
+          "workload": "app-2-20261104031530871",
+          "reason": null,
+          "since": 1793762130000
+        }
+      ],
+      "diagnostics": null
+    },
+    {
+      "name": "site",
+      "repository": "owner/site",
+      "state": "running",
+      "reason": null,
+      "has_token": true,
+      "runners_up": 1,
+      "slots": 1,
+      "runners": [
+        {
+          "slot": 1,
+          "state": "running",
+          "workload": "site-1-20261104033907412",
+          "reason": null,
+          "since": 1793763547000
+        }
+      ],
+      "diagnostics": null
+    }
+  ],
+  "leftovers": [],
+  "images": [
+    {
+      "name": "actions-runner:local",
+      "lines": [
+        {
+          "name": "image",
+          "value": "actions-runner:local"
+        },
+        {
+          "name": "image-contract",
+          "value": "3"
+        },
+        {
+          "name": "image-built",
+          "value": "2 days ago"
+        },
+        {
+          "name": "runner",
+          "value": "2.338.2, released 9 days ago"
+        }
+      ],
+      "warnings": [
+        {
+          "code": "runner_may_be_newer",
+          "days": 9,
+          "version": "2.338.2"
+        }
+      ]
+    }
+  ]
+}

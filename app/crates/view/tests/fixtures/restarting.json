@@ -1,0 +1,63 @@
+{
+  "agent": {
+    "version": "0.1.0",
+    "state": "running",
+    "since": 1793762100000,
+    "restart_due": 1793764320000
+  },
+  "configuration": {
+    "path": "C:\\Users\\me\\AppData\\Local\\marshal\\config.json",
+    "problems": []
+  },
+  "runners_up": 0,
+  "runners_wanted": 0,
+  "repositories": [
+    {
+      "repository": "owner/app",
+      "has_token": true,
+      "pools": ["app"]
+    },
+    {
+      "repository": "owner/site",
+      "has_token": true,
+      "pools": ["site"]
+    },
+    {
+      "repository": "owner/docs",
+      "has_token": false,
+      "pools": ["docs"]
+    }
+  ],
+  "pools": [],
+  "leftovers": [],
+  "images": [
+    {
+      "name": "actions-runner:local",
+      "lines": [
+        {
+          "name": "image",
+          "value": "actions-runner:local"
+        },
+        {
+          "name": "image-contract",
+          "value": "3"
+        },
+        {
+          "name": "image-built",
+          "value": "2 days ago"
+        },
+        {
+          "name": "runner",
+          "value": "2.338.2, released 9 days ago"
+        }
+      ],
+      "warnings": [
+        {
+          "code": "runner_may_be_newer",
+          "days": 9,
+          "version": "2.338.2"
+        }
+      ]
+    }
+  ]
+}
