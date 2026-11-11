@@ -6,6 +6,7 @@ import { keyOf } from "./controls.js";
 import { say } from "./live.js";
 import { renderWindow } from "./render.js";
 import { newestFirst } from "./revision.js";
+import { clearTypedTokens } from "./tokens.js";
 import { closeTip, resetTips } from "./tooltip.js";
 
 const { invoke } = window.__TAURI__.core;
@@ -349,7 +350,9 @@ document.addEventListener("keydown", (event) => {
 });
 
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden && !dialogOpen()) {
+  if (document.hidden) {
+    clearTypedTokens();
+  } else if (!dialogOpen()) {
     focusHeading();
   }
 });

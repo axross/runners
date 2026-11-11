@@ -49,6 +49,17 @@ export function forgetClosedFields(rows) {
   }
 }
 
+/**
+ * empties every open field, keeping the forms open, for when the window hides: a token
+ * half typed is not left in a page nobody can see.
+ */
+export function clearTypedTokens() {
+  for (const field of fields.values()) {
+    field.value = "";
+    field.dispatchEvent(new Event("input"));
+  }
+}
+
 /** Save is unavailable while the field is empty, and says why. */
 function saveButton(form, repository, field, ctx) {
   const button = h(
