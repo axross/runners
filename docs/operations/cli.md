@@ -881,9 +881,10 @@ build's own outcome: the check refreshes the snapshot's `images` entry with the 
 image's labels and warnings, and it does not change the `outcome`, which is the
 build's. The check runs while the agent is still `building` and answering: `status`
 shows the build, `start_all` and `build` are `busy`, and a `stop_all` or a `quit`
-abandons the check, which leaves the `images` entry as it was. A `build` that
-succeeds and is not cancelled leaves the agent stopped by you (`by_you`), whatever
-it was stopped for before, since the build read the configuration again and the
+taken during the build or during the check skips or abandons the check, which leaves
+the `images` entry as it was; a build that still commits after the stop stays `ready`.
+A `build` that succeeds and is not cancelled leaves the agent stopped by you
+(`by_you`), whatever it was stopped for before, since the build read the configuration again and the
 snapshot's problems and pools are those of that read. Its outcome, `ready`, is only in `agent.build`,
 and the refreshed image entry is in `images`: "stopped with the image ready", in
 the state table above, is that outcome and not a reason. A build that fails
@@ -1152,7 +1153,7 @@ token store, and talk to it with the library's client or by hand, line by line.
 `tests/agent_resident.rs` covers stop, start and quit (also while a subscribed
 connection reads nothing), launching stopped, the executable renamed, the resuming
 state, build (ready, failed, cancelled by a stop or a quit, `busy`, `refused`, and the
-image check after it, which still answers and is abandoned by a stop or a quit), and
+image check after it, which still answers and is skipped or abandoned by a stop or a quit), and
 staying up for each reason, also through `start_all`, which answers `resuming`, that
 `token_set` and `token_remove` are answered while it resumes, builds and stops, and the
 core's restarts: the `restart_due` window with its empty pool list, and the stop for

@@ -56,7 +56,7 @@ pub const TWO_POOLS: &str = r#"{"imageName":"actions-runner:local","repositories
     {"owner":"o","repository":"d","name":"d","slots":1,"tokenPath":"C:\\no-such-either.token","volumes":[]}]}"#;
 
 /// builds without Docker: it waits for a permit when told to hold, and ends with the
-/// next scripted outcome.
+/// next scripted outcome, or ready when a stop interrupts a hold that is told to commit.
 #[derive(Default)]
 pub struct FakeBuilder {
     pub images: RefCell<Vec<String>>,
@@ -65,6 +65,9 @@ pub struct FakeBuilder {
     pub release: Notify,
     /// set once the build saw a stop asked for.
     pub stopped: Cell<bool>,
+    /// a stop that interrupts the hold ends the build ready, as a retag that commits
+    /// within the grace of a stop.
+    pub ok_after_stop: Cell<bool>,
 }
 
 impl ImageBuilder for FakeBuilder {
@@ -80,6 +83,9 @@ impl ImageBuilder for FakeBuilder {
                 () = self.release.notified() => {}
                 _ = stop.wait_for(Option::is_some) => {
                     self.stopped.set(true);
+                    if self.ok_after_stop.get() {
+                        return Ok(());
+                    }
                     return Err("the build was aborted".to_string());
                 }
             }

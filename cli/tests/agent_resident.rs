@@ -637,6 +637,59 @@ async fn stop_all_abandons_the_image_check_after_a_build_and_leaves_the_agent_st
         .await;
 }
 
+/// a rig whose build ends ready when a stop interrupts it, and whose image check would
+/// wait for a permit that no test gives.
+fn commit_after_a_stop_rig() -> Rig {
+    let rig = image_check_after_a_build_rig();
+    rig.builder.ok_after_stop.set(true);
+    rig
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn quit_ends_the_agent_within_a_second_when_a_build_commits_after_the_stop() {
+    let rig = commit_after_a_stop_rig();
+    let rig = &rig;
+    let (ended, sent) = rig
+        .drive(Launch::Stopped, |conn| async move {
+            conn.ok("build").await;
+            let sent = Instant::now();
+            let answer = answered_within_a_second("quit", conn.call("quit", Value::Null))
+                .await
+                .unwrap();
+            assert_eq!(answer["state"], "quitting");
+            sent
+        })
+        .await;
+    assert_eq!(ended.reason, QUIT);
+    let ended_in = rig.ended_within(sent);
+    assert!(
+        ended_in < Duration::from_secs(1),
+        "the agent ended {ended_in:?} after quit was sent"
+    );
+    assert!(rig.backend.state.borrow().image_checks.is_empty());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn stop_all_skips_the_image_check_when_a_build_commits_after_the_stop() {
+    let rig = commit_after_a_stop_rig();
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Stopped, |conn| async move {
+            conn.ok("build").await;
+            let answer = answered_within_a_second("stop_all", conn.call("stop_all", Value::Null))
+                .await
+                .unwrap();
+            assert_eq!(answer["state"], "stopped");
+            let snapshot = conn.status().await;
+            assert_eq!(snapshot.agent.state, "stopped");
+            assert_eq!(snapshot.agent.reason.unwrap().code, "by_you");
+            assert_eq!(snapshot.agent.build.unwrap().outcome, "ready");
+            conn.ok("quit").await;
+        })
+        .await;
+    assert!(rig.backend.state.borrow().image_checks.is_empty());
+}
+
 /// what a successful build leaves, whatever the agent was stopped for before it.
 fn assert_stopped_by_you_with_a_ready_image(snapshot: &marshal_cli::agent::snapshot::Snapshot) {
     let reason = snapshot.agent.reason.as_ref().unwrap();

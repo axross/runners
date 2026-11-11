@@ -892,7 +892,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
 
     /// records how the build ended and the image it left, and says why the agent is
     /// stopped; the image is checked while calls are still answered, and a stop or a
-    /// quit abandons the check.
+    /// quit during the build skips the check or during the check abandons it.
     async fn build_ended(
         &self,
         requests: &mut Requests,
@@ -917,7 +917,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                 }
             }
         };
-        if word == "ready" {
+        if word == "ready" && !cancelled {
             self.serve(
                 requests,
                 true,
