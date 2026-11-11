@@ -27,8 +27,8 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   host, the release record for the CLI's dispatch-only release workflow and its
   signing Environment, the accepted LAN-egress risk, the axmc Linux runtime's per-job
   VM, CPU placement in it, Softnet and its SUID check, the accepted host-facing
-  surface, and the pinned Tart, Softnet, and golden VM base, what is never committed,
-  and why the review
+  surface, the pinned Tart, Softnet, and golden VM base, how the resident agent
+  keeps tokens and receives them, what is never committed, and why the review
   gate admits one bot identity by login.
 - [conventions/documentation.md](./conventions/documentation.md) - which
   document a change to each runner surface invalidates, and what the
@@ -62,6 +62,8 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   (the container backend, the runtime seam, the Tart backend, JIT registration,
   CPU placement, the slot loop, and the signal source), the
   instance layer (instance state, single-instance lock, and control channel),
+  the resident agent (its state, the token store, protocol version 2, and the
+  snapshot),
   the image contract (its labels, the image check, and freshness), building the
   runner image with `build`, running a host with `start`, `stop`, `restart`,
   `status`, and `diagnostics` (the log, containment, the stop sequence, and the

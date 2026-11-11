@@ -124,6 +124,29 @@ instance accepts. See
 runs every **Slot**'s loop until a stop. The instance restarts it after a failure;
 see [operations/cli.md](./operations/cli.md#the-instance-layer).
 
+**Resident Agent** - the **CLI**'s long-running form, started stopped or running
+and told what to do over its channel: it stops and starts all runners, builds the
+**Runner Image**, quits, and stays up when its configuration, image or pools fail.
+It takes the instance's lock, channel and log directory, so it and `start` never
+run on one machine together. Not to be confused with an **Agent Host**. See
+[operations/cli.md](./operations/cli.md#the-agent).
+
+**Token Store** - where the **Resident Agent** keeps each **Target Repository**'s
+token, by the repository's lower-case `owner/name`: the Windows Credential Manager
+on Windows, with local persistence, and none yet elsewhere, where every pool is
+skipped. See [operations/cli.md](./operations/cli.md#the-token-store).
+
+**Protocol Version 2** - the line-based JSON messages the **Resident Agent**
+serves on the instance's channel: `hello`, requests and responses, a subscribed
+`state` topic with events, heartbeats and `ending`. A first line that is not a
+`hello` is refused, so version 1's requests never reach the agent. See
+[operations/cli.md](./operations/cli.md#protocol-version-2).
+
+**Snapshot** - the value of the **Resident Agent**'s `state` topic and of its
+`status` method: its state and reason, its pools and runners, its images and what a
+stop left behind, from local state, cut to 64 KiB. It never holds a token. See
+[operations/cli.md](./operations/cli.md#the-snapshot).
+
 **Diagnostic Container** - a job container of an **Execution Pool** with
 `diagnostics` on. It runs the runner under the image's collector, carries the
 `runners.diagnostic-lifecycle=1` label, and has no `--rm`, so it stays after its job.

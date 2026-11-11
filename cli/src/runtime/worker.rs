@@ -16,7 +16,8 @@ use super::log::{Log, Masked};
 use super::name::job_container_name;
 use super::pool::SlotSpec;
 use super::registration::{JitRequest, Registrar};
-use super::token::read_token;
+use super::scrub::scrub_error_text;
+use super::token::{TokenFiles, TokenSource};
 
 /// the delay after a slot's first failure.
 pub const INITIAL_BACKOFF: Duration = Duration::from_secs(5);
@@ -102,22 +103,49 @@ impl Report<'_> {
     }
 }
 
-/// warns that an attempt failed and waits out the backoff, ending early on a stop;
-/// returns whether a stop was asked for.
+/// why a slot waits out a backoff.
+enum Pause {
+    /// an attempt failed, for this reason.
+    Failed(String),
+    /// a host prerequisite refuses the boot, for this reason.
+    Held(String),
+}
+
+impl Pause {
+    fn words(&self) -> String {
+        match self {
+            Self::Failed(reason) => reason.clone(),
+            Self::Held(reason) => format!("held, nothing is started ({reason})"),
+        }
+    }
+
+    /// the slot's state while it waits; the board's text reaches `status` and the
+    /// agent's snapshot, so the reason is scrubbed and masked.
+    fn state(&self, log: &dyn Log) -> SlotState {
+        let shown = |reason: &str| log.masks().apply(&scrub_error_text(reason, ""));
+        match self {
+            Self::Failed(reason) => SlotState::BackingOff(shown(reason)),
+            Self::Held(reason) => SlotState::Held(shown(reason)),
+        }
+    }
+}
+
+/// warns that a slot waits and for what, then waits out the backoff, ending early on
+/// a stop; returns whether a stop was asked for.
 async fn back_off<K: Clock>(
     report: &Report<'_>,
     clock: &K,
     stop: &mut watch::Receiver<bool>,
     backoff: &mut Backoff,
-    reason: &str,
-    state: SlotState,
+    pause: Pause,
 ) -> bool {
     report.log.warn(&format!(
-        "{}: {reason} - retrying in {}s.",
+        "{}: {} - retrying in {}s.",
         report.label,
+        pause.words(),
         backoff.current().as_secs()
     ));
-    report.state(state);
+    report.state(pause.state(report.log));
     sleep_or_stop(clock, stop, backoff.fail()).await
 }
 
@@ -136,6 +164,7 @@ struct Context<'a, B, K, R> {
     backend: &'a B,
     clock: &'a K,
     registrar: &'a R,
+    tokens: &'a dyn TokenSource,
     report: &'a Report<'a>,
 }
 
@@ -193,7 +222,9 @@ impl<B: Backend, K: Clock, R: Registrar> Context<'_, B, K, R> {
 
         let name = job_container_name(&slot.pool, slot.number, self.clock.now());
         let registration = async {
-            let token = read_token(&slot.token_path).map_err(|error| error.to_string())?;
+            let token = self
+                .tokens
+                .token(&slot.owner, &slot.repository, &slot.token_path)?;
             log.mask(&token);
             self.registrar
                 .request_jit(&JitRequest {
@@ -268,8 +299,52 @@ pub async fn run_slot<B: Backend, K: Clock, R: Registrar>(
     registrar: &R,
     log: &dyn Log,
     board: &Board,
+    stop: watch::Receiver<bool>,
+) {
+    let services = Services {
+        backend,
+        clock,
+        registrar,
+        tokens: &TokenFiles,
+        log,
+        board,
+    };
+    run_slot_with(slot, &services, stop).await;
+}
+
+/// what a slot's loop works with.
+pub struct Services<'a, B, K, R> {
+    pub backend: &'a B,
+    pub clock: &'a K,
+    pub registrar: &'a R,
+    /// where each registration reads its token.
+    pub tokens: &'a dyn TokenSource,
+    pub log: &'a dyn Log,
+    pub board: &'a Board,
+}
+
+impl<B, K, R> Clone for Services<'_, B, K, R> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<B, K, R> Copy for Services<'_, B, K, R> {}
+
+/// [`run_slot`] with its token source among its services.
+pub async fn run_slot_with<B: Backend, K: Clock, R: Registrar>(
+    slot: &SlotSpec,
+    services: &Services<'_, B, K, R>,
     mut stop: watch::Receiver<bool>,
 ) {
+    let Services {
+        backend,
+        clock,
+        registrar,
+        tokens,
+        log,
+        board,
+    } = *services;
     let report = Report {
         log,
         board,
@@ -279,6 +354,7 @@ pub async fn run_slot<B: Backend, K: Clock, R: Registrar>(
         backend,
         clock,
         registrar,
+        tokens,
         report: &report,
     };
     let mut backoff = Backoff::default();
@@ -297,14 +373,13 @@ pub async fn run_slot<B: Backend, K: Clock, R: Registrar>(
                 .map(|refusal| format!("{refusal}; no registration")),
         };
         if let Some(reason) = refused {
-            let state = SlotState::BackingOff;
-            if back_off(&report, clock, &mut stop, &mut backoff, &reason, state).await {
+            if back_off(&report, clock, &mut stop, &mut backoff, Pause::Failed(reason)).await {
                 return;
             }
             continue;
         }
 
-        let (reason, state) = match context.attempt(slot, &mut stop).await {
+        let pause = match context.attempt(slot, &mut stop).await {
             Attempt::Stopped => return,
             Attempt::Ended => {
                 log.info(&format!(
@@ -314,13 +389,10 @@ pub async fn run_slot<B: Backend, K: Clock, R: Registrar>(
                 backoff.reset();
                 continue;
             }
-            Attempt::Failed(reason) => (reason, SlotState::BackingOff),
-            Attempt::Held(reason) => (
-                format!("held, nothing is started ({reason})"),
-                SlotState::Held(reason),
-            ),
+            Attempt::Failed(reason) => Pause::Failed(reason),
+            Attempt::Held(reason) => Pause::Held(reason),
         };
-        if back_off(&report, clock, &mut stop, &mut backoff, &reason, state).await {
+        if back_off(&report, clock, &mut stop, &mut backoff, pause).await {
             return;
         }
     }

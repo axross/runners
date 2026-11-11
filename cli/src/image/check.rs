@@ -293,40 +293,87 @@ pub fn age_days(now: SystemTime, then: u64) -> u64 {
     now.saturating_sub(then) / SECONDS_PER_DAY
 }
 
-/// the freshness warnings for the image or golden VM a check found, as of `now`.
+/// one reason to rebuild the image or update the CLI, with the figures it rests on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Freshness {
+    /// the image has no build time, so it was not built by `marshal build`.
+    NotBuiltByMarshal,
+    /// the image's packages are at least [`SECOND_WARNING_DAYS`] old.
+    PackagesOld {
+        days: u64,
+    },
+    ImageOld {
+        days: u64,
+    },
+    /// the runner in the image was released at least [`SECOND_WARNING_DAYS`] ago.
+    RunnerOld {
+        version: String,
+        days: u64,
+    },
+    RunnerMayBeNewer {
+        version: String,
+        days: u64,
+    },
+}
+
+impl Freshness {
+    /// the warning as `status` and the log word it, about `subject`.
+    fn text(&self, subject: Subject) -> String {
+        let subject = subject.the();
+        match self {
+            Self::NotBuiltByMarshal => {
+                format!("{subject} was not built by `marshal build`, so its build age is unknown")
+            }
+            Self::PackagesOld { days } => format!(
+                "{subject}'s operating-system packages are {days} days old; rebuild it with `marshal build`"
+            ),
+            Self::ImageOld { days } => {
+                format!("{subject} is {days} days old and should be rebuilt with `marshal build`")
+            }
+            Self::RunnerOld { version, days } => format!(
+                "runner {version} was released {days} days ago, so each job's runner likely updates \
+                 itself at start; update the CLI to get a newer runner, then rebuild {subject}"
+            ),
+            Self::RunnerMayBeNewer { version, days } => format!(
+                "runner {version} was released {days} days ago, and a newer runner may exist"
+            ),
+        }
+    }
+}
+
+/// the freshness findings for the image or golden VM a check found, as of `now`.
 #[must_use]
-pub fn freshness_warnings(check: &ImageCheck, now: SystemTime) -> Vec<String> {
+pub fn freshness_findings(check: &ImageCheck, now: SystemTime) -> Vec<Freshness> {
     let Some(labels) = check.labels() else {
         return Vec::new();
     };
-    let subject = check.subject().the();
-    let mut warnings = Vec::new();
+    let mut findings = Vec::new();
     match built_seconds(labels).map(|built| age_days(now, built)) {
-        None => warnings.push(format!(
-            "{subject} was not built by `marshal build`, so its build age is unknown"
-        )),
-        Some(days) if days >= SECOND_WARNING_DAYS => warnings.push(format!(
-            "{subject}'s operating-system packages are {days} days old; rebuild it with `marshal build`"
-        )),
-        Some(days) if days >= FIRST_WARNING_DAYS => warnings.push(format!(
-            "{subject} is {days} days old and should be rebuilt with `marshal build`"
-        )),
+        None => findings.push(Freshness::NotBuiltByMarshal),
+        Some(days) if days >= SECOND_WARNING_DAYS => findings.push(Freshness::PackagesOld { days }),
+        Some(days) if days >= FIRST_WARNING_DAYS => findings.push(Freshness::ImageOld { days }),
         Some(_) => {}
     }
     if let Some((version, released)) = runner_release(labels) {
         let days = age_days(now, released);
+        let version = version.to_string();
         if days >= SECOND_WARNING_DAYS {
-            warnings.push(format!(
-                "runner {version} was released {days} days ago, so each job's runner likely updates \
-                 itself at start; update the CLI to get a newer runner, then rebuild {subject}"
-            ));
+            findings.push(Freshness::RunnerOld { version, days });
         } else if days >= FIRST_WARNING_DAYS {
-            warnings.push(format!(
-                "runner {version} was released {days} days ago, and a newer runner may exist"
-            ));
+            findings.push(Freshness::RunnerMayBeNewer { version, days });
         }
     }
-    warnings
+    findings
+}
+
+/// the freshness warnings for the image or golden VM a check found, as of `now`.
+#[must_use]
+pub fn freshness_warnings(check: &ImageCheck, now: SystemTime) -> Vec<String> {
+    let subject = check.subject();
+    freshness_findings(check, now)
+        .iter()
+        .map(|finding| finding.text(subject))
+        .collect()
 }
 
 /// the `status` lines for `image`, as of its latest check, or of none.

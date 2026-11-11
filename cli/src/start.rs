@@ -516,7 +516,7 @@ pub(crate) fn contain() -> Result<JobLauncher, String> {
 /// runs each job container's client through the shim, so the container is removed
 /// when this process ends, however it ends.
 #[cfg(unix)]
-fn contain() -> Result<JobLauncher, String> {
+pub(crate) fn contain() -> Result<JobLauncher, String> {
     std::env::current_exe()
         .map(JobLauncher::Shim)
         .map_err(|error| format!("this program cannot be found to run the shim: {error}"))

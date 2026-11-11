@@ -19,7 +19,7 @@ use crate::macos::prerequisites::{RESUME_VERSION_BUDGET, VERSION_BUDGET};
 use crate::macos::reason::sleep_reason;
 use crate::macos::watch::NetworkChange;
 use crate::profile::Profile;
-use crate::runtime::backend::{Backend, DiagnosticRecord, REMOVAL_WITHIN, StopRequest};
+use crate::runtime::backend::{Backend, DiagnosticRecord, REMOVAL_WITHIN};
 use crate::runtime::clock::Clock;
 use crate::runtime::diagnostic::{self, Flushed, StopClock};
 use crate::runtime::log::Log;
@@ -30,6 +30,7 @@ use crate::validate::Plan;
 
 use super::protocol::{Incoming, Request, Response};
 use super::restart::{RestartPolicy, Verdict, WINDOW};
+use super::steps;
 
 /// the times of the stop sequence, each counted from the step's own start except
 /// the last.
@@ -324,7 +325,7 @@ enum Reloaded {
 
 /// polls the core, turning a panic into an error carrying its message, so a
 /// panicking core is a failure rather than the end of the process.
-struct CatchPanic<F>(Pin<Box<F>>);
+pub(crate) struct CatchPanic<F>(pub(crate) Pin<Box<F>>);
 
 impl<F: Future> Future for CatchPanic<F> {
     type Output = Result<F::Output, String>;
@@ -918,74 +919,17 @@ impl<'a, B: Backend, K: Clock, C: Core, S: Source, M: Monitor> Instance<'a, B, K
     }
 
     async fn container_steps(&self, containers: Vec<String>) {
-        let start = tokio::time::Instant::now();
-        tokio::join!(
-            self.ordinary_steps(containers),
-            diagnostic::container_steps(
-                self.backend,
-                self.log,
-                StopClock::at(start).shortened_by(self.times.diagnostic_shortening()),
-                self.times.remove_budget,
-            )
-        );
-        self.release_hosts().await;
+        steps::container_steps(&self.steps(), containers).await;
     }
 
-    /// releases every job host still prepared, all at once, once the containers are
-    /// stopped: a worker releases its own host when its run ends, so what remains is
-    /// the host of a worker that is still busy or that a panic took.
-    async fn release_hosts(&self) {
-        let budget = self.times.release_budget;
-        let releases: Vec<_> = self
-            .backend
-            .prepared_hosts()
-            .into_iter()
-            .map(|host| async move {
-                if let Err(error) = self.backend.release_job_host(&host, budget).await {
-                    self.log.warn(&format!(
-                        "Releasing the job host of {} slot {} failed: {error}",
-                        host.pool, host.slot
-                    ));
-                    self.containers_removed.set(false);
-                }
-            })
-            .collect();
-        diagnostic::join_all(releases).await;
-    }
-
-    /// stops the containers in one call, and removes whatever remains in another; a
-    /// forced removal abandons the stop or skips it, and a failed removal is
-    /// remembered until the instance ends.
-    async fn ordinary_steps(&self, containers: Vec<String>) {
-        if containers.is_empty() {
-            return;
-        }
-        let request = StopRequest {
-            names: containers.clone(),
-            grace: self.times.grace,
-            budget: self.times.stop_budget,
-        };
-        let mut force = self.force.subscribe();
-        tokio::select! {
-            biased;
-            _ = force.wait_for(|forced| *forced) => {
-                self.log.warn("Forced removal: the grace period is skipped.");
-            }
-            stopped = self.backend.stop_containers(&request) => {
-                if let Err(error) = stopped {
-                    self.log
-                        .warn(&format!("Stopping the containers failed: {error}"));
-                }
-            }
-        }
-        if let Err(error) = self
-            .backend
-            .remove_containers(&containers, self.times.remove_budget)
-            .await
-        {
-            self.log
-                .warn(&format!("Removing the containers failed: {error}"));
-            self.containers_removed.set(false);
+    fn steps(&self) -> steps::Steps<'_, B> {
+        steps::Steps {
+            backend: self.backend,
+            log: self.log,
+            times: self.times,
+            force: &self.force,
+            containers_removed: &self.containers_removed,
+            left: None,
         }
     }
 }

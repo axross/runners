@@ -9,6 +9,25 @@ use std::path::Path;
 
 use super::secret::Secret;
 
+/// where a slot's registration reads its token: the commands read the pool's token
+/// file, and the agent reads the token store; both are asked at every registration,
+/// so a changed token applies to the next job.
+pub trait TokenSource {
+    /// the token of the pool's repository, or why there is none; the text never holds
+    /// a token.
+    fn token(&self, owner: &str, repository: &str, file: &Path) -> Result<Secret, String>;
+}
+
+/// the commands' source: the pool's token file.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TokenFiles;
+
+impl TokenSource for TokenFiles {
+    fn token(&self, _owner: &str, _repository: &str, file: &Path) -> Result<Secret, String> {
+        read_token(file).map_err(|error| error.to_string())
+    }
+}
+
 /// a token file is a few dozen bytes; this only stops a mistaken path from being
 /// read whole.
 pub const MAX_TOKEN_FILE_BYTES: u64 = 1024 * 1024;

@@ -35,7 +35,8 @@ impl fmt::Display for PoolState {
 pub enum SlotState {
     /// preparing its host, probing its CPUs and asking GitHub for a registration.
     Registering,
-    BackingOff,
+    /// waiting to try again, for this reason (scrubbed, and with the log's masks applied).
+    BackingOff(String),
     /// boots nothing because a host prerequisite refuses, for this reason, and
     /// retries on the backoff schedule.
     Held(String),
@@ -47,7 +48,7 @@ impl fmt::Display for SlotState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Registering => f.write_str("registering"),
-            Self::BackingOff => f.write_str("backing off"),
+            Self::BackingOff(_) => f.write_str("backing off"),
             Self::Held(reason) => write!(f, "held: {reason}"),
             Self::Running(name) => write!(f, "running container {name}"),
         }
@@ -64,16 +65,32 @@ struct ImageRecord {
 /// image they run.
 #[derive(Debug, Default)]
 pub struct Board {
-    pools: RefCell<Vec<(String, PoolState)>>,
-    slots: RefCell<Vec<(String, SlotState)>>,
+    pools: RefCell<Vec<Row<PoolState>>>,
+    slots: RefCell<Vec<Row<SlotState>>>,
     image: RefCell<Option<ImageRecord>>,
 }
 
-fn upsert<T>(entries: &RefCell<Vec<(String, T)>>, key: String, value: T) {
+/// a pool or slot, its state, and when it entered that state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Row<T> {
+    pub name: String,
+    pub state: T,
+    pub since: SystemTime,
+}
+
+fn upsert<T: PartialEq>(entries: &RefCell<Vec<Row<T>>>, name: String, state: T) {
     let mut entries = entries.borrow_mut();
-    match entries.iter_mut().find(|(held, _)| *held == key) {
-        Some(entry) => entry.1 = value,
-        None => entries.push((key, value)),
+    match entries.iter_mut().find(|row| row.name == name) {
+        Some(row) if row.state == state => {}
+        Some(row) => {
+            row.state = state;
+            row.since = SystemTime::now();
+        }
+        None => entries.push(Row {
+            name,
+            state,
+            since: SystemTime::now(),
+        }),
     }
 }
 
@@ -117,6 +134,27 @@ impl Board {
         }
     }
 
+    /// every pool with its state and since when, in the order first reported.
+    #[must_use]
+    pub fn pool_rows(&self) -> Vec<Row<PoolState>> {
+        self.pools.borrow().clone()
+    }
+
+    /// every slot with its state and since when, in the order first reported.
+    #[must_use]
+    pub fn slot_rows(&self) -> Vec<Row<SlotState>> {
+        self.slots.borrow().clone()
+    }
+
+    /// the image the pools run and its latest check, or `None` before one is named.
+    #[must_use]
+    pub fn image_record(&self) -> Option<(String, Option<ImageCheck>)> {
+        self.image
+            .borrow()
+            .as_ref()
+            .map(|record| (record.name.clone(), record.check.clone()))
+    }
+
     /// the `status` lines of the image, its ages counted to `now`; none before an
     /// image is named.
     #[must_use]
@@ -137,13 +175,13 @@ impl Board {
             .pools
             .borrow()
             .iter()
-            .map(|(name, state)| ("pool", format!("{name}: {state}")))
+            .map(|row| ("pool", format!("{}: {}", row.name, row.state)))
             .collect::<Vec<_>>();
         let slots = self
             .slots
             .borrow()
             .iter()
-            .map(|(name, state)| ("slot", format!("{name}: {state}")))
+            .map(|row| ("slot", format!("{}: {}", row.name, row.state)))
             .collect::<Vec<_>>();
         pools.into_iter().chain(slots).collect()
     }
@@ -187,7 +225,10 @@ mod tests {
             "waiting for Tart"
         );
         assert_eq!(PoolState::Preparing.to_string(), "preparing");
-        assert_eq!(SlotState::BackingOff.to_string(), "backing off");
+        assert_eq!(
+            SlotState::BackingOff("why".to_string()).to_string(),
+            "backing off"
+        );
         assert_eq!(SlotState::Registering.to_string(), "registering");
         assert_eq!(
             SlotState::Held("Softnet is not set up".to_string()).to_string(),

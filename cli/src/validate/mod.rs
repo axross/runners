@@ -59,9 +59,22 @@ struct RootFields {
     budget: Field,
 }
 
+/// where the checkout that a diagnostic directory must lie outside comes from.
+#[derive(Debug, Clone, Copy)]
+pub enum CheckoutRule<'a> {
+    /// the one given, which is the one above the configuration file; none skips the
+    /// rule.
+    Above(Option<&'a Path>),
+    /// the one given and, for each diagnostic directory, the one found at or above that
+    /// directory, for a configuration that lives outside any checkout. The rule is
+    /// then never skipped: the directory's own place was examined.
+    AboveAndAtSink(Option<&'a Path>),
+}
+
 struct Context<'a> {
     profile: Profile,
     checkout: Option<&'a Path>,
+    at_sink: bool,
     errors: Errors,
     checkout_rule_skipped: bool,
 }
@@ -70,6 +83,16 @@ struct Context<'a> {
 /// that private directories must lie outside, when one is known.
 #[must_use]
 pub fn validate(bytes: &[u8], profile: Profile, checkout: Option<&Path>) -> Validation {
+    validate_with(bytes, profile, CheckoutRule::Above(checkout))
+}
+
+/// validates a configuration against a profile under a [`CheckoutRule`].
+#[must_use]
+pub fn validate_with(bytes: &[u8], profile: Profile, rule: CheckoutRule<'_>) -> Validation {
+    let (checkout, at_sink) = match rule {
+        CheckoutRule::Above(checkout) => (checkout, false),
+        CheckoutRule::AboveAndAtSink(checkout) => (checkout, true),
+    };
     let root = match json::parse(bytes) {
         Ok(root) => root,
         Err(error) => {
@@ -82,6 +105,7 @@ pub fn validate(bytes: &[u8], profile: Profile, checkout: Option<&Path>) -> Vali
     let mut cx = Context {
         profile,
         checkout,
+        at_sink,
         errors: Errors::default(),
         checkout_rule_skipped: false,
     };

@@ -19,7 +19,7 @@ use super::diagnostic::{
 use super::log::Log;
 use super::name::cpu_probe_name;
 use super::select::Runtime;
-use super::token::read_token;
+use super::token::{TokenFiles, TokenSource};
 
 const STALE_REMOVE_BUDGET: Duration = Duration::from_secs(120);
 
@@ -290,6 +290,29 @@ fn skip(log: &dyn Log, board: &Board, pool: &PoolSpec, reason: &str) {
     board.set_pool(&pool.name, PoolState::Skipped(reason.to_string()));
 }
 
+/// admits one pool: reads its token from `tokens` and masks it in `log`, or skips the
+/// pool with a warning that names why, and shows an admitted pool as waiting for
+/// `engine`. Returns whether it was admitted.
+pub fn admit_pool(
+    pool: &PoolSpec,
+    engine: &'static str,
+    tokens: &dyn TokenSource,
+    log: &dyn Log,
+    board: &Board,
+) -> bool {
+    match tokens.token(&pool.owner, &pool.repository, &pool.token_path) {
+        Err(error) => {
+            skip(log, board, pool, &format!("{}: {error}.", pool.path));
+            false
+        }
+        Ok(token) => {
+            log.mask(&token);
+            board.set_pool(&pool.name, PoolState::WaitingForEngine(engine));
+            true
+        }
+    }
+}
+
 /// the first step of preparing the pools, needing no engine: returns the pools
 /// whose token file reads, skipping the others with a warning, and shows them as
 /// waiting for `engine`; every token read is masked in `log`.
@@ -300,18 +323,10 @@ pub fn admit_pools(
     log: &dyn Log,
     board: &Board,
 ) -> Vec<PoolSpec> {
-    let mut admitted = Vec::new();
-    for pool in pools {
-        match read_token(&pool.token_path) {
-            Err(error) => skip(log, board, &pool, &format!("{}: {error}.", pool.path)),
-            Ok(token) => {
-                log.mask(&token);
-                board.set_pool(&pool.name, PoolState::WaitingForEngine(engine));
-                admitted.push(pool);
-            }
-        }
-    }
-    admitted
+    pools
+        .into_iter()
+        .filter(|pool| admit_pool(pool, engine, &TokenFiles, log, board))
+        .collect()
 }
 
 /// the second step, once the engine answers: removes each admitted pool's stale

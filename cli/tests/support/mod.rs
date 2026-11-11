@@ -10,6 +10,7 @@
 
 #[cfg(unix)]
 pub mod axmc;
+pub mod agent;
 pub mod docker;
 #[cfg(unix)]
 pub mod golden;

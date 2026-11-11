@@ -15,6 +15,17 @@ pub fn find(config: &Path) -> Option<PathBuf> {
         .map(Path::to_path_buf)
 }
 
+/// returns the first directory at or above `directory` itself, found the same way as
+/// [`find`], for a directory such as a diagnostic sink whose own place decides.
+#[must_use]
+pub fn find_at_or_above(directory: &Path) -> Option<PathBuf> {
+    let absolute = lexical_absolute(directory)?;
+    absolute
+        .ancestors()
+        .find(|candidate| is_checkout(candidate))
+        .map(Path::to_path_buf)
+}
+
 fn is_checkout(directory: &Path) -> bool {
     directory.join(".git").exists() && directory.join("cli").join("Cargo.toml").is_file()
 }
