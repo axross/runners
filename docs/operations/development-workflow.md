@@ -236,8 +236,9 @@ GitHub-hosted runner with `contents: read`, checks out the pull request, and run
 `mise run check`, which executes the pull request's own task definitions and the
 linters they call, including the CLI's Rust gates and, for the app under `app/`, its
 formatting, the lint and tests of its platform-independent crates, its cargo-deny
-run, and a check that both Rust toolchain files name one channel and that
-`app/tauri-cli.version` holds one exact version. The same workflow also runs a
+run, a check that its checked-in licence notices match `app/Cargo.lock`, and a check
+that both Rust toolchain files name one channel and that `app/tauri-cli.version`
+holds one exact version. The same workflow also runs a
 `rust` job that formats, lints, and tests the CLI on Linux, Windows, and macOS hosted
 runners, with four more steps on Linux only: the release-profile tests of the
 debug-only overrides, the test definition `build` reads among them; a build of the
@@ -253,7 +254,10 @@ helper and runs a copy of the helper as `nobody` through the hosted runner's
 passwordless `sudo`, failing unless that other user is refused the lock. On Windows a
 further step has the helper open the control pipe and reads the live pipe's security
 descriptor back with PowerShell 7, failing unless it grants the current user alone.
-Neither step needs a new action, permission, or secret. An `app` job on a Windows
+Neither step needs a new action, permission, or secret. An `app-modes` job on a macOS
+hosted runner holds `contents: read` and runs clippy and the tests of the app's
+mode-dispatch crate, which covers the Unix shim's dispatch there without building the
+web view, and an `app` job on a Windows
 hosted runner holds `contents: read` and builds the app's whole workspace: it
 installs `tauri-cli` with `cargo install --locked` at the version in
 `app/tauri-cli.version`, the one place that pin is set, lints and tests every crate,
@@ -282,9 +286,10 @@ only `gh` stubbed. On Windows a standard local user without administrator rights
 runs the check block and installs the MSI. A pull request from a fork runs without
 repository secrets.
 [`rust-advisories.yaml`](../../.github/workflows/rust-advisories.yaml) checks the
-CLI's locked crates against the RustSec advisory database every week, on manual
-dispatch, and on a pull request that changes `cli/Cargo.lock`, `cli/deny.toml`, or the
-workflow itself. It needs the network and moves with the outside world, so it is not
+CLI's locked crates and, in a second step, the app's, against the RustSec advisory
+database every week, on manual dispatch, and on a pull request that changes
+`cli/Cargo.lock`, `cli/deny.toml`, `app/Cargo.lock`, `app/deny.toml`, or the workflow
+itself. It needs the network and moves with the outside world, so it is not
 part of `mise run check` and is not a required check: a new advisory turns it red and
 the maintainer triages it. Codex review may:
 
@@ -645,9 +650,12 @@ that subject, so the title decides the release:
   major version. On `0.x` it releases `1.0.0`, not the next minor.
 - `build(deps)` releases a patch, through the `releaseRules` in
   [`release/.releaserc.json`](../../release/.releaserc.json). That is the subject
-  Dependabot writes for the runner image and the CLI's crates and toolchain, so
+  Dependabot writes for the runner image, the CLI's crates and the toolchain, so
   such a bump reaches hosts in a release. Its notes list it under Dependencies,
-  through the notes generator's `presetConfig.types` in the same file.
+  through the notes generator's `presetConfig.types` in the same file. Dependabot's
+  entry for the app's crates writes the same subject, so until the release carries
+  the app, a bump of a crate only the app links releases a patch that changes
+  nothing in the released `marshal`.
 - Every other subject releases nothing. That includes `build(deps-dev)`, since
   dev-dependencies are not in the binary, though such a bump can still change a
   crate the binary shares in `Cargo.lock`; the CLI has no dev-dependencies today.
