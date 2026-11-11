@@ -179,7 +179,7 @@ that the revisions only grow.
 | `marshal:confirm` | `{action, question{title, body, confirm, cancel}}` | A menu choice needs a question; `action` is `stop_all` or `stop_build`    |
 
 The confirmation window, label `confirmation`, is 440 by 240 px and always on top. It
-opens when a menu choice needs a question and the main window is hidden, and for Quit
+opens when a menu choice needs a question and the main window is hidden or minimised, and for Quit
 whether or not the main window is shown, because the main window's capability has no
 command that answers a quit. One question shows at a time: while one is open it is
 brought forward and a new one is dropped.

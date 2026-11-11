@@ -9,7 +9,7 @@ use tauri::menu::{Menu as TauriMenu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager};
 
-use crate::app::{MAIN_WINDOW, show_main_window};
+use crate::app::{main_window_shown, show_main_window};
 use crate::confirmation;
 use crate::state::AppState;
 
@@ -108,10 +108,7 @@ async fn run_menu_item(app: &AppHandle, id: &str) {
     }) else {
         return;
     };
-    let shown = app
-        .get_webview_window(MAIN_WINDOW)
-        .is_some_and(|window| window.is_visible().unwrap_or(false));
-    let outcome = match choose(&item, shown) {
+    let outcome = match choose(&item, main_window_shown(app)) {
         Chosen::Open => {
             show_main_window(app);
             Ok(())

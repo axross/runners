@@ -26,6 +26,15 @@ pub fn show_main_window(app: &AppHandle) {
     }
 }
 
+/// whether the main window can be seen: visible and not minimised, so a question put to
+/// it is seen. A minimised window counts as not shown, and a question goes to a window
+/// of its own.
+pub fn main_window_shown(app: &AppHandle) -> bool {
+    app.get_webview_window(MAIN_WINDOW).is_some_and(|window| {
+        window.is_visible().unwrap_or(false) && !window.is_minimized().unwrap_or(false)
+    })
+}
+
 /// the log when the app's own file cannot be made: the app still runs.
 struct Discard;
 
