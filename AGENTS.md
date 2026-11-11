@@ -41,7 +41,9 @@ selected by
 ready or a reported stop naming an unmet gate, without a further prompt.
 That workflow owns the delivery sequence and handoff boundary, including when a
 run obtains a host's per-session confirmation; Agent Sessions describes
-[Claude Code's confirmation](./docs/operations/agent-sessions.md#confirming-delivery-at-the-plan-gate-in-claude-code).
+[Claude Code's confirmation](./docs/operations/agent-sessions.md#confirming-delivery-at-the-plan-gate-in-claude-code)
+and
+[Amp's plan-gate archive confirmation](./docs/operations/agent-sessions.md#confirming-review-thread-cleanup-at-the-plan-gate-in-amp).
 Current host instructions and tool usage conditions still apply; for Amp, see
 [Handle Amp delivery authorization](#handle-amp-delivery-authorization); for
 Codex, see
@@ -85,7 +87,9 @@ Choose guidance from the actual session and changed surface:
 
 - **Amp:** follow the runtime's current tool contracts and consult
   [Agent sessions](./docs/operations/agent-sessions.md#amp-quality-hooks) for
-  the quality-hooks plugin and
+  the quality-hooks plugin,
+  [the plan-gate confirmation for archiving review child threads](./docs/operations/agent-sessions.md#confirming-review-thread-cleanup-at-the-plan-gate-in-amp),
+  and
   [its environment provisioning](./docs/operations/agent-sessions.md#amp-environment-provisioning)
   for the `.agents/setup` script.
 - **Codex:** follow the runtime's current tool contracts and
@@ -104,6 +108,25 @@ Choose guidance from the actual session and changed surface:
   images and host scripts, secret handling, the dependency or supply-chain
   surface (including pinned actions and tool versions), and anything that
   changes what a self-hosted runner can reach SHOULD also receive human review.
+
+## Independent review route
+
+Loop Engineering's mandatory independent review, after the draft pull request
+exists, uses the route the authoring host selects. This section summarizes the
+selection that
+[The Independent Review](./docs/operations/development-workflow.md#the-independent-review)
+owns, together with each route's procedure, under Loop Engineering's
+[review workflow](./.claude/skills/loop-engineering/references/review-workflow.md).
+
+- **Claude Code:** request the review by posting `@claude review` as a
+  top-level comment on the pull request, once per round. The phrase is quoted
+  here as reference documentation.
+- **Amp:** request the review by starting a fresh Amp review child thread for
+  each round, never reusing one, with the neutral assignment The Independent
+  Review describes. The child posts its own review on the pull request; the run
+  verifies the posted review, then archives the child thread when the
+  plan-gate archive confirmation allows it.
+- **Codex, and changes made without an agent:** the Codex review.
 
 ## Handle Amp delivery authorization
 
@@ -210,7 +233,7 @@ adds the document that owns its procedure and the row that routes to it.
 | Commands and local verification                                                                                                                                                                      | [README.md](./README.md)                                                                                                                                                                                         |
 | Change loop, branches, delivery, independent review, and releases                                                                                                                                    | [Development Workflow](./docs/operations/development-workflow.md)                                                                                                                                                |
 | Skill installation, refresh, deviations, and gaps                                                                                                                                                    | [Agent Skills](./docs/operations/agent-skills.md)                                                                                                                                                                |
-| Claude Code and Amp startup, hooks, the plan-gate delivery confirmation, subagents, and telemetry                                                                                                    | [Agent Sessions](./docs/operations/agent-sessions.md)                                                                                                                                                            |
+| Claude Code and Amp startup, hooks, the plan-gate delivery confirmation, Amp's plan-gate archive confirmation for review child threads, subagents, and telemetry                                     | [Agent Sessions](./docs/operations/agent-sessions.md)                                                                                                                                                            |
 | Workflow permissions, action pinning, runner trust boundaries, cache and volume boundaries, and secrets                                                                                              | [Security](./docs/conventions/security.md)                                                                                                                                                                       |
 | Project terminology                                                                                                                                                                                  | [Glossary](./docs/glossary.md)                                                                                                                                                                                   |
 | Whether something should be a comment at all, or the code reshaped instead                                                                                                                           | [Code Maintainability](./.claude/skills/code-maintainability/SKILL.md)                                                                                                                                           |

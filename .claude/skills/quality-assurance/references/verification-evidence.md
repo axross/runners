@@ -43,7 +43,7 @@ This assessment does not require posted independent reviewers to enumerate passe
 
 ## Relevance and Currency
 
-A result answers a particular question at an observed material revision and stage. Static source inspection can establish an inspected branch, while rendering observes a surface and native execution observes a native target. A contribution's earlier result can stop describing the integrated change.
+A result answers a particular question at an observed material revision and stage. Static source inspection can establish an inspected branch, while rendering observes a surface, a simulator or emulator exercise observes that runtime, and a physical-device exercise observes the hardware. A contribution's earlier result can stop describing the integrated change.
 
 For the bounds of an integrated-output claim, consult contributor-verification practices when available. Without them, judge only observed properties of the inspected material and platform; unobserved dimensions stay unverified. QA assesses whether the supplied checks support that bounded claim.
 

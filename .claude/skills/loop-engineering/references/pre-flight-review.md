@@ -16,6 +16,8 @@ This checkpoint follows verified initial implementation, whether the driver or a
 
 The case for reviewing outside the authoring context is usually stated as one property. It is several, they separate, and none of them is recovered outright — which is why this stage can be worth running and still not replace the external review. Stating the accounting is what keeps "we already reviewed it" from being read as the external gate having been met.
 
+The external-review column describes a separately hosted arrangement. A child reviewer selected under [review-workflow.md](./review-workflow.md) supplies context separation and a posted result without necessarily supplying environment, account or policy-source independence. This comparison changes none of this pre-flight stage's requirements or the separate mandatory independent-review gate.
+
 | Property                                                                     | External review | This stage                                                                                                                                                                             |
 | ---------------------------------------------------------------------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Context independence** — no memory of its own decisions or its own plan    | yes             | **partly** — recovered only as far as the fresh-context and durable-park rules hold                                                                                                    |

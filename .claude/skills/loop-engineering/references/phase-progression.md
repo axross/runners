@@ -8,13 +8,50 @@ When research, plan, or design output is about to cross a phase boundary, use [r
 
 A named tracking target enters planning; an existing delivery target enters recovery and addressing. A free-form change first needs a durable tracking target. The tracking target is the project's own—an issue in the repository's forge by default, or whichever tracker project policy names instead—and the loop needs to know only that it is durable and holds the plan. These defaults preserve the loop's tracking target → plan → draft delivery path when a project supplies no more-specific change policy. They are not permission to make an external write.
 
+Choose the entry from actual target, canonical-plan and approval evidence. The
+following aid applies the existing [plan identity](./plan-document.md),
+[recovery](./resuming-and-handoff.md) and
+[operation-grant](./run-state-and-reporting.md#scoped-operation-grants) contracts:
+
+| Available evidence                                                                                                | Next permitted action                                                                                                                                                    | Boundary to preserve                                                                       |
+| ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| Fresh documentation request; no tracked plan or approval                                                          | Identify policy and the durable target, then prepare and review its canonical plan for approval.                                                                         | Wait for actual approval before implementation edits.                                      |
+| Existing task; approved canonical identity unchanged; pending phase and scoped grants established                 | Reconstruct actual state and advance the established pending phase.                                                                                                      | No replacement plan or repeated permission for an unchanged, covered effect.               |
+| Continuation request; canonical plan has no approval evidence                                                     | Recover the current plan and approval state; present the plan for approval when needed.                                                                                  | A resume signal alone does not supply approval away from a recorded approval boundary.     |
+| Current canonical content differs from the approved identity                                                      | Stop dependent edits and resolve the revision through Plan and Approval.                                                                                                 | Earlier approval and revision-bound results are stale.                                     |
+| Earlier change merged; a new documentation change is requested                                                    | Release the merged change's recorded resources under [Release a Finished Change](#release-a-finished-change), then start intake for the new change under project policy. | The merged task's approval does not authorize the new scope.                               |
+| A change with recorded resources is observed merged or closed, at resume, from a human's report or at next intake | Enter [Release a Finished Change](#release-a-finished-change) for that change.                                                                                           | No continuation of the ready run, and nothing armed to observe the next change.            |
+| Implementation edits already exist; required approval is missing                                                  | Preserve and inspect the actual edits under [Writing and Recovery](./writer-ownership-and-recovery.md), then recover the unmet plan/approval boundary.                   | No destructive reset, further dependent implementation or invented retrospective approval. |
+| Standalone read-only question; no project change requested or produced                                            | Investigate and answer under applicable read-only practices.                                                                                                             | No change-delivery gates merely to answer.                                                 |
+
+A small reversible documentation edit can need less verification than a runtime
+change. Its size supplies no adopted plan approval. Missing required material or
+an unavailable tracking route leaves the corresponding prerequisite unmet;
+identify that blocker under the intake rules below.
+
+**Contrasting Examples:**
+
+> **Fresh request:** “Combine the README's setup and development sections.”
+> The project requires a tracked plan and approval, and neither exists. Read
+> the headings and workflow to prepare that plan; a ready-to-apply content draft
+> or a passing documentation check does not authorize editing the README.
+
+> **Approved continuation:** “Continue the README reorganization.” The tracked
+> plan's exact identity still matches actual human approval, the pending phase
+> is execution and its grants still cover the effects. Resume implementation
+> from the actual tree without asking for the same approval again.
+
+> **Read-only question:** “Where does this README explain development setup?”
+> Read the document and answer. Discovering a possible improvement does not
+> turn that question into a request to implement it.
+
 **Guidelines:**
 
 - MUST identify the change target and applicable project policy before planning; by default anchor a new change in its durable tracking target before planning or edits, and reconstruct an existing delivery target rather than restarting it.
 - MUST record the plan in that durable target before requesting approval; a private local plan-mode artifact alone does not satisfy this gate.
 - MUST surface an authorization or capability blocker when a required delivery operation cannot be performed; never silently replace a mandatory target or gate with an easier one.
 - MUST defer to a host project's own more-specific change-loop capability wherever it ships one: that capability owns the loop there and this one does not run beside it, which is a different thing from the project policy above that merely chooses this loop's gates.
-- MUST use the default independent-review arrangement where project policy is silent: a separate session on separate infrastructure, under a bot identity distinct from the connected operator. A review produced inside the authoring session is self-review, regardless of its name.
+- MUST select the pre-flight and independent-review routes under [review-workflow.md](./review-workflow.md), honoring explicit applicable instructions and using its defaults only where unspecified.
 
 ## Advance or Stop
 
@@ -27,22 +64,17 @@ can block readiness while leaving diagnosis available; a pending review can
 block convergence while leaving required verification available. Name that
 dependency before deciding that the whole run must wait.
 
-**Contrasting Examples:**
+The following trace follows one change as evidence arrives. Each row names
+what can happen next and what that action still cannot establish; a label such
+as "baseline failure" or "CI green" supplies neither on its own:
 
-> **Work remains:** Review and CI are pending, and a local verification route
-> fails. Inspecting the failure and running a documented, permitted isolated
-> check remain required and independent of those results. Perform that work;
-> neither pending review nor one failed route establishes a run-wide stop.
-
-> **A machine result resolves the dependency:** The required checks and review
-> now satisfy their gates for the current material. Evaluate the remaining
-> ready conditions and publish ready when all hold, even if source is unchanged.
-> Creating a source edit or requesting the same authorization again adds no
-> missing evidence.
-
-> **Only dependent work remains:** The remaining action needs a pending check,
-> human decision, or unmatched grant. Use the applicable bounded machine wait
-> or human handoff; preserve the action and its prerequisite for recovery.
+| Observed evidence                                                                                                    | Remaining action and prerequisite                                                                               | Next permitted operation                                                                            | Gate still unmet                                                                 |
+| -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Local checking fails in both base and changed checkouts; review and CI are pending.                                  | Required input diagnosis has a documented route, matching authority and no dependency on those pending results. | Inspect the failing inputs and obtain discriminating verification evidence.                         | Verification remains unresolved; pending review also blocks readiness.           |
+| Clean CI passes, but comparison shows it omitted an input that enables required checking; that checking still fails. | Reconcile required coverage using the current material and documented setup.                                    | Diagnose the uncovered failure and pursue permitted remediation or other independent checks.        | A narrower pass has not resolved the required property, even if review finishes. |
+| Current evidence now covers every required property and review is complete.                                          | Evaluate the remaining ready conditions, including approval and mergeability.                                   | When all hold, publish ready without another source edit or a repeated matching permission request. | None once every ready condition holds; this does not authorize merge.            |
+| No independent required action remains; the next action needs a pending result, human decision or missing grant.     | That specific prerequisite must become available.                                                               | Use the permitted bounded machine wait or human handoff, retaining the action and its prerequisite. | The dependent gate remains unmet until current evidence resolves it.             |
+| The applicable execution, review or waiting bound is exhausted.                                                      | Further execution exceeds the current bound.                                                                    | Stop with the observed result, remaining work and resumable next action.                            | Exhaustion supplies no missing verification or readiness evidence.               |
 
 **Guidelines:**
 
@@ -90,3 +122,32 @@ When the approved evidence destination depends on creating the draft target—a 
 - MUST keep mandatory review marked unmet when it cannot be obtained; no self-check, advisory review, or unavailable reviewer certifies readiness.
 - MUST move to ready as soon as [independent-review.md](./independent-review.md)'s ready gate is satisfied, report the evidence, and leave merging to the human under the default policy.
 - MUST return to addressing after later human feedback, restoring draft status when necessary and requiring fresh review of changed content.
+
+## Release a Finished Change
+
+A run leaves local resources behind: its branch, a working copy made for it, processes it started, port forwards it set up and builds it installed on a simulator or emulator. Ready ends the run and merging stays with the human, so nothing in the run itself frees them. Release is a later, separate entry that does, once the driver observes the change merged or closed — at resume, from a human's report, or at the next intake. It is never a continuation of the ready run, and nothing is armed to find out: with no observation, nothing happens.
+
+Release touches only what the run state records as created by this run, under [Semantic Run State](./run-state-and-reporting.md#semantic-run-state), and only while that record still verifies against what is there. It needs no separate operation grant, under the carve-out in [Scoped Operation Grants](./run-state-and-reporting.md#scoped-operation-grants); host permission prompts and tool usage conditions remain boundaries. A **series** is the set of open changes the run state records as building on this change's resources, such as a stacked change on its branch or a follow-up using its install.
+
+Deleting a local branch destroys no evidence when the hosting service retains every commit on it, which holds when the local tip is the change's final head as the hosting service recorded it, or an ancestor of that head. Ancestry against the default branch proves nothing here, because a squash or rebase merge leaves the branch's commits off it.
+
+| Observed state                                                                        | Release                                                              |
+| ------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Squash-merged; the local tip is the recorded final head                               | Delete the local branch after removing its clean working copy.       |
+| The same, but the local branch has a commit the merged change lacks                   | Keep the branch and report the unmerged commit.                      |
+| Closed without merging                                                                | Keep the branch and ask; stop the run's processes and port forwards. |
+| First change of a recorded stack merged; the change built on its branch is still open | Keep what the open change needs until the series ends.               |
+| No merge or close observed; the driver is idle                                        | Nothing happens, and no wait is armed to find out.                   |
+| A branch or install the run never recorded as its own                                 | Leave it.                                                            |
+| A recorded install, but the target now holds a different build                        | Keep it and report; it is no longer the run's build.                 |
+| Any of the above                                                                      | The remote branch stays; repository settings or a human own it.      |
+
+**Guidelines:**
+
+- MUST enter release only on an observed merge or close of the change, and MUST NOT poll, subscribe, or schedule a wake to observe one; re-derive release from actual state each time, so a repeated entry is idempotent, and ask again about anything kept pending a human's answer that was not recorded.
+- SHOULD release each recorded resource once its own conditions below hold, and MUST NOT release a resource whose conditions do not hold, that the run state does not record as created by this run, whose recorded identity no longer matches what is there, or that a recorded open change in the same series still needs before the last change in that series is observed merged or closed; keep and report a recorded resource the driver cannot reach.
+- MUST NOT delete a local branch unless the hosting service shows the change merged and the local tip is the change's recorded final head or an ancestor of it; otherwise keep it and report why, and when the change closed without merging, keep it and ask. MUST NOT delete the remote branch.
+- MUST NOT remove a working copy the run created unless it holds no uncommitted or untracked work and its branch qualifies for deletion, and MUST remove it before deleting that branch; keep it with a kept branch, leave one whose lifecycle the host owns to the host and report it, and never discard changes to make a removal succeed.
+- SHOULD stop the processes the run started and remove the port forwards it set up, whether the change merged or closed unmerged, after verifying each by its recorded identity; keep one that does not verify.
+- MUST route a recorded install to the project's device-check practices for its uninstall conditions where present, and keep and report it where they are absent or the target's other holders cannot be determined.
+- MUST report in the session what was released and what was kept, each with its reason; a write to the merged or closed delivery target is not part of release unless separately authorized.

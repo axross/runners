@@ -41,5 +41,6 @@ See [manual-verification.md](./references/manual-verification.md) for:
 
 - Judging a data-driven surface, route, or running app output that passing commands do not exercise as a human would see it
 - The author exercised non-default content states when the change touches a data-driven surface
+- Simulator or emulator evidence per shipped platform, and a reasoned skip for a platform the author's host cannot run or a property reserved to a physical device
 - The not-found UI was verified for routing changes
 - The dev-server output was checked for new warnings or errors

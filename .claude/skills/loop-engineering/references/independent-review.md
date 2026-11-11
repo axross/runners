@@ -1,10 +1,10 @@
 # Independent Review and Readiness
 
-Apply this reference after verified implementation and whenever external review or required checks return. Project policy chooses the reviewer and delivery mechanism; where it is silent, independent review remains mandatory.
+Apply this reference after verified implementation and whenever independent review or required checks return. Mandatory independent review follows creation of the project's delivery target; pre-flight remains a separate advisory checkpoint. [review-workflow.md](./review-workflow.md) owns route selection and the context-independent default when applicable instructions are silent.
 
 ## Independence
 
-The author cannot certify its own work. Independence must come from the reviewer arrangement project policy requires, not from a label applied inside the authoring context.
+The author cannot certify its own work. Independence comes from the selected reviewer arrangement, not from a label applied inside the authoring context. A fresh child that publishes directly through the delivery target's review mechanism can satisfy the default; any stronger infrastructure or identity requirements still apply when explicitly selected.
 
 **Guidelines:**
 
