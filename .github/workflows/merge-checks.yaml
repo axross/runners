@@ -1,8 +1,8 @@
 name: Merge Checks
 
 # the repository's own CI: the gates behind mise run check, the CLI tests on
-# Linux, Windows, and macOS, the image build and its build-only arm64 twin, the
-# release dry run, and the documented install blocks against the dry run's
+# Linux, Windows, and macOS, the image build and smoke test on amd64 and arm64,
+# the release dry run, and the documented install blocks against the dry run's
 # installers. GitHub-hosted runners only, because this repository is public; see
 # docs/conventions/security.md.
 
@@ -223,9 +223,9 @@ jobs:
       - name: Smoke Test Runner Image
         run: bash images/actions-runner/tests/smoke-test.sh actions-runner:ci
 
-  # build only, on the hosted Linux arm64 runner: the axmc golden VM builds the
-  # same Dockerfile for linux/arm64. the smoke tests assume x86_64, so none runs
-  # here. no registry login and no push, so the job holds no credential.
+  # the same build and smoke test on the hosted Linux arm64 runner, where the
+  # image has no Android toolchain: the axmc golden VM builds this Dockerfile for
+  # linux/arm64. no registry login and no push, so the job holds no credential.
   image-arm64:
     name: Build Runner Image On Arm64
     runs-on: ubuntu-24.04-arm
@@ -237,3 +237,5 @@ jobs:
           persist-credentials: false
       - name: Build Runner Image
         run: docker build --platform linux/arm64 --tag actions-runner:ci-arm64 images/actions-runner
+      - name: Smoke Test Runner Image
+        run: bash images/actions-runner/tests/smoke-test.sh actions-runner:ci-arm64
