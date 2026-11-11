@@ -12,7 +12,7 @@ mod seam;
 mod session;
 mod wall;
 
-pub use choose::{Chosen, Place, Then, choose};
+pub use choose::{Chosen, Confirmable, Then, choose};
 pub use connect::RETRY_EVERY;
 pub use launcher::OwnExecutable;
 pub use library::{Agent, Library, dial_error, failure};

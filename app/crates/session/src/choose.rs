@@ -12,13 +12,22 @@ pub enum Then {
     Quit,
 }
 
-/// where a question is asked.
+/// the acts whose question the main window's page shows, and answers by calling the
+/// command that runs the act.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Place {
-    /// the main window, which is shown and has the page that asks it.
-    MainWindow,
-    /// a small window of its own.
-    OwnWindow,
+pub enum Confirmable {
+    StopAll,
+    StopBuild,
+}
+
+impl Confirmable {
+    fn of(then: Then) -> Option<Self> {
+        match then {
+            Then::Act(Act::StopAll) => Some(Self::StopAll),
+            Then::Act(Act::StopBuild) => Some(Self::StopBuild),
+            Then::Act(Act::StartAll | Act::Build) | Then::Quit => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,10 +37,15 @@ pub enum Chosen {
     Run(Act),
     TryAgain,
     Quit,
-    Ask {
+    /// ask in the main window, which is shown and has the page that asks it.
+    AskInMainWindow {
+        question: Confirmation,
+        then: Confirmable,
+    },
+    /// ask in a small window of its own.
+    AskInOwnWindow {
         question: Confirmation,
         then: Then,
-        place: Place,
     },
     /// the item is not available, or is not one the menu offers.
     Nothing,
@@ -64,14 +78,8 @@ pub fn choose(item: &MenuItem, main_window_shown: bool) -> Chosen {
             Then::Quit => Chosen::Quit,
         };
     };
-    let place = if main_window_shown && then != Then::Quit {
-        Place::MainWindow
-    } else {
-        Place::OwnWindow
-    };
-    Chosen::Ask {
-        question,
-        then,
-        place,
+    if main_window_shown && let Some(then) = Confirmable::of(then) {
+        return Chosen::AskInMainWindow { question, then };
     }
+    Chosen::AskInOwnWindow { question, then }
 }

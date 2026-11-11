@@ -1,6 +1,6 @@
 //! what choosing a menu item does.
 
-use marshal_session::{Act, Chosen, Place, Then, choose};
+use marshal_session::{Act, Chosen, Confirmable, Then, choose};
 use marshal_view::{Action, Confirmation, MenuItem};
 
 fn question() -> Confirmation {
@@ -47,39 +47,73 @@ fn stop_all_asks_in_the_window_while_it_is_shown() {
     let chosen = choose(&item(Action::StopAll, true, true), true);
     assert_eq!(
         chosen,
-        Chosen::Ask {
+        Chosen::AskInMainWindow {
             question: question(),
-            then: Then::Act(Act::StopAll),
-            place: Place::MainWindow,
+            then: Confirmable::StopAll,
+        }
+    );
+}
+
+#[test]
+fn stopping_the_build_asks_in_the_window_while_it_is_shown() {
+    let chosen = choose(&item(Action::StopBuild, true, true), true);
+    assert_eq!(
+        chosen,
+        Chosen::AskInMainWindow {
+            question: question(),
+            then: Confirmable::StopBuild,
         }
     );
 }
 
 #[test]
 fn stop_all_asks_in_a_window_of_its_own_when_the_main_window_is_hidden() {
-    let Chosen::Ask { place, then, .. } = choose(&item(Action::StopAll, true, true), false) else {
-        panic!("a question");
-    };
-    assert_eq!(place, Place::OwnWindow);
-    assert_eq!(then, Then::Act(Act::StopAll));
+    assert_eq!(
+        choose(&item(Action::StopAll, true, true), false),
+        Chosen::AskInOwnWindow {
+            question: question(),
+            then: Then::Act(Act::StopAll),
+        }
+    );
 }
 
 #[test]
 fn stopping_the_build_asks_and_then_stops() {
-    let Chosen::Ask { then, .. } = choose(&item(Action::StopBuild, true, true), false) else {
-        panic!("a question");
+    let Chosen::AskInOwnWindow { then, .. } = choose(&item(Action::StopBuild, true, true), false)
+    else {
+        panic!("a question in a window of its own");
     };
     assert_eq!(then, Then::Act(Act::StopBuild));
 }
 
 #[test]
+fn an_act_the_page_has_no_question_for_asks_in_a_window_of_its_own_even_when_the_window_is_shown() {
+    // no menu item asks before these today; one that did would not reach the page
+    for (action, act) in [
+        (Action::StartAll, Act::StartAll),
+        (Action::BuildImage, Act::Build),
+    ] {
+        assert_eq!(
+            choose(&item(action, true, true), true),
+            Chosen::AskInOwnWindow {
+                question: question(),
+                then: Then::Act(act),
+            }
+        );
+    }
+}
+
+#[test]
 fn quit_always_asks_in_a_window_of_its_own() {
     for shown in [false, true] {
-        let Chosen::Ask { place, then, .. } = choose(&item(Action::Quit, true, true), shown) else {
-            panic!("a question");
-        };
-        assert_eq!(place, Place::OwnWindow, "shown: {shown}");
-        assert_eq!(then, Then::Quit);
+        assert_eq!(
+            choose(&item(Action::Quit, true, true), shown),
+            Chosen::AskInOwnWindow {
+                question: question(),
+                then: Then::Quit,
+            },
+            "shown: {shown}"
+        );
     }
 }
 

@@ -3,7 +3,7 @@
 
 use std::sync::{Mutex, PoisonError};
 
-use marshal_session::{Chosen, Place, choose};
+use marshal_session::{Chosen, choose};
 use marshal_tray::{Look, Watch, bitmap, menu_id};
 use marshal_view::Menu;
 use tauri::image::Image;
@@ -132,16 +132,10 @@ async fn run_menu_item(app: &AppHandle, id: &str) {
             state.handle.quit();
             Ok(())
         }
-        Chosen::Ask {
-            question,
-            then,
-            place: Place::MainWindow,
-        } => confirmation::ask_in_main_window(app, &question, then).map_err(|e| e.to_string()),
-        Chosen::Ask {
-            question,
-            then,
-            place: Place::OwnWindow,
-        } => {
+        Chosen::AskInMainWindow { question, then } => {
+            confirmation::ask_in_main_window(app, &question, then).map_err(|e| e.to_string())
+        }
+        Chosen::AskInOwnWindow { question, then } => {
             confirmation::ask_in_own_window(app, &state, question, then).map_err(|e| e.to_string())
         }
         Chosen::Nothing => Ok(()),

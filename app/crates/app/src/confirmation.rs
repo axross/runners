@@ -1,7 +1,7 @@
 //! the question before an action that costs something, when the main window is not shown
 //! to ask it: a small window of its own with Cancel focused.
 
-use marshal_session::Then;
+use marshal_session::{Confirmable, Then};
 use marshal_view::Confirmation;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, Runtime, WebviewUrl, WebviewWindowBuilder};
@@ -23,14 +23,10 @@ struct Ask {
     question: Confirmation,
 }
 
-fn action_id(then: Then) -> &'static str {
-    use marshal_session::Act;
-    match then {
-        Then::Act(Act::StartAll) => "start_all",
-        Then::Act(Act::StopAll) => "stop_all",
-        Then::Act(Act::Build) => "build",
-        Then::Act(Act::StopBuild) => "stop_build",
-        Then::Quit => "quit",
+fn action_id(act: Confirmable) -> &'static str {
+    match act {
+        Confirmable::StopAll => "stop_all",
+        Confirmable::StopBuild => "stop_build",
     }
 }
 
@@ -39,7 +35,7 @@ fn action_id(then: Then) -> &'static str {
 pub fn ask_in_main_window<R: Runtime>(
     app: &AppHandle<R>,
     question: &Confirmation,
-    then: Then,
+    then: Confirmable,
 ) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
         let _ = window.set_focus();
