@@ -1,7 +1,7 @@
 # cargo-deny policy for the app's workspace, which covers everything the
 # executable links, `marshal-cli` and its crates included. `mise run deny:app` runs
 # the bans, licenses and sources checks, which need no advisory database;
-# docs/operations/cli.md records why each crate and licence is accepted.
+# docs/conventions/security.md records why each licence and exception is accepted.
 
 [graph]
 # the two operating systems the app is built for; the Linux build is for local
