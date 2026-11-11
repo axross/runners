@@ -7,8 +7,12 @@ use std::ffi::OsStr;
 use std::io;
 
 use interprocess::os::windows::ToWtf16;
+use interprocess::os::windows::named_pipe::{PipeListenerOptions, PipeMode};
 use interprocess::os::windows::security_descriptor::SecurityDescriptor;
 use winsafe::{self as w, co};
+
+use super::channel::ChannelError;
+use super::roots::Roots;
 
 /// `ERROR_ACCESS_DENIED`, which creating a second first instance of a pipe gives.
 const ERROR_ACCESS_DENIED: i32 = 5;
@@ -26,6 +30,22 @@ pub fn current_user_sid() -> io::Result<String> {
     let token = w::HPROCESS::GetCurrentProcess()
         .OpenProcessToken(co::TOKEN::QUERY)
         .map_err(|error| failed("OpenProcessToken", error))?;
+    token_user_sid(&token)
+}
+
+/// the security identifier of the user the process `pid` runs as; fails when the
+/// process or its token cannot be opened for reading, as a process of another account
+/// cannot.
+pub fn process_user_sid(pid: u32) -> io::Result<String> {
+    let process = w::HPROCESS::OpenProcess(co::PROCESS::QUERY_LIMITED_INFORMATION, false, pid)
+        .map_err(|error| failed("OpenProcess", error))?;
+    let token = process
+        .OpenProcessToken(co::TOKEN::QUERY)
+        .map_err(|error| failed("OpenProcessToken", error))?;
+    token_user_sid(&token)
+}
+
+fn token_user_sid(token: &w::HACCESSTOKEN) -> io::Result<String> {
     let information = token
         .GetTokenInformation(co::TOKEN_INFORMATION_CLASS::User)
         .map_err(|error| failed("GetTokenInformation", error))?;
@@ -64,6 +84,35 @@ pub fn name_is_taken(error: &io::Error) -> bool {
         error.raw_os_error(),
         Some(ERROR_ACCESS_DENIED | ERROR_PIPE_BUSY)
     )
+}
+
+/// the options of the control pipe and its name, for both the instance's channel and
+/// the agent's: the name of this user's pipe, a byte stream, the descriptor that grants
+/// this user alone, and remote clients rejected. The caller creates the listener, which
+/// is the first instance of the name, so a name another process holds is an error.
+pub fn control_pipe_options(
+    roots: &Roots,
+) -> Result<(PipeListenerOptions<'static>, String), ChannelError> {
+    let sid = current_user_sid().map_err(|error| ChannelError::Io(error.to_string()))?;
+    let descriptor =
+        only_user_descriptor(&sid).map_err(|error| ChannelError::Io(error.to_string()))?;
+    let name = roots.control_pipe_name(&sid);
+    let options = PipeListenerOptions::new()
+        .path(std::ffi::OsString::from(&name))
+        .mode(PipeMode::Bytes)
+        .accept_remote(false)
+        .security_descriptor(Some(descriptor));
+    Ok((options, name))
+}
+
+/// the channel error for a pipe that could not be created under `name`.
+#[must_use]
+pub fn creation_error(name: &str, error: &io::Error) -> ChannelError {
+    if name_is_taken(error) {
+        ChannelError::NameTaken(name.to_string())
+    } else {
+        ChannelError::Io(format!("{name}: {error}"))
+    }
 }
 
 #[cfg(test)]

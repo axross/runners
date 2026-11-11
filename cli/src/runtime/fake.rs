@@ -81,6 +81,12 @@ pub struct FakeState {
     /// the answers to `check_image`; when they run out, every check matches, with
     /// [`matching_labels`] as the image's labels.
     pub image_answers: VecDeque<ImageCheck>,
+    /// when set, a `check_image` waits for a permit of this before it answers, which
+    /// holds an agent in its resume.
+    pub image_gate: Option<Rc<Notify>>,
+    /// when set, `wait_until_available` waits for a permit of this, as a Docker that
+    /// is not up yet, which holds the pools unadmitted.
+    pub available_gate: Option<Rc<Notify>>,
     /// the outcomes of the exports `export_diagnostic` runs; when they run out,
     /// every export is complete; a complete export or one with a gap admits a
     /// bundle.
@@ -129,13 +135,27 @@ impl FakeBackend {
 
 impl Backend for FakeBackend {
     async fn wait_until_available(&self) {
-        self.state.borrow_mut().calls.push(Call::WaitUntilAvailable);
+        let gate = {
+            let mut state = self.state.borrow_mut();
+            state.calls.push(Call::WaitUntilAvailable);
+            state.available_gate.clone()
+        };
+        if let Some(gate) = gate {
+            gate.notified().await;
+        }
     }
 
     async fn check_image(&self, image: &str) -> ImageCheck {
-        let mut state = self.state.borrow_mut();
-        state.image_checks.push(image.to_string());
-        state
+        let gate = {
+            let mut state = self.state.borrow_mut();
+            state.image_checks.push(image.to_string());
+            state.image_gate.clone()
+        };
+        if let Some(gate) = gate {
+            gate.notified().await;
+        }
+        self.state
+            .borrow_mut()
             .image_answers
             .pop_front()
             .unwrap_or_else(|| ImageCheck::Matching(matching_labels()))

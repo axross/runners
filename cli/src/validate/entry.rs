@@ -1,6 +1,8 @@
 //! one repository entry: its fields, then whether it takes part in the cross-entry
 //! checks.
 
+use std::path::Path;
+
 use serde::Deserialize;
 
 use crate::json::Value;
@@ -288,14 +290,22 @@ fn read_diagnostic_directory(
         cx.errors
             .add(format!("{field}: must not contain dot path components"));
     }
-    match cx.checkout {
-        Some(checkout) => {
-            if paths::is_inside_checkout(directory, checkout, cx.profile) {
-                cx.errors
-                    .add(format!("{field}: must be outside the checkout"));
-            }
-        }
-        None => cx.checkout_rule_skipped = true,
+    // the checkout of the sink's own place, when the rule asks for it and the path is
+    // one of this host; a Windows path read on another host names no place here
+    let at_sink = Some(Path::new(directory))
+        .filter(|path| cx.at_sink && path.is_absolute())
+        .and_then(crate::checkout::find_at_or_above);
+    let checkouts = [cx.checkout, at_sink.as_deref()];
+    if checkouts.iter().all(Option::is_none) {
+        cx.checkout_rule_skipped = !cx.at_sink;
+    }
+    if checkouts
+        .into_iter()
+        .flatten()
+        .any(|checkout| paths::is_inside_checkout(directory, checkout, cx.profile))
+    {
+        cx.errors
+            .add(format!("{field}: must be outside the checkout"));
     }
     Some(directory.to_string())
 }

@@ -6,7 +6,7 @@
 
 mod arguments;
 pub mod golden;
-mod steps;
+pub(crate) mod steps;
 
 use std::ffi::OsStr;
 use std::future::Future;
@@ -35,7 +35,7 @@ use crate::runtime::tart::{TartClient, TartConfig, VmLauncher};
 use crate::start::{ANSWERS_WITHIN, LOCK_HELD_ELSEWHERE, signals, single_threaded_runtime};
 
 use golden::{GoldenBuild, GoldenTimings};
-use steps::{BuildLimits, Steps};
+use steps::{BuildLimits, BuildOutput, Steps};
 
 const HOLDER_ANSWER_WITHIN: Duration = Duration::from_secs(5);
 
@@ -135,10 +135,12 @@ pub fn build(request: &BuildRequest<'_>, err: &mut dyn Write) -> u8 {
             runtime.block_on(build.run(|stop| async move {
                 Steps {
                     program,
+                    environment: Vec::new(),
                     image,
                     context,
                     log,
                     limits: BuildLimits::default(),
+                    output: BuildOutput::Inherit,
                     stop,
                 }
                 .run()

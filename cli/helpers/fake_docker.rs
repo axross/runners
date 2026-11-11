@@ -48,7 +48,8 @@
 //!   `build_contract` when there is one, as the Dockerfile's `LABEL` gives a real
 //!   image;
 //! - the files `info_hangs`, `inspect_hangs`, `build_hangs` (holding `tagged` to
-//!   tag before it hangs), `build_fails`, `tag_hangs` (holding `after` to tag
+//!   tag before it hangs), `build_fails`, `build_stderr` (lines a build prints to
+//!   standard error), `tag_hangs` (holding `after` to tag
 //!   before it hangs), `tag_fails`, `image_rm_fails`, `prune_hangs` and
 //!   `prune_fails` change what those calls do.
 //!
@@ -735,6 +736,9 @@ fn build(dir: &Path, arguments: &[&str]) -> Result<u8, String> {
     let stem = latest_invocation(dir)?;
     fs::write(stem.with_extension("stdin"), &context).map_err(|error| error.to_string())?;
     let _ = writeln!(std::io::stdout(), "fake build output");
+    if let Some(lines) = text(dir, "build_stderr") {
+        let _ = write!(std::io::stderr(), "{lines}");
+    }
     let hangs = text(dir, "build_hangs");
     if hangs.as_deref() == Some("") {
         sleep_while(|| true);

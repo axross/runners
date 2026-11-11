@@ -854,14 +854,80 @@ built: its names, modes, and checks.
 - The control channel is per user: only the instance's own user can reach it, and
   no remote client can. Another user who takes this user's pipe name first stops
   the channel from opening, which is also accepted on a single-user host.
+  On Windows the agent's client does not rely on the name alone: it checks that the
+  process serving the pipe runs as the current user before it sends a byte, and a
+  server it cannot show to be that user is refused. `start`'s commands do not
+  check, and a squatted name there is the accepted cost above.
 - No request carries a configuration path for the instance to read, and no
   response carries a token or a JIT configuration. A resume names a path only so
   the instance can compare it with the one it started with.
+- The resident agent takes the same lock and opens the same channel with the same
+  access rules, so only its user reaches it, and it serves protocol version 2
+  there; [CLI](../operations/cli.md#the-agent) owns the protocol. A first line
+  that is not a `hello` is refused and the connection closed, so no version 1
+  request reaches the agent. A silent or stalled client cannot hold the agent:
+  every connection limit is a timer, a client that stops reading is closed after
+  5 s, and the agent ends and frees its lock without waiting for the pipe crate's
+  blocking flush thread that a stalled Windows client can keep alive (a process
+  test shows it). Such a thread is at most one for each final message to a client
+  that never reads and never closes, which is accepted on a single-user host.
+- Both Windows channels, `start`'s and the agent's, take their pipe name, byte
+  mode, refusal of remote clients and the only-user descriptor from one function,
+  `instance::windows::control_pipe_options`, so the two cannot differ. A test on
+  Windows shows a second pipe of the same name is refused as taken.
 - Only a debug build can move the lock, the channel, the log directory, or their
   roots, for the tests; a release build always uses the host's fixed locations,
   and a CI step checks in the release profile that it ignores the request. The
   `instance-helper` binary that the tests and CI run does nothing in a release
-  build.
+  build, including its mode that runs the agent.
+
+## The Agent Keeps Tokens in the Operating System's Store
+
+The resident agent reads each repository's token from the operating system's
+credential store, not from a file, and it receives a token from a client over its
+control channel. [CLI](../operations/cli.md#the-token-store) owns how the store is
+named and used.
+
+- On Windows a token is a generic credential in the user's Credential Manager,
+  named `app.axross.marshal:github.com/<owner>/<name>`, with **local** persistence.
+  The crate's default persistence is the enterprise one, which roams with the user's
+  profile and so would carry a repository's token to other machines of a domain
+  account; the store asks for the local one, and a test on Windows reads the
+  persistence back. Any process of the same user can read the credential, as any
+  can read a token file the user owns: the Credential Manager is not a boundary
+  against the user's other programs.
+- On macOS and Linux the agent has no store, so it skips every pool with "no token
+  store" rather than falling back to a file; it never reads `tokenPath`.
+- The `token_set` request is the first message in which a secret travels, from the
+  client to the agent. The token is held as a `Secret` once the request is parsed,
+  is masked in the log from then on, and is never repeated: not in the
+  response, an event, a snapshot, an error, or a log line. An error about a token
+  names its cause, such as an empty or too long token, and never the params. A
+  store failure names its kind and the platform's code, which hold no token. The
+  request is only as private as the channel: only the agent's user can send it, and
+  on Windows the client sends it only after it has checked that the pipe's server
+  runs as that user, so a squatter of another account receives nothing and a failure
+  to verify is a refusal. The residual risks are a squatter of the same user, which
+  is accepted on a single-user host, and the tiny window in which a process ID is
+  reused between the connection and the check.
+- A token longer than 1280 UTF-16 code units or empty is refused before it reaches the
+  store, so each token's size is bounded. The repository is not limited to the
+  configuration's: `token_set` accepts any well-formed `owner/name`, because a token
+  may be entered while the configuration is invalid.
+
+Residual risks, accepted on a single-user host:
+
+- A same-user client can create store entries for any well-formed repository name,
+  one token of at most 1280 units each, and the agent never removes one it did not
+  hear of. The agent's in-memory record of which repositories have a token also gains
+  an entry for each new name a `token_set` or `token_remove` names, until the next
+  configuration read replaces it; each key is bounded by the form of `owner/name`.
+- Another process of the same user that connects to the channel can set or remove
+  a token, stop the runners or quit the agent, as it can for `start`'s
+  commands.
+- The agent holds a token in memory for as long as a registration needs it, and a
+  JIT configuration a runtime-core panic's message carried would reach the log
+  unmasked, as for `start`.
 
 ## Tokens Stay Out of the Log, and Job Clients End With `start`
 
@@ -915,6 +981,13 @@ how a bundle is written.
   the repository's files. The CLI refuses a sink that fails its checks and never
   creates, repairs, or relaxes one; the checks and the modes a bundle is written
   with are under Sink checks in [CLI](../operations/cli.md#diagnostics).
+- For `start` the checkout is the one above the configuration file; the agent's
+  configuration lives outside any checkout, so the agent finds the checkout from
+  the sink itself, the first directory at or above it that holds both `.git` and
+  `cli/Cargo.toml`, and refuses a sink at or under it, with the same lexical,
+  link-free comparison and the per-profile case rule ([The Checkout
+  Rule](../operations/cli.md#the-checkout-rule)). A sink the agent could not look at
+  from its own place, such as a path of another host, is not compared.
 - On Windows the CLI does not check the sink's owner or access rules, because no
   safe call reads them; a bundle inherits the sink's rules. The operator's ACL step
   in

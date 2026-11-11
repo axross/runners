@@ -98,7 +98,7 @@ jobs:
       - name: Test That A Release Build Ignores The Debug-Only Overrides
         env:
           MARSHAL_EXPECT_RELEASE: "1"
-        run: cargo test --locked --release --test base_address --test instance_roots --test build_definition --test release_overrides
+        run: cargo test --locked --release --test base_address --test instance_roots --test build_definition --test release_overrides --test agent_overrides
       # `cargo test` above also builds the fake-docker, fake-tart, fake-softnet and
       # instance-helper helpers into target/release; only marshal is copied out.
       - name: Build The Release Binary

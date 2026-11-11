@@ -98,7 +98,7 @@ jobs:
         if: runner.os == 'Linux'
         env:
           MARSHAL_EXPECT_RELEASE: "1"
-        run: cargo test --locked --release --test base_address --test instance_roots --test build_definition --test release_overrides
+        run: cargo test --locked --release --test base_address --test instance_roots --test build_definition --test release_overrides --test agent_overrides
       # the real-Docker tests need the base stage and a daemon; the Windows and macOS
       # hosted runners have no Linux daemon, and a missing daemon or image fails each
       # test, so it cannot be skipped unseen. the image is never pushed, so the job

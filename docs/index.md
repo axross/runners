@@ -26,8 +26,9 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   threat model for shared runner storage, per-repository isolation on a runner
   host, the release record for the CLI's dispatch-only release workflow and its
   signing Environment, the accepted LAN-egress risk, Softnet's confinement of the
-  golden VM build's network and its SUID check, and the pinned Tart, Softnet, and
-  golden VM base, what is never committed, and why the review
+  golden VM build's network and its SUID check, the pinned Tart, Softnet, and
+  golden VM base, how the resident agent keeps tokens and receives them, what is
+  never committed, and why the review
   gate admits one bot identity by login.
 - [conventions/documentation.md](./conventions/documentation.md) - which
   document a change to each runner surface invalidates, and what the
@@ -59,6 +60,8 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   the shared fixtures, the runtime layer
   (container backend, JIT registration, CPU placement, and the slot loop), the
   instance layer (instance state, single-instance lock, and control channel),
+  the resident agent (its state, the token store, protocol version 2, and the
+  snapshot),
   the image contract (its labels, the image check, and freshness), building the
   runner image with `build`, running a host with `start`, `stop`, `restart`,
   `status`, and `diagnostics` (the log, containment, the stop sequence, and the
