@@ -1,6 +1,6 @@
 ---
 name: agent-skill-management
-description: Deciding whether guidance belongs in agent instructions, project documentation, host configuration or a skill, choosing its tier, and managing installation, active loading and actor-local acquisition. Triggers on adding, editing, renaming, moving or removing skills; installed-copy or lockfile drift; missing discovery; same-name masking; stale, truncated or missing material; retained-context recovery; a defective loaded rule. Metadata belongs to skill-authoring practices; selection/output assessment follow task-specific development/review practices; acquisition-safeguard qualification owns guard claims; host commands belong to project operations. Covers source ownership, targeted refresh, acquisition coverage and retention/recovery.
+description: Deciding whether guidance belongs in agent instructions, project documentation, host configuration or a skill, choosing its tier, and managing installation, active loading and actor-local acquisition. Triggers on adding, editing, renaming, moving or removing skills; installed-copy or lockfile drift; missing discovery; same-name masking; stale, truncated or missing material; retained-context recovery; a defective loaded rule. Metadata belongs to skill-authoring practices; selection/output assessment follow task-specific development/review practices; project policy and host operations own safeguard activation and commands. Covers source ownership, targeted refresh, acquisition coverage and retention/recovery.
 user-invocable: false
 ---
 
@@ -126,16 +126,6 @@ See [actor-local-acquisition.md](./references/actor-local-acquisition.md) for:
 - correlating expected and observed material without inferring acquisition from a parent or reused assignment identifier
 - recovering truncation or lost retention from one verified revision, without redundant reads of complete retained text
 - separating acquisition from output verification and verification-evidence assessment, without adding external-review attestations
-
-## Referencing an Optional Safeguard Claim
-
-When assessing a claim that an optional safeguard observes acquisition without
-interference or prevents dependent mutations, consult acquisition-safeguard
-qualification practices where present. Without that owner, report the
-qualification assessment as unperformed; acquisition coverage alone cannot
-qualify a safeguard or its audit fallback. Establishing acquisition meanings
-does not itself require guard qualification or reloading the qualification
-caller for the same question.
 
 ## Proposing a Change to an Installed Skill
 
