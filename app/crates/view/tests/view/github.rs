@@ -163,6 +163,25 @@ fn a_check_from_before_the_window_opened_reads_as_checking() {
 }
 
 #[test]
+fn a_window_opened_during_a_pause_keeps_the_last_values_marked_with_their_time() {
+    let status = github_of(|value| {
+        value["budget"]["level"] = "paused".into();
+    });
+    let snapshot = load("running");
+    let view = build(
+        &Input::new(Connection::Connected, Some(&snapshot), now()).github(GithubFeed::Live {
+            opened_ms: at(3, 51, 50),
+            status: Some(&status),
+        }),
+    );
+    let row = &list(&view).pools[0].runners[0];
+    assert_eq!(row.github.as_deref(), Some("GitHub: running a job"));
+    assert_eq!(row.github_checked.as_deref(), Some("checked 03:51"));
+    assert_eq!(row.job.as_deref(), Some("CI · test (ubuntu-latest)"));
+    assert!(view.summary.spoken.ends_with("2 running jobs"));
+}
+
+#[test]
 fn runners_an_oversize_value_left_out_are_marked_not_shown_and_counted() {
     let status = github_of(|value| {
         value["repositories"][1]["runners"] = Value::Array(Vec::new());

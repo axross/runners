@@ -105,18 +105,19 @@ fn since_line(context: &Context<'_>) -> String {
         text
     };
     match &context.resident {
-        Resident::Running => format!(
-            "{}{}{}",
-            since("Running"),
-            pools(),
-            github::running_jobs_phrase(context)
-        ),
-        Resident::Resuming => format!(
-            "{}{}{}",
-            since("Starting"),
-            pools(),
-            github::running_jobs_phrase(context)
-        ),
+        Resident::Running | Resident::Resuming => {
+            let verb = if matches!(context.resident, Resident::Running) {
+                "Running"
+            } else {
+                "Starting"
+            };
+            format!(
+                "{}{}{}",
+                since(verb),
+                pools(),
+                github::running_jobs_phrase(context)
+            )
+        }
         Resident::Stopping => since("Stopping"),
         Resident::Quitting => since("Quitting"),
         Resident::Building { stopping: false } => since("Building the runner image"),

@@ -606,7 +606,10 @@ Each runner with a registration gets a GitHub column beside its local state, in 
 that begin "GitHub:": checking…, offline, idle, running a job, not listed, or not shown
 when the agent's value left the runner out for size. A runner reads as checking until
 its repository was checked after both the window opened and the runner entered its
-current state, so a list read before then never makes it not listed. A busy runner
+current state, so a list read before then never makes it not listed. While checks are
+paused, or GitHub cannot answer for the repository, the last values read since the
+runner entered its state stay, marked with their time, even when they were read before
+the window opened. A busy runner
 whose job is known shows the workflow and job names, cleaned again and cut to 120 code
 points, and an Open run link. Open run is an element with the link role that takes Tab
 in list order; its accessible name names the job and the runner. It passes the pool

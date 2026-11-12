@@ -125,14 +125,18 @@ pub fn runner(context: &Context<'_>, pool: &PoolInfo, runner: &RunnerInfo) -> Op
     let Some(repository) = repository(value, pool) else {
         return Some(checking);
     };
-    let Some(checked_at) = repository
-        .checked_at
-        .filter(|at| *at > runner.since.max(opened_ms))
-    else {
+    // while paused, or while GitHub cannot answer, the last values stay, marked with
+    // their time, even when they were read before the window opened
+    let held = cause(&repository.status).is_some() || paused(status);
+    let since = if held {
+        runner.since
+    } else {
+        runner.since.max(opened_ms)
+    };
+    let Some(checked_at) = repository.checked_at.filter(|at| *at > since) else {
         return Some(checking);
     };
-    let checked = (cause(&repository.status).is_some() || paused(status))
-        .then(|| format!("checked {}", context.input.clock.when(checked_at)));
+    let checked = held.then(|| format!("checked {}", context.input.clock.when(checked_at)));
     let Some(listed) = entry(repository, workload) else {
         let state = if value.omitted_runners > 0 {
             "GitHub: not shown"

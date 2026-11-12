@@ -12,6 +12,8 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use serde_json::Value;
+use tauri::plugin::Plugin;
+use tauri::test::MockRuntime;
 
 /// the plan's content security policy, in full.
 const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; frame-ancestors 'none'";
@@ -180,13 +182,13 @@ fn the_main_window_opens_at_880_by_680_with_a_minimum_width_of_480() {
 
 #[test]
 fn the_opener_plugins_page_script_is_off_and_no_capability_names_it() {
-    let source = std::fs::read_to_string(app_file("src/app.rs")).unwrap();
     assert!(
-        source.contains(
-            "tauri_plugin_opener::Builder::new()\n        .open_js_links_on_click(false)"
-        ),
+        marshal_app::opener::<MockRuntime>()
+            .initialization_script_2()
+            .is_none(),
         "the app builds the opener plugin with its page script off"
     );
+    let source = std::fs::read_to_string(app_file("src/app.rs")).unwrap();
     assert!(!source.contains("tauri_plugin_opener::init"));
     assert!(!source.contains("tauri_plugin_opener::Builder::default"));
     assert_eq!(
