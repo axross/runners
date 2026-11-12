@@ -56,7 +56,9 @@ container, runner, and cache-volume namespace.
 **Routing Label** - the label a workflow uses in `runs-on` to select an
 **Execution Pool**. Missing or empty host `labels` default to the host's own
 label, `axpc` or `axmc`; a non-empty list supplies that pool's routing labels
-instead.
+instead. In a TOML host configuration the required `routing_label` key supplies
+the default, so no host's label is built in. See
+[operations/cli.md](./operations/cli.md#schema-version-1).
 
 **Custom Label** - an optional runner label an entry of the **Host Configuration**
 lists beside `self-hosted`, `linux`, and `x64`. A workflow
@@ -245,6 +247,16 @@ gate is the maintainer's approval of that plan.
 **Plan-Gate Delivery Confirmation** - the answer a Claude Code run collects
 with every plan-approval question: delivery of the run's draft pull request, the
 Claude review request on it, and watching its activity. See
+[operations/agent-sessions.md](./operations/agent-sessions.md).
+
+**Amp Review Child Thread** - a fresh Amp thread an Amp run starts for one
+independent-review round; it posts its own review on the pull request and is
+archived afterwards when the plan-gate archive confirmation allows it. See
+[operations/development-workflow.md](./operations/development-workflow.md).
+
+**Plan-Gate Archive Confirmation** - the human's answer, collected at the plan
+gate, or before archiving in a run without one or in a resumed session, on
+whether an Amp run archives its review child threads. See
 [operations/agent-sessions.md](./operations/agent-sessions.md).
 
 **Run State** - the recoverable record of a change loop's progress, which a

@@ -8,6 +8,8 @@ Start from the current approval target, scoped operation grants, assignments, ex
 
 When a phase deliverable's review is pending or interrupted, use [reviewing-phase-deliverables.md](./reviewing-phase-deliverables.md) to recover its identity, consumed rounds, and current-review coverage before selecting the next phase.
 
+When the reconstructed target is already merged or closed and the run state records created resources, the pending phase is [Release a Finished Change](./phase-progression.md#release-a-finished-change), not another delivery phase.
+
 **Guidelines:**
 
 - MUST compare stored or reported recovery information with actual state before acting.

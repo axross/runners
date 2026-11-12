@@ -1,0 +1,12 @@
+schema_version = 1
+routing_label = "axpc"
+image_name = "example-image:tag"
+
+[[pool]]
+name = "alpha"
+repository = "octo/hello"
+runners = "ghp_0123456789abcdefghijABCDEFGHIJ012345"
+cpus = ["ghp_0123456789abcdefghijABCDEFGHIJ012345"]
+memory_gb = { token = "ghp_0123456789abcdefghijABCDEFGHIJ012345" }
+diagnostics = "ghp_0123456789abcdefghijABCDEFGHIJ012345"
+labels = "ghp_0123456789abcdefghijABCDEFGHIJ012345"

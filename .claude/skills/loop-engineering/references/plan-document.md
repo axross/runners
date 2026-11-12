@@ -15,6 +15,7 @@ Use this order: Summary; Todo; Background with Assumptions; Goals and Non-goals;
 - MUST preserve question strictness from the project's conduct practices and never manufacture an answer from a resume signal. Without those practices, present decisions as two to four concrete options with the default marked recommended, ask dependent decisions in order, and re-present unanswered questions; never substitute defaults for answers.
 - MUST describe beneficiary-observable outcomes, not incidental implementation details; include required sections and state a reason for each omitted conditional section. Follow the project's product-requirement capability when present.
 - MUST separate decided assumptions from open questions and keep the approved Todo fixed rather than updating it as a progress log.
+- SHOULD publish evidence gathered to settle a plan or design choice in the same durable target as the plan, outside the canonical plan content (for example in a comment on it), so publishing it does not change the plan's identity.
 
 ## Verification Outside the Tree
 
@@ -22,10 +23,13 @@ Some approved criteria need evidence the diff cannot carry, such as a real-devic
 
 Designate each necessary external-verification criterion by appending `(verified out of tree: <where the evidence will be published>)` to its wording. Plan approval binds the verification method and evidence destination, not a reviewer exemption; review finding scope is a separate contract.
 
+Verification strategy also names, for each designated criterion, who performs the check — the agent or a human — and by what route, such as a simulator, an emulator, a local web build, or a physical device. Where the project's verification practices, if present, set exceptions that may apply, write the route conditionally, for example "agent on a simulator when the host has one, otherwise a human on a physical device". Falling back along a stated condition is then not a plan change.
+
 **Guidelines:**
 
 - SHOULD use in-tree verification when it can establish the required outcome.
 - MUST designate each criterion requiring out-of-tree verification in the plan and agree its verification method and evidence destination before implementation.
+- MUST name the executor and route for each designated criterion in Verification strategy, and MAY state the route conditionally along the verification practices' exceptions; a fallback along a stated condition needs no revision, and any other change to executor or route does.
 - MUST obtain an approved plan revision before adding or changing that designation later, then regenerate the delivery projection under the Plan Revision Identity rules below.
 
 ## Plan Revision Identity

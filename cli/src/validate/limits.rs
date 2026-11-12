@@ -3,6 +3,27 @@
 use crate::json::Value;
 
 use super::fields::Errors;
+use super::problem::{KeyPath, Kind};
+
+/// says what a CPU count may be, after the path.
+pub const CPU_RANGE: &str = "must be a number greater than 0 and at most 64";
+
+/// says what a disk budget total includes beyond the pools' own disks, after the key
+/// it is the sum of; empty when nothing is reserved.
+#[must_use]
+pub fn disk_reserve(reserve_gb: u64) -> String {
+    if reserve_gb == 0 {
+        String::new()
+    } else {
+        format!(", plus {reserve_gb} GB for the golden VM and Tart's image cache")
+    }
+}
+
+/// says what a Linux pool's disk must be, after the path.
+#[must_use]
+pub fn linux_disk_too_small(min_gb: u32) -> String {
+    format!("must be at least {min_gb} on a Linux pool, the golden VM's disk size")
+}
 
 pub const DEFAULT_CPUS: f64 = 2.0;
 pub const MAX_CPUS: f64 = 64.0;
@@ -32,48 +53,44 @@ pub fn bounded_integer(value: &Value, max: u32) -> Option<u32> {
         .filter(|n| (1..=max).contains(n))
 }
 
-/// reads an integer field with [`bounded_integer`], recording `<path>: must be an
-/// integer from 1 to <max>` when it is not one.
+/// reads an integer field with [`bounded_integer`], recording that it must be an
+/// integer from 1 to `max` when it is not one.
 pub fn read_bounded_integer(
     value: &Value,
-    path: &str,
+    path: &KeyPath,
     max: u32,
     errors: &mut Errors,
 ) -> Option<u32> {
     let integer = bounded_integer(value, max);
     if integer.is_none() {
-        errors.add(format!("{path}: must be an integer from 1 to {max}"));
+        errors.add(path.clone(), Kind::MustBeIntegerUpTo(max));
     }
     integer
 }
 
 /// reads a whole vCPU count from 1 to [`MAX_VM_CPUS`], as a VM has no fractional CPUs.
-pub fn whole_cpu_count(value: &Value, path: &str, errors: &mut Errors) -> Option<f64> {
+pub fn whole_cpu_count(value: &Value, path: &KeyPath, errors: &mut Errors) -> Option<f64> {
     read_bounded_integer(value, path, MAX_VM_CPUS, errors).map(f64::from)
 }
 
 /// reads a CPU count above 0 and at most 64 and large enough that its text form is
 /// not 0, which Docker reads as no limit, recording why it is unusable.
-pub fn cpu_count(value: &Value, path: &str, errors: &mut Errors) -> Option<f64> {
+pub fn cpu_count(value: &Value, path: &KeyPath, errors: &mut Errors) -> Option<f64> {
     let Value::Number(number) = value else {
-        errors.add(format!("{path}: {RANGE_PROBLEM}"));
+        errors.add(path.clone(), Kind::CpuCountOutOfRange);
         return None;
     };
     let cpus = number.as_f64();
     if cpus.is_nan() || cpus <= 0.0 || cpus > MAX_CPUS {
-        errors.add(format!("{path}: {RANGE_PROBLEM}"));
+        errors.add(path.clone(), Kind::CpuCountOutOfRange);
         return None;
     }
     if nanos(cpus) == 0 {
-        errors.add(format!(
-            "{path}: {RANGE_PROBLEM}, and large enough not to be written as 0, which Docker reads as no limit"
-        ));
+        errors.add(path.clone(), Kind::CpuCountRoundsToZero);
         return None;
     }
     Some(cpus)
 }
-
-const RANGE_PROBLEM: &str = "must be a number greater than 0 and at most 64";
 
 /// returns the CPU count in billionths, rounded half away from zero at nine decimals
 /// on its 15 significant digits, which differs from Rust's own rounding.

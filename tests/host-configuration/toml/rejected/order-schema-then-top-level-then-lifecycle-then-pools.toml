@@ -1,0 +1,42 @@
+# every level breaks a rule; the problems come in today's order, with the
+# schema version first and the lifecycle table after the top-level keys
+extra = 1
+schema_version = 3.5
+routing_label = "linux"
+image_name = "no tag"
+
+[lifecycle]
+other = 1
+keep_awake = "no"
+
+[[pool]]
+unexpected = 1
+name = "Alpha"
+repository = "octo/hello"
+runners = 17
+labels = ["linux", "gpu", "GPU", "-x", 5]
+os = "macos"
+cpus = 0
+memory_gb = 257
+diagnostics = 1
+diagnostic_directory = "relative"
+diagnostic_raw_records = true
+
+[[pool.volumes]]
+suffix = "cache"
+mount_path = "/a/../b"
+extra = 1
+
+[[pool.volumes]]
+suffix = "CACHE"
+mount_path = "/A/../B"
+
+[[pool]]
+name = "beta"
+repository = "octo/hello"
+runners = 1
+
+[[pool]]
+name = "beta"
+repository = "octo/hello"
+runners = 1
