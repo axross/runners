@@ -532,6 +532,7 @@ dependencies = [
  "regex",
  "reqwest",
  "rustls",
+ "security-framework",
  "serde",
  "serde_json",
  "tokio",
