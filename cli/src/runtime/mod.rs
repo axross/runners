@@ -12,6 +12,7 @@ pub mod exports;
 #[doc(hidden)]
 pub mod fake;
 pub mod image;
+pub mod job_marks;
 pub mod log;
 pub mod name;
 pub mod pool;
