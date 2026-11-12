@@ -3,15 +3,22 @@
 /// the most characters of an error that reach a log, before the ellipsis.
 pub const MAX_ERROR_CHARS: usize = 500;
 
+/// `text` with each occurrence of `secret` replaced by `<token>`; an empty secret
+/// replaces nothing.
+#[must_use]
+pub fn replace_secret(text: &str, secret: &str) -> String {
+    if secret.is_empty() {
+        text.to_string()
+    } else {
+        text.replace(secret, "<token>")
+    }
+}
+
 /// replaces `secret` with `<token>`, collapses whitespace, and cuts the text to
 /// [`MAX_ERROR_CHARS`] characters followed by `...`, for a registration error.
 #[must_use]
 pub fn scrub_error_text(text: &str, secret: &str) -> String {
-    let replaced = if secret.is_empty() {
-        text.to_string()
-    } else {
-        text.replace(secret, "<token>")
-    };
+    let replaced = replace_secret(text, secret);
     let collapsed = replaced.split_whitespace().collect::<Vec<_>>().join(" ");
     if collapsed.chars().count() > MAX_ERROR_CHARS {
         let mut cut: String = collapsed.chars().take(MAX_ERROR_CHARS).collect();

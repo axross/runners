@@ -15,6 +15,7 @@ use marshal_cli::agent::machine::Launch;
 use marshal_cli::agent::server::Limits;
 use serde_json::{Value, json};
 use support::agent::{ONE_POOL, Raw, Rig, TOKEN};
+use support::stub::{Reply, Stub};
 
 #[tokio::test(flavor = "current_thread")]
 async fn a_first_line_that_is_not_hello_is_refused_with_the_versions_served_and_closed() {
@@ -71,10 +72,11 @@ async fn welcome_lists_the_version_the_methods_and_the_topics() {
                 "token_set",
                 "token_remove",
                 "drain_for_update",
+                "renew",
             ] {
                 assert!(methods.contains(&method), "{method} is not served");
             }
-            assert_eq!(welcome["topics"], json!(["state"]));
+            assert_eq!(welcome["topics"], json!(["state", "github"]));
             conn.ok("quit").await;
         })
         .await;
@@ -513,4 +515,119 @@ async fn a_write_after_the_agent_closed_the_connection_is_cut_off_and_not_a_fail
             conn.ok("quit").await;
         })
         .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_github_subscription_holds_its_connection_and_ends_unless_renewed() {
+    let rig = Rig::new(ONE_POOL);
+    rig.limits.set(Limits {
+        renewal: Duration::from_millis(600),
+        ..Limits::default()
+    });
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Stopped, |conn| async move {
+            let mut raw = Raw::hello(&conn.roots).await;
+            raw.request(1, "subscribe", json!({"topic": "github"}))
+                .await;
+            assert_eq!(raw.answer().await["result"], json!({"topic": "github"}));
+            let event = raw.next().await.unwrap();
+            assert_eq!(
+                (event["type"].as_str(), event["topic"].as_str()),
+                (Some("event"), Some("github"))
+            );
+            assert_eq!(event["value"]["budget"], Value::Null);
+            assert_eq!(event["value"]["repositories"], json!([]));
+            // one subscription per connection
+            raw.request(2, "subscribe", json!({"topic": "state"})).await;
+            assert_eq!(raw.answer().await["error"]["code"], "invalid_request");
+            // renewed within the limit, twice, it lives past it
+            for id in [3, 4, 5] {
+                tokio::time::sleep(Duration::from_millis(350)).await;
+                raw.request(id, "renew", json!({"topic": "github"})).await;
+                assert_eq!(
+                    raw.answer().await["result"],
+                    json!({"topic": "github"}),
+                    "renewal {id}"
+                );
+            }
+            tokio::time::sleep(Duration::from_millis(900)).await;
+            raw.request(6, "renew", json!({"topic": "github"})).await;
+            assert_eq!(raw.answer().await["error"]["code"], "not_subscribed");
+            // the connection is still served, and subscribes again
+            raw.request(7, "subscribe", json!({"topic": "github"}))
+                .await;
+            assert_eq!(raw.answer().await["result"], json!({"topic": "github"}));
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_renewed_github_subscription_collects_from_github_with_the_stored_token() {
+    let stub = Stub::start(vec![Reply::Respond {
+        status: "200 OK",
+        headers: vec![
+            ("Content-Type", "application/json".to_string()),
+            ("ETag", "\"r1\"".to_string()),
+            ("x-ratelimit-limit", "5000".to_string()),
+            ("x-ratelimit-remaining", "4321".to_string()),
+            ("x-ratelimit-reset", "4102444800".to_string()),
+        ],
+        body: br#"{"total_count":0,"runners":[]}"#.to_vec(),
+    }]);
+    let rig = Rig::new(ONE_POOL);
+    rig.store_token("o", "r", TOKEN);
+    rig.hold_jobs();
+    *rig.github_api.borrow_mut() = stub.address.clone();
+    let rig = &rig;
+    let stub = &stub;
+    let (_, value) = rig
+        .drive(Launch::Running, |conn| async move {
+            conn.until_runner_runs().await;
+            // nothing is asked while no one subscribes
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            assert!(
+                stub.requests().is_empty(),
+                "GitHub was asked with no subscription"
+            );
+            let mut watcher = conn.another().await;
+            watcher.client.subscribe_github().await.unwrap();
+            let status = loop {
+                match watcher.push().await {
+                    Push::Github { status, .. }
+                        if !status.repositories.is_empty() && status.budget.is_some() =>
+                    {
+                        break status;
+                    }
+                    _ => {}
+                }
+            };
+            watcher.client.renew_github().await.unwrap();
+            conn.ok("quit").await;
+            status
+        })
+        .await;
+    let requests = stub.requests();
+    assert_eq!(requests[0].method, "GET");
+    assert_eq!(requests[0].path, "/repos/o/r/actions/runners?per_page=100");
+    assert_eq!(
+        requests[0].header("authorization"),
+        Some(format!("Bearer {TOKEN}").as_str())
+    );
+    assert_eq!(
+        requests[0].header("x-github-api-version"),
+        Some("2022-11-28")
+    );
+    assert_eq!(requests[0].header("if-none-match"), None);
+    assert_eq!(value.repositories[0].repository, "o/r");
+    assert_eq!(value.repositories[0].status, "ok");
+    assert_eq!(value.budget.as_ref().unwrap().remaining, 4321);
+    assert!(!serde_json::to_string(&*value).unwrap().contains(TOKEN));
+    assert!(rig.log.lines().iter().any(|line| {
+        line.contains(
+            "GET /repos/o/r/actions/runners?per_page=100 answered 200; 4321 requests left",
+        )
+    }));
+    assert!(rig.log.lines().iter().all(|line| !line.contains(TOKEN)));
 }
