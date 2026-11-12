@@ -271,7 +271,8 @@ the freshness warnings ask for it.
    This needs the VM to reach the network: Docker's repository, the Ubuntu archive,
    and the registries the Dockerfile pulls from, on Softnet's rules, which allow
    globally routable addresses.
-7. Shuts the VM down and renames it to the golden name,
+7. Writes the VM's files to its disk with `sync`, stops it, and renames it to the
+   golden name,
    `marshal-golden-linux-g<golden VM version>-c<image contract version>-r<runner version>-<time>`.
    This rename is the moment the new golden VM takes over.
 8. Deletes every other golden VM and the retired base images from Tart's cache. A

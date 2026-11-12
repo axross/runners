@@ -25,6 +25,7 @@ const DISABLE_SSH: &str = include_str!("scripts/disable-ssh.sh");
 const PACKAGE_STEP_BUDGET: Duration = Duration::from_secs(20 * 60);
 const DOWNLOAD_BUDGET: Duration = Duration::from_secs(2 * 60);
 const QUICK_STEP_BUDGET: Duration = Duration::from_secs(60);
+const FLUSH_BUDGET: Duration = Duration::from_secs(2 * 60);
 
 /// one call through the guest agent: pass `command` to `tart exec`, with `-i` and
 /// `input` on its standard input when there is some, and give it `budget`.
@@ -158,6 +159,22 @@ pub fn disable_ssh_call() -> GuestCall {
     )
 }
 
+/// writes the files the guest has not yet written to its disk, and fails when the
+/// root filesystem reports a write error. `tart stop` ends the VM at once, with no
+/// shutdown inside it, so the build VM runs this before it stops, or the files
+/// written last would be missing from the golden VM.
+#[must_use]
+pub fn flush_disk_call() -> GuestCall {
+    script_call(
+        true,
+        "marshal-flush-disk",
+        "sync && sync -f /",
+        &[],
+        None,
+        FLUSH_BUDGET,
+    )
+}
+
 /// the command that runs `docker` with `arguments` as root in the build VM. The
 /// guest agent's user joins the `docker` group in step 4, but the group applies only
 /// when the agent next starts, which the build VM does not do, so the image build
@@ -205,6 +222,17 @@ mod tests {
 
     #[test]
     fn the_calls_are_exact() {
+        assert_eq!(
+            flush_disk_call().command,
+            words(&[
+                "sudo",
+                "-n",
+                "bash",
+                "-c",
+                "sync && sync -f /",
+                "marshal-flush-disk"
+            ])
+        );
         assert_eq!(
             prepare_call().command,
             [

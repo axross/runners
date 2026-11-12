@@ -757,8 +757,8 @@ it, and a test shows the lock free while a shim lives.
   standard error and then its standard output, to its own standard output, and exits
   with Tart's code, or 128 plus the signal number when a signal ended it. It deletes
   nothing, because the CLI is still there and deletes the VM itself: a job VM when its
-  slot releases it, and a build VM when the build fails (one that shut down cleanly is
-  renamed to the golden name instead). A VM the CLI could not delete is left to the next
+  slot releases it, and a build VM when the build fails (one that stopped after a
+  successful build is renamed to the golden name instead). A VM the CLI could not delete is left to the next
   `start`, for a job VM, or the next `build`, for a build VM.
 - When the pipe closes, the shim stops the VM (`stop --timeout 5` within 8 s, then
   `stop --timeout 0` within 3 s when that fails), deletes it within 4 s, and exits 0.
@@ -2624,13 +2624,16 @@ does these in order:
    warning). It does not remove earlier temporary tags or prune dangling images,
    because the VM is new. The build's output is forwarded to the log line by line,
    masked and cut as a container's output is.
-7. **Commit.** `tart stop` of the build VM, which asks the guest to shut down and
-   gives it 60 s, within 90 s, then the wait for `tart run` to end, then
+7. **Commit.** `sync`, then `sync -f /`, as root in the build VM, within 2 min, then `tart stop` of the
+   build VM with a 60 s wait, within 90 s, then the wait for `tart run` to end, then
    `tart rename` to the golden name,
    `marshal-golden-linux-g<golden VM version>-c<image contract version>-r<runner version>-<yyyyMMddHHmmss>`
    with the build time: the time taken just before the in-VM `docker build`, the same
    value as the temporary tag's and the `built` label's, not the start of the build.
-   **The rename is the commit.**
+   **The rename is the commit.** `tart stop` ends the VM at once, with no shutdown
+   inside the guest (Tart's `stop` interrupts `tart run`, which stops the virtual
+   machine forcibly), so the `sync` is what puts the files the image build wrote last
+   on the golden VM's disk.
 8. **After the commit.** It deletes every other golden VM, whatever its versions, and
    removes from Tart's cache each image named in `golden::pins::RETIRED_BASE_PINS`, with
    `tart delete`; the current pin is never deleted, and the list never holds it. A
@@ -2841,8 +2844,8 @@ and one that succeeds within a stop's grace, which commits without an inspect.
 against the fake `tart`, `softnet` and `docker`, which are scripted per step: the order
 of the calls and the build VM's name; a failure scripted at the pull, the clone, the boot,
 each provisioning call, the engine wait, the image build, the contract check, the tag, the
-shutdown and the rename, each of which deletes the build VM and keeps the old golden VM,
-with the rename only after success; a key with another fingerprint and an empty listing,
+`sync` before the stop, the shutdown and the rename, each of which deletes the build VM
+and keeps the old golden VM, with the rename only after success; a key with another fingerprint and an empty listing,
 which fail before anything is installed; a stop at the pull, the clone, a provisioning
 call and the image build, each within the stop sequence; a stop after the rename;
 leftover build VMs deleted before the pull; the other golden VMs and only the retired
