@@ -904,10 +904,15 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
         match self.route(call) {
             Routed::Answered => false,
             Routed::Stop(reply) => {
-                if self.inner.borrow().drain.is_some() {
+                // a stop during a drain's last steps ends the agent for the update, so
+                // it answers as a stop earlier in the drain does
+                let state = if self.inner.borrow().drain.is_some() {
                     self.stopped_in_drain.set(true);
-                }
-                let _ = reply.send(Ok(json!({ "state": "stopped" })));
+                    "quitting"
+                } else {
+                    "stopped"
+                };
+                let _ = reply.send(Ok(json!({ "state": state })));
                 true
             }
             Routed::Quit(reply) => {

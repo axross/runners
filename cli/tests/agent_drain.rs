@@ -261,7 +261,7 @@ async fn during_a_drain_starts_are_refused_and_stop_all_ends_it_stopped_by_you()
                     .await,
                 "refused"
             );
-            conn.ok("stop_all").await;
+            assert_eq!(conn.ok("stop_all").await["state"], "quitting");
             let (reason, update) = ending(&mut conn).await;
             assert_eq!(reason, UPDATE);
             assert_eq!(update, Some(UpdateEnding::new("1.4.0", true)));
@@ -475,7 +475,7 @@ async fn stop_all_during_the_drains_last_steps_keeps_stopped_by_you() {
             conn.eventually("the export at the bound", || exported(rig, &names[0]))
                 .await;
             let answer = conn.ok("stop_all").await;
-            assert_eq!(answer["state"], "stopped");
+            assert_eq!(answer["state"], "quitting");
             gate.notify_waiters();
             let (reason, update) = ending(&mut conn).await;
             assert_eq!(reason, UPDATE);
