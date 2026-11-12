@@ -8,7 +8,7 @@
 //!   `--keep-snapshot` is given.
 //! - `--pending <stop-all|start-all|build|stop-build>`
 //! - `--editing <owner/name>` and `--removing <owner/name>`: the token forms that are open.
-//! - `--result <owner/name>=<saved|removed|not-removed:<why>|too-long|store|store:<detail>|refused:<words>|lost>`
+//! - `--result <owner/name>=<saved|removed|not-removed:<why>|not-answered:<save|removal>|too-long|store|store:<detail>|refused:<words>|lost>`
 //! - `--settled <count>`: the settled count of runners up.
 
 use std::collections::BTreeMap;
@@ -71,6 +71,9 @@ fn result(spec: &str) -> Result<(String, TokenResult), Failure> {
         },
         "removed" => TokenResult::Removed,
         "not-removed" => TokenResult::NotRemoved(detail.unwrap_or_default()),
+        "not-answered" => TokenResult::NotAnswered {
+            removal: detail.as_deref() == Some("removal"),
+        },
         "too-long" => TokenResult::NotSaved(NotSaved::TooLong),
         "store" => TokenResult::NotSaved(NotSaved::Store { detail }),
         "refused" => TokenResult::NotSaved(NotSaved::Refused(detail.unwrap_or_default())),

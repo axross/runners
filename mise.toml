@@ -154,6 +154,46 @@ echo "tauri-cli is pinned at $(bash .github/scripts/tauri-cli-version.sh)."
 description = "Check the script that reads the tauri-cli pin and refuses a file that is not one exact version"
 run = "bash .github/scripts/tests/test-tauri-cli-version.sh"
 
+# marshal-cli is not a member of the app's workspace, so the CLI's tests cover its
+# crates only at the versions cli/Cargo.lock holds; the app must link those. A crate a
+# feature the app turns on adds to a shared crate is the app's own, so the app's tree is
+# followed only through crates the CLI's tree names.
+[tasks."check:app-lock"]
+description = "Fail when app/Cargo.lock resolves any crate marshal-cli builds with in the CLI, for Windows, macOS or Linux, to another version than cli/Cargo.lock"
+depends = ["rust:require", "fetch:rust", "fetch:app"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+# prints "name version" for every crate marshal-cli builds with, dev-dependencies aside,
+# as workspace $1 resolves it for target $2, following only crates named in the JSON
+# object $3, when it is given.
+tree() {
+  (cd "$1" && cargo metadata --quiet --locked --offline --format-version 1 --filter-platform "$2") |
+    jq -r --argjson held "${3:-null}" '
+    (.packages | map({key: .id, value: .name}) | from_entries) as $name
+    | (.packages | map({key: .id, value: "\(.name) \(.version)"}) | from_entries) as $names
+    | (.resolve.nodes | map({key: .id, value: [.deps[] | select(any(.dep_kinds[]; .kind != "dev")) | .pkg | select($held == null or $held[$name[.]])]}) | from_entries) as $deps
+    | (.packages[] | select(.name == "marshal-cli") | .id) as $root
+    | {seen: {}, todo: $deps[$root]}
+    | until(.todo | length == 0;
+        .todo[0] as $p | .todo |= .[1:]
+        | if .seen[$p] then . else .seen[$p] = true | .todo += $deps[$p] end)
+    | .seen | keys[] | $names[.]' | LC_ALL=C sort
+}
+status=0
+for target in x86_64-pc-windows-msvc aarch64-apple-darwin x86_64-unknown-linux-gnu; do
+  cli="$(tree cli "$target")"
+  held="$(echo "$cli" | jq -R -s 'split("\n") | map(select(. != "") | split(" ")[0] | {(.): true}) | add')"
+  if ! diff -u --label "cli/Cargo.lock (${target})" --label "app/Cargo.lock (${target})" \
+    <(echo "$cli") <(tree app "$target" "$held"); then
+    echo "error: app/Cargo.lock resolves marshal-cli's crates for ${target} to other versions than cli/Cargo.lock; pin them to the CLI's with 'cargo update -p <crate>@<version> --precise <version>' in app/." >&2
+    status=1
+  fi
+done
+[ "$status" -eq 0 ] && echo "app/Cargo.lock resolves marshal-cli's crates as cli/Cargo.lock does."
+exit "$status"
+'''
+
 [tasks.format]
 description = "Rewrite Markdown, JSON, YAML, and TypeScript files with Prettier, and Rust files with rustfmt, the app's included"
 depends = ["format:rust", "format:app"]
@@ -378,7 +418,7 @@ description = "Run the signed package check, which verify-macos runs, against st
 run = "bash .github/scripts/tests/test-signed-pkg-refusals.sh"
 
 [tasks.check]
-description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, release script tests, release shape check and its test, sign-macos, signed package and assemble tests, installer version and WiX fetch tests, install block tests, Rust tests, Rust dependency check, the app's toolchain and tauri-cli pin checks, licence notices, tests, page tests and dependency check"
+description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, release script tests, release shape check and its test, sign-macos, signed package and assemble tests, installer version and WiX fetch tests, install block tests, Rust tests, Rust dependency check, the app's toolchain and tauri-cli pin checks, lockfile check, licence notices, tests, page tests and dependency check"
 depends = [
   "format:check",
   "lint",
@@ -401,6 +441,7 @@ depends = [
   "check:app-pins",
   "check:notices",
   "test:tauri-cli-version",
+  "check:app-lock",
   "test:app",
   "test:app-frontend",
   "deny:app",

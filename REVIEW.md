@@ -319,8 +319,8 @@ Apply the lens for each kind of file in the diff.
   indexing). The CLI collects every error in the order
   [CLI](docs/operations/cli.md) states under Validation Rules rather than returning
   the first. A new CLI crate has an
-  entry in [CLI](docs/operations/cli.md) and passes `cli/deny.toml`; a new crate of
-  the app is recorded in [Security](docs/conventions/security.md#the-apps-dependencies)
+  entry in [CLI](docs/operations/cli.md) and passes `cli/deny.toml`; a new direct
+  dependency of an app crate is recorded in [Security](docs/conventions/security.md#the-apps-dependencies)
   and passes `app/deny.toml`. A new
   procedural-macro crate, such as one a derive feature brings, is flagged for the
   maintainer's review, and so is a new duplicate-version skip. No token or JIT
@@ -340,7 +340,8 @@ Apply the lens for each kind of file in the diff.
   capabilities, the main window's and the confirmation window's, and the permission
   files Tauri generates keep to the permissions Security lists; a permission, a
   capability or Tauri feature added, such as `dynamic-acl`, is a finding. The
-  pages stay text-only: `dom.js` refuses `style`, `href`, `src`, `action` and `on*`,
+  pages stay text-only: `dom.js` refuses `style`, `href`, `src`, `srcdoc`, `action`, `formaction` and
+  `on*`,
   and text from the configuration, Docker or the agent is set as text, never as
   markup, with no inline script, remote asset or npm package. No token sits in the
   page, a view state or an event after `token_set` is called. A change to the
@@ -424,9 +425,9 @@ mechanical defect named below:
   required.
 - The app's clippy (`mise run lint:app`), tests (`mise run test:app`), licence,
   source, and duplicate checks (`mise run deny:app`), toolchain pin check
-  (`mise run check:app-pins`), main window page tests
-  (`mise run test:app-frontend`), the test of the `tauri-cli` pin's reader
-  (`mise run test:tauri-cli-version`), and licence notices check
+  (`mise run check:app-pins`), lockfile check (`mise run check:app-lock`), main
+  window page tests (`mise run test:app-frontend`), the test of the `tauri-cli` pin's
+  reader (`mise run test:tauri-cli-version`), and the licence notices check
   (`mise run check:notices`).
 - The agreement of `skills-lock.json` with `.claude/skills/`
   (`mise run check:skills`). Whether an installed copy matches its upstream
