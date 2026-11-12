@@ -387,7 +387,8 @@ fn a_pool_the_agent_does_not_list_is_refused_by_the_session() {
     let app = app();
     let main = window(&app, "main");
     let result = call(&main, "open_job", arguments("open_job"));
-    assert_eq!(result, Err("Marshal has no such pool.".to_string()));
+    // the mock runtime hands back a command's error as JSON
+    assert_eq!(result, Err(json!("Marshal has no such pool.").to_string()));
 }
 
 #[test]
