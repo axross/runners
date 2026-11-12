@@ -315,8 +315,8 @@ Apply the lens for each kind of file in the diff.
   indexing). The CLI collects every error in the order
   [CLI](docs/operations/cli.md) states under Validation Rules rather than returning
   the first. A new CLI crate has an
-  entry in [CLI](docs/operations/cli.md) and passes `cli/deny.toml`; a new crate of
-  the app is recorded in [Security](docs/conventions/security.md#the-apps-dependencies)
+  entry in [CLI](docs/operations/cli.md) and passes `cli/deny.toml`; a new direct
+  dependency of an app crate is recorded in [Security](docs/conventions/security.md#the-apps-dependencies)
   and passes `app/deny.toml`. A new
   procedural-macro crate, such as one a derive feature brings, is flagged for the
   maintainer's review, and so is a new duplicate-version skip. No token or JIT
@@ -420,9 +420,9 @@ mechanical defect named below:
   required.
 - The app's clippy (`mise run lint:app`), tests (`mise run test:app`), licence,
   source, and duplicate checks (`mise run deny:app`), toolchain pin check
-  (`mise run check:app-pins`), main window page tests
-  (`mise run test:app-frontend`), and the test of the `tauri-cli` pin's reader
-  (`mise run test:tauri-cli-version`).
+  (`mise run check:app-pins`), lockfile check (`mise run check:app-lock`), main
+  window page tests (`mise run test:app-frontend`), and the test of the `tauri-cli`
+  pin's reader (`mise run test:tauri-cli-version`).
 - The agreement of `skills-lock.json` with `.claude/skills/`
   (`mise run check:skills`). Whether an installed copy matches its upstream
   source is not checked in CI and remains reportable.

@@ -95,7 +95,7 @@
       "name": "docs",
       "repository": "owner/docs",
       "state": "skipped",
-      "reason": "no token",
+      "reason": "repositories[2]: no token.",
       "has_token": false,
       "runners_up": 0,
       "slots": 1,

@@ -139,11 +139,11 @@ pub fn footer(context: &Context<'_>) -> Footer {
         .collect();
     if built_just_before_the_stop(context, "cancelled") {
         warnings.push(format!(
-            "The build was stopped. Check the image {}: a stopped build may already have replaced it.",
-            context
-                .image_name
-                .as_deref()
-                .unwrap_or("the runner image")
+            "The build was stopped. Check {}: a stopped build may already have replaced it.",
+            context.image_name.as_deref().map_or_else(
+                || "the runner image".to_string(),
+                |name| format!("the image {name}")
+            )
         ));
     }
     Footer {

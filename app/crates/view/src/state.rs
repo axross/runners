@@ -10,6 +10,7 @@ use marshal_cli::runtime::registration::REJECTED_MARK;
 
 use crate::input::{Cause, Connection, Input, PendingKind};
 use crate::text::plain;
+use crate::tokens::skip_cause;
 
 /// why the agent is stopped.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -231,10 +232,9 @@ impl<'a> Context<'a> {
     /// whether every pool is skipped for want of a token.
     pub fn every_pool_lacks_a_token(&self) -> bool {
         !self.pools.is_empty()
-            && self
-                .pools
-                .iter()
-                .all(|pool| pool.state != "running" && pool.reason.as_deref() == Some(NO_TOKEN))
+            && self.pools.iter().all(|pool| {
+                pool.state != "running" && pool.reason.as_deref().map(skip_cause) == Some(NO_TOKEN)
+            })
     }
 }
 

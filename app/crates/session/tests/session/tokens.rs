@@ -4,7 +4,7 @@
 use marshal_session::{Failure, Forms};
 use marshal_view::TokenState;
 
-use crate::support::{Agent, Answer, Called, Running, World, fixture, secs, start};
+use crate::support::{Agent, Answer, Called, Running, World, fixture, secs, start, what};
 
 /// a token-shaped value built at run time, so no file holds one.
 fn fake_token(tail: &str) -> String {
@@ -276,6 +276,71 @@ async fn a_removal_the_store_refuses_says_the_token_was_not_removed() {
     assert!(status.contains("not removed"), "{status}");
     assert!(status.contains("It is still stored"), "{status}");
     assert!(!status.contains("Not saved"), "{status}");
+}
+
+/// a token save, or a removal, that the agent holds past the call's 10 s: the row says
+/// the agent has not answered yet and leaves the token's state to the snapshot.
+async fn overrun(removal: bool) {
+    let (method, verb) = if removal {
+        ("token_remove", "removing")
+    } else {
+        ("token_set", "saving")
+    };
+    let (agent, session) = connected("running").await;
+    let gate = agent.hold(method);
+    session
+        .handle
+        .read_view(Some(Forms {
+            editing: (!removal).then(|| "owner/app".to_string()),
+            removing: removal.then(|| "owner/app".to_string()),
+        }))
+        .await
+        .unwrap();
+    let handle = session.handle.clone();
+    let call = tokio::spawn(async move {
+        if removal {
+            handle.remove_token("owner/app".to_string()).await
+        } else {
+            handle
+                .set_token("owner/app".to_string(), fake_token("abcdefghijklmnop1234"))
+                .await
+        }
+    });
+    session.settle().await;
+    session.wait(secs(11)).await;
+    call.await.unwrap().unwrap();
+    let expected = format!(
+        "The agent has not answered yet about {verb} the token for owner/app. It may still do it; this row shows where the token stands."
+    );
+    let view = session.screen.view();
+    let app = row(&view, "owner/app");
+    assert_eq!(app.status.as_deref(), Some(expected.as_str()));
+    assert_eq!(
+        app.state,
+        TokenState::Set,
+        "the snapshot decides, not the call"
+    );
+    assert!(
+        app.form.is_none() && !app.confirming_removal,
+        "nothing asks again"
+    );
+    assert!(
+        session.screen.announced().contains(&expected),
+        "{:?}",
+        session.screen.announced()
+    );
+    assert_eq!(what(&session.screen.view()), "list", "contact is not lost");
+    drop(gate);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_save_that_takes_too_long_says_the_agent_has_not_answered_yet() {
+    overrun(false).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_removal_that_takes_too_long_says_the_agent_has_not_answered_yet() {
+    overrun(true).await;
 }
 
 #[tokio::test(start_paused = true)]

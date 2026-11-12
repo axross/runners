@@ -101,7 +101,9 @@ The app under [`app/`](../../app) is pinned the same way, with its own
 [`app/deny.toml`](../../app/deny.toml), and
 [`app/rust-toolchain.toml`](../../app/rust-toolchain.toml), which names the CLI's
 channel; `mise run check:app-pins` fails when the two files differ, and Dependabot's
-`rust-toolchain` entry bumps both in one pull request. Its `cargo` entry covers the
+`rust-toolchain` entry bumps both in one pull request. `mise run check:app-lock`
+fails when the app's lockfile resolves a crate `marshal-cli` builds with to another
+version than the CLI's. Its `cargo` entry covers the
 app's crates, and the weekly advisory check covers its lockfile. [The App's
 Dependencies](#the-apps-dependencies) holds the rest of its policy.
 
@@ -226,9 +228,11 @@ app is built for, `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`.
   on each other.
 - **Procedural macros are accepted as a class, in the app only.** Tauri's tree holds
   many, and a review of each crate would add nothing the lockfile's checksums and
-  `cargo-deny` do not already give. A procedural-macro crate that enters through
-  `marshal-cli` changes `cli/Cargo.lock`, and the CLI's rule, which needs the
-  maintainer's review, applies to it there.
+  `cargo-deny` do not already give. `app/Cargo.lock` holds exactly the crates and
+  versions `cli/Cargo.lock` resolves for `marshal-cli`, for Windows, macOS and Linux,
+  and `mise run check` fails otherwise (`check:app-lock`), so a procedural-macro crate
+  that enters through `marshal-cli` changes `cli/Cargo.lock`, and the CLI's rule,
+  which needs the maintainer's review, applies to it there.
 - **Marshal's own crates forbid `unsafe_code`.** Tauri's macros expand into the app's
   crates under that lint, and they build, so the macros emit none; Tauri's and the
   platform crates' own code is outside the claim.
@@ -255,7 +259,9 @@ app is built for, `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`.
   makes no network request of its own; a dependency or a feature that does is a
   finding.
 - **Refreshes.** Dependabot's `cargo` entry for `/app` proposes the crate refreshes,
-  and a red pull request is fixed there, as for the CLI.
+  and a red pull request is fixed there, as for the CLI. A refresh of a crate
+  `marshal-cli` uses fails `check:app-lock` until `cli/Cargo.lock` takes the same
+  version in the same change.
 
 **Front end.** The web view's pages are plain files in
 [`app/crates/app/frontend/`](../../app/crates/app/frontend):

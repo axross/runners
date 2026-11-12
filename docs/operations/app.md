@@ -139,15 +139,18 @@ web view.
   wait a bounded time for the agent's answer (40 s, and 10 s for a token). On a
   connection that is still open a call that overruns says the agent has not
   answered yet and leaves the list as it is, since the agent may still do it; it is
-  never reported as lost contact, which is only a connection that ended.
+  never reported as lost contact, which is only a connection that ended. A token
+  save or removal that overruns is neither saved nor refused: its row says the
+  agent has not answered yet, its form or question closes, and the row's state
+  then follows the snapshot.
 - **The app ending** or being killed leaves the agent and its runners running, and
   the next launch reconnects to them.
 
 A token travels from the window to the agent only in `token_set`. The session trims
 it, refuses an empty one or one over 1280 UTF-16 code units before sending, wraps it
 in the library's `Secret`, sends it once and drops it; it is in no field, log line,
-error text or view. A removal that fails, or that is asked for with no connection,
-shows as not removed, with the token still stored.
+error text or view. A removal that the agent refuses, or that is asked for with no
+connection, shows as not removed, with the token still stored.
 
 ## Logs
 
@@ -240,6 +243,17 @@ its reason says which. A state the app does not know shows the runner's own reas
 its words, with a dash, or the state's word when there is no reason, as the version
 rules in [CLI](./cli.md#version-rules) require.
 
+The agent gives a skipped pool's reason after its place in the configuration, as
+`repositories[0]: no token.`, and the view reads the cause after that place. A pool
+skipped for want of a token says "No token for owner/app. Start All skipped this
+pool." with Set Token. A pool skipped because the token store failed, or because there
+is none, keeps the agent's reason on its card, and its repository's row shows the
+store's words, such as "The token store failed: access was refused (kind
+access_refused, code 5).", instead of "No token", with no "No repository has a token
+yet" banner; Set Token stays, since a save goes through the same store and says if it
+fails too. A token save or removal the agent has not answered says so, and the row
+then follows the snapshot, since the agent may still do it.
+
 | File                                                | Holds                                                                                                                                  |
 | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `index.html`, `main.js`, `revision.js`              | The page, the first `read_view`, the `marshal:view`, `marshal:confirm` and `marshal:hidden` listeners; the order views are drawn in    |
@@ -297,7 +311,7 @@ masks in text, [`white.txt`](../../app/crates/tray/glyphs/white.txt) and
 `app/crates/tray/glyphs/`, embedded with `include_str!` and turned into RGBA when
 used, so the app links no image decoder. A file holds 25 blocks, one for each state
 and size: a line `<state> <size>`, then `size` rows of `size` characters, where a hex
-digit is a pixel's alpha in sixteenths and `.` is none. The shapes were laid out for
+digit is a pixel's alpha in fifteenths (`f` is opaque) and `.` is none. The shapes were laid out for
 each size on its own pixel grid, not scaled, and the white set is drawn a little
 lighter than the near-black set because white on a dark ground looks heavier.
 

@@ -1,6 +1,6 @@
 # the notification-area glyphs for a dark taskbar: white, drawn on each size's own pixel grid.
 # a block is `<state> <size>` and then <size> rows of <size> characters; a character is the
-# pixel's alpha in sixteenths as a hex digit (`f` opaque), `.` for none. the colour is not
+# pixel's alpha in fifteenths as a hex digit (`f` opaque), `.` for none. the colour is not
 # in the file, so the file holds the shapes in the weight that suits white on a dark ground,
 # a little lighter than near-black on a light one, which `near-black.txt` draws.
 
