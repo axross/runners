@@ -2282,10 +2282,12 @@ the jobs (`filter=latest`) of those runs, continuing where it stopped at the nex
 check. A job is matched to its runner by name, kept for that runner's life, and
 looked for in at most 20 checks. Every page is requested with `If-None-Match` and that
 page's last `ETag`, so a `304` keeps it at no cost. Pages hold 100 runners, 10 runs
-and 30 jobs; a read of more than 10 pages, or a page over 1 MiB, reads as
-`error`. Requests go out one at a time across the host, in the order repositories
+and 30 jobs; a read of more than 10 pages, a page over 1 MiB, or a `200` whose body
+is not the list asked for reads as `error`. Only the jobs pages of runs still in
+progress are kept. Requests go out one at a time across the host, in the order repositories
 fall due. A repository is checked at most once per 15 s at the `normal` level and
-once per 60 s at `slowed`, never sooner than GitHub's `x-poll-interval` for it.
+once per 60 s at `slowed`, and never sooner than the latest `x-poll-interval` GitHub
+sent for any of the repository's reads.
 Registrations stay outside this queue, and their responses are not read for the
 budget.
 
@@ -2315,35 +2317,39 @@ sends no display request until the reset.
 
 **What each answer means:**
 
-| Answer                                           | Runner list                                          | Lookup                                               |
-| ------------------------------------------------ | ---------------------------------------------------- | ---------------------------------------------------- |
-| `200`                                            | Read                                                 | Read; `job_names` becomes `shown`                    |
-| `304`                                            | Keep that page                                       | Keep that page                                       |
-| 403 or 429 with `x-ratelimit-remaining: 0`       | Pause until the reset                                | Pause until the reset                                |
-| 403 or 429 with GitHub's secondary-limit message | Wait `retry-after`, else 60 s doubling to 15 minutes | The same                                             |
-| Another 403 or 429 with `retry-after`            | Wait `retry-after`                                   | Wait `retry-after`                                   |
-| `401`                                            | `token_rejected`                                     | `token_rejected`                                     |
-| Any other 403                                    | `token_rejected`                                     | `job_names` `hidden`: the token has no Actions: read |
-| `404`                                            | `not_found`                                          | `job_names` `unreadable`, `not_found`                |
-| `3xx`                                            | `moved`                                              | `job_names` `unreadable`, `moved`                    |
-| `5xx`, anything else, or a next page refused     | `error`                                              | `job_names` `unreadable`, `error`                    |
-| No connection or a timeout                       | `unreachable`                                        | `job_names` `unreadable`, `unreachable`              |
-| The store cannot give the token                  | `token_unreadable`                                   | No request                                           |
+| Answer                                           | Runner list                                                                   | Lookup                                               |
+| ------------------------------------------------ | ----------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `200`                                            | Read                                                                          | Read; `job_names` becomes `shown`                    |
+| `304`                                            | Keep that page                                                                | Keep that page                                       |
+| 403 or 429 with `x-ratelimit-remaining: 0`       | Pause until the reset, or, with no reset known, wait as for a secondary limit | The same                                             |
+| 403 or 429 with GitHub's secondary-limit message | Wait `retry-after`, else 60 s doubling to 15 minutes                          | The same                                             |
+| Another 403 or 429 with `retry-after`            | Wait `retry-after`                                                            | Wait `retry-after`                                   |
+| `401`                                            | `token_rejected`                                                              | `job_names` `unreadable`, `token_rejected`           |
+| Any other 403                                    | `token_rejected`                                                              | `job_names` `hidden`: the token has no Actions: read |
+| `404`                                            | `not_found`                                                                   | `job_names` `unreadable`, `not_found`                |
+| `3xx`                                            | `moved`                                                                       | `job_names` `unreadable`, `moved`                    |
+| `5xx`, anything else, or a next page refused     | `error`                                                                       | `job_names` `unreadable`, `error`                    |
+| No connection or a timeout                       | `unreachable`                                                                 | `job_names` `unreadable`, `unreachable`              |
+| The store cannot give the token                  | `token_unreadable`                                                            | No request                                           |
 
 A rate-limit wait holds every display request on the host. A repository whose runner
 list fails keeps its last runners and `checked_at`, and is tried again after 15 s,
-doubling to 5 minutes, never sooner than the level allows. While job names are hidden
-the agent sends one in-progress-runs request again when one of the repository's
-runners becomes busy, at most once a minute, so a token that gains Actions: read
-shows the next job's name without a restart.
+doubling to 5 minutes, never sooner than the level allows, with `retry_at`. A failed
+lookup leaves the runner list alone: job names become `unreadable`, and lookups wait
+15 s, doubling to 5 minutes, never less than the level's interval, with
+`job_names_retry_at`; `unreadable` stays until a later lookup is answered. While job
+names are hidden the agent sends one in-progress-runs request again when one of the
+repository's runners becomes busy, at most once a minute: a runner that becomes busy
+within the minute gets it at the first check after the minute, so a token that gains
+Actions: read shows the next job's name without a restart.
 
 **The `github` value:**
 
 | Field                          | Meaning                                                                                                                |
 | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
 | `budget`                       | `null` until a display request is answered, then `limit`, `remaining`, `resets_at`, `seen_at` and `level`              |
-| `repositories`                 | Each repository checked since the agent started, by its key                                                            |
-| `repositories[]`               | `repository`, `checked_at`, `status`, `retry_at`, `job_names`, `job_names_cause`, `runners`                            |
+| `repositories`                 | Each repository with a registered runner and a stored token, by its key, with what the agent last learned of it        |
+| `repositories[]`               | `repository`, `checked_at`, `status`, `retry_at`, `job_names`, `job_names_cause`, `job_names_retry_at`, `runners`      |
 | `repositories[].runners`       | This host's runners GitHub lists: `name` (the snapshot's `workload`), `github` (`offline`, `idle` or `busy`) and `job` |
 | `repositories[].runners[].job` | `workflow`, `name`, `run_id` and `job_id`, once a busy runner's job is known                                           |
 | `omitted_runners`              | Runner entries left out from the end to keep the value within 64 KiB less the envelope                                 |

@@ -374,6 +374,36 @@ async fn a_next_page_elsewhere_is_never_requested() {
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_read_holds_one_repository_id_across_its_pages() {
+    // page 2 names id 7, page 3 goes back to the first request's form, and page 4
+    // names id 8, which the read must not follow
+    let world = World::new(|path, _, _| {
+        let next = match path {
+            RUNNERS => "/repositories/7/actions/runners?per_page=100&page=2",
+            "/repositories/7/actions/runners?per_page=100&page=2" => {
+                "/repos/owner/app/actions/runners?per_page=100&page=3"
+            }
+            "/repos/owner/app/actions/runners?per_page=100&page=3" => {
+                "/repositories/8/actions/runners?per_page=100&page=4"
+            }
+            other => panic!("followed {other}"),
+        };
+        let mut answer = json(&runners(&[]), "\"p\"");
+        answer.etag = None;
+        answer.link = Some(format!("<{BASE}{next}>; rel=\"next\""));
+        Ok(answer)
+    });
+    let (_s, snapshot_rx, _a, active_rx, status_tx, status_rx) =
+        channels(snapshot(&["app-1-20261112000000000"], true), true);
+    drive(&world, snapshot_rx, active_rx, status_tx, async {
+        sleep(Duration::from_secs(1)).await;
+    })
+    .await;
+    assert_eq!(world.fetch.paths().len(), 3);
+    assert_eq!(status_rx.borrow().repositories[0].status, "error");
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_repository_without_a_registered_runner_or_a_token_is_not_asked() {
     let world = World::new(idle_runner);
     let (snapshot_tx, snapshot_rx, _a, active_rx, status_tx, status_rx) =
@@ -489,6 +519,41 @@ async fn a_job_in_a_run_whose_jobs_were_read_before_the_runner_took_it_is_found(
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_run_no_longer_in_progress_keeps_no_jobs_page() {
+    const JOBS: &str = "/repos/owner/app/actions/runs/30/jobs?filter=latest&per_page=30";
+    let world = World::new(|path, _, at| match path {
+        RUNNERS => Ok(json(
+            &runners(&[("app-1-20261112000000000", "online", true)]),
+            "\"r\"",
+        )),
+        // run 30 is in progress, then not, then in progress again
+        RUNS if (15..30).contains(&at.as_secs()) => Ok(json(r#"{"workflow_runs":[]}"#, "\"none\"")),
+        RUNS => Ok(json(r#"{"workflow_runs":[{"id":30}]}"#, "\"one\"")),
+        JOBS => Ok(json(
+            r#"{"jobs":[{"id":301,"run_id":30,"runner_name":"other","name":"x","status":"in_progress"}]}"#,
+            "\"j30\"",
+        )),
+        other => panic!("unexpected request {other}"),
+    });
+    let (_s, snapshot_rx, _a, active_rx, status_tx, _status_rx) =
+        channels(snapshot(&["app-1-20261112000000000"], true), true);
+    drive(&world, snapshot_rx, active_rx, status_tx, async {
+        sleep(Duration::from_secs(40)).await;
+    })
+    .await;
+    let jobs: Vec<(u64, Option<String>)> = world
+        .fetch
+        .seen()
+        .into_iter()
+        .filter(|seen| seen.path == JOBS)
+        .map(|seen| (seen.at.as_secs(), seen.etag))
+        .collect();
+    // the page read at 0 s was dropped when the run left at 15 s, so it is read
+    // again in full at 30 s
+    assert_eq!(jobs, [(0, None), (30, None)]);
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn the_lookup_stops_after_20_turns_without_a_match() {
     let world = World::new(|path, _, _| match path {
         RUNNERS => Ok(json(
@@ -560,6 +625,96 @@ async fn hidden_job_names_are_tried_again_only_when_a_runner_becomes_busy_and_on
             .any(|line| line.contains("actions=read")
                 && line.contains("Resource not accessible by personal access token"))
     );
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_runner_busy_within_the_minute_gets_the_hidden_names_retry_when_the_minute_ends() {
+    // idle from 15 s to 29 s, then busy for good: the retry waits for the minute
+    let world = World::new(|path, _, at| match path {
+        RUNNERS => {
+            let busy = !(15..30).contains(&at.as_secs());
+            Ok(json(
+                &runners(&[("app-1-20261112000000000", "online", busy)]),
+                &format!("\"r{busy}\""),
+            ))
+        }
+        RUNS => Ok(status(403)),
+        other => panic!("unexpected request {other}"),
+    });
+    let (_s, snapshot_rx, _a, active_rx, status_tx, _status_rx) =
+        channels(snapshot(&["app-1-20261112000000000"], true), true);
+    drive(&world, snapshot_rx, active_rx, status_tx, async {
+        sleep(Duration::from_secs(140)).await;
+    })
+    .await;
+    let runs_at: Vec<u64> = world
+        .fetch
+        .seen()
+        .iter()
+        .filter(|seen| seen.path == RUNS)
+        .map(|seen| seen.at.as_secs())
+        .collect();
+    // names became hidden just after 0 s, so the first check after the minute is at
+    // 75 s; without the waiting retry the runner busy since 30 s would get none
+    assert_eq!(runs_at, [0, 75]);
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_failed_lookup_backs_off_and_says_when_it_tries_again() {
+    // the runs answer 200 with a body that is no list of runs
+    let world = World::new(|path, _, _| match path {
+        RUNNERS => Ok(json(
+            &runners(&[("app-1-20261112000000000", "online", true)]),
+            "\"r\"",
+        )),
+        RUNS => Ok(json("not json", "\"x\"")),
+        other => panic!("unexpected request {other}"),
+    });
+    let (_s, snapshot_rx, _a, active_rx, status_tx, status_rx) =
+        channels(snapshot(&["app-1-20261112000000000"], true), true);
+    drive(&world, snapshot_rx, active_rx, status_tx, async {
+        sleep(Duration::from_secs(160)).await;
+    })
+    .await;
+    let runs_at: Vec<u64> = world
+        .fetch
+        .seen()
+        .iter()
+        .filter(|seen| seen.path == RUNS)
+        .map(|seen| seen.at.as_secs())
+        .collect();
+    // 15 s, then 30 s, then 60 s after each failure, at the next check
+    assert_eq!(runs_at, [0, 30, 75, 150]);
+    let status = status_rx.borrow().clone();
+    let repository = &status.repositories[0];
+    assert_eq!(repository.status, "ok");
+    assert_eq!(repository.runners[0].github, "busy");
+    assert_eq!(repository.job_names, "unreadable");
+    assert_eq!(repository.job_names_cause.as_deref(), Some("error"));
+    assert!(repository.job_names_retry_at.unwrap() > START_MS + 150_000);
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_runner_list_that_is_not_one_is_an_error_and_keeps_the_last_runners() {
+    let world = World::new(|_, _, at| {
+        if at.as_secs() == 0 {
+            Ok(json(
+                &runners(&[("app-1-20261112000000000", "online", false)]),
+                "\"r1\"",
+            ))
+        } else {
+            Ok(json("<html>", "\"r2\""))
+        }
+    });
+    let (_s, snapshot_rx, _a, active_rx, status_tx, status_rx) =
+        channels(snapshot(&["app-1-20261112000000000"], true), true);
+    drive(&world, snapshot_rx, active_rx, status_tx, async {
+        sleep(Duration::from_secs(20)).await;
+    })
+    .await;
+    let status = status_rx.borrow().clone();
+    assert_eq!(status.repositories[0].status, "error");
+    assert_eq!(status.repositories[0].runners[0].github, "idle");
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]

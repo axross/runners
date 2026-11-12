@@ -97,7 +97,7 @@ impl Fetch for GitHubReader {
             }
             body.extend_from_slice(&chunk);
         }
-        Ok(answer(status, &headers, body))
+        Ok(answer(status, &headers, body, request.token))
     }
 }
 
@@ -109,18 +109,26 @@ fn number(headers: &HeaderMap, name: &str) -> Option<u64> {
     header(headers, name).and_then(|text| text.trim().parse().ok())
 }
 
-/// GitHub's `message`, cleaned and cut for the log.
-fn message(body: &[u8]) -> Option<String> {
+/// GitHub's `message`, cleaned and cut for the log. The token is replaced before the
+/// cut, so a cut never leaves part of it where the whole-token mask cannot find it.
+fn message(body: &[u8], token: &Secret) -> Option<String> {
     let Value::Object(object) = json::parse(body).ok()? else {
         return None;
     };
     object.iter().find_map(|(key, value)| match value {
-        Value::String(text) if key == "message" => Some(clean::cut(text, clean::MESSAGE_CHARS)),
+        Value::String(text) if key == "message" => {
+            let text = if token.expose().is_empty() {
+                text.clone()
+            } else {
+                text.replace(token.expose(), "<token>")
+            };
+            Some(clean::cut(&text, clean::MESSAGE_CHARS))
+        }
         _ => None,
     })
 }
 
-fn answer(status: u16, headers: &HeaderMap, body: Vec<u8>) -> Answer {
+fn answer(status: u16, headers: &HeaderMap, body: Vec<u8>, token: &Secret) -> Answer {
     let fresh = status == 200;
     Answer {
         status,
@@ -135,7 +143,7 @@ fn answer(status: u16, headers: &HeaderMap, body: Vec<u8>) -> Answer {
         poll_interval: number(headers, "x-poll-interval").map(Duration::from_secs),
         accepted_permissions: header(headers, "x-accepted-github-permissions")
             .map(|text| clean::cut(text, clean::MESSAGE_CHARS)),
-        message: (!fresh).then(|| message(&body)).flatten(),
+        message: (!fresh).then(|| message(&body, token)).flatten(),
         link: header(headers, "link").map(str::to_string),
         body: if fresh { body } else { Vec::new() },
     }
@@ -173,12 +181,23 @@ fn is_request_path(path: &str) -> bool {
         && !route.split('/').any(|part| part == "." || part == "..")
 }
 
+/// the id of a path in GitHub's `/repositories/<id>/…` form.
+#[must_use]
+pub fn repository_id(path: &str) -> Option<&str> {
+    let route = path.split_once('?').map_or(path, |(route, _)| route);
+    route
+        .strip_prefix("/repositories/")
+        .and_then(|rest| rest.split_once('/'))
+        .map(|(id, _)| id)
+}
+
 /// the next page of a paged read that a `link` header names: compared with the
 /// read's first request, followed only on its origin, on its path or on GitHub's
-/// `/repositories/<id>` form of it, with the same id as the `current` page when that
-/// page has one, and with only the query changed.
+/// `/repositories/<id>` form of it, with only the query changed. `held_id` is the id
+/// the read has already seen on one of its pages, and a next page with another id
+/// is refused, so one read names one id.
 #[must_use]
-pub fn next_page(link: &str, base_url: &str, first: &str, current: &str) -> Next {
+pub fn next_page(link: &str, base_url: &str, first: &str, held_id: Option<&str>) -> Next {
     let Some(target) = link.split(',').find_map(|part| {
         let (address, params) = part.trim().split_once(';')?;
         let is_next = params
@@ -200,14 +219,9 @@ pub fn next_page(link: &str, base_url: &str, first: &str, current: &str) -> Next
             .map_or(path, |(route, _)| route)
             .to_string()
     };
-    let (first_route, current_route) = (route_of(first), route_of(current));
-    let id_of = |route: &str| {
-        route
-            .strip_prefix("/repositories/")
-            .and_then(|rest| rest.split_once('/'))
-            .map(|(id, _)| id.to_string())
-    };
-    let same_id = match (id_of(route), id_of(&current_route)) {
+    let first_route = route_of(first);
+    let held = held_id.or_else(|| repository_id(first));
+    let same_id = match (repository_id(route), held) {
         (Some(next), Some(held)) => next == held,
         _ => true,
     };
@@ -238,7 +252,7 @@ mod tests {
         let next =
             format!("{BASE}/repos/owner/app/actions/runs?status=in_progress&per_page=10&page=2");
         assert_eq!(
-            next_page(&link(&next), BASE, REQUEST, REQUEST),
+            next_page(&link(&next), BASE, REQUEST, None),
             Next::Page(
                 "/repos/owner/app/actions/runs?status=in_progress&per_page=10&page=2".to_string()
             )
@@ -251,7 +265,7 @@ mod tests {
             "{BASE}/repositories/724712/actions/runs?status=in_progress&per_page=10&page=2"
         );
         assert_eq!(
-            next_page(&link(&next), BASE, REQUEST, REQUEST),
+            next_page(&link(&next), BASE, REQUEST, None),
             Next::Page(
                 "/repositories/724712/actions/runs?status=in_progress&per_page=10&page=2"
                     .to_string()
@@ -261,7 +275,7 @@ mod tests {
         let next =
             format!("{BASE}/repositories/7/actions/runs/123/jobs?filter=latest&per_page=30&page=2");
         assert!(matches!(
-            next_page(&link(&next), BASE, jobs, jobs),
+            next_page(&link(&next), BASE, jobs, None),
             Next::Page(_)
         ));
     }
@@ -282,7 +296,7 @@ mod tests {
             format!("{BASE}/repositories/7/actions/runs?page=%32"),
         ] {
             assert_eq!(
-                next_page(&link(&next), BASE, REQUEST, REQUEST),
+                next_page(&link(&next), BASE, REQUEST, None),
                 Next::Refused,
                 "{next}"
             );
@@ -295,19 +309,22 @@ mod tests {
         let second = "/repositories/7/actions/runs?status=in_progress&page=2";
         let third = format!("{BASE}/repositories/7/actions/runs?status=in_progress&page=3");
         assert!(matches!(
-            next_page(&link(&third), BASE, first, second),
+            next_page(&link(&third), BASE, first, repository_id(second)),
             Next::Page(_)
         ));
         let back = format!("{BASE}/repos/owner/app/actions/runs?status=in_progress&page=3");
         assert!(matches!(
-            next_page(&link(&back), BASE, first, second),
+            next_page(&link(&back), BASE, first, repository_id(second)),
             Next::Page(_)
         ));
         let other = format!("{BASE}/repositories/8/actions/runs?status=in_progress&page=3");
-        assert_eq!(next_page(&link(&other), BASE, first, second), Next::Refused);
+        assert_eq!(
+            next_page(&link(&other), BASE, first, repository_id(second)),
+            Next::Refused
+        );
         let other_repo = format!("{BASE}/repos/owner/other/actions/runs?page=3");
         assert_eq!(
-            next_page(&link(&other_repo), BASE, first, second),
+            next_page(&link(&other_repo), BASE, first, repository_id(second)),
             Next::Refused
         );
     }
@@ -319,10 +336,21 @@ mod tests {
                 &format!("<{BASE}/repositories/1/actions/runs?page=1>; rel=\"prev\""),
                 BASE,
                 REQUEST,
-                REQUEST
+                None
             ),
             Next::None
         );
+    }
+
+    #[test]
+    fn a_token_in_githubs_message_is_replaced_before_the_message_is_cut() {
+        let token = "github_pat_0123456789abcdefghijklmnopqrstuvwxyz";
+        // the token starts at the 181st character, so a cut at 200 would split it
+        let text = format!("{}{token} more", "m".repeat(180));
+        let body = serde_json::json!({ "message": text }).to_string();
+        let message = message(body.as_bytes(), &Secret::new(token.to_string())).unwrap();
+        assert!(!message.contains("github_pat_"), "{message}");
+        assert!(message.ends_with("<token> more"), "{message}");
     }
 
     #[test]

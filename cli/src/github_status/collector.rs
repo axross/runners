@@ -21,7 +21,7 @@ use crate::token_store::{RepositoryKey, TokenStore};
 use super::answer::{Answer, Cause, Endpoint, Next, Outcome, Wait, classify};
 use super::budget::{Level, Tracker};
 use super::clean;
-use super::http::{Fetch, Get, next_page};
+use super::http::{Fetch, Get, next_page, repository_id};
 use super::{GithubStatus, Job, RepositoryStatus, RunnerStatus};
 
 /// runners per page of the runner list.
@@ -125,7 +125,7 @@ struct Repository {
     backoff: Duration,
     retry: Option<Instant>,
     retry_at: Option<u64>,
-    /// GitHub's `x-poll-interval`, the longest seen.
+    /// GitHub's latest `x-poll-interval` for the repository.
     poll: Duration,
     runners: Vec<RunnerStatus>,
     names: Names,
@@ -136,6 +136,12 @@ struct Repository {
     /// the jobs pages still to read, front first.
     queue: VecDeque<String>,
     hidden_tried: Option<Instant>,
+    /// a runner became busy while names were hidden, and the retry waits for its minute.
+    hidden_pending: bool,
+    /// the wait after a failed lookup, which doubles, and when lookups resume.
+    lookup_backoff: Duration,
+    lookup_retry: Option<Instant>,
+    lookup_retry_at: Option<u64>,
 }
 
 impl Repository {
@@ -156,6 +162,10 @@ impl Repository {
             runs: Vec::new(),
             queue: VecDeque::new(),
             hidden_tried: None,
+            hidden_pending: false,
+            lookup_backoff: FAILURE_BACKOFF,
+            lookup_retry: None,
+            lookup_retry_at: None,
         }
     }
 
@@ -185,6 +195,9 @@ impl Repository {
             retry_at: self.retry_at,
             job_names: job_names.to_string(),
             job_names_cause,
+            job_names_retry_at: matches!(self.names, Names::Unreadable(_))
+                .then_some(self.lookup_retry_at)
+                .flatten(),
             runners: self.runners.clone(),
         }
     }
@@ -428,7 +441,17 @@ impl<'a, F: Fetch> Collector<'a, F> {
                 return;
             }
         };
-        let became_busy = self.take_runners(key, names, &pages);
+        let parsed: Option<Vec<RunnersPage>> = pages
+            .iter()
+            .map(|body| serde_json::from_slice(body).ok())
+            .collect();
+        let Some(parsed) = parsed else {
+            // a page GitHub answered with 200 that is not a runner list
+            self.fail(key, Cause::Error);
+            self.publish();
+            return;
+        };
+        let became_busy = self.take_runners(key, names, parsed);
         self.publish();
         self.lookup(key, &token, became_busy).await;
         self.publish();
@@ -472,6 +495,8 @@ impl<'a, F: Fetch> Collector<'a, F> {
     ) -> Read {
         let mut bodies = Vec::new();
         let mut path = first.to_string();
+        // the `/repositories/<id>` id of the read, held from the first page that names one
+        let mut held_id: Option<String> = None;
         for _ in 0..MAX_PAGES {
             if !self.is_active() || self.waiting() {
                 return Read::Stop;
@@ -505,7 +530,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
             if let Some(poll) = answer.poll_interval
                 && let Some(repository) = self.repositories.get_mut(key)
             {
-                repository.poll = repository.poll.max(poll);
+                repository.poll = poll;
             }
             let outcome = classify(endpoint, &answer);
             let page = match outcome {
@@ -540,8 +565,11 @@ impl<'a, F: Fetch> Collector<'a, F> {
                 Outcome::Failed(cause) => return Read::Failed(cause),
             };
             bodies.push(page.body);
+            if held_id.is_none() {
+                held_id = repository_id(&path).map(str::to_string);
+            }
             let next = page.link.as_deref().map_or(Next::None, |link| {
-                next_page(link, self.fetch.base_url(), first, &path)
+                next_page(link, self.fetch.base_url(), first, held_id.as_deref())
             });
             match next {
                 Next::Page(next) if follow => path = next,
@@ -563,8 +591,14 @@ impl<'a, F: Fetch> Collector<'a, F> {
         let until = match wait {
             Wait::UntilReset => {
                 self.tracker.reached();
-                self.log.warn("GitHub status: GitHub says the hourly limit is reached; checks pause until the reset.");
-                return;
+                if self.tracker.paused_until((self.now)()).is_some() {
+                    self.log.warn("GitHub status: GitHub says the hourly limit is reached; checks pause until the reset.");
+                    return;
+                }
+                // no reset known to pause until, so wait as for a secondary limit
+                let duration = self.secondary;
+                self.secondary = (self.secondary * 2).min(MAX_SECONDARY_BACKOFF);
+                now + duration
             }
             Wait::For(duration) => now + duration,
             Wait::Secondary(retry_after) => {
@@ -607,15 +641,14 @@ impl<'a, F: Fetch> Collector<'a, F> {
         &mut self,
         key: &RepositoryKey,
         names: &BTreeSet<String>,
-        pages: &[Vec<u8>],
+        pages: Vec<RunnersPage>,
     ) -> bool {
         let now_ms = (self.now)();
         let Some(repository) = self.repositories.get_mut(key) else {
             return false;
         };
         let listed: Vec<RunnerItem> = pages
-            .iter()
-            .filter_map(|body| serde_json::from_slice::<RunnersPage>(body).ok())
+            .into_iter()
             .flat_map(|page| page.runners)
             .filter(|item| names.contains(&item.name))
             .collect();
@@ -680,12 +713,22 @@ impl<'a, F: Fetch> Collector<'a, F> {
             let due = repository
                 .hidden_tried
                 .is_none_or(|tried| tried + HIDDEN_RETRY <= Instant::now());
-            if became_busy && due {
-                if let Some(repository) = self.repositories.get_mut(key) {
+            let pending = repository.hidden_pending || became_busy;
+            if let Some(repository) = self.repositories.get_mut(key) {
+                repository.hidden_pending = pending && !due;
+                if pending && due {
                     repository.hidden_tried = Some(Instant::now());
                 }
+            }
+            if pending && due {
                 self.read_runs(key, token).await;
             }
+            return;
+        }
+        if repository
+            .lookup_retry
+            .is_some_and(|retry| retry > Instant::now())
+        {
             return;
         }
         if let Some(repository) = self.repositories.get_mut(key) {
@@ -716,13 +759,22 @@ impl<'a, F: Fetch> Collector<'a, F> {
         };
         match self.read(key, token, &page, Endpoint::Jobs, false).await {
             Read::Pages(bodies) => {
-                self.take_jobs(key, &waiting, &bodies);
+                let parsed: Option<Vec<JobsPage>> = bodies
+                    .iter()
+                    .map(|body| serde_json::from_slice(body).ok())
+                    .collect();
+                let Some(parsed) = parsed else {
+                    self.lookup_failed(key, Cause::Error);
+                    return;
+                };
+                self.lookup_answered(key);
+                self.take_jobs(key, &waiting, parsed);
                 let next = self
                     .repositories
                     .get(key)
                     .and_then(|repository| repository.pages.get(&page))
                     .and_then(|kept| kept.link.clone())
-                    .map(|link| next_page(&link, self.fetch.base_url(), &page, &page));
+                    .map(|link| next_page(&link, self.fetch.base_url(), &page, None));
                 if let (Some(Next::Page(next)), Some(repository)) =
                     (next, self.repositories.get_mut(key))
                 {
@@ -730,8 +782,36 @@ impl<'a, F: Fetch> Collector<'a, F> {
                 }
             }
             Read::Hidden => self.names(key, Names::Hidden),
-            Read::Failed(cause) => self.names(key, Names::Unreadable(cause)),
+            Read::Failed(cause) => self.lookup_failed(key, cause),
             Read::Stop => {}
+        }
+    }
+
+    /// records a failed lookup: job names are unreadable, and lookups wait 15 s,
+    /// doubling to 5 minutes, never less than the level's interval.
+    fn lookup_failed(&mut self, key: &RepositoryKey, cause: Cause) {
+        let now_ms = (self.now)();
+        let level_interval = self
+            .tracker
+            .level(now_ms)
+            .interval()
+            .unwrap_or(Duration::ZERO);
+        self.names(key, Names::Unreadable(cause));
+        if let Some(repository) = self.repositories.get_mut(key) {
+            let wait = repository.lookup_backoff.max(level_interval);
+            repository.lookup_retry = Some(Instant::now() + wait);
+            repository.lookup_retry_at =
+                Some(now_ms + u64::try_from(wait.as_millis()).unwrap_or(u64::MAX));
+            repository.lookup_backoff = (repository.lookup_backoff * 2).min(MAX_FAILURE_BACKOFF);
+        }
+    }
+
+    /// records a lookup GitHub answered.
+    fn lookup_answered(&mut self, key: &RepositoryKey) {
+        if let Some(repository) = self.repositories.get_mut(key) {
+            repository.lookup_backoff = FAILURE_BACKOFF;
+            repository.lookup_retry = None;
+            repository.lookup_retry_at = None;
         }
     }
 
@@ -743,15 +823,26 @@ impl<'a, F: Fetch> Collector<'a, F> {
         );
         match self.read(key, token, &path, Endpoint::Runs, false).await {
             Read::Pages(bodies) => {
-                let runs: Vec<u64> = bodies
+                let Some(page) = bodies
                     .first()
                     .and_then(|body| serde_json::from_slice::<RunsPage>(body).ok())
-                    .map(|page| page.workflow_runs.iter().map(|run| run.id).collect())
-                    .unwrap_or_default();
+                else {
+                    self.lookup_failed(key, Cause::Error);
+                    return false;
+                };
+                let runs: Vec<u64> = page.workflow_runs.iter().map(|run| run.id).collect();
+                self.lookup_answered(key);
                 self.names(key, Names::Shown);
                 if let Some(repository) = self.repositories.get_mut(key) {
                     if repository.runs != runs {
                         repository.queue.clear();
+                        // a run no longer in progress needs its jobs pages no more
+                        repository.pages.retain(|path, _| {
+                            !path.contains("/jobs?")
+                                || runs
+                                    .iter()
+                                    .any(|run| path.contains(&format!("/actions/runs/{run}/jobs?")))
+                        });
                     }
                     repository.runs = runs;
                 }
@@ -762,7 +853,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
                 false
             }
             Read::Failed(cause) => {
-                self.names(key, Names::Unreadable(cause));
+                self.lookup_failed(key, cause);
                 false
             }
             Read::Stop => false,
@@ -790,13 +881,12 @@ impl<'a, F: Fetch> Collector<'a, F> {
         }
     }
 
-    fn take_jobs(&mut self, key: &RepositoryKey, waiting: &[String], bodies: &[Vec<u8>]) {
+    fn take_jobs(&mut self, key: &RepositoryKey, waiting: &[String], pages: Vec<JobsPage>) {
         let Some(repository) = self.repositories.get_mut(key) else {
             return;
         };
-        for job in bodies
-            .iter()
-            .filter_map(|body| serde_json::from_slice::<JobsPage>(body).ok())
+        for job in pages
+            .into_iter()
             .flat_map(|page| page.jobs)
             .filter(|job| job.status != "completed")
         {

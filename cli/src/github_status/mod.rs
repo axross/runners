@@ -20,7 +20,8 @@ pub struct GithubStatus {
     /// `None` until a display request has been answered.
     #[serde(default)]
     pub budget: Option<Budget>,
-    /// the repositories checked since the agent started, sorted by name.
+    /// the repositories with a registered runner and a stored token, sorted by
+    /// name, each with what the agent last learned of it.
     #[serde(default)]
     pub repositories: Vec<RepositoryStatus>,
     /// runner entries left out from the end to keep the value within the agent's
@@ -67,6 +68,10 @@ pub struct RepositoryStatus {
     /// why job names are unreadable, in the words of `status`.
     #[serde(default)]
     pub job_names_cause: Option<String>,
+    /// when the agent looks up jobs again after job names became unreadable, in
+    /// milliseconds since the epoch.
+    #[serde(default)]
+    pub job_names_retry_at: Option<u64>,
     /// this host's runners that GitHub lists, by name.
     #[serde(default)]
     pub runners: Vec<RunnerStatus>,
