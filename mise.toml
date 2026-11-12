@@ -130,6 +130,39 @@ fi
 echo "Both toolchain files name ${cli}."
 '''
 
+# marshal-cli is not a member of the app's workspace, so the CLI's tests cover its
+# crates only at the versions cli/Cargo.lock holds; the app must link those.
+[tasks."check:app-lock"]
+description = "Fail when app/Cargo.lock resolves any crate marshal-cli depends on, for Windows, macOS or Linux, to another version than cli/Cargo.lock"
+depends = ["rust:require", "fetch:rust", "fetch:app"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+# prints "name version" for every crate marshal-cli builds with, dev-dependencies aside,
+# as workspace $1 resolves it for target $2.
+tree() {
+  (cd "$1" && cargo metadata --quiet --locked --offline --format-version 1 --filter-platform "$2") | jq -r '
+    (.packages | map({key: .id, value: "\(.name) \(.version)"}) | from_entries) as $names
+    | (.resolve.nodes | map({key: .id, value: [.deps[] | select(any(.dep_kinds[]; .kind != "dev")) | .pkg]}) | from_entries) as $deps
+    | (.packages[] | select(.name == "marshal-cli") | .id) as $root
+    | {seen: {}, todo: $deps[$root]}
+    | until(.todo | length == 0;
+        .todo[0] as $p | .todo |= .[1:]
+        | if .seen[$p] then . else .seen[$p] = true | .todo += $deps[$p] end)
+    | .seen | keys[] | $names[.]' | LC_ALL=C sort
+}
+status=0
+for target in x86_64-pc-windows-msvc aarch64-apple-darwin x86_64-unknown-linux-gnu; do
+  if ! diff -u --label "cli/Cargo.lock (${target})" --label "app/Cargo.lock (${target})" \
+    <(tree cli "$target") <(tree app "$target"); then
+    echo "error: app/Cargo.lock resolves marshal-cli's crates for ${target} to other versions than cli/Cargo.lock; pin them to the CLI's with 'cargo update -p <crate>@<version> --precise <version>' in app/." >&2
+    status=1
+  fi
+done
+[ "$status" -eq 0 ] && echo "app/Cargo.lock resolves marshal-cli's crates as cli/Cargo.lock does."
+exit "$status"
+'''
+
 [tasks.format]
 description = "Rewrite Markdown, JSON, YAML, and TypeScript files with Prettier, and Rust files with rustfmt, the app's included"
 depends = ["format:rust", "format:app"]
@@ -354,7 +387,7 @@ description = "Run the signed package check, which verify-macos runs, against st
 run = "bash .github/scripts/tests/test-signed-pkg-refusals.sh"
 
 [tasks.check]
-description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, release script tests, release shape check and its test, sign-macos, signed package and assemble tests, installer version and WiX fetch tests, install block tests, Rust tests, Rust dependency check, the app's toolchain pin check, tests and dependency check"
+description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, release script tests, release shape check and its test, sign-macos, signed package and assemble tests, installer version and WiX fetch tests, install block tests, Rust tests, Rust dependency check, the app's toolchain pin check, lockfile check, tests and dependency check"
 depends = [
   "format:check",
   "lint",
@@ -375,6 +408,7 @@ depends = [
   "test:rust",
   "deny:rust",
   "check:app-pins",
+  "check:app-lock",
   "test:app",
   "deny:app",
 ]
