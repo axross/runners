@@ -21,9 +21,10 @@ use crate::instance::lock::InstanceLock;
 use crate::instance::roots::Roots;
 
 use super::api::Call;
-use super::server::{Counts, Limits, Shared, serve};
+use super::server::{Counts, Limits, Shared, Watchers, serve};
 use super::snapshot::Snapshot;
 use super::wire::{EndingNotice, UpdateEnding};
+use crate::github_status::GithubStatus;
 
 /// the bare stream to the agent, for the tests of the channel's limits.
 #[doc(hidden)]
@@ -41,6 +42,14 @@ pub struct AgentChannel {
     ending: watch::Sender<Option<EndingNotice>>,
     counts: Arc<Counts>,
     address: String,
+    github: Option<GithubFeed>,
+}
+
+/// what the collector of GitHub status needs from the channel: where it publishes
+/// the `github` topic's value, and whether a renewed subscription wants it.
+pub struct GithubFeed {
+    pub published: watch::Sender<Arc<GithubStatus>>,
+    pub active: watch::Receiver<bool>,
 }
 
 impl Drop for AgentChannel {
@@ -91,9 +100,13 @@ impl AgentChannel {
         let address = listener.address();
         let (ending, ending_receiver) = watch::channel(None);
         let counts = Arc::new(Counts::default());
+        let (published, github) = watch::channel(Arc::new(GithubStatus::default()));
+        let (watchers, active) = Watchers::new();
         let shared = Arc::new(Shared {
             calls,
             snapshots,
+            github,
+            watchers,
             ending: ending_receiver,
             limits,
             counts: Arc::clone(&counts),
@@ -105,7 +118,13 @@ impl AgentChannel {
             ending,
             counts,
             address,
+            github: Some(GithubFeed { published, active }),
         })
+    }
+
+    /// the feed of GitHub status, once.
+    pub fn github_feed(&mut self) -> Option<GithubFeed> {
+        self.github.take()
     }
 
     /// where clients reach the channel.

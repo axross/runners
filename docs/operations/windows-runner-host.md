@@ -180,7 +180,10 @@ write**. Create one **fine-grained personal access token per target repository**
 under **Settings, Developer settings, Fine-grained personal access tokens**:
 
 - **Repository access:** only that one repository.
-- **Permissions:** Administration, read and write, and nothing else.
+- **Permissions:** Administration, read and write. Actions, read, is optional: with
+  it the agent can name the job a busy runner runs, at the cost the token permission
+  section of [Security](../conventions/security.md#a-token-carries-only-its-pool-kinds-permissions)
+  names. Nothing else.
 
 Save each token in a file on this machine, holding the raw token text, at the
 `tokenPath` of the repository's pool entries, and keep these files outside any
