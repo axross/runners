@@ -290,3 +290,107 @@ async fn the_drain_is_cancelled_when_its_connection_closes() {
         .await;
     assert_eq!(ended.reason, "quit");
 }
+
+/// `config` with diagnostics on for every pool; the fake engine never touches the sink.
+fn with_diagnostics(config: &str) -> String {
+    config.replace(
+        r#""volumes":[]}"#,
+        r#""volumes":[],"diagnostics":true,"diagnosticDirectory":"C:\\diag"}"#,
+    )
+}
+
+fn exported(rig: &Rig, name: &str) -> bool {
+    rig.backend
+        .calls()
+        .iter()
+        .any(|call| matches!(call, Call::ExportDiagnostic(exported, _) if exported == name))
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_diagnostic_job_that_finishes_in_a_drain_is_finalised_before_the_agent_ends() {
+    let rig = rig(ONE_POOL);
+    rig.write_config(&with_diagnostics(ONE_POOL));
+    let rig = &rig;
+    let (ended, name) = rig
+        .drive(Launch::Running, |mut conn| async move {
+            let names = started(&conn, rig, 1).await;
+            rig.backend.print(&names[0], JOB);
+            conn.client.subscribe().await.unwrap();
+            drain(&conn).await;
+            rig.end_jobs().await;
+            assert_eq!(ending(&mut conn).await.0, UPDATE);
+            names[0].clone()
+        })
+        .await;
+    assert_eq!(ended.reason, UPDATE);
+    assert!(exported(rig, &name), "the finished job was not exported");
+    assert!(ended.kept.is_empty(), "{:?}", ended.kept);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_diagnostic_job_still_running_at_the_bound_is_finalised_before_the_agent_ends() {
+    let rig = rig(ONE_POOL);
+    rig.write_config(&with_diagnostics(ONE_POOL));
+    rig.drain_bound.set(Duration::from_millis(500));
+    let rig = &rig;
+    let (ended, name) = rig
+        .drive(Launch::Running, |mut conn| async move {
+            let names = started(&conn, rig, 1).await;
+            rig.backend.print(&names[0], JOB);
+            conn.client.subscribe().await.unwrap();
+            drain(&conn).await;
+            assert_eq!(ending(&mut conn).await.0, UPDATE);
+            names[0].clone()
+        })
+        .await;
+    assert_eq!(ended.reason, UPDATE);
+    assert!(
+        exported(rig, &name),
+        "the running job was not exported at the bound"
+    );
+    assert!(ended.kept.is_empty(), "{:?}", ended.kept);
+}
+
+/// the core fails during the drain (an export that panics as the idle runner's
+/// container is finalised): the container steps run, the core is not started again,
+/// and the agent ends for the update.
+#[tokio::test(flavor = "current_thread")]
+async fn a_core_failure_during_a_drain_runs_the_container_steps_and_starts_nothing_again() {
+    let rig = rig(TWO_POOLS);
+    rig.write_config(&with_diagnostics(TWO_POOLS));
+    let rig = &rig;
+    let (ended, busy) = rig
+        .drive(Launch::Running, |mut conn| async move {
+            let names = started(&conn, rig, 2).await;
+            rig.backend.print(&names[0], LISTENING);
+            rig.backend.print(&names[1], JOB);
+            // only the first export fails, so the container steps after it can export
+            let failed = std::rc::Rc::new(std::cell::Cell::new(false));
+            rig.backend.state.borrow_mut().on_export = Some(Box::new(move || {
+                if !failed.replace(true) {
+                    panic!("the core broke during the drain");
+                }
+            }));
+            conn.client.subscribe().await.unwrap();
+            drain(&conn).await;
+            let (reason, update) = ending(&mut conn).await;
+            assert_eq!(reason, UPDATE);
+            assert_eq!(update, Some(UpdateEnding::new("1.4.0", false)));
+            names[1].clone()
+        })
+        .await;
+    assert_eq!(ended.reason, UPDATE);
+    assert_eq!(
+        containers(rig).len(),
+        2,
+        "a runner registered after the failure"
+    );
+    let lines = rig.log.lines().join("\n");
+    assert!(lines.contains("The runtime core failed"), "{lines}");
+    assert!(!lines.contains("Restarting the runtime core"), "{lines}");
+    assert!(
+        exported(rig, &busy),
+        "the busy runner's container was not finalised"
+    );
+    assert!(ended.kept.is_empty(), "{:?}", ended.kept);
+}
