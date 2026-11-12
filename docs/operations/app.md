@@ -19,8 +19,8 @@ axpc's pools with the command line, which is how axpc runs them today.
 ## What Exists
 
 The app builds and its tests run, but nothing installs it and nothing releases it.
-The installer, the release and the removal of the command line's commands are the
-next pull request of the child that owns the app ([#73](https://github.com/axross/runners/issues/73)).
+The installer, the release and the removal of the command line's commands are W1's
+installer pull request (pull request 3); W1, [#73](https://github.com/axross/runners/issues/73), is the child that owns the app.
 Until it merges, `marshal` is still built and released, axpc still runs its pools
 with it, and this document describes an app that is built in CI and run from a
 build, not one a host has installed.
@@ -30,7 +30,7 @@ build, not one a host has installed.
 | The app, its menu and its main window                | Built by the Windows job of `merge-checks.yaml`; its build is kept as a run artifact |
 | The agent's resident mode and protocol version 2     | In the `marshal-cli` library, served by the app's executable in its agent mode       |
 | The token store                                      | The Windows Credential Manager, entered in the main window                           |
-| The installer, the release, the install layout below | Planned for the app's next pull request                                              |
+| The installer, the release, the install layout below | Planned for W1's installer pull request (pull request 3)                             |
 | The command line's removal                           | Planned for the same pull request                                                    |
 | Verification on axpc                                 | Not done; see [Verification Status](#verification-status)                            |
 
@@ -363,8 +363,8 @@ version of `tauri-cli`: one line holding one exact `X.Y.Z`.
 refuses a file that is a range, a prefix or more than one line, so a loose value
 never reaches `cargo install`. The Windows job installs `tauri-cli` with
 `cargo install tauri-cli --version "=<pin>" --locked` under `$RUNNER_TEMP`, with no
-cache, so the tool compiles on every run. The release build that the app's next pull
-request adds reads the same file the same way, and so does W4's tool job once it
+cache, so the tool compiles on every run. The release build that W1's installer pull
+request (pull request 3) adds reads the same file the same way, and so does W4's tool job once it
 lands, which commits a checksum of the crate archive that moves with the pin. Do not
 write the version anywhere else. To move it:
 
@@ -400,7 +400,7 @@ app enters each repository's token in the window, once.
 
 ## Install Layout
 
-This is planned, and holds until the app's next pull request merges the installer;
+This is planned, and holds until W1's installer pull request (pull request 3) merges the installer;
 no host has it installed.
 
 | What                                  | Where                                                                |

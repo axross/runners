@@ -258,9 +258,10 @@ GitHub-hosted runner with `contents: read`, checks out the pull request, and run
 `mise run check`, which executes the pull request's own task definitions and the
 linters they call, including the CLI's Rust gates and, for the app under `app/`, its
 formatting, the lint and tests of its platform-independent crates, its cargo-deny
-run, and a check
+run, the main window page's Node tests, a check
 that both Rust toolchain files name one channel and that `app/tauri-cli.version`
-holds one exact version. The same workflow also runs a
+holds one exact version, and the test of the script that reads that version
+(`test:tauri-cli-version`). The same workflow also runs a
 `rust` job that formats, lints, and tests the CLI on Linux, Windows, and macOS hosted
 runners, with four more steps on Linux only: the release-profile tests of the
 debug-only overrides, the test definition `build` reads among them; a build of the

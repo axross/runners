@@ -187,7 +187,7 @@ jobs:
       - name: Fail If The Build Changed A Tracked File
         run: |
           git diff --exit-code
-          untracked="$(git ls-files --others --exclude-standard)"
+          untracked="$(git ls-files --others --exclude-standard --full-name -- :/)"
           if [[ -n "$untracked" ]]; then
             echo "error: the build left files that are neither tracked nor ignored:" >&2
             echo "$untracked" >&2
