@@ -507,8 +507,7 @@ impl GoldenBuild<'_> {
     }
 
     /// writes the files the build VM has not yet written to its disk, stops it, and
-    /// waits for its
-    /// `tart run` to end.
+    /// waits for its `tart run` to end.
     async fn shut_down(&self, session: &Session, vm: &str) -> Result<(), Abort> {
         self.log
             .info(&format!("Writing the build VM {vm}'s files to its disk."));
