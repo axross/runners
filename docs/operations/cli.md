@@ -2257,7 +2257,9 @@ Removing one, or changing its meaning, needs version 3.
 So a client written against today's agent keeps working against a later agent of
 version 2, and a later client works against today's agent by calling only what
 `welcome` lists. [Protocol Version 2](#protocol-version-2) says how the library's
-`Client` follows these rules. A change that removes or reinterprets anything above is a version 3, which is a new
+`Client` follows these rules, and [App](./app.md#the-view) says how the app's view
+follows them. A change that removes or reinterprets anything
+above is a version 3, which is a new
 framing decision for the maintainer, not an addition.
 
 ### The Snapshot
@@ -3622,15 +3624,16 @@ the gates that cover it, so a change to the library knows what the app relies on
 - No file under `cli/src` moves for the app. The library's additions for it are
   small exports: the stop reason codes as `agent::StopReason`, the handshake
   timeout `agent::HANDSHAKE_TIMEOUT`, the registration error's marker of a token
-  GitHub rejects as `runtime::registration::REJECTED_MARK`, the failure that stops an
+  GitHub rejects as `runtime::registration::REJECTED_MARK`, the start of a pool's reason
+  when the token store failed as `agent::tokens::STORE_FAILED`, the failure that stops an
   instance as `instance::restart::STOPPING_FAILURE`, beside the already public
-  `WINDOW` and `DELAYS`, and the names of the debug-only test variables as
-  `command::TEST_ROOT_VARIABLE`, `TEST_DOCKER_VARIABLE` and
-  `TEST_GITHUB_API_VARIABLE`. A later change to a public item the app uses
+  `WINDOW` and `DELAYS`, whose figures the app's banners quote, and the names of the
+  debug-only test variables as `command::TEST_ROOT_VARIABLE`, `TEST_DOCKER_VARIABLE`
+  and `TEST_GITHUB_API_VARIABLE`. A later change to a public item the app uses
   breaks the app's build, which `mise run check` and the Windows job show, so the
   change and the app move together.
-- The app reads the library for the agent's entry and options and the hidden
-  `export`, `shim` and `vm-shim` commands. It adds no message to the protocol: a new
+- The app reads the library for the protocol's types, the agent's entry and options,
+  and the hidden `export`, `shim` and `vm-shim` commands. It adds no message to the protocol: a new
   message follows [Version Rules](#version-rules).
 - The app has its own `Cargo.lock`, [`deny.toml`](../../app/deny.toml) and
   [`rust-toolchain.toml`](../../app/rust-toolchain.toml). The toolchain file names
@@ -3653,8 +3656,8 @@ lints and tests them on Windows.
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `fetch:app`                      | `cargo fetch --locked` in `app/`, which `cargo deny` reads                                                               |
 | `format:app`, `format:check:app` | `cargo fmt --all`, and `cargo fmt --all --check`, in `app/`                                                              |
-| `lint:app`                       | `cargo clippy --locked --all-targets -- -D warnings` over the `marshal-modes` package                                    |
-| `test:app`                       | `cargo test --locked` over the same package                                                                              |
+| `lint:app`                       | `cargo clippy --locked --all-targets -- -D warnings` over the `marshal-modes` and `marshal-view` packages                |
+| `test:app`                       | `cargo test --locked` over the same two packages                                                                         |
 | `deny:app`                       | `cargo deny --locked check bans licenses sources` in `app/`, for `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`     |
 | `check:app-pins`                 | Both toolchain files name one channel                                                                                    |
 | `check:app-lock`                 | `app/Cargo.lock` resolves `marshal-cli`'s crates, dev-dependencies aside, for the three targets as `cli/Cargo.lock` does |

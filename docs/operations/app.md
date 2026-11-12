@@ -1,8 +1,8 @@
 # App
 
 The Windows app's Cargo workspace under [`app/`](../../app): the one executable and
-its modes, the debug-only test variables, and the app's tests and what they do and
-do not show.
+its modes, the debug-only test variables, what the window, menu and icon show for a
+snapshot, and the app's tests and what they do and do not show.
 
 [CLI](./cli.md) owns the library the app and the agent are built on: the agent's
 state, the token store, protocol version 2 and the snapshot. [Security](../conventions/security.md)
@@ -12,15 +12,16 @@ pools with the command line, which is how axpc runs them today.
 
 ## What Exists
 
-The workspace holds the mode dispatch and its tests, but nothing builds the app's
+The workspace holds the mode dispatch, the view and their tests, but nothing builds the app's
 executable, installs it or releases it. `marshal` is still built and released, and
 axpc still runs its pools with it.
 
-| Part                                             | State                                                                                          |
-| ------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
-| The mode dispatch, the `marshal-modes` crate     | Tested by `mise run check` on Linux, the `app-modes` job on macOS and the `app` job on Windows |
-| The agent's resident mode and protocol version 2 | In the `marshal-cli` library, which the mode dispatch runs in its agent mode                   |
-| Verification on axpc                             | Not done; see [Verification Status](#verification-status)                                      |
+| Part                                                          | State                                                                                          |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| The mode dispatch, the `marshal-modes` crate                  | Tested by `mise run check` on Linux, the `app-modes` job on macOS and the `app` job on Windows |
+| What the window, menu and icon show, the `marshal-view` crate | Tested by `mise run check` on Linux and the `app` job on Windows                               |
+| The agent's resident mode and protocol version 2              | In the `marshal-cli` library, which the mode dispatch runs in its agent mode                   |
+| Verification on axpc                                          | Not done; see [Verification Status](#verification-status)                                      |
 
 ## The Executable and Its Modes
 
@@ -64,6 +65,37 @@ test of that in the release profile, which the `app-modes` job runs on a macOS h
 runner with `cargo test --release` and all three variables set, so the test fails if a
 release build reads them, as a Linux step runs the library's own options in that
 profile. `mise run check` runs the crate's tests in the debug profile only.
+
+## The View
+
+What the window and menu show for a snapshot is computed in the `marshal-view` crate,
+which has no operating system dependency. Its tests build views from the recorded
+snapshots in `app/crates/view/tests/fixtures/`.
+
+A runner row writes its state out beside a mark: "Container running" with a check,
+"Saving diagnostics" with a check while the runner's diagnostic container is
+finalising, "Registering" with a ring, "Backing off" and "Held" with the history mark, and
+"Stopped" with the stop mark. A backing-off or held runner shows the agent's reason under
+its state, and a held one is a runner whose job host a host prerequisite refuses, so
+its reason says which. A state the app does not know shows the runner's own reason as
+its words, with the unknown mark, or the state's word when there is no reason, as the version
+rules in [CLI](./cli.md#version-rules) require.
+
+The agent gives a skipped pool's reason after its place in the configuration, as
+`repositories[0]: no token.`, and the view reads the cause after that place. A pool
+skipped for want of a token says "No token for owner/app. Start All skipped this
+pool." with Set Token. A pool skipped because the token store failed, or because there
+is none, keeps the agent's reason on its card, and its repository's row shows the
+store's words, such as "The token store failed: access was refused (kind
+access_refused, code 5).", instead of "No token", with no "No repository has a token
+yet" banner; Set Token stays, since a save goes through the same store and says if it
+fails too. A token save or removal the agent has not answered says so, and the row
+then follows the snapshot, since the agent may still do it.
+
+From `app/`, `cargo run -p marshal-view --example dump_view -- <fixture.json>` prints a
+recorded snapshot's view as JSON, with options to set the connection, a pending
+action, an open token form, a token result and the settled count, which the example's
+header comment lists.
 
 ## Verification Status
 

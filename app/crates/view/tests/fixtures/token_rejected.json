@@ -1,0 +1,141 @@
+{
+  "agent": {
+    "version": "0.1.0",
+    "state": "running",
+    "since": 1793762100000
+  },
+  "configuration": {
+    "path": "C:\\Users\\<user>\\AppData\\Local\\marshal\\config.json",
+    "problems": []
+  },
+  "runners_up": 2,
+  "runners_wanted": 6,
+  "repositories": [
+    {
+      "repository": "owner/app",
+      "has_token": true,
+      "pools": ["app"]
+    },
+    {
+      "repository": "owner/site",
+      "has_token": true,
+      "pools": ["site"]
+    },
+    {
+      "repository": "owner/docs",
+      "has_token": false,
+      "pools": ["docs"]
+    }
+  ],
+  "pools": [
+    {
+      "name": "app",
+      "repository": "owner/app",
+      "state": "running",
+      "reason": null,
+      "has_token": true,
+      "runners_up": 0,
+      "slots": 2,
+      "runners": [
+        {
+          "slot": 1,
+          "state": "backing_off",
+          "workload": null,
+          "reason": "failed to request a JIT registration (Response status code does not indicate success: 401 (Unauthorized). {\"message\":\"Bad credentials\",\"documentation_url\":\"https://docs.github.com/rest\",\"status\":\"401\"})",
+          "since": 1793764020000
+        },
+        {
+          "slot": 2,
+          "state": "backing_off",
+          "workload": null,
+          "reason": "failed to request a JIT registration (Response status code does not indicate success: 401 (Unauthorized). {\"message\":\"Bad credentials\",\"documentation_url\":\"https://docs.github.com/rest\",\"status\":\"401\"})",
+          "since": 1793764020000
+        }
+      ],
+      "diagnostics": null
+    },
+    {
+      "name": "site",
+      "repository": "owner/site",
+      "state": "running",
+      "reason": null,
+      "has_token": true,
+      "runners_up": 2,
+      "slots": 3,
+      "runners": [
+        {
+          "slot": 1,
+          "state": "running",
+          "workload": "site-1-20261104033907412",
+          "reason": null,
+          "since": 1793763547000
+        },
+        {
+          "slot": 2,
+          "state": "running",
+          "workload": "site-2-20261104033907413",
+          "reason": null,
+          "since": 1793763548000
+        },
+        {
+          "slot": 3,
+          "state": "registering",
+          "workload": null,
+          "reason": null,
+          "since": 1793763600000
+        }
+      ],
+      "diagnostics": null
+    },
+    {
+      "name": "docs",
+      "repository": "owner/docs",
+      "state": "skipped",
+      "reason": "repositories[2]: no token.",
+      "has_token": false,
+      "runners_up": 0,
+      "slots": 1,
+      "runners": [
+        {
+          "slot": 1,
+          "state": "stopped",
+          "workload": null,
+          "reason": null,
+          "since": 1793762100000
+        }
+      ],
+      "diagnostics": null
+    }
+  ],
+  "leftovers": [],
+  "images": [
+    {
+      "name": "actions-runner:local",
+      "lines": [
+        {
+          "name": "image",
+          "value": "actions-runner:local"
+        },
+        {
+          "name": "image-contract",
+          "value": "3"
+        },
+        {
+          "name": "image-built",
+          "value": "2 days ago"
+        },
+        {
+          "name": "runner",
+          "value": "2.338.2, released 9 days ago"
+        }
+      ],
+      "warnings": [
+        {
+          "code": "runner_may_be_newer",
+          "days": 9,
+          "version": "2.338.2"
+        }
+      ]
+    }
+  ]
+}

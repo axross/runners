@@ -207,7 +207,9 @@ app is built for, `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`.
   `marshal-cli` changes `cli/Cargo.lock`, and the CLI's rule, which needs the
   maintainer's review, applies to it there.
 - **Direct dependencies.** The `marshal-modes` crate depends only on `marshal-cli`,
-  by path. The token store's crates come through the library, and
+  by path, and the `marshal-view` crate on `marshal-cli`, by path, `serde`, which
+  serialises the view, and `serde_json`, which reads GitHub's message from a refused
+  token's reason, at versions the library already builds, so they add no crate. The token store's crates come through the library, and
   [CLI](../operations/cli.md#dependencies) lists them. A new direct dependency of an
   app crate MUST be added here with its reason, and needs the maintainer's review.
 - **Refreshes.** Dependabot's `cargo` entry for `/app` proposes the crate refreshes,
