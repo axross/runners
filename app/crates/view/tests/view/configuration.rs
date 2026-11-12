@@ -106,6 +106,36 @@ fn a_migration_that_could_not_write_warns_that_config_json_runs() {
 }
 
 #[test]
+fn a_config_toml_that_appeared_after_a_failed_migration_is_named_with_its_problems() {
+    let view = view_of(&running_with(json!({
+        "status": "invalid",
+        "problems": ["line 3: image_name: must be a string"],
+        "in_use": { "source": "json", "read_at": at(1, 5, 0) }
+    })));
+    assert_eq!(
+        configuration_warnings(&view),
+        [
+            "Warning: config.toml is not valid (line 3: image_name: must be a string), so \
+          Marshal runs the configuration of config.json it read today 01:05. Fix the file, \
+          then choose Stop All and Start All."
+        ]
+    );
+}
+
+#[test]
+fn a_stop_while_config_json_runs_after_a_failed_write_does_not_blame_config_json() {
+    let snapshot = patched("stopped_invalid_configuration", |value| {
+        value["configuration"]["in_use"] = json!({ "source": "json", "read_at": at(1, 5, 0) });
+        value["configuration"]["migration"] = json!({
+            "state": "failed",
+            "reason": "config.toml was not written: could not create config.toml: permission denied"
+        });
+    });
+    let banner = first_banner(&view_of(&snapshot)).clone();
+    assert_eq!(banner.heading, "Stopped: the configuration is not valid");
+}
+
+#[test]
 fn no_configuration_with_a_pending_migration_says_to_launch_marshal_again() {
     let snapshot = patched("stopped_no_configuration", |value| {
         value["configuration"]["status"] = "missing".into();

@@ -154,6 +154,8 @@ pub struct Rig {
     pub executable: RefCell<Option<PathBuf>>,
     /// the agent has no token store, as on a host without one.
     pub no_store: Cell<bool>,
+    /// the profile the agent checks its configuration under; axpc unless a test says.
+    pub profile: Cell<marshal_cli::profile::Profile>,
     /// a store the agent uses in place of the in-memory one, as the Credential Manager.
     pub other_store: RefCell<Option<Arc<dyn TokenStore>>>,
     lock: RefCell<Option<InstanceLock>>,
@@ -191,6 +193,7 @@ impl Rig {
             drain_bound: Cell::new(marshal_cli::agent::machine::DRAIN_BOUND),
             executable: RefCell::new(None),
             no_store: Cell::new(false),
+            profile: Cell::new(marshal_cli::profile::Profile::Axpc),
             other_store: RefCell::new(None),
             lock: RefCell::new(Some(lock)),
             ended_at: Cell::new(None),
@@ -294,7 +297,7 @@ impl Rig {
                 settings: Settings {
                     version: "test".to_string(),
                     config_folder: self.root.path().to_path_buf(),
-                    profile: marshal_cli::profile::Profile::Axpc,
+                    profile: self.profile.get(),
                     times: self.times.get(),
                     launch,
                     drain_bound: self.drain_bound.get(),

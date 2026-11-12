@@ -80,7 +80,6 @@ fn banner(
     }
 }
 
-/// the heading and the sentence that leads the body, as the live region reads them.
 /// whether the snapshot says the migration of `config.json` is in `state`.
 fn migration_is(context: &Context<'_>, state: &str) -> bool {
     context
@@ -89,6 +88,16 @@ fn migration_is(context: &Context<'_>, state: &str) -> bool {
         .is_some_and(|migration| migration.state == state)
 }
 
+/// whether `config.json` was refused at its migration: the one failure that leaves no
+/// configuration in use, as the others run `config.json`'s.
+fn json_refused(context: &Context<'_>) -> bool {
+    migration_is(context, "failed")
+        && context
+            .snapshot
+            .is_some_and(|snapshot| snapshot.configuration.in_use.is_none())
+}
+
+/// the heading and the sentence that leads the body, as the live region reads them.
 fn spoken(heading: &str, lead: &str) -> String {
     format!("{heading}. {lead}")
 }
@@ -243,7 +252,7 @@ fn stopped(context: &Context<'_>, stop: &Stop) -> Banner {
         }
         Stop::InvalidConfiguration => {
             // config.json was refused at its migration, so no config.toml was written
-            let json = migration_is(context, "failed");
+            let json = json_refused(context);
             let heading = if json {
                 "Stopped: config.json is not valid, so it was not migrated"
             } else {

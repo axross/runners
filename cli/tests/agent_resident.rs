@@ -839,6 +839,31 @@ async fn quit_cancels_a_build_and_ends_the_agent() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn an_axmc_configuration_without_an_image_name_builds_the_default_image() {
+    let rig = Rig::new(ONE_POOL);
+    rig.remove("config.json");
+    rig.profile.set(marshal_cli::profile::Profile::Axmc);
+    rig.write_toml(
+        "schema_version = 1\nrouting_label = \"axmc\"\n\n[budget]\ncpus = 8\nmemory_gb = 16\n\
+         disk_gb = 120\n\n[[pool]]\nname = \"r\"\nrepository = \"o/r\"\nrunners = 1\n\
+         disk_gb = 40\n",
+    );
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Stopped, |conn| async move {
+            assert_eq!(conn.status().await.configuration.status, "valid");
+            conn.ok("build").await;
+            conn.until("the build to end", |s| {
+                s.agent.build.as_ref().is_some_and(|b| b.outcome == "ready")
+            })
+            .await;
+            conn.ok("quit").await;
+        })
+        .await;
+    assert_eq!(*rig.builder.images.borrow(), ["actions-runner:local"]);
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn build_is_refused_while_the_runners_run() {
     let rig = running_rig();
     let rig = &rig;

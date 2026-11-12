@@ -29,6 +29,7 @@ use crate::runtime::board::{Board, PoolState, SlotState};
 use crate::runtime::clock::Clock;
 use crate::runtime::image::check_image;
 use crate::runtime::log::Log;
+use crate::runtime::pool::DEFAULT_IMAGE_NAME;
 use crate::runtime::registration::Registrar;
 use crate::runtime::scrub::scrub_error_text;
 use crate::runtime::worker::sleep_or_stop;
@@ -131,6 +132,14 @@ enum CycleEnd {
 enum Reloaded {
     Run(Plan),
     Stopped(Reason),
+}
+
+/// the image a plan runs: its own, or on axmc, where the key is optional, the
+/// default `build` uses too.
+fn image_name(plan: &Plan) -> Option<String> {
+    plan.image_name
+        .clone()
+        .or_else(|| (plan.profile == Profile::Axmc).then(|| DEFAULT_IMAGE_NAME.to_string()))
 }
 
 fn ticker() -> tokio::time::Interval {
@@ -464,12 +473,16 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             )),
             Migration::None | Migration::Pending => {}
         }
-        if let Some(in_use) = &loaded.in_use
-            && in_use.origin == Origin::LastValid
-        {
-            self.log.warn(
+        match &loaded.in_use {
+            Some(in_use) if in_use.origin == Origin::LastValid => self.log.warn(
                 "config.toml is not usable, so the configuration read from it earlier stays in use.",
-            );
+            ),
+            Some(in_use) if in_use.origin == Origin::Json && loaded.file != FileStatus::Missing => {
+                self.log.warn(
+                    "config.toml is not usable, so the configuration of config.json stays in use.",
+                );
+            }
+            _ => {}
         }
     }
 
@@ -635,14 +648,14 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             Ok(plan) => plan,
             Err(reason) => return Reloaded::Stopped(reason),
         };
-        let Some(image) = plan.image_name.as_deref() else {
+        let Some(image) = image_name(&plan) else {
             return Reloaded::Stopped(Reason::new(
                 Reason::INVALID_CONFIGURATION,
                 "the configuration names no image",
             ));
         };
-        let check = check_image(self.backend, &self.board, image).await;
-        match check.refusal(image) {
+        let check = check_image(self.backend, &self.board, &image).await;
+        match check.refusal(&image) {
             Some(refusal) => Reloaded::Stopped(Reason::new(Reason::IMAGE_UNUSABLE, refusal)),
             None => Reloaded::Run(plan),
         }
@@ -1206,7 +1219,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
              is valid"
                 .to_string()
         })?;
-        match plan.image_name {
+        match image_name(&plan) {
             None => Err("the configuration names no image to build".to_string()),
             Some(image) if image.contains('@') => Err(format!(
                 "the image name {image} names a digest, which cannot be tagged; give it a tag instead"

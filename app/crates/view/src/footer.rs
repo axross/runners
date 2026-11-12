@@ -159,24 +159,27 @@ fn configuration_warnings(context: &Context<'_>) -> Vec<String> {
     };
     let read = context.input.clock.when_with_day(in_use.read_at);
     let mut warnings = Vec::new();
-    match in_use.source.as_str() {
-        "last_valid" => {
-            let state = if configuration.status == "missing" {
-                "is missing".to_string()
-            } else {
-                let problems: Vec<String> =
-                    configuration.problems.iter().map(|p| plain(p)).collect();
-                if problems.is_empty() {
-                    "cannot be used".to_string()
-                } else {
-                    format!("is not valid ({})", problems.join("; "))
-                }
-            };
-            warnings.push(format!(
-                "Warning: config.toml {state}, so Marshal runs the configuration it read {read}. \
-                 Fix the file, then choose Stop All and Start All."
-            ));
+    let file_state = || {
+        let problems: Vec<String> = configuration.problems.iter().map(|p| plain(p)).collect();
+        match configuration.status.as_str() {
+            "missing" => "is missing".to_string(),
+            "unreadable" => format!("cannot be read ({})", problems.join("; ")),
+            _ if problems.is_empty() => "cannot be used".to_string(),
+            _ => format!("is not valid ({})", problems.join("; ")),
         }
+    };
+    match in_use.source.as_str() {
+        "last_valid" => warnings.push(format!(
+            "Warning: config.toml {}, so Marshal runs the configuration it read {read}. \
+             Fix the file, then choose Stop All and Start All.",
+            file_state()
+        )),
+        // config.toml appeared after a migration that could not write it
+        "json" if configuration.status != "missing" => warnings.push(format!(
+            "Warning: config.toml {}, so Marshal runs the configuration of config.json it \
+             read {read}. Fix the file, then choose Stop All and Start All.",
+            file_state()
+        )),
         "json" => {
             let why = configuration
                 .migration

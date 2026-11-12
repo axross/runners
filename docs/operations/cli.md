@@ -2026,8 +2026,9 @@ loading, and the agent keeps what the latest load found.
   the configuration in use was read. With none held, the agent stays stopped. A
   `start_all` migrates nothing: a missing `config.toml` beside `config.json` is
   `pending`, and the reason says to quit Marshal and launch it again.
-- **`build`** uses the image name of the configuration in use and reads no file; with
-  none in use it is `refused`.
+- **`build`** uses the image name of the configuration in use, on axmc
+  `actions-runner:local` when it names none, as `marshal build` does, and reads no
+  file; with none in use it is `refused`. Start All checks the same image.
 - The last valid configuration lives in memory only. A new agent process starts from
   the file. The agent does not watch the file.
 
