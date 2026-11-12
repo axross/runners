@@ -228,11 +228,15 @@ app is built for, `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`.
   on each other.
 - **Procedural macros are accepted as a class, in the app only.** Tauri's tree holds
   many, and a review of each crate would add nothing the lockfile's checksums and
-  `cargo-deny` do not already give. `app/Cargo.lock` holds exactly the crates and
-  versions `cli/Cargo.lock` resolves for `marshal-cli`, for Windows, macOS and Linux,
-  and `mise run check` fails otherwise (`check:app-lock`), so a procedural-macro crate
-  that enters through `marshal-cli` changes `cli/Cargo.lock`, and the CLI's rule,
-  which needs the maintainer's review, applies to it there.
+  `cargo-deny` do not already give. `app/Cargo.lock` resolves every crate
+  `cli/Cargo.lock` resolves for `marshal-cli`, for Windows, macOS and Linux, to the same
+  version, with nothing more among them, and `mise run check` fails otherwise
+  (`check:app-lock`), so a procedural-macro crate that `marshal-cli`'s own dependencies
+  bring changes `cli/Cargo.lock`, and the CLI's rule, which needs the maintainer's
+  review, applies to it there. A crate that a feature the app turns on adds to a crate
+  both trees share is the app's own and falls under this class rule: features the
+  app's other dependencies turn on in `futures-util`, `reqwest` and `tracing` add `futures-macro`,
+  `tracing-attributes`, `tokio-util`, `futures-io`, `futures-sink` and `syn` 2 that way.
 - **Marshal's own crates forbid `unsafe_code`.** Tauri's macros expand into the app's
   crates under that lint, and they build, so the macros emit none; Tauri's and the
   platform crates' own code is outside the claim.

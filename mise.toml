@@ -141,19 +141,24 @@ description = "Check the script that reads the tauri-cli pin and refuses a file 
 run = "bash .github/scripts/tests/test-tauri-cli-version.sh"
 
 # marshal-cli is not a member of the app's workspace, so the CLI's tests cover its
-# crates only at the versions cli/Cargo.lock holds; the app must link those.
+# crates only at the versions cli/Cargo.lock holds; the app must link those. A crate a
+# feature the app turns on adds to a shared crate is the app's own, so the app's tree is
+# followed only through crates the CLI's tree names.
 [tasks."check:app-lock"]
-description = "Fail when app/Cargo.lock resolves any crate marshal-cli depends on, for Windows, macOS or Linux, to another version than cli/Cargo.lock"
+description = "Fail when app/Cargo.lock resolves any crate marshal-cli builds with in the CLI, for Windows, macOS or Linux, to another version than cli/Cargo.lock"
 depends = ["rust:require", "fetch:rust", "fetch:app"]
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 # prints "name version" for every crate marshal-cli builds with, dev-dependencies aside,
-# as workspace $1 resolves it for target $2.
+# as workspace $1 resolves it for target $2, following only crates named in the JSON
+# object $3, when it is given.
 tree() {
-  (cd "$1" && cargo metadata --quiet --locked --offline --format-version 1 --filter-platform "$2") | jq -r '
-    (.packages | map({key: .id, value: "\(.name) \(.version)"}) | from_entries) as $names
-    | (.resolve.nodes | map({key: .id, value: [.deps[] | select(any(.dep_kinds[]; .kind != "dev")) | .pkg]}) | from_entries) as $deps
+  (cd "$1" && cargo metadata --quiet --locked --offline --format-version 1 --filter-platform "$2") |
+    jq -r --argjson held "${3:-null}" '
+    (.packages | map({key: .id, value: .name}) | from_entries) as $name
+    | (.packages | map({key: .id, value: "\(.name) \(.version)"}) | from_entries) as $names
+    | (.resolve.nodes | map({key: .id, value: [.deps[] | select(any(.dep_kinds[]; .kind != "dev")) | .pkg | select($held == null or $held[$name[.]])]}) | from_entries) as $deps
     | (.packages[] | select(.name == "marshal-cli") | .id) as $root
     | {seen: {}, todo: $deps[$root]}
     | until(.todo | length == 0;
@@ -163,8 +168,10 @@ tree() {
 }
 status=0
 for target in x86_64-pc-windows-msvc aarch64-apple-darwin x86_64-unknown-linux-gnu; do
+  cli="$(tree cli "$target")"
+  held="$(echo "$cli" | jq -R -s 'split("\n") | map(select(. != "") | split(" ")[0] | {(.): true}) | add')"
   if ! diff -u --label "cli/Cargo.lock (${target})" --label "app/Cargo.lock (${target})" \
-    <(tree cli "$target") <(tree app "$target"); then
+    <(echo "$cli") <(tree app "$target" "$held"); then
     echo "error: app/Cargo.lock resolves marshal-cli's crates for ${target} to other versions than cli/Cargo.lock; pin them to the CLI's with 'cargo update -p <crate>@<version> --precise <version>' in app/." >&2
     status=1
   fi

@@ -2963,8 +2963,8 @@ the gates that cover it, so a change to the library knows what the app relies on
 - The app has its own `Cargo.lock`, [`deny.toml`](../../app/deny.toml) and
   [`rust-toolchain.toml`](../../app/rust-toolchain.toml). The toolchain file names
   the CLI's channel, and Dependabot is set to bump both files in one pull request.
-  The app's lockfile resolves every crate `marshal-cli` builds with, for Windows,
-  macOS and Linux, to the version in the CLI's, so the CLI's tests cover the library
+  The app's lockfile resolves every crate `marshal-cli` builds with in the CLI, for
+  Windows, macOS and Linux, to the version in the CLI's, so the CLI's tests cover the library
   at the versions the app links; a change to one of those versions changes both
   lockfiles. The CLI's
   `Cargo.lock`, `deny.toml`, and dependency table do not change for the app: the
@@ -2977,17 +2977,17 @@ the gates that cover it, so a change to the library knows what the app relies on
 **Gates.** `mise run check` covers what builds without the web view's system
 libraries, so the Check job on Linux needs none; the Windows job covers the rest.
 
-| Task                             | Runs                                                                                                                                         |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `fetch:app`                      | `cargo fetch --locked` in `app/`, which `cargo deny` reads                                                                                   |
-| `format:app`, `format:check:app` | `cargo fmt --all`, and `cargo fmt --all --check`, in `app/`                                                                                  |
-| `lint:app`                       | `cargo clippy --locked --all-targets -- -D warnings` over the `marshal-modes`, `marshal-view`, `marshal-session` and `marshal-tray` packages |
-| `test:app`                       | `cargo test --locked` over the same four packages                                                                                            |
-| `test:app-frontend`              | `node --test` over the main window page's own tests, in `app/crates/app/tests/frontend/`                                                     |
-| `deny:app`                       | `cargo deny --locked check bans licenses sources` in `app/`, for `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`                         |
-| `check:app-pins`                 | Both toolchain files name one channel, and `app/tauri-cli.version` holds one exact version                                                   |
-| `test:tauri-cli-version`         | The script that reads the pin, against files that are not one exact version                                                                  |
-| `check:app-lock`                 | `app/Cargo.lock` resolves `marshal-cli`'s crates, dev-dependencies aside, for the three targets as `cli/Cargo.lock` does                     |
+| Task                             | Runs                                                                                                                                                                                                 |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fetch:app`                      | `cargo fetch --locked` in `app/`, which `cargo deny` reads                                                                                                                                           |
+| `format:app`, `format:check:app` | `cargo fmt --all`, and `cargo fmt --all --check`, in `app/`                                                                                                                                          |
+| `lint:app`                       | `cargo clippy --locked --all-targets -- -D warnings` over the `marshal-modes`, `marshal-view`, `marshal-session` and `marshal-tray` packages                                                         |
+| `test:app`                       | `cargo test --locked` over the same four packages                                                                                                                                                    |
+| `test:app-frontend`              | `node --test` over the main window page's own tests, in `app/crates/app/tests/frontend/`                                                                                                             |
+| `deny:app`                       | `cargo deny --locked check bans licenses sources` in `app/`, for `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`                                                                                 |
+| `check:app-pins`                 | Both toolchain files name one channel, and `app/tauri-cli.version` holds one exact version                                                                                                           |
+| `test:tauri-cli-version`         | The script that reads the pin, against files that are not one exact version                                                                                                                          |
+| `check:app-lock`                 | `app/Cargo.lock` resolves the crates `cli/Cargo.lock` resolves for `marshal-cli`, dev-dependencies aside, for the three targets to the same versions; crates the app's features add are not compared |
 
 `format:check` and `lint` call the app's formatting and lint tasks, and `check` calls
 the rest, so one run covers both workspaces. The Tauri crate, `marshal-app`, needs the

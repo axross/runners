@@ -336,7 +336,8 @@ Apply the lens for each kind of file in the diff.
   capabilities, the main window's and the confirmation window's, and the permission
   files Tauri generates keep to the permissions Security lists; a permission, a
   capability or Tauri feature added, such as `dynamic-acl`, is a finding. The
-  pages stay text-only: `dom.js` refuses `style`, `href`, `src`, `action` and `on*`,
+  pages stay text-only: `dom.js` refuses `style`, `href`, `src`, `srcdoc`, `action`, `formaction` and
+  `on*`,
   and text from the configuration, Docker or the agent is set as text, never as
   markup, with no inline script, remote asset or npm package. No token sits in the
   page, a view state or an event after `token_set` is called. A change to the
