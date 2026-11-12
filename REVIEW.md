@@ -136,9 +136,11 @@ Important; Codex review uses its native priority label.
   requirement that a later CLI record may hold, as Security records (see
   [Security](docs/conventions/security.md#nothing-identifying-or-secret-is-committed)).
   Verbatim third-party licence and copyright text in the notices under
-  `app/notices/` and the licence copies they draw on is the exception Security
-  records for personal names and email addresses, so it is not reported; such a
-  name or address anywhere else still is.
+  `app/notices/` and the licence copies they draw on, the crates' published
+  repository URLs in those notices, and `docs/operations/app.md`'s references to a
+  third-party crate's public repository are the exception Security records for
+  personal names, account names and email addresses, so they are not reported; such
+  a name or address anywhere else still is.
   An example uses an obviously fake
   placeholder (`<owner>`, `<repo>`, `example.invalid`). A value a runner needs
   is read from the environment or a prompt at run time.

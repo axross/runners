@@ -1519,11 +1519,14 @@ credential.
 The checked-in licence notices under `app/notices/` reproduce third-party licence
 texts and copyright notices verbatim, as those licences require, including the names
 and e-mail addresses of the people they name. That text is the one exception to the
-rule against committing personal names and e-mail addresses. It covers only verbatim
-licence and copyright text that `app/notices/generate.sh` produces or that the
-repository's licence copies hold (`app/notices/licences/` and the licence files beside
-the window's bundled fonts and colours), and adding a personal name or e-mail address
-of any other kind, or anywhere else, is still a finding.
+rule against committing personal names, account names and e-mail addresses. It covers
+only verbatim licence and copyright text that `app/notices/generate.sh` produces or
+that the repository's licence copies hold (`app/notices/licences/` and the licence
+files beside the window's bundled fonts and colours). It also covers the published
+repository URL that `generate.sh` writes into the notices for each crate, and a
+reference in `docs/operations/app.md` to a third-party crate's public repository,
+today `wravery/webview2-rs` and `madsmtm/objc2`; an account name, personal name or
+e-mail address of any other kind, or anywhere else, is still a finding.
 
 [`.gitignore`](../../.gitignore) excludes `settings.local.json`, `.env.local`,
 token files, and private keys so that a local working file cannot be committed by
