@@ -18,12 +18,13 @@ use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use tokio::time::{Instant, sleep_until, timeout};
 
-use super::api::{ApiResult, Call, Method, Parsed, parse};
+use super::api::{ApiError, ApiResult, Call, Method, Parsed, Topic, parse};
 use super::snapshot::Snapshot;
 use super::wire::{
-    AgentVersion, ClientMessage, EndingNotice, ErrorBody, ErrorCode, MAX_AGENT_MESSAGE_BYTES,
-    MAX_CLIENT_MESSAGE_BYTES, METHODS, ServerMessage, TOPIC_STATE, TOPICS, VERSION,
+    AgentVersion, ClientMessage, EndingNotice, ErrorBody, ErrorCode, EventValue,
+    MAX_AGENT_MESSAGE_BYTES, MAX_CLIENT_MESSAGE_BYTES, METHODS, ServerMessage, TOPICS, VERSION,
 };
+use crate::github_status::GithubStatus;
 
 /// the time and count limits of the channel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,6 +44,8 @@ pub struct Limits {
     pub connections: usize,
     /// connections that hold a subscription.
     pub subscriptions: usize,
+    /// a `github` subscription not renewed for this long ends.
+    pub renewal: Duration,
 }
 
 impl Default for Limits {
@@ -55,6 +58,7 @@ impl Default for Limits {
             coalesce: Duration::from_millis(250),
             connections: 16,
             subscriptions: 4,
+            renewal: Duration::from_secs(90),
         }
     }
 }
@@ -152,10 +156,54 @@ impl Counts {
     }
 }
 
+/// the `github` subscriptions alive now; GitHub status is collected while there is
+/// one.
+#[derive(Debug)]
+pub struct Watchers {
+    count: AtomicUsize,
+    active: watch::Sender<bool>,
+}
+
+impl Watchers {
+    /// no watcher yet, and the receiver that says whether there is one.
+    #[must_use]
+    pub fn new() -> (Arc<Self>, watch::Receiver<bool>) {
+        let (active, receiver) = watch::channel(false);
+        (
+            Arc::new(Self {
+                count: AtomicUsize::new(0),
+                active,
+            }),
+            receiver,
+        )
+    }
+
+    fn join(self: &Arc<Self>) -> Watching {
+        if self.count.fetch_add(1, Ordering::SeqCst) == 0 {
+            self.active.send_replace(true);
+        }
+        Watching(Arc::clone(self))
+    }
+}
+
+/// a live `github` subscription, counted until it drops.
+struct Watching(Arc<Watchers>);
+
+impl Drop for Watching {
+    fn drop(&mut self) {
+        if self.0.count.fetch_sub(1, Ordering::SeqCst) == 1 {
+            self.0.active.send_replace(false);
+        }
+    }
+}
+
 /// what every connection shares with the agent.
 pub struct Shared {
     pub calls: mpsc::UnboundedSender<Call>,
     pub snapshots: watch::Receiver<Arc<Snapshot>>,
+    /// the `github` topic's value.
+    pub github: watch::Receiver<Arc<GithubStatus>>,
+    pub watchers: Arc<Watchers>,
     /// set when the agent is about to end.
     pub ending: watch::Receiver<Option<EndingNotice>>,
     pub limits: Limits,
@@ -279,8 +327,28 @@ async fn write<W: AsyncWrite + Unpin>(
         .is_ok_and(|outcome| outcome.is_ok())
 }
 
+/// the value a subscription follows.
+enum Feed {
+    State(watch::Receiver<Arc<Snapshot>>),
+    Github {
+        values: watch::Receiver<Arc<GithubStatus>>,
+        /// when it was subscribed or last renewed.
+        renewed: Instant,
+        _watching: Watching,
+    },
+}
+
+impl Feed {
+    fn topic(&self) -> Topic {
+        match self {
+            Self::State(_) => Topic::State,
+            Self::Github { .. } => Topic::Github,
+        }
+    }
+}
+
 struct Subscription {
-    snapshots: watch::Receiver<Arc<Snapshot>>,
+    feed: Feed,
     seq: u64,
     /// when the latest event or heartbeat was written.
     last_push: Instant,
@@ -300,13 +368,25 @@ async fn answered(pending: &mut Pending) -> Result<ApiResult, oneshot::error::Re
 }
 
 async fn changed(subscription: &mut Option<Subscription>) {
-    if let Some(subscription) = subscription
-        && subscription.snapshots.changed().await.is_ok()
+    let changed = match subscription
+        .as_mut()
+        .map(|subscription| &mut subscription.feed)
     {
-        subscription.snapshots.borrow_and_update();
-        return;
+        Some(Feed::State(snapshots)) => {
+            let changed = snapshots.changed().await.is_ok();
+            snapshots.borrow_and_update();
+            changed
+        }
+        Some(Feed::Github { values, .. }) => {
+            let changed = values.changed().await.is_ok();
+            values.borrow_and_update();
+            changed
+        }
+        None => false,
+    };
+    if !changed {
+        pending::<()>().await;
     }
-    pending::<()>().await;
 }
 
 /// the reason the agent is ending, once it is; never, when the agent drops it unset.
@@ -479,6 +559,13 @@ impl<W: AsyncWrite + Abandon + Unpin> Session<'_, W> {
                 .subscription
                 .as_ref()
                 .and_then(|subscription| subscription.due);
+            let lapses =
+                self.subscription
+                    .as_ref()
+                    .and_then(|subscription| match &subscription.feed {
+                        Feed::Github { renewed, .. } => Some(*renewed + limits.renewal),
+                        Feed::State(_) => None,
+                    });
             let proceed = tokio::select! {
                 biased;
                 _ = ending.changed() => true,
@@ -489,6 +576,13 @@ impl<W: AsyncWrite + Abandon + Unpin> Session<'_, W> {
                 }
                 () = at(due) => self.push_event().await,
                 () = at(heartbeat) => self.push_heartbeat().await,
+                () = at(lapses) => {
+                    // the connection stays; the next `renew` is told the
+                    // subscription ended
+                    self.subscription = None;
+                    self.last_received = Instant::now();
+                    true
+                }
                 () = at(idle) => false,
                 line = self.lines.recv(), if self.pending.is_none() => match line {
                     Some(Read::Line(line)) => {
@@ -532,14 +626,27 @@ impl<W: AsyncWrite + Abandon + Unpin> Session<'_, W> {
         subscription.due = None;
         subscription.seq += 1;
         subscription.last_push = Instant::now();
-        let snapshot = Arc::clone(&subscription.snapshots.borrow_and_update());
         let seq = subscription.seq;
-        self.send(&ServerMessage::Event {
-            topic: TOPIC_STATE,
-            seq,
-            value: &snapshot,
-        })
-        .await
+        match &mut subscription.feed {
+            Feed::State(snapshots) => {
+                let snapshot = Arc::clone(&snapshots.borrow_and_update());
+                self.send(&ServerMessage::Event {
+                    topic: Topic::State.word(),
+                    seq,
+                    value: EventValue::State(&snapshot),
+                })
+                .await
+            }
+            Feed::Github { values, .. } => {
+                let value = Arc::clone(&values.borrow_and_update());
+                self.send(&ServerMessage::Event {
+                    topic: Topic::Github.word(),
+                    seq,
+                    value: EventValue::Github(&value),
+                })
+                .await
+            }
+        }
     }
 
     async fn push_heartbeat(&mut self) -> bool {
@@ -555,17 +662,13 @@ impl<W: AsyncWrite + Abandon + Unpin> Session<'_, W> {
         let Some((id, _)) = self.pending.take() else {
             return true;
         };
-        let answer = answer.unwrap_or_else(|_| {
-            Err(super::api::ApiError::new(
-                ErrorCode::Refused,
-                "the agent is ending",
-            ))
-        });
+        let answer = answer
+            .unwrap_or_else(|_| Err(ApiError::new(ErrorCode::Refused, "the agent is ending")));
         self.answer(id, &answer).await
     }
 
     async fn answer(&mut self, id: u64, answer: &ApiResult) -> bool {
-        let body = answer.as_ref().err().map(super::api::ApiError::body);
+        let body = answer.as_ref().err().map(ApiError::body);
         self.send(&ServerMessage::Response {
             id,
             result: answer.as_ref().ok(),
@@ -585,7 +688,7 @@ impl<W: AsyncWrite + Abandon + Unpin> Session<'_, W> {
                 Some(id) => {
                     self.answer(
                         id,
-                        &Err(super::api::ApiError::new(
+                        &Err(ApiError::new(
                             ErrorCode::InvalidRequest,
                             "the request is malformed",
                         )),
@@ -597,11 +700,15 @@ impl<W: AsyncWrite + Abandon + Unpin> Session<'_, W> {
         };
         match parse(&method, params) {
             Err(refusal) => self.answer(id, &Err(refusal)).await,
-            Ok(Parsed::Subscribe) => {
-                let answer = self.subscribe();
+            Ok(Parsed::Subscribe(topic)) => {
+                let answer = self.subscribe(topic);
                 let sent = self.answer(id, &answer).await;
                 self.schedule_event();
                 sent
+            }
+            Ok(Parsed::Renew(topic)) => {
+                let answer = self.renew(topic);
+                self.answer(id, &answer).await
             }
             Ok(Parsed::Call(mut method)) => {
                 if let Method::DrainForUpdate { requester, .. } = &mut method {
@@ -612,10 +719,7 @@ impl<W: AsyncWrite + Abandon + Unpin> Session<'_, W> {
                 }
                 let (reply, answer) = oneshot::channel();
                 if self.shared.calls.send(Call { method, reply }).is_err() {
-                    let gone = Err(super::api::ApiError::new(
-                        ErrorCode::Refused,
-                        "the agent is ending",
-                    ));
+                    let gone = Err(ApiError::new(ErrorCode::Refused, "the agent is ending"));
                     return self.answer(id, &gone).await;
                 }
                 self.pending = Some((id, answer));
@@ -624,11 +728,45 @@ impl<W: AsyncWrite + Abandon + Unpin> Session<'_, W> {
         }
     }
 
-    fn subscribe(&mut self) -> ApiResult {
-        if self.subscription.is_none() {
+    fn renew(&mut self, topic: Topic) -> ApiResult {
+        match self
+            .subscription
+            .as_mut()
+            .map(|subscription| &mut subscription.feed)
+        {
+            Some(Feed::Github { renewed, .. }) if topic == Topic::Github => {
+                *renewed = Instant::now();
+                Ok(serde_json::json!({ "topic": topic.word() }))
+            }
+            _ => Err(ApiError::new(
+                ErrorCode::NotSubscribed,
+                format!(
+                    "this connection holds no {} subscription; subscribe again",
+                    topic.word()
+                ),
+            )),
+        }
+    }
+
+    fn subscribe(&mut self, topic: Topic) -> ApiResult {
+        if let Some(subscription) = &mut self.subscription {
+            let held = subscription.feed.topic();
+            if held != topic {
+                return Err(ApiError::new(
+                    ErrorCode::InvalidRequest,
+                    format!(
+                        "this connection already holds a {} subscription; open another connection",
+                        held.word()
+                    ),
+                ));
+            }
+            if let Feed::Github { renewed, .. } = &mut subscription.feed {
+                *renewed = Instant::now();
+            }
+        } else {
             let limits = &self.shared.limits;
             let Some(slot) = self.shared.counts.subscribe(limits) else {
-                return Err(super::api::ApiError::new(
+                return Err(ApiError::new(
                     ErrorCode::SubscriptionLimit,
                     format!(
                         "the agent serves {} subscriptions at once",
@@ -636,10 +774,24 @@ impl<W: AsyncWrite + Abandon + Unpin> Session<'_, W> {
                     ),
                 ));
             };
-            let mut snapshots = self.shared.snapshots.clone();
-            snapshots.borrow_and_update();
+            let feed = match topic {
+                Topic::State => {
+                    let mut snapshots = self.shared.snapshots.clone();
+                    snapshots.borrow_and_update();
+                    Feed::State(snapshots)
+                }
+                Topic::Github => {
+                    let mut values = self.shared.github.clone();
+                    values.borrow_and_update();
+                    Feed::Github {
+                        values,
+                        renewed: Instant::now(),
+                        _watching: self.shared.watchers.join(),
+                    }
+                }
+            };
             self.subscription = Some(Subscription {
-                snapshots,
+                feed,
                 seq: 0,
                 last_push: Instant::now()
                     .checked_sub(limits.coalesce)
@@ -648,7 +800,7 @@ impl<W: AsyncWrite + Abandon + Unpin> Session<'_, W> {
                 _slot: slot,
             });
         }
-        Ok(serde_json::json!({ "topic": TOPIC_STATE }))
+        Ok(serde_json::json!({ "topic": topic.word() }))
     }
 }
 
@@ -666,5 +818,6 @@ mod tests {
         assert_eq!(limits.coalesce, Duration::from_millis(250));
         assert_eq!(limits.connections, 16);
         assert_eq!(limits.subscriptions, 4);
+        assert_eq!(limits.renewal, Duration::from_secs(90));
     }
 }

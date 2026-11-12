@@ -7,7 +7,7 @@ use tokio::sync::oneshot;
 use crate::runtime::secret::Secret;
 use crate::token_store::{RepositoryKey, StoreError, TokenRefusal, accepted_token};
 
-use super::wire::{ErrorBody, ErrorCode, StoreFault, TOPIC_STATE};
+use super::wire::{ErrorBody, ErrorCode, StoreFault, TOPIC_GITHUB, TOPIC_STATE};
 
 /// an error with its stable code.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -83,10 +83,38 @@ pub struct Call {
     pub reply: oneshot::Sender<ApiResult>,
 }
 
+/// a topic a connection subscribes to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Topic {
+    State,
+    /// collected only while a subscription to it is renewed.
+    Github,
+}
+
+impl Topic {
+    #[must_use]
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::State => TOPIC_STATE,
+            Self::Github => TOPIC_GITHUB,
+        }
+    }
+
+    fn of(word: &str) -> Result<Self, ApiError> {
+        match word {
+            TOPIC_STATE => Ok(Self::State),
+            TOPIC_GITHUB => Ok(Self::Github),
+            _ => Err(invalid("the agent serves the topics state and github")),
+        }
+    }
+}
+
 /// a request as the connection understands it.
 #[derive(Debug)]
 pub enum Parsed {
-    Subscribe,
+    Subscribe(Topic),
+    /// keeps the connection's `github` subscription alive.
+    Renew(Topic),
     Call(Method),
 }
 
@@ -161,10 +189,14 @@ pub fn parse(method: &str, value: serde_json::Value) -> Result<Parsed, ApiError>
         "quit" => Method::Quit,
         "subscribe" => {
             let SubscribeParams { topic } = params(value)?;
-            if topic != TOPIC_STATE {
-                return Err(invalid("the agent serves the topic state only"));
+            return Ok(Parsed::Subscribe(Topic::of(&topic)?));
+        }
+        "renew" => {
+            let SubscribeParams { topic } = params(value)?;
+            if topic != TOPIC_GITHUB {
+                return Err(invalid("only a github subscription is renewed"));
             }
-            return Ok(Parsed::Subscribe);
+            return Ok(Parsed::Renew(Topic::Github));
         }
         "token_set" => {
             let TokenSetParams { repository, token } = params(value)?;
@@ -224,16 +256,33 @@ mod tests {
     }
 
     #[test]
-    fn subscribe_takes_the_state_topic_only() {
+    fn subscribe_takes_the_state_and_github_topics() {
         assert!(matches!(
             parse("subscribe", json!({"topic": "state"})),
-            Ok(Parsed::Subscribe)
+            Ok(Parsed::Subscribe(Topic::State))
+        ));
+        assert!(matches!(
+            parse("subscribe", json!({"topic": "github"})),
+            Ok(Parsed::Subscribe(Topic::Github))
         ));
         assert_eq!(
             code("subscribe", json!({"topic": "later"})),
             ErrorCode::InvalidRequest
         );
         assert_eq!(code("subscribe", json!(null)), ErrorCode::InvalidRequest);
+    }
+
+    #[test]
+    fn renew_takes_the_github_topic_only() {
+        assert!(matches!(
+            parse("renew", json!({"topic": "github"})),
+            Ok(Parsed::Renew(Topic::Github))
+        ));
+        assert_eq!(
+            code("renew", json!({"topic": "state"})),
+            ErrorCode::InvalidRequest
+        );
+        assert_eq!(code("renew", json!(null)), ErrorCode::InvalidRequest);
     }
 
     #[test]
