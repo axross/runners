@@ -83,7 +83,7 @@ run = "cargo deny --locked check bans licenses sources"
 # tasks name them; the Windows job in merge-checks.yaml builds, lints and tests the
 # whole workspace.
 [tasks."fetch:app"]
-description = "Fetch the crates in app/Cargo.lock, which cargo deny reads"
+description = "Fetch the crates in app/Cargo.lock, which cargo deny and cargo about read"
 depends = ["rust:require"]
 dir = "app"
 run = "cargo fetch --locked"

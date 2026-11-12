@@ -105,7 +105,7 @@ channel; `mise run check:app-pins` fails when the two files differ, and Dependab
 app's crates, and the weekly advisory check covers its lockfile. [The App's
 Dependencies](#the-apps-dependencies) holds the rest of its policy.
 `cargo-about`, which writes the app's licence notices, is a mise tool like
-`cargo-deny`: pinned to 0.9.3 in `mise.toml` and installed as the project's prebuilt
+`cargo-deny`: pinned in `mise.toml` and installed as the project's prebuilt
 release, with its download URL and checksum in `mise.lock`, so it needs no compile
 in CI and no exception here. The version is printed in each notices file, so another
 `cargo-about` fails the notices check too.

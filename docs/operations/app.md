@@ -334,13 +334,19 @@ MPL-2.0 crate's published source named; then IBM Plex Sans, Radix Colors and, fo
 Windows, the WebView2 loader. `mise run check:notices` regenerates both files and
 fails on any difference from the checked-in ones, so a lockfile change that adds,
 drops or bumps a crate fails the Check job until `mise run notices:app` writes them
-again and the change commits them. The first line of each file names the cargo-about
-version, so another version fails the check too.
+again and the change commits them. Each file's header names the cargo-about version,
+so another version fails the check too.
 
 `cargo-about` is a mise tool pinned in [`mise.toml`](../../mise.toml) and locked in
 `mise.lock` like the others, installed from its release as a prebuilt binary, so the
 notices need no compile in CI. It runs with `--frozen`, offline, so a crate that
-ships no licence file gets the licence's standard text without a copyright line.
+ships no licence file gets the licence's standard text with its template line
+`Copyright (c) <year> <copyright holders>`. cargo-about also prints that line for
+some crates whose licence file it does not read the copyright line from; `about.toml`
+clarifies those, the `windows-rs` crates, `dpi` and `tauri-plugin-single-instance`,
+naming each crate's own licence files with their SHA-256. A bump that changes such a
+file no longer matches its checksum, the template line comes back in the regenerated
+notices, and the clarification is updated to the new file in the same change.
 The crate `webview2-com-sys` ships no licence file; its MIT notice is the `LICENSE`
 at the git commit its 0.39.1 crate was published from (`edc2caf`, in
 `wravery/webview2-rs`, recorded in the crate's `.cargo_vcs_info.json`). The loader's text is Microsoft's `LICENSE.txt` from the NuGet
