@@ -107,8 +107,8 @@ Dependencies](#the-apps-dependencies) holds the rest of its policy.
 `cargo-about`, which writes the app's licence notices, is a mise tool like
 `cargo-deny`: pinned in `mise.toml` and installed as the project's prebuilt
 release, with its download URL and checksum in `mise.lock`, so it needs no compile
-in CI and no exception here. The version is printed in each notices file, so another
-`cargo-about` fails the notices check too.
+in CI and no exception here. [App](../operations/app.md#licence-notices) describes how
+the notices check holds that version.
 
 The Windows installer's tool is pinned the same way. Besides the Rust toolchain,
 whose exception is recorded below, WiX is the one tool the release build fetches.

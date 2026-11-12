@@ -349,7 +349,9 @@ ships no licence file gets the licence's standard text with its template line
 `notices:app` fail on it. cargo-about also prints the line for some crates whose
 licence file it does not read the copyright line from; `about.toml` clarifies those,
 the `windows-rs` crates, `dpi` and `tauri-plugin-single-instance`, naming each
-crate's own licence files with their SHA-256. A bump that changes such a file no
+crate's own licence files with their SHA-256. It clarifies `ring` the same way, since
+its `LICENSE` only points to its two licence files and cargo-about would otherwise
+list the licence header of each source file. A bump that changes such a file no
 longer matches its checksum, the template line comes back and the run fails until the
 clarification names the new file.
 
@@ -362,10 +364,12 @@ Two groups ship no licence file, and `generate.sh` fills in their line itself:
   its copyright line from that copy. `generate.sh` does so only while the copy's
   words, without that line, are the licence text cargo-about printed for them, and
   fails otherwise.
-- The `objc2` crates, from `madsmtm/objc2`, whose upstream licence names no
-  copyright holder. Their notice is the licence text without the template line,
-  after one sentence saying that the crates ship no licence file and that their
-  upstream licence names no copyright holder.
+- The `objc2` crates, from `madsmtm/objc2`. The versions in `app/Cargo.lock` ship no
+  licence file, and the repository's `LICENSE.md` at the commits they were published
+  from (in each crate's `.cargo_vcs_info.json`) names no copyright holder; a later
+  licence there, from commit `ee9a7ad`, names one, and applies once a release carries
+  it. Their notice is the licence text without the template line, after one sentence
+  saying so.
 
 A crate outside these groups that gets the template line fails the run.
 

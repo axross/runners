@@ -36,14 +36,15 @@ template="Copyright (c) <year> <copyright holders>"
 # prints cargo-about's output $1 with the two groups of crates that ship no licence file
 # given what they have instead of the template line: the webview2-rs crates take the
 # copyright line of the repository's copy of their upstream licence, once the copy's
-# words are the licence cargo-about printed, and the objc2 crates, whose upstream
-# licence names no copyright holder, have the licence without the line, after a
-# sentence saying so. Any other crate keeps the template line, which the run refuses.
+# words are the licence cargo-about printed, and the objc2 crates, whose licence at the
+# commits they were published from names no copyright holder, have the licence without
+# the line, after a sentence saying so. Any other crate keeps the template line, which
+# the run refuses.
 own_copyright_lines() {
   local copy="${here}/licences/webview2-com-sys-LICENSE.txt"
   licence "$copy" >/dev/null
   awk -v template="$template" \
-    -v objc2="These crates ship no licence file, and their upstream licence names no copyright holder." '
+    -v objc2="These crate versions ship no licence file, and the licence in their repository at the commits they were published from names no copyright holder; a later licence there, from commit ee9a7ad, names one." '
     function words(text) {
       gsub(/[ \t\r]+/, " ", text)
       sub(/^ /, "", text)
@@ -108,8 +109,8 @@ notices() {
     echo
     cat "$crates"
     echo
-    echo "PART 2. IBM PLEX SANS, BUNDLED FOR THE WINDOWS"
-    echo "-----------------------------------------------"
+    echo "PART 2. IBM PLEX SANS, THE FONT BUNDLED FOR MARSHAL'S WINDOW PAGES"
+    echo "------------------------------------------------------------------"
     echo
     echo "IBM Plex Sans 1.1.0, by IBM Corp., in the files IBMPlexSans-Regular.woff2,"
     echo "IBMPlexSans-Medium.woff2 and IBMPlexSans-SemiBold.woff2, under the SIL Open Font"
@@ -117,8 +118,8 @@ notices() {
     echo
     licence "${frontend}/fonts/LICENSE.txt"
     echo
-    echo "PART 3. RADIX COLORS, THE COLOUR VALUES OF THE WINDOWS"
-    echo "-------------------------------------------------------"
+    echo "PART 3. RADIX COLORS, THE COLOUR VALUES OF MARSHAL'S WINDOW PAGES"
+    echo "-----------------------------------------------------------------"
     echo
     echo "@radix-ui/colors 3.0.0, by Radix, whose values the window's stylesheet copies."
     echo "Source: https://github.com/radix-ui/colors"
