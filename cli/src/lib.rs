@@ -16,6 +16,7 @@ pub mod golden;
 pub mod image;
 pub mod instance;
 pub mod json;
+pub mod lifecycle_settings;
 pub mod macos;
 #[cfg(unix)]
 pub mod private;
