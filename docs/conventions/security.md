@@ -1457,11 +1457,20 @@ environment or supplied at run time. The exceptions are the two default runner l
 and `axmc`, which a host adds when `labels` is absent or empty and which are
 committed by the maintainer's decision: `axpc` names the Windows Docker Desktop
 host and `axmc` the macOS host. Every other host, consumer, or machine value stays
-a parameter. The one further exception is the macOS signing team ID and the exact
+a parameter. A further exception is the macOS signing team ID and the exact
 designated requirement, which a documentation change records in the CLI document
 after the first signed release as the contract text for later work. The team ID is
 public in every signed file, so recording it discloses nothing; it is not an account
 credential.
+
+The checked-in licence notices under `app/notices/` reproduce third-party licence
+texts and copyright notices verbatim, as those licences require, including the names
+and e-mail addresses of the people they name. That text is the one exception to the
+rule against committing personal names and e-mail addresses. It covers only verbatim
+licence and copyright text that `app/notices/generate.sh` produces or that the
+repository's licence copies hold (`app/notices/licences/` and the licence files beside
+the window's bundled fonts and colours), and adding a personal name or e-mail address
+of any other kind, or anywhere else, is still a finding.
 
 [`.gitignore`](../../.gitignore) excludes `settings.local.json`, `.env.local`,
 token files, and private keys so that a local working file cannot be committed by

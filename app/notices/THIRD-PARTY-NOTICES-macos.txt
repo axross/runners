@@ -4552,9 +4552,9 @@ Used by:
   * objc2-web-kit 0.3.2 - https://github.com/madsmtm/objc2
   * objc2 0.6.5 - https://github.com/madsmtm/objc2
 
-MIT License
+These crates ship no licence file, and their upstream licence names no copyright holder.
 
-Copyright (c) <year> <copyright holders>
+MIT License
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction, including

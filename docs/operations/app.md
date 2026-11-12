@@ -323,11 +323,11 @@ The Windows installer will install a notices file, so the notices are checked in
 for, `THIRD-PARTY-NOTICES-windows.txt` for `x86_64-pc-windows-msvc` and
 `THIRD-PARTY-NOTICES-macos.txt` for `aarch64-apple-darwin`, and what writes them:
 
-| File or folder              | Holds                                                                                                       |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `generate.sh`               | `write` or `check`: runs `cargo about generate --frozen --fail` for each tree, then appends the files below |
-| `about.toml`, `notices.hbs` | cargo-about's accepted licences, which are `deny.toml`'s allowlist and its two exceptions, and its template |
-| `licences/`                 | The WebView2 loader's licence and `webview2-com-sys`'s, for the Windows file only                           |
+| File or folder              | Holds                                                                                                                                           |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `generate.sh`               | `write` or `check`: runs `cargo about generate --frozen --fail` for each tree, fills in the copyright lines below, then appends the files below |
+| `about.toml`, `notices.hbs` | cargo-about's accepted licences, which are `deny.toml`'s allowlist and its two exceptions, and its template                                     |
+| `licences/`                 | The WebView2 loader's licence and the `webview2-rs` crates' licence, for the Windows file only                                                  |
 
 Each file lists every crate the executable links, grouped by licence, with each
 MPL-2.0 crate's published source named; then IBM Plex Sans, Radix Colors and, for
@@ -341,15 +341,33 @@ so another version fails the check too.
 `mise.lock` like the others, installed from its release as a prebuilt binary, so the
 notices need no compile in CI. It runs with `--frozen`, offline, so a crate that
 ships no licence file gets the licence's standard text with its template line
-`Copyright (c) <year> <copyright holders>`. cargo-about also prints that line for
-some crates whose licence file it does not read the copyright line from; `about.toml`
-clarifies those, the `windows-rs` crates, `dpi` and `tauri-plugin-single-instance`,
-naming each crate's own licence files with their SHA-256. A bump that changes such a
-file no longer matches its checksum, the template line comes back in the regenerated
-notices, and the clarification is updated to the new file in the same change.
-The crate `webview2-com-sys` ships no licence file; its MIT notice is the `LICENSE`
-at the git commit its 0.39.1 crate was published from (`edc2caf`, in
-`wravery/webview2-rs`, recorded in the crate's `.cargo_vcs_info.json`). The loader's text is Microsoft's `LICENSE.txt` from the NuGet
+`Copyright (c) <year> <copyright holders>`, and the notices never hold that line:
+`generate.sh` refuses output with either placeholder, so `check:notices` and
+`notices:app` fail on it. cargo-about also prints the line for some crates whose
+licence file it does not read the copyright line from; `about.toml` clarifies those,
+the `windows-rs` crates, `dpi` and `tauri-plugin-single-instance`, naming each
+crate's own licence files with their SHA-256. A bump that changes such a file no
+longer matches its checksum, the template line comes back and the run fails until the
+clarification names the new file.
+
+Two groups ship no licence file, and `generate.sh` fills in their line itself:
+
+- `webview2-com`, `webview2-com-macros` and `webview2-com-sys` come from one
+  repository, `wravery/webview2-rs`. `licences/webview2-com-sys-LICENSE.txt` is its
+  `LICENSE` at the git commit the 0.39.1 crate was published from (`edc2caf`,
+  recorded in the crate's `.cargo_vcs_info.json`), and the three crates' notice takes
+  its copyright line from that copy. `generate.sh` does so only while the copy's
+  words, without that line, are the licence text cargo-about printed for them, and
+  fails otherwise.
+- The `objc2` crates, from `madsmtm/objc2`, whose upstream licence names no
+  copyright holder. Their notice is the licence text without the template line,
+  after one sentence saying that the crates ship no licence file and that their
+  upstream licence names no copyright holder.
+
+A crate outside these groups that gets the template line fails the run.
+
+The Windows file's part for the WebView2 loader repeats `webview2-com-sys`'s notice
+from the same copy. The loader's text is Microsoft's `LICENSE.txt` from the NuGet
 package `Microsoft.Web.WebView2` 1.0.3800.47, which is the SDK that
 `webview2-com-sys` 0.39.1 bundles; it was identified by matching the SHA-256 of
 `x64/WebView2LoaderStatic.lib` across NuGet releases. `generate.sh` fails when any

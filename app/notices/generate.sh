@@ -29,6 +29,64 @@ licence() {
   cat "$1"
 }
 
+# the template line cargo-about prints for a crate whose own copyright line it has not
+# got, which --fail lets through; the finished notices must not hold it.
+template="Copyright (c) <year> <copyright holders>"
+
+# prints cargo-about's output $1 with the two groups of crates that ship no licence file
+# given what they have instead of the template line: the webview2-rs crates take the
+# copyright line of the repository's copy of their upstream licence, once the copy's
+# words are the licence cargo-about printed, and the objc2 crates, whose upstream
+# licence names no copyright holder, have the licence without the line, after a
+# sentence saying so. Any other crate keeps the template line, which the run refuses.
+own_copyright_lines() {
+  local copy="${here}/licences/webview2-com-sys-LICENSE.txt"
+  licence "$copy" >/dev/null
+  awk -v template="$template" \
+    -v objc2="These crates ship no licence file, and their upstream licence names no copyright holder." '
+    function words(text) {
+      gsub(/[ \t\r]+/, " ", text)
+      sub(/^ /, "", text)
+      sub(/ $/, "", text)
+      return text
+    }
+    function flush(   i, f, k, kind, line, start, text) {
+      for (i = 1; i <= n; i++) if (block[i] == template) line = i
+      for (i = 1; i <= n; i++) if (block[i] ~ /^  \* /) {
+        split(block[i], f, " ")
+        k = f[2] ~ /^webview2-com(-macros|-sys)?$/ ? "webview2" : \
+          (f[5] == "https://github.com/madsmtm/objc2" ? "objc2" : "other")
+        kind = (kind == "" || kind == k) ? k : "mixed"
+        start = i
+      }
+      if (line) {
+        for (start++; start <= n && block[start] == ""; start++) {}
+        if (kind == "webview2") {
+          for (i = start; i <= n; i++) if (i != line) text = text " " block[i]
+          if (words(text) == words(copy)) block[line] = holder
+          else print "error: app/notices/licences/webview2-com-sys-LICENSE.txt no longer holds the licence cargo-about names for the webview2-rs crates." > "/dev/stderr"
+        }
+      }
+      for (i = 1; i <= n; i++) {
+        if (line && kind == "objc2") {
+          if (i == start) { print objc2; print "" }
+          if (i == line || (i == line + 1 && block[i] == "")) continue
+        }
+        print block[i]
+      }
+      n = 0
+    }
+    FNR == NR {
+      if ($0 ~ /^Copyright /) holder = $0
+      else copy = copy " " $0
+      next
+    }
+    /^=+$/ && length($0) >= 40 { flush(); print; next }
+    { block[++n] = $0 }
+    END { flush() }
+  ' "$copy" "$1"
+}
+
 # one file for each tree: the crates differ, and so does what a tree links that is
 # not a crate. $1 is the file's name, $2 the target, $3 the name of the platform.
 notices() {
@@ -37,6 +95,8 @@ notices() {
   (cd "$app" && cargo about generate --frozen --fail \
     --config notices/about.toml --manifest-path crates/app/Cargo.toml \
     --target "$target" --output-file "$crates" notices/notices.hbs)
+  own_copyright_lines "$crates" >"${crates}.own"
+  mv "${crates}.own" "$crates"
   {
     echo "THIRD-PARTY NOTICES: Marshal for ${platform} (${target})"
     echo
@@ -91,6 +151,10 @@ notices THIRD-PARTY-NOTICES-macos.txt aarch64-apple-darwin macOS
 
 status=0
 for file in THIRD-PARTY-NOTICES-windows.txt THIRD-PARTY-NOTICES-macos.txt; do
+  if grep -n -e '<year>' -e '<copyright holders>' "${out}/${file}" >&2; then
+    echo "error: app/notices/${file} would hold the template line '${template}' above, not a crate's own copyright line; give that crate its own in notices/about.toml or generate.sh." >&2
+    exit 1
+  fi
   if [[ "$mode" == "write" ]]; then
     cp "${out}/${file}" "${here}/${file}"
     echo "wrote app/notices/${file}"

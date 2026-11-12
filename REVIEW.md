@@ -135,6 +135,10 @@ Important; Codex review uses its native priority label.
   kept by the maintainer's decision, and the macOS signing team ID and designated
   requirement that a later CLI record may hold, as Security records (see
   [Security](docs/conventions/security.md#nothing-identifying-or-secret-is-committed)).
+  Verbatim third-party licence and copyright text in the notices under
+  `app/notices/` and the licence copies they draw on is the exception Security
+  records for personal names and email addresses, so it is not reported; such a
+  name or address anywhere else still is.
   An example uses an obviously fake
   placeholder (`<owner>`, `<repo>`, `example.invalid`). A value a runner needs
   is read from the environment or a prompt at run time.
