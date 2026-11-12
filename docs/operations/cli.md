@@ -1795,10 +1795,10 @@ Removing one, or changing its meaning, needs version 3.
 So a client written against today's agent keeps working against a later agent of
 version 2, and a later client works against today's agent by calling only what
 `welcome` lists. [Protocol Version 2](#protocol-version-2) says how the library's
-`Client` follows these rules. The app's view crate shows a state or reason it does
-not know in words instead of failing, and an `ending` reason it does not know is
-logged and ignored, so a later reason does not end the app. A change that removes or
-reinterprets anything above is a version 3, which is a new
+`Client` follows these rules, and App says how the app follows them, in
+[The View](./app.md#the-view) and
+[The Agent and the App's Session](./app.md#the-agent-and-the-apps-session). A
+change that removes or reinterprets anything above is a version 3, which is a new
 framing decision for the maintainer, not an addition.
 
 ### The Snapshot
@@ -2941,7 +2941,8 @@ the gates that cover it, so a change to the library knows what the app relies on
 - No file under `cli/src` moves for the app. The library's additions for it are
   small exports: the stop reason codes as `agent::StopReason`, the handshake
   timeout `agent::HANDSHAKE_TIMEOUT`, the registration error's marker of a token
-  GitHub rejects as `runtime::registration::REJECTED_MARK`, the failure that stops an
+  GitHub rejects as `runtime::registration::REJECTED_MARK`, the start of a pool's reason
+  when the token store failed as `agent::tokens::STORE_FAILED`, the failure that stops an
   instance as `instance::restart::STOPPING_FAILURE`, beside the already public
   `WINDOW` and `DELAYS`, whose figures the app's banners quote, and the names of the
   debug-only test variables as `command::TEST_ROOT_VARIABLE`, `TEST_DOCKER_VARIABLE`
@@ -2956,7 +2957,11 @@ the gates that cover it, so a change to the library knows what the app relies on
   `FILE_MODE`), and the log's timestamp (`runtime::name::stamp`). It adds no message to the protocol: a new message follows [Version Rules](#version-rules).
 - The app has its own `Cargo.lock`, [`deny.toml`](../../app/deny.toml) and
   [`rust-toolchain.toml`](../../app/rust-toolchain.toml). The toolchain file names
-  the CLI's channel, and Dependabot is set to bump both files in one pull request. The CLI's
+  the CLI's channel, and Dependabot is set to bump both files in one pull request.
+  The app's lockfile resolves every crate `marshal-cli` builds with, for Windows,
+  macOS and Linux, to the version in the CLI's, so the CLI's tests cover the library
+  at the versions the app links; a change to one of those versions changes both
+  lockfiles. The CLI's
   `Cargo.lock`, `deny.toml`, and dependency table do not change for the app: the
   table under Dependencies lists the CLI's crates only, and
   [Security](../conventions/security.md#the-apps-dependencies) holds the policy for the
@@ -2975,6 +2980,7 @@ lints and tests them on Windows.
 | `test:app`                       | `cargo test --locked` over the same four packages                                                                                            |
 | `deny:app`                       | `cargo deny --locked check bans licenses sources` in `app/`, for `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`                         |
 | `check:app-pins`                 | Both toolchain files name one channel                                                                                                        |
+| `check:app-lock`                 | `app/Cargo.lock` resolves `marshal-cli`'s crates, dev-dependencies aside, for the three targets as `cli/Cargo.lock` does                     |
 
 `format:check` and `lint` call the app's formatting and lint tasks, and `check` calls
 the rest, so one run covers both workspaces.

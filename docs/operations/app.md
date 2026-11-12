@@ -160,6 +160,17 @@ its reason says which. A state the app does not know shows the runner's own reas
 its words, with the unknown mark, or the state's word when there is no reason, as the version
 rules in [CLI](./cli.md#version-rules) require.
 
+The agent gives a skipped pool's reason after its place in the configuration, as
+`repositories[0]: no token.`, and the view reads the cause after that place. A pool
+skipped for want of a token says "No token for owner/app. Start All skipped this
+pool." with Set Token. A pool skipped because the token store failed, or because there
+is none, keeps the agent's reason on its card, and its repository's row shows the
+store's words, such as "The token store failed: access was refused (kind
+access_refused, code 5).", instead of "No token", with no "No repository has a token
+yet" banner; Set Token stays, since a save goes through the same store and says if it
+fails too. A token save or removal the agent has not answered says so, and the row
+then follows the snapshot, since the agent may still do it.
+
 From `app/`, `cargo run -p marshal-view --example dump_view -- <fixture.json>` prints a
 recorded snapshot's view as JSON, with options to set the connection, a pending
 action, an open token form, a token result and the settled count, which the example's

@@ -597,6 +597,13 @@ fn no_tokens(context: &Context<'_>) -> Option<Banner> {
     if repositories.is_empty() || repositories.iter().any(|repository| repository.has_token) {
         return None;
     }
+    // a store that failed to answer does not show that no token is stored
+    if repositories
+        .iter()
+        .any(|repository| tokens::store_problem(context, &repository.key).is_some())
+    {
+        return None;
+    }
     if matches!(context.resident, Resident::Stopped(Stop::NoPoolStarted))
         && context.every_pool_lacks_a_token()
     {

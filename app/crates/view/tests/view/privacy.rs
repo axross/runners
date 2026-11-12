@@ -126,12 +126,23 @@ const CODES: [&str; 5] = ["state", "code", "outcome", "export", "kind"];
 /// what the image check found.
 const CODE_WORDS: [&str; 3] = ["no token", "missing", "not checked"];
 
+/// whether `text` is a code word, alone or as a skip's reason after its path, such as
+/// `repositories[2]: no token.`.
+fn is_code_word(text: &str) -> bool {
+    CODE_WORDS.iter().any(|word| {
+        text == *word
+            || text
+                .strip_suffix(&format!(": {word}."))
+                .is_some_and(|path| path.starts_with("repositories["))
+    })
+}
+
 /// every text of `value` followed by a token-shaped word, and GitHub's message inside a
 /// runner's reason given one too; codes and the image lines' names are left as they are,
 /// so each fixture keeps the state that shows its text.
 fn tainted(value: &mut Value, word: &str) {
     match value {
-        Value::String(text) if !CODE_WORDS.contains(&text.as_str()) => {
+        Value::String(text) if !is_code_word(text) => {
             *text = text.replace("\"message\":\"", &format!("\"message\":\"{word} "));
             text.push_str(&format!(" {word}"));
         }
