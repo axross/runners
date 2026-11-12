@@ -39,15 +39,9 @@ starts, in the `marshal-modes` crate:
 The hidden modes are internal. They have no window, no icon and no console, and no
 compatibility promise: their arguments are what the app and the library pass each
 other, not an interface for a person or a script. Each `docker` client the agent
-starts and the exporter child get `CREATE_NO_WINDOW` on Windows, set by the library's
-two command builders and asserted by a unit test at each; their process groups are
-unchanged. Most clients have piped or closed standard streams, but in terminal mode
-`marshal build`'s `docker build` inherits the CLI's standard output and standard error,
-and the exporter child inherits its standard error. What a terminal run does with the
-flag on Windows, including whether a terminal `marshal build` still streams its output,
-is shown only by the axpc run: the Windows CI tests record the flags or run the CLI
-with piped output (see [CLI](./cli.md#running-a-host)).
-Whether a window still appears is shown only on axpc. The agent mode is kept to one
+starts and the exporter child get `CREATE_NO_WINDOW` on Windows; [CLI](./cli.md#running-a-host)
+says where it is set and tested, which children inherit the CLI's standard streams,
+and what only the axpc run shows, including whether a window still appears. The agent mode is kept to one
 by the machine-wide lock the library's agent takes, as `start` is, so the app and the
 command line never run the pools together.
 
@@ -67,8 +61,9 @@ them: the `marshal-modes` crate reads them only when `debug_assertions` is on, s
 environment moves a release build's lock, channel, files, `docker` or GitHub address.
 [Security](../conventions/security.md#the-app-surface) records why. The crate has a
 test of that in the release profile, which the `app-modes` job runs on a macOS hosted
-runner with `cargo test --release`, as a Linux step runs the library's own options in
-that profile. `mise run check` runs the crate's tests in the debug profile only.
+runner with `cargo test --release` and all three variables set, so the test fails if a
+release build reads them, as a Linux step runs the library's own options in that
+profile. `mise run check` runs the crate's tests in the debug profile only.
 
 ## Verification Status
 

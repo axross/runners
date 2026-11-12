@@ -310,8 +310,8 @@ Apply the lens for each kind of file in the diff.
   its test. A change that relaxes the record, or touches the signing job, needs the
   maintainer's review.
 - **Rust.** The CLI under `cli/` and the app's crates under `app/` have no
-  `unsafe`. The CLI has no panic on an input path
-  (`unwrap`, `expect`, `panic!`, indexing); it collects every error in the order
+  `unsafe` and no panic on an input path (`unwrap`, `expect`, `panic!`,
+  indexing). The CLI collects every error in the order
   [CLI](docs/operations/cli.md) states under Validation Rules rather than returning
   the first. A new CLI crate has an
   entry in [CLI](docs/operations/cli.md) and passes `cli/deny.toml`; a new crate of
