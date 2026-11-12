@@ -265,7 +265,11 @@ app is built for, `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`.
   to the tree and runs only when the target is Windows with the MSVC environment;
   `serde`, `serde_json` and `tokio` for the session and the view, at versions the
   library already builds, so they add no crate; `windows-registry` 0.6 on Windows, which reads the taskbar's mode and the
-  time zone's bias without `unsafe` code. Its development-only dependencies are
+  time zone's bias without `unsafe` code; and `keepawake` 0.6 on Windows, without its
+  default features, which asks Windows not to idle-sleep while the agent's runners run
+  and which the library's policy does not admit, so the executable gives the request to
+  the agent. Its `derive_builder` macros bring a second version of the `darling`
+  crates beside the one the tree already has. Its development-only dependencies are
   Tauri's `test` feature, and on Windows `interprocess`, which a test uses to squat on
   the agent's channel. The token store's crates come through the library, and
   [CLI](../operations/cli.md#dependencies) lists them. A new direct dependency of an

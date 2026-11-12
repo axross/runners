@@ -140,10 +140,13 @@ where
     Ok(ended)
 }
 
-/// what the agent was given; the fields after `launch` are for the tests, and a
+/// what the agent was given; the fields after `keep_awake` are for the tests, and a
 /// release build ignores them.
 pub struct AgentOptions<'a> {
     pub launch: Launch,
+    /// the keep-awake request on Windows, which the executable supplies; without one
+    /// nothing is held.
+    pub keep_awake: Option<crate::windows_host::keep_awake::Request>,
     /// moves the lock, channel, log and configuration roots; a debug build only.
     pub test_root: Option<&'a Path>,
     /// moves the GitHub base address; a debug build only.
@@ -170,6 +173,7 @@ impl AgentOptions<'_> {
     pub fn new(launch: Launch) -> Self {
         Self {
             launch,
+            keep_awake: None,
             test_root: None,
             github_api: None,
             docker: None,

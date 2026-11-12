@@ -123,14 +123,33 @@ pub fn run(mode: Mode) -> ExitCode {
     match mode {
         Mode::Agent(launch) => {
             let overrides = Overrides::from_environment();
-            ExitCode::from(marshal_cli::agent::run(
-                overrides.options(launch),
-                &mut std::io::stderr(),
-            ))
+            let mut options = overrides.options(launch);
+            options.keep_awake = keep_awake_request();
+            ExitCode::from(marshal_cli::agent::run(options, &mut std::io::stderr()))
         }
         Mode::Command(args) => {
             marshal_cli::command::run(args, &mut std::io::stdout(), &mut std::io::stderr())
         }
         Mode::App | Mode::Refused => ExitCode::from(EXIT_USAGE),
     }
+}
+
+/// asks Windows to keep the system, not the display, awake until the returned guard
+/// is dropped.
+#[cfg(windows)]
+fn keep_awake_request() -> Option<marshal_cli::windows_host::keep_awake::Request> {
+    Some(Box::new(|| {
+        keepawake::Builder::default()
+            .idle(true)
+            .reason("Marshal's runners are running")
+            .app_name("Marshal")
+            .create()
+            .map(|held| Box::new(held) as Box<dyn std::any::Any>)
+            .map_err(|error| error.to_string())
+    }))
+}
+
+#[cfg(not(windows))]
+fn keep_awake_request() -> Option<marshal_cli::windows_host::keep_awake::Request> {
+    None
 }
