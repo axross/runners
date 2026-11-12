@@ -5,7 +5,7 @@ use serde::Deserialize;
 use tokio::sync::oneshot;
 
 use crate::runtime::secret::Secret;
-use crate::token_store::{RepositoryKey, StoreError, TokenRefusal, accepted_token};
+use crate::token_store::{StoreError, TokenKey, TokenRefusal, accepted_token};
 
 use super::wire::{ErrorBody, ErrorCode, StoreFault, TOPIC_GITHUB, TOPIC_STATE};
 
@@ -62,11 +62,11 @@ pub enum Method {
     Build,
     Quit,
     TokenSet {
-        key: RepositoryKey,
+        key: TokenKey,
         token: Secret,
     },
     TokenRemove {
-        key: RepositoryKey,
+        key: TokenKey,
     },
     /// drain for an update to `version`; `requester` reports, by closing, that the
     /// connection that asked has closed, and `None` never does.
@@ -174,8 +174,8 @@ fn params<T: for<'de> Deserialize<'de>>(value: serde_json::Value) -> Result<T, A
     serde_json::from_value(value).map_err(|_| invalid("the params are not what the method takes"))
 }
 
-fn key(text: &str) -> Result<RepositoryKey, ApiError> {
-    RepositoryKey::parse(text).map_err(|error| invalid(&error.to_string()))
+fn key(text: &str) -> Result<TokenKey, ApiError> {
+    TokenKey::parse(text).map_err(|error| invalid(&error.to_string()))
 }
 
 /// reads the method a request names and its params; a method without params ignores
@@ -314,6 +314,10 @@ mod tests {
         );
         assert_eq!(
             code("token_set", json!({"repository": "owner", "token": "x"})),
+            ErrorCode::InvalidRequest
+        );
+        assert_eq!(
+            code("token_remove", json!({"repository": "owner"})),
             ErrorCode::InvalidRequest
         );
         assert_eq!(

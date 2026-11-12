@@ -5,7 +5,7 @@
 
 use marshal_cli::agent::snapshot::{PoolInfo, RunnerInfo, Snapshot};
 use marshal_cli::github_status::{GithubStatus, RepositoryStatus, RunnerStatus, clean};
-use marshal_cli::token_store::RepositoryKey;
+use marshal_cli::token_store::TokenKey;
 use serde::Serialize;
 
 use crate::banner::{Banner, BannerKind, Tone};
@@ -69,7 +69,7 @@ fn status<'a>(context: &Context<'a>) -> Option<(u64, Option<&'a GithubStatus>)> 
 }
 
 fn key_of(repository: &str) -> String {
-    RepositoryKey::parse(repository)
+    TokenKey::parse(repository)
         .map(|key| key.as_str().to_string())
         .unwrap_or_else(|_| repository.to_ascii_lowercase())
 }
@@ -437,7 +437,7 @@ pub fn job_page(
     pool.runners
         .iter()
         .find(|each| each.workload.as_deref() == Some(runner))?;
-    let key = RepositoryKey::parse(&pool.repository).ok()?;
+    let key = TokenKey::parse(&pool.repository).ok()?;
     let job = entry(repository(status, pool)?, runner)
         .filter(|listed| listed.github == "busy")?
         .job
