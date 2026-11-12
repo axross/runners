@@ -20,11 +20,11 @@ pub const STOPPED: &str = "stopped";
 
 const EXIT_USAGE: u8 = 2;
 
-/// the variables a debug build's agent reads to run against a scratch host, with the
-/// names the command line's `start` reads.
-pub const TEST_ROOT_VARIABLE: &str = "MARSHAL_TEST_ROOT";
-pub const TEST_DOCKER_VARIABLE: &str = "MARSHAL_TEST_DOCKER";
-pub const TEST_GITHUB_API_VARIABLE: &str = "MARSHAL_TEST_GITHUB_API";
+/// the variables a debug build's agent reads to run against a scratch host, which are
+/// the ones the command line's `start` reads.
+pub use marshal_cli::command::{
+    TEST_DOCKER_VARIABLE, TEST_GITHUB_API_VARIABLE, TEST_ROOT_VARIABLE,
+};
 
 /// what a test moves in the agent: where its lock, channel, log and configuration are,
 /// which `docker` it runs and which GitHub address it calls. Only a debug build reads
