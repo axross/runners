@@ -1,10 +1,11 @@
-//! the names of the macOS VMs Marshal makes, and of the Linux VMs it must tell them
-//! from: the golden macOS VM, a macOS build VM, and a job VM.
+//! the names of the macOS VMs Marshal makes: the golden macOS VM and a macOS build
+//! VM. a job VM's name is the same for both OSs, and M1's `runtime::tart::names`
+//! writes and reads it with the Linux forms.
 
 use std::time::SystemTime;
 
 use crate::image::runner::is_version;
-use crate::runtime::name::{DIGITS_IN_STAMP, stamp};
+use crate::runtime::name::{DIGITS_IN_SECONDS_STAMP, DIGITS_IN_STAMP, stamp};
 
 /// the version of the golden macOS VM this CLI builds and accepts; it goes up
 /// whenever the base digest, the provisioning steps or the launcher change.
@@ -12,10 +13,6 @@ pub const GOLDEN_MACOS_VM_VERSION: u32 = 1;
 
 const GOLDEN_PREFIX: &str = "marshal-golden-macos-g";
 const BUILD_PREFIX: &str = "marshal-build-macos-";
-const JOB_PREFIX: &str = "marshal-job-";
-
-/// the digits of a golden VM's build time, `yyyyMMddHHmmss`.
-pub(super) const DIGITS_IN_SECOND_STAMP: usize = 14;
 
 /// what a golden macOS VM's name records, so `start` and `status` read it from
 /// Tart's list without booting the VM. A value always writes a name that
@@ -69,7 +66,7 @@ impl GoldenMacosName {
         let rest = name.strip_prefix(GOLDEN_PREFIX)?;
         let (version, rest) = rest.split_once("-r")?;
         let (runner_version, built) = rest.rsplit_once('-')?;
-        if !is_version(runner_version) || !is_digits(built, DIGITS_IN_SECOND_STAMP) {
+        if !is_version(runner_version) || !is_digits(built, DIGITS_IN_SECONDS_STAMP) {
             return None;
         }
         Some(Self {
@@ -120,53 +117,20 @@ pub fn newest_golden<'a>(
         })
 }
 
-/// a job VM's name, `marshal-job-<pool>-<slot>-<yyyyMMddHHmmssfff>`, split into its
-/// parts.
-///
-/// TODO(#74): use M1's job VM name parser once its Tart runtime is on main.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct JobName<'a> {
-    pub pool: &'a str,
-    pub slot: &'a str,
-    pub stamp: &'a str,
-}
-
-impl<'a> JobName<'a> {
-    /// reads a job VM's name. A pool name may contain hyphens and end in
-    /// `-<digits>`, so the slot is the last number before the 17-digit stamp, which
-    /// leaves one reading of any name; the pool is one or more characters other
-    /// than a line break.
-    #[must_use]
-    pub fn parse(name: &'a str) -> Option<Self> {
-        let rest = name.strip_prefix(JOB_PREFIX)?;
-        let (rest, stamp) = rest.rsplit_once('-')?;
-        let (pool, slot) = rest.rsplit_once('-')?;
-        if !is_digits(stamp, DIGITS_IN_STAMP)
-            || slot.is_empty()
-            || !slot.bytes().all(|byte| byte.is_ascii_digit())
-            || pool.is_empty()
-            || pool.contains('\n')
-        {
-            return None;
-        }
-        Some(Self { pool, slot, stamp })
-    }
-}
-
 /// writes `time` as `yyyyMMddHHmmss` in UTC.
-pub(super) fn second_stamp(time: SystemTime) -> String {
+fn second_stamp(time: SystemTime) -> String {
     let mut text = stamp(time);
-    text.truncate(DIGITS_IN_SECOND_STAMP);
+    text.truncate(DIGITS_IN_SECONDS_STAMP);
     text
 }
 
 /// whether `text` is exactly `count` ASCII digits.
-pub(super) fn is_digits(text: &str, count: usize) -> bool {
+fn is_digits(text: &str, count: usize) -> bool {
     text.len() == count && text.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 /// reads a positive integer written without a leading zero or a sign.
-pub(super) fn positive_integer(text: &str) -> Option<u32> {
+fn positive_integer(text: &str) -> Option<u32> {
     if text.starts_with('0') || !text.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }

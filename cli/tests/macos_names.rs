@@ -10,9 +10,12 @@
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use marshal_cli::macos::linux_forms;
 use marshal_cli::macos::name::{
-    GOLDEN_MACOS_VM_VERSION, GoldenMacosName, JobName, build_name, is_build_name, newest_golden,
+    GOLDEN_MACOS_VM_VERSION, GoldenMacosName, build_name, is_build_name, newest_golden,
+};
+use marshal_cli::runtime::tart::list::{VmEntry, VmSource, VmState};
+use marshal_cli::runtime::tart::names::{
+    GoldenVmName, build_vm_name, newest_golden_vm, parse_build_vm_name, parse_job_vm_name,
 };
 
 /// 2024-03-05 06:07:08.009 UTC.
@@ -216,45 +219,31 @@ fn golden_macos_vms_built_in_the_same_second_are_ordered_by_version_then_name() 
 }
 
 #[test]
-fn a_job_name_is_split_into_pool_slot_and_stamp() {
-    let name = JobName::parse("marshal-job-example-repo-one-2-20240305060708009").expect("a job");
-    assert_eq!(name.pool, "example-repo-one");
-    assert_eq!(name.slot, "2");
-    assert_eq!(name.stamp, "20240305060708009");
-}
-
-#[test]
-fn a_pool_name_may_end_in_hyphen_and_digits() {
-    let name = JobName::parse("marshal-job-ci-2-1-20240305060708009").expect("a job");
-    assert_eq!((name.pool, name.slot), ("ci-2", "1"));
-    let name = JobName::parse("marshal-job-ci-2-12-20240305060708009").expect("a job");
-    assert_eq!((name.pool, name.slot), ("ci-2", "12"));
-    let name =
-        JobName::parse("marshal-job-ci-1-20240305060708-1-20240305060708009").expect("a job");
-    assert_eq!((name.pool, name.slot), ("ci-1-20240305060708", "1"));
-    let name = JobName::parse("marshal-job-a-b-c-3-20240305060708009").expect("a job");
-    assert_eq!(name.pool, "a-b-c");
-}
-
-#[test]
-fn a_job_name_is_read_strictly() {
-    for (what, name) in [
-        ("no slot", "marshal-job-pool-20240305060708009"),
-        ("an empty slot", "marshal-job-pool--20240305060708009"),
-        ("a lettered slot", "marshal-job-pool-x-20240305060708009"),
-        ("a 16-digit stamp", "marshal-job-pool-1-2024030506070800"),
-        ("an 18-digit stamp", "marshal-job-pool-1-202403050607080099"),
-        ("a suffix", "marshal-job-pool-1-20240305060708009-x"),
-        ("no pool", "marshal-job--1-20240305060708009"),
-        ("no pool or hyphen", "marshal-job-1-20240305060708009"),
-        (
-            "a line break in the pool",
-            "marshal-job-po\nol-1-20240305060708009",
-        ),
-        ("another prefix", "marshal-jobs-pool-1-20240305060708009"),
-        ("a prefix", "x-marshal-job-pool-1-20240305060708009"),
+fn a_job_vm_of_a_pool_whose_name_ends_in_digits_is_read_as_that_pool() {
+    // the count finds a job VM's pool with M1's reader; a pool name may end in
+    // `-<digits>`, so the slot is the last number before the stamp.
+    for (name, pool, slot) in [
+        ("marshal-job-ci-2-1-20240305060708009", "ci-2", 1),
+        ("marshal-job-ci-2-12-20240305060708009", "ci-2", 12),
+        ("marshal-job-ci-2-20240305060708009", "ci", 2),
+        ("marshal-job-a-b-c-3-20240305060708009", "a-b-c", 3),
     ] {
-        assert_eq!(JobName::parse(name), None, "{what}: {name}");
+        let job = parse_job_vm_name(name).expect("a job");
+        assert_eq!((job.pool.as_str(), job.slot), (pool, slot), "{name}");
+    }
+}
+
+fn linux_golden(built: SystemTime) -> String {
+    let mut name = GoldenVmName::current(built).expect("a declared runner version");
+    name.runner_version = "2.337.0".to_string();
+    name.to_string()
+}
+
+fn local(name: &str) -> VmEntry {
+    VmEntry {
+        name: name.to_string(),
+        source: VmSource::Local,
+        state: VmState::Stopped,
     }
 }
 
@@ -262,37 +251,34 @@ fn a_job_name_is_read_strictly() {
 fn no_name_form_of_one_os_matches_the_others() {
     let macos_golden = golden(1, "2.337.0", pinned()).to_string();
     let macos_build = build_name(pinned());
-    let linux_golden = linux_forms::golden_name(1, 1, "2.337.0", pinned());
-    let linux_build = linux_forms::build_name(pinned());
+    let linux_golden = linux_golden(pinned());
+    let linux_build = build_vm_name(pinned());
 
-    assert_eq!(
-        linux_golden,
-        "marshal-golden-linux-g1-c1-r2.337.0-20240305060708"
-    );
+    assert!(linux_golden.starts_with("marshal-golden-linux-g"));
     assert_eq!(linux_build, "marshal-build-linux-20240305060708009");
 
     assert!(GoldenMacosName::parse(&macos_golden).is_some());
     assert!(is_build_name(&macos_build));
-    assert!(linux_forms::is_golden_name(&linux_golden));
-    assert!(linux_forms::is_build_name(&linux_build));
+    assert!(GoldenVmName::parse(&linux_golden).is_some());
+    assert!(parse_build_vm_name(&linux_build).is_some());
 
     assert!(GoldenMacosName::parse(&linux_golden).is_none());
     assert!(!is_build_name(&linux_build));
-    assert!(!linux_forms::is_golden_name(&macos_golden));
-    assert!(!linux_forms::is_build_name(&macos_build));
+    assert!(GoldenVmName::parse(&macos_golden).is_none());
+    assert!(parse_build_vm_name(&macos_build).is_none());
     // a name of one OS's form is not the other OS's under the other form either.
     assert!(!is_build_name(&macos_golden) && !is_build_name(&linux_golden));
-    assert!(!linux_forms::is_build_name(&linux_golden));
-    assert!(!linux_forms::is_golden_name(&linux_build));
-    assert!(JobName::parse(&macos_build).is_none() && JobName::parse(&linux_build).is_none());
+    assert!(parse_build_vm_name(&linux_golden).is_none());
+    assert!(GoldenVmName::parse(&linux_build).is_none());
+    assert!(parse_job_vm_name(&macos_build).is_none() && parse_job_vm_name(&linux_build).is_none());
 }
 
 #[test]
 fn the_macos_selection_never_picks_a_linux_golden_vm_and_the_reverse() {
     let macos_old = golden(1, "2.337.0", pinned()).to_string();
-    let linux_new = linux_forms::golden_name(1, 1, "2.337.0", later(86_400));
+    let linux_new = linux_golden(later(86_400));
     let macos_new = golden(1, "2.337.0", later(172_800)).to_string();
-    let linux_old = linux_forms::golden_name(1, 1, "2.337.0", pinned());
+    let linux_old = linux_golden(pinned());
     let all = [
         macos_old.as_str(),
         linux_new.as_str(),
@@ -304,15 +290,16 @@ fn the_macos_selection_never_picks_a_linux_golden_vm_and_the_reverse() {
         newest_golden(all).map(|found| found.0),
         Some(macos_new.as_str())
     );
-    assert_eq!(linux_forms::newest_golden(all), Some(linux_new.as_str()));
+    let entries: Vec<VmEntry> = all.iter().map(|name| local(name)).collect();
+    assert_eq!(
+        newest_golden_vm(&entries).map(|found| found.0.name.as_str()),
+        Some(linux_new.as_str())
+    );
 
     // with only the other OS's golden VMs present, nothing is found.
     assert_eq!(
         newest_golden([linux_new.as_str(), linux_old.as_str()]),
         None
     );
-    assert_eq!(
-        linux_forms::newest_golden([macos_old.as_str(), macos_new.as_str()]),
-        None
-    );
+    assert!(newest_golden_vm(&[local(&macos_old), local(&macos_new)]).is_none());
 }

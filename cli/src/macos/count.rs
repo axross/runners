@@ -7,8 +7,9 @@ use std::future::Future;
 use crate::profile::Os;
 use crate::validate::MAX_MACOS_VMS;
 
-use super::linux_forms;
-use super::name::{GoldenMacosName, JobName, is_build_name};
+use crate::runtime::tart::names::{GoldenVmName, parse_build_vm_name, parse_job_vm_name};
+
+use super::name::{GoldenMacosName, is_build_name};
 
 /// a VM's state as `tart list` reports it; a VM that is stopping is still running.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -142,7 +143,7 @@ fn judge_by_name(vm: &ListedVm, pools: &[ConfiguredPool]) -> Verdict {
     if is_build_name(&vm.name) {
         return Verdict::Counts(Reason::MacosBuild);
     }
-    if let Some(job) = JobName::parse(&vm.name) {
+    if let Some(job) = parse_job_vm_name(&vm.name) {
         return match pools.iter().find(|pool| pool.name == job.pool) {
             Some(pool) if pool.os == Os::Macos => Verdict::Counts(Reason::ConfiguredMacosJob),
             Some(_) => Verdict::Ask(Open::LinuxPoolJob),
@@ -150,7 +151,7 @@ fn judge_by_name(vm: &ListedVm, pools: &[ConfiguredPool]) -> Verdict {
         };
     }
     let is_linux_form =
-        linux_forms::is_golden_name(&vm.name) || linux_forms::is_build_name(&vm.name);
+        GoldenVmName::parse(&vm.name).is_some() || parse_build_vm_name(&vm.name).is_some();
     let is_stopped_golden =
         vm.state == VmState::Stopped && GoldenMacosName::parse(&vm.name).is_some();
     if is_linux_form || is_stopped_golden || !vm.state.is_booted() {

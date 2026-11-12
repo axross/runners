@@ -2184,9 +2184,10 @@ yet: `status` shows no base age until the golden macOS VM does.
 ### VM Names
 
 The `macos::name` module writes and reads the names of the macOS VMs Marshal
-makes, and `macos::linux_forms` holds the Linux forms that it must tell them
-from. Each form is read strictly: the whole name matches, nothing precedes or
-follows it, and case matters.
+makes. The job VM form and the Linux forms are M1's, in `runtime::tart::names`,
+and the macOS count reads job, Linux golden and Linux build VMs with M1's readers.
+Each form is read strictly: the whole name matches, nothing precedes or follows
+it, and case matters.
 
 | VM              | Form                                                                                                     |
 | --------------- | -------------------------------------------------------------------------------------------------------- |
@@ -2211,10 +2212,6 @@ follows it, and case matters.
   `-<digits>`: `marshal-job-ci-2-1-<stamp>` is slot 1 of pool `ci-2`, and
   `marshal-job-ci-2-<stamp>` is slot 2 of pool `ci`. Pool names are unique per
   host, so a pool name identifies the pool whatever its OS.
-
-- **The Linux forms are a stand-in.** M1's Tart runtime owns them (#74), and its
-  code is not on `main` yet. `macos::linux_forms` writes them as M1's plan gives
-  them, and the integration with M1's runtime replaces it.
 
 No command writes or reads these names yet: the macOS runtime and `build` do not
 exist. `cli/tests/macos_names.rs` pins the forms, the strict reading, the golden VM
