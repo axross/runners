@@ -9,9 +9,9 @@ use keyring_core::{Entry, Error};
 
 use crate::runtime::secret::Secret;
 
-use super::{RepositoryKey, StoreError, StoreErrorKind, TokenStore};
+use super::{StoreError, StoreErrorKind, TokenKey, TokenStore};
 
-/// how one repository's entry is named in a store.
+/// how one key's entry is named in a store.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EntryName {
     pub service: String,
@@ -20,8 +20,8 @@ pub struct EntryName {
     pub modifiers: Vec<(&'static str, String)>,
 }
 
-/// names a repository's entry.
-pub type Naming = fn(&RepositoryKey) -> EntryName;
+/// names a key's entry.
+pub type Naming = fn(&TokenKey) -> EntryName;
 
 /// what a store's failure means to the caller: its kind and the platform's code.
 pub type Classified = (StoreErrorKind, Option<i64>);
@@ -33,7 +33,7 @@ fn unclassified(_: &Error) -> Classified {
     (StoreErrorKind::Other, None)
 }
 
-/// tokens in a `keyring-core` store, one entry per repository.
+/// tokens in a `keyring-core` store, one entry per key.
 pub struct KeyringTokenStore {
     store: Arc<CredentialStore>,
     naming: Naming,
@@ -57,7 +57,7 @@ impl KeyringTokenStore {
         self
     }
 
-    fn entry(&self, key: &RepositoryKey) -> Result<Entry, StoreError> {
+    fn entry(&self, key: &TokenKey) -> Result<Entry, StoreError> {
         let name = (self.naming)(key);
         let modifiers: HashMap<&str, &str> = name
             .modifiers
@@ -69,9 +69,9 @@ impl KeyringTokenStore {
             .map_err(|error| self.failed(&error))
     }
 
-    /// the attributes the store keeps for the repository's existing entry, such as the
+    /// the attributes the store keeps for the key's existing entry, such as the
     /// Credential Manager's `persistence`; they hold no token.
-    pub fn attributes(&self, key: &RepositoryKey) -> Result<HashMap<String, String>, StoreError> {
+    pub fn attributes(&self, key: &TokenKey) -> Result<HashMap<String, String>, StoreError> {
         self.entry(key)?
             .get_attributes()
             .map_err(|error| self.failed(&error))
@@ -84,7 +84,7 @@ impl KeyringTokenStore {
 }
 
 impl TokenStore for KeyringTokenStore {
-    fn get(&self, key: &RepositoryKey) -> Result<Option<Secret>, StoreError> {
+    fn get(&self, key: &TokenKey) -> Result<Option<Secret>, StoreError> {
         match self.entry(key)?.get_password() {
             Ok(token) => Ok(Some(Secret::new(token))),
             Err(Error::NoEntry) => Ok(None),
@@ -92,13 +92,13 @@ impl TokenStore for KeyringTokenStore {
         }
     }
 
-    fn set(&self, key: &RepositoryKey, token: &Secret) -> Result<(), StoreError> {
+    fn set(&self, key: &TokenKey, token: &Secret) -> Result<(), StoreError> {
         self.entry(key)?
             .set_password(token.expose())
             .map_err(|error| self.failed(&error))
     }
 
-    fn remove(&self, key: &RepositoryKey) -> Result<(), StoreError> {
+    fn remove(&self, key: &TokenKey) -> Result<(), StoreError> {
         match self.entry(key)?.delete_credential() {
             Ok(()) | Err(Error::NoEntry) => Ok(()),
             Err(error) => Err(self.failed(&error)),
@@ -110,7 +110,7 @@ impl TokenStore for KeyringTokenStore {
 mod tests {
     use super::*;
 
-    fn by_key(key: &RepositoryKey) -> EntryName {
+    fn by_key(key: &TokenKey) -> EntryName {
         EntryName {
             service: "app.axross.marshal".to_string(),
             user: key.to_string(),
@@ -125,7 +125,7 @@ mod tests {
     #[test]
     fn a_token_round_trips_and_a_missing_entry_is_none_and_removing_it_is_fine() {
         let store = store();
-        let key = RepositoryKey::of("o", "r");
+        let key = TokenKey::of("o", "r");
         assert!(store.get(&key).unwrap().is_none());
         store.remove(&key).unwrap();
         store
@@ -139,7 +139,7 @@ mod tests {
     #[test]
     fn the_attributes_of_a_missing_entry_are_a_failure_and_hold_no_token() {
         let store = store();
-        let key = RepositoryKey::of("o", "r");
+        let key = TokenKey::of("o", "r");
         store
             .set(&key, &Secret::new("ghp_fake".to_string()))
             .unwrap();
@@ -158,7 +158,7 @@ mod tests {
             });
         let error = store
             .set(
-                &RepositoryKey::of("o", "r"),
+                &TokenKey::of("o", "r"),
                 &Secret::new("ghp_fake".to_string()),
             )
             .unwrap_err();
@@ -175,7 +175,7 @@ mod tests {
             .classifying(|_| (StoreErrorKind::NeedsUser, Some(-25308)));
         let error = store
             .set(
-                &RepositoryKey::of("o", "r"),
+                &TokenKey::of("o", "r"),
                 &Secret::new("ghp_fake".to_string()),
             )
             .unwrap_err();
@@ -191,7 +191,7 @@ mod tests {
                 modifiers: vec![("persistence", "Local".to_string())],
                 ..by_key(key)
             });
-        let error = store.get(&RepositoryKey::of("o", "r")).unwrap_err();
+        let error = store.get(&TokenKey::of("o", "r")).unwrap_err();
         assert_eq!((error.kind(), error.code()), (StoreErrorKind::Other, None));
     }
 }
