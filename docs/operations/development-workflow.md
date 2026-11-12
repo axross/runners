@@ -421,8 +421,8 @@ the contract tests in `cli/src/image/contract.rs` ask for by name:
    [`cli/tests/build-definition/Dockerfile`](../../cli/tests/build-definition/Dockerfile)
    to the same base and values.
 
-Nothing else needs an edit: the tests that depend on the declared runner version
-and date read them from the two Dockerfiles.
+Nothing else needs an edit for the version: the tests that depend on the declared
+runner version and date read them from the two Dockerfiles.
 
 Before the bump merges, check that the new runner still prints the two lines the
 update drain reads, `Listening for Jobs` and `Running job:`, in the same form: search

@@ -251,7 +251,8 @@ enum Attempt {
     Failed(String),
     /// a host prerequisite refused the boot, and the slot waits out the backoff held.
     Held(String),
-    /// a stop or a drain ended the attempt before a container started.
+    /// a stop or a drain ended the attempt before a container started, or a drain
+    /// stopped its idle runner's container.
     Halted,
 }
 
@@ -363,14 +364,14 @@ impl<B: Backend, K: Clock, R: Registrar> Context<'_, B, K, R> {
             run_command: self.backend.run_command().to_string(),
             diagnostic: slot.diagnostic.clone(),
         };
-        let exit = {
+        let (exit, stopped_idle) = {
             let mut run = std::pin::pin!(self.backend.run_container(&spec, &jit));
             tokio::select! {
                 biased;
-                exit = &mut run => exit,
+                exit = &mut run => (exit, false),
                 () = halt.idle_in_drain(self.backend, &spec.name) => {
                     let (_, exit) = tokio::join!(self.stop_idle(&spec.name), &mut run);
-                    exit
+                    (exit, true)
                 }
             }
         };
@@ -378,6 +379,9 @@ impl<B: Backend, K: Clock, R: Registrar> Context<'_, B, K, R> {
             finalize_at_job_end(self.backend, log, &spec.name, tokio::time::Instant::now()).await;
         }
         match exit {
+            // the agent stopped it, so its exit is no failure even if the drain is
+            // cancelled before the slot looks again
+            _ if stopped_idle => Attempt::Halted,
             Ok(0) => Attempt::Ended,
             outcome => {
                 let reason = match outcome {
@@ -390,9 +394,7 @@ impl<B: Backend, K: Clock, R: Registrar> Context<'_, B, K, R> {
             }
         }
     }
-}
 
-impl<B: Backend, K: Clock, R: Registrar> Context<'_, B, K, R> {
     /// stops an idle runner's container during a drain, with a stop's grace, and kills
     /// it when the stop fails, which keeps the container for a finalisation; its run
     /// then ends, and the slot finalises it as after any job.

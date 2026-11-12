@@ -329,6 +329,8 @@ async fn the_drain_is_cancelled_when_its_connection_closes() {
             rig.backend.print(&names[0], LISTENING);
             // a busy runner keeps the drain open until the requester leaves
             rig.backend.print(&names[1], JOB);
+            // the stopped idle runner exits as a stopped container does
+            rig.backend.state.borrow_mut().exits.push_back(Ok(137));
             let requester = conn.another().await;
             drain(&requester).await;
             conn.eventually("the idle runner stopped", || !stopped(rig).is_empty())
@@ -338,6 +340,11 @@ async fn the_drain_is_cancelled_when_its_connection_closes() {
                 .await;
             conn.eventually("a runner registered again", || containers(rig).len() >= 3)
                 .await;
+            let lines = rig.log.lines().join("\n");
+            assert!(
+                !lines.contains("exited with code 137"),
+                "the drain's own stop was taken for a failure: {lines}"
+            );
             rig.mark_running();
             conn.ok("quit").await;
         })
