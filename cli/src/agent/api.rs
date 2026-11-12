@@ -61,8 +61,19 @@ pub enum Method {
     StopAll,
     Build,
     Quit,
-    TokenSet { key: RepositoryKey, token: Secret },
-    TokenRemove { key: RepositoryKey },
+    TokenSet {
+        key: RepositoryKey,
+        token: Secret,
+    },
+    TokenRemove {
+        key: RepositoryKey,
+    },
+    /// drain for an update to `version`; `requester` reports, by closing, that the
+    /// connection that asked has closed, and `None` never does.
+    DrainForUpdate {
+        version: String,
+        requester: Option<oneshot::Receiver<()>>,
+    },
 }
 
 /// a method and where its result goes.
@@ -93,6 +104,36 @@ struct TokenSetParams {
 #[derive(Deserialize)]
 struct TokenRemoveParams {
     repository: String,
+}
+
+#[derive(Deserialize)]
+struct DrainParams {
+    version: String,
+}
+
+/// the longest version a drain takes.
+const MAX_VERSION_CHARS: usize = 64;
+
+/// whether `text` is a version number: three dot-separated numbers, then optionally
+/// `-` or `+` and ASCII letters, digits, dots, hyphens and pluses.
+fn is_version(text: &str) -> bool {
+    if text.is_empty() || text.len() > MAX_VERSION_CHARS {
+        return false;
+    }
+    let (core, rest) = match text.find(['-', '+']) {
+        Some(at) => text.split_at(at),
+        None => (text, ""),
+    };
+    let numbers: Vec<&str> = core.split('.').collect();
+    numbers.len() == 3
+        && numbers
+            .iter()
+            .all(|number| !number.is_empty() && number.bytes().all(|b| b.is_ascii_digit()))
+        && rest
+            .bytes()
+            .skip(1)
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'+'))
+        && rest.len() != 1
 }
 
 fn invalid(message: &str) -> ApiError {
@@ -135,6 +176,16 @@ pub fn parse(method: &str, value: serde_json::Value) -> Result<Parsed, ApiError>
             let TokenRemoveParams { repository } = params(value)?;
             Method::TokenRemove {
                 key: key(&repository)?,
+            }
+        }
+        "drain_for_update" => {
+            let DrainParams { version } = params(value)?;
+            if !is_version(&version) {
+                return Err(invalid("the version is not a version number"));
+            }
+            Method::DrainForUpdate {
+                version,
+                requester: None,
             }
         }
         _ => {
@@ -230,6 +281,41 @@ mod tests {
         )
         .unwrap_err();
         assert!(!error.message.contains("123456789"), "{}", error.message);
+    }
+
+    #[test]
+    fn drain_for_update_takes_a_version_number_only() {
+        for version in ["1.4.0", "10.0.12", "1.4.0-rc.1", "1.4.0+build.7"] {
+            let parsed = parse("drain_for_update", json!({ "version": version })).unwrap();
+            let Parsed::Call(Method::DrainForUpdate { version: read, .. }) = parsed else {
+                panic!("not a drain");
+            };
+            assert_eq!(read, version);
+        }
+        for version in [
+            "",
+            "1.4",
+            "1.4.0.1",
+            "v1.4.0",
+            "1..0",
+            "1.4.0-",
+            "1.4.0 ",
+            "1.4.0-a b",
+        ] {
+            assert_eq!(
+                code("drain_for_update", json!({ "version": version })),
+                ErrorCode::InvalidRequest,
+                "{version:?}"
+            );
+        }
+        assert_eq!(
+            code("drain_for_update", json!({ "version": "9".repeat(65) })),
+            ErrorCode::InvalidRequest
+        );
+        assert_eq!(
+            code("drain_for_update", json!(null)),
+            ErrorCode::InvalidRequest
+        );
     }
 
     #[test]

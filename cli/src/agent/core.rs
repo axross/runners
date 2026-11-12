@@ -10,7 +10,7 @@ use std::task::Poll;
 
 use tokio::sync::watch;
 
-use crate::instance::lifecycle::{CoreFailure, Ending};
+use crate::instance::lifecycle::{CoreFailure, Ending, StopTimes};
 use crate::instance::runtime_core::{failure, verify_image};
 use crate::runtime::backend::Backend;
 use crate::runtime::board::Board;
@@ -37,6 +37,13 @@ pub struct AgentCore<'a, B, K, R> {
     pub board: &'a Board,
     /// set once the pools are admitted and prepared, or have been given up on.
     pub admitted: &'a watch::Sender<bool>,
+    /// true while the agent drains for an update: nothing registers, and no pool
+    /// begins its preparation. The run's first preparation, waiting for Docker
+    /// included, is dropped when a drain begins; a late pool already preparing
+    /// finishes, and its slots register nothing.
+    pub drain: &'a watch::Sender<bool>,
+    /// the times of a stop, which an idle runner's stop during a drain uses.
+    pub times: StopTimes,
 }
 
 impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
@@ -48,6 +55,8 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
             tokens: self.tokens,
             log: self.log,
             board: self.board,
+            drain: Some(self.drain),
+            stop_times: self.times,
         }
     }
 
@@ -110,9 +119,11 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
             pools_from_plan(plan).map_err(|error| failure(error.to_string(), Ending::Ordinary))?;
         let image = plan.image_name.as_deref().unwrap_or_default();
         self.board.expect_image(image);
+        let mut drain = self.drain.subscribe();
         let prepared = tokio::select! {
             prepared = self.prepare(pools, image) => prepared?,
             () = wait_for_stop(&mut stop) => return Ok(()),
+            _ = drain.wait_for(|draining| *draining) => return Ok(()),
         };
         let (prepared, waiting) = prepared;
         self.admitted.send_replace(true);
@@ -151,10 +162,32 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
         stop: &watch::Receiver<bool>,
     ) {
         let mut stop = stop.clone();
+        let mut drain = self.drain.subscribe();
         while !waiting.is_empty() {
+            // a pool that waits for a token is not started while a drain lasts
+            if *drain.borrow_and_update() {
+                let ended = tokio::select! {
+                    () = wait_for_stop(&mut stop) => return,
+                    ended = drain.wait_for(|draining| !*draining) => ended.is_ok(),
+                };
+                if !ended {
+                    return;
+                }
+            }
             tokio::select! {
+                biased;
                 () = wait_for_stop(&mut stop) => return,
+                changed = drain.changed() => {
+                    if changed.is_err() { return }
+                    continue;
+                }
                 changed = changes.changed() => if changed.is_err() { return },
+            }
+            // a drain that began with the token's change is seen before a preparation;
+            // the change is kept, so the pool is admitted once the drain is cancelled
+            if *drain.borrow() {
+                changes.mark_changed();
+                continue;
             }
             let (ready, still): (Vec<_>, Vec<_>) =
                 waiting.into_iter().partition(|pool| self.admit(pool));
