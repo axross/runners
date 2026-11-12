@@ -53,6 +53,22 @@ fn a_fall_in_the_count_shows_after_it_has_lasted_30_s() {
 }
 
 #[test]
+fn a_fall_with_no_later_snapshot_asks_for_an_update_when_it_counts() {
+    let mut tracker = Tracker::new();
+    let all = with_up(3);
+    let two = with_up(2);
+    assert_eq!(step(&mut tracker, &all, 0).announced.recheck_at_ms, None);
+    let fall = step(&mut tracker, &two, 10);
+    let due = at(3, 52, 0) + (10 + 30) * SECOND;
+    assert_eq!(fall.announced.recheck_at_ms, Some(due));
+
+    // the agent sends nothing new, so the update at that time has the same snapshot
+    let settled = step(&mut tracker, &two, 10 + 30);
+    assert_eq!(settled.view.tooltip, "Marshal: 2 of 3 runners up");
+    assert_eq!(settled.announced.recheck_at_ms, None);
+}
+
+#[test]
 fn a_rise_in_the_count_shows_at_once() {
     let mut tracker = Tracker::new();
     let two = with_up(2);
