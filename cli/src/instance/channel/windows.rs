@@ -8,14 +8,12 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use interprocess::ConnectWaitMode;
-use interprocess::os::windows::named_pipe::{
-    DuplexPipeStream, PipeListener, PipeListenerOptions, PipeMode, pipe_mode,
-};
+use interprocess::os::windows::named_pipe::{DuplexPipeStream, PipeListener, pipe_mode};
 use tokio::sync::mpsc;
 
 use super::super::protocol::{Incoming, MAX_REQUEST_BYTES, Response, read_line_limited, submit};
 use super::super::roots::Roots;
-use super::super::windows::{current_user_sid, name_is_taken, only_user_descriptor};
+use super::super::windows::{control_pipe_options, creation_error, current_user_sid};
 use super::{CONNECT_TIMEOUT, ChannelError, ClientError, MAX_CONNECTIONS};
 
 type Stream = DuplexPipeStream<pipe_mode::Bytes>;
@@ -67,24 +65,10 @@ impl Server {
         roots: &Roots,
         requests: mpsc::UnboundedSender<Incoming>,
     ) -> Result<Self, ChannelError> {
-        let sid = current_user_sid().map_err(|error| ChannelError::Io(error.to_string()))?;
-        let descriptor =
-            only_user_descriptor(&sid).map_err(|error| ChannelError::Io(error.to_string()))?;
-        let name = roots.control_pipe_name(&sid);
-        // PipeListenerOptions rejects remote clients unless told otherwise, and
-        // creates the first instance of the name.
-        let listener = PipeListenerOptions::new()
-            .path(OsStr::new(&name))
-            .mode(PipeMode::Bytes)
-            .security_descriptor(Some(descriptor))
+        let (options, name) = control_pipe_options(roots)?;
+        let listener = options
             .create_duplex::<pipe_mode::Bytes>()
-            .map_err(|error| {
-                if name_is_taken(&error) {
-                    ChannelError::NameTaken(name.clone())
-                } else {
-                    ChannelError::Io(format!("{name}: {error}"))
-                }
-            })?;
+            .map_err(|error| creation_error(&name, &error))?;
         let closing = Arc::new(AtomicBool::new(false));
         let active = Arc::new(AtomicUsize::new(0));
         let (flag, count) = (Arc::clone(&closing), Arc::clone(&active));

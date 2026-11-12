@@ -10,4 +10,4 @@ repository = "octo/hello"
 runners = 2
 cpus = 1
 memory_gb = 1
-disk_gb = 1
+disk_gb = 20

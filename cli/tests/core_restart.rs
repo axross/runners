@@ -89,6 +89,35 @@ async fn each_failure_stops_and_removes_the_containers_the_failed_core_had_start
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn each_failure_also_releases_the_job_hosts_the_failed_core_left_prepared() {
+    let rig = Rig::new();
+    let host = marshal_cli::runtime::backend::JobHost {
+        pool: "r".to_string(),
+        slot: 1,
+    };
+    rig.backend.state.borrow_mut().hosts = vec![host.clone()];
+    rig.core.push(marshal_cli::instance::fake::CoreStep::Fail {
+        message: "boom".to_string(),
+        containers: Vec::new(),
+        after: Duration::ZERO,
+    });
+    let core = &rig.core;
+    let (_, ()) = rig
+        .drive(|control| async move {
+            settle(&control, core, 2).await;
+            control.stop().await;
+        })
+        .await;
+    assert_eq!(
+        rig.backend.state.borrow().host_calls,
+        [marshal_cli::runtime::fake::HostCall::Release(
+            host,
+            Duration::ZERO
+        )]
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn a_removal_that_failed_after_a_core_failure_is_reported_when_the_instance_ends() {
     let rig = Rig::new();
     rig.backend.state.borrow_mut().remove_error =

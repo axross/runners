@@ -79,10 +79,23 @@ struct RootFields {
     budget: Field,
 }
 
+/// where the checkout that a diagnostic directory must lie outside comes from.
+#[derive(Debug, Clone, Copy)]
+pub enum CheckoutRule<'a> {
+    /// the one given, which is the one above the configuration file; none skips the
+    /// rule.
+    Above(Option<&'a Path>),
+    /// the one given and, for each diagnostic directory, the one found at or above that
+    /// directory, for a configuration that lives outside any checkout. The rule is
+    /// then never skipped: the directory's own place was examined.
+    AboveAndAtSink(Option<&'a Path>),
+}
+
 struct Context<'a> {
     profile: Profile,
     reader: &'a dyn Reader,
     checkout: Option<&'a Path>,
+    at_sink: bool,
     errors: Errors,
     checkout_rule_skipped: bool,
 }
@@ -91,7 +104,13 @@ struct Context<'a> {
 /// that private directories must lie outside, when one is known.
 #[must_use]
 pub fn validate(bytes: &[u8], profile: Profile, checkout: Option<&Path>) -> Validation {
-    validate_with(bytes, profile, &JsonReader::new(profile), checkout)
+    validate_with(bytes, profile, CheckoutRule::Above(checkout))
+}
+
+/// validates a JSON configuration against a profile under a [`CheckoutRule`].
+#[must_use]
+pub fn validate_with(bytes: &[u8], profile: Profile, rule: CheckoutRule<'_>) -> Validation {
+    validate_json_as(bytes, profile, &JsonReader::new(profile), rule)
 }
 
 /// validates TOML bytes for a host: the file is read into the tree the JSON reader
@@ -105,7 +124,7 @@ pub fn validate_toml(bytes: &[u8], profile: Profile, checkout: Option<&Path>) ->
             &document.tree,
             profile,
             &TomlReader::new(profile, &document),
-            checkout,
+            CheckoutRule::Above(checkout),
         ),
         Err(problem) => Validation {
             outcome: Err(Failure::Unreadable(problem)),
@@ -116,14 +135,14 @@ pub fn validate_toml(bytes: &[u8], profile: Profile, checkout: Option<&Path>) ->
 
 /// validates JSON bytes under the rules the reader supplies; the problems are worded
 /// by the reader.
-fn validate_with(
+fn validate_json_as(
     bytes: &[u8],
     profile: Profile,
     reader: &dyn Reader,
-    checkout: Option<&Path>,
+    rule: CheckoutRule<'_>,
 ) -> Validation {
     match json::parse(bytes) {
-        Ok(root) => validate_tree(&root, profile, reader, checkout),
+        Ok(root) => validate_tree(&root, profile, reader, rule),
         Err(error) => Validation {
             outcome: Err(Failure::Unreadable(error.to_string())),
             checkout_rule_skipped: false,
@@ -135,12 +154,17 @@ fn validate_tree(
     root: &Value,
     profile: Profile,
     reader: &dyn Reader,
-    checkout: Option<&Path>,
+    rule: CheckoutRule<'_>,
 ) -> Validation {
+    let (checkout, at_sink) = match rule {
+        CheckoutRule::Above(checkout) => (checkout, false),
+        CheckoutRule::AboveAndAtSink(checkout) => (checkout, true),
+    };
     let mut cx = Context {
         profile,
         reader,
         checkout,
+        at_sink,
         errors: Errors::default(),
         checkout_rule_skipped: false,
     };
@@ -203,8 +227,8 @@ fn read_root(root: &Value, cx: &mut Context) -> Option<Plan> {
     })
 }
 
-/// reads the image name: required on axpc, optional on axmc, where its use is
-/// undecided, and checked the same way where present.
+/// reads the image name: required on axpc, optional on axmc, where it defaults to
+/// `actions-runner:local`, and checked the same way where present.
 fn read_image_name(image_name: &Field, cx: &mut Context) -> Option<String> {
     let path = KeyPath::root().key(Key::ImageName);
     let expectation = "a local Docker image name with a tag, such as name:tag";
@@ -416,7 +440,12 @@ mod tests {
     }
 
     fn validate_other_format(text: &str, profile: Profile) -> Validation {
-        validate_with(text.as_bytes(), profile, &OtherFormat, None)
+        validate_json_as(
+            text.as_bytes(),
+            profile,
+            &OtherFormat,
+            CheckoutRule::Above(None),
+        )
     }
 
     #[test]
@@ -434,7 +463,7 @@ mod tests {
         assert_eq!(entry.labels.last().map(String::as_str), Some("custom"));
 
         let axmc = validate_other_format(
-            r#"{ "budget": { "cpus": 4, "memoryGb": 8, "diskGb": 40 }, "repositories": [
+            r#"{ "budget": { "cpus": 4, "memoryGb": 8, "diskGb": 80 }, "repositories": [
                 { "owner": "o", "repository": "r", "name": "a", "slots": 1, "diskGb": 40 }] }"#,
             Profile::Axmc,
         );

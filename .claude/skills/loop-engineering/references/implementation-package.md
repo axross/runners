@@ -15,7 +15,7 @@ Approval identifies the exact plan artifact and revision the human considered, t
 
 An assignment says what work is requested and what the executor can rely on. Every repository- or version-dependent assignment—including investigation and review—identifies the source or workspace, target revision or content identifier, actual uncommitted diff and files, and material locations. Naming `HEAD` alone is insufficient when uncommitted work matters.
 
-Writing assignments additionally name permitted paths or effects, protected changes, conflict coordination, verification, self-review expectations and applicable policy, and whether commits or another delivery form are expected. Read-only assignments omit writing permissions rather than granting empty ones.
+Writing assignments additionally name permitted paths or effects, protected changes, conflict coordination, verification, self-review expectations and applicable policy, whether commits or another delivery form are expected, and any shared runtime target the executor may claim and resources it may create. Read-only assignments omit writing permissions rather than granting empty ones.
 
 **Guidelines:**
 
@@ -53,7 +53,7 @@ A writing result carries compact self-review evidence for the current loop drive
 
 **Guidelines:**
 
-- MUST report the assignment and plan revision, materials actually read, changed and uncommitted files, commits or delivered artifacts, evidence and exact check results, unresolved work, residual risk, remaining processes, and actual workspace state where relevant.
+- MUST report the assignment and plan revision, materials actually read, changed and uncommitted files, commits or delivered artifacts, evidence and exact check results, unresolved work, residual risk, remaining processes, created resources by the identities [Semantic Run State](./run-state-and-reporting.md#semantic-run-state) names, and actual workspace state where relevant.
 - MUST report the self-review's local material or content identifier, applicable policy, outcome, unresolved findings, skipped checks, and limitations for every writing result.
 - MUST use a non-complete result state when required self-review is missing or could not cover the assigned material; a verification pass does not imply a clean self-review.
 - MUST distinguish a needed decision from needed authorization, unavailable capability, known failure, and unknown effect.

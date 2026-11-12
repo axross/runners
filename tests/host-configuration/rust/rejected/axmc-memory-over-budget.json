@@ -12,7 +12,7 @@
       "os": "linux",
       "slots": 5,
       "tokenPath": "/path/to/example-repo-1.token",
-      "diskGb": 40,
+      "diskGb": 30,
       "cpus": 1,
       "memoryGb": 8
     }

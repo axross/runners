@@ -36,7 +36,7 @@ pub fn read_budget(budget: &Field, reader: &dyn Reader, errors: &mut Errors) -> 
     let memory_path = path.key(Key::MemoryGb);
     let disk_path = path.key(Key::DiskGb);
     let cpus = fields::required(&node.cpus, &cpus_path, errors)
-        .and_then(|value| limits::cpu_count(value, &cpus_path, errors));
+        .and_then(|value| limits::whole_cpu_count(value, &cpus_path, errors));
     let memory_gb = fields::required(&node.memory_gb, &memory_path, errors).and_then(|value| {
         limits::read_bounded_integer(value, &memory_path, MAX_BUDGET_MEMORY_GB, errors)
     });
@@ -49,6 +49,10 @@ pub fn read_budget(budget: &Field, reader: &dyn Reader, errors: &mut Errors) -> 
     })
 }
 
+/// the disk beyond the slot VMs that any Linux pool needs, for the golden VM and Tart's
+/// image cache.
+pub const LINUX_DISK_RESERVE_GB: u64 = 40;
+
 /// what the pools use together: the sum over the pools of slots times the limit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Usage {
@@ -56,6 +60,7 @@ pub struct Usage {
     pub cpu_nanos: u128,
     pub memory_gb: u64,
     pub disk_gb: u64,
+    pub disk_reserve_gb: u64,
 }
 
 #[must_use]
@@ -65,6 +70,7 @@ pub fn usage(entries: &[Entry]) -> Usage {
         cpu_nanos: 0,
         memory_gb: 0,
         disk_gb: 0,
+        disk_reserve_gb: 0,
     };
     for entry in entries {
         let slots = u64::from(entry.slots);
@@ -74,7 +80,11 @@ pub fn usage(entries: &[Entry]) -> Usage {
         total.cpu_nanos += u128::from(entry.slots) * limits::nanos(entry.cpus);
         total.memory_gb += slots * u64::from(entry.memory_gb);
         total.disk_gb += slots * u64::from(entry.disk_gb.unwrap_or(0));
+        if entry.os == Some(Os::Linux) {
+            total.disk_reserve_gb = LINUX_DISK_RESERVE_GB;
+        }
     }
+    total.disk_gb += total.disk_reserve_gb;
     total
 }
 
@@ -120,6 +130,7 @@ pub fn check_budget(entries: &[Entry], budget: Option<&Budget>, errors: &mut Err
             path,
             Kind::DiskBudgetExceeded {
                 total: used.disk_gb,
+                reserve: used.disk_reserve_gb,
                 budget: budget.disk_gb,
             },
         );

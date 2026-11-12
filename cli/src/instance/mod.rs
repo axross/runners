@@ -14,5 +14,6 @@ pub mod restart;
 pub mod roots;
 pub mod runtime_core;
 pub mod source;
+pub mod steps;
 #[cfg(windows)]
 pub mod windows;

@@ -200,10 +200,15 @@ pub enum Kind {
         total: u64,
         budget: u32,
     },
+    /// `reserve` is the disk any Linux pool adds for the golden VM and Tart's image
+    /// cache, which `total` includes; 0 when no pool is a Linux one.
     DiskBudgetExceeded {
         total: u64,
+        reserve: u64,
         budget: u32,
     },
+    /// a Linux pool's disk below the given minimum, the golden VM's disk size.
+    LinuxDiskTooSmall(u32),
 }
 
 /// one rule a configuration breaks.

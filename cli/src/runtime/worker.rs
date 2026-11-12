@@ -1,5 +1,5 @@
-//! the loop of one slot: check the image, probe the CPUs, register, run one job
-//! container, repeat.
+//! the loop of one slot: check the image, prepare a host, probe the CPUs, register,
+//! run one job container, release the host, repeat.
 
 use std::time::Duration;
 
@@ -7,17 +7,17 @@ use tokio::sync::watch;
 
 use crate::image::check::ImageCheck;
 
-use super::backend::{Backend, ContainerSpec, CpuRequest};
+use super::backend::{Backend, ContainerSpec, CpuRequest, HostPreparation, RELEASE_WITHIN};
 use super::board::{Board, SlotState};
 use super::clock::Clock;
 use super::diagnostic::finalize_at_job_end;
-use super::docker_args::RUN_COMMAND;
 use super::image::check_image;
 use super::log::{Log, Masked};
 use super::name::job_container_name;
 use super::pool::SlotSpec;
 use super::registration::{JitRequest, Registrar};
-use super::token::read_token;
+use super::scrub::scrub_error_text;
+use super::token::{TokenFiles, TokenSource};
 
 /// the delay after a slot's first failure.
 pub const INITIAL_BACKOFF: Duration = Duration::from_secs(5);
@@ -103,28 +103,195 @@ impl Report<'_> {
     }
 }
 
-/// warns that an attempt failed and waits out the backoff, ending early on a stop;
-/// returns whether a stop was asked for.
+/// why a slot waits out a backoff.
+enum Pause {
+    /// an attempt failed, for this reason.
+    Failed(String),
+    /// a host prerequisite refuses the boot, for this reason.
+    Held(String),
+}
+
+impl Pause {
+    fn words(&self) -> String {
+        match self {
+            Self::Failed(reason) => reason.clone(),
+            Self::Held(reason) => format!("held, nothing is started ({reason})"),
+        }
+    }
+
+    /// the slot's state while it waits; the board's text reaches `status` and the
+    /// agent's snapshot, so the reason is scrubbed and masked.
+    fn state(&self, log: &dyn Log) -> SlotState {
+        let shown = |reason: &str| log.masks().apply(&scrub_error_text(reason, ""));
+        match self {
+            Self::Failed(reason) => SlotState::BackingOff(shown(reason)),
+            Self::Held(reason) => SlotState::Held(shown(reason)),
+        }
+    }
+}
+
+/// warns that a slot waits and for what, then waits out the backoff, ending early on
+/// a stop; returns whether a stop was asked for.
 async fn back_off<K: Clock>(
     report: &Report<'_>,
     clock: &K,
     stop: &mut watch::Receiver<bool>,
     backoff: &mut Backoff,
-    reason: &str,
+    pause: Pause,
 ) -> bool {
     report.log.warn(&format!(
-        "{}: {reason} - retrying in {}s.",
+        "{}: {} - retrying in {}s.",
         report.label,
+        pause.words(),
         backoff.current().as_secs()
     ));
-    report.state(SlotState::BackingOff);
+    report.state(pause.state(report.log));
     sleep_or_stop(clock, stop, backoff.fail()).await
+}
+
+/// how one attempt, from the host's preparation to its release, ended.
+enum Attempt {
+    /// the container exited 0, and the slot starts a replacement at once.
+    Ended,
+    /// the attempt failed, or the container exited otherwise, and the slot backs off.
+    Failed(String),
+    /// a host prerequisite refused the boot, and the slot waits out the backoff held.
+    Held(String),
+    Stopped,
+}
+
+struct Context<'a, B, K, R> {
+    backend: &'a B,
+    clock: &'a K,
+    registrar: &'a R,
+    tokens: &'a dyn TokenSource,
+    report: &'a Report<'a>,
+}
+
+impl<B: Backend, K: Clock, R: Registrar> Context<'_, B, K, R> {
+    /// prepares the slot's host, runs one job on it, and releases the host on every
+    /// path out of the preparation, whatever its outcome and a stop included, before
+    /// the caller backs off.
+    async fn attempt(&self, slot: &SlotSpec, stop: &mut watch::Receiver<bool>) -> Attempt {
+        let request = slot.host_request();
+        let prepared = tokio::select! {
+            prepared = self.backend.prepare_job_host(&request) => Some(prepared),
+            () = wait_for_stop(stop) => None,
+        };
+        let attempt = match prepared {
+            None => Attempt::Stopped,
+            Some(HostPreparation::Ready) => self.run_job(slot, stop).await,
+            Some(HostPreparation::Failed(error)) => Attempt::Failed(format!(
+                "the job host could not be prepared ({error}); no registration"
+            )),
+            Some(HostPreparation::Held(reason)) => Attempt::Held(reason),
+        };
+        if stopped(stop) && self.backend.host_awaits_finalisation(&request.host) {
+            // the stop sequence exports the host's evidence first, then releases it
+            return attempt;
+        }
+        let budget = if stopped(stop) {
+            self.backend.release_budget()
+        } else {
+            RELEASE_WITHIN
+        };
+        if let Err(error) = self.backend.release_job_host(&request.host, budget).await {
+            self.report.log.warn(&format!(
+                "{}: releasing the job host failed ({error}).",
+                self.report.label
+            ));
+        }
+        attempt
+    }
+
+    /// probes the host's CPUs, registers, runs one job container to its end and
+    /// finalises it.
+    async fn run_job(&self, slot: &SlotSpec, stop: &mut watch::Receiver<bool>) -> Attempt {
+        let log = self.report.log;
+        let request = CpuRequest {
+            probe_name: slot.probe_name(),
+            image: slot.image.clone(),
+            count: slot.cpu_count,
+            offset: slot.cpu_offset,
+        };
+        let Ok(cpuset) = self.backend.select_cpuset(&request).await else {
+            return Attempt::Failed(
+                "CPU discovery or probe cleanup failed; no registration".to_string(),
+            );
+        };
+
+        let name = job_container_name(&slot.pool, slot.number, self.clock.now());
+        let registration = async {
+            let token = self
+                .tokens
+                .token(&slot.owner, &slot.repository, &slot.token_path)?;
+            log.mask(&token);
+            self.registrar
+                .request_jit(&JitRequest {
+                    owner: &slot.owner,
+                    repository: &slot.repository,
+                    name: &name,
+                    labels: &slot.labels,
+                    token: &token,
+                })
+                .await
+                .map_err(|error| error.to_string())
+        };
+        let registered = tokio::select! {
+            result = registration => result,
+            () = wait_for_stop(stop) => return Attempt::Stopped,
+        };
+        let jit = match registered {
+            Ok(jit) => jit,
+            Err(reason) => {
+                return Attempt::Failed(format!("failed to request a JIT registration ({reason})"));
+            }
+        };
+
+        let _masked = Masked::new(log, &jit);
+        if stopped(stop) {
+            return Attempt::Stopped;
+        }
+        log.info(&format!(
+            "{}: starting container {name}.",
+            self.report.label
+        ));
+        self.report.state(SlotState::Running(name.clone()));
+        let spec = ContainerSpec {
+            name,
+            cpus: slot.cpus.clone(),
+            cpuset,
+            memory_gb: slot.memory_gb,
+            mounts: slot.mounts.clone(),
+            image: slot.image.clone(),
+            run_command: self.backend.run_command().to_string(),
+            diagnostic: slot.diagnostic.clone(),
+        };
+        let exit = self.backend.run_container(&spec, &jit).await;
+        if spec.diagnostic.is_some() && !stopped(stop) {
+            finalize_at_job_end(self.backend, log, &spec.name, tokio::time::Instant::now()).await;
+        }
+        match exit {
+            Ok(0) => Attempt::Ended,
+            outcome => {
+                let reason = match outcome {
+                    Ok(code) => format!("container exited with code {code}"),
+                    Err(error) => format!("container could not run ({error})"),
+                };
+                // the JIT configuration is masked only until this function ends, and a
+                // failed run's error text could hold it
+                Attempt::Failed(log.masks().apply(&reason))
+            }
+        }
+    }
 }
 
 /// runs one slot until a stop is asked for, leaving a container already running to
 /// the stop sequence; a diagnostic container is finalised after its run unless a stop
 /// is under way, and its export's gaps never change the backoff; the token it reads
-/// and the JIT configuration it holds are masked in `log`.
+/// and the JIT configuration it holds are masked in `log`. Each attempt checks the
+/// image, prepares a host, probes the CPUs, registers, runs the container, finalises
+/// it, and releases the host before the slot backs off.
 pub async fn run_slot<B: Backend, K: Clock, R: Registrar>(
     slot: &SlotSpec,
     backend: &B,
@@ -132,12 +299,63 @@ pub async fn run_slot<B: Backend, K: Clock, R: Registrar>(
     registrar: &R,
     log: &dyn Log,
     board: &Board,
+    stop: watch::Receiver<bool>,
+) {
+    let services = Services {
+        backend,
+        clock,
+        registrar,
+        tokens: &TokenFiles,
+        log,
+        board,
+    };
+    run_slot_with(slot, &services, stop).await;
+}
+
+/// what a slot's loop works with.
+pub struct Services<'a, B, K, R> {
+    pub backend: &'a B,
+    pub clock: &'a K,
+    pub registrar: &'a R,
+    /// where each registration reads its token.
+    pub tokens: &'a dyn TokenSource,
+    pub log: &'a dyn Log,
+    pub board: &'a Board,
+}
+
+impl<B, K, R> Clone for Services<'_, B, K, R> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<B, K, R> Copy for Services<'_, B, K, R> {}
+
+/// [`run_slot`] with its token source among its services.
+pub async fn run_slot_with<B: Backend, K: Clock, R: Registrar>(
+    slot: &SlotSpec,
+    services: &Services<'_, B, K, R>,
     mut stop: watch::Receiver<bool>,
 ) {
+    let Services {
+        backend,
+        clock,
+        registrar,
+        tokens,
+        log,
+        board,
+    } = *services;
     let report = Report {
         log,
         board,
         label: slot.label(),
+    };
+    let context = Context {
+        backend,
+        clock,
+        registrar,
+        tokens,
+        report: &report,
     };
     let mut backoff = Backoff::default();
     while !stopped(&stop) {
@@ -155,95 +373,35 @@ pub async fn run_slot<B: Backend, K: Clock, R: Registrar>(
                 .map(|refusal| format!("{refusal}; no registration")),
         };
         if let Some(reason) = refused {
-            if back_off(&report, clock, &mut stop, &mut backoff, &reason).await {
+            if back_off(
+                &report,
+                clock,
+                &mut stop,
+                &mut backoff,
+                Pause::Failed(reason),
+            )
+            .await
+            {
                 return;
             }
             continue;
         }
 
-        let request = CpuRequest {
-            probe_name: slot.probe_name(),
-            image: slot.image.clone(),
-            count: slot.cpu_count,
-            offset: slot.cpu_offset,
-        };
-        let Ok(cpuset) = backend.select_cpuset(&request).await else {
-            let reason = "CPU discovery or probe cleanup failed; no registration";
-            if back_off(&report, clock, &mut stop, &mut backoff, reason).await {
-                return;
-            }
-            continue;
-        };
-
-        let name = job_container_name(&slot.pool, slot.number, clock.now());
-        let registration = async {
-            let token = read_token(&slot.token_path).map_err(|error| error.to_string())?;
-            log.mask(&token);
-            registrar
-                .request_jit(&JitRequest {
-                    owner: &slot.owner,
-                    repository: &slot.repository,
-                    name: &name,
-                    labels: &slot.labels,
-                    token: &token,
-                })
-                .await
-                .map_err(|error| error.to_string())
-        };
-        let registered = tokio::select! {
-            result = registration => result,
-            () = wait_for_stop(&mut stop) => return,
-        };
-        let jit = match registered {
-            Ok(jit) => jit,
-            Err(reason) => {
-                let reason = format!("failed to request a JIT registration ({reason})");
-                if back_off(&report, clock, &mut stop, &mut backoff, &reason).await {
-                    return;
-                }
-                continue;
-            }
-        };
-
-        let _masked = Masked::new(log, &jit);
-        if stopped(&stop) {
-            return;
-        }
-        log.info(&format!("{}: starting container {name}.", report.label));
-        report.state(SlotState::Running(name.clone()));
-        let spec = ContainerSpec {
-            name,
-            cpus: slot.cpus.clone(),
-            cpuset,
-            memory_gb: slot.memory_gb,
-            mounts: slot.mounts.clone(),
-            image: slot.image.clone(),
-            run_command: RUN_COMMAND.to_string(),
-            diagnostic: slot.diagnostic.clone(),
-        };
-        // the JIT configuration stays masked until the outcome below is reported,
-        // since a failed run's error text could hold it
-        let exit = backend.run_container(&spec, &jit).await;
-        if spec.diagnostic.is_some() && !stopped(&stop) {
-            finalize_at_job_end(backend, log, &spec.name, tokio::time::Instant::now()).await;
-        }
-        match exit {
-            Ok(0) => {
+        let pause = match context.attempt(slot, &mut stop).await {
+            Attempt::Stopped => return,
+            Attempt::Ended => {
                 log.info(&format!(
                     "{}: container exited successfully (GitHub owns the job result) - starting a replacement.",
                     report.label
                 ));
                 backoff.reset();
+                continue;
             }
-            outcome => {
-                let reason = match outcome {
-                    Ok(code) => format!("container exited with code {code}"),
-                    Err(error) => format!("container could not run ({error})"),
-                };
-                if back_off(&report, clock, &mut stop, &mut backoff, &reason).await {
-                    return;
-                }
-            }
+            Attempt::Failed(reason) => Pause::Failed(reason),
+            Attempt::Held(reason) => Pause::Held(reason),
+        };
+        if back_off(&report, clock, &mut stop, &mut backoff, pause).await {
+            return;
         }
     }
 }

@@ -77,7 +77,8 @@ See [asking-the-human.md](./references/asking-the-human.md) for:
 
 - putting a decision to the human or returning an unresolved human decision to a parent, in a single mid-task question or an interview
 - using a dedicated question mechanism when its purpose and usage conditions qualify, and the permitted fallback when no dedicated mechanism is eligible
-- re-presenting a prompt that closed or errored, and reading a bare answer token as answering the still-open question
+- distinguishing synchronous replies, async submission receipts, and later human answers without claiming visibility from acceptance
+- recovering closed, errored, or reported-missing questions while retaining matched answers, and reading a bare answer token as answering the still-open question
 - framing a decision as concrete options, each with its consequence and the default marked with its reason and evidence
 - returning a question you cannot ask to whoever asked, with its partial results, inventing neither an answer nor an approval
 - which decisions go in one round's prompts, and which wait for a later round in dependency order

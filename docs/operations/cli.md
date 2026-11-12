@@ -3,16 +3,21 @@
 The Rust command line tool under [`cli/`](../../cli): what `validate` accepts and
 prints, the rules it applies, the shared fixtures its tests read, the TOML
 configuration format with its conversion from JSON and its comment-preserving write
-path, the runtime layer that runs a host's pools (the container backend, JIT registration, CPU placement,
-and the slot loop), the instance layer that keeps
+path, the runtime layer that runs a host's pools (the container backend and the Tart
+VM backend, JIT registration, CPU placement, and the slot loop, and on the Mac the
+host prerequisites and the sleep and network signals), the instance layer that keeps
 `start` to one instance per machine (the instance state, the single-instance lock,
-and the control channel), the image contract every runner image declares and the
-check of it, running a host with `build`, `start`, `stop`, `restart`, `status`, and
-`diagnostics`, the diagnostic containers a diagnostics-enabled pool runs and their
-export, the toolchain and the gates that cover it, how a release is built,
-signed, and installed, and why its name is fixed. The binary is `marshal`, and
-axpc runs its pools with it, as [Windows Runner Host](./windows-runner-host.md)
-describes, including how to roll back to the previous release.
+and the control channel), the resident agent that takes the instance's place and its
+protocol version 2 (the state it keeps, the token store, the messages, and the
+snapshot), the image contract every runner image declares and the
+check of it, running a host with `build` (the runner image on axpc, the golden VM on
+axmc), `start`, `stop`, `restart`, `status`, and
+`diagnostics`, the diagnostic containers and VMs a diagnostics-enabled pool runs and their
+export, the toolchain and the gates that cover it, how a release is built, signed,
+and installed, and why its name is fixed. The binary is `marshal`. axpc runs its pools
+with it, as [Windows Runner Host](./windows-runner-host.md) describes, including how
+to roll back to the previous release, and axmc runs its Linux pools with it in Tart
+VMs, as [macOS Runner Host](./macos-runner-host.md) describes.
 
 ## Running It
 
@@ -78,42 +83,66 @@ to both, and the shared fixtures pin the message text. The profile decides the
 fields, the platform labels, the routing label, the path form, and the extra
 checks.
 
-| Aspect                  | `axpc` (Windows, Docker Desktop)                                         | `axmc` (macOS host)                                                                       |
-| ----------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| Platform labels         | `self-hosted, linux, x64`                                                | `self-hosted, linux, ARM64` for `os: linux`; `self-hosted, macOS, ARM64` for `macos`      |
-| Routing label           | `axpc`, the default when `labels` is absent or empty; a list replaces it | `axmc`, with the same default and replacement                                             |
-| Paths                   | Drive-letter or UNC                                                      | Absolute POSIX: start with `/`, no control characters, no empty, `.`, or `..` parts       |
-| Root fields             | `imageName` (required), `repositories`                                   | `budget` (required), `repositories`, `imageName` (optional; its use is undecided)         |
-| Entry fields            | The existing schema, with `volumes`                                      | The same without `volumes`, plus `os` and `diskGb`, both required                         |
-| Foreign platform labels | Accepted and listed, such as `ARM64`                                     | Rejected: another host's or OS's platform label, such as `macOS` on a Linux pool or `x64` |
+| Aspect                  | `axpc` (Windows, Docker Desktop)                                         | `axmc` (macOS host)                                                                                     |
+| ----------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| Platform labels         | `self-hosted, linux, x64`                                                | `self-hosted, linux, ARM64` for `os: linux`; `self-hosted, macOS, ARM64` for `macos`                    |
+| Routing label           | `axpc`, the default when `labels` is absent or empty; a list replaces it | `axmc`, with the same default and replacement                                                           |
+| Paths                   | Drive-letter or UNC                                                      | Absolute POSIX: start with `/`, no control characters, no empty, `.`, or `..` parts                     |
+| Root fields             | `imageName` (required), `repositories`                                   | `budget` (required), `repositories`, `imageName` (optional; it names the runner image in the golden VM) |
+| Entry fields            | The existing schema, with `volumes`                                      | The same without `volumes`, plus `os` and `diskGb`, both required                                       |
+| Foreign platform labels | Accepted and listed, such as `ARM64`                                     | Rejected: another host's or OS's platform label, such as `macOS` on a Linux pool or `x64`               |
 
 On `axmc`, `os` is `linux` or `macos`, `diskGb` is the per-VM disk cap, and
-`budget` holds `cpus`, `memoryGb`, and `diskGb`. `volumes` is rejected on an entry
-even as `null`, because VM pools keep no volumes. The axmc fields are provisional:
-later phases may extend them but MUST NOT change what this phase accepts without a
-recorded migration.
+`budget` holds `cpus`, `memoryGb`, and `diskGb`. A VM has whole vCPUs, so `cpus`
+is an integer from 1 to 64 on `axmc`, while axpc keeps its fractional CPU counts.
+`volumes` is rejected on an entry even as `null`, because VM pools keep no volumes.
+A change to what these fields accept MUST come with a recorded migration, which
+[Migrations](#migrations) holds.
 
 ### New Rules
 
 These rules exist on `axmc` only. Their messages follow the `<path>: <problem>`
-form, and each is pinned by a fixture under
-[`tests/host-configuration/rust/`](../../tests/host-configuration/rust). A later
-phase MUST NOT change the text without a recorded migration.
+form. A fixture under
+[`tests/host-configuration/rust/`](../../tests/host-configuration/rust) pins each
+rule. A change to the text MUST come with a recorded migration.
 
-| Rule                                                  | Path and message                                                                                                                                                               |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `volumes` present                                     | `repositories[i].volumes: not supported on axmc, because VM pools keep no volumes`                                                                                             |
-| `os` missing, or not `linux` or `macos`               | `repositories[i].os: required field is missing`, or `...os: must be "linux" or "macos"`                                                                                        |
-| `diskGb` missing or out of range                      | `repositories[i].diskGb: required field is missing`, or `...diskGb: must be an integer from 1 to 16384`                                                                        |
-| `budget` missing, not an object, or a member unusable | `budget: required field is missing` or `budget: must be an object`; `budget.cpus` follows the entry `cpus` rule; `budget.memoryGb` is 1 to 1024; `budget.diskGb` is 1 to 16384 |
-| A platform label the pool cannot provide              | `repositories[i].labels: '<label>' is a platform label that a <os> pool on axmc cannot provide, so list only non-platform labels`                                              |
-| More than two macOS VMs                               | `budget: macOS pools total N VMs (the sum of their slots), above the limit of 2`                                                                                               |
-| CPU, memory, or disk use above the budget             | `budget: pools total N CPUs (the sum of slots times cpus), above the budget of M`, and the same for `GB of memory` and `GB of disk`                                            |
+| Rule                                                  | Path and message                                                                                                                                                                    |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `volumes` present                                     | `repositories[i].volumes: not supported on axmc, because VM pools keep no volumes`                                                                                                  |
+| `os` missing, or not `linux` or `macos`               | `repositories[i].os: required field is missing`, or `...os: must be "linux" or "macos"`                                                                                             |
+| `diskGb` missing or out of range                      | `repositories[i].diskGb: required field is missing`, or `...diskGb: must be an integer from 1 to 16384`                                                                             |
+| `cpus` or `budget.cpus` not a whole vCPU count        | `repositories[i].cpus: must be an integer from 1 to 64`, or `budget.cpus: must be an integer from 1 to 64`                                                                          |
+| `diskGb` below 20 on a Linux pool                     | `repositories[i].diskGb: must be at least 20 on a Linux pool, the golden VM's disk size`                                                                                            |
+| `budget` missing, not an object, or a member unusable | `budget: required field is missing` or `budget: must be an object`; `budget.cpus` is a whole vCPU count from 1 to 64; `budget.memoryGb` is 1 to 1024; `budget.diskGb` is 1 to 16384 |
+| A platform label the pool cannot provide              | `repositories[i].labels: '<label>' is a platform label that a <os> pool on axmc cannot provide, so list only non-platform labels`                                                   |
+| More than two macOS VMs                               | `budget: macOS pools total N VMs (the sum of their slots), above the limit of 2`                                                                                                    |
+| CPU, memory, or disk use above the budget             | `budget: pools total N CPUs (the sum of slots times cpus), above the budget of M`, and the same for `GB of memory` and `GB of disk`; see below for the disk reserve                 |
 
 The budget errors come after every per-entry and cross-entry error. They sum
 `slots` times the limit over the entries that join the cross-entry checks. The
 macOS VM limit is fixed by the host, so it is checked even when `budget` itself is
 unusable.
+
+When any Linux pool is configured, the disk total also counts a fixed 40 GB for the
+Linux golden VM and Tart's image cache, and the disk error says so:
+`budget: pools total N GB of disk (the sum of slots times diskGb, plus 40 GB for the golden VM and Tart's image cache), above the budget of M GB`.
+The summary's disk line includes the reserve and ends `, including a 40 GB reserve`.
+Without a Linux pool the total and the message are the sum of slots times `diskGb`
+alone.
+
+### Migrations
+
+A change to what `axmc` accepts is recorded here with each old and new rule, its
+message, and the fixture that shows it. A configuration that validated before the
+change may be rejected now; the last column says how to change it.
+
+| Rule                          | Old                                                                                          | New                                                                                                                                                               | Fixture                                                                                                                                                                                                                                                              | To migrate                                                              |
+| ----------------------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `cpus` of a pool              | A number above 0 and at most 64, fractions allowed                                           | An integer from 1 to 64: `repositories[i].cpus: must be an integer from 1 to 64`                                                                                  | [`axmc-fractional-cpus.json`](../../tests/host-configuration/rust/rejected/axmc-fractional-cpus.json), accepted before and rejected now                                                                                                                              | Round each fractional `cpus` to a whole vCPU count, at least 1          |
+| `budget.cpus`                 | A number above 0 and at most 64, fractions allowed                                           | An integer from 1 to 64: `budget.cpus: must be an integer from 1 to 64`                                                                                           | [`axmc-budget-members.json`](../../tests/host-configuration/rust/rejected/axmc-budget-members.json), message changed; `axmc-fractional-cpus.json`                                                                                                                    | Round `budget.cpus` to a whole number that covers the pools             |
+| `diskGb` of a Linux pool      | Any integer from 1 to 16384                                                                  | At least 20: `repositories[i].diskGb: must be at least 20 on a Linux pool, the golden VM's disk size`                                                             | [`axmc-linux-disk-too-small.json`](../../tests/host-configuration/rust/rejected/axmc-linux-disk-too-small.json), accepted before and rejected now, with a macOS pool at the same `diskGb` left unflagged                                                             | Raise a Linux pool's `diskGb` to 20 or more; a macOS pool is unchanged  |
+| `imageName` of axmc           | Optional and validated as on axpc, with its use undecided                                    | Optional and validated as before; an absent name is `actions-runner:local`, and the name is the image that `build` makes inside the golden VM and every pool runs | [`axmc-image-name.json`](../../tests/host-configuration/rust/accepted/axmc-image-name.json), accepted before and now; nothing is accepted or rejected differently                                                                                                    | None; a configuration that validated still validates                    |
+| Disk budget with a Linux pool | `budget: pools total N GB of disk (the sum of slots times diskGb), above the budget of M GB` | `budget: pools total N GB of disk (the sum of slots times diskGb, plus 40 GB for the golden VM and Tart's image cache), above the budget of M GB`                 | [`axmc-disk-over-budget.json`](../../tests/host-configuration/rust/rejected/axmc-disk-over-budget.json), message and total; [`axmc-budget-at-limit.json`](../../tests/host-configuration/rust/accepted/axmc-budget-at-limit.json), whose budget rose from 150 to 190 | Raise `budget.diskGb` by 40 GB, or lower the pools' `diskGb` or `slots` |
 
 ### Labels
 
@@ -137,10 +166,32 @@ summary on standard output is the same with or without a checkout. The rule appl
 both profiles but can only bite where the profile's path form matches the
 operating system: axpc on Windows, axmc on Linux and macOS.
 
+For the agent the checkout is found from the sink itself. The agent's configuration
+lives outside any checkout, so the checkout above the file would never exist: the
+agent compares each `diagnosticDirectory` with the first directory at or above that
+directory that holds both `.git` and `cli/Cargo.toml`, found the same way, lexically
+and without resolving a link, and with the same per-profile case rule. Because it looks
+from the sink, which directories hold `.git` follows the volume: on a volume that
+ignores case, such as macOS's default one, a case variant of the checkout's path finds
+the checkout and is refused, while on Linux it is another directory. It also applies
+the checkout above its configuration file where one exists. A sink at or under either
+is a configuration problem, `repositories[n].diagnosticDirectory: must be outside the
+checkout`, in the snapshot, and the agent stops for `invalid_configuration`. The agent
+looks from a sink only when the path is one of the host it runs on, so a Windows path
+read on another host is not compared. Because the sink's own place was examined, the
+agent writes no note that the rule was skipped. `start`, `validate` and `build` are
+unchanged: their checkout stays the one above the configuration file.
+`tests/checkout_rule_agent.rs` covers a sink inside a checkout, outside one, a sibling
+prefix, a case variant (accepted on Linux, refused on macOS), and the unchanged rule of
+`start`.
+
 Known limitation: the axmc comparison is case-sensitive, while macOS's default APFS
-volume is case-insensitive. A `diagnosticDirectory` that differs from the checkout
-only in case therefore passes the rule even though it names the same directory. The
-validator cannot know a volume's case sensitivity, so it does not guess.
+volume is case-insensitive. For `start` and `validate`, whose checkout is the one above
+the configuration file, a `diagnosticDirectory` that differs from the checkout only in
+case therefore passes the rule even though it names the same directory. The validator
+cannot know a volume's case sensitivity, so it does not guess. The agent is not
+affected on such a volume: its lookup starts at the sink, and the volume itself answers
+for the case variant.
 
 ## Validation Rules
 
@@ -209,9 +260,10 @@ configuration prints its summary on standard output, with lines ending in `\n`:
 - **Patterns.** A pattern matches the whole value, so a trailing newline does not
   pass.
 - **Numbers.** Integer fields accept only an integer literal: `8.0` and `1e1` are
-  rejected. Decimal fields accept integers, decimals, and exponents. A CPU count is
-  rounded half away from zero at nine decimals on its 15-significant-digit form,
-  and a value that rounds to zero is rejected. An out-of-range literal such as
+  rejected. Decimal fields accept integers, decimals, and exponents; on axmc `cpus`
+  is an integer field instead. An axpc CPU count is rounded half away from zero at
+  nine decimals on its 15-significant-digit form, and a value that rounds to zero is
+  rejected. An out-of-range literal such as
   `1e400` gets the field's range error, not a parse error.
 - **Cross-entry checks.** An entry joins them only when its owner, repository,
   token path, labels, volumes, slots, name, `cpus`, and `memoryGb` are all usable
@@ -600,30 +652,46 @@ The library holds the code that runs a host's pools: the container backend, JIT
 registration, and the loop of one slot. `start` reaches it through the instance
 layer, and the tests also drive it through its seams.
 
-| Module                                              | Holds                                                                                  |
-| --------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `affinity`                                          | The CPU offsets `validate` and the backend share, and the selection of a slot's CPUs   |
-| `runtime::backend`                                  | The backend seam                                                                       |
-| `runtime::select`                                   | The runtime a pool's operating system selects on its host                              |
-| `runtime::docker`, `runtime::docker_args`           | The container backend and the exact `docker` argument lists                            |
-| `runtime::registration`, `token`, `scrub`, `secret` | JIT registration, the token file, error text, and the type that hides a secret         |
-| `runtime::clock`, `runtime::log`                    | The time source and the sink for the runtime's messages, each a seam the tests replace |
-| `runtime::name`                                     | Runner and container names, and the test for a pool's own                              |
-| `runtime::pool`                                     | Pools from a plan, and their preparation                                               |
-| `runtime::worker`                                   | The slot loop and its backoff                                                          |
-| `runtime::retained`                                 | The diagnostic containers the backend retains, their records, and who finalises each   |
-| `runtime::diagnostic`                               | Finalising diagnostic containers at job end, in the container steps, and at startup    |
-| `diagnostics`, `diagnostics::exporter`              | The exporter child and the lines and exit codes it answers with                        |
-| `diagnostics::transport`                            | The transport seam through which the exporter reads a container's evidence             |
-| `diagnostics::sink`, `archive`, `identity`          | The sink checks and admission, the strict archive reader, and the identity readback    |
-| `runtime::board`                                    | Each pool's and each slot's state, which `status` reports                              |
-| `runtime::fake`                                     | In-memory stand-ins for the seams, used by tests; a debug or test build only           |
+| Module                                                   | Holds                                                                                                        |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `affinity`                                               | The CPU offsets `validate` and the backend share, and the selection of a slot's CPUs                         |
+| `runtime::backend`                                       | The backend seam                                                                                             |
+| `runtime::select`                                        | The runtime a pool's operating system selects on its host                                                    |
+| `runtime::docker`, `runtime::docker_args`                | The container backend and the exact `docker` argument lists                                                  |
+| `runtime::tart`, `tart::args`, `tart::client`            | The `tart` client: the exact argument lists, and the bounded process wrapper                                 |
+| `runtime::tart::list`, `tart::names`                     | The reader of `tart list --format json`, and the VM names, parsers and matchers                              |
+| `runtime::tart::backend`                                 | The Tart backend: the slot cycle's host steps, the probes, the job container, and the release                |
+| `tart::golden_check`, `tart::guest`                      | The golden VM check from VM names alone, and the commands run in a booted VM through the guest agent         |
+| `tart::boot`                                             | The wait for a booted VM's guest agent and the boot failure text, shared by a job VM and the build VM        |
+| `tart::hold`, `tart::teardown`, `vm_shim`                | The holder of a VM's `tart run`, the stop-and-delete within a budget, and the VM shim                        |
+| `golden`, `golden::pins`, `golden::key`, `golden::steps` | The golden VM's pins, the check of Docker's signing key, the launcher and the guest calls that provision it  |
+| `macos::version`                                         | The tested Tart and Softnet versions, the readers of their `--version`, and the sorting                      |
+| `macos::softnet`                                         | Finding Softnet on `PATH` as Tart does, the judgment of its file, and its version read                       |
+| `macos::prerequisites`                                   | The host checks: Tart's version, then Softnet's file and version, each a pass, warning or refusal            |
+| `runtime::registration`, `token`, `scrub`, `secret`      | JIT registration, the token file, error text, and the type that hides a secret                               |
+| `runtime::clock`, `runtime::log`                         | The time source and the sink for the runtime's messages, each a seam the tests replace                       |
+| `runtime::name`                                          | Runner and container names, and the test for a pool's own                                                    |
+| `runtime::pool`                                          | Pools from a plan, and their preparation                                                                     |
+| `runtime::worker`                                        | The slot loop and its backoff                                                                                |
+| `runtime::retained`                                      | The diagnostic containers the backend retains, their records, and who finalises each                         |
+| `runtime::diagnostic`                                    | Finalising diagnostic containers at job end, in the container steps, and at startup                          |
+| `diagnostics`, `diagnostics::exporter`                   | The exporter child and the lines and exit codes it answers with                                              |
+| `diagnostics::transport`                                 | The transport seam through which the exporter reads a container's evidence                                   |
+| `diagnostics::sink`, `archive`, `identity`               | The sink checks and admission, the strict archive reader, and the identity readback                          |
+| `runtime::board`                                         | Each pool's and each slot's state, which `status` reports                                                    |
+| `macos::signals`, `macos::mac`                           | The signal-source seam and its real macOS source                                                             |
+| `macos::sleep`, `macos::network`, `macos::watch`         | The sleep judgment, the `route` and `arp` readers, and the primary network's judgment                        |
+| `macos::keep_awake`, `macos::probe`, `macos::reason`     | The `caffeinate` hold, the bounded system-program call, and the stop-reason texts                            |
+| `macos::monitor`, `macos::gate`                          | The instance's signals on axmc: the watch, the keep-awake hold, and the gate that holds back the first clone |
+| `macos::fake`, `macos::scripted`                         | The in-process signal source for tests, and the one a debug build reads from a directory                     |
+| `runtime::fake`                                          | In-memory stand-ins for the seams, used by tests; a debug or test build only                                 |
 
 ### Backend
 
 The runtime asks a backend to wait until it is available; check the configured
 image, as [The Image Contract](#the-image-contract) describes; list a pool's
-containers and remove containers; prepare volumes; choose a slot's CPUs; run a
+containers and remove containers; prepare volumes; prepare and release a job host,
+as below; choose a slot's CPUs; run a
 container under the run contract and report its exit code; name the containers it
 has started and not seen end; stop, end, or remove a set of containers within a
 budget; and, for a diagnostics-enabled pool, retain each diagnostic container it
@@ -633,9 +701,52 @@ finalisation, the same for every backend, decides whether to export and removes
 the container after it. The JIT
 configuration reaches the backend as a `Secret`, whose `Debug` form is redacted and
 which has no `Display`. The container backend passes it as an environment variable
-by name; a later backend that runs the containers in a virtual machine can pass it
-another way. A fake backend implements the same seam for the tests of the code
+by name; the [Tart Backend](#tart-backend), which runs the containers in a virtual
+machine, passes it on the standard input of the launcher in the VM. A fake backend implements the same seam for the tests of the code
 above it.
+
+The backend also provides two values the runtime core would otherwise take from the
+container backend's modules: the command a job container runs after the launcher
+verifies its CPUs, and the wait between checks while the engine does not answer.
+The container backend gives `/home/runner/run.sh` and 5 s, so nothing on axpc
+changes.
+
+**Job hosts.** A job host is whatever one job runs on. A container on axpc runs
+directly on Docker Desktop, so the container backend's host is nothing; a backend
+that gives each job a virtual machine makes and deletes that machine as the host.
+Two steps, per job and per slot, carry this:
+
+- `prepare_job_host` runs after the image check and before any CPU probe or
+  registration. It is given the slot, its vCPUs, memory and disk, and answers one of
+  three outcomes. **Ready**: the host can take the job. **Failed**: the host could
+  not be made, and the slot backs off like any other failed attempt. **Held**: a
+  host prerequisite refuses this boot, with a reason. A held slot boots nothing,
+  warns in the log, shows `held: <reason>` in `status`, and tries again on the same
+  5 s doubling to 300 s schedule, and a job running on another slot is not
+  affected. The reason `status` shows is scrubbed, joined onto one line and cut to
+  500 characters followed by `...`, as a backing-off runner's is; the log line keeps
+  the whole reason. A held slot is not a failure of the runtime core, and it counts
+  for no restart. An engine that does not answer is not an outcome of this step: the
+  backend waits for it in `wait_until_available`, or reports the image check as
+  unavailable, as Docker does today.
+- `release_job_host` is given a budget and gets rid of the host. It runs once after
+  every preparation, whatever the preparation answered, and on every path from there
+  on, before the slot backs off: after a failed or held preparation, a failed CPU
+  probe, a failed or refused registration, a run that ended or failed, and a stop at
+  any of those points. A diagnostic container is exported first, so the host is
+  released after the export. A release that fails is a warning and changes nothing
+  else.
+
+The backend counts a host as prepared from the start of its preparation until its
+release and lists the hosts it still counts, so the stop sequence can release the
+ones whose worker could not: a release does nothing for a host that is not
+prepared, and may run twice at once for one host. A backend also names the budget
+the stop sequence reserves for its releases; the container backend has no hosts, so
+its answer is zero.
+
+The container backend prepares every host as ready without running a command,
+releases nothing, and lists no host. Its argument lists, messages, and exit codes
+are unchanged.
 
 The container backend runs `docker` with the run contract's argument lists. The
 image smoke tests run the same container commands through the helpers
@@ -708,34 +819,45 @@ registration error is.
 A pool's operating system, on the host that runs it, selects its runtime. The
 selection is `Runtime::of_pool` in `runtime::select`:
 
-| Host | Pool               | Runtime                                                          |
-| ---- | ------------------ | ---------------------------------------------------------------- |
-| axpc | every pool (Linux) | The Docker Desktop container runtime, the backend above          |
-| axmc | `os: "linux"`      | The VM runtime, a Tart VM per job; selected, but not implemented |
-| axmc | `os: "macos"`      | None                                                             |
+| Host | Pool               | Runtime                                                 |
+| ---- | ------------------ | ------------------------------------------------------- |
+| axpc | every pool (Linux) | The Docker Desktop container runtime, the backend above |
+| axmc | `os: "linux"`      | The VM runtime, a Tart VM per job, run by `start`       |
+| axmc | `os: "macos"`      | None: `start` skips the pool                            |
 
-The backend above is the Docker Desktop runtime. The runtime core drives the
-containers through the backend seam, apart from two values it takes from the Docker
-modules: the engine poll interval from `runtime::docker` and the run command from
-`runtime::docker_args`. `start` and the shim construct the Docker backend
-directly. No code implements the VM runtime yet, so a
-configuration that selects it, or selects none for a pool, is validated and then
-refused:
+The backend above is the Docker Desktop runtime. The runtime core takes nothing from
+the Docker modules: it drives the containers, and the per-job host steps under
+[Backend](#backend), through the backend seam, and the run command and the engine
+poll interval are values the backend provides. `start` constructs the backend the
+host's profile selects: the Docker backend on axpc, and on axmc the
+[Tart Backend](#tart-backend). The shim constructs the Docker backend directly.
 
-- `start --profile axmc` exits 1 after taking the lock and validating, before it
-  opens a log file or calls an engine. It prints:
+The core runs a runtime that gives each job a virtual machine. A plan of axmc
+Linux pools becomes pools: each slot's host has the pool's whole `cpus` as
+vCPUs, the pool's `memoryGb` and the pool's `diskGb`, and the job container's CPU
+quota and affinity cover all of the host's vCPUs, 0 to `cpus` - 1, with its memory
+limit equal to the host's memory. The image defaults to `actions-runner:local` when
+`imageName` is absent. `start` and the core apply that default, and `validate` and
+its summary do not. The macOS pools of a plan are not made into pools. The VM
+runtime is the [Tart Backend](#tart-backend), which `start` runs, and
+`build --profile axmc` makes its golden VM:
 
-  ```text
-  error: the configuration is valid, but this version of marshal cannot run axmc's VM pools yet
-  ```
+- `start --profile axmc` runs the Linux pools on the Tart backend. Each macOS pool
+  is skipped: the core logs `Skipping pool <pool>: macOS VM pools are not supported yet`
+  once for it at each run, and `status` shows the pool as
+  `skipped: macOS VM pools are not supported yet`. When every pool is skipped,
+  nothing can start, and `start` exits 1 with
+  `No pool can start, because macOS VM pools are not supported yet`, without
+  checking Tart or Softnet. A restart or a resume that finds only macOS pools fails
+  the core the same way, as any later run without a startable pool does. On a
+  Windows host, `start --profile axmc` exits 1 first, before taking the lock or
+  calling any engine, with `error: the axmc profile runs only on macOS`; a Linux
+  host is refused as unsupported, as under [Start](#start).
+- `build --profile axmc` makes the golden VM, as
+  [The Golden VM Build](#the-golden-vm-build) describes. On a Windows host it exits 1
+  first, before taking the lock, with `error: the axmc profile runs only on macOS`.
 
-- `build --profile axmc` exits 1 after the same lock and validation, and prints:
-
-  ```text
-  error: the configuration is valid, but this version of marshal cannot build axmc's golden VM yet
-  ```
-
-Both refusals print on standard error, as every `start` and `build` error before
+A refusal prints on standard error, as every `start` and `build` error before
 the log opens. axpc is unaffected: its commands, messages, exit codes, and the run
 contract keep their text.
 
@@ -743,17 +865,365 @@ The diagnostics export reads a retained container's evidence through the
 `EvidenceTransport` seam in `diagnostics::transport`: the allowlisted identity
 text, and the evidence archive, which the strict archive reader writes into the
 bundle. The exporter child's admission, bundle files, limits, exit codes, and
-deadline do not depend on the transport. Its first transport, `DockerCopy`, runs
-`docker inspect` and `docker cp` as [Backend](#backend) lists them.
+deadline do not depend on the transport. `DockerCopy` runs `docker inspect` and
+`docker cp` as [Backend](#backend) lists them. `VmCopy` runs the same two commands
+inside a job VM as `tart exec <vm> docker ...`, with the same identity cap and
+archive limits. The exporter child picks the transport from its arguments: with
+`--vm <name>` it reads that VM through the Tart program it is given, and without it
+it reads the container with `DockerCopy`, so axpc's exporter command line is
+unchanged. Both backends start the child, take its admission lock, and read its
+`admitted` and `bundles` lines through `runtime::exports`.
 
-A unit test in `runtime::select` pins the table. `start_command.rs` and
-`build_command.rs` pin the two refusal texts and their exit code, and
-`start_command.rs` also refuses a configuration of Linux and macOS pools and one of
-macOS pools alone. Unit tests in `diagnostics::exporter` write a complete bundle, a
+A unit test in `runtime::select` pins the table. `axmc_start.rs` runs a
+configuration of Linux and macOS pools, and one of macOS pools alone, through
+`start` as processes, unit tests in `profile` and `build` pin the Windows refusal,
+and `golden_build.rs` runs the golden VM build. Unit tests in `diagnostics::exporter` write a complete bundle, a
 gap, and the failed bundles of an unreadable identity and a failed archive through a
 scripted transport, and the
 diagnostics tests listed under [Diagnostics](#diagnostics) run the exporter through
-`DockerCopy` with unchanged expectations.
+`DockerCopy` with unchanged expectations. `tart_diagnostics.rs` and
+`axmc_diagnostics.rs` run it through `VmCopy` against the fake `tart` and the fake
+`docker` in its VMs.
+
+### Tart Backend
+
+`runtime::tart::backend::TartBackend` is the VM runtime. It gives each job a VM
+cloned from the golden VM, runs the run contract's Docker commands inside it, and
+deletes it. `start` constructs it for the axmc profile, with the VM shim as its
+launcher; `build` does not use it. The in-process tests build it through
+`cli/tests/support/rig.rs` against the fake `tart`, `docker` and `softnet`, and
+`cli/tests/axmc_start.rs` runs it through `start`. The `tart` client library under it is documented where its
+parts are: [Host Prerequisites](#host-prerequisites),
+[Golden VM Provisioning](#golden-vm-provisioning), and the argument lists in
+`tart::args`.
+
+**Availability.** `wait_until_available` runs `tart list` and, while it fails, warns
+`Tart is not responding yet (not installed, or not answering) - waiting.` and tries
+again every 5 s. A Tart that does not answer is therefore never a failure of the
+runtime core. A missing `tart` is refused at `start` before this wait is reached, as
+[Host Prerequisites](#host-prerequisites) maps it. `check_image` runs the same listing within the image check's budget and
+reads the golden VM from the VM names alone ([The Image Contract](#the-image-contract)
+describes the check's outcomes). A listing that fails or overruns is
+`Unavailable`, which registers nothing and goes into the backoff.
+
+**The golden VM check.** `tart::golden_check` reads `tart list --format json` and no
+VM's contents. A golden VM's name,
+`marshal-golden-linux-g<golden VM version>-c<image contract version>-r<runner version>-<yyyyMMddHHmmss>`,
+records what the image's labels record, so nothing boots. The newest golden VM by its
+build second decides, whatever its versions. It matches when its golden VM version
+and image contract version are this CLI's, and a runner version that differs is not a
+mismatch, as for an image. It feeds the image check's outcomes, so the texts and
+refusals are today's, naming the golden VM instead of an image: no golden VM is
+missing, and one built for another golden VM version or contract version is
+mismatched and asks for a rebuild. A unit test in `image::check` pins the case of a
+golden VM whose old runner asks for a rebuild.
+
+**A slot's cycle.** `prepare_job_host` takes these steps and answers `Ready`,
+`Failed`, or `Held`:
+
+1. A host this slot could not release earlier is released first, within 30 s, so a
+   slot never owns two VMs. Its failure fails the preparation.
+2. When the instance's signals have recorded no primary network, the preparation
+   waits at the network gate first; a stop ends the wait. Then the prerequisites run:
+   Tart's version, then Softnet's file and version, as
+   [Host Prerequisites](#host-prerequisites) maps their causes, so a boot after a long
+   wait uses a check made after it. A Tart that is
+   missing or does not answer warns `Tart is not available (<message>) - waiting.`
+   and tries again every 5 s; a refusal of Tart's version or of Softnet is `Held`
+   with the refusal's text. The versions in use are logged once, as
+   `Using Tart <v> and Softnet <v>.`, and again when they change; each warning is
+   logged once until it changes.
+3. The newest golden VM that runs here is listed and cloned to
+   `marshal-job-<pool>-<slot>-<yyyyMMddHHmmssfff>`. The name is recorded before the
+   clone runs, so a clone that fails halfway is still deleted.
+4. The clone is sized with `tart set --cpu <vcpus> --memory <MB> --disk-size <GB>`
+   from the pool's `cpus`, `memoryGb` and `diskGb`.
+5. `tart run` (headless, with Softnet) is started by the [VM shim](#the-vm-shim),
+   and the backend asks the guest agent whether it answers, every second with each
+   question bounded at 5 s, until it does, `tart run` ends, or the 120 s boot
+   deadline passes.
+
+A boot that fails is `Failed`, with the text
+`boot failure: <tart run for the job VM <vm> ended with exit code N (<Tart's own error>) | the guest agent of the job VM <vm> did not answer by the boot deadline (<last error>)>; a locked login keychain is the documented cause, see the "The Signed-In Session" section of the macOS Runner Host document`.
+The section is [The Signed-In Session](./macos-runner-host.md#the-signed-in-session).
+
+**Probes.** `select_cpuset` finds the slot's VM from the probe's name and waits up to
+60 s for the Docker Engine in it (`docker info` every 2 s, each call bounded at
+10 s). The wait ends early, with `CPU discovery: the job VM was released.`, once the
+VM's release has begun. A stop ends it this way: the slot does not watch for the
+stop here, and the release that the stop sequence runs deletes the VM. Then it runs the CPU probe's `docker run` through the guest agent within the 30 s the
+probe has. The output is read as the container backend reads it, capped at 64 KiB,
+ASCII only, and selected with the same function, so a VM's affinity is chosen from the
+VM's own CPUs. A probe that fails registers nothing, and the cycle releases the VM. The
+VM has the pool's whole `cpus` as vCPUs, so the quota and the affinity of the job
+container cover all of them and its memory limit equals the VM's.
+
+**The job container.** `run_container` runs
+`tart exec -i <vm> /usr/local/bin/marshal-launch <docker run arguments>` where the
+arguments are the container backend's own `docker run` list: `--pull never`, the
+name, quota, affinity and memory options, and `-e ACTIONS_RUNNER_INPUT_JITCONFIG`
+with no value. The JIT configuration is written to the client's standard input and
+the pipe is closed. It is in no argument list, in no environment variable of `tart`,
+and in no log line. The launcher reads it from standard input, exports it, and
+`exec`s `docker`. Standard output and error are forwarded to the log line by line
+and masked, as for the container backend. A volume is refused in a VM
+(`volumes are not supported in virtual machines`), and `validate` already refuses
+one on axmc. The text a guest command returns to the backend is cut at 64 KiB; the
+one exception is the diagnostics archive, which the Diagnostics paragraph below
+streams through the strict archive reader and the bundle limits instead.
+
+**Which user runs it.** `tart exec` reaches the guest agent,
+[cirruslabs/tart-guest-agent](https://github.com/cirruslabs/tart-guest-agent) at
+commit `6d4bd9c`. Its systemd unit, `packaging/tart-guest-agent.service`, sets
+`User=admin`, and `internal/rpc/exec.go` starts the command as the agent's own user
+with no user switch, in a process group of its own that it kills when the call is
+cancelled. A command therefore runs as `admin`. The golden VM adds `admin` to the
+`docker` group, which applies from the agent's start, so `docker` runs without
+`sudo` and the backend never calls it.
+
+**Stop and release.** `stop_containers` and `kill_containers` run one `docker stop
+--time <n>` or `docker kill` per VM through the guest agent, all in parallel, and
+`remove_containers` runs `docker rm -f` in the container's VM. A name that is a job
+VM, which only a leftover from an earlier run is, is stopped forcibly and deleted.
+`release_job_host` gets rid of the slot's VM within the budget it is given:
+
+- with a VM that is running, it asks for a graceful stop, stops it forcibly when that
+  fails, deletes it, and, when the deletion fails, lists the VMs to see whether it
+  is already gone. The budget is split in tenths: 5 for the graceful stop (its
+  `--timeout` is a second less, so Tart ends its own wait first), 2 for the forced
+  stop (`stop --timeout 0`), 2 for the deletion and 1 for the listing. A VM whose
+  holder has ended is deleted without a graceful stop, and a deletion that fails
+  then is retried once after a forced stop, because a killed VM shim leaves its
+  `tart run` running and Tart refuses to delete a running VM;
+- it is idempotent and safe to run twice at once: the second waits for the first
+  and finds the host released;
+- a release that succeeds forgets the host, its containers, and the holder of its
+  `tart run`. A release that fails or runs out of its budget keeps all of them, so
+  the next preparation of the slot or the next release deletes the VM.
+
+**The release budget split.** The stop sequence of [Stopping](#stopping) takes the
+backend's reserve out of its container steps. The Tart backend reserves 10 s
+(`release_budget`), so the container stop is ended at 12 s with a grace of 7 s, the
+removal takes 6 s more, and the release the remaining 10 s, which ends at 28 s, the
+exit deadline; a diagnostic container's stop, export and removal end 6 s earlier for the
+same reason. The container backend reserves nothing, so its steps are unchanged.
+The 10 s is the CLI's: 5 s graceful, 2 s forced, 2 s deletion and 1 s listing. A VM
+the CLI could not delete within it is deleted by its [VM shim](#the-vm-shim), which
+has its own 15 s once the CLI has dropped the liveness pipe, even after the CLI has
+exited. The worst path is 12 s + 6 s + 10 s = 28 s, with no slack, so a double fault,
+a `tart` call that hangs to its bound, can leave a VM for its shim, which deletes it
+within 15 s after `start` exits, or for the next `start`. A VM that neither deleted
+is a leftover, and the next `start` deletes it.
+
+**Leftovers.** At the start of a pool's preparation, `list_pool_containers` finds
+the local VMs named `marshal-job-<pool>-<slot>-<17 digits>` for the configured
+pools, and the runtime removes them, each by a forced stop and a deletion
+(`deletes_leftovers_unexported`). Nothing is exported from a leftover VM. The log
+says `Deleting job VM '<name>' left over from an earlier run.`; for a
+diagnostics-enabled pool, it also says that its diagnostic evidence is gone, in
+today's gap wording. A leftover that cannot be deleted skips its pool, as a labelled
+container that remains does on the container backend: the warning says the pool "is
+not started and gets no slots" and names the VMs, and the other pools start. Only the
+pool's own VMs are matched, so another pool's, a golden VM and a build VM are left
+alone.
+
+**Diagnostics.** A diagnostic container is recorded as retained when it starts, and
+the runtime finalises it, exporting before it removes the container, and releases
+the host only after that, as the [worker's order](#names-and-the-slot-loop) has it.
+For a VM, the export runs the exporter child with `--vm <name>`, which reads the
+evidence through `VmCopy` (`tart exec <vm> docker inspect` and `docker cp`), with
+the identity cap, the strict archive reader, and the bundle limits of
+[Diagnostics](#diagnostics), and `count_bundles` counts the pool's bundles through
+the same child. The VM is the retained container: it stays alive after its job
+until the export has run, and the removal of a retained container is the deletion
+of its VM, by the release above, within the removal's 24 s clock, where a container
+backend would run `docker rm -f`. A failed deletion keeps the container retained
+for `diagnostics`, as a failed removal does. The worker does not release a stopping
+slot's diagnostic host itself (`host_awaits_finalisation`), because the stop
+sequence exports it first and then releases it; without that, the slot's own
+release would delete the VM while the export reads it. The warnings and gaps are
+today's.
+
+**Evidence a VM loses.** A diagnostic VM is deleted without an export in three
+cases: a second SIGINT, which skips the export and deletes the VM where a container
+would be killed and kept; a `start` that ends while it still holds the VM, whose
+[VM shim](#the-vm-shim) deletes it when the liveness pipe closes; and the next
+`start`, which deletes a leftover. The shim also deletes a VM that the CLI's release
+could not delete before `start` exited; for a diagnostic VM the export was attempted
+in the stop sequence before that release, so this is not a fourth case, but the shim
+cannot tell that the export succeeded, so its gap line can name evidence that stands
+in the sink. Each reports the loss with today's gap wording,
+`Diagnostic gap in pool <pool>, job VM <vm>: <text>`, or, for a forced stop,
+`container <name>` in place of the VM. A forced stop keeps the container names in
+its result, so `start` exits 1 as for a kept container and its last line says that
+the job VMs were deleted without an export. A container whose export had succeeded
+is not among them: when a release deletes its VM, the backend forgets it, so that
+line names only evidence that was lost. The forced stop's warning says the VM
+"will be deleted" when the hosts are released, because the deletion can still fail.
+
+Every VM of a diagnostics-enabled pool that is deleted in these cases is reported as
+a diagnostic gap, whether or not a job ran in it, because the CLI cannot tell a VM
+that holds evidence from an idle one without booting it. The next `start` reports a
+leftover before it deletes it (`delete_leftover_host`), so a leftover whose deletion
+then fails is still reported, and the VM shim reports a VM only once it has deleted
+it, and none that was already gone.
+
+### The VM Shim
+
+The VM shim is the CLI run again as the hidden `marshal vm-shim --name <vm> -- <tart>`
+on Unix. It starts `tart run` for the VM, with the arguments of `tart::args`, in a
+process group of its own. Its standard input is the read end of a liveness pipe whose
+write end only the CLI holds. It holds no lock: the instance lock is never passed to
+it, and a test shows the lock free while a shim lives.
+
+- When `tart run` ends while the pipe is open, the shim relays what Tart printed, its
+  standard error and then its standard output, to its own standard output, and exits
+  with Tart's code, or 128 plus the signal number when a signal ended it. It deletes
+  nothing, because the CLI is still there and deletes the VM itself: a job VM when its
+  slot releases it, and a build VM when the build fails (one that shut down cleanly is
+  renamed to the golden name instead). A VM the CLI could not delete is left to the next
+  `start`, for a job VM, or the next `build`, for a build VM.
+- When the pipe closes, the shim stops the VM (`stop --timeout 5` within 8 s, then
+  `stop --timeout 0` within 3 s when that fails), deletes it within 4 s, and exits 0.
+  It exits 1 when the deletion fails or the 15 s run out. A shim started for a
+  diagnostics-enabled pool's VM (`--diagnostic-pool <pool>`) also writes
+  `WARNING: Diagnostic gap in pool <pool>, job VM <vm>: <text>` to its standard
+  error, which it shares with the CLI, once the VM is deleted. It cannot tell a VM
+  holding evidence from an idle one, so it reports each VM it deletes, and none that
+  was already gone. None of its `tart` calls
+  prunes, which `TART_NO_AUTO_PRUNE=1` sets.
+
+The shim takes any VM name, so the build command can hold a build VM the same way.
+`HeldVm` is the CLI's end: it starts the shim, keeps the write end of the pipe, and
+closes it when it is dropped.
+
+### Host Prerequisites
+
+The axmc runtime runs two programs it does not ship: `tart`, and `softnet`, which
+Tart runs. `macos::prerequisites` checks both and returns a `Check`: a pass, a
+warning, or a refusal that carries a `Cause` and its message. The
+[Tart Backend](#tart-backend) calls it before each boot, `start`, `restart` and
+the resume of a stopped instance call it before anything is started, and
+[`build --profile axmc`](#the-golden-vm-build) calls it before it creates any VM. The tested versions are constants in `macos::version`, Tart 2.41.1 and Softnet
+0.25.0, and the host document records them in
+[Installing Tart and Softnet](./macos-runner-host.md#installing-tart-and-softnet);
+a change of either is a change of the constant, the document, and the fake programs'
+default output.
+
+| Check             | How                                                                                                                                                                                                              |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tart's version    | `tart --version` through the Tart client, within 5 s (2 s at a restart or a resume). The output is exactly three dot-separated numbers and one optional final newline                                            |
+| Softnet's file    | The first `softnet` on the `PATH` the Tart client carries, found as Tart finds it (see below); a regular file owned by root, with the SUID bit set and no write permission for its group or others               |
+| Softnet's version | `softnet --version`, run on that file, within 5 s (2 s at a restart or a resume). The output is `softnet <three numbers>-<short commit>` and one optional final newline: clap's form for Softnet's release build |
+
+Each version sorts into the tested version, which runs; a newer patch of the tested
+minor version, which runs with a warning that names the tested version; or a refusal
+that names the tested version and the host document's install section. An older
+patch, another minor or major version, a fourth number, a suffix other than
+Softnet's commit, and output with no version are refused. Each number has no sign and
+no leading zero, and the commit is 7 to 40 lowercase hexadecimal digits. Softnet
+0.25.0 is a patch of 0, so an older patch of its minor version cannot exist. The
+version reads and the Tart client share one bounded process wrapper: their own
+process group, killed when the call is dropped, standard input null, output cut at
+64 KiB, and the JIT variable cleared. A `softnet` read gets the same `PATH`.
+
+Tart takes no path for Softnet. It runs the first `softnet` on its own `PATH`, found
+by `resolveBinaryPath` in Tart 2.41.1's `Sources/tart/Utils.swift`: each entry in
+order, empty entries skipped, the first where the file exists with links followed.
+It tests existence alone, so a directory named `softnet` matches, and a link that
+leads nowhere does not. `macos::softnet::find_on_path` does the same and the file
+check reads that file's type, owner and mode with the standard library's metadata,
+which follows links. The judgment is a pure function over the file's type, owner and
+mode (`setup_problem`); the first failing requirement in the order type, owner, SUID
+bit, group write, other write gives the message. The file is judged before it runs,
+so a file that fails never starts. The reader of owner and mode is Unix code; on
+another platform it returns an error, which is a refusal.
+
+A refusal carries a cause, so a caller can map it. A missing program or one that
+cannot start is `Missing`, a program that does not answer within the bound is
+`NotAnswering`, a version that does not run is `Version`, and a file that is not set
+up is `Setup`. A missing `tart` or `softnet` at `start` or `build` is refused naming
+the install section. A `tart` that does not answer, or goes missing after `start`, is
+Tart unavailable and its slots wait. A `softnet` that does not answer counts as a
+refusal.
+
+**At `start`, `restart` and a resume.** The instance asks the core to check the
+prerequisites once, through the backend's `check_prerequisites`, when the core runs
+a plan with a Linux pool on axmc; a plan of macOS pools alone, and every axpc plan,
+pass without a check. Every refusal of Tart's check but `NotAnswering` is a
+refusal, and so is every refusal of Softnet's, a missing or unanswering `softnet`
+included; a `tart` that does not answer is not, because the slots wait for it. Then:
+
+- At a fresh `start` a refusal ends the instance before the runtime core runs: the
+  log warns `The instance ends: <the refusal's message>`, which names the host
+  document's section, and `start` exits 1. Nothing but `tart --version` and
+  `softnet --version` has run, so no VM was cloned, set, or booted.
+- At a `restart` or a resume, including a `start` that resumes a stopped instance, a
+  refusal leaves the instance stopped with the refusal's message as its reason,
+  exactly as an image that cannot run jobs does, and the client exits 1. The check
+  runs before the image check. A restart has by then stopped every running job.
+- The check at a first `start` gives each version read 5 s. At a `restart` or a resume
+  a client is waiting, so each read gets 2 s and the two run together, which keeps the
+  reload inside the client's wait, as [The Image Check](#the-image-check) counts. A
+  `softnet` that takes longer than 2 s to answer is a refusal there, as one that takes
+  longer than 5 s is at `start`.
+- The warnings of a passing check, a newer patch of Tart or Softnet, are logged once
+  and shown by `status` as `warning: <message>` lines, listed on every call, after
+  the image lines, as of the latest check that passed.
+
+After `start`, the Tart backend maps the causes this way before each boot: a Tart that is
+`Missing` or `NotAnswering` makes the slot wait, a Tart `Version` refusal holds the
+slot, and every refusal of Softnet holds it, a missing or unanswering `softnet`
+included.
+
+A debug build replaces the owner and mode read from Softnet's file with
+`MARSHAL_TEST_SOFTNET_OWNER_MODE=<user ID>:<octal mode>`, such as `0:4755`, for the
+process tests, because CI cannot create a root-owned file. The
+file's type is still read, links followed. A release build ignores the variable, and
+a debug build refuses a malformed value. `Check`'s tests are in
+`cli/tests/host_prerequisites.rs`, against the fake `tart` and `fake-softnet`
+(`cli/helpers/fake_softnet.rs`, documented in its header, which prints Softnet's real
+form), and the parsers and the file judgment have unit tests in `macos`.
+
+### Golden VM Provisioning
+
+The `golden` module holds what `build --profile axmc` uses to provision the
+golden VM; [The Golden VM Build](#the-golden-vm-build) sequences it. `golden::pins` records the base image by its
+digest (`ghcr.io/cirruslabs/ubuntu`, tag `24.04`, arm64), the list of retired base
+pins, Docker's apt repository and signing-key fingerprint, the four Docker Engine
+packages at their pinned versions (Compose is not installed), and the launcher's
+path in the VM, `/usr/local/bin/marshal-launch`. A change to the base digest, the
+provisioning scripts, the launcher or the Docker Engine versions raises
+`GOLDEN_VM_VERSION`, and a change of the base digest also adds the old one to the
+retired list. A test asserts the current base is a digest reference and is not on
+that list.
+
+`golden::steps` builds each guest call as a `tart exec` command and the standard
+input it takes, from scripts embedded in the binary. The calls run in this order:
+
+1. upgrade the Ubuntu packages and install `ca-certificates`, `curl` and `gnupg`;
+2. download Docker's key to `/etc/apt/keyrings/docker.asc`;
+3. list the key with `gpg --show-keys --with-colons`;
+4. install the apt source and the four packages at their pinned versions, hold
+   them, and add `admin` to the `docker` group (`install-docker.sh`);
+5. install the launcher, owned by root, mode 0755;
+6. lock the `admin` password and mask `ssh.service` and `ssh.socket`.
+
+`golden::key` compares the listing from step 3 with the recorded fingerprint. It
+accepts only one primary key, listed with its fingerprint record, and refuses a
+mismatch, a second primary key and anything it does not recognise. Its result is
+the argument the call for step 4 requires, so nothing from Docker's repository is
+installed before the comparison passes.
+
+The launcher reads the JIT configuration from standard input to its end, sets
+`ACTIONS_RUNNER_INPUT_JITCONFIG` in the environment of the `docker` client it
+then `exec`s with its own arguments, and refuses an empty input or one over 64 KiB
+with exit code 64, without printing the input. The Tart backend calls it as
+`tart exec -i <vm> /usr/local/bin/marshal-launch <docker run arguments>`.
+
+`golden::steps::build_vm_docker_command` is the prefix the build uses to run `docker`
+in the build VM, `sudo -n docker`, because the `docker` group applies only from the
+guest agent's next start; see [The Golden VM Build](#the-golden-vm-build).
 
 ### CPU Placement
 
@@ -826,10 +1296,12 @@ A runner is named `<pool>-<slot>-<yyyyMMddHHmmssfff>` in UTC, and its container 
 the same name. A name is recognised as a pool's own only when it is the
 pool's name, a hyphen, a slot number, a hyphen, and exactly 17 ASCII digits.
 
-A slot loops until it is asked to stop. Each attempt checks the image, then probes
-the CPUs, then registers, then runs the container. An image that cannot run jobs,
-or a check Docker does not answer, registers nothing and goes into the backoff. A
-failed probe or registration, or a non-zero exit, waits
+A slot loops until it is asked to stop. Each attempt checks the image, then prepares
+the job host, then probes the CPUs, then registers, then runs the container, then,
+for a diagnostics-enabled pool, exports it, and finally releases the host. An image
+that cannot run jobs, or a check Docker does not answer, registers nothing and goes
+into the backoff. A failed or held preparation, a failed probe or registration, or a
+non-zero exit releases the host and then waits
 5 s, then 10 s, doubling to 300 s; an exit of 0 resets the delay and starts the
 replacement at once. A wait ends early when a stop is asked for, and a stop that
 arrives as a registration completes starts no container. Time and sleeping
@@ -858,17 +1330,210 @@ client and no argument, the process groups, the probe limits, the stale cleanup 
 the wait for Docker. `registration.rs` runs the client against a loopback stub for
 the request, the error text, a redirect, a stalled response and an oversize
 response. `slot_worker.rs`, `pool_preparation.rs` and `cpu_affinity.rs` use the
-fake seams, and `image_check.rs` drives the image check through the fake backend,
+fake seams. `job_host.rs` scripts a failure at each step of the slot cycle on the
+fake backend and shows the host released exactly once before the backoff, a failed
+probe registering nothing, a held slot on the board retrying on the backoff
+schedule, and the cycle's order; `pool_preparation.rs` also shows an axmc Linux
+pool's quota, affinity, memory, disk and default image, and
+`instance_state.rs` and `core_restart.rs` the release at a stop and at a core
+failure. `image_check.rs` drives the image check through the fake backend,
 the instance, and the real backend against `fake-docker`. The diagnostics tests are
-listed under [Diagnostics](#diagnostics). `real_docker.rs` runs a container and the
+listed under [Diagnostics](#diagnostics). `tart_client.rs` runs the `tart` client
+against the fake `tart`: the exact argument lists, a run's options and Softnet rules,
+the environment and the standard output every call gets, the JIT configuration
+reaching the guest on standard input only, the 64 KiB cut, the budgets, and the VM
+names and the listing reader. `host_prerequisites.rs` runs the prerequisite checks
+against the fake `tart` and `fake-softnet`. `golden_provisioning.rs` runs the golden
+VM's guest calls against the fake `tart` in their order, with a key of another
+fingerprint stopping them before anything is installed, and `golden_launcher.rs` runs
+the launcher as a shell script against a stand-in `docker` (Unix only).
+`tart_backend.rs` runs the
+[Tart Backend](#tart-backend) against the fake `tart`, which forwards a guest
+command to `fake-docker` as the launcher would, and `fake-softnet`, through the rig
+in `tests/support/rig.rs`: availability and the golden VM check, the cleanup of
+leftovers, each step of a slot's cycle and its failures, the boot failure text, the
+probes, the JIT configuration reaching the guest on standard input alone, the run
+arguments, bounded and masked output, the stop and release within their budgets,
+and a release run twice at once. `tart_diagnostics.rs` and `axmc_diagnostics.rs` run the
+diagnostic VM cases listed under [Diagnostics](#diagnostics). `vm_shim.rs` runs the VM shim as a real process,
+for a job VM and for a build VM, and `tart_slot.rs` runs the slot loop on the
+backend with the fake programs, for the order of a cycle and what each failure does
+to the VM and the registration. Both are Unix only. `real_docker.rs` runs a container and the
 probe through a real Docker daemon on Linux, and exports a container's small
 `metrics.txt` through the exporter child from a real `docker cp` stream; it is
 `#[ignore]`d for a local `cargo test`, and CI runs it in its own step, where it
 fails when Docker or the image is missing. Not verified by these tests: a real
-Docker daemon outside that CI step, the TLS handshake with GitHub, and Windows and
-macOS runtime behaviour beyond what the hosted runners show. The handshake and a
+Docker daemon outside that CI step, a real Tart, Softnet and guest agent (the fakes
+stand in for them, and the guest user comes from the agent's source, not from a
+run), the TLS handshake with GitHub, and Windows and macOS runtime behaviour beyond
+what the hosted runners show. The handshake and a
 real registration are verified on axpc instead, on the maintainer's report, as the
 TLS paragraph above says.
+
+### Signal Source
+
+The axmc host stops every runner when the Mac sleeps or its primary network
+changes, and holds off idle sleep while it runs. `macos` holds what reads those
+signals, and on axmc the instance polls it
+([Wiring](#wiring-the-signals-into-the-instance)). The seam is `SignalSource` in
+`macos::signals`, which the instance polls for five things:
+
+| Call                                                       | Answers                                                                   |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `sleep_detected`, every 1 s                                | Whether the Mac slept, or its wall clock stepped, since the sample before |
+| `rearm_sleep`, at each start of a run                      | Forgets the clocks sampled so far, so the next sample sets a new baseline |
+| `read_network`, every 5 s                                  | A `NetworkReading`: the primary network, or `NoDefaultRoute`              |
+| `hold_keep_awake`, `poll_keep_awake`, `release_keep_awake` | Taking the hold, checking it and retrying a lost one, and ending it       |
+| `keep_awake_warning`                                       | The warning text while the hold is wanted and not held                    |
+
+`MacSignals` is the real source. `FakeSignals` in `macos::fake` is the in-process
+source the tests of the code above it use, a debug or test build only.
+
+**Sleep.** Each sample holds the wall clock and an `Instant`. On macOS the
+standard library reads `Instant` from `CLOCK_UPTIME_RAW`
+(`library/std/src/sys/time/unix.rs` in the pinned toolchain's source), which does
+not advance while the Mac sleeps, so the wall clock moves ahead of it by the length
+of the sleep. `slept_between` judges two samples: a gap between the two clocks'
+movements, in either direction, of more than 3 s is a sleep, and exactly 3 s is
+not. A wall-clock step of that size is judged the same way, which errs on the safe
+side. A sleep shorter than the gap goes unseen. The first sample of a
+`SleepDetector` only sets its baseline.
+
+**Primary network.** `route -n get default` gives the interface and the router, and
+`arp -n <router>` the router's hardware address. Each call is bounded to 2 s, runs
+in its own process group with standard input null, and has its standard output
+capped at 64 KiB; more than that is refused. A release build runs `/sbin/route`,
+`/usr/sbin/arp` and `/usr/bin/caffeinate` by absolute path. The readers accept only
+the forms macOS prints, which are the ones `print_getmsg` in `route.tproj/route.c`
+and `print_entry` in `arp.tproj/arp.c` write in Apple's `network_cmds`:
+
+- `route` prints `route to: default` first, then `interface: <name>` exactly once,
+  and `gateway: <IPv4 address>` at most once. The gateway line is absent when the
+  route leaves through a point-to-point interface, as a VPN's does, and the reading
+  then has no router and makes no `arp` call. A gateway that is a link
+  (`link#<index>` of 1 to 9 digits) or a hardware address names the interface and no
+  router, and reads the same way: the interface holds the default route. A gateway
+  that is neither of those nor a routable IPv4 address, a second `interface:` or `gateway:` line, an interface name that is not
+  1 to 15 letters and digits starting with a letter, or a failing exit code is
+  refused. A refused table, a hung or missing `route`, and a table with no IPv4
+  default route (`route: writing to routing socket: not in table`) are all
+  `NoDefaultRoute`.
+- `arp -n <router>` prints one line per entry,
+  `? (<router>) at <address> on <interface> [ifscope] [permanent] [published (proxy only)] [<type>]`.
+  The address is six lowercase hexadecimal bytes of one or two digits each, as `%x`
+  writes them (`0:0:5e:0:53:1`). A line of another form refuses the whole answer;
+  `(incomplete)` and `-- no entry` give no address; entries on other interfaces are
+  ignored; entries on the route's interface that disagree give no address. An
+  address that cannot be read leaves the reading with the router and no hardware
+  address.
+
+`NetworkWatch` in `macos::watch` is the pure judgment over the readings, built from
+the first reading at start or resume:
+
+- A primary network at the first reading is recorded at once. With none, the watch
+  waits, and records a network only when it has held, as the same interface and
+  router, on two checks in a row.
+- A reading is the same network as the record when the interface and the router are
+  equal and the hardware addresses are equal, or either is unread. A hardware
+  address that was unread at the record is added to it the first time it is read.
+- A reading that differs from the record counts, and one that matches resets the
+  count. Two differing checks in a row are a change, even if the two differ from
+  each other. The change names the record's interface and the latest reading's
+  interface, or `none` when the latest has no default route. A watch that has
+  reported a change keeps reporting it, and a resume builds a new one.
+- Joining another network, a VPN that takes the default route switched on or off,
+  and losing the default route for two checks are changes. Roaming between access
+  points behind the same router is not.
+
+`macos::reason` builds the two texts `status` and the `start` terminal show:
+`the Mac slept, so every runner was stopped` and
+`the primary network changed (<old interface> to <new interface>), so every runner was stopped`.
+They name interfaces and never network names or addresses.
+
+**Keep-awake.** `KeepAwake` runs `caffeinate -i -w <this process's ID>` as a child
+with standard input and output null, in its own process group; `-w` ends it when
+this process ends, however it ends. `hold` takes it, `release` ends it, and `poll`
+checks it. A `caffeinate` that cannot start, or ends early, gives one `Warned`
+event with the warning text, and `warning` returns the text until the hold is back.
+`poll` retries a lost hold 10 s after the failure (`RETRY_INTERVAL`), and reports
+`Recovered` at the first check after a retry that finds its `caffeinate` still
+running, so a `caffeinate` that keeps ending warns once, not at every retry.
+
+**Overrides.** A debug build reads these variables, and a release build ignores
+every one, which `tests/release_overrides.rs` shows in the release profile for the
+programs and the directory:
+
+| Variable                  | Replaces                                                                     |
+| ------------------------- | ---------------------------------------------------------------------------- |
+| `MARSHAL_TEST_CAFFEINATE` | The `caffeinate` program                                                     |
+| `MARSHAL_TEST_ROUTE`      | The `route` program                                                          |
+| `MARSHAL_TEST_ARP`        | The `arp` program                                                            |
+| `MARSHAL_TEST_SIGNALS`    | The whole source, with a directory a test writes into while the process runs |
+
+A scripted source also runs the instance's cadence in a fiftieth of its time, so a
+process test sees a network check every 100 ms; the ratio of five samples to a check
+is the real one.
+
+The directory holds a `sleep` file, which the next sample reports once and removes;
+a `network` file, which is `none` or lines `interface=`, `router=` and `hardware=`;
+a `keep_awake_failure` file, whose text is the hold's failure while it exists; and
+the file `keep_awake`, which the source writes as `held`, `warning` or `released`.
+
+The tests run the real code against the `fake-macos` helper, one program that plays
+`caffeinate`, `route` and `arp` by their arguments, records every call's arguments,
+process group and terminals, and answers as a test scripts it, including a failure,
+a hang and a flood. `macos_signals.rs` covers the pure judgments, and
+`macos_processes.rs` the readers, the bounds, the hold and the scripted source. Not
+verified by them: the output of a real macOS `route` and `arp`, which the samples
+copy from Apple's source (a VPN's `gateway: link#<index>` form included), and a real
+sleep; both wait for a run on the Mac.
+
+#### Wiring the Signals into the Instance
+
+`instance::lifecycle::Monitor` is the instance's view of the signals; `Instance`
+takes one with `with_monitor`, and without one, as on axpc, it asks for nothing.
+`start` gives axmc a `macos::monitor::SignalMonitor` built on the `Signals` source
+for the process, which is the real `MacSignals` or, in a debug build, the scripted
+one.
+
+- **Keep-awake follows the state.** `set_state` takes the hold on entering running
+  and resuming, keeps it through stopping, and releases it on entering stopped and
+  when the instance ends. `build` neither holds it nor reacts to the signals. A
+  failed or lost hold warns once in the log, shows as a `warning` line in `status`,
+  and is retried every 10 s; `Keep-awake is held again.` is logged when it recovers.
+  The hold is checked every sample while running (inside the watch) and while
+  resuming or stopping (the monitor's `maintain`, which `serve` polls beside the
+  work it waits for).
+- **Each run begins afresh.** When the instance enters running, at the first run and
+  at every resume or restart, it calls `begin`: the sleep baseline is set again,
+  because nothing sampled the clocks while it was stopped and the time spent
+  stopped is no sleep, and the gate below is closed. The watch then reads the
+  primary network and builds a new `NetworkWatch`, so a record from before a stop
+  is never reused.
+- **The watch.** One future per run samples the clocks every second and checks the
+  network every fifth sample. A sleep, or two differing checks in a row, ends it
+  with a `StopReason`: `Slept`, whose text is
+  `the Mac slept, so every runner was stopped`, or `NetworkChanged`, whose text names
+  the old and the new interface (`none` when no interface holds the default route).
+  Dropping the future, as a stop does, ends the watch. The sleep is checked before
+  the network in each sample, so a wake that also changes the network stops with the
+  sleep reason.
+- **The stop.** The reason ends the instance's running as `stop` does: the core is
+  asked to stop, and the container steps and the release of every prepared job host
+  run within the stop sequence's 28 s exit deadline, with the state `stopping`. The instance then moves
+  to `stopped` with the reason, which `status` shows as `reason:` and the `start`
+  terminal as `The instance is stopped: <reason>.`. A `stop` that arrives during the
+  sequence ends the instance instead. The restart policy counts nothing, and only
+  `start` or `restart` resumes; nothing resumes on its own.
+- **No primary network.** `begin` closes the `NetworkGate` in `macos::gate`, and the
+  first reading opens it when a primary network is recorded. The Tart backend waits
+  at the gate in `prepare_job_host`, before the host prerequisites, so the boot that
+  follows a wait of any length uses a check made after it, and a slot that waits has
+  cloned nothing.
+  Without a default route the gate stays closed until a network has held for two
+  checks, and `status` shows
+  `network: waiting for a network (no IPv4 default route)`. A stop ends the wait, as
+  it ends a preparation, and the gate is open for a backend that was given none.
 
 ## The Instance Layer
 
@@ -886,7 +1551,8 @@ backend and clock, and a helper process.
 | `instance::source`                        | The instance's own configuration file, read again at a restart or a resume                  |
 | `instance::lock`, `instance::roots`       | The single-instance lock, and where the lock and the channel live                           |
 | `instance::channel`, `instance::protocol` | The control channel's server and client, and its text protocol                              |
-| `instance::windows`                       | The current user's security identifier and the descriptor that admits only that user        |
+| `instance::windows`                       | The current user's security identifier, the only-user descriptor, and the pipe's options    |
+| `instance::steps`                         | The container steps of a stop, shared by the foreground instance and the agent              |
 | `private`                                 | The Unix checks for a private directory and a private file, and the current user ID         |
 | `instance::runtime_core`                  | The runtime core `start` runs: pool preparation and every slot's loop                       |
 | `instance::log_file`                      | The log `start` writes through, its file, the file's cap, and the files kept                |
@@ -918,13 +1584,29 @@ running instance refuses a resume too.
   `start` fixes it as the path it was given, made absolute but not resolved, so
   each read finds the checkout above it as the first validation did; the
   canonical path is kept only to compare with a resume's.
-- A resume and a `restart` check the image after the file validates, before the
-  instance answers. An image that cannot run jobs leaves the instance stopped,
-  with a reason that names the image and says to run `marshal stop`, then
+- A resume and a `restart` check the host prerequisites, on axmc, and then the
+  image, after the file validates and before the instance answers. A prerequisite
+  that refuses leaves the instance stopped with the refusal's message as its reason;
+  the instance also checks them once before its first run, and a refusal there ends
+  the instance, so `start` exits 1.
+- On axmc, a sleep and its wake, or a change of the primary network on two checks
+  in a row, stops every runner as `stop` does, runs the container steps and the
+  release of every job host, and leaves the instance stopped with the signal's
+  text as its reason: `the Mac slept, so every runner was stopped` or
+  `the primary network changed (<old interface> to <new interface>), so every runner was stopped`.
+  It names interfaces only. Only `start` or `restart` resumes it, and a resume
+  begins the signals afresh;
+  [Wiring the Signals into the Instance](#wiring-the-signals-into-the-instance) has
+  the rest.
+- On axmc the instance holds off idle sleep while it is running or resuming and
+  while it is stopping, and releases the hold on entering stopped.
+- An image that cannot run jobs, which on axmc includes a missing or mismatched
+  golden VM, leaves the instance stopped on a resume or a `restart`, with a reason
+  that names the image and says to run `marshal stop`, then
   `marshal build --config <path>`, then `marshal start --config <path>`, because
-  `build` is refused while the instance exists. When Docker does not answer the
-  check, the instance answers as before and runs the core, which checks again once
-  Docker answers and moves the instance to stopped with that reason.
+  `build` is refused while the instance exists. When the engine does not answer the
+  check, Docker or Tart, the instance answers as before and runs the core, which
+  checks again once it answers and moves the instance to stopped with that reason.
 
 The container steps stop every ordinary container the backend has started and not
 seen end, in one `docker stop` call with a grace of 15 s, ended at 20 s, and then
@@ -939,6 +1621,24 @@ instance reads the containers before it tells the core to stop, because dropping
 worker forgets its container. How the instance ended records whether every removal
 in its life succeeded, at a stop, a restart, or a failure of the core, so a failed
 removal is still reported when a later stop has nothing to remove.
+
+**Releasing job hosts.** After the container steps, the instance and the agent
+release every job host the backend still counts as prepared, all at once, each
+within the backend's release budget: a worker releases its own host when its run
+ends, so what remains is the host of a worker that is still busy or that a panic
+took. The container backend has no hosts and a release budget of zero, so the stop
+sequence above is unchanged. A backend that reserves a release budget `R` shortens
+the container stop to fit the same 28 s exit deadline: the stop call is ended at
+28 - 6 - `R` seconds, and its grace is 5 s shorter, never longer than 15 s. With a
+`R` of 10 s, the grace is 7 s and the stop call is ended at 12 s, then the removal
+at 6 s later, then the release at 10 s later, so the three take 28 s at the most
+and `stop` still ends within 30 s. That leaves no slack: a `tart` call that hangs
+to its bound in a double fault leaves its VM to the VM shim or the next `start`, as
+[The release budget split](#tart-backend) describes. The diagnostic column ends
+early by the same reserve, as [Diagnostics](#diagnostics) describes, so a
+diagnostics pool's release keeps its whole budget too. The release itself splits
+its budget, a graceful stop of the host first and a forced stop and deletion in its
+last seconds; the backend chooses that split.
 
 The runtime core is the part that runs the pools. It fails when it ends, with an
 error, a panic, or neither, while no stop was asked for. The instance polls it
@@ -1028,12 +1728,29 @@ it.
   A socket path longer than the operating system allows is a startup failure.
   The client checks the directory before it connects, so it does not talk to a
   socket another user placed.
+- **Windows, the agent's client.** The library's client of protocol version 2 reads
+  the process ID of the pipe's server right after it connects and before it sends
+  anything, opens that process, and compares its user's SID with the current
+  user's. A server of another account, a process that cannot be opened or read, or
+  any failed call is a refusal, `ServerNotThisUser`: the client drops the
+  connection without sending a byte, so a `token_set` never reaches a squatter of
+  another account. The check names no command and no token. A squatter of the same
+  user is not told apart, and a process ID reused between the connection and the
+  check is a short window; both are accepted on a single-user host.
+  The commands of `start`, which speak version 1, are unchanged and still reach
+  whatever holds the pipe, as the cost above says.
 
 On both systems an ending instance first drops its request queue, so a request
 still waiting is answered that the instance is ending, then stops accepting and
 waits up to 0.5 s for every connection it accepted to end, so an answer it has
 given, such as `stop`'s, is written before the process exits. A connection still
 sending its request does not hold the exit longer than that.
+
+The agent opens this same channel with the same names, descriptor, modes and
+peer checks, but serves protocol version 2 on its own runtime without a thread per
+connection, so its connection limits are timers on every operating system; see
+[The Agent](#the-agent). A version 1 request reaches an agent as a first line that
+is not `hello` and is refused as `unsupported_protocol`.
 
 The protocol is UTF-8 lines. A request is one line of at most 16 KiB: `status`,
 `stop`, `restart`, `diagnostics`, or `resume <profile> <path>`, where the path is
@@ -1079,7 +1796,8 @@ On the Linux and macOS hosted runners, `tests/ci/other-user-lock.sh` copies the
 helper to a directory under `/tmp`, holds the lock in a debug-only root there, and
 runs the copy as `nobody` through `sudo`; it fails unless `nobody` is refused with
 the "held" exit code. On the Windows hosted runner,
-`tests/ci/control-pipe-security.ps1` has the helper open the control pipe, connects
+`tests/ci/control-pipe-security.ps1` has the helper open the control pipe, once as
+the instance's channel (`serve`) and once as the agent's (`serve-agent`), connects
 to it, reads the live pipe's descriptor through .NET, and fails unless the access
 control list is protected and holds one entry, allowing the current user full
 access. Neither crate the CLI uses reads a live pipe's descriptor without `unsafe`,
@@ -1089,6 +1807,406 @@ verified on axpc
 ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)):
 neither check was run there, by the maintainer's decision.
 Not verified: macOS and Windows behaviour beyond what the hosted runners show.
+
+## The Agent
+
+The library also holds the resident agent: the instance in a form that stays up and
+is told what to do, instead of being started by a terminal and stopped by it. It is
+the same process model as `start`: the agent takes the same single-instance lock,
+opens the same control channel, writes a log in the same directory and, on Windows,
+runs inside the same kind of Job Object, so `start` and the agent never run on one
+machine at once, and a second agent is refused as a second `start` is. It has no
+command or flag of its own yet; `agent::run` is the entry that wires the container
+backend, GitHub, the token store, the lock, the channel and the log, and the tests
+start it through `instance-helper agent`. A later release gives it a program to run
+in. Only a debug build lets a test replace the agent's token store, channel limits,
+watched file, log size and `docker` environment; a release build ignores each
+request, as it does the roots and the GitHub address, and `tests/agent_overrides.rs`
+shows both halves and runs again in the release profile in CI.
+
+| Module              | Holds                                                                               |
+| ------------------- | ----------------------------------------------------------------------------------- |
+| `agent::machine`    | The agent's state, and what each request, failure and changed executable does to it |
+| `agent::core`       | The pools' slots, with each token read from the store and late pools started        |
+| `agent::state`      | Where the agent is, why it is stopped, and what it knows of its configuration       |
+| `agent::tokens`     | The pools' token source, read from the store, and the changes that start late pools |
+| `agent::view`       | The snapshot, built from the state, the board, the retained record and the tokens   |
+| `agent::api`        | The methods a connection can call and the errors they answer with                   |
+| `agent::wire`       | The messages of protocol version 2 and the version and size constants               |
+| `agent::server`     | One connection: handshake, requests, subscription, heartbeat, `ending` and timers   |
+| `agent::channel`    | The pipe or socket the agent listens on, and the public client                      |
+| `agent::snapshot`   | The value of the `state` topic and its fit to the message limit                     |
+| `agent::log`        | The log file that is continued in a new file at 10 MiB                              |
+| `agent::executable` | The check that the file the agent started from is still the same file               |
+| `agent::builder`    | The seam the agent builds the runner image through                                  |
+| `agent::run`        | `run_resident` on its seams, and `run` with Docker, GitHub and the platform's store |
+| `token_store`       | The token store interface, the in-memory store, and the Windows Credential Manager  |
+
+### Agent State
+
+The agent is `running`, `resuming`, `stopping`, `stopped`, `building`, or
+`quitting`, and one task owns the state, so a request that arrives during a
+transition is answered at once, never queued behind it. It starts `running` or
+`stopped` as the caller asks.
+
+| Method         | Answer                                                                                                                                                                    |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `status`       | The snapshot, in any state                                                                                                                                                |
+| `start_all`    | Stopped: reads the configuration again and checks the image, then answers `resuming`, or `stopped` with the reason it could not. Running: the state it is in              |
+| `stop_all`     | Running: runs the stop sequence (the same grace, budget and exit deadline of 28 s as `stop`) and answers `stopped` when it is done. Stopped: `stopped`                    |
+| `build`        | Stopped: answers `building` with the start time once the build began, and the snapshot tells the rest. Running: `refused`. A configuration that cannot be used: `refused` |
+| `quit`         | Runs the stop sequence if runners run, cancels a build, answers `quitting`, and ends the agent; the lock is free within a second of the answer                            |
+| `token_set`    | Stores the repository's token in any state                                                                                                                                |
+| `token_remove` | Removes it in any state                                                                                                                                                   |
+
+A request that arrives while the agent is `resuming`, `stopping`, `building` or
+`quitting` and is not one of `status`, `token_set` and `token_remove`, a stop or a
+quit, is answered `busy`. The agent is `resuming` from the moment it begins to read
+the configuration until the runners' pools are admitted, so a `start_all` or a
+`build` in that time is `busy`, not answered as if the runners ran. One table in the
+code decides all of it, for every phase; this is what it says:
+
+| State      | `stop_all`                           | `start_all` | `build`                                          | `quit`                     |
+| ---------- | ------------------------------------ | ----------- | ------------------------------------------------ | -------------------------- |
+| `running`  | Stops, then `stopped` (by you)       | No change   | `refused`                                        | Stops, then the agent ends |
+| `stopped`  | No change                            | `resuming`  | `building`, or `refused` without a configuration | The agent ends             |
+| `resuming` | Abandons it, then `stopped` (by you) | `busy`      | `busy`                                           | Abandons it, then ends     |
+| `building` | Cancels it, then `stopped` (by you)  | `busy`      | `busy`                                           | Cancels it, then ends      |
+| `stopping` | No change                            | `busy`      | `busy`                                           | Ends after the stop        |
+
+The agent stays up when something is wrong; it stops its runners and says why in the
+snapshot, as the reason of the `stopped` state:
+
+| Reason code             | When                                                                         |
+| ----------------------- | ---------------------------------------------------------------------------- |
+| `by_you`                | A `stop_all`, a `quit`, or an agent launched stopped                         |
+| `no_configuration`      | There is no file at the configuration path                                   |
+| `invalid_configuration` | The file is not valid for the axpc profile; the problems are in the snapshot |
+| `image_unusable`        | The image is missing, or its contract version is not this CLI's              |
+| `no_pool_started`       | No pool could start, such as every pool without a token                      |
+| `restart_limit`         | The runtime core failed too often, under the same restart policy `start` has |
+| `image_build_failed`    | A `build` failed; the build's message is in the snapshot                     |
+
+The answer to a `start_all` follows the configuration read and the image check; it
+is not sent first. The check is one `docker image inspect` and, when that fails, one
+`docker image ls`, which share a bound of 4 s (the image check budget), so the answer
+comes within about that time and the pools are admitted after it. A client that
+needs a sooner answer bounds its own call and watches the `state` topic for the
+rest.
+
+After a `build` that succeeds the agent checks the image once more, as part of the
+build's own outcome: the check refreshes the snapshot's `images` entry with the new
+image's labels and warnings, and it does not change the `outcome`, which is the
+build's. The check runs while the agent is still `building` and answering: `status`
+shows the build, `start_all` and `build` are `busy`, and a `stop_all` or a `quit`
+taken during the build or during the check skips or abandons the check, which leaves
+the `images` entry as it was; a build that still commits after the stop stays `ready`.
+A `build` that succeeds and is not cancelled leaves the agent stopped by you
+(`by_you`), whatever it was stopped for before, since the build read the configuration again and the
+snapshot's problems and pools are those of that read. Its outcome, `ready`, is only in `agent.build`,
+and the refreshed image entry is in `images`: "stopped with the image ready", in
+the state table above, is that outcome and not a reason. A build that fails
+stops the agent for `image_build_failed`, and a cancelled one is stopped by you.
+The app's rule to restart the agent when the last state it heard was stopped by you
+is unchanged. A `start_all` answers
+`resuming`, which stays true until the pools are admitted: the snapshot's `state`
+becomes `running` once they are, or `stopped` with one of the reasons above when
+they could not be.
+
+The set is open: a reader keeps a code it does not know as text. A pool skipped for
+want of a token does not stop the others: it is listed `skipped` with its reason,
+and when a token for its repository is set, it starts without a restart. When no
+pool is left running, the agent is stopped for `no_pool_started`, and each pool
+keeps its reason in the snapshot, listed `stopped`.
+
+The agent ends by itself when the file it started from is moved, renamed, replaced
+or deleted, so it never goes on running a program that is no longer the installed
+one. It tells the file by its size, its times and its identity on the volume (device
+and inode on Unix; volume serial number and file index on Windows, read through a
+handle opened for no access with every share mode, so neither the running program nor
+an installer is blocked). It looks once a second and ends within 5 s, after the same stop sequence as
+`quit`; the `ending` message names the reason `executable_changed`, where a `quit`
+names `quit`. The agent does not handle a sign-out or a shutdown: it gets no event
+for them, as `start` gets none on Windows, and the next agent removes what they left.
+
+The configuration is `config.json` in the `marshal` folder of `%LOCALAPPDATA%` on
+Windows and in `~/Library/Application Support/marshal/` on macOS, a folder that must
+be a directory owned by the user with mode `0700`, the folder the socket is in. A
+debug build can move it with a test root. The agent reads the file when it starts
+running and at each `start_all` and `build`, with the axpc profile; it does not
+read a token file, and the `tokenPath` of each entry, which the commands of `start`
+still read, is checked by `validate` and ignored by the agent.
+
+The agent's log is a file in the same private directory as `start`'s. It is
+continued in a new file when it reaches 10 MiB, so no line is lost to the limit, and
+the newest ten files are kept, and a warning in the file being written says when an
+old one could not be removed. Every token and JIT configuration is masked in it, and
+nothing goes to a terminal, since the agent has none: a failure before the log opens
+goes to standard error, and everything after goes to the log. A `docker build` the
+agent runs has its output read line by line into the log, each line masked and
+marked `docker build:`; a longer line is cut at 8 KiB, or before a masked value the cut would split,
+marked with `...`, and the rest of it dropped, so it is logged once and no part of a
+masked value is kept, and the last five
+lines, masked and each cut at 70 characters, end the message of a failed build, so the 500-character cut
+of the message never takes the newest line. `marshal build` itself still passes the build's
+output on to its terminal.
+
+A log that cannot write or continue its file stops, and the agent goes on without
+it. It tries to open a new file again when a line arrives, at most every 30 s, and
+writes one line in the new file that says how many lines were not written.
+
+### The Token Store
+
+`token_store` is the one place the agent keeps a repository's token. The interface
+names no operating system: `get`, `set` and `remove` by a repository key, which is
+`owner/name` in lower case, so `Axross/Runners` and `axross/runners` are one token.
+A token is trimmed, then refused when it is empty or longer than 1280 UTF-16 code
+units, which keeps it inside the Credential Manager's 2560 bytes.
+
+- **Windows.** The Credential Manager of the current user, through
+  `windows-native-keyring-store`, as one generic credential per repository named
+  `app.axross.marshal:github.com/<owner>/<name>`, with the token as UTF-16 and with
+  local persistence. The crate's default persistence is the enterprise one, which
+  roams with the user's profile, so the store asks for the local one.
+  `tests/token_store_windows.rs` sets, reads and removes a real credential, reads
+  its persistence back from the store's `persistence` attribute, round-trips a token of 1280 UTF-16 units and
+  a non-ASCII, non-BMP one, and sends a `token_set` through an agent whose store is
+  the Credential Manager to a registration; only the Windows CI job runs it.
+- **macOS and Linux.** There is no store yet. The agent runs with none, every pool is
+  skipped with the reason "no token store", a `token_set` is refused as
+  `store_failed`, and the agent is stopped for `no_pool_started`. A Keychain store can
+  later sit behind the same interface by naming its entries, as the Windows store
+  does.
+- **Tests.** An in-memory store, which can be made to fail with each kind of error.
+
+A store failure has a kind, which says what it asks of the caller, and the platform's
+own code when it gave one. The kinds are `needs_user`, such as a locked keychain the
+user can unlock, `access_refused`, when the item refuses this program, and `other`.
+The Credential Manager's failures are all `other`, with the Windows error number in
+the code. The kind and the code appear in the `store_failed` error (see Errors), in
+the reason of a pool skipped because the store failed (`the token store failed: ...
+(kind needs_user, code 1312)`), and in the log line of a registration that failed
+for the same reason. None of them ever holds a token.
+
+The agent reads a token from the store when a pool is admitted and again at each
+registration, so a `token_set` takes effect at the next registration, and a
+`token_remove` makes the next registration fail and its slot back off with "no
+token". A running job container keeps the JIT configuration it was started with.
+
+`has_token` in the snapshot is the store's answer as of the last configuration
+read, not a live reading: it refreshes only on a configuration read, a `token_set`
+or a `token_remove`.
+
+### Protocol Version 2
+
+Protocol version 2 is served only by the agent, on the channel of the instance layer
+with its access rules: only the agent's user reaches it, as [Control
+Channel](#control-channel) describes. A message is one JSON object on one line. A
+client message is at most 16 KiB and an agent message at most 64 KiB, line break
+included. The first line a client sends MUST be `hello`; anything else, including
+`start`'s version 1 requests, is answered with `unsupported_protocol` and the
+connection is closed, so today's commands exit 1 against an agent and change
+nothing. A later slice of version 2 may add methods, topics, error codes and fields
+but never rename or remove one.
+
+| Message     | Fields                                                                                               |
+| ----------- | ---------------------------------------------------------------------------------------------------- |
+| `hello`     | `versions` (the versions the client speaks), `client` (`name`, `version`), which the agent ignores   |
+| `welcome`   | `version` (2), `agent` (`version`), `methods`, `topics`                                              |
+| `request`   | `id` (an integer of the client's own), `method`, `params`                                            |
+| `response`  | `id`, then `result` or `error`                                                                       |
+| `error`     | `error`, for what answers no request: a failed handshake, `busy`, or a message that is not a request |
+| `event`     | `topic` (`state`), `seq`, `value` (the snapshot)                                                     |
+| `heartbeat` | `seq`, the last event's                                                                              |
+| `ending`    | `reason`: `quit` or `executable_changed`                                                             |
+
+A reader ignores a message type, a field and a topic it does not know, and calls only
+the methods `welcome` lists. The library's `Client` does so, refuses a `welcome` that is not version 2, and
+subscribes only to a topic `welcome` listed, reports a result it cannot read, and a `response` whose
+envelope it cannot read but whose `id` it can, as `BadAnswer`, not as a closed connection, and refuses a request longer than 16 KiB
+with `TooLong` before writing anything, so the connection stays usable. Its wire, snapshot, `Push`, `CallError` and
+`ConnectError` types are `#[non_exhaustive]`, so a later slice can add a field or a
+variant without breaking a program that uses them; `tests/agent_protocol.rs` shows it
+against unknown methods, topics and fields.
+
+The agent answers one connection's requests in order and several connections at once.
+
+| Method         | Params                | Result                                                             |
+| -------------- | --------------------- | ------------------------------------------------------------------ |
+| `status`       | none                  | The snapshot                                                       |
+| `subscribe`    | `topic`: `state`      | `{"topic":"state"}`; the first event follows at once               |
+| `start_all`    | none                  | `{state}`, `resuming` while the pools are admitted                 |
+| `stop_all`     | none                  | `{state}`                                                          |
+| `build`        | none                  | `{state, started}`, `started` in milliseconds since the Unix epoch |
+| `quit`         | none                  | `{state}`                                                          |
+| `token_set`    | `repository`, `token` | `{repository}`, the key it was stored under                        |
+| `token_remove` | `repository`          | `{repository}`                                                     |
+
+`token_set` is the one message that carries a secret: the token travels only in its
+`token` param, from the client to the agent, and the agent never sends, logs or
+repeats it. Its error text never quotes the params.
+
+Errors have a stable `code`, an open set, and a `message` in plain text:
+
+| Code                   | Meaning                                                                                                                                  |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `unsupported_protocol` | The first line was not a `hello` that lists version 2; `versions` lists what the agent serves                                            |
+| `busy`                 | The agent is in a transition that does not take the method, or has its most connections                                                  |
+| `unknown_method`       | The agent has no such method                                                                                                             |
+| `invalid_request`      | The params are not what the method takes, or the message is not a request; a malformed request with a readable `id` is answered under it |
+| `subscription_limit`   | The agent has its most subscriptions                                                                                                     |
+| `token_invalid`        | The token is empty or too long                                                                                                           |
+| `store_failed`         | The token store could not do it; `store` holds `kind` and `code`                                                                         |
+| `refused`              | The agent's state does not allow the method                                                                                              |
+
+A subscription gets the snapshot at once as an event with `seq` 1, then an event
+with the whole snapshot after each change, at most one per 250 ms: changes within a
+window are merged into one event, so a client never sees an intermediate state it did
+not ask for. `seq` rises by one with each event of the connection. After 15 s without
+an event the agent sends a `heartbeat` with the last `seq`, and the library's client
+reads 45 s of silence on a subscribed connection as a lost agent. A `Client::call`
+fails with `Closed` once the connection has ended but waits as long as the agent
+takes on one that stays open, so a caller that needs a bound wraps it in its own
+timeout. Dropping a call, as that timeout does, is safe: the client has queued the
+request whole for a task that writes it to the end, and discards the answer.
+Before the agent ends it sends `ending` to every connection, one still in
+its handshake included, and waits up to 0.5 s for them to end; an
+answer already given, such as `quit`'s, is written before the `ending`.
+
+The limits are timers on the agent's own runtime on every operating system, so a
+silent or stalled client holds no task of its own past them. A thread is held only
+where the pipe crate needs one, which is measured on Linux only (the stalled readers'
+test counts the runtime's worker threads there, and finds none held); the Windows
+case is next to the table.
+
+The limits:
+
+| Limit         | Value                                                                                                                |
+| ------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Connections   | 16; a 17th is told `busy` and closed; beyond 32 connections open or waiting for `busy`, one is closed with no answer |
+| Subscriptions | 4; a 5th is told `subscription_limit` and the connection stays                                                       |
+| Handshake     | 5 s from connect to `hello`                                                                                          |
+| Idle          | 60 s without a message, for a connection with no subscription and no request pending                                 |
+| Write         | 5 s for one message, or the connection is closed                                                                     |
+
+On Windows the pipe is created as the first instance of the name with the descriptor
+`D:P(A;;GA;;;<user SID>)` and with remote clients rejected, as for `start`, but it
+is served by the pipe crate's asynchronous listener on the agent's runtime, so the
+limits above are the same there as on macOS. Both channels take the pipe's options
+from one function, so they cannot differ. The pipe crate flushes a pipe on a blocking
+thread that waits until the peer has read everything, and that wait cannot be
+cancelled. So the agent flushes only the messages that end a connection (`ending`,
+and the error that answers a refused or failed handshake), each in at most the write
+limit, and abandons a connection's write half when the connection ends for any
+reason, so the crate does not park it on a waiting thread. A client that never reads
+and never closes can still keep one such thread for each of those final messages.
+The agent leaves its runtime without waiting for blocking tasks, so neither the exit
+nor the release of the lock waits for such a thread, and
+`tests/agent_quit_stalled.rs` runs the agent as a process on every platform and
+shows a `quit` ends it within a second or so while a subscribed client reads
+nothing. On Unix the socket has the checks of
+[Control Channel](#control-channel).
+
+### The Snapshot
+
+The snapshot is what `status` returns and what the `state` topic carries. It comes
+from local state the agent already keeps; it reads nothing from Docker or GitHub, and
+never holds a token or a JIT configuration. Every field is optional for a reader, and
+a reader ignores one it does not know.
+
+| Field                          | Holds                                                                                                 |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `agent`                        | `version`, `state`, `reason` (`code`, `message`), `since`, `build`, `restart_due`                     |
+| `agent.build`                  | `started`, `outcome` (`building`, `ready`, `failed`, `cancelled`), `finished`, `message`              |
+| `configuration`                | `path` and `problems`, at most 100                                                                    |
+| `runners_up`, `runners_wanted` | Totals over the listed pools, kept when rows are left out; 0 while `restart_due` is set               |
+| `repositories`                 | Each repository (`owner/name` in lower case), `has_token` and its pools                               |
+| `pools`                        | `name`, `repository`, `state`, `reason`, `has_token`, `runners_up`, `slots`, `runners`, `diagnostics` |
+| `pools[].runners`              | `slot`, `state`, `workload`, `reason`, `since`                                                        |
+| `pools[].diagnostics`          | `limit`, `written`, `in_sink`, `containers`, `findings`, `manual_recovery`                            |
+| `leftovers`                    | What a stop could not remove, `kind` (today `container`) and `name`                                   |
+| `images`                       | Each image the agent tracks (today the runner image): `name`, `lines`, `warnings`                     |
+| `omitted`                      | How many `runners`, `problems`, `pools`, `repositories`, `leftovers` and `images` it left out         |
+
+When the runtime core fails, the agent starts it again after 10, 30 and 60 s for the
+first, second and third failure within 10 minutes, and stops for `restart_limit` at the
+fourth. While it waits, `agent.restart_due` holds the time it restarts, the agent's
+state stays `running`, and `pools` is empty, so `runners_up` and `runners_wanted` read
+0 for the wait, because the core's rows are not kept across a failure. A stopped agent
+lists its pools again. `repositories` is still listed.
+
+A pool is `waiting_for_docker`, `preparing`, `running`, `skipped` or `stopped`; the
+first word stands for whichever engine the pool waits for. A runner is `running`,
+`registering`, `backing_off`, `held` or `stopped`. The `reason` of a runner is plain
+text that says more about its state, such as what a state means that the reader may
+not know. A backing-off runner gives the reason it backs off: a token store
+failure's kind and code, or what GitHub answered, scrubbed of any token and never a
+command. A `held` runner is one whose job host a host prerequisite refuses, with
+that prerequisite's reason, scrubbed the same way and cut to 500 characters; it
+occurs only on axmc's Tart backend, which the agent, running axpc only today, does
+not run. An image warning is data, not text: a `code` (`not_built_by_marshal`,
+`packages_old`, `image_old`, `runner_old` or `runner_may_be_newer`) with `days` or
+`version` where they apply, so the app words it. `leftovers` lists every container
+name of a failed removal call, which can name more containers than the one that
+failed. They stay listed until a start prepares the pools, which removes what is
+stale, so a `start_all` that stops for a missing image or an invalid configuration
+keeps them.
+
+An agent may add a runner state, an image and an image warning within version 2, so
+a reader MUST treat a state word it does not know as an unknown state and show the
+runner's `reason`, MUST list an image it does not know, and MUST ignore a warning
+code it does not know. The library's `RunnerState`, `RunnerInfo::kind`,
+`ImageWarning::kind` and `ImageInfo::known_warnings` do so, and a unit test of the
+client shows an event with a state and a warning from a later agent.
+
+A snapshot is cut to at most 64 KiB less the message's envelope. When it is larger
+it first lists no more than 100 configuration problems, then leaves out runner rows
+from the end, as many as it must and no more, then pools from the end, then
+leftovers, repositories, images and configuration problems from their ends, and says
+how many in `omitted`. Last of all the long texts, the configuration path and the
+agent's version, reason and build message, are cut to 512 characters. `runners_up`
+and `runners_wanted` still count a row left out.
+
+### What the Agent Tests Cover
+
+The agent tests run the agent and the test script on one runtime, behind the real
+channel, on the fake backend, clock, registrar and image builder and an in-memory
+token store, and talk to it with the library's client or by hand, line by line.
+`tests/agent_resident.rs` covers stop, start and quit (also while a subscribed
+connection reads nothing), launching stopped, the executable renamed, the resuming
+state, build (ready, failed, cancelled by a stop or a quit, `busy`, `refused`, and the
+image check after it, which still answers and is skipped or abandoned by a stop or a quit), and
+staying up for each reason, also through `start_all`, which answers `resuming`, that
+`token_set` and `token_remove` are answered while it resumes, builds and stops, and the
+core's restarts: the `restart_due` window with its empty pool list, and the stop for
+`restart_limit`. The restart waits are the fake clock's, with a real pause of 400 ms
+each so the script can look at the window.
+`tests/agent_protocol.rs` covers the handshake, `welcome`, unknown methods, topics
+and fields, subscription (also by a client that arrives while the agent is idle),
+coalescing, heartbeats, `ending`, the limits as timers and
+a connection that stops reading. `tests/agent_tokens.rs` covers what `token_set` and
+`token_remove` do to the next registration, a skipped pool starting, refused tokens,
+and the store's kind and code in an error, a skipped pool's reason and the log.
+`tests/agent_snapshot.rs` covers the snapshot, the diagnostics, the leftovers, the
+64 KiB cut, that the agent ends and frees the lock within a second of `quit` with 640
+runners and four subscribed connections that never read, the stalled readers' thread
+count (measured on Linux only, from the runtime's worker threads) and, in
+`tests/agent_quit_stalled.rs`, that the process ends within a second or so of a
+`quit` with a stalled subscriber, and that no token or JIT
+configuration reaches a connection or the log. `tests/agent_versions.rs` runs `stop`,
+`status`, `restart` and `diagnostics` against an agent and shows they exit 1 and
+change nothing. `tests/agent_channel.rs` covers the socket's mode, the peer's user
+and a directory open to others on Unix. `tests/agent_channel_windows.rs` shows a pipe
+of a taken name is refused and a client passes the check of the server's user. `tests/agent_process.rs` runs the agent as a process on
+the fake `docker` and a GitHub stub, a second agent refused, and the log continued
+with ten files kept.
+
+The Windows CI step `tests/ci/control-pipe-security.ps1` runs its checks against
+the `serve` mode of the helper and against `serve-agent`, which opens the agent's
+channel, so the agent's pipe is read back with the same descriptor. The real
+Credential Manager test and the connection limits on Windows and macOS run in CI only.
+Not verified here: the agent on Windows and macOS beyond what the hosted runners show,
+and the remote-client rejection, as for `start`.
 
 ## The Image Contract
 
@@ -1150,8 +2268,12 @@ The check reads the configured image's labels with one
 the contract, build-time, and runner labels. A name whose last path part has no tag
 is checked as `<name>:latest`, as `docker run` resolves it. When inspect fails, a
 `docker image ls --quiet <name>` tells a missing image from Docker not answering.
-Both calls share a bound of 4 s, so a resume's check fits inside `start`'s 10 s
-wait, and the container steps and the check fit inside `restart`'s 35 s.
+Both calls share a bound of 4 s. A resume's reload is the configuration read, then
+on axmc the [host prerequisites](#host-prerequisites), whose two version reads run
+together and get 2 s each, and then this check. It takes 4 s at the most on axpc and
+6 s on axmc, so it fits inside `start`'s 10 s wait. It follows the container steps of
+a `restart`, which take 28 s at the most, so it ends at 32 s on axpc and 34 s on axmc,
+inside the 35 s wait.
 
 | Outcome            | When                                                                         |
 | ------------------ | ---------------------------------------------------------------------------- |
@@ -1159,6 +2281,14 @@ wait, and the container steps and the check fit inside `restart`'s 35 s.
 | Mismatched         | Inspect succeeds, but the contract label is missing, malformed, or different |
 | Missing            | Inspect fails, and the listing succeeds with empty output                    |
 | Docker unavailable | Any other failure, or the 4 s running out                                    |
+
+On axmc the check reads the golden VM instead, from the VM names alone, as the
+[Tart Backend](#tart-backend) describes: a matching golden VM carries this CLI's
+golden VM version and image contract version, a missing one is `missing`, and any
+other is mismatched. Their messages are
+`the golden VM <name> has golden VM version <g> and image contract <m>, but this CLI needs golden VM version <G> and image contract <n>`
+and `the golden VM is missing; this CLI needs one with golden VM version <G> and image contract <n>`.
+A `tart list` that fails or overruns the same 4 s is the unavailable outcome.
 
 Docker unavailable is never a mismatch. A mismatched image's message is
 `the image <name> has image contract <m>, but this CLI needs image contract <n>`,
@@ -1205,6 +2335,9 @@ the warnings nor an unknown age block a start.
   check Docker does not answer leaves the latest answer in place;
 - `image-built: <d> days ago`, or `unknown`;
 - `runner: <version>, released <d> days ago`, or `unknown`;
+- on axmc, `golden-vm: <name>` once a golden VM exists, and `mismatch (golden VM
+version <g> and image contract <m>, CLI golden VM version <G> and image contract
+<n>)` in place of the mismatch above;
 - one `warning: <text>` line per freshness warning.
 
 `image-built` and `runner` read `unknown` before the first check Docker answers, and
@@ -1216,17 +2349,19 @@ when the image is missing or its labels are missing or malformed.
 runtime layer, and `stop`, `restart`, `status`, and `diagnostics` talk to it from another terminal
 over the control channel. `build` builds the runner image, and the same clients
 talk to it. axpc runs its pools with `start` and builds its image with `build`, as
-[Windows Runner Host](./windows-runner-host.md) describes.
+[Windows Runner Host](./windows-runner-host.md) describes; axmc does the same with Tart
+VMs, and `build` there makes the golden VM, as [macOS Runner Host](./macos-runner-host.md)
+describes.
 
-| Module                   | Holds                                                                                                |
-| ------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `start`                  | `start`: the lock, validation, the log file, containment, the channel, the instance, and its signals |
-| `build`                  | `build`: the lock, validation, the channel, its states, and its `docker` steps and their aborts      |
-| `control`                | The clients `stop`, `restart`, `status`, and `diagnostics`                                           |
-| `shim`                   | The Unix shim between `start` and one job container's `docker run` client                            |
-| `diagnostics`            | The exporter child, listed under The Runtime Layer                                                   |
-| `instance::runtime_core` | The runtime core, listed under The Instance Layer                                                    |
-| `instance::log_file`     | The log, listed under The Instance Layer                                                             |
+| Module                   | Holds                                                                                                                |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `start`                  | `start`: the lock, validation, the log file, containment, the channel, the instance, and its signals                 |
+| `build`, `build::golden` | `build`: the lock, validation, the channel, its states, and its `docker` steps and their aborts; the golden VM build |
+| `control`                | The clients `stop`, `restart`, `status`, and `diagnostics`                                                           |
+| `shim`                   | The Unix shim between `start` and one job container's `docker run` client                                            |
+| `diagnostics`            | The exporter child, listed under The Runtime Layer                                                                   |
+| `instance::runtime_core` | The runtime core, listed under The Instance Layer                                                                    |
+| `instance::log_file`     | The log, listed under The Instance Layer                                                                             |
 
 ### Start
 
@@ -1235,18 +2370,28 @@ A fresh `start` does these in order:
 1. It takes the instance lock. When the lock is held it asks this user's instance
    to resume instead, as below.
 2. It validates the configuration as `validate` does. An invalid one prints every
-   error and exits 1, and nothing is written. With `--profile axmc` a valid
-   configuration still exits 1, with the refusal that [Runtime Seam](#runtime-seam)
-   gives.
+   error and exits 1, and nothing is written.
 3. It opens its log file and logs the plan summary.
 4. It contains its children, builds the HTTPS client, and opens the control
    channel. A failure of any of them, including a TLS setup failure, exits 1.
-5. It runs the instance. The runtime core waits for Docker every 5 s, checks the
-   image as [The Image Contract](#the-image-contract) describes, prepares the pools
+5. It runs the instance on the backend of the profile: Docker on axpc, Tart on
+   axmc. On axmc, a host prerequisite that refuses ends the instance first, as
+   [Host Prerequisites](#host-prerequisites) says. The runtime core waits for the
+   engine every 5 s (Docker, or Tart), checks the image as
+   [The Image Contract](#the-image-contract) describes, prepares the pools
    as [Names and the Slot Loop](#names-and-the-slot-loop) describes, and then runs
    every slot's loop until a stop. When the image cannot run jobs, the instance
    ends, and `start` exits 1, saying to run `marshal build --config <path>`, then
-   `marshal start --config <path>`. When no pool can start, `start` exits 1.
+   `marshal start --config <path>`. When no pool can start, `start` exits 1. On axmc
+   the instance also holds off idle sleep and watches the Mac's sleep and primary
+   network, as [Signal Source](#signal-source) describes, and a slot clones no VM
+   until a primary network is recorded.
+
+On Windows, `start --profile axmc` exits 1 before step 1 with
+`error: the axmc profile runs only on macOS`, because Tart exists only on macOS.
+On axmc the containment of a job VM is the [VM shim](#the-vm-shim): `start` gives
+the Tart backend the shim as its launcher on Unix, as it gives the Docker backend
+the container shim.
 
 On Linux a release build exits 1 at the first step, because Linux is not a
 supported host, and `tests/instance_roots.rs` shows it in the release profile. A
@@ -1255,13 +2400,20 @@ runs the container backend with Unix containment, which serves the tests, not an
 operated host. `MARSHAL_TEST_ROOT` moves the lock, the channel, and the log
 directory, `MARSHAL_TEST_GITHUB_API` moves the GitHub base address,
 `MARSHAL_TEST_DOCKER` names the `docker` client that `start` and `build` run, the
-Unix shim's removal in `start` included, and `MARSHAL_TEST_BUILD_DEFINITION` names
-a test definition that `build` builds instead of the embedded one. Only a debug
+Unix shim's removal in `start` included, `MARSHAL_TEST_TART` names the `tart`
+client that `start` runs on axmc, and `MARSHAL_TEST_BUILD_DEFINITION` names
+a test definition that `build` builds instead of the embedded one. On axmc the
+tests also set `PATH` to find the fake `softnet`, as Tart does, and
+`MARSHAL_TEST_SOFTNET_OWNER_MODE` to judge its file, and `MARSHAL_TEST_SIGNALS` to
+script the sleep, the primary network and the keep-awake hold. Only a debug
 build honours any of them: in the release profile `tests/base_address.rs` shows
-that the client stays `docker`, and `tests/build_definition.rs` that `build` keeps
-the embedded definition. The tests name the fake client rather than put it first on `PATH`,
-because Windows searches the program's directory and the system directories before
-`PATH`, so a real `docker.exe` in `System32` would win.
+that the client stays `docker`, `tests/build_definition.rs` that `build` keeps
+the embedded definition, and `tests/release_overrides.rs` that the client stays
+`tart`, the `route`, `arp` and `caffeinate` programs stay the system's, the
+signals are not read from a directory, and Softnet's file is judged as it is.
+The tests name the fake client rather than put it first on `PATH`, because Windows
+searches the program's directory and the system directories before `PATH`, so a
+real `docker.exe` in `System32` would win.
 
 A `start` that finds the lock held changes nothing. It canonicalises its
 configuration path, sends `resume <profile> <path>`, and waits up to 10 s:
@@ -1273,6 +2425,11 @@ configuration path, sends `resume <profile> <path>`, and waits up to 10 s:
   and so does a stopped one started with another path or profile. `start` exits 1.
 - A stopped instance whose image cannot run jobs stays stopped with that reason,
   and `start` exits 1.
+- A stopped axmc instance whose host prerequisite refuses stays stopped with the
+  refusal as its reason, and `start` exits 1.
+- A stopped axmc instance that a sleep or a network change stopped resumes like any
+  other: it reads its file, checks the prerequisites and the image, records the
+  primary network afresh, and `start` exits 0.
 - When nothing answers on this user's channel, `start` exits 1, saying that the
   lock is held by another OS user or by an instance of this user that is still
   starting or ending. The lock does not say which, and `start` never connects to
@@ -1286,14 +2443,21 @@ answer in time.
 
 - `status` waits up to 5 s and prints one `name: value` line per field: `state`;
   `reason`, when stopped; `config`; `profile`; one `pool` line per pool, which is
-  `waiting for Docker`, `preparing`, `running`, or `skipped: <reason>`; one `slot`
-  line per slot, which is `registering` (the CPU probe included), `backing off`,
-  or `running container <name>`; and the image lines under
-  [The Image Contract](#the-image-contract). Pools and slots are listed while the
-  runtime core runs; the image lines are listed on every call, as of the latest
-  check. A `build` answers `state`, `image`, and `elapsed: <s> s`.
-- `restart` waits up to 35 s for the instance to run its container steps, read its
-  file again, check the image, and answer. An invalid file or an image that cannot
+  `waiting for Docker` (`waiting for Tart` on axmc), `preparing`, `running`, or
+  `skipped: <reason>`; one `slot`
+  line per slot, which is `registering` (the preparation of its job host and the CPU
+  probe included), `backing off`, `held: <reason>`, or `running container <name>`;
+  and the image lines under
+  [The Image Contract](#the-image-contract), then, on axmc, a
+  `network: waiting for a network (no IPv4 default route)` line while no primary
+  network is recorded, a `warning: keep-awake is not held (...)` line while the hold
+  is wanted and not held, and one `warning: <message>` line per
+  warning of the latest passing host prerequisite check. Pools and slots
+  are listed while the runtime core runs; the image and warning lines are listed on
+  every call, as of the latest check. A `build` answers `state`, `image`, and `elapsed: <s> s`.
+- `restart` waits up to 35 s for the instance to run its container steps (28 s at the
+  most), read its file again, check the host prerequisites (axmc only) and the image
+  (6 s at the most on axmc, 4 s on axpc), and answer. An invalid file or an image that cannot
   run jobs leaves the instance stopped, and `restart` exits 1. It is refused while
   the instance is stopping, resuming, or building.
 - `stop` asks the instance to stop, then checks about every 200 ms whether the
@@ -1316,10 +2480,14 @@ default action; the others still stop the instance.
 1. The slots stop registering at once.
 2. The container steps under [Instance State](#instance-state) run: one
    `docker stop --time 15`, ended at 20 s, and then one `docker rm -f`, ended 6 s
-   later; alongside, each diagnostic container is exported and removed by 24 s.
+   later; alongside, each diagnostic container is exported and removed by 24 s, a
+   VM's by deleting the VM.
 3. At 28 s whatever still runs is dropped. A `docker` client is killed; on Unix a
    job container's shim sees its liveness pipe close, removes its container, or
-   ends a diagnostic one and keeps it, within 5 s, and ends.
+   ends a diagnostic one and keeps it, within 5 s, and ends. A VM backend reserves
+   10 s of the 28 s to release its job VMs, which ends the container steps earlier,
+   as the [Tart Backend](#tart-backend) describes, and a VM its release could not
+   delete is deleted by its VM shim within 15 s more.
 4. `start` gives the answers it has already sent, such as the one to `stop`, up to
    0.5 s to reach their clients, closes the channel, and exits, which releases the
    lock.
@@ -1327,7 +2495,10 @@ default action; the others still stop the instance.
 A second SIGINT, Ctrl+C, or Ctrl+Break skips the grace period: a `docker stop` under
 way is abandoned and the ordinary containers are removed at once, while each
 diagnostic container is ended with `docker kill` and kept without its export.
-`start` then exits 1, and its last line names each kept container. Raising Ctrl+C in a
+`start` then exits 1, and its last line names each kept container. A VM backend cannot
+keep a container once its VM is gone, so it deletes each diagnostic VM without an
+export and reports the lost evidence, as [Diagnostics](#diagnostics) describes; `start`
+still exits 1 and names the containers. Raising Ctrl+C in a
 Windows test needs `unsafe`, so the Windows handling is checked by review. On axpc
 one Ctrl+C stopped the instance with exit 0, and a second Ctrl+C force-stopped it
 with exit 1 (maintainer's report,
@@ -1418,7 +2589,15 @@ at 0 s:
 | 28.5   | answers reach their clients                           |                                                       |
 
 Both columns stay inside the 26 s container steps and the 28 s exit deadline, so
-`stop` still ends within 30 s and its 35 s wait is unchanged.
+`stop` still ends within 30 s and its 35 s wait is unchanged. A backend that reserves
+a release budget `R` (the [Tart Backend](#tart-backend) reserves 10 s) leaves the
+release the time after the container steps, so the diagnostic column's times fall
+earlier by `R` less the 4 s it leaves before the exit deadline. With an `R` of 10 s
+the stop is ended at 6 s with a grace of 4 s, each export by 12 s, and each removal
+by 18 s; the export and removal windows keep their sizes, and the release keeps its
+10 s before 28 s, with no slack after it, so a VM that the release could not delete
+in a double fault is deleted by its VM shim within 15 s after `start` exits, or by
+the next `start`.
 
 **Startup.** While a pool is prepared, the CLI looks at the labelled containers of
 the pool that an earlier process left and the backend does not retain:
@@ -1452,10 +2631,24 @@ not remove one, and its last line names each one. The next `start` finalises the
 while their pool's diagnostics are on, and reports each one; an export gap alone
 does not change `start`'s exit code.
 
+**Diagnostic VMs.** On axmc the diagnostic container lives in a job VM, which is the
+retained thing: it stays alive after the job until the exporter has read the
+evidence through the guest agent, and its removal is the VM's deletion. A graceful
+stop, `diagnostics`, and the job end finalise it as they do a container. A forced
+stop, a hard kill of `start`, and the next `start` cannot keep the evidence, because
+nothing keeps a VM alive without its holder. They delete the VM without an export and
+report the loss with the same gap wording as an export gap, and a forced stop still
+exits `start` with 1, naming the containers whose evidence is lost. A crash reports
+the loss from the VM shim, on the standard error it shares with `start`.
+
 **The exporter.** Each export runs in a child process: the CLI run again as the
 hidden
-`marshal export --pool <pool> --directory <sink> [--container <name>] [--raw-records] [--checkout <path>] --deadline-ms <ms> -- <docker>`.
-Without `--container` it only counts the pool's bundles.
+`marshal export --pool <pool> --directory <sink> [--container <name>] [--vm <name>] [--raw-records] [--checkout <path>] --deadline-ms <ms> -- <docker or tart>`.
+Without `--container` it only counts the pool's bundles. With `--vm` it reads the
+evidence from that VM through `tart exec`, with the program after `--` as `tart`; the
+bundle, its files, limits, and exit codes are the same. Its clients are then `tart exec`
+clients that run `docker` in the VM, and the Isolation item below applies to them as
+it does to the `docker` clients.
 
 - **Sink checks.** Before each bundle the child checks the sink. It must be an
   existing directory outside the checkout above the configuration, judged by the
@@ -1496,15 +2689,17 @@ Without `--container` it only counts the pool's bundles.
   during a graceful stop. Its standard input is a liveness pipe from the instance,
   and the instance passes it the export deadline that remains. The child keeps that
   deadline itself, and ends when it passes or when its standard input closes,
-  killing its `docker` clients first. Each client runs in a process group of its
-  own, with the JIT variable cleared and its standard error discarded, and every file
-  system call runs on a thread of its own, so a hung sink cannot keep the child from
-  ending. At the export deadline the instance closes the liveness pipe, and kills
+  killing its clients first: on axpc its `docker` clients, and on axmc its `tart exec`
+  clients, which run `docker` in the VM. Each client runs in a process group of its
+  own, killed when its call is dropped, with the JIT variable cleared and its standard
+  error discarded, and every file system call runs on a thread of its own, so a hung
+  sink cannot keep the child from ending. At the export deadline the instance closes the liveness pipe, and kills
   the child 1 s later only if it has not ended. On Windows the child also inherits
   `start`'s Job Object. So the child outlives neither its deadline nor its
   instance, and its clients end with it whenever it ends on its own. A child killed
   1 s after its pipe closed cannot kill its clients: on Unix they run until each
-  ends by itself, and on Windows until `start` ends and its Job Object closes.
+  ends by itself, which is what the `tart exec` clients of axmc do, since macOS has
+  no Job Object, and on Windows until `start` ends and its Job Object closes.
 - **Exit codes.** 0 is a complete bundle, or a count; 3 a complete bundle with a
   gap; 4 a full sink; and 1 anything else, a refused sink, a failed copy, an archive
   outside the subset, a deadline, or a closed pipe. Containment needs no exit code
@@ -1532,6 +2727,11 @@ names it on a line of its own and leaves it to the manual recovery. It prints:
 - then one line per container whose export had a gap, whose removal failed, or
   which was left to the manual recovery, such as
   `container <name>: removal failed; it stays retained`.
+
+A retained VM is finalised the same way: the export reads it through the guest
+agent, and its removal is the VM's deletion, so a VM whose deletion failed is
+reported as `removal failed; it stays retained` and deleted by a later `diagnostics`
+once Tart can, without a second bundle.
 
 It exits 0 when every container it acted on was removed, and 1 when one was not or
 one was left to the manual recovery. With nothing to act on and no
@@ -1566,6 +2766,21 @@ and `cp` with a scripted archive or a stall, and stand in for the exporter child
   failed and then retried removal, the manual-recovery and `unknown` lines, an
   exporter whose instance is killed, a mixed stop within 30 s, and on Linux and
   macOS a first SIGINT during an export, a second SIGINT, and a hard kill;
+- `tart_diagnostics.rs` runs the Tart backend and the real exporter child against the
+  fake `tart` and the fake `docker` in its VMs: the bundle exported through the guest
+  agent, token-free, before the VM is deleted; a copy that hangs in the VM, which ends
+  the export at its deadline and its `tart exec` client with the exporter; a
+  malformed or oversized archive, a missing final observation, a full sink, a failed
+  stop and a clock with no time left to begin the export, each with the container's
+  gap; `diagnostics` finalising a retained VM; a VM kept for its finalisation at a
+  stop; a forced stop that deletes the VM without an export and reports the gap; and
+  a VM already gone;
+- `axmc_diagnostics.rs` runs `start`, `stop`, and `diagnostics` as processes on an
+  axmc host with a diagnostics-enabled Linux pool: a finished job exported and its VM
+  deleted, a graceful stop that exports a running job first, a second SIGINT, the
+  next `start` deleting a leftover, a killed `start` whose shim deletes the VM and
+  reports the gap, a killed `start` whose exporter ends with the `tart exec` client of
+  its copy, and `diagnostics` finalising a VM whose deletion failed;
 - `sink.rs`'s unit tests refuse a sink that is missing, under a link, inside the
   checkout, also when the checkout is named through a link, or not private, and on Windows one that is or lies under a junction or
   a directory symbolic link.
@@ -1587,9 +2802,9 @@ these in order:
    nothing, naming the instance's state when this user's channel answers within
    5 s, and otherwise giving `start`'s message for a lock held elsewhere.
 2. It validates the configuration as `validate` does; an invalid one exits 1.
-   `--profile axmc` exits 1 after validation with the refusal that
-   [Runtime Seam](#runtime-seam) gives. An image name given by digest is refused,
-   because it cannot be tagged. It prints the name it builds.
+   `--profile axmc` then builds the golden VM instead, as
+   [The Golden VM Build](#the-golden-vm-build) describes. An image name given by
+   digest is refused, because it cannot be tagged. It prints the name it builds.
 3. It contains its children as `start` does on Windows, and opens the control
    channel. While it builds, `status` answers `state: building`, `image: <name>`,
    and `elapsed: <s> s`; a `start`, a resume, `restart`, and `diagnostics` are refused, naming
@@ -1649,6 +2864,120 @@ console close can leave one too. The next `build` removes it.
 | 1    | A refused, invalid, or failed `build`, Docker not answering, or an uncommitted abort |
 | 2    | A usage error                                                                        |
 
+On axmc, exit 0 means the golden VM holds the new image. Exit 1 is a refused, failed or
+stopped build. It deletes its build VM and keeps the previous golden VM, with two
+exceptions: at the exit deadline the build VM is left to its shim or the next build, and
+when the commit is unknown the rename may have made a new golden VM. Stop and failure in
+[The Golden VM Build](#the-golden-vm-build) describes both.
+
+#### The Golden VM Build
+
+`build --profile axmc` makes the golden VM that every job VM is cloned from
+(`build::golden`). It takes the lock, validates, contains and opens the control channel
+as above, and answers `status` and `stop` the same way, but it calls `tart`, not
+`docker`. A debug build runs the `tart` that `MARSHAL_TEST_TART` names, and a release
+build always runs `tart` from `PATH`, as the [Tart Backend](#tart-backend) does. It
+does these in order:
+
+1. **Prerequisites.** It reads Tart's version, then finds Softnet on the `PATH` the Tart
+   client carries and judges its file and version, as
+   [Host Prerequisites](#host-prerequisites) says. A refusal, a missing `tart` or
+   `softnet` included, exits 1 before any VM exists, with a message that names the
+   host document's section ([Installing Tart and Softnet](./macos-runner-host.md#installing-tart-and-softnet)
+   or [Setting Up Softnet](./macos-runner-host.md#setting-up-softnet)). A warning, such
+   as a newer patch version, is logged and the build runs. `build` does not wait for
+   Tart, as it does not wait for Docker.
+2. **Leftovers.** Every local VM whose name is `marshal-build-linux-<yyyyMMddHHmmssfff>`
+   is stopped forcibly and deleted, within 15 s each. These are the build VMs of
+   a CLI that died: its [VM shim](#the-vm-shim) deletes its VM when the CLI is gone,
+   and this deletes any that the shim could not. A VM that cannot be deleted is a
+   warning.
+3. **Pull and clone.** `tart pull` of the base image by its pinned digest
+   (`golden::pins::BASE_REFERENCE`), within 30 min, and `tart clone` of it to a new
+   build VM, `marshal-build-linux-<yyyyMMddHHmmssfff>`. The name is recorded before
+   the clone runs, so a clone that fails halfway is deleted. The build VM keeps the
+   base's CPUs, memory and 20 GB disk: the build does not run `tart set`, because no
+   job needs more than the image build takes, and every job VM is sized from the pool
+   when it is cloned.
+4. **Boot.** `tart run` under the VM shim (this program run again, as for a job VM),
+   then the wait for the guest agent, every second with each question bounded at 5 s,
+   until it answers, `tart run` ends, or 120 s pass. A boot that fails has the job VM
+   boot failure's text, naming the build VM, and the same section,
+   [The Signed-In Session](./macos-runner-host.md#the-signed-in-session). The wait is
+   `tart::boot`, which the Tart backend's job VM boot shares.
+5. **Provisioning.** The six guest calls of [Golden VM Provisioning](#golden-vm-provisioning),
+   in order, each through `tart exec` with its own budget. Their output is read as data,
+   cut at 64 KiB, and appears only in the message of a call that failed, on one line. A
+   call that exits non-zero fails the build. The listing from the third call goes to
+   `golden::key`; a mismatch, a second key, or an empty or oversize listing fails the
+   build before the fourth call, which installs from Docker's repository.
+6. **The image.** It waits up to 60 s for the Docker Engine in the VM (`docker info`
+   every 2 s, each bounded at 10 s), then builds the runner image from the definition
+   embedded in the binary, with the context on the standard input of
+   `tart exec -i`, and follows the axpc flow as far as a new VM needs: the one
+   `docker build` with exactly axpc's arguments under the temporary tag
+   `<repository>:marshal-build-<yyyyMMddHHmmssfff>` in UTC, a `docker image inspect` of
+   the labels that requires this CLI's image contract, a `docker tag` to the configured
+   `imageName`, and the removal of the temporary tag (a failure of the removal is a
+   warning). It does not remove earlier temporary tags or prune dangling images,
+   because the VM is new. The build's output is forwarded to the log line by line,
+   masked and cut as a container's output is.
+7. **Commit.** `tart stop` of the build VM, which asks the guest to shut down and
+   gives it 60 s, within 90 s, then the wait for `tart run` to end, then
+   `tart rename` to the golden name,
+   `marshal-golden-linux-g<golden VM version>-c<image contract version>-r<runner version>-<yyyyMMddHHmmss>`
+   with the build time: the time taken just before the in-VM `docker build`, the same
+   value as the temporary tag's and the `built` label's, not the start of the build.
+   **The rename is the commit.**
+8. **After the commit.** It deletes every other golden VM, whatever its versions, and
+   removes from Tart's cache each image named in `golden::pins::RETIRED_BASE_PINS`, with
+   `tart delete`; the current pin is never deleted, and the list never holds it. A
+   failure of any of these is a warning that the next `build` tries again, and
+   `build` still exits 0, because the newest golden VM is the one used.
+
+`imageName` is optional on axmc. When it is absent, `build` names the image
+`actions-runner:local` (`runtime::pool::DEFAULT_IMAGE_NAME`), and `validate` and its
+summary do not change.
+
+**The Docker group.** The fourth guest call adds `admin` to the `docker` group, but a
+group change reaches `tart exec` commands only when the guest agent next starts, and
+the build VM is not restarted. The image build therefore runs `sudo -n docker`
+(`golden::steps::build_vm_docker_command`), where it could instead have rebooted the VM,
+which would add a boot and a second wait for the agent. Job VMs, which boot from the
+golden VM, run `docker` as `admin` without `sudo`.
+
+**Stop and failure.** Any failure, and `stop`, SIGINT, SIGTERM and SIGHUP at any step
+before the rename, drop the call in flight, which kills its `tart` client, and delete
+the build VM: a graceful stop and then a forced stop if that fails, then `tart delete`,
+within 15 s as one `teardown` budget (7.5 s, 3 s, 3 s and 1.5 s for a listing). The previous golden VM is not touched.
+The exit deadline of 28 s from the stop applies as it does on axpc, and at it `build`
+exits 1, naming that the VM shim or the next build deletes the build VM. The rename has
+the same grace as axpc's retag: when a stop arrives during it, `tart rename` gets up to
+5 s from the stop, its client is then ended, and a listing, within 4 s, says whether
+the golden name exists. If it does, the build has committed and `build` exits 0; if it does not, the build VM is
+deleted and `build` exits 1; if the listing fails, the exit is 1 with "commit unknown"
+and the golden name to look for. The build VM is still deleted by its own name, which
+removes it if the rename did not happen. If it did, there is no such VM to delete, and
+with the listing failing too the deletion cannot be confirmed, so `build` warns that the
+next build deletes it if it is still there. The 5 s grace, the 4 s listing and the 15 s
+clean-up fit inside the 28 s deadline, and a unit test holds the constants to that. After
+the rename, a stop skips the rest of the clean-up, and `build` exits 0.
+
+**A CLI that dies.** A build VM is held by a [VM shim](#the-vm-shim), so a CLI that is
+killed, or crashes, leaves its build VM to the shim, which stops and deletes it within
+15 s. A shim that is killed too leaves it to the next `build`, which deletes every build
+VM by name form.
+
+**Keep-awake.** `build` holds no keep-awake and ignores the sleep and network signals,
+which only a running instance reacts to. A Mac that sleeps during a build stops the VM's
+work, and the build fails or is stopped; the host document tells the operator to keep
+the Mac awake.
+
+**Windows.** `build --profile axmc` on Windows exits 1 before the lock, the
+configuration and any engine, with `error: the axmc profile runs only on macOS`. The
+code compiles on Windows and holds the VM with `VmLauncher::Direct` there, which no run
+reaches.
+
 ### The Log
 
 Each `start` writes one file, `marshal-<yyyyMMddHHmmssfff>-<pid>.log` in UTC, in a
@@ -1704,6 +3033,11 @@ failure.
   the shim then ends its container with `docker kill` within 5 s and keeps it. The
   shim shares `start`'s standard error, and its own warnings there name containers
   only.
+- **VM shim.** A job VM's `tart run` is held by the VM shim, the CLI run again as
+  `marshal vm-shim`, with a liveness pipe of its own, as [The VM Shim](#the-vm-shim)
+  describes. It stops and deletes its VM within 15 s when the pipe closes, reporting
+  the lost evidence of a diagnostics-enabled pool's VM on the standard error it shares
+  with `start`, and holds no lock.
 - **Exporter.** The exporter child under [Diagnostics](#diagnostics) has a
   liveness pipe of its own and keeps its own deadline, on every system, and on
   Windows it is also in the Job Object.
@@ -1762,6 +3096,30 @@ left; on Windows, a handle to the job container's client is signalled when
 a panicking core, and no startable pool. The diagnostics tests are listed under
 [Diagnostics](#diagnostics).
 
+`axmc_start.rs` runs `start` on the axmc profile as real processes, with the fake
+`tart`, the fake `softnet` and the fake `docker` in the VMs: a configuration of
+Linux and macOS pools that starts only the Linux pools, with one skip warning per
+macOS pool, and one of macOS pools alone that exits 1; a missing `tart`, a missing
+`softnet`, version refusals, Softnet setup refusals and a `softnet` that does not
+answer, each exiting 1 before any VM is cloned or booted; a `tart` that does not
+answer, which makes the slots wait; a newer patch, with its warnings in the log and
+`status`; a restart and two `start`s that a refused prerequisite leaves stopped with
+its reason, the last resuming; and a refusal after `start` that holds a slot while
+another slot's job ends, and lets it boot again. `prerequisite_gate.rs` shows where
+the instance asks for the check, on the fake seams.
+
+`instance_signals.rs` wires the signals into the instance on the fake signal source,
+backend, core and clock: a wake that stops and deletes every VM, a primary network
+that differs on two checks (a VPN taking the default route, a lost route naming
+`none`) and on one check, the same network, a hardware address that is not read, a
+resume that arms the sleep baseline and records the network afresh, the gate that
+opens at the second check of a first network, and the keep-awake hold held through
+running and stopping, released at stopped, and retried after a failure.
+`axmc_signals.rs` runs the same as real processes with the scripted source: a wake and
+a network change stop the instance with their reasons, no VM is cloned and `status`
+waits for a network until one is there, a stop ends that wait, and the hold's state
+is read from the scripted source's file.
+
 `build_command.rs` runs `build` the same way, from an empty directory, with
 `fake-docker` keeping an image store: the one build's arguments, labels, temporary
 tag, and context bytes, equal to the definition's files and the same on a second
@@ -1774,7 +3132,19 @@ build runs. The unit tests in `cli/src/build/steps.rs` run the steps against a
 stop, which prunes when it committed and is reported as a stall when it did not,
 and one that succeeds within a stop's grace, which commits without an inspect.
 `image_check.rs` runs `start` against images that cannot run jobs.
-`real_docker_build.rs` runs `build` through a real Docker daemon on Linux, with the
+`golden_build.rs` runs the axmc build ([The Golden VM Build](#the-golden-vm-build))
+against the fake `tart`, `softnet` and `docker`, which are scripted per step: the order
+of the calls and the build VM's name; a failure scripted at the pull, the clone, the boot,
+each provisioning call, the engine wait, the image build, the contract check, the tag, the
+shutdown and the rename, each of which deletes the build VM and keeps the old golden VM,
+with the rename only after success; a key with another fingerprint and an empty listing,
+which fail before anything is installed; a stop at the pull, the clone, a provisioning
+call and the image build, each within the stop sequence; a stop after the rename;
+leftover build VMs deleted before the pull; the other golden VMs and only the retired
+pins deleted after the commit; `TART_NO_AUTO_PRUNE` and `PATH` on every call; and, as a
+real process under the VM shim, a missing `tart` or `softnet` exiting 1 before any VM
+boots, the default and the configured image name, SIGINT within 30 s, and a killed CLI
+whose build VM the shim deletes. `real_docker_build.rs` runs `build` through a real Docker daemon on Linux, with the
 test definition in `cli/tests/build-definition/`, the runner image's digest-pinned
 base and its declared labels, and fails unless the result carries all five labels,
 no temporary tag remains, and the container backend's image check finds the image
@@ -1906,8 +3276,9 @@ The `rust` job in
 [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) runs format check,
 clippy, and tests on Linux, Windows, and macOS; the axpc checkout-rule cases that
 need drive-letter paths run only on Windows. Four more steps run on Linux only: the
-base-address, instance-roots, and build-definition tests again with `--release` and
-`MARSHAL_EXPECT_RELEASE=1`, which makes each fail if built in the wrong profile;
+base-address, instance-roots, build-definition, release-overrides, and
+agent-overrides tests again with `--release` and `MARSHAL_EXPECT_RELEASE=1`, which
+makes each fail if built in the wrong profile;
 `docker build --target base` of
 [`images/actions-runner`](../../images/actions-runner), tagged and never pushed;
 the `real_docker` test with `--ignored`, pointed at that tag by
@@ -1918,10 +3289,11 @@ which removes the image it builds. The Windows and macOS hosted runners have no
 Linux Docker daemon, and each test fails rather than skips when one is missing.
 One more step runs on Linux and macOS, `tests/ci/other-user-lock.sh`, and one on
 Windows, `tests/ci/control-pipe-security.ps1` under PowerShell 7; What the Instance
-Tests Cover says what each shows. The `fake-docker` and `instance-helper` helpers are
+Tests Cover says what each shows. The `fake-docker`, `fake-tart`, `fake-softnet`,
+`fake-macos` and `instance-helper` helpers are
 further binaries in the package (`cli/helpers/`, `test = false`) that only the tests
 and those steps run, and `default-run = "marshal"` keeps `cargo run` on the CLI.
-`instance-helper` does nothing in a release build. A release MUST NOT ship either
+`instance-helper` does nothing in a release build. A release MUST NOT ship any
 helper; [Releases](#releases) says how the release build keeps them out. Tests find fixtures relative to the
 crate's manifest directory, and the checkout-rule tests build a temporary directory
 with the marker files at test time. The advisory check, `cargo deny --locked check advisories`,
@@ -1994,9 +3366,9 @@ no cross-compilation, in one leg that:
 1. fails unless `rustc`'s host target is the one in the table, so a change of
    runner image fails the build instead of shipping the wrong architecture;
 2. writes the version with `set-release-version.sh`;
-3. runs the base-address, instance-roots, and build-definition tests with
-   `--release` and `MARSHAL_EXPECT_RELEASE=1`, the same tests the Linux `rust` job
-   runs, on the target itself;
+3. runs the base-address, instance-roots, build-definition, release-overrides, and
+   agent-overrides tests with `--release` and `MARSHAL_EXPECT_RELEASE=1`, the same
+   tests the Linux `rust` job runs, on the target itself;
 4. builds `cargo build --locked --release --bin marshal`;
 5. fails unless the binary's `--version` prints `marshal <version>`, with the
    version its caller passed;
@@ -2031,11 +3403,11 @@ through `vswhere` among the MSVC tools the build links with. It fails unless
 `dumpbin` listed the binary's dependencies, `KERNEL32.dll` among them, so a run that
 read nothing cannot pass.
 
-A release never ships `fake-docker` or `instance-helper`. The release-profile tests
-build both into `target/release`, so the build names `marshal` alone and copies only
-that file out, each leg's artifact holds that binary and its installer, and the
-assemble job, the attest job, and the release gate refuse a set of files that holds
-anything else.
+A release never ships a helper: `fake-docker`, `fake-tart`, `fake-softnet`,
+`fake-macos` or `instance-helper`. The release-profile tests build them into
+`target/release`, so the build names `marshal` alone and copies only that file out,
+each leg's artifact holds that binary and its installer, and the assemble job, the
+attest job, and the release gate refuse a set of files that holds anything else.
 
 ### Installers
 
@@ -3391,8 +4763,11 @@ maintainer fixes it there.
 | `bumpalo`, `combine`, `jni`, `jni-macros`, `jni-sys`, `jni-sys-macros`, `js-sys`, `rustc_version`, `rustls-platform-verifier-android`, `rustversion`, `same-file`, `semver`, `simd_cesu8`, `simdutf8`, `thiserror` 2, `thiserror-impl` 2, `walkdir`, `wasm-bindgen`, `wasm-bindgen-futures`, `wasm-bindgen-macro`, `wasm-bindgen-macro-support`, `wasm-bindgen-shared`, `web-sys`, `winapi-util`, `windows-targets`, `windows_aarch64_gnullvm`, `windows_aarch64_msvc`, `windows_i686_gnu`, `windows_i686_gnullvm`, `windows_i686_msvc`, `windows_x86_64_gnu`, `windows_x86_64_gnullvm`, and `windows_x86_64_msvc` | Platform verifier and `getrandom` code for Android, WebAssembly, and other Windows targets, which the lockfile records and none of the three CI targets builds                                                                                                                                                                 | MIT OR Apache-2.0 (`same-file`, `walkdir`, and `winapi-util` are Unlicense OR MIT)          |
 | `wasi`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | A WebAssembly dependency of `getrandom`, not built on the CI targets                                                                                                                                                                                                                                                           | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT                                         |
 | `webpki-root-certs`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Bundled roots the platform verifier uses on WebAssembly, not built on the CI targets                                                                                                                                                                                                                                           | CDLA-Permissive-2.0                                                                         |
-| `interprocess`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | The Windows named pipes behind the single-instance lock and the control channel, with default features off; it builds on Windows only                                                                                                                                                                                          | 0BSD OR Apache-2.0                                                                          |
+| `interprocess`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | The Windows named pipes behind the single-instance lock and the control channel, with default features off and, for the agent's asynchronous pipe, its `tokio` feature; it builds on Windows only                                                                                                                              | 0BSD OR Apache-2.0                                                                          |
 | `recvmsg`, `doctest-file`, and `widestring`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Dependencies of `interprocess`: a receive helper, a procedural macro that includes example files in documentation, and wide-string types for Windows paths                                                                                                                                                                     | 0BSD for `recvmsg` and `doctest-file`, MIT OR Apache-2.0 for `widestring`                   |
+| `serde_json`, `zmij`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | The agent's protocol messages and snapshot, in JSON, with only the `std` feature; `zmij` formats its floating-point numbers                                                                                                                                                                                                    | MIT OR Apache-2.0 for `serde_json`, MIT for `zmij`                                          |
+| `keyring-core`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | The interface of a credential store, which the token store adapts and a platform's store implements, with default features off                                                                                                                                                                                                 | MIT OR Apache-2.0                                                                           |
+| `windows-native-keyring-store` and `byteorder`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | The Windows Credential Manager behind the token store, with default features off, and the byte-order helper it uses for the UTF-16 token; they build on Windows only                                                                                                                                                           | MIT OR Apache-2.0 for the store, Unlicense OR MIT for `byteorder`                           |
 | `winsafe`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | The current user's security identifier, with only the `advapi` feature; it builds on Windows only                                                                                                                                                                                                                              | MIT                                                                                         |
 | `win32job`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | The Job Object that ends each job container's `docker run` client with `start`; it builds on Windows only (see [Containment](#containment))                                                                                                                                                                                    | MIT OR Apache-2.0                                                                           |
 | `windows`, `windows-core`, `windows-collections`, `windows-future`, `windows-numerics`, `windows-threading`, `windows-result`, `windows-strings`, and `windows-link` 0.1                                                                                                                                                                                                                                                                                                                                                                                                                                           | The Windows API bindings `win32job` uses; they build on Windows only                                                                                                                                                                                                                                                           | MIT OR Apache-2.0                                                                           |
@@ -3405,11 +4780,18 @@ maintainer fixes it there.
 optional, but the CLI's feature set (`std` and `unicode-perl`, no `perf`) does not
 build them. They are accepted under their MIT alternative, so the Unlicense is not
 on the allowlist and need not be.
+`serde_json`, `keyring-core`, `windows-native-keyring-store`, and the `tokio`
+feature of `interprocess` were added with the agent (issue #73).
+Their dependencies in the lockfile are `zmij` and `byteorder`, and `serde_json` also
+brings `itoa` and `memchr`, which the table already lists. `byteorder` is accepted
+under its MIT alternative, like `memchr`.
 
-The JSON parser is in the crate, not a dependency. The rules under Validation Rules
-need order-preserving objects, the last-position duplicate rule, case-conflict
-errors, and number literals kept as text. The crate owns that parser, and the
-fixtures pin it.
+The validator's JSON parser is in the crate, not a dependency. The rules under
+Validation Rules need order-preserving objects, the last-position duplicate rule,
+case-conflict errors, and number literals kept as text. The crate owns that parser,
+and the fixtures pin it. `serde_json` is for the agent's protocol only: the messages
+of version 2 are serialised and parsed with it, with only its `std` feature, and the
+validator never uses it.
 
 The reader implements serde's `Deserializer`, so a type that derives `Deserialize`
 can be read from the parsed tree. A failed read is an error, never a panic, and
@@ -3419,9 +4801,10 @@ reach the tree's own value type as text; any other target sees an `i64`, `u64`,
 ASCII case only when the caller asks, and only for struct fields. The validator
 reads each configuration object (root, entry, volume, and budget) into a derived
 type of wrapped fields, and keeps lists and nested objects raw so a wrong container
-type is reported with its path. Nothing implements or derives `Serialize`: the
-validator writes no JSON, and the registration body is written by hand (see
-[Registration](#registration)).
+type is reported with its path. Nothing in the validator implements or derives
+`Serialize`: it writes no JSON, and the registration body is written by hand (see
+[Registration](#registration)). The agent's messages derive `Serialize` and
+`Deserialize` for `serde_json`.
 
 The TOML parser is a dependency, where the JSON parser is not. The JSON rules need
 behaviour no crate gives, which is why the crate owns that parser. TOML's grammar is

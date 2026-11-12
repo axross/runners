@@ -126,6 +126,29 @@ instance accepts. See
 runs every **Slot**'s loop until a stop. The instance restarts it after a failure;
 see [operations/cli.md](./operations/cli.md#the-instance-layer).
 
+**Resident Agent** - the **CLI**'s long-running form, started stopped or running
+and told what to do over its channel: it stops and starts all runners, builds the
+**Runner Image**, quits, and stays up when its configuration, image or pools fail.
+It takes the instance's lock, channel and log directory, so it and `start` never
+run on one machine together. Not to be confused with an **Agent Host**. See
+[operations/cli.md](./operations/cli.md#the-agent).
+
+**Token Store** - where the **Resident Agent** keeps each **Target Repository**'s
+token, by the repository's lower-case `owner/name`: the Windows Credential Manager
+on Windows, with local persistence, and none yet elsewhere, where every pool is
+skipped. See [operations/cli.md](./operations/cli.md#the-token-store).
+
+**Protocol Version 2** - the line-based JSON messages the **Resident Agent**
+serves on the instance's channel: `hello`, requests and responses, a subscribed
+`state` topic with events, heartbeats and `ending`. A first line that is not a
+`hello` is refused, so version 1's requests never reach the agent. See
+[operations/cli.md](./operations/cli.md#protocol-version-2).
+
+**Snapshot** - the value of the **Resident Agent**'s `state` topic and of its
+`status` method: its state and reason, its pools and runners, its images and what a
+stop left behind, from local state, cut to 64 KiB. It never holds a token. See
+[operations/cli.md](./operations/cli.md#the-snapshot).
+
 **Diagnostic Container** - a job container of an **Execution Pool** with
 `diagnostics` on. It runs the runner under the image's collector, carries the
 `runners.diagnostic-lifecycle=1` label, and has no `--rm`, so it stays after its job.
@@ -133,6 +156,45 @@ The **Supervisor** finalises it: it exports the collector's evidence into a bund
 in the pool's private sink, then removes it. Until then it is retained with the
 settings it ran with. See
 [operations/cli.md](./operations/cli.md#diagnostics).
+
+**Runtime Seam** - the boundary in the **CLI** between the **Runtime Core** and
+whatever a job runs in. The core keeps the configuration, registration, backoff and
+the stop sequence; the runtime behind the seam waits for its engine, checks its
+image, prepares and releases a job's host, runs the job, and exports diagnostics. A
+pool's operating system, on the **Host Profile**'s host, selects the runtime: a
+Docker Desktop container on axpc, a **Job VM** for a Linux pool on axmc. See
+[operations/cli.md](./operations/cli.md#runtime-seam).
+
+**Golden VM** - the Tart Ubuntu VM that `build --profile axmc` makes on the macOS
+host and every **Job VM** is cloned from. It holds Docker Engine, the launcher and
+the **Runner Image**, and its name records its golden VM version, the **Image
+Contract Version**, the runner version and the build time, so they are read without
+booting it. Only `build` deletes it. See
+[operations/macos-runner-host.md](./operations/macos-runner-host.md#the-golden-vm-contract).
+
+**Job VM** - the VM that runs one job of an axmc Linux **Execution Pool**: a clone
+of the **Golden VM**, named `marshal-job-<pool>-<slot>-<time>`, booted on
+**Softnet** with no shared directory, clipboard, audio, USB accessories or Rosetta,
+and deleted when its job ends. A **Slot**'s Job VM is booted and idle while its
+runner waits for a job. See [conventions/security.md](./conventions/security.md#a-linux-job-on-axmc-runs-in-a-per-job-vm).
+
+**Build VM** - the temporary VM, named `marshal-build-linux-<time>`, in which
+`build --profile axmc` makes a new **Golden VM**. It is renamed to the golden name
+only when complete, and a failed or interrupted build deletes it, so the previous
+Golden VM stays in place.
+
+**Softnet** - the program Tart runs to filter a VM's network. It lets a **Job VM**
+send only to globally routable IPv4 addresses and to its gateway, and `marshal`
+passes it rules that leave the gateway only DNS and block all multicast. Its
+privilege is a SUID bit on its binary, which `marshal` checks before every boot and
+never sets. See
+[operations/macos-runner-host.md](./operations/macos-runner-host.md#setting-up-softnet).
+
+**Primary Network** - on the macOS host, the interface that holds the IPv4 default
+route, that route's router, and the router's hardware address. The instance records
+it when it starts running and stops every runner when it differs on two checks in a
+row. It is IPv4 only, because **Softnet** carries only IPv4, and it names
+interfaces, never network names or addresses.
 
 **Host Profile** - the host a **Host Configuration** is checked for: `axpc`, the
 Windows machine with Docker Desktop, or `axmc`, the macOS machine. A profile fixes
@@ -178,6 +240,16 @@ gate is the maintainer's approval of that plan.
 **Plan-Gate Delivery Confirmation** - the answer a Claude Code run collects
 with every plan-approval question: delivery of the run's draft pull request, the
 Claude review request on it, and watching its activity. See
+[operations/agent-sessions.md](./operations/agent-sessions.md).
+
+**Amp Review Child Thread** - a fresh Amp thread an Amp run starts for one
+independent-review round; it posts its own review on the pull request and is
+archived afterwards when the plan-gate archive confirmation allows it. See
+[operations/development-workflow.md](./operations/development-workflow.md).
+
+**Plan-Gate Archive Confirmation** - the human's answer, collected at the plan
+gate, or before archiving in a run without one or in a resumed session, on
+whether an Amp run archives its review child threads. See
 [operations/agent-sessions.md](./operations/agent-sessions.md).
 
 **Run State** - the recoverable record of a change loop's progress, which a

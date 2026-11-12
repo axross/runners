@@ -5,7 +5,7 @@ use crate::json::Object;
 use crate::profile::Profile;
 
 use super::budget::BUDGET_FIELDS;
-use super::limits::{CPU_RANGE, format_nanos};
+use super::limits::{CPU_RANGE, disk_reserve, format_nanos, linux_disk_too_small};
 use super::problem::{Key, KeyPath, Kind, Location, Problem, Segment};
 use super::reader::Reader;
 use super::volumes::VOLUME_FIELDS;
@@ -170,10 +170,18 @@ impl Reader for JsonReader {
                 "{path}: pools total {total} GB of memory (the sum of {slots} times {}), above the budget of {budget} GB",
                 key_name(Key::MemoryGb)
             ),
-            Kind::DiskBudgetExceeded { total, budget } => format!(
-                "{path}: pools total {total} GB of disk (the sum of {slots} times {}), above the budget of {budget} GB",
-                key_name(Key::DiskGb)
+            Kind::DiskBudgetExceeded {
+                total,
+                reserve,
+                budget,
+            } => format!(
+                "{path}: pools total {total} GB of disk (the sum of {slots} times {}{}), above the budget of {budget} GB",
+                key_name(Key::DiskGb),
+                disk_reserve(*reserve)
             ),
+            Kind::LinuxDiskTooSmall(min) => {
+                format!("{path}: {}", linux_disk_too_small(*min))
+            }
         }
     }
 }

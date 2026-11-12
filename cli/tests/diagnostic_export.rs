@@ -570,6 +570,7 @@ fn an_exporter_whose_pipe_closes_ends_with_its_clients() {
     let request = ExportRequest {
         pool: "d".to_string(),
         container: Some(NAME.to_string()),
+        vm: None,
         directory: sink.to_str().unwrap().to_string(),
         raw_records: false,
         checkout: None,

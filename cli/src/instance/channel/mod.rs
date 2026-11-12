@@ -21,6 +21,8 @@ use super::protocol::Incoming;
 use super::roots::Roots;
 
 pub use client::{CONNECT_TIMEOUT, ClientError, exchange};
+#[cfg(unix)]
+pub(crate) use unix::bind_private;
 
 #[cfg(unix)]
 use unix::connect as platform_connect;
