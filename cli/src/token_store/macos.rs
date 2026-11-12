@@ -16,7 +16,7 @@ use security_framework::passwords::{
 
 use crate::runtime::secret::Secret;
 
-use super::{TokenKey, StoreError, StoreErrorKind, TokenStore};
+use super::{StoreError, StoreErrorKind, TokenKey, TokenStore};
 
 /// the service every Marshal item carries: F0's signing identifier.
 pub const SERVICE: &str = "app.axross.marshal";

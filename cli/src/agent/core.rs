@@ -22,7 +22,8 @@ use crate::runtime::clock::Clock;
 use crate::runtime::log::Log;
 use crate::runtime::name::parse_stamp;
 use crate::runtime::pool::{
-    NoPoolStartable, PoolSpec, SlotSpec, admit_pool, pools_from_plan, prepare_admitted,
+    NoPoolStartable, PoolSpec, SlotSpec, admit_pool, image_name, pools_from_plan, prepare_admitted,
+    skip_warning, skipped_pools,
 };
 use crate::runtime::registration::Registrar;
 use crate::runtime::worker::{Services, run_slot_with, wait_for_stop};
@@ -224,7 +225,10 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
         let changes = self.tokens.changes();
         let pools =
             pools_from_plan(plan).map_err(|error| failure(error.to_string(), Ending::Ordinary))?;
-        let image = plan.image_name.as_deref().unwrap_or_default();
+        for pool in skipped_pools(plan) {
+            self.log.warn(&skip_warning(pool));
+        }
+        let image = image_name(plan);
         self.board.expect_image(image);
         let mut drain = self.drain.subscribe();
         let wanted = pools.clone();

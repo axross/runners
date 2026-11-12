@@ -262,7 +262,7 @@ async fn run_instance(parts: Parts<'_>, plan: crate::validate::Plan) -> u8 {
 
 /// the launcher of job VMs that matches the one of job containers: the shim where the
 /// containers have one, else the VM as a child of this process.
-fn vm_launcher(launcher: &JobLauncher) -> VmLauncher {
+pub(crate) fn vm_launcher(launcher: &JobLauncher) -> VmLauncher {
     match launcher {
         JobLauncher::Direct => VmLauncher::Direct,
         #[cfg(unix)]
