@@ -133,6 +133,8 @@ pub struct Rig {
     pub log: MemoryLog,
     pub limits: Cell<Limits>,
     pub times: Cell<StopTimes>,
+    /// how long a drain for an update waits for busy runners.
+    pub drain_bound: Cell<Duration>,
     /// the file the agent watches, when a test asks for it.
     pub executable: RefCell<Option<PathBuf>>,
     /// the agent has no token store, as on a host without one.
@@ -170,6 +172,7 @@ impl Rig {
             log: MemoryLog::default(),
             limits: Cell::new(Limits::default()),
             times: Cell::new(StopTimes::default()),
+            drain_bound: Cell::new(marshal_cli::agent::machine::DRAIN_BOUND),
             executable: RefCell::new(None),
             no_store: Cell::new(false),
             other_store: RefCell::new(None),
@@ -259,6 +262,7 @@ impl Rig {
                     config_path: self.root.path().join("config.json"),
                     times: self.times.get(),
                     launch,
+                    drain_bound: self.drain_bound.get(),
                 },
                 executable: self.executable.borrow().clone(),
                 limits: self.limits.get(),

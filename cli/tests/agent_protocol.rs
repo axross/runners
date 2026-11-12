@@ -70,6 +70,7 @@ async fn welcome_lists_the_version_the_methods_and_the_topics() {
                 "quit",
                 "token_set",
                 "token_remove",
+                "drain_for_update",
             ] {
                 assert!(methods.contains(&method), "{method} is not served");
             }

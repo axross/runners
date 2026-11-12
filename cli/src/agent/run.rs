@@ -27,7 +27,7 @@ use super::builder::{DockerImageBuilder, ImageBuilder};
 use super::channel::AgentChannel;
 use super::executable::{CHECK_EVERY, Executable};
 use super::log::AgentLog;
-use super::machine::{Agent, Ended, Launch, Seams, Settings};
+use super::machine::{Agent, DRAIN_BOUND, Ended, Launch, Seams, Settings};
 use super::server::Limits;
 use super::snapshot::Snapshot;
 use super::tokens::StoreTokens;
@@ -107,7 +107,9 @@ where
     let ended = agent.run(&mut requests).await;
     drop(agent);
     watcher.abort();
-    channel.close(ended.reason, ANSWERS_WITHIN).await;
+    channel
+        .close(ended.reason, ended.update.clone(), ANSWERS_WITHIN)
+        .await;
     Ok(ended)
 }
 
@@ -292,6 +294,7 @@ pub fn run(options: AgentOptions<'_>, err: &mut dyn Write) -> u8 {
             config_path: roots.config_file().to_path_buf(),
             times: StopTimes::default(),
             launch: options.launch,
+            drain_bound: DRAIN_BOUND,
         },
         executable: applied.executable,
         limits: applied.limits,
