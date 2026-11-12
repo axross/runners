@@ -246,6 +246,9 @@ pub struct Seams<D> {
     pub log: Arc<dyn Log>,
     /// the app's own version.
     pub version: String,
+    /// the version of the agent this app starts, which the library it links gives; an
+    /// agent older than it is replaced.
+    pub agent_version: String,
     /// the update feed; `None` where the app does not update itself.
     pub updater: Option<Arc<dyn Updater>>,
     pub processes: Arc<dyn Processes>,
@@ -292,6 +295,7 @@ pub struct Session<D: Dial> {
     /// the revision of `shown`, which counts the views the session has shown.
     revision: u64,
     version: String,
+    agent_version: String,
     updater: Option<Arc<dyn Updater>>,
     processes: Arc<dyn Processes>,
     update_record: Arc<dyn Record>,
@@ -348,6 +352,7 @@ impl<D: Dial> Session<D> {
             shown: None,
             revision: 0,
             version: seams.version,
+            agent_version: seams.agent_version,
             updater: seams.updater,
             processes: seams.processes,
             update_record: seams.record,
@@ -601,11 +606,20 @@ impl<D: Dial> Session<D> {
             // an agent may add reasons within version 2; what is not known is ignored,
             // and the connection's end that follows is handled as a drop. So is an end for
             // an update another client asked for.
-            Pushed::Ending { .. } => {
+            Pushed::Ending { update, .. } => {
                 self.log
                     .info("The agent is ending for a reason this app does not act on.");
                 // the agent's end is not this app's drain ending, so it installs nothing
                 self.drain = None;
+                // an end for an update still says how the runners were left, which the
+                // start after it keeps
+                if let Some(update) = update {
+                    self.next_launch = Some(if update.stopped_by_you {
+                        Launch::Stopped
+                    } else {
+                        Launch::Running
+                    });
+                }
             }
             Pushed::Closed => self.closed(),
         }

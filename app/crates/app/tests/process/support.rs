@@ -182,6 +182,7 @@ pub fn run_session(roots: Roots, launcher: Arc<dyn Launcher>) -> Running {
         time: Arc::new(WallClock::new(|| 0)),
         log: log.clone(),
         version: "test".to_string(),
+        agent_version: "test".to_string(),
         updater: None,
         processes: Arc::new(marshal_session::NoUpdates),
         record: Arc::new(marshal_session::NoUpdates),

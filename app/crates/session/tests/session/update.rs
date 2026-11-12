@@ -7,6 +7,7 @@ use marshal_session::{Act, AgentInfo, CHECK_EVERY, EXIT_WITHIN, Ended, Failure};
 
 use crate::support::{
     Agent, Answer, Called, RecordEvent, Running, Updates, World, fixture, patched, secs, start_as,
+    start_linking, what,
 };
 
 const PID: u32 = 4242;
@@ -172,6 +173,34 @@ async fn another_clients_drain_is_waited_for_and_its_end_installs_nothing() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn another_clients_update_from_stopped_by_you_starts_the_agent_again_stopped() {
+    let (agent, connected) = Agent::new();
+    let world = World::default();
+    world.then(Answer::Agent(connected));
+    let session = start_as(world, Updates::default(), "1.3.0", Launch::Running);
+    agent.push(fixture("running"));
+    session.settle().await;
+    agent.end_for_update("1.5.0", true);
+    agent.close();
+    session.wait(secs(1)).await;
+    assert_eq!(session.world.started(), [Launch::Stopped]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_agent_at_the_librarys_version_is_not_replaced_whatever_the_apps_version() {
+    let (agent, connected) = Agent::reporting(AgentInfo {
+        version: "1.3.0".into(),
+        drains: true,
+    });
+    let world = World::default();
+    world.then(Answer::Agent(connected));
+    let session = start_linking(world, Updates::default(), "1.4.0", "1.3.0", Launch::Running);
+    agent.push(fixture("running"));
+    session.settle().await;
+    assert!(drains(&agent).is_empty(), "it is the agent this app starts");
+}
+
+#[tokio::test(start_paused = true)]
 async fn an_unknown_end_during_the_drain_installs_nothing() {
     let (agent, session) = offered().await;
     agent.end("signal_sleep");
@@ -275,6 +304,11 @@ async fn a_lost_connection_with_no_agent_answering_waits_for_its_process_then_in
     assert!(
         session.updates.installed().is_empty(),
         "its process still runs"
+    );
+    assert_ne!(
+        what(&session.screen.view()),
+        "lost contact (restart failed)",
+        "nothing was started, and Try Again is not taken while the app waits"
     );
     session.updates.exit(PID);
     session.settle().await;

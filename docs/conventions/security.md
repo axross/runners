@@ -277,7 +277,9 @@ app is built for, `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`.
   updater's configuration needs. The
   `marshal-feed` crate takes `minisign-verify`, `base64`, `semver`, `url` and `sha2`,
   each at the version the updater plugin or the library already links on Windows, so
-  that its feed check verifies exactly as the plugin does; on macOS they add
+  that its feed check verifies exactly as the plugin does, and `serde` and
+  `serde_json`, at the versions the session builds, to read the feed and the app's
+  configuration; on macOS they add
   `minisign-verify` to the tree. The token store's crates come through the library, and
   [CLI](../operations/cli.md#dependencies) lists them. A new direct dependency of an
   app crate MUST be added here with its reason, and needs the maintainer's review.

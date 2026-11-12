@@ -11,6 +11,7 @@ use std::time::Duration;
 use marshal_cli::agent::Launch;
 use marshal_cli::agent::wire::UpdateEnding;
 use marshal_feed::{DEVELOPMENT_VERSION, newer};
+use marshal_view::{Cause, Connection};
 use tokio::time::Instant;
 
 use super::{CALL_WITHIN, Ended, Internal, Session, Stage, stopped_by_you};
@@ -112,9 +113,11 @@ impl<D: Dial> Session<D> {
         }
     }
 
-    /// an agent older than this app, which this app's own agent replaces.
+    /// an agent older than the one this app starts, which replaces it. The app's own
+    /// version is not compared: nothing keeps it equal to the library's.
     fn older_agent(&self) -> bool {
-        self.version != DEVELOPMENT_VERSION && newer(&self.agent.version, &self.version) == Ok(true)
+        self.agent_version != DEVELOPMENT_VERSION
+            && newer(&self.agent.version, &self.agent_version) == Ok(true)
     }
 
     pub(super) fn connected_to(&mut self, agent: AgentInfo) {
@@ -126,9 +129,9 @@ impl<D: Dial> Session<D> {
         self.told_no_drain = false;
         if self.older_agent() {
             self.log.info(&format!(
-                "The agent is version {}, older than this app's {}.",
+                "The agent is version {}, older than this app's agent, {}.",
                 marshal_view::plain(&self.agent.version),
-                self.version
+                self.agent_version
             ));
         }
     }
@@ -144,7 +147,7 @@ impl<D: Dial> Session<D> {
             return;
         };
         let (version, purpose) = if self.older_agent() {
-            (self.version.clone(), Purpose::ReplaceOlder)
+            (self.agent_version.clone(), Purpose::ReplaceOlder)
         } else if let Some(verified) = &self.verified {
             (verified.version().to_string(), Purpose::Install)
         } else {
@@ -479,6 +482,11 @@ impl<D: Dial> Session<D> {
             self.log.warn(
                 "No agent answered, but its process still runs; the app waits for it to exit.",
             );
+            // nothing was started, and the session takes no Try Again while it waits
+            self.connection = Connection::LostContact {
+                last_heard_ms: self.last_heard_ms.unwrap_or_else(|| self.now_ms()),
+                cause: Cause::Dropped,
+            };
             self.ending_unannounced();
         } else {
             // with no handle the app cannot tell the agent ended, so it starts it once

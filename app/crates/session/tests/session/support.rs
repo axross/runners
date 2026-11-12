@@ -635,6 +635,18 @@ pub fn start(world: World) -> Running {
 /// starts a session of an app at `version`, with the update feed `updates` and the
 /// launch mode a fresh launch has.
 pub fn start_as(world: World, updates: Updates, version: &str, launch: Launch) -> Running {
+    start_linking(world, updates, version, version, launch)
+}
+
+/// starts a session of an app at `version` whose library, and so its own agent, is at
+/// `agent_version`.
+pub fn start_linking(
+    world: World,
+    updates: Updates,
+    version: &str,
+    agent_version: &str,
+    launch: Launch,
+) -> Running {
     let screen = Arc::new(Screen::default());
     let log = Arc::new(MemoryLog::default());
     let started_at = Instant::now();
@@ -645,6 +657,7 @@ pub fn start_as(world: World, updates: Updates, version: &str, launch: Launch) -
         time: Arc::new(FakeTime { start: started_at }),
         log: log.clone(),
         version: version.to_string(),
+        agent_version: agent_version.to_string(),
         updater: Some(Arc::new(updates.clone())),
         processes: Arc::new(updates.clone()),
         record: Arc::new(updates.clone()),

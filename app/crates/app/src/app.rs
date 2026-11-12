@@ -140,6 +140,7 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         time,
         log: Arc::clone(&log),
         version: version.to_string(),
+        agent_version: marshal_cli::agent::PACKAGE_VERSION.to_string(),
         updater,
         processes,
         record,

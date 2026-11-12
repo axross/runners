@@ -650,9 +650,12 @@ of it starts the agent stopped; every launch removes it, so it applies once. Oth
 a launch starts the runners, as a fresh launch does. If W3's update record merges
 first, it replaces this one.
 
-**An older agent.** An app that finds a running agent older than itself, for example
-after an installer was run by hand, asks it to drain for the app's own version and
+**An older agent.** An app that finds a running agent older than the agent it starts,
+for example after an installer was run by hand, asks it to drain for that version and
 then starts its own agent, stopped if `ending` said the runners were stopped by you.
+The comparison is with the version of the `marshal-cli` library the app links, which
+the agent gives in `welcome`, not with the app's own package version, so a release
+that stamps the two differently does not replace the app's own agent again and again.
 An older agent that does not list `drain_for_update` is used as it is, logged once,
 and nothing installs while it runs.
 
