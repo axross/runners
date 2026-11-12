@@ -17,6 +17,10 @@ powershell = "7.6.6"
 # the install block suites apply the blocks' --jq expressions with it in the gh stand-in.
 jq = "1.8.2"
 cargo-deny = "0.20.2"
+# generates the app's THIRD-PARTY-NOTICES files (app/notices/generate.sh). The pinned release
+# is installed from the project's GitHub release, with its checksum in mise.lock, so the
+# notices need no compile in CI. This is the one place the version is set.
+"github:EmbarkStudios/cargo-about" = "0.9.3"
 
 [env]
 # PSScriptAnalyzer is a PowerShell module, not a mise tool, so `lint:powershell`
@@ -79,7 +83,7 @@ run = "cargo deny --locked check bans licenses sources"
 # tasks name them; the Windows job in merge-checks.yaml builds, lints and tests the
 # whole workspace.
 [tasks."fetch:app"]
-description = "Fetch the crates in app/Cargo.lock, which cargo deny reads"
+description = "Fetch the crates in app/Cargo.lock, which cargo deny and cargo about read"
 depends = ["rust:require"]
 dir = "app"
 run = "cargo fetch --locked"
@@ -117,6 +121,16 @@ description = "Check the crates the app's executable links for banned versions, 
 depends = ["rust:require", "fetch:app"]
 dir = "app"
 run = "cargo deny --locked check bans licenses sources"
+
+[tasks."check:notices"]
+description = "Fail when the checked-in licence notices for the app's Windows and macOS trees no longer match app/Cargo.lock, which cargo-about reads"
+depends = ["rust:require", "fetch:app"]
+run = "bash app/notices/generate.sh check"
+
+[tasks."notices:app"]
+description = "Write the app's licence notices again from app/Cargo.lock, for the Windows and the macOS tree"
+depends = ["rust:require", "fetch:app"]
+run = "bash app/notices/generate.sh write"
 
 [tasks."check:app-pins"]
 description = "Check that both Rust toolchain files name one channel and that app/tauri-cli.version holds one exact version"
@@ -414,7 +428,7 @@ description = "Run the signed package check, which verify-macos runs, against st
 run = "bash .github/scripts/tests/test-signed-pkg-refusals.sh"
 
 [tasks.check]
-description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, release script tests, release shape check and its test, sign-macos, signed package and assemble tests, installer version and WiX fetch tests, install block tests, Rust tests, Rust dependency check, the app's toolchain and tauri-cli pin checks, lockfile check, tests, page tests and dependency check"
+description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, release script tests, release shape check and its test, sign-macos, signed package and assemble tests, installer version and WiX fetch tests, install block tests, Rust tests, Rust dependency check, the app's toolchain and tauri-cli pin checks, lockfile check, licence notices, tests, page tests and dependency check"
 depends = [
   "format:check",
   "lint",
@@ -435,6 +449,7 @@ depends = [
   "test:rust",
   "deny:rust",
   "check:app-pins",
+  "check:notices",
   "test:tauri-cli-version",
   "check:app-lock",
   "test:app",

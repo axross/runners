@@ -258,7 +258,8 @@ GitHub-hosted runner with `contents: read`, checks out the pull request, and run
 `mise run check`, which executes the pull request's own task definitions and the
 linters they call, including the CLI's Rust gates and, for the app under `app/`, its
 formatting, the lint and tests of its platform-independent crates, its cargo-deny
-run, the main window page's Node tests, a check
+run, the main window page's Node tests, a check that its checked-in licence notices
+match `app/Cargo.lock`, a check
 that both Rust toolchain files name one channel and that `app/tauri-cli.version`
 holds one exact version, the test of the script that reads that version
 (`test:tauri-cli-version`), and `check:app-lock`, which fails when the app's

@@ -135,6 +135,12 @@ Important; Codex review uses its native priority label.
   kept by the maintainer's decision, and the macOS signing team ID and designated
   requirement that a later CLI record may hold, as Security records (see
   [Security](docs/conventions/security.md#nothing-identifying-or-secret-is-committed)).
+  Verbatim third-party licence and copyright text in the notices under
+  `app/notices/` and the licence copies they draw on, the crates' published
+  repository URLs in those notices, and `docs/operations/app.md`'s references to a
+  third-party crate's public repository are the exception Security records for
+  personal names, account names and email addresses, so they are not reported; such
+  a name or address anywhere else still is.
   An example uses an obviously fake
   placeholder (`<owner>`, `<repo>`, `example.invalid`). A value a runner needs
   is read from the environment or a prompt at run time.
@@ -435,8 +441,9 @@ mechanical defect named below:
 - The app's clippy (`mise run lint:app`), tests (`mise run test:app`), licence,
   source, and duplicate checks (`mise run deny:app`), toolchain pin check
   (`mise run check:app-pins`), lockfile check (`mise run check:app-lock`), main
-  window page tests (`mise run test:app-frontend`), and the test of the `tauri-cli`
-  pin's reader (`mise run test:tauri-cli-version`).
+  window page tests (`mise run test:app-frontend`), the test of the `tauri-cli` pin's
+  reader (`mise run test:tauri-cli-version`), and the licence notices check
+  (`mise run check:notices`).
 - The agreement of `skills-lock.json` with `.claude/skills/`
   (`mise run check:skills`). Whether an installed copy matches its upstream
   source is not checked in CI and remains reportable.
