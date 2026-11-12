@@ -810,6 +810,16 @@ impl<D: Dial> Session<D> {
         let result = match (removal, outcome) {
             (false, Ok(())) => TokenResult::Saved { started },
             (true, Ok(())) => TokenResult::Removed,
+            (_, Err(Failure::TimedOut)) => {
+                // the connection is open and the agent may still do it, so the snapshot,
+                // not this call, says where the token stands
+                self.log.warn(&format!(
+                    "The agent did not answer the token {} for {repository} in {} s; it may still do it.",
+                    if removal { "removal" } else { "save" },
+                    TOKEN_WITHIN.as_secs()
+                ));
+                TokenResult::NotAnswered { removal }
+            }
             (_, Err(failure)) => {
                 self.log.warn(&format!(
                     "A token for {repository} was not {}: {}",

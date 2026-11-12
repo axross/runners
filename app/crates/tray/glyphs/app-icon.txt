@@ -1,7 +1,7 @@
 # the app icon, drawn on each size's own pixel grid: a tile in Radix Iris step 9 (#5b5bd6) with
 # three white lines on it, the runners' rows, from the design record's app icon. a block is
 # `tile <size>` or `mark <size>` and then <size> rows of <size> characters; a character is the
-# pixel's alpha in sixteenths as a hex digit (`f` opaque), `.` for none. the mark is white over
+# pixel's alpha in fifteenths as a hex digit (`f` opaque), `.` for none. the mark is white over
 # the tile. `cargo run --example icons -- app-icon <folder>` writes icon.ico and icon.png from
 # this file.
 

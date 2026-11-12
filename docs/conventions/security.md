@@ -205,7 +205,8 @@ app is built for, `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`.
   by path, and the `marshal-view` crate on `marshal-cli`, by path, `serde`, which
   serialises the view, and `serde_json`, which reads GitHub's message from a refused
   token's reason, at versions the library already builds, so they add no crate. The
-  `marshal-session` crate depends on those three by path, on `serde` and
+  `marshal-session` crate depends on `marshal-cli`, `marshal-modes` and `marshal-view`
+  by path, on `serde` and
   `serde_json`, and on `tokio` for the session's timers and its one task, at the
   version the library already builds, so it adds no crate either. The `marshal-tray`
   crate depends on `marshal-view`, by path, and on `windows-registry` 0.6 on Windows,

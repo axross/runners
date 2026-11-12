@@ -40,13 +40,13 @@ fn file(colour: GlyphColour) -> &'static str {
 }
 
 /// the alpha a mask character stands for: `.` is none and a hex digit is its value in
-/// sixteenths of opaque.
+/// fifteenths of opaque, so `f` is opaque.
 fn alpha_of(character: char) -> Option<u8> {
     match character {
         '.' => Some(0),
         digit => digit
             .to_digit(16)
-            .and_then(|sixteenths| u8::try_from(sixteenths * 17).ok()),
+            .and_then(|fifteenths| u8::try_from(fifteenths * 17).ok()),
     }
 }
 
