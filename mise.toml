@@ -96,16 +96,16 @@ dir = "app"
 run = "cargo fmt --all --check"
 
 [tasks."lint:app"]
-description = "Lint the app's platform-independent crates (the modes and the view) with clippy, warnings as errors"
+description = "Lint the app's platform-independent crates (the modes, the view, the session and the icon) with clippy, warnings as errors"
 depends = ["rust:require"]
 dir = "app"
-run = "cargo clippy --locked --package marshal-modes --package marshal-view --all-targets -- -D warnings"
+run = "cargo clippy --locked --package marshal-modes --package marshal-view --package marshal-session --package marshal-tray --all-targets -- -D warnings"
 
 [tasks."test:app"]
-description = "Run the tests of the app's platform-independent crates: the mode dispatch and the view"
+description = "Run the tests of the app's platform-independent crates: the mode dispatch, the view, the session lifecycle and the icon"
 depends = ["rust:require"]
 dir = "app"
-run = "cargo test --locked --package marshal-modes --package marshal-view"
+run = "cargo test --locked --package marshal-modes --package marshal-view --package marshal-session --package marshal-tray"
 
 [tasks."deny:app"]
 description = "Check the crates the app's executable links for banned versions, unreviewed licences, and other sources, for the Windows and macOS builds; the advisory check runs in its own workflow"
