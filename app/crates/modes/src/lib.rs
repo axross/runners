@@ -3,7 +3,7 @@
 //! shims on Unix, or otherwise the app. The hidden modes run the `marshal-cli` library's
 //! entry points, have no interface and promise no compatibility.
 
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -61,7 +61,7 @@ impl Overrides {
     fn options(&self, launch: Launch) -> AgentOptions<'_> {
         let mut options = AgentOptions::new(launch);
         options.test_root = self.root.as_deref();
-        options.docker = self.docker.as_deref().map(OsStr::new);
+        options.docker = self.docker.as_deref();
         options.github_api = self.github_api.as_deref();
         options
     }

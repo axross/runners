@@ -60,8 +60,8 @@ pub fn repositories(context: &Context<'_>) -> Vec<Repository> {
     found
 }
 
-/// the pools a save for `repository` starts at once: those skipped for want of a
-/// token, while the agent runs. The app reads them before it sends the token.
+/// the pools a save for `repository`, as the view keys it, starts at once: those
+/// skipped for want of a token, while the agent runs. The app reads them before it sends the token.
 #[must_use]
 pub fn pools_started_by(snapshot: &Snapshot, repository: &str) -> Vec<String> {
     if snapshot.agent.state != "running" {
@@ -71,7 +71,7 @@ pub fn pools_started_by(snapshot: &Snapshot, repository: &str) -> Vec<String> {
         .pools
         .iter()
         .filter(|pool| {
-            pool.repository == repository
+            plain(&pool.repository) == repository
                 && pool.state == "skipped"
                 && pool.reason.as_deref() == Some(NO_TOKEN)
         })
@@ -95,7 +95,7 @@ fn rejection(context: &Context<'_>, repository: &str) -> Option<String> {
     let reason = context
         .pools
         .iter()
-        .filter(|pool| pool.repository == repository)
+        .filter(|pool| plain(&pool.repository) == repository)
         .flat_map(|pool| &pool.runners)
         .filter(|runner| runner.kind() == RunnerState::BackingOff)
         .filter_map(|runner| runner.reason.as_deref())
@@ -154,12 +154,16 @@ fn removal_question(context: &Context<'_>, repository: &Repository) -> Confirmat
 
 /// the text and the pill a pool's card adds for its repository's token, or `None`
 /// where the card is as it was.
-pub fn pool_note(context: &Context<'_>, pool: &PoolInfo) -> Option<(String, Control)> {
-    let repository = repositories(context)
-        .into_iter()
+pub fn pool_note(
+    context: &Context<'_>,
+    repositories: &[Repository],
+    pool: &PoolInfo,
+) -> Option<(String, Control)> {
+    let repository = repositories
+        .iter()
         .find(|repository| repository.key == plain(&pool.repository))?;
     let key = repository.key.clone();
-    match state_of(context, &repository) {
+    match state_of(context, repository) {
         (TokenState::Set, _) => None,
         (TokenState::Rejected, text) => Some((
             text,

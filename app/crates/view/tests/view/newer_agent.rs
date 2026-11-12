@@ -3,7 +3,7 @@
 //! ignores what it does not know, shows an unknown runner state by the runner's reason
 //! and takes an unknown stop code for a stop that is not an error.
 
-use marshal_view::{Action, BannerKind, IconState, Mark, Tone};
+use marshal_view::{Action, BannerKind, Connection, IconState, Mark, Tone};
 
 use crate::support::*;
 
@@ -142,6 +142,27 @@ fn an_unknown_agent_state_is_named_and_nothing_is_offered() {
         );
     }
     assert!(menu_item(&view, &Action::Quit).available);
+}
+
+#[test]
+fn quitting_in_an_unknown_agent_state_asks_about_the_agent_it_still_reaches() {
+    let snapshot = load("unknown_agent_state");
+    let question = |connection| {
+        menu_item(&view_in(connection, Some(&snapshot)), &Action::Quit)
+            .confirmation
+            .clone()
+            .expect("a question")
+            .body
+    };
+    let connected = question(Connection::Connected);
+    assert_eq!(
+        connected,
+        "Its agent ends, and so do any runners it runs and any job running on them."
+    );
+    assert!(
+        question(Connection::NotAnswering).contains("any runners keep running"),
+        "an agent the app cannot reach is left as it is"
+    );
 }
 
 #[test]
