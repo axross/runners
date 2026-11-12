@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use marshal_cli::agent::{AgentOptions, Launch};
-use marshal_cli::token_store::{MemoryTokenStore, RepositoryKey, TokenStore};
+use marshal_cli::token_store::{MemoryTokenStore, TokenKey, TokenStore};
 
 use crate::support::{FAKE_DOCKER, NoLauncher, ONE_POOL, Scratch, run_session};
 
@@ -49,7 +49,7 @@ async fn a_token_entered_in_the_window_reaches_the_agents_store_and_nothing_else
         .expect("the agent stored the token");
 
     let stored = store
-        .get(&RepositoryKey::of("o", "r"))
+        .get(&TokenKey::of("o", "r"))
         .unwrap()
         .expect("the token reached the store");
     assert_eq!(

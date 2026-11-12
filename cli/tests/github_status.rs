@@ -20,7 +20,7 @@ use marshal_cli::github_status::collector::Collector;
 use marshal_cli::github_status::http::{Fetch, Get};
 use marshal_cli::runtime::fake::MemoryLog;
 use marshal_cli::runtime::secret::Secret;
-use marshal_cli::token_store::{MemoryTokenStore, RepositoryKey, TokenStore};
+use marshal_cli::token_store::{MemoryTokenStore, TokenKey, TokenStore};
 use tokio::sync::watch;
 use tokio::time::{Instant, sleep};
 
@@ -175,7 +175,7 @@ impl World {
         let store = Arc::new(MemoryTokenStore::default());
         store
             .set(
-                &RepositoryKey::parse("owner/app").unwrap(),
+                &TokenKey::parse("owner/app").unwrap(),
                 &Secret::new(TOKEN.to_string()),
             )
             .unwrap();
