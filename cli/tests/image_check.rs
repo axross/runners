@@ -55,7 +55,7 @@ fn plan(scratch: &TempDir) -> Plan {
     let mut plan = validate(config.as_bytes(), Profile::Axpc, None)
         .outcome
         .unwrap();
-    plan.entries[0].token_path = scratch.path().join("token").to_str().unwrap().to_string();
+    plan.entries[0].token_path = Some(scratch.path().join("token").to_str().unwrap().to_string());
     plan
 }
 

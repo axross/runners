@@ -5,6 +5,7 @@ use crate::profile::Profile;
 
 use super::fields::Errors;
 use super::plan::Entry;
+use super::problem::{Key, KeyPath, Kind};
 
 fn names_collide(first: &str, second: &str) -> bool {
     first == second || extends(first, second) || extends(second, first)
@@ -20,7 +21,7 @@ fn extends(name: &str, prefix: &str) -> bool {
 struct Keys<'a> {
     entry: &'a Entry,
     repository: String,
-    token_path: String,
+    token_path: Option<String>,
     /// the labels that are not platform labels of this entry's own OS, each with its
     /// ASCII lowercase form; two entries' lists compare only when their OS is the
     /// same.
@@ -33,7 +34,7 @@ impl<'a> Keys<'a> {
         Self {
             entry,
             repository: format!("{}/{}", entry.owner, entry.repository).to_ascii_lowercase(),
-            token_path: fold::folded(&entry.token_path),
+            token_path: entry.token_path.as_deref().map(fold::folded),
             routing_labels: entry
                 .labels
                 .iter()
@@ -54,19 +55,22 @@ pub fn check_entries(entries: &[Entry], profile: Profile, errors: &mut Errors) {
         .map(|entry| Keys::new(entry, profile))
         .collect();
     for (later, b) in keys.iter().enumerate().skip(1) {
+        let path = KeyPath::root().key(Key::Repositories).index(b.entry.index);
         for a in keys.iter().take(later) {
+            let other = a.entry.index;
             if names_collide(&a.entry.name, &b.entry.name) {
-                errors.add(format!(
-                    "{}.name: name '{}' collides with '{}' at {}; set a distinct name on one entry",
-                    b.entry.path, b.entry.name, a.entry.name, a.entry.path
-                ));
+                errors.add(
+                    path.key(Key::Name),
+                    Kind::NameCollision {
+                        name: b.entry.name.clone(),
+                        other_name: a.entry.name.clone(),
+                        other,
+                    },
+                );
             }
             if a.repository == b.repository {
                 if a.token_path != b.token_path {
-                    errors.add(format!(
-                        "{}.tokenPath: pools for the same repository must use the same token file as {}",
-                        b.entry.path, a.entry.path
-                    ));
+                    errors.add(path.key(Key::TokenPath), Kind::TokenFileDiffers { other });
                 }
                 let overlap: Vec<&str> = if a.entry.os == b.entry.os {
                     b.routing_labels
@@ -80,18 +84,27 @@ pub fn check_entries(entries: &[Entry], profile: Profile, errors: &mut Errors) {
                     Vec::new()
                 };
                 if !overlap.is_empty() {
-                    errors.add(format!(
-                        "{}.labels: ambiguous same-repository routing; labels '{}' also appear at {}",
-                        b.entry.path,
-                        overlap.join(", "),
-                        a.entry.path
-                    ));
+                    errors.add(
+                        path.key(Key::Labels),
+                        Kind::AmbiguousRouting {
+                            labels: overlap.join(", "),
+                            other,
+                        },
+                    );
                 }
-            } else if a.token_path == b.token_path {
-                errors.add(format!(
-                    "{}.tokenPath: token file '{}' is already used at {}; each repository needs its own token",
-                    b.entry.path, b.entry.token_path, a.entry.path
-                ));
+            } else if let Some(token_path) = b
+                .entry
+                .token_path
+                .as_ref()
+                .filter(|_| a.token_path == b.token_path)
+            {
+                errors.add(
+                    path.key(Key::TokenPath),
+                    Kind::TokenFileReused {
+                        token_path: token_path.clone(),
+                        other,
+                    },
+                );
             }
         }
     }

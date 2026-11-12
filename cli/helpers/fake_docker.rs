@@ -31,6 +31,9 @@
 //! with `FAKE_DOCKER_WATCH_PARENT` set, as the fake `tart` sets it when it runs this
 //! program for `tart exec`, it also ends when its parent process ends, so a test that
 //! kills the fake client leaves no command behind;
+//! a `hold` job container also prints each line appended to `run_says` while it
+//! stays, a `stdout<TAB>text` or `stderr<TAB>text` line naming the stream, as a
+//! runner prints its progress;
 //! a `longline` job container prints one line of [`LONG_LINE_BYTES`] bytes, the
 //! letters `a` to `z` in turn, then exits as an ordinary job does. every wait is
 //! bounded, so a test that fails does not leave the helper running.
@@ -513,7 +516,11 @@ fn job(dir: &Path, name: &str, diagnostic: bool) -> Result<u8, String> {
     let code = if text(dir, "run_mode").as_deref() == Some("hold") {
         let parent = parent_id();
         let watching = std::env::var_os("FAKE_DOCKER_WATCH_PARENT").is_some();
-        sleep_while(|| running(dir, name) && (!watching || parent_id() == parent));
+        let mut said = 0;
+        sleep_while(|| {
+            say_new_lines(dir, &mut said);
+            running(dir, name) && (!watching || parent_id() == parent)
+        });
         137
     } else {
         let exit = text(dir, "run_exit")
@@ -523,6 +530,20 @@ fn job(dir: &Path, name: &str, diagnostic: bool) -> Result<u8, String> {
         exit
     };
     Ok(code)
+}
+
+/// prints the lines of `run_says` after the first `said`, each on the stream it
+/// names, and counts them in `said`.
+fn say_new_lines(dir: &Path, said: &mut usize) {
+    let script = text(dir, "run_says").unwrap_or_default();
+    for line in script.lines().skip(*said) {
+        let _ = match line.split_once('\t') {
+            Some(("stderr", words)) => writeln!(std::io::stderr(), "{words}"),
+            Some((_, words)) => writeln!(std::io::stdout(), "{words}"),
+            None => Ok(()),
+        };
+        *said += 1;
+    }
 }
 
 /// the process that started this one, which changes to another when that one ends.

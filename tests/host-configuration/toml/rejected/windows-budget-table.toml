@@ -1,0 +1,13 @@
+schema_version = 1
+routing_label = "axpc"
+image_name = "example-image:tag"
+
+[budget]
+cpus = 4
+memory_gb = 16
+disk_gb = 100
+
+[[pool]]
+name = "alpha"
+repository = "octo/hello"
+runners = 1

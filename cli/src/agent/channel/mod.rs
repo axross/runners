@@ -21,13 +21,15 @@ use crate::instance::lock::InstanceLock;
 use crate::instance::roots::Roots;
 
 use super::api::Call;
-use super::server::{Counts, Limits, Shared, serve};
+use super::server::{Counts, Limits, Shared, Watchers, serve};
 use super::snapshot::Snapshot;
+use super::wire::{EndingNotice, UpdateEnding};
+use crate::github_status::GithubStatus;
 
 /// the bare stream to the agent, for the tests of the channel's limits.
 #[doc(hidden)]
 pub use client::platform::{Stream as RawStream, connect as connect_raw};
-pub use client::{CallError, Client, ConnectError, Push, Welcome, connect};
+pub use client::{CallError, Client, ConnectError, HANDSHAKE_TIMEOUT, Push, Welcome, connect};
 
 #[cfg(unix)]
 use unix::{Listener, split as platform_split};
@@ -37,9 +39,17 @@ use windows::{Listener, split as platform_split};
 /// the open channel; dropping it closes it at once.
 pub struct AgentChannel {
     accepting: JoinHandle<()>,
-    ending: watch::Sender<Option<String>>,
+    ending: watch::Sender<Option<EndingNotice>>,
     counts: Arc<Counts>,
     address: String,
+    github: Option<GithubFeed>,
+}
+
+/// what the collector of GitHub status needs from the channel: where it publishes
+/// the `github` topic's value, and whether a renewed subscription wants it.
+pub struct GithubFeed {
+    pub published: watch::Sender<Arc<GithubStatus>>,
+    pub active: watch::Receiver<bool>,
 }
 
 impl Drop for AgentChannel {
@@ -90,9 +100,13 @@ impl AgentChannel {
         let address = listener.address();
         let (ending, ending_receiver) = watch::channel(None);
         let counts = Arc::new(Counts::default());
+        let (published, github) = watch::channel(Arc::new(GithubStatus::default()));
+        let (watchers, active) = Watchers::new();
         let shared = Arc::new(Shared {
             calls,
             snapshots,
+            github,
+            watchers,
             ending: ending_receiver,
             limits,
             counts: Arc::clone(&counts),
@@ -104,7 +118,13 @@ impl AgentChannel {
             ending,
             counts,
             address,
+            github: Some(GithubFeed { published, active }),
         })
+    }
+
+    /// the feed of GitHub status, once.
+    pub fn github_feed(&mut self) -> Option<GithubFeed> {
+        self.github.take()
     }
 
     /// where clients reach the channel.
@@ -113,12 +133,16 @@ impl AgentChannel {
         &self.address
     }
 
-    /// tells every connection the agent is ending for `reason`, stops accepting, and
+    /// tells every connection the agent is ending for `reason`, with `update` when it
+    /// ends for an update, stops accepting, and
     /// waits up to `within` for the connections to end, so the message reaches a
     /// client that reads; a connection that has not ended then is dropped, so a
     /// client that never reads cannot hold the agent.
-    pub async fn close(mut self, reason: &str, within: Duration) {
-        self.ending.send_replace(Some(reason.to_string()));
+    pub async fn close(mut self, reason: &str, update: Option<UpdateEnding>, within: Duration) {
+        self.ending.send_replace(Some(EndingNotice {
+            reason: reason.to_string(),
+            update,
+        }));
         let deadline = tokio::time::Instant::now() + within;
         while self.counts.all() > 0 && tokio::time::Instant::now() < deadline {
             tokio::time::sleep(Duration::from_millis(10)).await;

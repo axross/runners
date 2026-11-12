@@ -71,6 +71,8 @@ reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
 serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
 keyring-core = { version = "1.0.1", default-features = false }
+toml_edit = { version = "0.25.18", default-features = false, features = ["parse", "display"] }
+toml_parser = { version = "1.1.5", default-features = false, features = ["std"] }
 
 # the instance lock and control channel are named pipes on Windows: interprocess
 # owns the pipe calls, winsafe reads the current user's SID, and win32job puts
@@ -85,6 +87,11 @@ win32job = { version = "2.0.3", default-features = false }
 # name. tokio already depends on libc, so this adds no crate.
 [target.'cfg(unix)'.dependencies]
 libc = { version = "0.2.191", default-features = false }
+
+# the GitHub status tests run the collector on tokio's paused clock, so its
+# intervals and back-offs pass without waiting; no crate is added.
+[dev-dependencies]
+tokio = { version = "1.54.1", default-features = false, features = ["test-util"] }
 
 [lints.rust]
 unsafe_code = "forbid"

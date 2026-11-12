@@ -18,6 +18,11 @@ pub const GUEST_USER: &str = "admin";
 /// `docker run` and the JIT configuration on standard input.
 pub const LAUNCHER_PATH: &str = "/usr/local/bin/marshal-launch";
 
+/// the id of the `docker` group, which owns the socket the runner container mounts:
+/// the golden VM creates the group with it, and the runner image's `docker` group
+/// has it, the one its `runner` user is in. a test holds the Dockerfile to it.
+pub const DOCKER_GROUP_ID: u32 = 123;
+
 /// where Docker publishes the key that signs its apt repository.
 pub const DOCKER_KEY_URL: &str = "https://download.docker.com/linux/ubuntu/gpg";
 
