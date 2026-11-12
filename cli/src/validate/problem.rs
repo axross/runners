@@ -36,11 +36,12 @@ pub enum Key {
     StartAtLogin,
     StartRunnersOnLaunch,
     KeepAwake,
+    StopOnNetworkChange,
     ResumeAfterStop,
 }
 
 impl Key {
-    pub const ALL: [Self; 26] = [
+    pub const ALL: [Self; 27] = [
         Self::ImageName,
         Self::Repositories,
         Self::Budget,
@@ -66,6 +67,7 @@ impl Key {
         Self::StartAtLogin,
         Self::StartRunnersOnLaunch,
         Self::KeepAwake,
+        Self::StopOnNetworkChange,
         Self::ResumeAfterStop,
     ];
 
@@ -80,6 +82,7 @@ impl Key {
                 | Self::StartAtLogin
                 | Self::StartRunnersOnLaunch
                 | Self::KeepAwake
+                | Self::StopOnNetworkChange
                 | Self::ResumeAfterStop
         )
     }

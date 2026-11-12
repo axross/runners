@@ -345,7 +345,11 @@ mod tests {
             field_names::<settings::LifecycleFields>(),
             union(
                 &["keepAwake", "resumeAfterStop"],
-                &["startAtLogin", "startRunnersOnLaunch"]
+                &[
+                    "startAtLogin",
+                    "startRunnersOnLaunch",
+                    "stopOnNetworkChange"
+                ]
             )
         );
         assert_eq!(

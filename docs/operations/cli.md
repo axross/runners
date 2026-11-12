@@ -368,8 +368,9 @@ changes:
 - **No token key.** The file holds no token and no token path, so `token_path` is an
   undefined key. A pool's token is not a configuration setting, and the token-file
   rules of the JSON profiles do not apply to TOML.
-- **`[lifecycle]`** holds four optional booleans, `start_at_login`,
-  `start_runners_on_launch`, `keep_awake`, and `resume_after_stop`. Any other key in
+- **`[lifecycle]`** holds five optional booleans, `start_at_login`,
+  `start_runners_on_launch`, `keep_awake`, `stop_on_network_change`, and
+  `resume_after_stop`. Any other key in
   it is a problem, and an absent key means "not set". The rule set checks and keeps
   the values, and nothing acts on them yet: W3 on Windows and M4 on macOS decide
   what "not set" means and act on the rest.

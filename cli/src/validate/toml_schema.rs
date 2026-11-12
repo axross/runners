@@ -77,10 +77,11 @@ const BUDGET: [Member; 3] = [
     member(Key::DiskGb, Child::Leaf),
 ];
 
-const LIFECYCLE: [Member; 4] = [
+const LIFECYCLE: [Member; 5] = [
     member(Key::StartAtLogin, Child::Leaf),
     member(Key::StartRunnersOnLaunch, Child::Leaf),
     member(Key::KeepAwake, Child::Leaf),
+    member(Key::StopOnNetworkChange, Child::Leaf),
     member(Key::ResumeAfterStop, Child::Leaf),
 ];
 
@@ -144,6 +145,7 @@ pub(crate) fn key_name(key: Key) -> &'static str {
         Key::StartAtLogin => "start_at_login",
         Key::StartRunnersOnLaunch => "start_runners_on_launch",
         Key::KeepAwake => "keep_awake",
+        Key::StopOnNetworkChange => "stop_on_network_change",
         Key::ResumeAfterStop => "resume_after_stop",
     }
 }
