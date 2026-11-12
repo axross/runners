@@ -10,11 +10,12 @@ use super::Budget;
 /// how often a repository is checked at most, at the normal level.
 pub const NORMAL_INTERVAL: Duration = Duration::from_secs(15);
 
-/// the rate limit's window; a reset is never taken as further away than this.
-const HOUR_MS: u64 = 3_600_000;
-
 /// how often a repository is checked at most, once checks are slowed.
 pub const SLOWED_INTERVAL: Duration = Duration::from_secs(60);
+
+/// the rate limit's window, in seconds: no reset, `retry-after` or `x-poll-interval`
+/// counts for longer.
+pub const RATE_WINDOW_SECONDS: u64 = 3600;
 
 /// the agent's level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -82,7 +83,9 @@ impl Tracker {
             return;
         };
         // GitHub's window is an hour, so a later reset is held to an hour from now
-        let resets_at = reset.saturating_mul(1000).min(now.saturating_add(HOUR_MS));
+        let resets_at = reset
+            .saturating_mul(1000)
+            .min(now.saturating_add(RATE_WINDOW_SECONDS * 1000));
         match &mut self.window {
             Some(window) if resets_at > window.resets_at && now >= window.resets_at => {
                 *window = Window {

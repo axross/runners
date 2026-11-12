@@ -16,7 +16,7 @@ use crate::runtime::scrub::replace_secret;
 use crate::runtime::secret::Secret;
 
 use super::answer::{Answer, Cause, Next};
-use super::budget::RateHeaders;
+use super::budget::{RATE_WINDOW_SECONDS, RateHeaders};
 use super::clean;
 
 /// one display request.
@@ -125,14 +125,11 @@ fn message(body: &[u8], token: &Secret) -> Option<String> {
     })
 }
 
-/// a wait GitHub asks for, at most an hour, the rate limit's own window, so no
-/// header can stop collection for longer or overflow a deadline.
+/// a wait GitHub asks for, at most the rate limit's window, so no header can stop
+/// collection for longer or overflow a deadline.
 fn bounded_wait(seconds: u64) -> Duration {
-    Duration::from_secs(seconds.min(MAX_WAIT_SECONDS))
+    Duration::from_secs(seconds.min(RATE_WINDOW_SECONDS))
 }
-
-/// the longest wait a `retry-after` or `x-poll-interval` header sets.
-pub const MAX_WAIT_SECONDS: u64 = 3600;
 
 fn answer(status: u16, headers: &HeaderMap, body: Vec<u8>, token: &Secret) -> Answer {
     let fresh = status == 200;

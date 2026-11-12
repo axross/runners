@@ -864,7 +864,8 @@ is an operator rule and a review rule, not a check.
   rate-limit response means Actions: read is missing; Marshal hides job names for
   that repository rather than failing, and logs GitHub's message and its
   `X-Accepted-GitHub-Permissions` header.
-- An organisation pool's token is created by an owner of the organisation, has the
+- Organisation pools are planned (X2) and no release configures one yet. An
+  organisation pool's token is created by an owner of the organisation, has the
   organisation as its resource owner, and carries the organisation permission
   Self-hosted runners: Read and write. It carries no repository permission, and its
   repository access is public repositories only. One token serves one
