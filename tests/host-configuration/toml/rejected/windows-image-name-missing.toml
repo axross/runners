@@ -1,0 +1,7 @@
+schema_version = 1
+routing_label = "axpc"
+
+[[pool]]
+name = "alpha"
+repository = "octo/hello"
+runners = 1
