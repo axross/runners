@@ -79,7 +79,9 @@ fn apply_one(document: &mut DocumentMut, edit: &Edit) -> Result<Option<Marked>, 
 }
 
 /// a table found by its path, and whether it is written inline, where one line holds
-/// the whole of it.
+/// the whole of it: a path into an inline table written over several lines, which
+/// TOML 1.1 allows, is refused, since its members' comments sit where an edit would
+/// move them.
 struct Found<'a> {
     table: &'a mut dyn TableLike,
     inline: bool,
@@ -100,6 +102,13 @@ fn descend_from<'a>(
             let item = table
                 .get_mut(toml_key_name(*key))
                 .ok_or("a list on the way is missing")?;
+            let entry = item.as_array().and_then(|list| list.get(*index));
+            if entry
+                .and_then(TomlValue::as_inline_table)
+                .is_some_and(written_over_lines)
+            {
+                return Err(OVER_LINES);
+            }
             let (entry, entry_inline) =
                 entry_at(item, *index).ok_or("an entry on the way is missing")?;
             descend_from(entry, rest, inline || entry_inline)
@@ -108,6 +117,9 @@ fn descend_from<'a>(
             let item = table
                 .get_mut(toml_key_name(*key))
                 .ok_or("a table on the way is missing")?;
+            if item.as_inline_table().is_some_and(written_over_lines) {
+                return Err(OVER_LINES);
+            }
             let item_inline = item.is_inline_table();
             let next = item
                 .as_table_like_mut()
@@ -116,6 +128,15 @@ fn descend_from<'a>(
         }
         [Segment::Index(_), ..] => Err("a position has no key before it"),
     }
+}
+
+const OVER_LINES: Reason = "an inline table on the way is written over several lines";
+
+/// whether the inside of `table`, between its braces, spans more than one line.
+fn written_over_lines(table: &toml_edit::InlineTable) -> bool {
+    let mut inside = table.clone();
+    inside.decor_mut().clear();
+    inside.to_string().contains('\n')
 }
 
 fn entry_at(item: &mut Item, index: usize) -> Option<(&mut dyn TableLike, bool)> {
@@ -143,7 +164,10 @@ fn split_key(path: &KeyPath) -> Result<(&[Segment], &'static str), Reason> {
 /// value takes over the old one's decoration, which carries the comment on its line.
 fn set(root: &mut Table, path: &KeyPath, value: &Value) -> Result<(), Reason> {
     let (parent, name) = split_key(path)?;
-    let parent = descend(root, parent)?.table;
+    let Found {
+        table: parent,
+        inline,
+    } = descend(root, parent)?;
     let mut new = value.to_toml();
     match parent.get_mut(name) {
         Some(Item::Value(old)) => {
@@ -153,6 +177,19 @@ fn set(root: &mut Table, path: &KeyPath, value: &Value) -> Result<(), Reason> {
         }
         Some(_) => Err("it holds a table, not a value"),
         None => {
+            // in an inline table the space before the closing brace is the last
+            // member's suffix, so it moves to the new last member.
+            let closing = inline
+                .then(|| {
+                    let last = parent.iter_mut().last()?.1.as_value_mut()?;
+                    let suffix = last.decor().suffix().cloned()?;
+                    last.decor_mut().set_suffix("");
+                    Some(suffix)
+                })
+                .flatten();
+            if let Some(closing) = closing {
+                new.decor_mut().set_suffix(closing);
+            }
             parent.insert(name, Item::Value(new));
             Ok(())
         }

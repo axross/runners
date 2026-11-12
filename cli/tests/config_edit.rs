@@ -1111,6 +1111,58 @@ runners = 1
 }
 
 #[test]
+fn an_edit_inside_an_inline_table_written_over_several_lines_is_refused() {
+    let before = "\
+schema_version = 1
+routing_label = \"axpc\"
+image_name = \"i:1\"
+pool = [
+  {
+    name = \"alpha\", # the name
+    repository = \"octo/hello\", # the repo
+    cpus = 2, # two cpus
+    runners = 1, # one runner
+    volumes = [{ suffix = \"a\", mount_path = \"/a\" }],
+  },
+  { name = \"beta\", repository = \"octo/other\", runners = 1 },
+]
+";
+    let edit = |edit: Edit| rewrite(before.as_bytes(), Profile::Axpc, None, &[edit]);
+    for refused in [
+        set(pool(0, Key::Cpus), Value::Integer(3)),
+        set(pool(0, Key::MemoryGb), Value::Integer(4)),
+        Edit::Remove {
+            path: pool(0, Key::Cpus),
+        },
+        Edit::AddEntry {
+            array: volumes_of(0),
+            values: volume("b", "/b"),
+        },
+    ] {
+        let error = edit(refused.clone()).unwrap_err();
+        assert!(
+            matches!(&error, EditError::Inapplicable(reason) if reason.contains("several lines")),
+            "{refused:?}: {error:?}"
+        );
+    }
+    let changed =
+        String::from_utf8(edit(set(pool(1, Key::Cpus), Value::Integer(3))).unwrap()).unwrap();
+    assert_eq!(
+        changed,
+        before.replace("runners = 1 }", "runners = 1, cpus = 3 }")
+    );
+    let removed = String::from_utf8(
+        edit(Edit::RemoveEntry {
+            path: path(&[K(Key::Repositories), I(0)]),
+        })
+        .unwrap(),
+    )
+    .unwrap();
+    assert!(!removed.contains("alpha"), "{removed}");
+    assert!(removed.contains("{ name = \"beta\""), "{removed}");
+}
+
+#[test]
 fn an_entry_added_to_a_list_written_over_several_lines_goes_on_a_line_of_its_own() {
     let head = "\
 schema_version = 1
