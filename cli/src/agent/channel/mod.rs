@@ -23,6 +23,7 @@ use crate::instance::roots::Roots;
 use super::api::Call;
 use super::server::{Counts, Limits, Shared, serve};
 use super::snapshot::Snapshot;
+use super::wire::{EndingNotice, UpdateEnding};
 
 /// the bare stream to the agent, for the tests of the channel's limits.
 #[doc(hidden)]
@@ -37,7 +38,7 @@ use windows::{Listener, split as platform_split};
 /// the open channel; dropping it closes it at once.
 pub struct AgentChannel {
     accepting: JoinHandle<()>,
-    ending: watch::Sender<Option<String>>,
+    ending: watch::Sender<Option<EndingNotice>>,
     counts: Arc<Counts>,
     address: String,
 }
@@ -113,12 +114,16 @@ impl AgentChannel {
         &self.address
     }
 
-    /// tells every connection the agent is ending for `reason`, stops accepting, and
+    /// tells every connection the agent is ending for `reason`, with `update` when it
+    /// ends for an update, stops accepting, and
     /// waits up to `within` for the connections to end, so the message reaches a
     /// client that reads; a connection that has not ended then is dropped, so a
     /// client that never reads cannot hold the agent.
-    pub async fn close(mut self, reason: &str, within: Duration) {
-        self.ending.send_replace(Some(reason.to_string()));
+    pub async fn close(mut self, reason: &str, update: Option<UpdateEnding>, within: Duration) {
+        self.ending.send_replace(Some(EndingNotice {
+            reason: reason.to_string(),
+            update,
+        }));
         let deadline = tokio::time::Instant::now() + within;
         while self.counts.all() > 0 && tokio::time::Instant::now() < deadline {
             tokio::time::sleep(Duration::from_millis(10)).await;

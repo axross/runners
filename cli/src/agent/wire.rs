@@ -21,7 +21,7 @@ pub const MAX_CLIENT_MESSAGE_BYTES: usize = 16 * 1024;
 pub const MAX_AGENT_MESSAGE_BYTES: usize = 64 * 1024;
 
 /// the methods `welcome` lists.
-pub const METHODS: [&str; 8] = [
+pub const METHODS: [&str; 9] = [
     "status",
     "subscribe",
     "start_all",
@@ -30,7 +30,39 @@ pub const METHODS: [&str; 8] = [
     "quit",
     "token_set",
     "token_remove",
+    "drain_for_update",
 ];
+
+/// the `ending` reason of an agent that ends for an update.
+pub const ENDING_UPDATE: &str = "update";
+
+/// what `ending` adds when the agent ends for an update: the version it ends for, and
+/// whether the runners were stopped by you, which the app keeps across the update.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct UpdateEnding {
+    #[serde(default)]
+    pub version: String,
+    #[serde(default)]
+    pub stopped_by_you: bool,
+}
+
+impl UpdateEnding {
+    #[must_use]
+    pub fn new(version: &str, stopped_by_you: bool) -> Self {
+        Self {
+            version: version.to_string(),
+            stopped_by_you,
+        }
+    }
+}
+
+/// why the agent is about to end, as every connection is told.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EndingNotice {
+    pub reason: String,
+    pub update: Option<UpdateEnding>,
+}
 
 /// the only topic of version 2's first slice: the snapshot `status` returns.
 pub const TOPIC_STATE: &str = "state";
@@ -209,9 +241,12 @@ pub enum AgentMessage {
     Heartbeat {
         seq: u64,
     },
-    /// the agent is about to end; `reason` is an open set.
+    /// the agent is about to end; `reason` is an open set, and `update` is there when
+    /// it ends for an update.
     Ending {
         reason: String,
+        #[serde(default)]
+        update: Option<UpdateEnding>,
     },
 }
 
@@ -245,6 +280,8 @@ pub enum ServerMessage<'a> {
     },
     Ending {
         reason: &'a str,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        update: Option<&'a UpdateEnding>,
     },
 }
 
@@ -337,6 +374,39 @@ mod tests {
         assert_eq!(
             String::from_utf8(line.unwrap()).unwrap(),
             "{\"type\":\"response\",\"id\":4,\"error\":{\"code\":\"refused\",\"message\":\"no\"}}\n"
+        );
+    }
+
+    #[test]
+    fn an_ending_for_an_update_carries_its_field_and_another_does_not() {
+        let update = UpdateEnding::new("1.4.0", true);
+        let line = ServerMessage::Ending {
+            reason: ENDING_UPDATE,
+            update: Some(&update),
+        }
+        .line()
+        .unwrap();
+        assert_eq!(
+            String::from_utf8(line.clone()).unwrap(),
+            "{\"type\":\"ending\",\"reason\":\"update\",\"update\":{\"version\":\"1.4.0\",\"stopped_by_you\":true}}\n"
+        );
+        let read: AgentMessage = serde_json::from_slice(&line).unwrap();
+        assert_eq!(
+            read,
+            AgentMessage::Ending {
+                reason: "update".to_string(),
+                update: Some(update)
+            }
+        );
+        let quit = ServerMessage::Ending {
+            reason: "quit",
+            update: None,
+        }
+        .line()
+        .unwrap();
+        assert_eq!(
+            String::from_utf8(quit).unwrap(),
+            "{\"type\":\"ending\",\"reason\":\"quit\"}\n"
         );
     }
 

@@ -18,10 +18,10 @@ use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use tokio::time::{Instant, sleep_until, timeout};
 
-use super::api::{ApiResult, Call, Parsed, parse};
+use super::api::{ApiResult, Call, Method, Parsed, parse};
 use super::snapshot::Snapshot;
 use super::wire::{
-    AgentVersion, ClientMessage, ErrorBody, ErrorCode, MAX_AGENT_MESSAGE_BYTES,
+    AgentVersion, ClientMessage, EndingNotice, ErrorBody, ErrorCode, MAX_AGENT_MESSAGE_BYTES,
     MAX_CLIENT_MESSAGE_BYTES, METHODS, ServerMessage, TOPIC_STATE, TOPICS, VERSION,
 };
 
@@ -156,8 +156,8 @@ impl Counts {
 pub struct Shared {
     pub calls: mpsc::UnboundedSender<Call>,
     pub snapshots: watch::Receiver<Arc<Snapshot>>,
-    /// set to the reason when the agent is about to end.
-    pub ending: watch::Receiver<Option<String>>,
+    /// set when the agent is about to end.
+    pub ending: watch::Receiver<Option<EndingNotice>>,
     pub limits: Limits,
     pub counts: Arc<Counts>,
     pub agent_version: String,
@@ -310,10 +310,10 @@ async fn changed(subscription: &mut Option<Subscription>) {
 }
 
 /// the reason the agent is ending, once it is; never, when the agent drops it unset.
-async fn ending_reason(ending: &mut watch::Receiver<Option<String>>) -> String {
+async fn ending_reason(ending: &mut watch::Receiver<Option<EndingNotice>>) -> EndingNotice {
     loop {
-        if let Some(reason) = ending.borrow_and_update().clone() {
-            return reason;
+        if let Some(notice) = ending.borrow_and_update().clone() {
+            return notice;
         }
         if ending.changed().await.is_err() {
             pending::<()>().await;
@@ -356,10 +356,13 @@ where
             Ok(Some(Read::Line(line))) => line,
             _ => return,
         },
-        reason = ending_reason(&mut ending) => {
+        notice = ending_reason(&mut ending) => {
             write(
                 &mut writer,
-                &ServerMessage::Ending { reason: &reason },
+                &ServerMessage::Ending {
+                    reason: &notice.reason,
+                    update: notice.update.as_ref(),
+                },
                 limits.write,
                 Delivery::Final,
             )
@@ -418,6 +421,7 @@ where
         subscription: None,
         pending: None,
         last_received: Instant::now(),
+        drain_requests: Vec::new(),
     }
     .run()
     .await;
@@ -430,6 +434,9 @@ struct Session<'a, W: Abandon> {
     subscription: Option<Subscription>,
     pending: Pending,
     last_received: Instant,
+    /// dropped with the session, which tells the agent that the connection that asked
+    /// for a drain has closed.
+    drain_requests: Vec<oneshot::Sender<()>>,
 }
 
 impl<W: AsyncWrite + Abandon + Unpin> Session<'_, W> {
@@ -447,12 +454,15 @@ impl<W: AsyncWrite + Abandon + Unpin> Session<'_, W> {
         let limits = self.shared.limits;
         let mut ending = self.shared.ending.clone();
         loop {
-            let reason = ending.borrow_and_update().clone();
-            if let Some(reason) = reason {
+            let notice = ending.borrow_and_update().clone();
+            if let Some(notice) = notice {
                 self.answer_if_ready().await;
                 write(
                     &mut self.writer,
-                    &ServerMessage::Ending { reason: &reason },
+                    &ServerMessage::Ending {
+                        reason: &notice.reason,
+                        update: notice.update.as_ref(),
+                    },
                     limits.write,
                     Delivery::Final,
                 )
@@ -593,7 +603,13 @@ impl<W: AsyncWrite + Abandon + Unpin> Session<'_, W> {
                 self.schedule_event();
                 sent
             }
-            Ok(Parsed::Call(method)) => {
+            Ok(Parsed::Call(mut method)) => {
+                if let Method::DrainForUpdate { requester, .. } = &mut method {
+                    let (alive, closed) = oneshot::channel();
+                    self.drain_requests.retain(|sender| !sender.is_closed());
+                    self.drain_requests.push(alive);
+                    *requester = Some(closed);
+                }
                 let (reply, answer) = oneshot::channel();
                 if self.shared.calls.send(Call { method, reply }).is_err() {
                     let gone = Err(super::api::ApiError::new(

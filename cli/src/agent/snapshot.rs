@@ -66,6 +66,30 @@ pub struct AgentInfo {
     /// Unix epoch.
     #[serde(default)]
     pub restart_due: Option<u64>,
+    /// the drain for an update, while the agent drains; the agent's state stays
+    /// `running` meanwhile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update: Option<UpdateInfo>,
+}
+
+/// a drain for an update under way.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct UpdateInfo {
+    /// the version the agent drains for.
+    #[serde(default)]
+    pub version: String,
+    /// the runners the drain still waits for: those still running a container,
+    /// including an idle runner until its container has stopped.
+    #[serde(default)]
+    pub waiting: u32,
+    /// when the drain stops the remaining runners, in milliseconds since the Unix
+    /// epoch.
+    #[serde(default)]
+    pub deadline: u64,
+    /// the agent's process ID, which the app waits on.
+    #[serde(default)]
+    pub pid: u32,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
