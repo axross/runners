@@ -36,7 +36,14 @@ impl Tracker {
             .settled
             .observe(context.agent_runs(), context.up, now_ms);
         let view = build(&input.settled(settled));
-        let announced = self.announcer.update(&view, now_ms);
+        let mut announced = self.announcer.update(&view, now_ms);
+        if let Some(falls_at) = self.settled.falls_at_ms() {
+            announced.recheck_at_ms = Some(
+                announced
+                    .recheck_at_ms
+                    .map_or(falls_at, |due| due.min(falls_at)),
+            );
+        }
         Update { view, announced }
     }
 }

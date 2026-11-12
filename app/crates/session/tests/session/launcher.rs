@@ -24,6 +24,21 @@ fn a_missing_executable_is_never_started() {
 }
 
 #[test]
+fn an_executable_that_could_not_be_read_when_the_app_started_is_never_started() {
+    let directory = temp_dir("launcher-unread");
+    let path = directory.join("marshal-app");
+    let (launcher, _) = launcher(&path);
+    // a file appears at the path only after the app started
+    fs::write(&path, b"later").unwrap();
+    let error = launcher.start_agent(Launch::Running).unwrap_err();
+    assert!(
+        error.contains("could not be read when the app started"),
+        "{error}"
+    );
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn an_executable_deleted_after_the_app_started_is_never_started() {
     let directory = temp_dir("launcher-deleted");
     let path = directory.join("marshal-app");

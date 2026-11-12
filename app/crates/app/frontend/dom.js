@@ -1,6 +1,6 @@
 // builds elements from fixed structure and sets every text from the view as text: no
-// markup is ever parsed, and an attribute that could load, run or style anything is
-// refused.
+// markup is ever parsed, and the attributes `style`, `href`, `src`, `srcdoc`, `action`,
+// `formaction` and any `on*` handler are refused.
 
 const FORBIDDEN = /^(style|href|src|srcdoc|action|formaction|on.*)$/i;
 

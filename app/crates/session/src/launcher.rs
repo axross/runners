@@ -64,8 +64,8 @@ impl OwnExecutable {
         self
     }
 
-    /// whether the file is still the one the app started from; a missing or changed file
-    /// is never started.
+    /// whether the file is still the one the app started from; a missing or changed file,
+    /// or one the app could not read when it started, is never started.
     fn check(&self) -> Result<(), String> {
         let word = |what: &str| format!("the executable {} {what}", self.path.display());
         match &self.started_from {
@@ -74,7 +74,7 @@ impl OwnExecutable {
                 Look::Replaced => Err(word("has changed since the app started")),
                 Look::Unreadable => Err(word("cannot be read")),
             },
-            None if self.path.is_file() => Ok(()),
+            None if self.path.is_file() => Err(word("could not be read when the app started")),
             None => Err(word("is missing")),
         }
     }

@@ -44,6 +44,20 @@ impl Settled {
             .max()
             .unwrap_or(up)
     }
+
+    /// when the count shown can next fall, while it is above the latest count; `None`
+    /// once it shows the latest.
+    #[must_use]
+    pub fn falls_at_ms(&self) -> Option<u64> {
+        let latest = self.changes.last()?.1;
+        let shown = self.changes.iter().map(|(_, count)| *count).max()?;
+        if shown <= latest {
+            return None;
+        }
+        self.changes
+            .get(1)
+            .map(|(at, _)| at.saturating_add(FALL_DELAY_MS))
+    }
 }
 
 #[cfg(test)]
