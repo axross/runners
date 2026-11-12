@@ -42,16 +42,19 @@ impl Host {
     }
 
     /// [`Host::path`] followed by this process's own `PATH`, so the fake can run `ps`
-    /// to record its process group. A test that expects Softnet to be missing uses
-    /// [`Host::path`], so a `softnet` installed on the machine is never found.
+    /// to record its process group. A directory of that `PATH` holding a `softnet` is
+    /// left out, so a test that removes the fake never finds one installed on the
+    /// machine. A test that expects Softnet to be missing from the start uses
+    /// [`Host::path`].
     pub fn path_with_system(&self, names: &[&str]) -> OsString {
         let mut directories: Vec<PathBuf> = names
             .iter()
             .map(|name| self.root.path().join(name))
             .collect();
-        directories.extend(std::env::split_paths(
-            &std::env::var_os("PATH").unwrap_or_default(),
-        ));
+        directories.extend(
+            std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
+                .filter(|directory| !directory.join("softnet").exists()),
+        );
         std::env::join_paths(directories).unwrap()
     }
 

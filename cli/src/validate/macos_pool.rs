@@ -1,13 +1,13 @@
 //! the fields of an axmc pool with `os: "macos"`: the defaults that make `slots`,
-//! `cpus`, `memoryGb` and `diskGb` optional, the minimums the golden macOS VM
-//! needs, and the refusal of diagnostics; see `docs/operations/cli.md`. a value
-//! below its minimum is recorded as an error but still read, so the pool takes part
-//! in the cross-entry and budget checks.
+//! `cpus`, `memoryGb` and `diskGb` optional, and the minimums the golden macOS VM
+//! needs; see `docs/operations/cli.md`. a value below its minimum is recorded as an
+//! error but still read, so the pool takes part in the cross-entry and budget checks.
 
 use crate::json::Value;
 
 use super::fields::{Errors, Field};
 use super::limits::{self, MAX_DISK_GB, MAX_MEMORY_GB, MAX_SLOTS, MAX_VM_CPUS};
+use super::problem::{Key, KeyPath, Kind};
 
 pub const DEFAULT_SLOTS: u32 = 1;
 pub const DEFAULT_CPUS: u32 = 4;
@@ -19,43 +19,54 @@ pub const MIN_DISK_GB: u32 = 50;
 
 /// reads `slots`: absent is [`DEFAULT_SLOTS`], and a `null` is a type error, as it
 /// is for `cpus`.
-pub(super) fn read_slots(slots: &Field, path: &str, errors: &mut Errors) -> Option<u32> {
+pub(super) fn read_slots(slots: &Field, path: &KeyPath, errors: &mut Errors) -> Option<u32> {
     let Some(value) = slots.get() else {
         return Some(DEFAULT_SLOTS);
     };
-    limits::read_bounded_integer(value, &format!("{path}.slots"), MAX_SLOTS, errors)
+    limits::read_bounded_integer(value, &path.key(Key::Slots), MAX_SLOTS, errors)
 }
 
 /// reads `cpus`: absent is [`DEFAULT_CPUS`]; a VM has whole vCPUs, as on every
 /// axmc pool, and a count below [`MIN_CPUS`] is an error.
-pub(super) fn read_cpus(cpus: &Field, path: &str, errors: &mut Errors) -> Option<f64> {
-    let field = format!("{path}.cpus");
+pub(super) fn read_cpus(cpus: &Field, path: &KeyPath, errors: &mut Errors) -> Option<f64> {
     let Some(value) = cpus.get() else {
         return Some(f64::from(DEFAULT_CPUS));
     };
-    let cpus = read_at_least(value, &field, MAX_VM_CPUS, MIN_CPUS, "", errors)?;
+    let cpus = read_at_least(
+        value,
+        &path.key(Key::Cpus),
+        MAX_VM_CPUS,
+        MIN_CPUS,
+        "",
+        errors,
+    )?;
     Some(f64::from(cpus))
 }
 
 /// reads `memoryGb`: absent is [`DEFAULT_MEMORY_GB`].
-pub(super) fn read_memory(memory_gb: &Field, path: &str, errors: &mut Errors) -> Option<u32> {
-    let field = format!("{path}.memoryGb");
+pub(super) fn read_memory(memory_gb: &Field, path: &KeyPath, errors: &mut Errors) -> Option<u32> {
     let Some(value) = memory_gb.get() else {
         return Some(DEFAULT_MEMORY_GB);
     };
-    read_at_least(value, &field, MAX_MEMORY_GB, MIN_MEMORY_GB, "", errors)
+    read_at_least(
+        value,
+        &path.key(Key::MemoryGb),
+        MAX_MEMORY_GB,
+        MIN_MEMORY_GB,
+        "",
+        errors,
+    )
 }
 
 /// reads `diskGb`: absent is [`DEFAULT_DISK_GB`], and the golden macOS VM's disk is
 /// the least a pool can ask for.
-pub(super) fn read_disk(disk_gb: &Field, path: &str, errors: &mut Errors) -> Option<u32> {
-    let field = format!("{path}.diskGb");
+pub(super) fn read_disk(disk_gb: &Field, path: &KeyPath, errors: &mut Errors) -> Option<u32> {
     let Some(value) = disk_gb.get() else {
         return Some(DEFAULT_DISK_GB);
     };
     read_at_least(
         value,
-        &field,
+        &path.key(Key::DiskGb),
         MAX_DISK_GB,
         MIN_DISK_GB,
         ", the golden macOS VM's disk size",
@@ -63,27 +74,17 @@ pub(super) fn read_disk(disk_gb: &Field, path: &str, errors: &mut Errors) -> Opt
     )
 }
 
-/// records that diagnostics are refused; the caller calls it only for a pool that
-/// enables them.
-pub(super) fn refuse_diagnostics(path: &str, errors: &mut Errors) {
-    errors.add(format!(
-        "{path}.diagnostics: not supported on a macOS pool, because macOS VM pools have no diagnostics"
-    ));
-}
-
 fn read_at_least(
     value: &Value,
-    field: &str,
+    field: &KeyPath,
     max: u32,
     min: u32,
-    reason: &str,
+    reason: &'static str,
     errors: &mut Errors,
 ) -> Option<u32> {
     let integer = limits::read_bounded_integer(value, field, max, errors)?;
     if integer < min {
-        errors.add(format!(
-            "{field}: must be at least {min} on a macOS pool{reason}"
-        ));
+        errors.add(field.clone(), Kind::MacosBelowMinimum { min, reason });
     }
     Some(integer)
 }
@@ -91,18 +92,21 @@ fn read_at_least(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::profile::Profile;
+    use crate::validate::json_reader::JsonReader;
 
     fn field(text: &str) -> Field {
         Field::Value(crate::json::parse(text.as_bytes()).unwrap())
     }
 
     fn read<T>(
-        reader: fn(&Field, &str, &mut Errors) -> Option<T>,
+        reader: fn(&Field, &KeyPath, &mut Errors) -> Option<T>,
         field: &Field,
     ) -> (Option<T>, Vec<String>) {
         let mut errors = Errors::default();
-        let read = reader(field, "repositories[2]", &mut errors);
-        (read, errors.into_vec())
+        let path = KeyPath::root().key(Key::Repositories).index(2);
+        let read = reader(field, &path, &mut errors);
+        (read, errors.render(&JsonReader::new(Profile::Axmc)))
     }
 
     #[test]

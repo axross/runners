@@ -56,7 +56,9 @@ container, runner, and cache-volume namespace.
 **Routing Label** - the label a workflow uses in `runs-on` to select an
 **Execution Pool**. Missing or empty host `labels` default to the host's own
 label, `axpc` or `axmc`; a non-empty list supplies that pool's routing labels
-instead.
+instead. In a TOML host configuration the required `routing_label` key supplies
+the default, so no host's label is built in. See
+[operations/cli.md](./operations/cli.md#schema-version-1).
 
 **Custom Label** - an optional runner label an entry of the **Host Configuration**
 lists beside `self-hosted`, `linux`, and `x64`. A workflow
@@ -175,6 +177,13 @@ of the **Golden VM**, named `marshal-job-<pool>-<slot>-<time>`, booted on
 **Softnet** with no shared directory, clipboard, audio, USB accessories or Rosetta,
 and deleted when its job ends. A **Slot**'s Job VM is booted and idle while its
 runner waits for a job. See [conventions/security.md](./conventions/security.md#a-linux-job-on-axmc-runs-in-a-per-job-vm).
+
+**VM-Local Docker Socket** - the Docker socket, `/var/run/docker.sock`, of the Docker
+Engine inside a **Job VM**, which the VM runtime mounts into that VM's runner
+container from **Image Contract Version** 2, so a job step can run `docker`. It
+belongs to a VM that one job uses and that is deleted afterwards, never to a host,
+and the Docker runtime on axpc mounts no socket. See
+[conventions/security.md](./conventions/security.md#the-vm-local-docker-socket).
 
 **Build VM** - the temporary VM, named `marshal-build-linux-<time>`, in which
 `build --profile axmc` makes a new **Golden VM**. It is renamed to the golden name

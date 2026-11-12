@@ -18,6 +18,7 @@ use super::backend::{
     HostPreparation, HostRequest, JobHost, PoolContainers, StopRequest,
 };
 use super::clock::Clock;
+use super::job_marks::{Activity, JobMarks};
 use super::log::{Log, Masks};
 use super::registration::{JitRequest, Registrar, RegistrationError};
 use super::retained::Retained;
@@ -131,6 +132,15 @@ pub struct FakeState {
     /// every `run_container` waits until a stop, a kill or a removal is asked for,
     /// of any container.
     pub hold_runs: bool,
+    /// with `hold_runs`, a held run ends only on a stop, kill or removal that names
+    /// its container or names none, as one job that ends while others run.
+    pub hold_runs_by_name: bool,
+    /// the containers a stop, kill or removal named while `hold_runs_by_name` is set;
+    /// an empty entry stands for a call that named none.
+    pub ended_names: Vec<String>,
+    /// the marks each job container's output has made, as [`FakeBackend::print`]
+    /// records them.
+    pub marks: std::collections::BTreeMap<String, JobMarks>,
     /// the host calls, in order.
     pub host_calls: Vec<HostCall>,
     /// the answers to `prepare_job_host`; when they run out, every host is ready.
@@ -173,6 +183,41 @@ impl FakeBackend {
     #[must_use]
     pub fn calls(&self) -> Vec<Call> {
         self.state.borrow().calls.clone()
+    }
+
+    /// records `line` as printed by the job container `name`.
+    pub fn print(&self, name: &str, line: &str) {
+        let mut state = self.state.borrow_mut();
+        let marks = state.marks.entry(name.to_string()).or_default();
+        *marks = marks.observe(line);
+    }
+
+    /// notes the containers a stop, kill or removal named, and ends the held runs
+    /// it ends.
+    fn end_runs(&self, names: &[String]) {
+        {
+            let mut state = self.state.borrow_mut();
+            if state.hold_runs_by_name {
+                if names.is_empty() {
+                    state.ended_names.push(String::new());
+                } else {
+                    state.ended_names.extend(names.iter().cloned());
+                }
+            }
+        }
+        self.ended.notify_waiters();
+    }
+
+    /// whether a held run of `name` that began when `ended_names` held `since`
+    /// entries has been ended since.
+    fn run_ended(&self, name: &str, since: usize) -> bool {
+        let state = self.state.borrow();
+        !state.hold_runs_by_name
+            || state
+                .ended_names
+                .iter()
+                .skip(since)
+                .any(|ended| ended.is_empty() || ended == name)
     }
 }
 
@@ -287,7 +332,7 @@ impl Backend for FakeBackend {
         _budget: Duration,
     ) -> Result<(), BackendError> {
         self.timeline.push("remove");
-        self.ended.notify_waiters();
+        self.end_runs(names);
         let mut state = self.state.borrow_mut();
         state.calls.push(Call::RemoveContainers(names.to_vec()));
         if let Some(error) = state.remove_error.clone() {
@@ -352,7 +397,13 @@ impl Backend for FakeBackend {
             state.hold_runs
         };
         if hold {
-            self.ended.notified().await;
+            let since = self.state.borrow().ended_names.len();
+            loop {
+                self.ended.notified().await;
+                if self.run_ended(&spec.name, since) {
+                    break;
+                }
+            }
         }
         let mut state = self.state.borrow_mut();
         match state.exits.pop_front() {
@@ -370,6 +421,14 @@ impl Backend for FakeBackend {
         self.state.borrow().running.clone()
     }
 
+    fn job_activity(&self, container: &str) -> Activity {
+        self.state
+            .borrow()
+            .marks
+            .get(container)
+            .map_or(Activity::Unknown, |marks| marks.activity())
+    }
+
     async fn stop_containers(&self, request: &StopRequest) -> Result<(), BackendError> {
         self.timeline.push("stop");
         let hangs = {
@@ -380,7 +439,7 @@ impl Backend for FakeBackend {
         if hangs {
             std::future::pending::<()>().await;
         }
-        self.ended.notify_waiters();
+        self.end_runs(&request.names);
         let mut state = self.state.borrow_mut();
         if let Some(error) = state.stop_error.clone() {
             return Err(error);
@@ -394,7 +453,7 @@ impl Backend for FakeBackend {
         names: &[String],
         _budget: Duration,
     ) -> Result<(), BackendError> {
-        self.ended.notify_waiters();
+        self.end_runs(names);
         let mut state = self.state.borrow_mut();
         state.calls.push(Call::KillContainers(names.to_vec()));
         state.kill_error.clone().map_or(Ok(()), Err)

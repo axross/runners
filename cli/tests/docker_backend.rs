@@ -18,6 +18,7 @@ use marshal_cli::runtime::backend::{
 use marshal_cli::runtime::board::Board;
 use marshal_cli::runtime::docker::DockerLimits;
 use marshal_cli::runtime::fake::FakeRegistrar;
+use marshal_cli::runtime::job_marks::Activity;
 use marshal_cli::runtime::log::Log;
 use marshal_cli::runtime::pool::pools_from_plan;
 use marshal_cli::runtime::secret::Secret;
@@ -323,6 +324,17 @@ async fn the_jit_configuration_reaches_only_the_run_client_through_its_environme
             assert!(!argument.contains("ghp_exampletoken"));
         }
     }
+    for invocation in &invocations {
+        assert!(
+            invocation.arguments.iter().all(|argument| {
+                !argument.contains("docker.sock")
+                    && !argument.contains("type=bind")
+                    && argument != "--privileged"
+            }),
+            "the Docker runtime mounts no socket: {:?}",
+            invocation.arguments
+        );
+    }
     let seen = registrar.seen.borrow();
     assert_eq!(
         seen[0].token, "ghp_exampletoken",
@@ -483,6 +495,54 @@ async fn container_output_is_forwarded_and_a_stop_is_one_call_with_the_grace() {
             .iter()
             .all(|call| call.jit.is_none())
     );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_runners_output_marks_it_idle_then_busy_on_either_stream_until_its_run_ends() {
+    let fake = Fake::new();
+    fake.script("run_mode", "hold");
+    let spec = spec("marks-1-20240305060708009");
+    let jit = Secret::new("jit".to_string());
+    let held = fake.backend.run_container(&spec, &jit);
+    let activity = || fake.backend.job_activity(&spec.name);
+    let until = |wanted: Activity| async move {
+        let started = Instant::now();
+        while activity() != wanted {
+            assert!(
+                started.elapsed() < Duration::from_secs(20),
+                "never read {wanted:?}"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    };
+    let listening = "stdout\t2026-11-12 08:00:01Z: Listening for Jobs";
+    let observe = async {
+        let started = Instant::now();
+        while !fake.containers().contains(&spec.name) {
+            assert!(started.elapsed() < Duration::from_secs(20));
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        // the runner's own start lines carry neither mark
+        assert_eq!(activity(), Activity::Unknown);
+        fake.script("run_says", listening);
+        until(Activity::Idle).await;
+        fake.script(
+            "run_says",
+            &format!("{listening}\nstderr\t2026-11-12 08:03:00Z: Running job: build"),
+        );
+        until(Activity::Busy).await;
+        fake.backend
+            .stop_containers(&StopRequest {
+                names: vec![spec.name.clone()],
+                grace: Duration::from_secs(15),
+                budget: Duration::from_secs(20),
+            })
+            .await
+            .unwrap();
+    };
+    let (code, ()) = tokio::join!(held, observe);
+    assert_eq!(code.unwrap(), 137);
+    assert_eq!(activity(), Activity::Unknown, "the marks outlived the run");
 }
 
 #[tokio::test(flavor = "current_thread")]

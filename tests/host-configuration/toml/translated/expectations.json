@@ -1,0 +1,34 @@
+{
+  "rust/rejected/axmc-os-missing.json": {
+    "outcome": "accept",
+    "problems": [],
+    "reason": "os may be left out in TOML, and a pool without it is a Linux pool"
+  },
+  "rust/rejected/axpc-axmc-only-fields.json": {
+    "outcome": "reject",
+    "problems": ["budget: unknown key", "pool[0].disk_gb: unknown key"],
+    "reason": "os is a key a Windows pool defines in TOML, where linux is accepted, so only budget and disk_gb are undefined"
+  },
+  "shared/rejected/field-name-case.json": {
+    "outcome": "reject",
+    "problems": [
+      "ImageName: unknown key",
+      "image_name: required key is missing",
+      "pool[0].Owner: unknown key",
+      "pool[0].Slots: unknown key",
+      "pool[0].repository: must be \"owner/name\"",
+      "pool[0].runners: required key is missing"
+    ],
+    "reason": "TOML keys match in exact case, so a key in the wrong case is unknown and the key it stands for is missing as well"
+  },
+  "shared/rejected/missing-owner.json": {
+    "outcome": "reject",
+    "problems": ["pool[0].repository: must be \"owner/name\""],
+    "reason": "the owner is part of repository in TOML, so a missing owner is reported on repository"
+  },
+  "shared/rejected/missing-volumes.json": {
+    "outcome": "accept",
+    "problems": [],
+    "reason": "volumes may be left out in TOML, and a pool without it has none"
+  }
+}

@@ -1,10 +1,11 @@
 # CLI
 
 The Rust command line tool under [`cli/`](../../cli): what `validate` accepts and
-prints, the rules it applies, the shared fixtures its tests read, the runtime layer
-that runs a host's pools (the container backend and the Tart VM backend, JIT
-registration, CPU placement, and the slot loop, and on the Mac the host
-prerequisites and the sleep and network signals), the instance layer that keeps
+prints, the rules it applies, the shared fixtures its tests read, the TOML
+configuration format with its conversion from JSON and its comment-preserving write
+path, the runtime layer that runs a host's pools (the container backend and the Tart
+VM backend, JIT registration, CPU placement, and the slot loop, and on the Mac the
+host prerequisites and the sleep and network signals), the instance layer that keeps
 `start` to one instance per machine (the instance state, the single-instance lock,
 and the control channel), the resident agent that takes the instance's place and its
 protocol version 2 (the state it keeps, the token store, the messages, and the
@@ -61,14 +62,15 @@ path from being read whole. It is a rule of the CLI, pinned by
 The uniqueness checks compare every pair of entries, so their time grows with the
 square of the number of entries, and it grows with the labels per entry too. On a
 release build in a 4-CPU cloud container, 8,000 entries (about 0.8 MB) in distinct
-repositories take about 0.6 s when nothing collides, and 8,000 entries in one
-repository with a distinct label each take about 0.9 s. With many labels per entry it takes
+repositories take about 1 s when nothing collides, and 8,000 entries in one
+repository with a distinct label each take about 1.1 s. With many labels per entry it takes
 longer: 1,500 entries in one repository with 50 labels each take about 3 s. Colliding
 entries grow the error output with the square too, because every error is reported:
 8,000 entries in one repository with the default labels print about 32 million error
-lines and use about 9 GB of memory, and several collisions per pair or shorter entries
-(the 1 MiB limit fits about 11,900) give more. The 1 MiB limit bounds both. Real
-configurations are expected to have about ten entries.
+lines and use about 8.4 GB of memory, and several collisions per pair or shorter entries
+(the 1 MiB limit fits about 11,900) give more. The 1 MiB limit bounds both. A TOML
+pool is shorter than a JSON entry, so the limit admits more of them; TOML Problems
+gives the figures. Real configurations are expected to have about ten entries.
 
 Known limitation: when `validate` cannot write its output, for example a closed
 pipe, it exits 1, the same code as a rejected configuration. The behaviour is
@@ -201,6 +203,9 @@ Tests](#fixtures-and-tests) says how they are read. `validate` is a pure functio
 from the file's bytes and a profile to a plan or an ordered list of errors, and it
 records every error it finds rather than stopping at the first.
 
+These rules read a JSON file. [The TOML Configuration](#the-toml-configuration)
+applies the same rules to a second format and says what differs.
+
 ### Error Order
 
 A missing file prints `Host configuration file not found: <path>`, another file
@@ -307,6 +312,360 @@ test named under Running It.
 | U+017F against `s` or `S`, U+0345 against U+03B9 or U+0399, U+1E9B against U+1E61 or U+1E60                                                                                                                                                                                 | Equal under simple case folding                                    |
 | The Kelvin sign U+212A against `k` or `K`                                                                                                                                                                                                                                   | Equal under simple case folding                                    |
 
+## The TOML Configuration
+
+A host configuration can also be written as TOML, schema version 1. The library
+reads that format with the same rules as JSON, converts a JSON configuration to it,
+and changes an existing file while keeping its comments. No command reads, converts,
+or writes TOML yet: `validate`, `build`, `start`, and the rest take JSON through
+`--config`, as Running It describes, and only the tests call the functions below.
+The agent's use of the format, which includes the migration that calls the
+conversion, lands in the second pull request of issue
+[#77](https://github.com/axross/runners/issues/77) and is documented with it. The
+roadmap issue [#72](https://github.com/axross/runners/issues/72) names the later
+consumers of the schema: W3 and M4 for `[lifecycle]`, and K3, X1, X2, and M2 for the
+rest.
+
+### Schema Version 1
+
+The file is UTF-8 TOML. Keys are lower-case snake_case and case-sensitive. A key the
+schema does not define for the host, a duplicated key, and a value of the wrong type
+are problems at every level. A date or time is a wrong type, because no key holds
+one. Any TOML form that gives the same tree reads the same: dotted keys, inline
+tables, an inline array of tables, and hexadecimal integers.
+
+| Top-level key    | Type                                    | Rule                                                                                                                                                                                                                                                  |
+| ---------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema_version` | integer                                 | Required, and MUST be `1`.                                                                                                                                                                                                                            |
+| `routing_label`  | string                                  | Required, with no default. A pool that lists no labels carries it beside the platform labels, and a `labels` list replaces it. It follows the label pattern and is none of the platform labels of any host, and Labels applies to it as to a default. |
+| `image_name`     | string                                  | Windows: required. macOS: optional, as `imageName` is on axmc.                                                                                                                                                                                        |
+| `[budget]`       | table of `cpus`, `memory_gb`, `disk_gb` | macOS: required, under today's `budget` rules. Windows: an undefined key.                                                                                                                                                                             |
+| `[lifecycle]`    | table                                   | Optional. Four optional booleans, below.                                                                                                                                                                                                              |
+| `[[pool]]`       | array of tables                         | At least one. Each table is one entry of today's `repositories`.                                                                                                                                                                                      |
+
+| `[[pool]]` key           | Type                                | Renames                          | Rule                                                                                                                                                            |
+| ------------------------ | ----------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`                   | string                              | `name`                           | Required.                                                                                                                                                       |
+| `repository`             | string                              | `owner` and `repository`         | Required, `"owner/name"`. Anything that is not one owner, a slash, and one name is `must be "owner/name"`; each part then follows the owner or repository rule. |
+| `runners`                | integer                             | `slots`                          | Required on a Linux pool. Optional on a macOS pool, with the JSON key's default.                                                                                |
+| `labels`                 | array of strings                    | `labels`                         | Optional. Absent or empty gives the platform labels plus `routing_label`.                                                                                       |
+| `os`                     | `"linux"`, `"macos"`                | `os`                             | Optional on both hosts, and a pool without it is a Linux pool. Windows accepts `"linux"`, which changes nothing, and rejects `"macos"`.                         |
+| `cpus`                   | number                              | `cpus`                           | Optional, with the JSON key's default and range.                                                                                                                |
+| `memory_gb`              | integer                             | `memoryGb`                       | Optional, with the JSON key's default and range.                                                                                                                |
+| `disk_gb`                | integer                             | `diskGb`                         | macOS: required on a Linux pool and optional on a macOS pool, as `diskGb` is. Windows: an undefined key.                                                        |
+| `diagnostics`            | boolean                             | `diagnostics`                    | Optional, false by default.                                                                                                                                     |
+| `diagnostic_directory`   | string                              | `diagnosticDirectory`            | Required with `diagnostics`, invalid without it, under the checkout rule.                                                                                       |
+| `diagnostic_raw_records` | boolean                             | `diagnosticRawRecords`           | Optional, false by default, invalid when true without `diagnostics`.                                                                                            |
+| `[[pool.volumes]]`       | tables of `suffix` and `mount_path` | `volumes`, `suffix`, `mountPath` | Windows: optional, and a pool without them has none. macOS: rejected.                                                                                           |
+
+Every key follows the rule of the JSON key it renames on the host's profile:
+whether it is required, its default, and its range. The shared rule set applies
+those rules to both formats, so a later change to a profile's rules reaches TOML
+too. [`hosts/windows-docker-desktop/README.md`](../../hosts/windows-docker-desktop/README.md)
+describes what each Windows field means. The table lists only what TOML adds or
+changes:
+
+- **`os` and `volumes` may be omitted.** JSON requires `os` on axmc and `volumes` on
+  axpc. A TOML pool without them is a Linux pool without volumes.
+- **One `repository` key.** The owner is part of it, so a missing owner is a problem
+  on `repository`.
+- **No token key.** The file holds no token and no token path, so `token_path` is an
+  undefined key. A pool's token is not a configuration setting, and the token-file
+  rules of the JSON profiles do not apply to TOML.
+- **`[lifecycle]`** holds four optional booleans, `start_at_login`,
+  `start_runners_on_launch`, `keep_awake`, and `resume_after_stop`. Any other key in
+  it is a problem, and an absent key means "not set". The rule set checks and keeps
+  the values, and nothing acts on them yet: W3 on Windows and M4 on macOS decide
+  what "not set" means and act on the rest.
+- **Encoding and size.** A leading byte-order mark is ignored and moves no position.
+  A file larger than 1 MiB (1048576 bytes) is refused before it is parsed, and a file
+  that is not UTF-8 is refused before TOML sees it. The file may be exactly 1 MiB.
+
+### Extending the Schema
+
+Adding an optional key, or making a required key optional, keeps
+`schema_version = 1`. An older program reports such a key as undefined, or its
+absence as missing. Who may make a change without an answer from K1:
+
+- W3 and M4 add keys to `[lifecycle]`. X1, X2, and K3 add them to a pool or at the
+  top level. Each does it in its own pull request, and adds the key to this chapter.
+- M1 and M3 change a profile's rules under their approved plans: a range, a default,
+  whether a key is required, or an allowed value. Through the shared rule set the
+  change applies to both formats and keeps version 1. Any other change of that kind
+  needs the maintainer's approval, as a deviation request on the roadmap.
+
+Removing a key, changing its meaning, or adding a required key raises
+`schema_version`, and needs the maintainer's approval as a deviation request on the
+roadmap. The agent that introduces the new version migrates an older file when it
+starts. A program that finds a higher `schema_version` than it knows reports that a
+newer Marshal wrote the file, and no other problem.
+
+### TOML Problems
+
+`validate_toml` records every problem it finds, in the order below, except when the
+bytes are not a TOML document: a file over the size limit, one that is not UTF-8, and
+a syntax error are each the only problem. Their forms are:
+
+| Problem                         | Form                                                                       |
+| ------------------------------- | -------------------------------------------------------------------------- |
+| Any rule                        | `line <n>: <key path>: <problem>`                                          |
+| A syntax error                  | `line <n>, column <c>: syntax error: <the parser's fixed message>`         |
+| A syntax error with no position | `syntax error: <the parser's fixed message>`                               |
+| A file that is not UTF-8        | `line <n>, column <c>: the file is not valid UTF-8`, at the first bad byte |
+| A file over 1 MiB               | `line 1: the file is larger than 1048576 bytes (1 MiB)`                    |
+
+Columns count characters from 1, and a CRLF file gives the same problems at the same
+lines and columns as its LF copy, a syntax error at the end of a line included. A
+syntax error names its line and column. `toml_edit` gives no position for a key of
+more than 80 dotted parts, in a table header or before a value, so the reader finds
+the first such key with `toml_parser`'s events and names where that key starts. A
+syntax error that is still without a position names none, because a false position
+would be worse.
+
+A TOML pool can be shorter than a JSON entry, so the 1 MiB limit admits more of them.
+About 20,200 pools of only `name`, `repository`, and `runners`, with the shortest
+distinct values, fit beside the three header keys, and `validate_toml` takes about
+4.8 s on them on a release build in a 4-CPU cloud container when none collide.
+Colliding pools cost far more, because every problem is reported: 6,000 pools in one
+repository (about 0.29 MB) take about 11 s and 4.4 GB of memory, and about 21,600 of
+them, the most that fit, abort with a failed memory allocation under an 8 GiB
+address-space limit. As for JSON, the 1 MiB limit is the only bound.
+
+**Order.** The order is the one under Error Order, with the TOML key names:
+
+1. `schema_version`. A version above 1 is `this file was written by a newer Marshal`
+   and is the only problem. A missing one is `required key is missing`, and any other
+   value is `must be the integer 1`.
+2. The root's unknown keys, in document order. Every table starts with its own
+   unknown keys the same way.
+3. `routing_label`, `image_name`, and on macOS `budget` and its members.
+4. `[lifecycle]`.
+5. `pool` itself: missing, not an array of tables, or empty.
+6. Each pool in file order, all of one pool's problems before the next pool's, in the
+   order of the JSON keys they rename, after the pool's own unknown keys:
+   `repository`, `os`, `labels`, `volumes`, `runners`, `name`, `cpus`, `memory_gb`,
+   on macOS `disk_gb`, then `diagnostics` and `diagnostic_raw_records` when they are
+   not booleans, `diagnostic_directory`, and last `diagnostic_raw_records` when it
+   requires `diagnostics`.
+7. The checks across pools, for each pool after the first against each pool before
+   it: a colliding `name`, then an ambiguous routing label. Then on macOS the budget
+   totals.
+
+**Key paths and lines.** A key path is in TOML form, such as `pool[1].runners` or
+`pool[0].volumes[2].mount_path`, with pools and volumes counted from 0, as the JSON
+paths are. A problem names the line where the file holds its value. Three kinds have
+no value to point at:
+
+- A missing key names the line where its table starts: a `[[pool]]` or
+  `[[pool.volumes]]` header, `[budget]`, or line 1 for the top level.
+- A clash between pools, a name or a routing label, names the line where the later
+  pool starts.
+- A budget total names the line where `[budget]` starts, which is its first dotted key
+  when the table is written that way.
+
+**Wording.** A problem keeps the meaning it has under JSON and is worded in the
+file's own names: TOML keys such as `runners`, `memory_gb`, `disk_gb`, and `pool`,
+and Windows or macOS where JSON names a profile. A list is an array of tables or
+labels, an object is a table, a field is a key, and `pool[0]` replaces
+`repositories[0]`:
+
+| JSON                                                                | TOML                                                                          |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `repositories[0].slots: required field is missing`                  | `line 5: pool[0].runners: required key is missing`                            |
+| `repositories[0].Owner: unknown field`                              | `line 7: pool[0].Owner: unknown key`                                          |
+| `repositories[0].volumes: not supported on axmc, because …`         | `line 15: pool[0].volumes: not supported on macOS, because …`                 |
+| `budget: macOS pools total 3 VMs (the sum of their slots), above …` | `line 4: budget: macOS pools total 3 VMs (the sum of their runners), above …` |
+
+JSON problems, their text, and their fixtures are unchanged. The TOML problems are
+new and are pinned by their own fixtures, under Fixtures and Tests.
+
+**Syntax and type problems quote nothing.** A syntax error and a wrong-type problem carry only the
+key path, the line, the column, and fixed text, so a token pasted into the file by
+mistake is not repeated. The syntax error is built from the parser's message, which
+is fixed text, and its byte span when it has one, from which the line and the column
+are counted. It never uses the parser's own display text, which quotes the source line. Two kinds of
+problem still show something the file holds: an unknown key is named as it is
+written, which is how it is found, and a rule that compares a value names it, such as
+a duplicate label, a platform label, a name that collides, or a suffix. A token in a
+value of the wrong type, or on a line of its own, appears in no problem, and
+`a_token_pasted_anywhere_in_a_document_is_echoed_only_as_an_unknown_key` in
+`cli/tests/toml_fixtures.rs` pins that for a token inserted at every position of a
+valid document.
+
+### One Rule Set, Two Readers
+
+A JSON reader and a TOML reader produce the same tree of values, and one rule set in
+`cli/src/validate/` checks both:
+
+```text
+JSON bytes --JSON reader--+
+                          +--> value tree --one rule set--> plan or problems
+TOML bytes --TOML reader--+
+```
+
+The rule set records a problem as data: its key path as segments (a key, or a
+position in a list), a kind with its values, and the location the reader gave the
+key. Each reader renders the problem. The JSON reader renders today's path form and
+words, byte for byte, which the shared fixtures pin. The TOML reader renders the form
+and words above. What differs by format is what the reader supplies, through the
+`Reader` trait:
+
+- its `Format`, which fixes the rules that change together by format. `Format::Json`
+  carries the profile's routing label: the file carries no settings, and a pool names
+  its owner and repository as two keys and its token file, whose rules apply, and
+  leaves out neither `os` nor `volumes` where its host has them. `Format::Toml` reads
+  `schema_version`, `routing_label` and `[lifecycle]` from the file: a pool names
+  `owner/name` in one key, has no token file, and may omit `os` and `volumes`, which
+  gives a Linux pool without volumes, so a Windows pool also has an `os`;
+- the path form of a pool, which a plan entry also records as its source path;
+- which keys the format leaves undefined for the host, and where the file holds a key;
+- how a problem reads. A rule that reads the same in both formats, apart from the
+  host's name, the key names and a pool's path, is worded once in `rule_text`, which
+  hands each reader the rest to word itself as a value it matches in full.
+
+`validate` is the JSON entry point and `validate_toml(bytes, host, checkout)` the TOML
+one. Both return a `Validation` with the same two outcomes: a `Plan`, or a `Failure`
+that is either `Unreadable`, one line for bytes that are not a document, or `Invalid`,
+the ordered problems. A plan from TOML carries `settings`: the schema version, the
+routing label, and the four lifecycle values, each `Some` when the file sets it. Its
+entries have no token path. A plan from JSON has no `settings`, and its entries keep
+theirs. The `host` is a profile, and it selects the rules: Windows applies axpc's, and
+macOS applies axmc's.
+
+### Converting a JSON Configuration
+
+`convert_to_toml(json, host, source, checkout, clock)` in `cli/src/convert.rs` turns
+the bytes of a JSON configuration into the text of an equivalent TOML document, and
+checks that text before it returns it. It reads and writes no file: the caller
+writes the text. The agent's migration, which does, lands in the second pull request
+of issue #77.
+
+1. It validates the JSON under the host's JSON rules, which still require `tokenPath`.
+   A rejected file is `SourceRejected`.
+2. It writes the document, by structure. It sets `schema_version = 1`, and
+   `routing_label` to the host's former label, `axpc` or `axmc`. It renames the keys,
+   joins `owner` and `repository`, and leaves out `tokenPath`. It writes each key the
+   JSON file set and no other, so a pool without `labels` still gets the routing label
+   by default. It writes no `[lifecycle]`.
+3. It validates the document with the full TOML rules under the same checkout. A
+   document that fails is `DocumentRejected`.
+4. It compares the document's plan with the JSON file's, and a difference is
+   `NotEquivalent`, naming the key or the pool.
+
+It returns the text only when both checks pass. A failure carries the reasons and no
+document, so a document that failed its check cannot be written. The comparison,
+`first_difference(original, converted)`, accepts a difference only in the source
+path, in `tokenPath`, and in an `os` that TOML defaults to Linux where an axpc file
+had none. It also requires the converted settings to be version 1, the host's routing
+label, and an empty lifecycle.
+
+The document opens with `# Converted from <file name> by Marshal at <time>.`, where
+the name is the last part of `source` under either separator, never its path, with a
+control character replaced by `?`, and the time is the UTC time of the `clock` the
+caller passes. Lines end in CRLF for axpc and LF for axmc, whatever machine runs the
+conversion.
+
+### Changing the File
+
+`cli/src/edit/` changes an existing `config.toml` and keeps what the change leaves
+alone. Nothing calls it yet: W3 and K3 will, and the tests exercise it.
+
+`edit_config(path, host, checkout, edits)` reads the file, applies the edits in
+order, each against the document the ones before it left, and replaces the file with
+the result. `ConfigFile::read` and `ConfigFile::edit` are the same in two steps, and
+`rewrite` does the work on bytes without touching a file. An edit is one of:
+
+- `Set`, a value at a key path: a boolean, an integer, a float, a string, or an array
+  of strings such as `labels`. It replaces a value, or adds the key to a table that
+  exists.
+- `Remove`, a value. One that is not there stays absent.
+- `CreateTable`, a table such as `[lifecycle]`. One that exists stays as it is.
+- `AddEntry`, an entry of an array of tables such as `pool` or a pool's `volumes`,
+  with its values. The array is created when it is missing.
+- `RemoveEntry`, an entry of such an array.
+
+A key path names keys from the root and a position for an entry, so `pool[1].labels`
+is `Repositories`, `Index(1)`, `Labels`.
+
+**What it keeps.** Everything the edits do not change survives: comments, key order,
+blank lines, and how the other values are written, including dotted keys and inline
+tables and arrays.
+
+- A changed value takes over its old value's decoration, so a comment on its line
+  stays. A removed value takes only its own lines, with any comment inside a value
+  written over several lines, and a comment above it stays.
+- A removed pool or volume takes its keys, a pool's volumes, and the comment lines
+  directly above its header. When a blank line or the end of the file follows it, the
+  blank lines above it go too. A comment set apart from the header by a blank line
+  stays. In a list written inline, a removed entry takes the comment after it on its
+  line and the comment lines directly above it; the other entries keep theirs, and
+  so does a comment set apart from it by a blank line.
+- An added entry goes after the last entry of its array, with a blank line before it.
+  A comment that ends the file stays at its end. In a list written inline over
+  several lines, an added entry goes on a line of its own after the last entry, with
+  that entry's indentation, and the comment on the last entry's line stays there.
+  An entry added to an empty inline list goes straight after its `[`.
+- A new root table goes before the first `[[pool]]`, so a new `[lifecycle]` reads
+  before the pools. When the file writes its pools inline, it goes at the end of the
+  file.
+- The parser reads LF and drops a byte-order mark, so the write path notes the file's
+  mark and line ending before it parses, and writes the whole result with them. A file
+  with mixed endings is written with its more common one, LF when the two are equally
+  common. A last line that was not ended stays so. Lines it adds use the file's
+  ending.
+
+**Checks.** Before it writes, `rewrite` checks the result with `validate_toml` for the
+host. Then, just before the replacement, the write path reads the file again and
+compares it with the bytes it started from. This narrows, but cannot close, the
+window in which an editor's save could be overwritten. An edit that changes nothing
+writes nothing, so the file keeps its identity and its bytes, even when it had mixed
+line endings.
+
+**Errors.** `EditError` says which check stopped the write, and the file keeps its
+bytes in each case:
+
+- `Changed`: the file no longer holds the bytes the edit was made from, or is gone.
+- `Invalid`: the result breaks the TOML rules, with the problems. A source that is
+  not a TOML document, is not UTF-8, or is over 1 MiB is reported the same way, with
+  the one problem `validate_toml` gives it, and so is a source that is valid TOML but
+  breaks the rules and stays broken. Removing every pool is invalid.
+- `Io`: the file could not be read, the new one could not be written, or it could not
+  be put in place, for example because an editor holds the file open on Windows. It
+  carries the path, which of the three failed, and the kind of error, and no file text.
+- `Inapplicable`: the edit names a place the document lacks or of another kind, such as
+  a table on the way that is missing, a `Set` on a key that holds a table, or an entry
+  that does not exist, which is a mistake of the caller. It carries no file text, only
+  the edit and the reason. Two refusals come from the file instead, and only the user
+  can change it: a file that already holds the text the write path uses to mark a
+  removal, and an edit inside an inline table written over several lines, which TOML
+  1.1 allows, since its members' comments sit where the edit would move them. A caller
+  shows these as a file to rewrite, for example that table on one line or as a
+  `[table]`, not as its own error. Removing such a table from its list, or adding one,
+  is not refused.
+
+**One step.** The write path creates `config.toml.<32 lower-case hexadecimal digits>.tmp`
+in the same folder, with a name that does not exist yet and, on Unix, mode 0600. It
+writes the result and flushes the file to disk, compares the original again, and
+renames the temporary file over `config.toml`. A reader therefore sees the old file or
+the new one, never part of one.
+
+- A temporary file that is not renamed is removed, whatever stopped the write. If the
+  operating system refuses the rename, nothing else changes.
+- On Unix the new file takes the old file's mode.
+- The rename replaces a symlinked `config.toml` with a regular file, and leaves the
+  link's target as it was. The new file holds the target's contents and mode.
+- The write path does not flush the folder after the rename. The data is flushed
+  before it, so a crash right after a write can leave the old file in place, but not
+  a partial one.
+- On Windows no mode is copied: the new file has the access its folder gives a new
+  file.
+
+`remove_leftover_temporary_files(folder)` removes what an interrupted write left. It
+removes only regular files named exactly `config.toml.<32 lower-case hexadecimal
+digits>.tmp`, so `config.toml.old.tmp`, a link, and a folder stay. It cannot tell a
+leftover from the temporary file of a write in progress, so a process calls it once,
+when it starts and before anything writes. Nothing calls it yet either.
+
 ## The Runtime Layer
 
 The library holds the code that runs a host's pools: the container backend, JIT
@@ -334,6 +693,7 @@ layer, and the tests also drive it through its seams.
 | `runtime::name`                                          | Runner and container names, and the test for a pool's own                                                    |
 | `runtime::pool`                                          | Pools from a plan, and their preparation                                                                     |
 | `runtime::worker`                                        | The slot loop and its backoff                                                                                |
+| `runtime::job_marks`                                     | What a runner's output says about its job, idle, busy or unknown, which a drain reads                        |
 | `runtime::retained`                                      | The diagnostic containers the backend retains, their records, and who finalises each                         |
 | `runtime::diagnostic`                                    | Finalising diagnostic containers at job end, in the container steps, and at startup                          |
 | `diagnostics`, `diagnostics::exporter`                   | The exporter child and the lines and exit codes it answers with                                              |
@@ -437,8 +797,10 @@ caller inherits Docker's default of 10 s.
 
 The launcher is the guard script followed by `exec "$@"`. It reads
 `Cpus_allowed_list` from `/proc/self/status` and exits 125 unless it equals the set
-the container was given. A job container has no network option, `--privileged`,
-socket mount, or `--user`, and an ordinary one has no label. The JIT variable is
+the container was given. The Docker runtime's job container has no network option,
+`--privileged`, socket mount, or `--user`, and an ordinary one has no label. The VM
+runtime's has the same list and one more option, a bind mount of the job VM's own
+Docker socket, as [Tart Backend](#tart-backend) describes. The JIT variable is
 passed to the one `docker run` client that starts the container, in that client's
 environment, and is removed from every other client's.
 
@@ -621,9 +983,11 @@ container cover all of them and its memory limit equals the VM's.
 
 **The job container.** `run_container` runs
 `tart exec -i <vm> /usr/local/bin/marshal-launch <docker run arguments>` where the
-arguments are the container backend's own `docker run` list: `--pull never`, the
-name, quota, affinity and memory options, and `-e ACTIONS_RUNNER_INPUT_JITCONFIG`
-with no value. The JIT configuration is written to the client's standard input and
+arguments are `docker_args::vm_job_run_arguments`, the container backend's own
+`docker run` list with the VM's Docker socket added: `--pull never`, the
+name, quota, affinity and memory options,
+`--mount type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock`, and
+`-e ACTIONS_RUNNER_INPUT_JITCONFIG` with no value. The JIT configuration is written to the client's standard input and
 the pipe is closed. It is in no argument list, in no environment variable of `tart`,
 and in no log line. The launcher reads it from standard input, exports it, and
 `exec`s `docker`. Standard output and error are forwarded to the log line by line
@@ -632,6 +996,19 @@ and masked, as for the container backend. A volume is refused in a VM
 one on axmc. The text a guest command returns to the backend is cut at 64 KiB; the
 one exception is the diagnostics archive, which the Diagnostics paragraph below
 streams through the strict archive reader and the bundle limits instead.
+
+**The VM-local socket.** From image contract 2, the runner container mounts the Docker
+socket of the VM it runs in, so a job step can run `docker` against that VM's own
+Docker Engine. The socket belongs to a VM that one job uses and that is deleted
+afterwards, and never to a host. The Docker runtime's list, `job_run_arguments`,
+mounts none, and `vm_job_run_arguments` adds the mount to it and to nothing else:
+the CPU probe and the volume commands still carry no socket mount. Tests in
+`docker_backend.rs`, `tart_backend.rs` and `runtime::docker_args` hold both sides.
+The socket's group is the VM's `docker` group, which the golden VM creates with
+`golden::pins::DOCKER_GROUP_ID` and which the runner image's `docker` group matches;
+[Golden VM Provisioning](#golden-vm-provisioning) says where each build checks it,
+and [Security](../conventions/security.md#the-vm-local-docker-socket) says why the
+match needs no `--group-add`.
 
 **Which user runs it.** `tart exec` reaches the guest agent,
 [cirruslabs/tart-guest-agent](https://github.com/cirruslabs/tart-guest-agent) at
@@ -741,8 +1118,8 @@ it, and a test shows the lock free while a shim lives.
   standard error and then its standard output, to its own standard output, and exits
   with Tart's code, or 128 plus the signal number when a signal ended it. It deletes
   nothing, because the CLI is still there and deletes the VM itself: a job VM when its
-  slot releases it, and a build VM when the build fails (one that shut down cleanly is
-  renamed to the golden name instead). A VM the CLI could not delete is left to the next
+  slot releases it, and a build VM when the build fails (one that stopped after a
+  successful build is renamed to the golden name instead). A VM the CLI could not delete is left to the next
   `start`, for a job VM, or the next `build`, for a build VM.
 - When the pipe closes, the shim stops the VM (`stop --timeout 5` within 8 s, then
   `stop --timeout 0` within 3 s when that fails), deletes it within 4 s, and exits 0.
@@ -852,8 +1229,9 @@ The `golden` module holds what `build --profile axmc` uses to provision the
 golden VM; [The Golden VM Build](#the-golden-vm-build) sequences it. `golden::pins` records the base image by its
 digest (`ghcr.io/cirruslabs/ubuntu`, tag `24.04`, arm64), the list of retired base
 pins, Docker's apt repository and signing-key fingerprint, the four Docker Engine
-packages at their pinned versions (Compose is not installed), and the launcher's
-path in the VM, `/usr/local/bin/marshal-launch`. A change to the base digest, the
+packages at their pinned versions (Compose is not installed), the id of the `docker`
+group (`DOCKER_GROUP_ID`, 123), and the launcher's path in the VM,
+`/usr/local/bin/marshal-launch`. A change to the base digest, the
 provisioning scripts, the launcher or the Docker Engine versions raises
 `GOLDEN_VM_VERSION`, and a change of the base digest also adds the old one to the
 retired list. A test asserts the current base is a digest reference and is not on
@@ -865,8 +1243,9 @@ input it takes, from scripts embedded in the binary. The calls run in this order
 1. upgrade the Ubuntu packages and install `ca-certificates`, `curl` and `gnupg`;
 2. download Docker's key to `/etc/apt/keyrings/docker.asc`;
 3. list the key with `gpg --show-keys --with-colons`;
-4. install the apt source and the four packages at their pinned versions, hold
-   them, and add `admin` to the `docker` group (`install-docker.sh`);
+4. install the apt source, create the `docker` group with the id `DOCKER_GROUP_ID` and
+   refuse a group that has another, install the four packages at their pinned versions, hold
+   them, and add `admin` to the group (`install-docker.sh`);
 5. install the launcher, owned by root, mode 0755;
 6. lock the `admin` password and mask `ssh.service` and `ssh.socket`.
 
@@ -881,6 +1260,14 @@ The launcher reads the JIT configuration from standard input to its end, sets
 then `exec`s with its own arguments, and refuses an empty input or one over 64 KiB
 with exit code 64, without printing the input. The Tart backend calls it as
 `tart exec -i <vm> /usr/local/bin/marshal-launch <docker run arguments>`.
+
+The runner image's Dockerfile installs `docker-ce-cli` at the version pinned here,
+from the same repository, after the same key's fingerprint matches, and asserts that
+its `docker` group has the id `DOCKER_GROUP_ID`; a unit test in `image::contract` holds the
+Dockerfile and the smoke test to `golden::pins`: the `docker-ce-cli` pin, the key's
+fingerprint and URL, the repository's URI and suite, and the group id. So the image's
+client, key and group id cannot differ from the golden VM's `docker-ce-cli` pin, key and
+group id.
 
 `golden::steps::build_vm_docker_command` is the prefix the build uses to run `docker`
 in the build VM, `sudo -n docker`, because the `docker` group applies only from the
@@ -987,7 +1374,7 @@ describes.
 `docker_backend.rs` runs the real backend against the `fake-docker` helper, a
 program built by Cargo because Windows finds only `.exe` commands. It checks the
 example configuration's argument lists, the JIT variable reaching only the `run`
-client and no argument, the process groups, the probe limits, the stale cleanup and
+client and no argument, that no client is given a socket mount, the process groups, the probe limits, the stale cleanup and
 the wait for Docker. `registration.rs` runs the client against a loopback stub for
 the request, the error text, a redirect, a stalled response and an oversize
 response. `slot_worker.rs`, `pool_preparation.rs` and `cpu_affinity.rs` use the
@@ -1008,13 +1395,17 @@ against the fake `tart` and `fake-softnet`. `golden_provisioning.rs` runs the go
 VM's guest calls against the fake `tart` in their order, with a key of another
 fingerprint stopping them before anything is installed, and `golden_launcher.rs` runs
 the launcher as a shell script against a stand-in `docker` (Unix only).
+`golden_install_docker.rs` runs the install-docker script as a real shell script
+against stand-in system tools (Unix only): a missing `docker` group is created with
+`DOCKER_GROUP_ID`, a group with that id is accepted with or without members, and a group
+with another id is refused before apt runs.
 `tart_backend.rs` runs the
 [Tart Backend](#tart-backend) against the fake `tart`, which forwards a guest
 command to `fake-docker` as the launcher would, and `fake-softnet`, through the rig
 in `tests/support/rig.rs`: availability and the golden VM check, the cleanup of
 leftovers, each step of a slot's cycle and its failures, the boot failure text, the
 probes, the JIT configuration reaching the guest on standard input alone, the run
-arguments, bounded and masked output, the stop and release within their budgets,
+arguments and the VM's one socket mount, bounded and masked output, the stop and release within their budgets,
 and a release run twice at once. `tart_diagnostics.rs` and `axmc_diagnostics.rs` run the
 diagnostic VM cases listed under [Diagnostics](#diagnostics). `vm_shim.rs` runs the VM shim as a real process,
 for a job VM and for a build VM, and `tart_slot.rs` runs the slot loop on the
@@ -1510,22 +1901,25 @@ The agent is `running`, `resuming`, `stopping`, `stopped`, `building`, or
 transition is answered at once, never queued behind it. It starts `running` or
 `stopped` as the caller asks.
 
-| Method         | Answer                                                                                                                                                                    |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `status`       | The snapshot, in any state                                                                                                                                                |
-| `start_all`    | Stopped: reads the configuration again and checks the image, then answers `resuming`, or `stopped` with the reason it could not. Running: the state it is in              |
-| `stop_all`     | Running: runs the stop sequence (the same grace, budget and exit deadline of 28 s as `stop`) and answers `stopped` when it is done. Stopped: `stopped`                    |
-| `build`        | Stopped: answers `building` with the start time once the build began, and the snapshot tells the rest. Running: `refused`. A configuration that cannot be used: `refused` |
-| `quit`         | Runs the stop sequence if runners run, cancels a build, answers `quitting`, and ends the agent; the lock is free within a second of the answer                            |
-| `token_set`    | Stores the repository's token in any state                                                                                                                                |
-| `token_remove` | Removes it in any state                                                                                                                                                   |
+| Method             | Answer                                                                                                                                                                    |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `status`           | The snapshot, in any state                                                                                                                                                |
+| `start_all`        | Stopped: reads the configuration again and checks the image, then answers `resuming`, or `stopped` with the reason it could not. Running: the state it is in              |
+| `stop_all`         | Running: runs the stop sequence (the same grace, budget and exit deadline of 28 s as `stop`) and answers `stopped` when it is done. Stopped: `stopped`                    |
+| `build`            | Stopped: answers `building` with the start time once the build began, and the snapshot tells the rest. Running: `refused`. A configuration that cannot be used: `refused` |
+| `quit`             | Runs the stop sequence if runners run, cancels a build, answers `quitting`, and ends the agent; the lock is free within a second of the answer                            |
+| `token_set`        | Stores the repository's token in any state                                                                                                                                |
+| `token_remove`     | Removes it in any state                                                                                                                                                   |
+| `drain_for_update` | See [The Update Drain](#the-update-drain)                                                                                                                                 |
 
 A request that arrives while the agent is `resuming`, `stopping`, `building` or
 `quitting` and is not one of `status`, `token_set` and `token_remove`, a stop or a
-quit, is answered `busy`. The agent is `resuming` from the moment it begins to read
+quit, is answered `busy`, except `drain_for_update`, which is `refused` there. The
+agent is `resuming` from the moment it begins to read
 the configuration until the runners' pools are admitted, so a `start_all` or a
 `build` in that time is `busy`, not answered as if the runners ran. One table in the
-code decides all of it, for every phase; this is what it says:
+code decides all of it, for every phase; this is what it says, and while a drain runs
+the table in [The Update Drain](#the-update-drain) takes its place:
 
 | State      | `stop_all`                           | `start_all` | `build`                                          | `quit`                     |
 | ---------- | ------------------------------------ | ----------- | ------------------------------------------------ | -------------------------- |
@@ -1616,6 +2010,65 @@ A log that cannot write or continue its file stops, and the agent goes on withou
 it. It tries to open a new file again when a line arrives, at most every 30 s, and
 writes one line in the new file that says how many lines were not written.
 
+### The Update Drain
+
+W4 ([#78](https://github.com/axross/runners/issues/78)) adds `drain_for_update` to
+protocol version 2, under its rules for added methods and fields. Before the app
+installs an update, it asks the agent to drain: to stop registering runners and to end
+once the jobs already running have finished, within 6 hours. The `version` param is
+the version of the update, three numbers and an optional suffix, at most 64
+characters in all; anything else is `invalid_request`.
+
+A runner is busy once its container's output has carried a line that reads
+`Running job:` after the runner's timestamp, and idle once it has carried
+`Listening for Jobs` and not `Running job:`. A runner whose output has carried
+neither line is waited for, as if busy. That fallback covers a runner that prints
+neither line, not one that still prints `Listening for Jobs` but rewords or drops
+`Running job:`: its busy runners would read as idle and be stopped mid-job, so
+[Bumping the Runner](./development-workflow.md#bumping-the-runner) checks both lines.
+Both streams count, a mark never clears, and
+no other line, such as `Runner reconnected.`, changes it. Only the fixed text is
+compared: the drain keeps no job name and puts none in the snapshot or a protocol
+message; the line itself reaches the log, as all runner output does.
+
+The drain's last steps begin when the drain ends its runners: when no runner is waited
+for any more, when the 6 hours pass, or when the runtime core ends for the drain or
+fails. In them the container steps run and the agent then ends for the update; the
+drain can no longer be cancelled, because its runners are already stopping.
+
+| When                                                     | Result                                                                                                                                                 |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `drain_for_update`, while `running`                      | Drains: the answer is `{state, update}`, and `agent.update` appears                                                                                    |
+| `drain_for_update`, while `stopped`                      | Ends for the update at once; `stopped_by_you` is true when stopped by you                                                                              |
+| `drain_for_update`, in any other state or while draining | `refused`, and nothing changes                                                                                                                         |
+| `start_all` or `build`, while draining                   | `refused`, and nothing changes                                                                                                                         |
+| `stop_all`, while draining                               | Answers `quitting`, also during the drain's last steps; stops every runner, so running jobs fail, then ends for the update, stopped by you             |
+| `quit`, while draining                                   | Stops and ends as a `quit` does; `agent.update` is gone once the stop begins or, during the drain's last steps, at once, and the `ending` names `quit` |
+| The connection that asked closes, while draining         | Before the last steps, the drain is cancelled, the agent keeps running, and the slots register again; during them, the agent still ends for the update |
+| A runtime core failure, while draining                   | The container steps run, so running jobs fail; the core does not start again, and the agent ends for the update                                        |
+| No runner is waited for any more                         | The container steps run, then the agent ends for the update                                                                                            |
+| 6 hours pass                                             | The container steps run, so the jobs still running fail, then the agent ends                                                                           |
+
+While the agent drains, nothing registers a runner: not a slot, not a pool prepared
+after a core failure or when Docker comes back, and not a pool that waited for a token.
+A slot that is registering or backing off stops without starting a container, an idle
+runner's container is stopped with a stop's grace, and killed when the stop fails,
+and a busy runner's container runs
+until it exits; its slot then finalises it as after any job and registers nothing. A
+drained slot is listed `stopped` with the reason "stopped for an update". The agent's
+state stays `running`, so an older app shows it running; `agent.update.waiting` counts
+the slots still running a container, an idle one until its stop ends, `deadline` is the bound's time in milliseconds since the
+Unix epoch, and `pid` is the agent's process ID, which the app waits on. Before the
+agent ends for an update, every connection receives `ending` with the reason `update`
+and an `update` field naming the version and whether the runners were stopped by you.
+A `drain_for_update` while stopped answers `{state, update}` with the state
+`quitting`, so the app has the process ID it waits on. If the requesting
+connection's close is seen before the core ends for the drain, the drain is cancelled
+and the core starts again; if the core's end is seen first, the last steps have begun. Only the
+container backend reads a runner's output today; a backend that does not, such as
+axmc's Tart backend, reports every runner as waited for, so its drain ends at the
+bound.
+
 ### The Token Store
 
 `token_store` is the one place the agent keeps a repository's token. The interface
@@ -1670,16 +2123,16 @@ connection is closed, so today's commands exit 1 against an agent and change
 nothing. A later slice of version 2 may add methods, topics, error codes and fields
 but never rename or remove one.
 
-| Message     | Fields                                                                                               |
-| ----------- | ---------------------------------------------------------------------------------------------------- |
-| `hello`     | `versions` (the versions the client speaks), `client` (`name`, `version`), which the agent ignores   |
-| `welcome`   | `version` (2), `agent` (`version`), `methods`, `topics`                                              |
-| `request`   | `id` (an integer of the client's own), `method`, `params`                                            |
-| `response`  | `id`, then `result` or `error`                                                                       |
-| `error`     | `error`, for what answers no request: a failed handshake, `busy`, or a message that is not a request |
-| `event`     | `topic` (`state`), `seq`, `value` (the snapshot)                                                     |
-| `heartbeat` | `seq`, the last event's                                                                              |
-| `ending`    | `reason`: `quit` or `executable_changed`                                                             |
+| Message     | Fields                                                                                                   |
+| ----------- | -------------------------------------------------------------------------------------------------------- |
+| `hello`     | `versions` (the versions the client speaks), `client` (`name`, `version`), which the agent ignores       |
+| `welcome`   | `version` (2), `agent` (`version`), `methods`, `topics`                                                  |
+| `request`   | `id` (an integer of the client's own), `method`, `params`                                                |
+| `response`  | `id`, then `result` or `error`                                                                           |
+| `error`     | `error`, for what answers no request: a failed handshake, `busy`, or a message that is not a request     |
+| `event`     | `topic` (`state`), `seq`, `value` (the snapshot)                                                         |
+| `heartbeat` | `seq`, the last event's                                                                                  |
+| `ending`    | `reason`: `quit`, `executable_changed` or `update`; `update` (`version`, `stopped_by_you`) for an update |
 
 A reader ignores a message type, a field and a topic it does not know, and calls only
 the methods `welcome` lists. The library's `Client` does so, refuses a `welcome` that is not version 2, and
@@ -1692,16 +2145,17 @@ against unknown methods, topics and fields.
 
 The agent answers one connection's requests in order and several connections at once.
 
-| Method         | Params                | Result                                                             |
-| -------------- | --------------------- | ------------------------------------------------------------------ |
-| `status`       | none                  | The snapshot                                                       |
-| `subscribe`    | `topic`: `state`      | `{"topic":"state"}`; the first event follows at once               |
-| `start_all`    | none                  | `{state}`, `resuming` while the pools are admitted                 |
-| `stop_all`     | none                  | `{state}`                                                          |
-| `build`        | none                  | `{state, started}`, `started` in milliseconds since the Unix epoch |
-| `quit`         | none                  | `{state}`                                                          |
-| `token_set`    | `repository`, `token` | `{repository}`, the key it was stored under                        |
-| `token_remove` | `repository`          | `{repository}`                                                     |
+| Method             | Params                | Result                                                             |
+| ------------------ | --------------------- | ------------------------------------------------------------------ |
+| `status`           | none                  | The snapshot                                                       |
+| `subscribe`        | `topic`: `state`      | `{"topic":"state"}`; the first event follows at once               |
+| `start_all`        | none                  | `{state}`, `resuming` while the pools are admitted                 |
+| `stop_all`         | none                  | `{state}`                                                          |
+| `build`            | none                  | `{state, started}`, `started` in milliseconds since the Unix epoch |
+| `quit`             | none                  | `{state}`                                                          |
+| `token_set`        | `repository`, `token` | `{repository}`, the key it was stored under                        |
+| `token_remove`     | `repository`          | `{repository}`                                                     |
+| `drain_for_update` | `version`             | `{state, update}`; see The Update Drain                            |
 
 `token_set` is the one message that carries a secret: the token travels only in its
 `token` param, from the client to the agent, and the agent never sends, logs or
@@ -1777,7 +2231,8 @@ a reader ignores one it does not know.
 
 | Field                          | Holds                                                                                                 |
 | ------------------------------ | ----------------------------------------------------------------------------------------------------- |
-| `agent`                        | `version`, `state`, `reason` (`code`, `message`), `since`, `build`, `restart_due`                     |
+| `agent`                        | `version`, `state`, `reason` (`code`, `message`), `since`, `build`, `restart_due`, `update`           |
+| `agent.update`                 | While a drain for an update runs: `version`, `waiting`, `deadline`, `pid`                             |
 | `agent.build`                  | `started`, `outcome` (`building`, `ready`, `failed`, `cancelled`), `finished`, `message`              |
 | `configuration`                | `path` and `problems`, at most 100                                                                    |
 | `runners_up`, `runners_wanted` | Totals over the listed pools, kept when rows are left out; 0 while `restart_due` is set               |
@@ -1860,7 +2315,10 @@ change nothing. `tests/agent_channel.rs` covers the socket's mode, the peer's us
 and a directory open to others on Unix. `tests/agent_channel_windows.rs` shows a pipe
 of a taken name is refused and a client passes the check of the server's user. `tests/agent_process.rs` runs the agent as a process on
 the fake `docker` and a GitHub stub, a second agent refused, and the log continued
-with ten files kept.
+with ten files kept. `tests/agent_drain.rs` covers the update drain: idle, busy and
+unknown runners, the bound, the reachable rows of its state table, a cancelled drain,
+a backing-off slot, a pool waiting for a token, a core failure, and diagnostic
+finalisation.
 
 The Windows CI step `tests/ci/control-pipe-security.ps1` runs its checks against
 the `serve` mode of the helper and against `serve-agent`, which opens the agent's
@@ -1903,18 +2361,34 @@ two on its command line, because they describe the build, not the definition.
 The CLI's own contract version is read from the same embedded Dockerfile when the
 binary is compiled, so the two cannot drift inside one binary; a Dockerfile without
 a well-formed version does not compile. The version rises when the run contract
-changes or the image must provide something it did not. Contract 1 is the run
+changes or the image must provide something it did not. The two runner lines the
+[update drain](#the-update-drain) reads are not part of it: they come from the
+runner, and a runner bump keeps the contract version, so the bump checks them
+instead, as [Bumping the Runner](./development-workflow.md#bumping-the-runner)
+describes.
+Contract 1 is the run
 contract as Phase 2 left it, plus the diagnostic variant's use of the collector's
-path and output directory.
+path and output directory. Contract 2 adds what the VM runtime needs of the image: a
+Docker client at the version the golden VM's Docker Engine is at, installed from
+Docker's apt repository after its signing key matches a recorded fingerprint, and a
+`docker` group with the id `DOCKER_GROUP_ID`, so the runner can use the VM-local socket
+the VM runtime mounts. The Docker runtime's arguments are unchanged and it still mounts no
+socket, but an image of contract 1 is mismatched, so axpc needs one `marshal build`
+after the release that carries contract 2. The golden VM's name records the contract,
+so a golden VM built for contract 1 is mismatched the same way.
 
 Unit tests in `cli/src/image/contract.rs` keep the declaration honest:
 
 - `APPROVED_CONTRACTS` pins a fingerprint of the run contract's argument lists, the
-  launcher, the diagnostic variant's argument lists and launcher, the label keys
-  and the inspect format, against
-  the version they were approved for. Changing any of them without raising the
-  contract version fails, and the failure names the row to add with the new
-  version.
+  launcher, the diagnostic variant's argument lists and launcher, the VM runtime's
+  argument lists with the VM-local socket mount, the label keys and the inspect
+  format, against the version they were approved for. Changing any of them without
+  raising the contract version fails, and the failure names the row to add with the
+  new version. A new version is approved by adding that row, with the fingerprint the
+  failure prints.
+- The Dockerfile must hold the golden VM's pins, as
+  [Golden VM Provisioning](#golden-vm-provisioning) says, and the image smoke test
+  must check the same client version and group id.
 - `RUNNER_RELEASES` in `cli/src/image/runner.rs` is the runner record: each
   declared runner version's release date and the SHA-256 of its osx-arm64 archive.
   The declared runner version, `DECLARED_RUNNER_VERSION`, must equal the base
@@ -2846,13 +3320,16 @@ does these in order:
    warning). It does not remove earlier temporary tags or prune dangling images,
    because the VM is new. The build's output is forwarded to the log line by line,
    masked and cut as a container's output is.
-7. **Commit.** `tart stop` of the build VM, which asks the guest to shut down and
-   gives it 60 s, within 90 s, then the wait for `tart run` to end, then
+7. **Commit.** `sync`, then `sync -f /`, as root in the build VM, within 2 min, then `tart stop` of the
+   build VM with a 60 s wait, within 90 s, then the wait for `tart run` to end, then
    `tart rename` to the golden name,
    `marshal-golden-linux-g<golden VM version>-c<image contract version>-r<runner version>-<yyyyMMddHHmmss>`
    with the build time: the time taken just before the in-VM `docker build`, the same
    value as the temporary tag's and the `built` label's, not the start of the build.
-   **The rename is the commit.**
+   **The rename is the commit.** `tart stop` ends the VM at once, with no shutdown
+   inside the guest (Tart's `stop` interrupts `tart run`, which stops the virtual
+   machine forcibly), so the `sync` is what puts the files the image build wrote last
+   on the golden VM's disk.
 8. **After the commit.** It deletes every other golden VM, whatever its versions, and
    removes from Tart's cache each image named in `golden::pins::RETIRED_BASE_PINS`, with
    `tart delete`; the current pin is never deleted, and the list never holds it. A
@@ -2863,9 +3340,12 @@ does these in order:
 `actions-runner:local` (`runtime::pool::DEFAULT_IMAGE_NAME`), and `validate` and its
 summary do not change.
 
-**The Docker group.** The fourth guest call adds `admin` to the `docker` group, but a
-group change reaches `tart exec` commands only when the guest agent next starts, and
-the build VM is not restarted. The image build therefore runs `sudo -n docker`
+**The Docker group.** The fourth guest call creates the `docker` group with the id
+`DOCKER_GROUP_ID`, so the socket the runner container mounts is owned by the group that
+the runner image's `runner` user is in, and adds `admin` to it. A `docker` group that exists with
+another id fails the build before any Docker package is installed. The group change reaches
+`tart exec` commands only when the guest agent next starts, and the build VM is not
+restarted. The image build therefore runs `sudo -n docker`
 (`golden::steps::build_vm_docker_command`), where it could instead have rebooted the VM,
 which would add a boot and a second wait for the agent. Job VMs, which boot from the
 golden VM, run `docker` as `admin` without `sudo`.
@@ -3060,8 +3540,8 @@ and one that succeeds within a stop's grace, which commits without an inspect.
 against the fake `tart`, `softnet` and `docker`, which are scripted per step: the order
 of the calls and the build VM's name; a failure scripted at the pull, the clone, the boot,
 each provisioning call, the engine wait, the image build, the contract check, the tag, the
-shutdown and the rename, each of which deletes the build VM and keeps the old golden VM,
-with the rename only after success; a key with another fingerprint and an empty listing,
+`sync` before the stop, the shutdown and the rename, each of which deletes the build VM
+and keeps the old golden VM, with the rename only after success; a key with another fingerprint and an empty listing,
 which fail before anything is installed; a stop at the pull, the clone, a provisioning
 call and the image build, each within the stop sequence; a stop after the rename;
 leftover build VMs deleted before the pull; the other golden VMs and only the retired
@@ -3104,6 +3584,75 @@ Expected strings are ASCII, with newlines as JSON `\n` escapes. The tests fail w
 fixture has no expectation or an expectation has no fixture. The byte-order-mark
 input is built at run time from the axpc example, because a formatter or editor
 would strip a stored mark.
+
+### TOML Fixtures
+
+The TOML format has three sets of fixtures, which the tests read through
+`validate_toml`. The TOML problems are new, so they have fixtures of their own,
+beside the JSON ones and not in place of them. `.gitattributes` pins everything under
+`tests/host-configuration/toml/` to LF (`text eol=lf`), unlike the `-text` raw JSON
+fixtures, because the tests compare these files' bytes and columns and a checkout
+that converts them to CRLF, as a Windows one can, would break them. The tests that
+need CRLF build it from the stored text.
+
+- **Hand-written TOML.** [`tests/host-configuration/toml/`](../../tests/host-configuration/toml)
+  holds `accepted/` and `rejected/` documents and one `expectations.json`, read by
+  `cli/tests/toml_fixtures.rs`. These are the cases only TOML has: syntax errors,
+  `schema_version`, `routing_label`, `[lifecycle]`, letter case, duplicates, wrong
+  types including a date, nesting deeper than the parser allows, in an array, an
+  inline table, a dotted key and a table header, each placed on its line, the
+  problem order, the lines, and a token-shaped value or key. Each expectation names the profile
+  (`axpc` for Windows, `axmc` for macOS), the outcome, the problems whole, with their
+  lines and in order, and `contains` and `lacks` strings checked against the problems
+  and, for an accepted file, a description of its plan. An unknown or misspelled key
+  fails the read, and the test fails when a fixture has no expectation or an
+  expectation has no fixture. Some inputs are built at run time because a stored file
+  could not hold their exact bytes: a byte-order mark, a file of exactly 1 MiB, a file
+  that is not UTF-8, a control character, and a token pasted into a document at every
+  position.
+- **Translated JSON.** `cli/tests/toml_equivalence/` turns each shared JSON fixture
+  into a TOML document at test time and checks it against the JSON outcome. The
+  translator, `translate.rs`, works by structure: it renames the keys, joins `owner`
+  and `repository`, drops `tokenPath`, and adds `schema_version` and the profile's
+  routing label. It stores nothing, so a fixture that a later change migrates is
+  translated again and not mirrored by hand. The same test converts every accepted
+  fixture that translates, on each host it is valid on, and checks the document.
+- **Expectations of their own.** `tests/host-configuration/toml/translated/expectations.json`
+  holds the TOML outcome of the fixtures whose outcome differs, each with a `reason`.
+
+**Same outcome** means that both readers accept the file or both reject it. When both
+reject it, the problems are the same and in the same order once the paths and names
+are translated. When both accept it, the plans are equal apart from the source path,
+`tokenPath`, and an `os` that TOML defaults to Linux where axpc's JSON has none.
+
+Five fixtures have an expectation of their own, because the TOML rules differ:
+
+| Fixture                                    | TOML outcome                                                                     | Reason                                                                                                       |
+| ------------------------------------------ | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `rust/rejected/axmc-os-missing.json`       | Accepted                                                                         | `os` may be left out, and a pool without it is a Linux pool.                                                 |
+| `shared/rejected/missing-volumes.json`     | Accepted                                                                         | `volumes` may be left out, and a pool without it has none.                                                   |
+| `shared/rejected/missing-owner.json`       | `pool[0].repository: must be "owner/name"`                                       | The owner is part of `repository`, so a missing owner is reported there.                                     |
+| `rust/rejected/axpc-axmc-only-fields.json` | Only `budget` and `pool[0].disk_gb` are unknown                                  | `os` is a key a Windows pool defines, and it accepts `"linux"`.                                              |
+| `shared/rejected/field-name-case.json`     | The wrong-case keys are unknown, and the keys they stand for are missing as well | TOML keys match in exact case, where JSON finds a known field in any case and reports only the unknown ones. |
+
+**The fixtures that do not map** stay JSON-only. The test lists all 42 by name with
+the category that keeps each out, and fails when a fixture that cannot be translated
+is not listed, when a listed one can be, or when its category is wrong. The
+categories are:
+
+- **Raw syntax that is not JSON:** bytes the JSON reader refuses as a document, such
+  as comments, trailing commas, quoting, number forms, invalid UTF-8, two keys that
+  differ only in case, and an empty key.
+- **A root that is not an object.** TOML cannot express it, because its root is
+  always a table.
+- **JSON `null`.** TOML has no value for it.
+- **A number TOML cannot hold,** such as the `1e400` literal, which the TOML reader
+  reports as a syntax error.
+- **`tokenPath` and token files.** The TOML format has neither, so a fixture whose
+  problem is about one is not translated. `rust/rejected/axmc-budget-errors-come-last.json`
+  is one, so the hand-written `rejected/macos-clashes-come-before-budget-totals.toml`
+  pins for TOML that the clashes between pools come before the budget totals, though
+  the budget's line is the earlier one.
 
 ## Toolchain and Gates
 
@@ -4586,47 +5135,50 @@ private crates for that reason. A Dependabot bump that raises new clippy warning
 or adds a duplicate crate version arrives as a red pull request, and the
 maintainer fixes it there.
 
-| Crate                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Why                                                                                                                                                                                                                                                                                                                            | Licence                                                                                     |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
-| `clap`, with `clap_builder`, `clap_lex`, and `anstyle`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Argument parsing, with default features off                                                                                                                                                                                                                                                                                    | MIT OR Apache-2.0                                                                           |
-| `regex`, with `regex-automata` and `regex-syntax`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | The whole-value patterns for names, labels, and image names                                                                                                                                                                                                                                                                    | MIT OR Apache-2.0                                                                           |
-| `aho-corasick` and `memchr`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Optional dependencies of `regex`                                                                                                                                                                                                                                                                                               | Unlicense OR MIT                                                                            |
-| `serde`, with `serde_core`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Reading the parsed JSON tree and the shared expectations into derived types, with default features off                                                                                                                                                                                                                         | MIT OR Apache-2.0                                                                           |
-| `serde_derive`, `syn` 3, `quote`, and `proc-macro2`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | The `Deserialize` derive; these run at build time                                                                                                                                                                                                                                                                              | MIT OR Apache-2.0                                                                           |
-| `unicode-ident`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | A dependency of `syn` and `proc-macro2`                                                                                                                                                                                                                                                                                        | (MIT OR Apache-2.0) AND Unicode-3.0                                                         |
-| `tokio`, `tokio-macros`, `mio`, `bytes`, and `slab`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | The async runtime for the slot loop and the container backend, on one thread, with only the `rt`, `time`, `sync`, `io-util`, `process`, `macros`, `net`, and `signal` features; `tokio-macros` supplies `select!` and `join!`, `net` serves the Unix control socket, and `signal` delivers the stop signals and console events | MIT                                                                                         |
-| `socket2`, `signal-hook-registry`, `errno`, `smallvec`, `once_cell`, `cfg-if`, `log`, `itoa`, and `bitflags`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Operating-system and small-utility dependencies of `tokio`, `reqwest`, and their dependencies                                                                                                                                                                                                                                  | MIT OR Apache-2.0                                                                           |
-| `libc`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | The `O_NOFOLLOW` and `O_NONBLOCK` values for the Unix lock's open, declared directly on Unix with default features off; `tokio` and its dependencies use it too                                                                                                                                                                | MIT OR Apache-2.0                                                                           |
-| `pin-project-lite` and `atomic-waker`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Futures plumbing under `tokio` and `hyper`                                                                                                                                                                                                                                                                                     | Apache-2.0 OR MIT                                                                           |
-| `futures-core`, `futures-task`, `futures-channel`, and `futures-util`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Future and channel traits `hyper` and `reqwest` use                                                                                                                                                                                                                                                                            | MIT OR Apache-2.0                                                                           |
-| `reqwest`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | The one HTTPS request to GitHub's JIT endpoint, with default features off and only `rustls-no-provider`, so no JSON, cookie, proxy-crate, or compression feature is built                                                                                                                                                      | MIT OR Apache-2.0                                                                           |
-| `hyper`, `hyper-util`, `http-body`, `http-body-util`, `tower`, `tower-http`, `tower-layer`, `tower-service`, `tracing`, `tracing-core`, `want`, and `try-lock`                                                                                                                                                                                                                                                                                                                                                                                                                                                     | The HTTP client stack under `reqwest`                                                                                                                                                                                                                                                                                          | MIT                                                                                         |
-| `http`, `httparse`, `base64`, and `ipnet`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | HTTP types, header parsing, header encoding, and proxy address matching under `reqwest`                                                                                                                                                                                                                                        | MIT OR Apache-2.0                                                                           |
-| `sync_wrapper`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | A dependency of `reqwest`                                                                                                                                                                                                                                                                                                      | Apache-2.0                                                                                  |
-| `url`, `form_urlencoded`, `percent-encoding`, `idna`, and `idna_adapter`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Parsing the request URL, under `reqwest`                                                                                                                                                                                                                                                                                       | MIT OR Apache-2.0                                                                           |
-| `utf8_iter`, `stable_deref_trait`, and `zeroize`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Dependencies of `idna` and the TLS stack                                                                                                                                                                                                                                                                                       | Apache-2.0 OR MIT for `utf8_iter` and `zeroize`, MIT OR Apache-2.0 for `stable_deref_trait` |
-| `icu_collections`, `icu_locale_core`, `icu_normalizer`, `icu_normalizer_data`, `icu_properties`, `icu_properties_data`, `icu_provider`, `litemap`, `potential_utf`, `tinystr`, `writeable`, `yoke`, `zerofrom`, `zerotrie`, and `zerovec`                                                                                                                                                                                                                                                                                                                                                                          | Unicode normalisation data for `idna`                                                                                                                                                                                                                                                                                          | Unicode-3.0                                                                                 |
-| `displaydoc`, `yoke-derive`, `zerofrom-derive`, `zerovec-derive`, and `synstructure`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Derives and their helper for the Unicode crates above; these run at build time                                                                                                                                                                                                                                                 | MIT OR Apache-2.0 for `displaydoc`, MIT for `synstructure`, Unicode-3.0 for the rest        |
-| `rustls`, `hyper-rustls`, and `rustls-native-certs`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | TLS for `reqwest`, with only the `ring`, `std`, and `tls12` features                                                                                                                                                                                                                                                           | Apache-2.0 OR ISC OR MIT                                                                    |
-| `tokio-rustls`, `rustls-pki-types`, and `rustls-platform-verifier`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | TLS glue, certificate types, and the platform's certificate verifier                                                                                                                                                                                                                                                           | MIT OR Apache-2.0                                                                           |
-| `rustls-webpki` and `untrusted`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Certificate validation for `rustls`                                                                                                                                                                                                                                                                                            | ISC                                                                                         |
-| `ring`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | The cryptography provider, installed explicitly                                                                                                                                                                                                                                                                                | Apache-2.0 AND ISC                                                                          |
-| `cc`, `shlex`, `find-msvc-tools`, and `getrandom`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Build-time C compiler discovery for `ring`, and its random-number source                                                                                                                                                                                                                                                       | MIT OR Apache-2.0                                                                           |
-| `subtle`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Constant-time comparison for `rustls`                                                                                                                                                                                                                                                                                          | BSD-3-Clause                                                                                |
-| `openssl-probe`, `security-framework`, `security-framework-sys`, `core-foundation`, `core-foundation-sys`, `windows-sys`, and `windows-link` 0.2                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | The platform certificate stores: the system store on Linux, the keychain on macOS, and the Windows APIs                                                                                                                                                                                                                        | MIT OR Apache-2.0                                                                           |
-| `schannel`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | The Windows certificate APIs; Cargo records it but the three CI targets do not build it                                                                                                                                                                                                                                        | MIT                                                                                         |
-| `bumpalo`, `combine`, `jni`, `jni-macros`, `jni-sys`, `jni-sys-macros`, `js-sys`, `rustc_version`, `rustls-platform-verifier-android`, `rustversion`, `same-file`, `semver`, `simd_cesu8`, `simdutf8`, `thiserror` 2, `thiserror-impl` 2, `walkdir`, `wasm-bindgen`, `wasm-bindgen-futures`, `wasm-bindgen-macro`, `wasm-bindgen-macro-support`, `wasm-bindgen-shared`, `web-sys`, `winapi-util`, `windows-targets`, `windows_aarch64_gnullvm`, `windows_aarch64_msvc`, `windows_i686_gnu`, `windows_i686_gnullvm`, `windows_i686_msvc`, `windows_x86_64_gnu`, `windows_x86_64_gnullvm`, and `windows_x86_64_msvc` | Platform verifier and `getrandom` code for Android, WebAssembly, and other Windows targets, which the lockfile records and none of the three CI targets builds                                                                                                                                                                 | MIT OR Apache-2.0 (`same-file`, `walkdir`, and `winapi-util` are Unlicense OR MIT)          |
-| `wasi`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | A WebAssembly dependency of `getrandom`, not built on the CI targets                                                                                                                                                                                                                                                           | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT                                         |
-| `webpki-root-certs`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Bundled roots the platform verifier uses on WebAssembly, not built on the CI targets                                                                                                                                                                                                                                           | CDLA-Permissive-2.0                                                                         |
-| `interprocess`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | The Windows named pipes behind the single-instance lock and the control channel, with default features off and, for the agent's asynchronous pipe, its `tokio` feature; it builds on Windows only                                                                                                                              | 0BSD OR Apache-2.0                                                                          |
-| `recvmsg`, `doctest-file`, and `widestring`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Dependencies of `interprocess`: a receive helper, a procedural macro that includes example files in documentation, and wide-string types for Windows paths                                                                                                                                                                     | 0BSD for `recvmsg` and `doctest-file`, MIT OR Apache-2.0 for `widestring`                   |
-| `serde_json`, `zmij`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | The agent's protocol messages and snapshot, in JSON, with only the `std` feature; `zmij` formats its floating-point numbers                                                                                                                                                                                                    | MIT OR Apache-2.0 for `serde_json`, MIT for `zmij`                                          |
-| `keyring-core`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | The interface of a credential store, which the token store adapts and a platform's store implements, with default features off                                                                                                                                                                                                 | MIT OR Apache-2.0                                                                           |
-| `windows-native-keyring-store` and `byteorder`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | The Windows Credential Manager behind the token store, with default features off, and the byte-order helper it uses for the UTF-16 token; they build on Windows only                                                                                                                                                           | MIT OR Apache-2.0 for the store, Unlicense OR MIT for `byteorder`                           |
-| `winsafe`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | The current user's security identifier, with only the `advapi` feature; it builds on Windows only                                                                                                                                                                                                                              | MIT                                                                                         |
-| `win32job`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | The Job Object that ends each job container's `docker run` client with `start`; it builds on Windows only (see [Containment](#containment))                                                                                                                                                                                    | MIT OR Apache-2.0                                                                           |
-| `windows`, `windows-core`, `windows-collections`, `windows-future`, `windows-numerics`, `windows-threading`, `windows-result`, `windows-strings`, and `windows-link` 0.1                                                                                                                                                                                                                                                                                                                                                                                                                                           | The Windows API bindings `win32job` uses; they build on Windows only                                                                                                                                                                                                                                                           | MIT OR Apache-2.0                                                                           |
-| `windows-implement`, `windows-interface`, `thiserror` 1, `thiserror-impl` 1, and `syn` 2                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | The derives of the `windows` crates and `win32job`, with the older `syn` they use; these run at build time, on Windows only                                                                                                                                                                                                    | MIT OR Apache-2.0                                                                           |
+| Crate                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Why                                                                                                                                                                                                                                                                                                                                              | Licence                                                                                     |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| `clap`, with `clap_builder`, `clap_lex`, and `anstyle`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Argument parsing, with default features off                                                                                                                                                                                                                                                                                                      | MIT OR Apache-2.0                                                                           |
+| `regex`, with `regex-automata` and `regex-syntax`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | The whole-value patterns for names, labels, and image names                                                                                                                                                                                                                                                                                      | MIT OR Apache-2.0                                                                           |
+| `aho-corasick` and `memchr`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Optional dependencies of `regex`                                                                                                                                                                                                                                                                                                                 | Unlicense OR MIT                                                                            |
+| `serde`, with `serde_core`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Reading the parsed JSON tree and the shared expectations into derived types, with default features off                                                                                                                                                                                                                                           | MIT OR Apache-2.0                                                                           |
+| `serde_derive`, `syn` 3, `quote`, and `proc-macro2`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | The `Deserialize` derive; these run at build time                                                                                                                                                                                                                                                                                                | MIT OR Apache-2.0                                                                           |
+| `unicode-ident`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | A dependency of `syn` and `proc-macro2`                                                                                                                                                                                                                                                                                                          | (MIT OR Apache-2.0) AND Unicode-3.0                                                         |
+| `tokio`, `tokio-macros`, `mio`, `bytes`, and `slab`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | The async runtime for the slot loop and the container backend, on one thread, with only the `rt`, `time`, `sync`, `io-util`, `process`, `macros`, `net`, and `signal` features; `tokio-macros` supplies `select!` and `join!`, `net` serves the Unix control socket, and `signal` delivers the stop signals and console events                   | MIT                                                                                         |
+| `socket2`, `signal-hook-registry`, `errno`, `smallvec`, `once_cell`, `cfg-if`, `log`, `itoa`, and `bitflags`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Operating-system and small-utility dependencies of `tokio`, `reqwest`, and their dependencies                                                                                                                                                                                                                                                    | MIT OR Apache-2.0                                                                           |
+| `libc`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | The `O_NOFOLLOW` and `O_NONBLOCK` values for the Unix lock's open, declared directly on Unix with default features off; `tokio` and its dependencies use it too                                                                                                                                                                                  | MIT OR Apache-2.0                                                                           |
+| `pin-project-lite` and `atomic-waker`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Futures plumbing under `tokio` and `hyper`                                                                                                                                                                                                                                                                                                       | Apache-2.0 OR MIT                                                                           |
+| `futures-core`, `futures-task`, `futures-channel`, and `futures-util`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Future and channel traits `hyper` and `reqwest` use                                                                                                                                                                                                                                                                                              | MIT OR Apache-2.0                                                                           |
+| `reqwest`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | The one HTTPS request to GitHub's JIT endpoint, with default features off and only `rustls-no-provider`, so no JSON, cookie, proxy-crate, or compression feature is built                                                                                                                                                                        | MIT OR Apache-2.0                                                                           |
+| `hyper`, `hyper-util`, `http-body`, `http-body-util`, `tower`, `tower-http`, `tower-layer`, `tower-service`, `tracing`, `tracing-core`, `want`, and `try-lock`                                                                                                                                                                                                                                                                                                                                                                                                                                                     | The HTTP client stack under `reqwest`                                                                                                                                                                                                                                                                                                            | MIT                                                                                         |
+| `http`, `httparse`, `base64`, and `ipnet`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | HTTP types, header parsing, header encoding, and proxy address matching under `reqwest`                                                                                                                                                                                                                                                          | MIT OR Apache-2.0                                                                           |
+| `sync_wrapper`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | A dependency of `reqwest`                                                                                                                                                                                                                                                                                                                        | Apache-2.0                                                                                  |
+| `url`, `form_urlencoded`, `percent-encoding`, `idna`, and `idna_adapter`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Parsing the request URL, under `reqwest`                                                                                                                                                                                                                                                                                                         | MIT OR Apache-2.0                                                                           |
+| `utf8_iter`, `stable_deref_trait`, and `zeroize`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Dependencies of `idna` and the TLS stack                                                                                                                                                                                                                                                                                                         | Apache-2.0 OR MIT for `utf8_iter` and `zeroize`, MIT OR Apache-2.0 for `stable_deref_trait` |
+| `icu_collections`, `icu_locale_core`, `icu_normalizer`, `icu_normalizer_data`, `icu_properties`, `icu_properties_data`, `icu_provider`, `litemap`, `potential_utf`, `tinystr`, `writeable`, `yoke`, `zerofrom`, `zerotrie`, and `zerovec`                                                                                                                                                                                                                                                                                                                                                                          | Unicode normalisation data for `idna`                                                                                                                                                                                                                                                                                                            | Unicode-3.0                                                                                 |
+| `displaydoc`, `yoke-derive`, `zerofrom-derive`, `zerovec-derive`, and `synstructure`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Derives and their helper for the Unicode crates above; these run at build time                                                                                                                                                                                                                                                                   | MIT OR Apache-2.0 for `displaydoc`, MIT for `synstructure`, Unicode-3.0 for the rest        |
+| `rustls`, `hyper-rustls`, and `rustls-native-certs`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | TLS for `reqwest`, with only the `ring`, `std`, and `tls12` features                                                                                                                                                                                                                                                                             | Apache-2.0 OR ISC OR MIT                                                                    |
+| `tokio-rustls`, `rustls-pki-types`, and `rustls-platform-verifier`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | TLS glue, certificate types, and the platform's certificate verifier                                                                                                                                                                                                                                                                             | MIT OR Apache-2.0                                                                           |
+| `rustls-webpki` and `untrusted`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Certificate validation for `rustls`                                                                                                                                                                                                                                                                                                              | ISC                                                                                         |
+| `ring`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | The cryptography provider, installed explicitly                                                                                                                                                                                                                                                                                                  | Apache-2.0 AND ISC                                                                          |
+| `cc`, `shlex`, `find-msvc-tools`, and `getrandom`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Build-time C compiler discovery for `ring`, and its random-number source                                                                                                                                                                                                                                                                         | MIT OR Apache-2.0                                                                           |
+| `subtle`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Constant-time comparison for `rustls`                                                                                                                                                                                                                                                                                                            | BSD-3-Clause                                                                                |
+| `openssl-probe`, `security-framework`, `security-framework-sys`, `core-foundation`, `core-foundation-sys`, `windows-sys`, and `windows-link` 0.2                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | The platform certificate stores: the system store on Linux, the keychain on macOS, and the Windows APIs                                                                                                                                                                                                                                          | MIT OR Apache-2.0                                                                           |
+| `schannel`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | The Windows certificate APIs; Cargo records it but the three CI targets do not build it                                                                                                                                                                                                                                                          | MIT                                                                                         |
+| `bumpalo`, `combine`, `jni`, `jni-macros`, `jni-sys`, `jni-sys-macros`, `js-sys`, `rustc_version`, `rustls-platform-verifier-android`, `rustversion`, `same-file`, `semver`, `simd_cesu8`, `simdutf8`, `thiserror` 2, `thiserror-impl` 2, `walkdir`, `wasm-bindgen`, `wasm-bindgen-futures`, `wasm-bindgen-macro`, `wasm-bindgen-macro-support`, `wasm-bindgen-shared`, `web-sys`, `winapi-util`, `windows-targets`, `windows_aarch64_gnullvm`, `windows_aarch64_msvc`, `windows_i686_gnu`, `windows_i686_gnullvm`, `windows_i686_msvc`, `windows_x86_64_gnu`, `windows_x86_64_gnullvm`, and `windows_x86_64_msvc` | Platform verifier and `getrandom` code for Android, WebAssembly, and other Windows targets, which the lockfile records and none of the three CI targets builds                                                                                                                                                                                   | MIT OR Apache-2.0 (`same-file`, `walkdir`, and `winapi-util` are Unlicense OR MIT)          |
+| `wasi`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | A WebAssembly dependency of `getrandom`, not built on the CI targets                                                                                                                                                                                                                                                                             | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT                                         |
+| `webpki-root-certs`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Bundled roots the platform verifier uses on WebAssembly, not built on the CI targets                                                                                                                                                                                                                                                             | CDLA-Permissive-2.0                                                                         |
+| `interprocess`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | The Windows named pipes behind the single-instance lock and the control channel, with default features off and, for the agent's asynchronous pipe, its `tokio` feature; it builds on Windows only                                                                                                                                                | 0BSD OR Apache-2.0                                                                          |
+| `recvmsg`, `doctest-file`, and `widestring`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Dependencies of `interprocess`: a receive helper, a procedural macro that includes example files in documentation, and wide-string types for Windows paths                                                                                                                                                                                       | 0BSD for `recvmsg` and `doctest-file`, MIT OR Apache-2.0 for `widestring`                   |
+| `serde_json`, `zmij`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | The agent's protocol messages and snapshot, in JSON, with only the `std` feature; `zmij` formats its floating-point numbers                                                                                                                                                                                                                      | MIT OR Apache-2.0 for `serde_json`, MIT for `zmij`                                          |
+| `keyring-core`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | The interface of a credential store, which the token store adapts and a platform's store implements, with default features off                                                                                                                                                                                                                   | MIT OR Apache-2.0                                                                           |
+| `windows-native-keyring-store` and `byteorder`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | The Windows Credential Manager behind the token store, with default features off, and the byte-order helper it uses for the UTF-16 token; they build on Windows only                                                                                                                                                                             | MIT OR Apache-2.0 for the store, Unlicense OR MIT for `byteorder`                           |
+| `winsafe`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | The current user's security identifier, with only the `advapi` feature; it builds on Windows only                                                                                                                                                                                                                                                | MIT                                                                                         |
+| `win32job`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | The Job Object that ends each job container's `docker run` client with `start`; it builds on Windows only (see [Containment](#containment))                                                                                                                                                                                                      | MIT OR Apache-2.0                                                                           |
+| `windows`, `windows-core`, `windows-collections`, `windows-future`, `windows-numerics`, `windows-threading`, `windows-result`, `windows-strings`, and `windows-link` 0.1                                                                                                                                                                                                                                                                                                                                                                                                                                           | The Windows API bindings `win32job` uses; they build on Windows only                                                                                                                                                                                                                                                                             | MIT OR Apache-2.0                                                                           |
+| `windows-implement`, `windows-interface`, `thiserror` 1, `thiserror-impl` 1, and `syn` 2                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | The derives of the `windows` crates and `win32job`, with the older `syn` they use; these run at build time, on Windows only                                                                                                                                                                                                                      | MIT OR Apache-2.0                                                                           |
+| `toml_edit`, with `toml_parser`, `toml_writer`, and `toml_datetime`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Reading the TOML host configuration into a document that keeps each key's position, and changing a document while keeping its comments, with default features off and only `parse` and `display`; `display` prints a document back. The reader also uses `toml_parser` directly, with only `std`, to place a key nested past `toml_edit`'s limit | MIT OR Apache-2.0                                                                           |
+| `winnow`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | The parser library under `toml_parser` and `toml_edit`                                                                                                                                                                                                                                                                                           | MIT                                                                                         |
+| `indexmap`, `hashbrown`, and `equivalent`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | The order-keeping map under `toml_edit`'s tables, and its hash map and lookup trait                                                                                                                                                                                                                                                              | Apache-2.0 OR MIT for `indexmap` and `equivalent`, MIT OR Apache-2.0 for `hashbrown`        |
 
 `aho-corasick` and `memchr` are in the lockfile because `regex` lists them as
 optional, but the CLI's feature set (`std` and `unicode-perl`, no `perf`) does not
@@ -4657,6 +5209,19 @@ type is reported with its path. Nothing in the validator implements or derives
 `Serialize`: it writes no JSON, and the registration body is written by hand (see
 [Registration](#registration)). The agent's messages derive `Serialize` and
 `Deserialize` for `serde_json`.
+
+The TOML parser is a dependency, where the JSON parser is not. The JSON rules need
+behaviour no crate gives, which is why the crate owns that parser. TOML's grammar is
+much larger than JSON's, and the write path needs a full document model of the file
+to keep its comments, which `toml_edit` is. The project does not write a TOML reader
+by hand, and it does not use the `toml` crate alone, because that crate cannot
+change one value in a file and keep the file's comments. The TOML reader walks the
+`toml_edit` document into the same tree of values the JSON parser makes, so the rule
+set reads one kind of tree, and `toml_edit`'s `serde` feature stays off with the other
+default features. For a syntax error the reader uses only the parser's fixed message
+and a position, from the error's byte span or, for a key of too many dotted parts,
+from `toml_parser`'s events, never its display text, which quotes the file; see
+[TOML Problems](#toml-problems).
 
 Allowed licences are `MIT`, `Apache-2.0`, `Unicode-3.0`, `ISC`, `BSD-3-Clause`, and `0BSD`; a
 crate whose licence is an `OR` expression is accepted when one alternative is on that

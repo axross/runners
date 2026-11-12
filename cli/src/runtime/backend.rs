@@ -10,6 +10,7 @@ use tokio::time::Instant;
 use crate::image::check::ImageCheck;
 use crate::validate::PlannedVolume;
 
+use super::job_marks::Activity;
 use super::name::is_own_container_name;
 use super::retained::Retained;
 use super::secret::Secret;
@@ -348,6 +349,12 @@ pub trait Backend {
     /// `run_container` future removes its container from the list though it may live
     /// on, so a stop sequence reads it before cancelling the workers.
     fn running_containers(&self) -> Vec<String>;
+
+    /// what a running job container's own output has said about its job; a backend
+    /// that does not read it answers [`Activity::Unknown`], which a drain waits for.
+    fn job_activity(&self, _container: &str) -> Activity {
+        Activity::Unknown
+    }
 
     /// stops the containers, in one call to the container engine.
     fn stop_containers(

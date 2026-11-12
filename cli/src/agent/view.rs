@@ -16,6 +16,7 @@ use crate::validate::Entry;
 use super::snapshot::{
     AgentInfo, ConfigurationInfo, DiagnosticContainer, DiagnosticFinding, DiagnosticsInfo,
     ImageInfo, ImageLine, ImageWarning, Leftover, PoolInfo, RepositoryInfo, RunnerInfo, Snapshot,
+    UpdateInfo,
 };
 use super::state::{Inner, Phase};
 use super::tokens::StoreTokens;
@@ -107,6 +108,12 @@ impl View<'_> {
                 since: millis(inner.since),
                 build: inner.build.clone(),
                 restart_due: inner.restart_due.map(millis),
+                update: inner.drain.as_ref().map(|drain| UpdateInfo {
+                    version: drain.version.clone(),
+                    waiting: drain.waiting,
+                    deadline: millis(drain.deadline),
+                    pid: std::process::id(),
+                }),
             },
             configuration: ConfigurationInfo {
                 path: self.config_path.to_string(),
@@ -183,6 +190,9 @@ impl View<'_> {
                             SlotState::BackingOff(why) => ("backing_off", None, Some(why.clone())),
                             SlotState::Held(why) => ("held", None, Some(why.clone())),
                             SlotState::Running(name) => ("running", Some(name.clone()), None),
+                            SlotState::Drained => {
+                                ("stopped", None, Some("stopped for an update".to_string()))
+                            }
                         };
                         RunnerInfo {
                             slot: number,
@@ -306,11 +316,12 @@ mod tests {
     fn entry() -> Entry {
         Entry {
             path: String::new(),
+            index: 0,
             owner: "owner".to_string(),
             repository: "repository".to_string(),
             name: "pool".to_string(),
             slots: 2,
-            token_path: String::new(),
+            token_path: None,
             labels: Vec::new(),
             cpus: 1.0,
             memory_gb: 8,
@@ -330,6 +341,7 @@ mod tests {
             image_name: None,
             entries: vec![entry()],
             budget: None,
+            settings: None,
         });
         let retained = Retained::default();
         let tokens = StoreTokens::new(None);
