@@ -644,10 +644,7 @@ The socket's group is the VM's `docker` group, which the golden VM creates with
 `golden::pins::DOCKER_GROUP_ID` and which the runner image's `docker` group matches;
 [Golden VM Provisioning](#golden-vm-provisioning) says where each build checks it,
 and [Security](../conventions/security.md#the-vm-local-docker-socket) says why the
-match needs no `--group-add`. The containers a job starts through the socket are
-siblings of the runner container inside the VM: the runner container's quota,
-affinity and memory limit do not reach them, and the VM's vCPUs, memory and disk
-bound them, as Security says.
+match needs no `--group-add`.
 
 **Which user runs it.** `tart exec` reaches the guest agent,
 [cirruslabs/tart-guest-agent](https://github.com/cirruslabs/tart-guest-agent) at

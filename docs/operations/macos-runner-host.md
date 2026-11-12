@@ -33,9 +33,13 @@ The tested versions are recorded in the CLI (`macos::version`):
 | Tart    | 2.41.1         | `2.41.1`                        |
 | Softnet | 0.25.0         | `softnet 0.25.0-<short commit>` |
 
-Install them with Homebrew, which installs Softnet as a dependency of Tart:
+Install them with Homebrew, which installs Softnet as a dependency of Tart. The
+`openai/tools` tap is not one Homebrew trusts by default, and on the first host run
+Homebrew refused the tap's `softnet` formula until `brew trust` named it:
 
 ```bash
+brew tap openai/tools
+brew trust --formula openai/tools/softnet
 brew install openai/tools/tart
 tart --version
 softnet --version
@@ -548,9 +552,12 @@ the run goes in this order:
    confirm with `tart list` that the job's VM runs while it does. Record the
    runner's labels and the slot's turnaround. This step also covers the mount of the
    VM's Docker socket and the match of the two `docker` groups.
-5. With no external display attached, close the lid for about 5 s during a job, and
+5. With no external display attached, close the lid for about 15 s during a job, and
    switch networks during another job. Confirm that each stops the runners, with the
-   reason in `marshal status`, and that `tart list` then shows no job VM.
+   reason in `marshal status`, and that `tart list` then shows no job VM. The Mac
+   takes several seconds to enter sleep after the lid closes, so a close of about 5 s
+   can sleep for less than the 3 s a sleep needs to be seen; on the first host run it
+   slept about 3 s and nothing stopped.
 6. Run `marshal stop`, then confirm with `tart list` that no job or build VM is left
    and that the golden VM stays.
 
@@ -590,7 +597,7 @@ of an Apple tool as the source prints it, and not on a run:
   `gateway: link#<index>` or no `gateway:` line, which the CLI reads as an interface
   without a router; and `arp -n <router>` prints the form it reads.
 - A sleep is detected: `Instant` stops across a sleep on the pinned toolchain, a short
-  lid close of about 5 s and a long one of about 60 s each stop every slot within 10 s
+  lid close of about 15 s and a long one of about 60 s each stop every slot within 10 s
   of the wake, and a network change stops them within 15 s.
 - `caffeinate -i -w <pid>` holds the Mac awake while runners run and releases it after
   `stop`, as `pmset -g assertions` shows.
