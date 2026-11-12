@@ -147,8 +147,8 @@ on Windows, with local persistence, and none yet elsewhere, where every pool is
 skipped. See [operations/cli.md](./operations/cli.md#the-token-store).
 
 **Protocol Version 2** - the line-based JSON messages the **Resident Agent**
-serves on the instance's channel: `hello`, requests and responses, a subscribed
-`state` topic with events, heartbeats and `ending`. A first line that is not a
+serves on the instance's channel: `hello`, requests and responses, subscribed
+`state` and `github` topics with events, heartbeats and `ending`. A first line that is not a
 `hello` is refused, so version 1's requests never reach the agent. See
 [operations/cli.md](./operations/cli.md#protocol-version-2).
 
@@ -156,6 +156,20 @@ serves on the instance's channel: `hello`, requests and responses, a subscribed
 `status` method: its state and reason, its pools and runners, its images and what a
 stop left behind, from local state, cut to 64 KiB. It never holds a token. See
 [operations/cli.md](./operations/cli.md#the-snapshot).
+
+**GitHub State** - what GitHub's runner list says of one runner of this host:
+offline, idle or busy, with the job a busy runner runs once it is known, or not
+listed. It is separate from the runner's local state in the **Snapshot**; the
+**Resident Agent** reads it only while a client holds the `github` topic, and only
+for a **Target Repository** with a registered runner. See
+[operations/cli.md](./operations/cli.md#github-status).
+
+**Request Budget** - the hourly count of GitHub API requests left to the token's
+account, as the `x-ratelimit-*` headers of the **Resident Agent**'s GitHub status
+reads report it, with the level it sets: normal, slowed at 25% left, and paused at
+10% until the reset. Registrations use the same budget but their responses are
+not read for it. See
+[operations/cli.md](./operations/cli.md#github-status).
 
 **Diagnostic Container** - a job container of an **Execution Pool** with
 `diagnostics` on. It runs the runner under the image's collector, carries the

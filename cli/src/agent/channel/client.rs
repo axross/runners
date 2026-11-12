@@ -19,8 +19,9 @@ use crate::instance::roots::Roots;
 use super::super::snapshot::Snapshot;
 use super::super::wire::{
     AgentMessage, ClientInfo, ClientMessage, ErrorBody, MAX_AGENT_MESSAGE_BYTES,
-    MAX_CLIENT_MESSAGE_BYTES, TOPIC_STATE, UpdateEnding, VERSION,
+    MAX_CLIENT_MESSAGE_BYTES, TOPIC_GITHUB, TOPIC_STATE, UpdateEnding, VERSION,
 };
+use crate::github_status::GithubStatus;
 
 /// a client gives up connecting after this long and reads it as no agent.
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
@@ -111,6 +112,9 @@ pub enum Push {
     /// the snapshot, whole; `seq` rises by one with each event of the connection.
     #[non_exhaustive]
     Event { seq: u64, snapshot: Box<Snapshot> },
+    /// the `github` topic's value, whole; `seq` rises as an event's does.
+    #[non_exhaustive]
+    Github { seq: u64, status: Box<GithubStatus> },
     #[non_exhaustive]
     Heartbeat { seq: u64 },
     /// the agent is about to end, for this reason (an open set), with what an end for
@@ -239,6 +243,31 @@ impl Client {
             .await?;
         self.subscribed.store(true, Ordering::SeqCst);
         Ok(())
+    }
+
+    /// subscribes to the `github` topic on this connection, which then holds no other
+    /// subscription; the agent collects while it is renewed, so renew it every 30 s.
+    pub async fn subscribe_github(&self) -> Result<(), CallError> {
+        if !self
+            .welcome
+            .topics
+            .iter()
+            .any(|topic| topic == TOPIC_GITHUB)
+        {
+            return Err(CallError::NotServed(format!("the topic {TOPIC_GITHUB}")));
+        }
+        self.call("subscribe", serde_json::json!({ "topic": TOPIC_GITHUB }))
+            .await?;
+        self.subscribed.store(true, Ordering::SeqCst);
+        Ok(())
+    }
+
+    /// renews this connection's `github` subscription; an agent that ended it for
+    /// want of renewal answers `not_subscribed`, and the caller subscribes again.
+    pub async fn renew_github(&self) -> Result<(), CallError> {
+        self.call("renew", serde_json::json!({ "topic": TOPIC_GITHUB }))
+            .await
+            .map(|_| ())
     }
 
     /// stores the repository's token; the token is sent once, in this call.
@@ -407,11 +436,12 @@ async fn read_messages<R: AsyncRead + Unpin>(
                     });
                 }
             }
-            AgentMessage::Event { topic, seq, value } if topic == TOPIC_STATE => {
-                let _ = pushes.send(Push::Event {
-                    seq,
-                    snapshot: value,
-                });
+            AgentMessage::Event { topic, seq, value } => {
+                if let Some(snapshot) = AgentMessage::snapshot(&topic, &value) {
+                    let _ = pushes.send(Push::Event { seq, snapshot });
+                } else if let Some(status) = AgentMessage::github(&topic, &value) {
+                    let _ = pushes.send(Push::Github { seq, status });
+                }
             }
             AgentMessage::Heartbeat { seq } => {
                 let _ = pushes.send(Push::Heartbeat { seq });
@@ -419,9 +449,7 @@ async fn read_messages<R: AsyncRead + Unpin>(
             AgentMessage::Ending { reason, update } => {
                 let _ = pushes.send(Push::Ending { reason, update });
             }
-            AgentMessage::Welcome { .. }
-            | AgentMessage::Error { .. }
-            | AgentMessage::Event { .. } => {}
+            AgentMessage::Welcome { .. } | AgentMessage::Error { .. } => {}
         }
     }
     end_answers(&answers, &closed);

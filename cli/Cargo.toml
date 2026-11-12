@@ -88,6 +88,11 @@ win32job = { version = "2.0.3", default-features = false }
 [target.'cfg(unix)'.dependencies]
 libc = { version = "0.2.191", default-features = false }
 
+# the GitHub status tests run the collector on tokio's paused clock, so its
+# intervals and back-offs pass without waiting; no crate is added.
+[dev-dependencies]
+tokio = { version = "1.54.1", default-features = false, features = ["test-util"] }
+
 [lints.rust]
 unsafe_code = "forbid"
 
