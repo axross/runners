@@ -282,12 +282,13 @@ mod tests {
 
     fn entry(slots: u32, cpus: f64) -> Entry {
         Entry {
+            index: 0,
             path: String::new(),
             owner: String::new(),
             repository: String::new(),
             name: String::new(),
             slots,
-            token_path: String::new(),
+            token_path: None,
             labels: Vec::new(),
             cpus,
             memory_gb: 8,

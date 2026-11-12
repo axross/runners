@@ -1,0 +1,23 @@
+# two pools clash on name and on routing, and together they total more than the
+# budget; the budget totals come after both clashes, whatever their lines
+schema_version = 1
+routing_label = "axmc"
+
+[budget]
+cpus = 8
+memory_gb = 32
+disk_gb = 200
+
+[[pool]]
+name = "alpha"
+repository = "octo/hello"
+runners = 2
+os = "macos"
+disk_gb = 40
+
+[[pool]]
+name = "alpha"
+repository = "octo/hello"
+runners = 1
+os = "macos"
+disk_gb = 1000

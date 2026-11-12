@@ -1,0 +1,7 @@
+schema_version = 1
+routing_label = 'axpc'
+image_name = "example-image:tag"
+pool = [
+  { name = "alpha", repository = "octo/hello", runners = 0x2, cpus = 2 },
+  { name = "beta", repository = "octo/other", runners = 1, volumes = [{ suffix = "cache", mount_path = "/cache" }] },
+]
