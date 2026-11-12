@@ -15,7 +15,9 @@ use std::time::{Duration, Instant};
 use marshal_cli::json::{self, Value};
 use marshal_cli::runtime::board::Board;
 use marshal_cli::runtime::fake::{Call, FakeBackend, FakeClock, MemoryLog};
-use marshal_cli::runtime::registration::{GitHubRegistrar, HttpLimits, JitRequest, Registrar};
+use marshal_cli::runtime::registration::{
+    GitHubRegistrar, HttpLimits, JitRequest, REJECTED_MARK, Registrar,
+};
 use marshal_cli::runtime::secret::Secret;
 use marshal_cli::runtime::worker::{run_slot, stop_channel};
 use support::stub::{Reply, Stub};
@@ -114,6 +116,7 @@ async fn an_error_response_is_scrubbed_of_the_token_and_cut() {
         error.starts_with("Response status code does not indicate success: 401 (Unauthorized)."),
         "{error}"
     );
+    assert!(error.contains(REJECTED_MARK), "{error}");
     assert!(error.contains("Bad credentials for <token>"), "{error}");
     assert!(!error.contains(TOKEN));
     assert_eq!(error.chars().count(), 503);

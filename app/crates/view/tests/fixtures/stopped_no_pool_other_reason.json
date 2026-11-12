@@ -1,0 +1,83 @@
+{
+  "agent": {
+    "version": "0.1.0",
+    "state": "stopped",
+    "since": 1793763660000,
+    "reason": {
+      "code": "no_pool_started",
+      "message": "no pool could start"
+    }
+  },
+  "configuration": {
+    "path": "C:\\Users\\<user>\\AppData\\Local\\marshal\\config.json",
+    "problems": []
+  },
+  "runners_up": 0,
+  "runners_wanted": 2,
+  "repositories": [
+    {
+      "repository": "owner/app",
+      "has_token": true,
+      "pools": ["app"]
+    }
+  ],
+  "pools": [
+    {
+      "name": "app",
+      "repository": "owner/app",
+      "state": "stopped",
+      "reason": "the token store failed: access was refused (kind access_refused, code 5)",
+      "has_token": true,
+      "runners_up": 0,
+      "slots": 2,
+      "runners": [
+        {
+          "slot": 1,
+          "state": "stopped",
+          "workload": null,
+          "reason": null,
+          "since": 1793763660000
+        },
+        {
+          "slot": 2,
+          "state": "stopped",
+          "workload": null,
+          "reason": null,
+          "since": 1793763660000
+        }
+      ],
+      "diagnostics": null
+    }
+  ],
+  "leftovers": [],
+  "images": [
+    {
+      "name": "actions-runner:local",
+      "lines": [
+        {
+          "name": "image",
+          "value": "actions-runner:local"
+        },
+        {
+          "name": "image-contract",
+          "value": "3"
+        },
+        {
+          "name": "image-built",
+          "value": "2 days ago"
+        },
+        {
+          "name": "runner",
+          "value": "2.338.2, released 9 days ago"
+        }
+      ],
+      "warnings": [
+        {
+          "code": "runner_may_be_newer",
+          "days": 9,
+          "version": "2.338.2"
+        }
+      ]
+    }
+  ]
+}

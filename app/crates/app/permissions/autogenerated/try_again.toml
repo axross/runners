@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-try-again"
+description = "Enables the try_again command without any pre-configured scope."
+commands.allow = ["try_again"]
+
+[[permission]]
+identifier = "deny-try-again"
+description = "Denies the try_again command without any pre-configured scope."
+commands.deny = ["try_again"]

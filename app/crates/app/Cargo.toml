@@ -1,0 +1,59 @@
+[package]
+name = "marshal-app"
+description = "Marshal: the notification-area app, and the one executable that also runs as the agent"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+build = "build.rs"
+default-run = "marshal-app"
+
+[[bin]]
+name = "marshal-app"
+path = "src/main.rs"
+
+# the CLI's stand-in for the docker client, built here too so the tests that start this
+# executable's exporter child can run it against a fake engine, as the CLI's own tests do.
+[[bin]]
+name = "fake-docker"
+path = "../../../cli/helpers/fake_docker.rs"
+test = false
+doc = false
+
+[dependencies]
+marshal-cli = { path = "../../../cli" }
+marshal-modes = { path = "../modes" }
+marshal-session = { path = "../session" }
+marshal-tray = { path = "../tray" }
+marshal-view = { path = "../view" }
+# Tauri's defaults are off and each feature is named, with its reason. `wry` is the web
+# view runtime. `tray-icon` is the notification-area icon and its menu, with no
+# `image-png` or `image-ico`, so the app links no image decoder: the icon's images are
+# embedded already decoded. `common-controls-v6` makes the Windows menu use the
+# version 6 common controls that tauri-build's manifest asks for, which the menu's
+# subclassing needs. The defaults left out: `compression` (the embedded pages are a few
+# files and the fonts are woff2, already compressed, so brotli would only be more code),
+# `dynamic-acl` (the two capabilities are fixed files, and nothing adds one while the
+# app runs), and `x11` and `dbus`, which are Linux only.
+tauri = { version = "2.12", default-features = false, features = ["wry", "common-controls-v6", "tray-icon"] }
+tauri-plugin-single-instance = "2.5"
+serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
+
+[dev-dependencies]
+serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
+tauri = { version = "2.12", default-features = false, features = ["test"] }
+tokio = { version = "1.54.1", default-features = false, features = ["rt", "time", "macros", "net", "io-util"] }
+
+# the named pipe a test squats on, as the library does, to stand in for another process
+# that holds the agent's channel.
+[target.'cfg(windows)'.dev-dependencies]
+interprocess = { version = "2.4.7", default-features = false, features = ["tokio"] }
+
+[build-dependencies]
+tauri-build = { version = "2.7", features = [] }
+# links the common controls manifest into the integration tests, which tauri-build does for
+# the binaries only. it is the resource compiler tauri-build already builds with, so the
+# lock file gains no crate.
+embed-resource = "3.0.12"
+
+[lints]
+workspace = true

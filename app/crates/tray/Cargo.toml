@@ -1,0 +1,17 @@
+[package]
+name = "marshal-tray"
+description = "The notification-area icon's images, when they are replaced, and what the platform says of the taskbar and the clock"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+marshal-view = { path = "../view" }
+
+# the taskbar's mode and the time zone's bias are registry values, read without unsafe
+# code through the safe wrapper.
+[target.'cfg(windows)'.dependencies]
+windows-registry = "0.6"
+
+[lints]
+workspace = true

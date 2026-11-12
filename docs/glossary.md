@@ -128,8 +128,16 @@ see [operations/cli.md](./operations/cli.md#the-instance-layer).
 and told what to do over its channel: it stops and starts all runners, builds the
 **Runner Image**, quits, and stays up when its configuration, image or pools fail.
 It takes the instance's lock, channel and log directory, so it and `start` never
-run on one machine together. Not to be confused with an **Agent Host**. See
+run on one machine together. The **Marshal App**'s executable runs it in its agent
+mode. Not to be confused with an **Agent Host**. See
 [operations/cli.md](./operations/cli.md#the-agent).
+
+**Marshal App** - the Windows notification-area app under `app/`: one executable that
+shows the icon, its menu and the main window and, started again with `agent` as its
+first argument, runs the **Resident Agent** in a separate hidden process that outlives
+it. The app is a client of **Protocol Version 2** only; it never holds the lock, reads
+the configuration, touches the **Token Store** or runs Docker. It is built in CI and
+not yet installed or released. See [operations/app.md](./operations/app.md).
 
 **Token Store** - where the **Resident Agent** keeps each **Target Repository**'s
 token, by the repository's lower-case `owner/name`: the Windows Credential Manager

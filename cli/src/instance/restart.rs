@@ -14,6 +14,9 @@ pub const DELAYS: [Duration; 3] = [
     Duration::from_secs(60),
 ];
 
+/// the failure within the window that stops the instance, after `DELAYS` restarts.
+pub const STOPPING_FAILURE: usize = DELAYS.len() + 1;
+
 /// what a failure leads to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Verdict {
@@ -62,6 +65,20 @@ mod tests {
 
     fn at(seconds: u64) -> SystemTime {
         UNIX_EPOCH + Duration::from_secs(1_000_000 + seconds)
+    }
+
+    #[test]
+    fn the_stopping_failure_is_the_one_after_the_last_delay() {
+        let mut policy = RestartPolicy::default();
+        let verdicts: Vec<Verdict> = (0..STOPPING_FAILURE as u64)
+            .map(|second| policy.record_failure(at(second)))
+            .collect();
+        assert_eq!(verdicts.last(), Some(&Verdict::Stop));
+        assert!(
+            verdicts[..STOPPING_FAILURE - 1]
+                .iter()
+                .all(|verdict| matches!(verdict, Verdict::RestartAfter(_)))
+        );
     }
 
     #[test]

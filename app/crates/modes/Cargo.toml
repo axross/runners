@@ -1,0 +1,12 @@
+[package]
+name = "marshal-modes"
+description = "The modes the one Marshal executable runs in, decided before the app starts"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+marshal-cli = { path = "../../../cli" }
+
+[lints]
+workspace = true
