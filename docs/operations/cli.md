@@ -2950,7 +2950,11 @@ the gates that cover it, so a change to the library knows what the app relies on
   message follows [Version Rules](#version-rules).
 - The app has its own `Cargo.lock`, [`deny.toml`](../../app/deny.toml) and
   [`rust-toolchain.toml`](../../app/rust-toolchain.toml). The toolchain file names
-  the CLI's channel, and Dependabot is set to bump both files in one pull request. The CLI's
+  the CLI's channel, and Dependabot is set to bump both files in one pull request.
+  The app's lockfile resolves every crate `marshal-cli` builds with, for Windows,
+  macOS and Linux, to the version in the CLI's, so the CLI's tests cover the library
+  at the versions the app links; a change to one of those versions changes both
+  lockfiles. The CLI's
   `Cargo.lock`, `deny.toml`, and dependency table do not change for the app: the
   table under Dependencies lists the CLI's crates only, and
   [Security](../conventions/security.md#the-apps-dependencies) holds the policy for the
@@ -2961,14 +2965,15 @@ the gates that cover it, so a change to the library knows what the app relies on
 **Gates.** `mise run check` covers the app's crates on Linux, and the Windows job
 lints and tests them on Windows.
 
-| Task                             | Runs                                                                                                                 |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `fetch:app`                      | `cargo fetch --locked` in `app/`, which `cargo deny` reads                                                           |
-| `format:app`, `format:check:app` | `cargo fmt --all`, and `cargo fmt --all --check`, in `app/`                                                          |
-| `lint:app`                       | `cargo clippy --locked --all-targets -- -D warnings` over the `marshal-modes` package                                |
-| `test:app`                       | `cargo test --locked` over the same package                                                                          |
-| `deny:app`                       | `cargo deny --locked check bans licenses sources` in `app/`, for `x86_64-pc-windows-msvc` and `aarch64-apple-darwin` |
-| `check:app-pins`                 | Both toolchain files name one channel                                                                                |
+| Task                             | Runs                                                                                                                     |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `fetch:app`                      | `cargo fetch --locked` in `app/`, which `cargo deny` reads                                                               |
+| `format:app`, `format:check:app` | `cargo fmt --all`, and `cargo fmt --all --check`, in `app/`                                                              |
+| `lint:app`                       | `cargo clippy --locked --all-targets -- -D warnings` over the `marshal-modes` package                                    |
+| `test:app`                       | `cargo test --locked` over the same package                                                                              |
+| `deny:app`                       | `cargo deny --locked check bans licenses sources` in `app/`, for `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`     |
+| `check:app-pins`                 | Both toolchain files name one channel                                                                                    |
+| `check:app-lock`                 | `app/Cargo.lock` resolves `marshal-cli`'s crates, dev-dependencies aside, for the three targets as `cli/Cargo.lock` does |
 
 `format:check` and `lint` call the app's formatting and lint tasks, and `check` calls
 the rest, so one run covers both workspaces.
