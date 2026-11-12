@@ -23,3 +23,5 @@ cli/target/
 
 # Prettier has no XML parser, and fails on a WiX source.
 *.wxs
+
+app/target/

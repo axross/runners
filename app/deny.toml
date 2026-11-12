@@ -1,0 +1,27 @@
+# cargo-deny policy for the app's workspace, which covers everything the
+# executable links, `marshal-cli` and its crates included. `mise run deny:app` runs
+# the bans, licenses and sources checks, which need no advisory database;
+# docs/conventions/security.md records why each licence is accepted.
+
+[graph]
+# the two operating systems the app is built for; the Linux build is for local
+# development only and is not checked.
+targets = ["x86_64-pc-windows-msvc", "aarch64-apple-darwin"]
+
+[licenses]
+allow = ["MIT", "Apache-2.0", "Unicode-3.0", "ISC", "BSD-3-Clause", "0BSD"]
+confidence-threshold = 0.93
+# the app's own crates are unpublished and carry no licence field.
+private = { ignore = true }
+
+# duplicate versions are reported, not denied, in the app only.
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# the app's crates and `marshal-cli` are path dependencies of each other.
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

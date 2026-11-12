@@ -5,9 +5,9 @@ under [`.github/`](../../.github) is pinned, what a workflow may be granted, how
 release of the CLI is published and its
 macOS files are signed, where
 a self-hosted runner may and may not run, what a runner's shared storage exposes,
-and what is never committed. It does not cover application-level security, such as
-input validation or the OWASP-style concerns the installed `application-security`
-capability owns.
+what the Windows app's processes may do, and what is never committed. It
+does not cover general application-level security, such as input validation or the
+OWASP-style concerns the installed `application-security` capability owns.
 
 The runner image under [`images/actions-runner/`](../../images/actions-runner) and
 the host configuration under
@@ -101,6 +101,17 @@ computed from the real download, and are not covered by Dependabot. Dependabot
 does cover the CLI's own dependencies: its `cargo` and `rust-toolchain` entries
 for `/cli` propose the crate and toolchain refreshes as pull requests.
 
+The app under [`app/`](../../app) is pinned the same way, with its own
+[`app/Cargo.lock`](../../app/Cargo.lock), used with `--locked` everywhere, its own
+[`app/deny.toml`](../../app/deny.toml), and
+[`app/rust-toolchain.toml`](../../app/rust-toolchain.toml), which names the CLI's
+channel; `mise run check:app-pins` fails when the two files differ, and Dependabot's
+`rust-toolchain` entry bumps both in one pull request. `mise run check:app-lock`
+fails when the app's lockfile resolves a crate `marshal-cli` builds with to another
+version than the CLI's. Its `cargo` entry covers the
+app's crates, and the weekly advisory check covers its lockfile. [The App's
+Dependencies](#the-apps-dependencies) holds the rest of its policy.
+
 The Windows installer's tool is pinned the same way. Besides the Rust toolchain,
 whose exception is recorded below, WiX is the one tool the release build fetches.
 [`fetch-wix.sh`](../../.github/scripts/fetch-wix.sh) downloads the NuGet package
@@ -153,7 +164,8 @@ component's hash against that manifest, but it does not verify the manifest's
 signature, so the trust rests on the HTTPS connection to the Rust project's
 distribution server. Recording the manifest's hash here would need a refresh for
 every release without adding a signature check. A step that installs the toolchain
-`cli/rust-toolchain.toml` names through `rustup` is this recorded exception.
+`cli/rust-toolchain.toml` or `app/rust-toolchain.toml` names through `rustup` is this
+recorded exception.
 
 The other is the Node that `actions/setup-node` installs in `release.yaml`, at the
 exact version in `mise.toml`. It takes Node from the runner's tool cache or from
@@ -167,6 +179,41 @@ nodejs.org, again with no checksum. That path is outside the joint-trust argumen
 since the Node.js project is a separate party, and it is accepted as a residual
 risk of the release workflow, below. Any other unpinned download remains a
 finding.
+
+## The App's Dependencies
+
+The app's workspace under [`app/`](../../app) links the `marshal-cli` library, and
+its policy differs from the CLI's in the duplicates and procedural macros it accepts.
+The pinning of the lockfile and the toolchain is in
+[Pinning Convention](#pinning-convention).
+[`app/deny.toml`](../../app/deny.toml) is the app's `cargo-deny` configuration, and
+`mise run deny:app` runs its bans, licences and sources checks for the two targets the
+app is built for, `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`.
+
+- **Registry and licences.** crates.io only, and the CLI's licence allowlist: `MIT`,
+  `Apache-2.0`, `Unicode-3.0`, `ISC`, `BSD-3-Clause` and `0BSD`, an `OR` expression
+  accepted when one alternative is on the list. Any crate under another licence
+  returns to the maintainer.
+- **Duplicates are reported, not denied.** `deny.toml` sets `multiple-versions` to
+  `warn`, so a duplicate version needs no skip. This is the app only: the CLI's
+  duplicates stay denied beyond its two listed skips. Wildcard version requirements
+  are denied except for the path dependencies the app's crates and `marshal-cli` have
+  on each other.
+- **Procedural macros are accepted as a class, in the app only.** A review of each
+  crate would add nothing the lockfile's checksums and `cargo-deny` do not already
+  give. `app/Cargo.lock` holds exactly the crates and versions `cli/Cargo.lock`
+  resolves for `marshal-cli`, for Windows, macOS and Linux, and `mise run check`
+  fails otherwise (`check:app-lock`), so a procedural-macro crate that enters through
+  `marshal-cli` changes `cli/Cargo.lock`, and the CLI's rule, which needs the
+  maintainer's review, applies to it there.
+- **Direct dependencies.** The `marshal-modes` crate depends only on `marshal-cli`,
+  by path. The token store's crates come through the library, and
+  [CLI](../operations/cli.md#dependencies) lists them. A new direct dependency of an
+  app crate MUST be added here with its reason, and needs the maintainer's review.
+- **Refreshes.** Dependabot's `cargo` entry for `/app` proposes the crate refreshes,
+  and a red pull request is fixed there, as for the CLI. A refresh of a crate
+  `marshal-cli` uses fails `check:app-lock` until `cli/Cargo.lock` takes the same
+  version in the same change.
 
 ## `actions/*` Stays on Major Tags
 
@@ -935,6 +982,36 @@ Residual risks, accepted on a single-user host:
 - The agent holds a token in memory for as long as a registration needs it, and a
   JIT configuration a runtime-core panic's message carried would reach the log
   unmasked, as for `start`.
+
+## The App Surface
+
+The Windows app will run as the signed-in user, beside an agent of the same
+executable that holds the pools' tokens, so the question is what the app may do with
+that reach. Nothing builds the app's executable yet, so these rules bind the crates
+that will make it up.
+[App](../operations/app.md) owns how it works.
+
+- **The app process is a client only.** It never holds the instance lock, reads the
+  configuration, touches the token store or runs Docker: it talks to the agent in
+  protocol version 2 and will pass a newly entered token to it in `token_set`, then
+  drop it. One executable runs as both, so the operating system cannot enforce the rule
+  for the app mode. Only the `marshal-modes` crate reaches the library's agent entry,
+  and only when the executable is started in its agent mode. A review checks that no
+  other app crate takes the lock, opens the store or starts `docker`.
+- **The debug-only test variables are ignored in a release build.** A debug build's
+  agent reads `MARSHAL_TEST_ROOT`, `MARSHAL_TEST_DOCKER` and
+  `MARSHAL_TEST_GITHUB_API`, so a test can run the executable against a scratch host.
+  A release build ignores all three, so no environment can move the lock, channel,
+  log, configuration, `docker` program or GitHub address of an installed Marshal, as
+  for the CLI under [One Instance per Machine](#one-instance-per-machine-reached-only-by-its-user).
+
+Residual risks, accepted on a single-user host:
+
+- Whether the exporter or one of the agent's `docker` clients shows a console window
+  (each is created with `CREATE_NO_WINDOW`, asserted at its command builder, but no
+  check observes the window) is shown only on axpc;
+  [App](../operations/app.md#verification-status) lists what has and has not been
+  shown.
 
 ## Tokens Stay Out of the Log, and Job Clients End With `start`
 

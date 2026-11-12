@@ -29,8 +29,9 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   VM, CPU placement in it, Softnet and its SUID check, the accepted host-facing
   surface, the VM-local Docker socket, the pinned Tart, Softnet, golden VM base, and
   runner image Docker client, how the resident agent keeps tokens and receives them,
-  what the TOML configuration holds and what its problems quote, what is never
-  committed, and why the review gate admits one bot identity by login.
+  what the TOML configuration holds and what its problems quote, what the Windows
+  app's processes may do, the app's dependency policy, what is never committed, and
+  why the review gate admits one bot identity by login.
 - [conventions/documentation.md](./conventions/documentation.md) - which
   document a change to each runner surface invalidates, and what the
   documentation checks cover.
@@ -66,17 +67,21 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   (the container backend, the runtime seam, the Tart backend, JIT registration,
   CPU placement, the slot loop, and the signal source), the
   instance layer (instance state, single-instance lock, and control channel),
-  the resident agent (its state, the token store, protocol version 2, and the
-  snapshot),
+  the resident agent (its state, the token store, protocol version 2 with its
+  version rules, and the snapshot),
   the image contract (its labels, the image check, and freshness), building the
   runner image with `build`, running a host with `start`, `stop`, `restart`,
   `status`, and `diagnostics` (the log, containment, the stop sequence, and the
   diagnostic containers and VMs and their export), the axmc host's prerequisites,
   its VM shim, golden VM provisioning, and the golden VM build, the toolchain and Rust
-  gates, the release build and its dry run, signing the macOS files, installing
-  from the MSI or the pkg, the optional check of a download, migrating, updating,
-  uninstalling, and rolling back (including to the bare-binary `v0.1.0`), the
-  tests of those blocks, the allowed dependencies, and why the CLI's name is fixed.
+  gates, the app's workspace and what the library gives it, the release build and
+  its dry run, signing the macOS files, installing from the MSI or the pkg, the
+  optional check of a download, migrating, updating, uninstalling, and rolling back
+  (including to the bare-binary `v0.1.0`), the tests of those blocks, the allowed
+  dependencies, and why the CLI's name is fixed.
+- [operations/app.md](./operations/app.md) - the Windows app's workspace: the one
+  executable and its modes, the debug-only test variables, and what its tests do
+  and do not show.
 - [operations/agent-skills.md](./operations/agent-skills.md) - installing and
   refreshing the skills from `axross/skills`, the drift checks, and the register
   of deviations and gaps.
