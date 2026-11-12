@@ -585,7 +585,8 @@ blank lines, and how the other values are written, including dotted keys and inl
 tables and arrays.
 
 - A changed value takes over its old value's decoration, so a comment on its line
-  stays. A removed value takes only its own line, and a comment above it stays.
+  stays. A removed value takes only its own lines, with any comment inside a value
+  written over several lines, and a comment above it stays.
 - A removed pool or volume takes its keys, a pool's volumes, and the comment lines
   directly above its header. When a blank line or the end of the file follows it, the
   blank line above it goes too. A comment set apart from the header by a blank line
