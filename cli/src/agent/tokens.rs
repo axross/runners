@@ -11,7 +11,7 @@ use tokio::sync::watch;
 
 use crate::runtime::secret::Secret;
 use crate::runtime::token::TokenSource;
-use crate::token_store::{RepositoryKey, StoreError, TokenStore};
+use crate::token_store::{StoreError, TokenKey, TokenStore};
 
 /// why a pool has no token to start with; the snapshot and the log show it.
 pub const NO_TOKEN: &str = "no token";
@@ -24,7 +24,7 @@ pub const NO_TOKEN_STORE: &str = "no token store";
 pub struct StoreTokens {
     store: Option<Arc<dyn TokenStore>>,
     /// which repositories had a token when the store was last asked.
-    known: RefCell<BTreeMap<RepositoryKey, bool>>,
+    known: RefCell<BTreeMap<TokenKey, bool>>,
     changed: watch::Sender<u64>,
 }
 
@@ -46,13 +46,13 @@ impl StoreTokens {
 
     /// whether the repository had a token when the store was last asked.
     #[must_use]
-    pub fn has_token(&self, key: &RepositoryKey) -> bool {
+    pub fn has_token(&self, key: &TokenKey) -> bool {
         self.known.borrow().get(key).copied().unwrap_or(false)
     }
 
     /// asks the store about each repository, and keeps the answers for the snapshot;
     /// a store that fails leaves the repository without one.
-    pub fn refresh<'a>(&self, keys: impl IntoIterator<Item = &'a RepositoryKey>) {
+    pub fn refresh<'a>(&self, keys: impl IntoIterator<Item = &'a TokenKey>) {
         let mut known = self.known.borrow_mut();
         known.clear();
         for key in keys {
@@ -64,7 +64,7 @@ impl StoreTokens {
         }
     }
 
-    pub fn set(&self, key: &RepositoryKey, token: &Secret) -> Result<(), StoreError> {
+    pub fn set(&self, key: &TokenKey, token: &Secret) -> Result<(), StoreError> {
         let store = self.store.as_ref().ok_or_else(no_store)?;
         store.set(key, token)?;
         self.known.borrow_mut().insert(key.clone(), true);
@@ -72,7 +72,7 @@ impl StoreTokens {
         Ok(())
     }
 
-    pub fn remove(&self, key: &RepositoryKey) -> Result<(), StoreError> {
+    pub fn remove(&self, key: &TokenKey) -> Result<(), StoreError> {
         let store = self.store.as_ref().ok_or_else(no_store)?;
         store.remove(key)?;
         self.known.borrow_mut().insert(key.clone(), false);
@@ -80,7 +80,7 @@ impl StoreTokens {
     }
 
     /// the repository's token for a registration, or why there is none.
-    pub fn read(&self, key: &RepositoryKey) -> Result<Secret, String> {
+    pub fn read(&self, key: &TokenKey) -> Result<Secret, String> {
         let Some(store) = &self.store else {
             return Err(NO_TOKEN_STORE.to_string());
         };
@@ -98,7 +98,7 @@ fn no_store() -> StoreError {
 
 impl TokenSource for StoreTokens {
     fn token(&self, owner: &str, repository: &str, _file: &Path) -> Result<Secret, String> {
-        self.read(&RepositoryKey::of(owner, repository))
+        self.read(&TokenKey::of(owner, repository))
     }
 }
 
@@ -107,8 +107,8 @@ mod tests {
     use super::*;
     use crate::token_store::MemoryTokenStore;
 
-    fn key() -> RepositoryKey {
-        RepositoryKey::of("Owner", "Repo")
+    fn key() -> TokenKey {
+        TokenKey::of("Owner", "Repo")
     }
 
     fn tokens() -> (StoreTokens, Arc<MemoryTokenStore>) {
@@ -174,7 +174,7 @@ mod tests {
     fn refresh_asks_the_store_for_each_repository() {
         let (tokens, store) = tokens();
         store.set(&key(), &Secret::new("fake".to_string())).unwrap();
-        let other = RepositoryKey::of("o", "other");
+        let other = TokenKey::of("o", "other");
         tokens.refresh([&key(), &other]);
         assert!(tokens.has_token(&key()));
         assert!(!tokens.has_token(&other));

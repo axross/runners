@@ -28,7 +28,7 @@ use marshal_cli::instance::lock::InstanceLock;
 use marshal_cli::instance::roots::Roots;
 use marshal_cli::runtime::fake::{Call, FakeBackend, FakeClock, FakeRegistrar, MemoryLog};
 use marshal_cli::runtime::log::Log;
-use marshal_cli::token_store::{MemoryTokenStore, RepositoryKey, TokenStore};
+use marshal_cli::token_store::{MemoryTokenStore, TokenKey, TokenStore};
 use serde_json::{Value, json};
 use tokio::io::WriteHalf;
 use tokio::sync::{Notify, mpsc, watch};
@@ -182,10 +182,7 @@ impl Rig {
     pub fn store_token(&self, owner: &str, name: &str, token: &str) {
         use marshal_cli::runtime::secret::Secret;
         self.store
-            .set(
-                &RepositoryKey::of(owner, name),
-                &Secret::new(token.to_string()),
-            )
+            .set(&TokenKey::of(owner, name), &Secret::new(token.to_string()))
             .unwrap();
     }
 

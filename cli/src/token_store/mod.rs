@@ -1,5 +1,5 @@
-//! where the agent keeps each repository's token: an interface that names no
-//! operating system, an in-memory store for tests, and an adapter over a
+//! where the agent keeps each repository's and organization's token: an interface
+//! that names no operating system, an in-memory store for tests, and an adapter over a
 //! `keyring-core` store, which the Windows Credential Manager provides and the Mac's
 //! Keychain store can later provide; the agent is the only caller, one call at a
 //! time; `docs/operations/cli.md` describes the keys and the Windows entries.
@@ -21,10 +21,11 @@ pub use memory::MemoryTokenStore;
 /// 2560 bytes the Credential Manager keeps a password in.
 pub const MAX_TOKEN_UTF16_UNITS: usize = 1280;
 
-/// a repository as the store names it: `owner/name` in lower case, the way the
-/// configuration's checks compare an owner and a repository.
+/// what a token belongs to, as the store names it, in lower case the way the
+/// configuration's checks compare an owner and a repository: a repository is
+/// `owner/name` and an organization its login alone, so no two kinds share a key.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct RepositoryKey(String);
+pub struct TokenKey(String);
 
 /// why a text is not a repository key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,7 +39,29 @@ impl fmt::Display for NotAKey {
 
 impl std::error::Error for NotAKey {}
 
-impl RepositoryKey {
+/// why a text is not an organization key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NotAnOrganization;
+
+impl fmt::Display for NotAnOrganization {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("an organization is written as its login alone")
+    }
+}
+
+impl std::error::Error for NotAnOrganization {}
+
+impl TokenKey {
+    /// reads an organization's login, in any case, with the pattern a configuration
+    /// applies to an owner.
+    pub fn parse_organization(text: &str) -> Result<Self, NotAnOrganization> {
+        if is_owner(text) {
+            Ok(Self(text.to_ascii_lowercase()))
+        } else {
+            Err(NotAnOrganization)
+        }
+    }
+
     /// the key of `owner` and `name`, which must already be valid in a
     /// configuration.
     #[must_use]
@@ -63,7 +86,7 @@ impl RepositoryKey {
     }
 }
 
-impl fmt::Display for RepositoryKey {
+impl fmt::Display for TokenKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
     }
@@ -146,16 +169,16 @@ impl fmt::Display for StoreError {
 
 impl std::error::Error for StoreError {}
 
-/// reads, sets and removes a token by repository.
+/// reads, sets and removes a token by key.
 pub trait TokenStore: Send + Sync {
-    /// the repository's token, or `None` when it has none.
-    fn get(&self, key: &RepositoryKey) -> Result<Option<Secret>, StoreError>;
+    /// the key's token, or `None` when it has none.
+    fn get(&self, key: &TokenKey) -> Result<Option<Secret>, StoreError>;
 
     /// stores the token, replacing any.
-    fn set(&self, key: &RepositoryKey, token: &Secret) -> Result<(), StoreError>;
+    fn set(&self, key: &TokenKey, token: &Secret) -> Result<(), StoreError>;
 
-    /// removes the token; a repository without one is not an error.
-    fn remove(&self, key: &RepositoryKey) -> Result<(), StoreError>;
+    /// removes the token; a key without one is not an error.
+    fn remove(&self, key: &TokenKey) -> Result<(), StoreError>;
 }
 
 /// why a token is refused before it reaches the store.
@@ -206,9 +229,9 @@ mod tests {
 
     #[test]
     fn a_key_is_the_owner_and_name_in_lower_case() {
-        let key = RepositoryKey::parse("Example-Owner/Repo_One").unwrap();
+        let key = TokenKey::parse("Example-Owner/Repo_One").unwrap();
         assert_eq!(key.as_str(), "example-owner/repo_one");
-        assert_eq!(key, RepositoryKey::of("EXAMPLE-owner", "repo_ONE"));
+        assert_eq!(key, TokenKey::of("EXAMPLE-owner", "repo_ONE"));
     }
 
     #[test]
@@ -223,8 +246,42 @@ mod tests {
             "o/..",
             "../x",
         ] {
-            assert_eq!(RepositoryKey::parse(text), Err(NotAKey), "{text:?}");
+            assert_eq!(TokenKey::parse(text), Err(NotAKey), "{text:?}");
         }
+    }
+
+    #[test]
+    fn an_organization_key_is_its_login_in_lower_case() {
+        let key = TokenKey::parse_organization("Example-Org").unwrap();
+        assert_eq!(key.as_str(), "example-org");
+        assert_eq!(key, TokenKey::parse_organization("EXAMPLE-ORG").unwrap());
+    }
+
+    #[test]
+    fn a_text_that_is_not_a_login_is_not_an_organization_key() {
+        for text in ["", "o/r", "org/", "/org", "-org", "o rg", "org_x", ".."] {
+            assert_eq!(
+                TokenKey::parse_organization(text),
+                Err(NotAnOrganization),
+                "{text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn no_organization_key_equals_a_repository_key() {
+        let organization = TokenKey::parse_organization("axross").unwrap();
+        for repository in ["axross/axross", "axross/.github", "axross/runners"] {
+            assert_ne!(organization, TokenKey::parse(repository).unwrap());
+        }
+        assert!(!organization.as_str().contains('/'));
+        assert_eq!(
+            TokenKey::of("axross", "runners")
+                .as_str()
+                .matches('/')
+                .count(),
+            1
+        );
     }
 
     #[test]

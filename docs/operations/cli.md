@@ -1614,16 +1614,21 @@ writes one line in the new file that says how many lines were not written.
 
 ### The Token Store
 
-`token_store` is the one place the agent keeps a repository's token. The interface
-names no operating system: `get`, `set` and `remove` by a repository key, which is
-`owner/name` in lower case, so `Axross/Runners` and `axross/runners` are one token.
+`token_store` is the one place the agent keeps a token. The interface names no
+operating system: `get`, `set` and `remove` by a key of one of two kinds, each in
+lower case. A repository key is `owner/name`, so `Axross/Runners` and
+`axross/runners` are one token. An organization key is the organization's login
+alone, matching the configuration's owner pattern. A repository key always holds one
+slash and an organization key none, so the two never collide. `token_set` and
+`token_remove` take a repository key only and refuse an organization's login.
 A token is trimmed, then refused when it is empty or longer than 1280 UTF-16 code
 units, which keeps it inside the Credential Manager's 2560 bytes.
 
 - **Windows.** The Credential Manager of the current user, through
-  `windows-native-keyring-store`, as one generic credential per repository named
-  `app.axross.marshal:github.com/<owner>/<name>`, with the token as UTF-16 and with
-  local persistence. The crate's default persistence is the enterprise one, which
+  `windows-native-keyring-store`, as one generic credential per key named
+  `app.axross.marshal:github.com/<owner>/<name>` for a repository, or
+  `app.axross.marshal:github.com/<org>` for an organization, with the token as
+  UTF-16 and with local persistence. The crate's default persistence is the enterprise one, which
   roams with the user's profile, so the store asks for the local one.
   `tests/token_store_windows.rs` sets, reads and removes a real credential, reads
   its persistence back from the store's `persistence` attribute, round-trips a token of 1280 UTF-16 units and
@@ -1701,7 +1706,11 @@ The agent answers one connection's requests in order and several connections at 
 
 `token_set` is the one message that carries a secret: the token travels only in its
 `token` param, from the client to the agent, and the agent never sends, logs or
-repeats it. Its error text never quotes the params.
+repeats it. Its error text never quotes the params. A method a later slice adds
+under the version rules above that carries a secret is handled as `token_set` is.
+On Windows the client makes its same-user check (see [Control
+Channel](#control-channel)) at connection, before it sends any request, so every
+such method is covered without a check of its own.
 
 Errors have a stable `code`, an open set, and a `message` in plain text:
 

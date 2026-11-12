@@ -18,7 +18,7 @@ use marshal_cli::agent::CallError;
 use marshal_cli::agent::machine::Launch;
 use marshal_cli::runtime::secret::Secret;
 use marshal_cli::token_store::windows::{credential_manager, target_name};
-use marshal_cli::token_store::{MAX_TOKEN_UTF16_UNITS, RepositoryKey, TokenStore, accepted_token};
+use marshal_cli::token_store::{MAX_TOKEN_UTF16_UNITS, TokenKey, TokenStore, accepted_token};
 use support::agent::Rig;
 
 const FAKE: &str = "fake-token-windows-4444";
@@ -44,7 +44,7 @@ fn has_entry(listing: &str, target: &str) -> bool {
 #[test]
 fn a_token_is_a_local_machine_credential_that_round_trips_and_goes() {
     let store = credential_manager().unwrap();
-    let key = RepositoryKey::of(&format!("Marshal-Test-{}", std::process::id()), "Repo");
+    let key = TokenKey::of(&format!("Marshal-Test-{}", std::process::id()), "Repo");
     let _cleanup = Cleanup(key.clone());
     let target = target_name(&key);
     assert!(target.starts_with("app.axross.marshal:github.com/marshal-test-"));
@@ -84,7 +84,7 @@ fn a_token_is_a_local_machine_credential_that_round_trips_and_goes() {
 }
 
 /// removes a test credential when the test ends, whether it passed or not.
-struct Cleanup(RepositoryKey);
+struct Cleanup(TokenKey);
 
 impl Drop for Cleanup {
     fn drop(&mut self) {
@@ -94,8 +94,8 @@ impl Drop for Cleanup {
     }
 }
 
-fn test_key(label: &str) -> RepositoryKey {
-    RepositoryKey::of(
+fn test_key(label: &str) -> TokenKey {
+    TokenKey::of(
         &format!("marshal-test-{}-{label}", std::process::id()),
         "repo",
     )

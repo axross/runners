@@ -10,7 +10,7 @@ use crate::runtime::backend::ExportOutcome;
 use crate::runtime::board::{Board, PoolState, Row, SlotState};
 use crate::runtime::diagnostic::BUNDLE_QUOTA;
 use crate::runtime::retained::Retained;
-use crate::token_store::RepositoryKey;
+use crate::token_store::TokenKey;
 use crate::validate::Entry;
 
 use super::snapshot::{
@@ -142,10 +142,10 @@ impl View<'_> {
     }
 
     fn repositories(&self, entries: &[Entry]) -> Vec<RepositoryInfo> {
-        let mut by_key: BTreeMap<RepositoryKey, Vec<String>> = BTreeMap::new();
+        let mut by_key: BTreeMap<TokenKey, Vec<String>> = BTreeMap::new();
         for entry in entries {
             by_key
-                .entry(RepositoryKey::of(&entry.owner, &entry.repository))
+                .entry(TokenKey::of(&entry.owner, &entry.repository))
                 .or_default()
                 .push(entry.name.clone());
         }
@@ -165,7 +165,7 @@ impl View<'_> {
         pools: &RowsByName<'_, PoolState>,
         slots: &RowsByName<'_, SlotState>,
     ) -> PoolInfo {
-        let key = RepositoryKey::of(&entry.owner, &entry.repository);
+        let key = TokenKey::of(&entry.owner, &entry.repository);
         let (state, reason) = match pools.get(entry.name.as_str()).map(|row| &row.state) {
             Some(PoolState::WaitingForEngine(_)) => ("waiting_for_docker", None),
             Some(PoolState::Preparing) => ("preparing", None),

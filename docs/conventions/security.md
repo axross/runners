@@ -883,13 +883,14 @@ built: its names, modes, and checks.
 
 ## The Agent Keeps Tokens in the Operating System's Store
 
-The resident agent reads each repository's token from the operating system's
+The resident agent reads each token from the operating system's
 credential store, not from a file, and it receives a token from a client over its
 control channel. [CLI](../operations/cli.md#the-token-store) owns how the store is
 named and used.
 
 - On Windows a token is a generic credential in the user's Credential Manager,
-  named `app.axross.marshal:github.com/<owner>/<name>`, with **local** persistence.
+  named `app.axross.marshal:github.com/<owner>/<name>` for a repository or
+  `app.axross.marshal:github.com/<org>` for an organization, with **local** persistence.
   The crate's default persistence is the enterprise one, which roams with the user's
   profile and so would carry a repository's token to other machines of a domain
   account; the store asks for the local one, and a test on Windows reads the
@@ -907,7 +908,10 @@ named and used.
   request is only as private as the channel: only the agent's user can send it, and
   on Windows the client sends it only after it has checked that the pipe's server
   runs as that user, so a squatter of another account receives nothing and a failure
-  to verify is a refusal. The residual risks are a squatter of the same user, which
+  to verify is a refusal. The check is made once at connection, before any request,
+  so it covers every request on the connection. A method added under protocol
+  version 2's version rules that carries a secret is handled as `token_set` is. The
+  residual risks are a squatter of the same user, which
   is accepted on a single-user host, and the tiny window in which a process ID is
   reused between the connection and the check.
 - A token longer than 1280 UTF-16 code units or empty is refused before it reaches the
@@ -917,11 +921,12 @@ named and used.
 
 Residual risks, accepted on a single-user host:
 
-- A same-user client can create store entries for any well-formed repository name,
-  one token of at most 1280 units each, and the agent never removes one it did not
-  hear of. The agent's in-memory record of which repositories have a token also gains
-  an entry for each new name a `token_set` or `token_remove` names, until the next
-  configuration read replaces it; each key is bounded by the form of `owner/name`.
+- A same-user client can create store entries for any well-formed key, one token of
+  at most 1280 units each, and the agent never removes one it did not hear of. The
+  agent's in-memory record of which keys have a token also gains an entry for each
+  new name a request names, until the next configuration read replaces it; each key
+  is bounded by its form, `owner/name` for a repository or a login for an
+  organization.
 - Another process of the same user that connects to the channel can set or remove
   a token, stop the runners or quit the agent, as it can for `start`'s
   commands.
