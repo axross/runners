@@ -77,6 +77,8 @@ pub enum TokenResult {
     },
     Removed,
     NotSaved(NotSaved),
+    /// a removal that failed, with why; the token is still stored.
+    NotRemoved(String),
 }
 
 /// the token forms as the page has them open. The view never holds a token or what is

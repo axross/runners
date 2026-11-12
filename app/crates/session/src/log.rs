@@ -36,6 +36,8 @@ struct Current {
     named: SystemTime,
     /// when a log that stopped may try to open a file again.
     retry_at: Instant,
+    /// the lines dropped since the log stopped.
+    lost: u64,
 }
 
 pub struct AppLog {
@@ -57,6 +59,7 @@ impl AppLog {
                 written: 0,
                 named,
                 retry_at: Instant::now(),
+                lost: 0,
             }),
         })
     }
@@ -68,31 +71,52 @@ impl AppLog {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let length = u64::try_from(text.len()).unwrap_or(u64::MAX);
-        if current.file.is_none() || current.written.saturating_add(length) > self.max_bytes {
+        let stopped = current.file.is_none();
+        if stopped || current.written.saturating_add(length) > self.max_bytes {
             // a log that stopped drops its lines until the retry time, so a full disk
             // does not replace every kept file with a new empty one
-            if current.file.is_none() && Instant::now() < current.retry_at {
+            if stopped && Instant::now() < current.retry_at {
+                current.lost = current.lost.saturating_add(1);
                 return;
             }
             let at = SystemTime::now().max(current.named + Duration::from_millis(1));
             current.file = create(&self.directory, at).ok();
             current.written = 0;
             current.named = at;
+            if stopped && current.file.is_some() {
+                let notice = format!(
+                    "{} Logging recovered; {} lines were not written while it was stopped.\n",
+                    stamp(SystemTime::now()),
+                    current.lost
+                );
+                current.lost = 0;
+                write(&mut current, &notice);
+            }
         }
-        let Some(file) = current.file.as_mut() else {
-            current.retry_at = Instant::now() + RETRY_EVERY;
-            return;
-        };
-        if file
-            .write_all(text.as_bytes())
-            .and_then(|()| file.flush())
-            .is_err()
-        {
-            current.file = None;
-            current.retry_at = Instant::now() + RETRY_EVERY;
-        }
-        current.written = current.written.saturating_add(length);
+        write(&mut current, &text);
     }
+}
+
+/// writes `text` to the open file; a failed write stops the log until the retry time,
+/// and a log with no file counts the line as lost.
+fn write(current: &mut Current, text: &str) {
+    let Some(file) = current.file.as_mut() else {
+        current.retry_at = Instant::now() + RETRY_EVERY;
+        current.lost = current.lost.saturating_add(1);
+        return;
+    };
+    if file
+        .write_all(text.as_bytes())
+        .and_then(|()| file.flush())
+        .is_err()
+    {
+        current.file = None;
+        current.retry_at = Instant::now() + RETRY_EVERY;
+        current.lost = current.lost.saturating_add(1);
+        return;
+    }
+    let length = u64::try_from(text.len()).unwrap_or(u64::MAX);
+    current.written = current.written.saturating_add(length);
 }
 
 impl Log for AppLog {
@@ -193,7 +217,15 @@ mod tests {
         );
         log.current.lock().unwrap().retry_at = Instant::now();
         log.info("written again");
-        assert_eq!(fs::read_dir(&logs).unwrap().count(), 1);
+        let files: Vec<_> = fs::read_dir(&logs).unwrap().collect();
+        assert_eq!(files.len(), 1);
+        let text = fs::read_to_string(files[0].as_ref().unwrap().path()).unwrap();
+        // the line that could not make a file and the one before the retry time
+        assert!(
+            text.contains("Logging recovered; 2 lines were not written while it was stopped."),
+            "{text}"
+        );
+        assert!(text.contains("written again"), "{text}");
         fs::remove_dir_all(directory).unwrap();
     }
 }

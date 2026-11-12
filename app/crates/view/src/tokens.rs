@@ -264,13 +264,6 @@ fn row(context: &Context<'_>, repository: &Repository) -> TokenRow {
     } else {
         format!("Used by pools {}", list_of(&repository.pools))
     };
-    let remove = control(
-        context,
-        Action::RemoveToken(key.clone()),
-        "Remove Token",
-        Look::Destructive,
-        Some(removal_question(context, repository)),
-    );
     let controls = match state {
         TokenState::Missing => vec![control(
             context,
@@ -287,7 +280,13 @@ fn row(context: &Context<'_>, repository: &Repository) -> TokenRow {
                 Look::Tonal,
                 None,
             ),
-            remove,
+            control(
+                context,
+                Action::RemoveToken(key.clone()),
+                "Remove Token",
+                Look::Destructive,
+                Some(removal_question(context, repository)),
+            ),
         ],
     };
     let ui = context.input.tokens;
@@ -410,6 +409,10 @@ impl TokenResult {
             ),
             Self::Removed => format!("Token for {repository} removed."),
             Self::NotSaved(failure) => failure.message(),
+            Self::NotRemoved(why) => format!(
+                "Token for {repository} not removed. {}. It is still stored.",
+                capitalised(plain(why).trim_end_matches('.'))
+            ),
         }
     }
 

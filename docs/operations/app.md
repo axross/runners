@@ -53,20 +53,15 @@ compatibility promise: their arguments are what the app and the library pass eac
 other, not an interface for a person or a script. A release build is a Windows
 subsystem executable, so the app and the modes it starts have no console of their
 own, and the agent is started with `DETACHED_PROCESS` (see Launch), which leaves it
-no console. It has no console for its children to inherit, so each `docker` client it
-starts and the exporter child get `CREATE_NO_WINDOW`, set by the library's two command
-builders and asserted by a unit test at each; the agent's own flags are recorded
-and asserted by a unit test too. Their process groups are unchanged. Most clients
-have piped or closed standard streams, but in terminal mode `marshal build`'s
-`docker build` inherits the CLI's standard output and standard error, and the
-exporter child inherits its standard error. What a terminal run does with the flag on
-Windows, including whether a terminal `marshal build` still streams its output, is
-shown only by the axpc run: the Windows CI tests record the flags or run the CLI with
-piped output (see [CLI](./cli.md#running-a-host)). Whether a
-window still appears is shown only on axpc. Only the app mode takes Tauri's single-instance lock, so a second
-launch brings the first one's window forward and starts nothing. The agent mode is
-kept to one by the machine-wide lock the library's agent takes, as `start` is, so
-the app and the command line never run the pools together.
+no console; its flags are recorded and asserted by a unit test. It has no console for
+its children to inherit, so each `docker` client it starts and the exporter child get
+`CREATE_NO_WINDOW`; [CLI](./cli.md#running-a-host) says where that is set and tested,
+which children inherit the CLI's standard streams, and what only the axpc run shows,
+including whether a window still appears. Only the app mode takes Tauri's
+single-instance lock, so a second launch brings the first one's window forward and
+starts nothing. The agent mode is kept to one by the machine-wide lock the library's
+agent takes, as `start` is, so the app and the command line never run the pools
+together.
 
 A `fake-docker` binary is built beside `marshal-app` from the CLI's
 [`cli/helpers/fake_docker.rs`](../../cli/helpers/fake_docker.rs), so the tests that
@@ -91,8 +86,9 @@ them: the `marshal-modes` crate reads them only when `debug_assertions` is on, s
 environment moves a release build's lock, channel, files, `docker` or GitHub address.
 [Security](../conventions/security.md#the-app-surface) records why. The crate has a
 test of that in the release profile, which the `app-modes` job runs on a macOS hosted
-runner with `cargo test --release`, as a Linux step runs the library's own options in
-that profile. `mise run check` runs the crate's tests in the debug profile only.
+runner with `cargo test --release` and all three variables set, so the test fails if a
+release build reads them, as a Linux step runs the library's own options in that
+profile. `mise run check` runs the crate's tests in the debug profile only.
 
 ## The Agent and the App's Session
 
@@ -150,7 +146,8 @@ web view.
 A token travels from the window to the agent only in `token_set`. The session trims
 it, refuses an empty one or one over 1280 UTF-16 code units before sending, wraps it
 in the library's `Secret`, sends it once and drops it; it is in no field, log line,
-error text or view.
+error text or view. A removal that fails, or that is asked for with no connection,
+shows as not removed, with the token still stored.
 
 ## Logs
 
@@ -159,7 +156,8 @@ named `marshal-<time>-<pid>.log`, continued in a new file at 10 MiB with the new
 ten kept. The app writes to the same folder under its own name, `app-<time>-<pid>.log`,
 with the same limits. A log that cannot write stops and drops its lines for 30 s
 before it tries a new file, as the agent's does, so a full disk does not replace the
-kept files with empty ones. Each side prunes only its own files, so neither takes the
+kept files with empty ones; the first line of the next file says how many lines were
+not written. Each side prunes only its own files, so neither takes the
 other's place, and a test shows it. A second launch of the app writes no file, because
 the single-instance plugin ends it before the log opens. Every line passes through the
 view crate's `plain`, which also replaces a word shaped like a GitHub token, though

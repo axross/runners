@@ -155,5 +155,18 @@ fn no_variable_means_no_override() {
 #[cfg(not(debug_assertions))]
 #[test]
 fn a_release_build_ignores_the_variables() {
+    // CI's release step sets all three, so the test fails if a release build reads them
+    if std::env::var("MARSHAL_EXPECT_RELEASE").as_deref() == Ok("1") {
+        for name in [
+            marshal_modes::TEST_ROOT_VARIABLE,
+            marshal_modes::TEST_DOCKER_VARIABLE,
+            marshal_modes::TEST_GITHUB_API_VARIABLE,
+        ] {
+            assert!(
+                std::env::var_os(name).is_some(),
+                "the release step sets {name}"
+            );
+        }
+    }
     assert_eq!(Overrides::from_environment(), Overrides::default());
 }
