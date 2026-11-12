@@ -30,3 +30,4 @@ pub mod token_store;
 pub mod validate;
 #[cfg(unix)]
 pub mod vm_shim;
+pub mod windows_host;
