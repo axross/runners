@@ -21,6 +21,7 @@ doc = false
 
 [dependencies]
 marshal-cli = { path = "../../../cli" }
+marshal-feed = { path = "../feed" }
 marshal-modes = { path = "../modes" }
 marshal-session = { path = "../session" }
 marshal-tray = { path = "../tray" }
@@ -42,6 +43,18 @@ serde = { version = "1.0.229", default-features = false, features = ["std", "der
 serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
 tauri = { version = "2.12", default-features = false, features = ["test"] }
 tokio = { version = "1.54.1", default-features = false, features = ["rt", "time", "macros", "net", "io-util"] }
+
+# Tauri's updater, in the app mode only (see src/updates.rs), pinned to the version whose
+# source the plan read. Its defaults are off: the feed and the MSI come over rustls with
+# ring, the MSI is downloaded as itself so no zip support is linked, and no system proxy
+# is read.
+[target.'cfg(windows)'.dependencies]
+tauri-plugin-updater = { version = "=2.14.1", default-features = false, features = ["rustls-tls"] }
+# the handle the app waits on for the agent's process to exit, without unsafe code, as
+# the library already does.
+winsafe = { version = "0.0.29", default-features = false, features = ["kernel"] }
+# the wait's timer; the version the session already builds, so this adds no crate.
+tokio = { version = "1.54.1", default-features = false, features = ["time"] }
 
 # the named pipe a test squats on, as the library does, to stand in for another process
 # that holds the agent's channel.

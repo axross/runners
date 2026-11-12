@@ -1,0 +1,27 @@
+[package]
+name = "marshal-feed"
+description = "The update feed: which releases the app takes, and the check the release run makes of latest.json before it publishes it"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "marshal-feed-check"
+path = "src/main.rs"
+
+# every crate here is one the updater plugin or the library already links into the app's
+# Windows tree, at the version the lockfile holds, so this crate adds none:
+# minisign-verify is the verifier the plugin uses, base64 decodes the key and signature as
+# the plugin does, semver compares versions as the plugin does, url parses the download
+# address, and sha2 hashes a file for the feed check.
+[dependencies]
+base64 = { version = "0.23.1", default-features = false, features = ["std"] }
+minisign-verify = "0.3.0"
+semver = { version = "1.0.28", default-features = false, features = ["std"] }
+serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
+serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
+sha2 = { version = "0.10.9", default-features = false, features = ["std"] }
+url = { version = "2.5.8", default-features = false, features = ["std"] }
+
+[lints]
+workspace = true

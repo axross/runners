@@ -116,6 +116,8 @@ clarified() {
       line["windows"] = "7f7a9f0f246a7dca9c3337dad59f29abc61de9ebbaf8e7a778283007b4f3f6e7"
       line["dpi"] = "1cee0792a39a8b4052ac78110030989b9374b9ed91d53cfcbc0598e9f8c377b9"
       line["tauri-plugin-single-instance"] = "279bb0a6b9b8181aedb132d9045bf88de6569341a5222f7585ba26064c82fba4"
+      line["tauri-plugin-updater"] = "51556d4ae4fc1be8af027239721b4df8e46684013543508e86610fb18819a734"
+      line["minisign-verify"] = "e3779c5525d8d1e30bc3c56a5beb4e1a1be85affcc0a3a1a91033dda35d72f2d"
       line["ring"] = "b560151d3861940d7a754b25cb9753400462028037d7a8192bd46f5d3ebb8313"
     }
     function own(crate) { return crate ~ /^windows(-|$)/ ? line["windows"] : line[crate] }

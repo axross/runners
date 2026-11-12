@@ -13,8 +13,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 use marshal_app::state::{AppState, Asking, Latest};
 use marshal_app::{HIDDEN_EVENT, commands, on_window_event};
 use marshal_session::{
-    Act, Connected, Dial, DialError, Failure, Launcher, Link, Log, Method, Present, Seams, Session,
-    Shown, Then, WallClock,
+    Act, Connected, Dial, DialError, Failure, Launcher, Link, Log, Method, NoUpdates, Present,
+    Seams, Session, Shown, Then, WallClock,
 };
 use marshal_view::Confirmation;
 use serde_json::json;
@@ -34,6 +34,9 @@ impl Link for Nothing {
     }
     async fn call(&self, _method: Method) -> Result<(), Failure> {
         Ok(())
+    }
+    async fn drain_for_update(&self, _version: &str) -> Result<Option<u32>, Failure> {
+        Ok(None)
     }
 }
 
@@ -108,6 +111,11 @@ fn app_asking(then: Then, log: Arc<dyn Log>) -> App<MockRuntime> {
         present: Arc::new(Quiet),
         time: Arc::new(WallClock::new(|| 0)),
         log: Arc::new(Quiet),
+        version: "test".to_string(),
+        updater: None,
+        processes: Arc::new(NoUpdates),
+        record: Arc::new(NoUpdates),
+        launch: marshal_cli::agent::Launch::Running,
     });
     tauri::async_runtime::spawn(async move {
         session.run().await;
@@ -315,6 +323,11 @@ fn closing_the_main_window_tells_the_page_and_hides_it_instead() {
         present: Arc::new(Quiet),
         time: Arc::new(WallClock::new(|| 0)),
         log: Arc::new(Quiet),
+        version: "test".to_string(),
+        updater: None,
+        processes: Arc::new(NoUpdates),
+        record: Arc::new(NoUpdates),
+        launch: marshal_cli::agent::Launch::Running,
     });
     tauri::async_runtime::spawn(async move {
         session.run().await;

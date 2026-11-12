@@ -4,7 +4,7 @@
 use serde::Serialize;
 
 use crate::state::{Context, Resident, Stop};
-use crate::text::{capitalised, counted};
+use crate::text::{capitalised, counted, plain};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Summary {
@@ -54,9 +54,30 @@ fn stop_phrase(stop: &Stop) -> String {
     }
 }
 
+/// while the agent drains for an update, what it is waiting for: "updating to 1.4.0:
+/// waiting for 2 runners to finish", or "updating to 1.4.0" once it waits for none. The
+/// agent's state stays running meanwhile, so a pending stop or quit is shown instead.
+fn updating(context: &Context<'_>) -> Option<String> {
+    if !matches!(context.resident, Resident::Running) {
+        return None;
+    }
+    let update = context.snapshot?.agent.update.as_ref()?;
+    let version = plain(&update.version);
+    Some(match update.waiting {
+        0 => format!("updating to {version}"),
+        waiting => format!(
+            "updating to {version}: waiting for {} to finish",
+            counted(waiting, "runner", "runners")
+        ),
+    })
+}
+
 /// what the tooltip says after "Marshal: ".
 fn phrase(context: &Context<'_>) -> String {
     let (up, settled, wanted) = (context.up, context.up_settled, context.wanted);
+    if let Some(updating) = updating(context) {
+        return updating;
+    }
     match &context.resident {
         Resident::Running if context.restart_due.is_some() => {
             "restarting after a failure".to_string()
@@ -79,8 +100,12 @@ fn phrase(context: &Context<'_>) -> String {
 }
 
 /// "Running since today 03:15", and for the states that run the pools, how many pools
-/// there are and how many are skipped.
+/// there are and how many are skipped; while the agent drains for an update, what it
+/// waits for instead.
 fn since_line(context: &Context<'_>) -> String {
+    if let Some(updating) = updating(context) {
+        return capitalised(&updating);
+    }
     let clock = &context.input.clock;
     let since = |word: &str| format!("{word} since {}", clock.when_with_day(context.since_ms));
     let pools = || {

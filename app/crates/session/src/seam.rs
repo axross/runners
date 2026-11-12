@@ -1,11 +1,16 @@
 //! what the session needs from the world, as traits, so its tests run it against fakes
 //! and a clock that jumps: the connection to the agent, the start of the agent, the
-//! time, the log and the screen.
+//! time, the log, the screen, and for updates the feed, the agent's process and the
+//! record kept across an update.
 
 use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
+use std::time::Duration;
 
 use marshal_cli::agent::Launch;
 use marshal_cli::agent::snapshot::Snapshot;
+use marshal_cli::agent::wire::UpdateEnding;
 use marshal_view::{Clock, View};
 use serde::Serialize;
 use tokio::sync::mpsc;
@@ -88,8 +93,12 @@ pub enum DialError {
 pub enum Pushed {
     Snapshot(Box<Snapshot>),
     Heartbeat,
-    /// the agent is about to end, for this reason (an open set).
-    Ending(String),
+    /// the agent is about to end, for this reason (an open set), with what an end for an
+    /// update adds.
+    Ending {
+        reason: String,
+        update: Option<UpdateEnding>,
+    },
     /// the connection ended.
     Closed,
 }
@@ -98,12 +107,28 @@ pub enum Pushed {
 pub trait Link: Send + Sync + 'static {
     fn subscribe(&self) -> impl Future<Output = Result<(), Failure>> + Send;
     fn call(&self, method: Method) -> impl Future<Output = Result<(), Failure>> + Send;
+    /// asks the agent to drain for an update to `version`; the answer is the agent's
+    /// process ID when it gave one.
+    fn drain_for_update(
+        &self,
+        version: &str,
+    ) -> impl Future<Output = Result<Option<u32>, Failure>> + Send;
+}
+
+/// what the agent said of itself in `welcome`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AgentInfo {
+    /// the agent's own version.
+    pub version: String,
+    /// whether it lists `drain_for_update`.
+    pub drains: bool,
 }
 
 /// a connection and what the agent sends on it.
 pub struct Connected<L> {
     pub link: L,
     pub pushes: mpsc::UnboundedReceiver<Pushed>,
+    pub agent: AgentInfo,
 }
 
 /// makes connections to this user's agent.
@@ -152,4 +177,63 @@ pub struct Shown {
 /// the screen: called from the session's task whenever what is shown changes.
 pub trait Present: Send + Sync + 'static {
     fn present(&self, shown: &Shown);
+}
+
+/// a future a seam returns, which a trait object can name.
+pub type Later<T> = Pin<Box<dyn Future<Output = T> + Send>>;
+
+/// the update feed: what a check found, after its download verified.
+pub trait Updater: Send + Sync + 'static {
+    /// reads the feed and, for a release the app takes, downloads its installer and
+    /// verifies it; `None` when there is no newer release. A check never installs.
+    fn check(&self) -> Later<Result<Option<Box<dyn Verified>>, String>>;
+}
+
+/// a downloaded update whose signature verified, held until it is installed or dropped.
+pub trait Verified: Send + 'static {
+    /// the version it installs.
+    fn version(&self) -> &str;
+
+    /// starts its installer, which replaces Marshal and starts the new app. On Windows
+    /// the app's process ends here when the installer started, so `Ok` returns only to a
+    /// test.
+    fn install(self: Box<Self>) -> Result<(), String>;
+}
+
+/// the agent's process, which the app waits on before it installs.
+pub trait Processes: Send + Sync + 'static {
+    /// a handle to the process `pid`, or `None` when no such process runs.
+    fn open(&self, pid: u32) -> Result<Option<Arc<dyn Process>>, String>;
+}
+
+/// a handle to a process, which stays the same process while the handle is open.
+pub trait Process: Send + Sync + 'static {
+    fn has_exited(&self) -> bool;
+
+    /// waits at most `limit` for the process to exit; `true` when it has.
+    fn wait(self: Arc<Self>, limit: Duration) -> Later<bool>;
+}
+
+/// where the app does not update itself: no process is watched and no record is kept.
+pub struct NoUpdates;
+
+impl Processes for NoUpdates {
+    fn open(&self, _pid: u32) -> Result<Option<Arc<dyn Process>>, String> {
+        Err("this build does not watch processes".to_string())
+    }
+}
+
+impl Record for NoUpdates {
+    fn write(&self, _version: &str, _at_ms: u64) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn remove(&self) {}
+}
+
+/// the one-shot record of runners "stopped by you" when the agent ended for an update.
+pub trait Record: Send + Sync + 'static {
+    /// writes that the runners were stopped by you, for the update to `version`.
+    fn write(&self, version: &str, at_ms: u64) -> Result<(), String>;
+    fn remove(&self);
 }

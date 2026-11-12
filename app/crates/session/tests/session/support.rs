@@ -9,9 +9,11 @@ use std::time::Duration;
 
 use marshal_cli::agent::Launch;
 use marshal_cli::agent::snapshot::Snapshot;
+use marshal_cli::agent::wire::UpdateEnding;
 use marshal_session::{
-    Connected, Dial, DialError, Ended, Failure, Handle, Launcher, Link, Log, Method, Present,
-    Pushed, Seams, Session, Shown, TimeSource,
+    AgentInfo, Connected, Dial, DialError, Ended, Failure, Handle, Later, Launcher, Link, Log,
+    Method, Present, Process, Processes, Pushed, Record, Seams, Session, Shown, TimeSource,
+    Updater, Verified,
 };
 use marshal_view::{Clock, View};
 use tokio::sync::mpsc;
@@ -57,6 +59,7 @@ pub enum Called {
     Quit,
     TokenSet { repository: String, token: String },
     TokenRemove { repository: String },
+    Drain { version: String },
 }
 
 #[derive(Default)]
@@ -67,6 +70,8 @@ struct AgentState {
     subscribe: Option<Result<(), Failure>>,
     /// a call that is held until the test lets it go.
     held: Vec<(&'static str, Arc<tokio::sync::Notify>)>,
+    /// the process ID a drain answers with.
+    pid: Option<u32>,
 }
 
 /// the test's end of a fake agent.
@@ -129,11 +134,43 @@ impl Link for FakeLink {
         }
         answer
     }
+
+    async fn drain_for_update(&self, version: &str) -> Result<Option<u32>, Failure> {
+        let (answer, held, pid) = {
+            let mut state = locked(&self.state);
+            state.calls.push(Called::Drain {
+                version: version.to_string(),
+            });
+            let answer = state
+                .answers
+                .iter()
+                .find(|(named, _)| *named == "drain_for_update")
+                .map_or(Ok(()), |(_, answer)| answer.clone());
+            let held = state
+                .held
+                .iter()
+                .find(|(named, _)| *named == "drain_for_update")
+                .map(|(_, gate)| Arc::clone(gate));
+            (answer, held, state.pid)
+        };
+        if let Some(gate) = held {
+            gate.notified().await;
+        }
+        answer.map(|()| pid)
+    }
 }
 
 impl Agent {
     /// a connection to hand to the session, and the test's end of it.
     pub fn new() -> (Self, Connected<FakeLink>) {
+        Self::reporting(AgentInfo {
+            version: "1.3.0".to_string(),
+            drains: true,
+        })
+    }
+
+    /// an agent that says this of itself in `welcome`.
+    pub fn reporting(agent: AgentInfo) -> (Self, Connected<FakeLink>) {
         let state = Arc::new(Mutex::new(AgentState::default()));
         let (pushes, receiver) = mpsc::unbounded_channel();
         (
@@ -144,6 +181,7 @@ impl Agent {
             Connected {
                 link: FakeLink { state },
                 pushes: receiver,
+                agent,
             },
         )
     }
@@ -157,7 +195,23 @@ impl Agent {
     }
 
     pub fn end(&self, reason: &str) {
-        let _ = self.pushes.send(Pushed::Ending(reason.to_string()));
+        let _ = self.pushes.send(Pushed::Ending {
+            reason: reason.to_string(),
+            update: None,
+        });
+    }
+
+    /// says the agent is ending for the update to `version`.
+    pub fn end_for_update(&self, version: &str, stopped_by_you: bool) {
+        let _ = self.pushes.send(Pushed::Ending {
+            reason: "update".to_string(),
+            update: Some(UpdateEnding::new(version, stopped_by_you)),
+        });
+    }
+
+    /// the process ID the agent's drain answers with.
+    pub fn answer_pid(&self, pid: u32) {
+        locked(&self.state).pid = Some(pid);
     }
 
     pub fn close(&self) {
@@ -390,10 +444,181 @@ impl Log for MemoryLog {
     }
 }
 
+// ---- the update feed, the agent's process and the record
+
+#[derive(Default)]
+struct UpdatesState {
+    /// what each check finds, in order; once none are left, no update.
+    checks: VecDeque<Result<Option<String>, String>>,
+    checked: Vec<Instant>,
+    installed: Vec<String>,
+    install_error: Option<String>,
+    /// processes by ID: whether each has exited, and when it does
+    processes: Vec<(u32, Arc<FakeProcessState>)>,
+    record: Vec<RecordEvent>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RecordEvent {
+    Written(String),
+    Removed,
+}
+
+#[derive(Default)]
+struct FakeProcessState {
+    exited: Mutex<bool>,
+    notify: tokio::sync::Notify,
+}
+
+#[derive(Clone, Default)]
+pub struct Updates(Arc<Mutex<UpdatesState>>);
+
+impl Updates {
+    /// the next check finds the update to `version`, downloaded and verified.
+    pub fn offer(&self, version: &str) -> &Self {
+        locked(&self.0)
+            .checks
+            .push_back(Ok(Some(version.to_string())));
+        self
+    }
+
+    pub fn fail_check(&self, why: &str) -> &Self {
+        locked(&self.0).checks.push_back(Err(why.to_string()));
+        self
+    }
+
+    pub fn refuse_install(&self, why: &str) {
+        locked(&self.0).install_error = Some(why.to_string());
+    }
+
+    /// a running process with this ID.
+    pub fn process(&self, pid: u32) -> &Self {
+        locked(&self.0)
+            .processes
+            .push((pid, Arc::new(FakeProcessState::default())));
+        self
+    }
+
+    pub fn exit(&self, pid: u32) {
+        let state = locked(&self.0)
+            .processes
+            .iter()
+            .find(|(id, _)| *id == pid)
+            .map(|(_, state)| Arc::clone(state));
+        if let Some(state) = state {
+            *locked(&state.exited) = true;
+            state.notify.notify_waiters();
+        }
+    }
+
+    pub fn checks(&self, since: Instant) -> Vec<u64> {
+        locked(&self.0)
+            .checked
+            .iter()
+            .map(|at| at.duration_since(since).as_secs())
+            .collect()
+    }
+
+    pub fn installed(&self) -> Vec<String> {
+        locked(&self.0).installed.clone()
+    }
+
+    pub fn record(&self) -> Vec<RecordEvent> {
+        locked(&self.0).record.clone()
+    }
+}
+
+struct FakeVerified {
+    version: String,
+    updates: Updates,
+}
+
+impl Verified for FakeVerified {
+    fn version(&self) -> &str {
+        &self.version
+    }
+
+    fn install(self: Box<Self>) -> Result<(), String> {
+        let mut state = locked(&self.updates.0);
+        if let Some(why) = state.install_error.clone() {
+            return Err(why);
+        }
+        state.installed.push(self.version.clone());
+        Ok(())
+    }
+}
+
+impl Updater for Updates {
+    fn check(&self) -> Later<Result<Option<Box<dyn Verified>>, String>> {
+        let found = {
+            let mut state = locked(&self.0);
+            state.checked.push(Instant::now());
+            state.checks.pop_front().unwrap_or(Ok(None))
+        };
+        let updates = self.clone();
+        Box::pin(async move {
+            found.map(|found| {
+                found
+                    .map(|version| Box::new(FakeVerified { version, updates }) as Box<dyn Verified>)
+            })
+        })
+    }
+}
+
+struct FakeProcess(Arc<FakeProcessState>);
+
+impl Process for FakeProcess {
+    fn has_exited(&self) -> bool {
+        *locked(&self.0.exited)
+    }
+
+    fn wait(self: Arc<Self>, limit: Duration) -> Later<bool> {
+        Box::pin(async move {
+            let exited = async {
+                loop {
+                    let notified = self.0.notify.notified();
+                    if self.has_exited() {
+                        return;
+                    }
+                    notified.await;
+                }
+            };
+            tokio::time::timeout(limit, exited).await.is_ok()
+        })
+    }
+}
+
+impl Processes for Updates {
+    fn open(&self, pid: u32) -> Result<Option<Arc<dyn Process>>, String> {
+        let state = locked(&self.0)
+            .processes
+            .iter()
+            .find(|(id, _)| *id == pid)
+            .map(|(_, state)| Arc::clone(state));
+        Ok(state
+            .filter(|state| !*locked(&state.exited))
+            .map(|state| Arc::new(FakeProcess(state)) as Arc<dyn Process>))
+    }
+}
+
+impl Record for Updates {
+    fn write(&self, version: &str, _at_ms: u64) -> Result<(), String> {
+        locked(&self.0)
+            .record
+            .push(RecordEvent::Written(version.to_string()));
+        Ok(())
+    }
+
+    fn remove(&self) {
+        locked(&self.0).record.push(RecordEvent::Removed);
+    }
+}
+
 // ---- a running session
 
 pub struct Running {
     pub world: World,
+    pub updates: Updates,
     pub screen: Arc<Screen>,
     pub log: Arc<MemoryLog>,
     pub handle: Handle,
@@ -402,7 +627,14 @@ pub struct Running {
 }
 
 /// starts a session on the paused clock; the world is scripted before the first sleep.
+/// The app is a development build, which never checks the feed.
 pub fn start(world: World) -> Running {
+    start_as(world, Updates::default(), "0.0.0-dev", Launch::Running)
+}
+
+/// starts a session of an app at `version`, with the update feed `updates` and the
+/// launch mode a fresh launch has.
+pub fn start_as(world: World, updates: Updates, version: &str, launch: Launch) -> Running {
     let screen = Arc::new(Screen::default());
     let log = Arc::new(MemoryLog::default());
     let started_at = Instant::now();
@@ -412,9 +644,15 @@ pub fn start(world: World) -> Running {
         present: screen.clone(),
         time: Arc::new(FakeTime { start: started_at }),
         log: log.clone(),
+        version: version.to_string(),
+        updater: Some(Arc::new(updates.clone())),
+        processes: Arc::new(updates.clone()),
+        record: Arc::new(updates.clone()),
+        launch,
     });
     Running {
         world,
+        updates,
         screen,
         log,
         handle,

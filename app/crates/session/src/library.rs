@@ -6,7 +6,7 @@ use marshal_cli::agent::{CallError, Client, ConnectError, Push, connect};
 use marshal_cli::instance::roots::Roots;
 use tokio::sync::mpsc;
 
-use crate::seam::{Connected, Dial, DialError, Failure, Link, Method, Pushed};
+use crate::seam::{AgentInfo, Connected, Dial, DialError, Failure, Link, Method, Pushed};
 
 /// connects to this user's agent at the channel the roots name.
 pub struct Library {
@@ -36,9 +36,18 @@ impl Dial for Library {
         let (client, pushes) = connect(&self.roots, &self.info)
             .await
             .map_err(|error| dial_error(&error))?;
+        let agent = AgentInfo {
+            version: client.welcome.agent_version.clone(),
+            drains: client
+                .welcome
+                .methods
+                .iter()
+                .any(|method| method == DRAIN_FOR_UPDATE),
+        };
         Ok(Connected {
             link: Agent { client },
             pushes: forward(pushes),
+            agent,
         })
     }
 }
@@ -92,7 +101,7 @@ fn forward(mut pushes: mpsc::UnboundedReceiver<Push>) -> mpsc::UnboundedReceiver
             let pushed = match push {
                 Push::Event { snapshot, .. } => Pushed::Snapshot(snapshot),
                 Push::Heartbeat { .. } => Pushed::Heartbeat,
-                Push::Ending { reason, .. } => Pushed::Ending(reason),
+                Push::Ending { reason, update, .. } => Pushed::Ending { reason, update },
                 Push::Closed => Pushed::Closed,
                 // a push a later agent adds is ignored
                 _ => continue,
@@ -130,4 +139,21 @@ impl Link for Agent {
         };
         called.map(|_| ()).map_err(failure)
     }
+
+    async fn drain_for_update(&self, version: &str) -> Result<Option<u32>, Failure> {
+        let answer = self
+            .client
+            .call(DRAIN_FOR_UPDATE, serde_json::json!({ "version": version }))
+            .await
+            .map_err(failure)?;
+        Ok(answer
+            .get("update")
+            .and_then(|update| update.get("pid"))
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|pid| u32::try_from(pid).ok())
+            .filter(|pid| *pid != 0))
+    }
 }
+
+/// the method that asks the agent to drain for an update.
+const DRAIN_FOR_UPDATE: &str = "drain_for_update";

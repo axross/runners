@@ -7,13 +7,19 @@
 //! The session connects at launch, starts the agent when none answers, keeps the last
 //! list under lost contact, starts the agent once more, tries again on `busy` and on a
 //! held lock every 5 s, and ends when the agent ends for `quit` or
-//! `executable_changed`.
+//! `executable_changed`. Its [`update`] module checks the update feed and installs an
+//! update once the agent has drained.
+
+mod update;
+
+pub use update::{CHECK_EVERY, EXIT_WITHIN};
 
 use std::future::pending;
 use std::sync::Arc;
 use std::time::Duration;
 
 use marshal_cli::agent::snapshot::Snapshot;
+use marshal_cli::agent::wire::ENDING_UPDATE;
 use marshal_cli::agent::{EXECUTABLE_CHANGED, Launch, QUIT, StopReason};
 use marshal_cli::token_store::{RepositoryKey, TokenRefusal, accepted_token};
 use marshal_view::{
@@ -26,7 +32,11 @@ use tokio::task::JoinHandle;
 use tokio::time::{Instant, sleep_until};
 
 use crate::connect::{Attempt, Found, RETRY_EVERY, attempt};
-use crate::seam::{Dial, Failure, Launcher, Link, Log, Method, Present, Pushed, Shown, TimeSource};
+use crate::seam::{
+    AgentInfo, Dial, Failure, Launcher, Link, Log, Method, Present, Processes, Pushed, Record,
+    Shown, TimeSource, Updater, Verified,
+};
+use update::Drain;
 
 /// how often the view is computed again with no news, so a build's elapsed time and the
 /// settled count move.
@@ -58,6 +68,9 @@ pub enum Ended {
     AgentEnded(String),
     /// the user quit with no agent to quit: only the app ends.
     AppOnly,
+    /// the agent ended for the update to this version and its installer started; on
+    /// Windows the process has already ended by then, so only a test sees this.
+    Installing(String),
 }
 
 /// the token forms the page has open, which only the page knows.
@@ -198,6 +211,12 @@ enum Internal<L> {
         reply: Reply<()>,
     },
     QuitAnswered(Result<(), Failure>),
+    /// what a check of the update feed found.
+    Checked(Result<Option<Box<dyn Verified>>, String>),
+    /// the agent's answer to the drain this connection asked for: its process ID.
+    DrainAnswered(Result<Option<u32>, Failure>),
+    /// whether the agent's process exited after it ended for the update.
+    AgentGone(bool),
 }
 
 enum Stage {
@@ -209,6 +228,9 @@ enum Stage {
     /// nothing more happens until the user tries again.
     Parked,
     Quitting,
+    /// the agent ended for this app's update; the app waits for its process to exit,
+    /// then installs.
+    Ending,
 }
 
 struct Live<L> {
@@ -222,6 +244,15 @@ pub struct Seams<D> {
     pub present: Arc<dyn Present>,
     pub time: Arc<dyn TimeSource>,
     pub log: Arc<dyn Log>,
+    /// the app's own version.
+    pub version: String,
+    /// the update feed; `None` where the app does not update itself.
+    pub updater: Option<Arc<dyn Updater>>,
+    pub processes: Arc<dyn Processes>,
+    pub record: Arc<dyn Record>,
+    /// how a launch that starts the agent starts it: stopped when the record kept across
+    /// an update says the runners were stopped by you, else running.
+    pub launch: Launch,
 }
 
 pub struct Session<D: Dial> {
@@ -260,6 +291,25 @@ pub struct Session<D: Dial> {
     shown: Option<View>,
     /// the revision of `shown`, which counts the views the session has shown.
     revision: u64,
+    version: String,
+    updater: Option<Arc<dyn Updater>>,
+    processes: Arc<dyn Processes>,
+    update_record: Arc<dyn Record>,
+    /// the mode the next start of the agent uses instead of the one the last state
+    /// gives: the launch's own, or the replaced older agent's.
+    next_launch: Option<Launch>,
+    /// what the connected agent said of itself.
+    agent: AgentInfo,
+    next_check: Option<Instant>,
+    checking: bool,
+    /// the update downloaded and verified, until it installs or is dropped.
+    verified: Option<Box<dyn Verified>>,
+    /// the drain this app asked for.
+    drain: Option<Drain>,
+    /// when a drain the agent did not take is asked for again.
+    drain_again_at: Option<Instant>,
+    /// an agent that does not drain was logged once.
+    told_no_drain: bool,
 }
 
 impl<D: Dial> Session<D> {
@@ -297,6 +347,18 @@ impl<D: Dial> Session<D> {
             tracker: Tracker::new(),
             shown: None,
             revision: 0,
+            version: seams.version,
+            updater: seams.updater,
+            processes: seams.processes,
+            update_record: seams.record,
+            next_launch: Some(seams.launch),
+            agent: AgentInfo::default(),
+            next_check: None,
+            checking: false,
+            verified: None,
+            drain: None,
+            drain_again_at: None,
+            told_no_drain: false,
         };
         (
             session,
@@ -308,6 +370,7 @@ impl<D: Dial> Session<D> {
 
     /// runs until the agent ends or the user quits; the caller then ends the app.
     pub async fn run(mut self) -> Ended {
+        self.first_check();
         self.begin_attempt();
         self.refresh();
         loop {
@@ -335,6 +398,8 @@ impl<D: Dial> Session<D> {
             self.recheck,
             self.end_by,
             self.retry_at,
+            self.check_due(),
+            self.drain_again_at,
         ]
         .into_iter()
         .flatten()
@@ -412,7 +477,8 @@ impl<D: Dial> Session<D> {
         self.retry_at = None;
         self.generation += 1;
         let generation = self.generation;
-        let start = (self.starts_left > 0).then(|| self.launch_mode());
+        let start =
+            (self.starts_left > 0).then(|| self.next_launch.unwrap_or_else(|| self.launch_mode()));
         let dial = Arc::clone(&self.dial);
         let launcher = Arc::clone(&self.launcher);
         let log = Arc::clone(&self.log);
@@ -445,12 +511,18 @@ impl<D: Dial> Session<D> {
     }
 
     fn found(&mut self, attempted: Attempt<D::Link>) {
+        // the launch's own mode is spent once an attempt reached or started an agent; an
+        // attempt that did neither keeps it for the next
+        if attempted.started || matches!(attempted.found, Found::Connected(_)) {
+            self.next_launch = None;
+        }
         if attempted.started {
             self.starts_left = self.starts_left.saturating_sub(1);
         }
         match attempted.found {
             Found::Connected(connected) => {
                 self.starts_left = 1;
+                self.connected_to(connected.agent.clone());
                 self.live = Some(Live {
                     link: Arc::new(connected.link),
                     pushes: connected.pushes,
@@ -463,6 +535,7 @@ impl<D: Dial> Session<D> {
             Found::NoAgent => {
                 self.stage = Stage::Parked;
                 self.connection = self.unreachable();
+                self.unreached_during_drain();
             }
             Found::NotAnswering => {
                 self.stage = Stage::Parked;
@@ -496,6 +569,7 @@ impl<D: Dial> Session<D> {
         if matches!(self.stage, Stage::Waiting) && self.retry_at.is_some_and(|at| now >= at) {
             self.begin_attempt();
         }
+        self.update_due(now);
         if now >= self.next_tick {
             self.next_tick = now + TICK;
         }
@@ -509,18 +583,29 @@ impl<D: Dial> Session<D> {
             Pushed::Snapshot(snapshot) => {
                 self.last_heard_ms = Some(self.now_ms());
                 self.snapshot = Some(*snapshot);
+                self.snapshot_for_drain();
                 self.refresh();
             }
             Pushed::Heartbeat => self.last_heard_ms = Some(self.now_ms()),
-            Pushed::Ending(reason) if reason == QUIT || reason == EXECUTABLE_CHANGED => {
+            Pushed::Ending { reason, .. } if reason == QUIT || reason == EXECUTABLE_CHANGED => {
                 self.log.info(&format!("The agent is ending: {reason}."));
                 self.ended = Some(Ended::AgentEnded(reason));
             }
+            Pushed::Ending {
+                reason,
+                update: Some(update),
+            } if reason == ENDING_UPDATE && self.drain_is_for(&update) => {
+                self.agent_ending(update.stopped_by_you);
+            }
             // an agent may add reasons within version 2; what is not known is ignored,
-            // and the connection's end that follows is handled as a drop
-            Pushed::Ending(_) => self
-                .log
-                .info("The agent is ending for a reason this app does not know."),
+            // and the connection's end that follows is handled as a drop. So is an end for
+            // an update another client asked for.
+            Pushed::Ending { .. } => {
+                self.log
+                    .info("The agent is ending for a reason this app does not act on.");
+                // the agent's end is not this app's drain ending, so it installs nothing
+                self.drain = None;
+            }
             Pushed::Closed => self.closed(),
         }
     }
@@ -531,7 +616,26 @@ impl<D: Dial> Session<D> {
             self.ended = Some(Ended::Quit);
             return;
         }
+        if matches!(self.stage, Stage::Ending) {
+            // the agent said it is ending for the update; the wait for its process decides
+            return;
+        }
         self.log.warn("The connection to the agent ended.");
+        if self.drain_closed() {
+            return;
+        }
+        self.restart_after_drop();
+    }
+
+    /// what W1's app does when its agent is gone: keep the list under lost contact and
+    /// start the agent once more.
+    fn restart_after_drop(&mut self) {
+        self.reconnect_after_drop(true);
+    }
+
+    /// keeps the list under lost contact and reaches the agent again, starting it once
+    /// more only with `start`.
+    fn reconnect_after_drop(&mut self, start: bool) {
         self.pending = None;
         self.answered = None;
         if let Some(repository) = self.tokens.editing.clone() {
@@ -541,7 +645,7 @@ impl<D: Dial> Session<D> {
             last_heard_ms: self.last_heard_ms.unwrap_or_else(|| self.now_ms()),
             cause: Cause::Dropped,
         };
-        self.starts_left = 1;
+        self.starts_left = u32::from(start);
         self.begin_attempt();
         self.refresh();
     }
@@ -648,7 +752,9 @@ impl<D: Dial> Session<D> {
                     self.connection = Connection::Quitting;
                     self.refresh();
                 }
-                Stage::Live | Stage::Waiting | Stage::Parked => self.ended = Some(Ended::AppOnly),
+                Stage::Live | Stage::Waiting | Stage::Parked | Stage::Ending => {
+                    self.ended = Some(Ended::AppOnly);
+                }
             }
             return;
         };
@@ -797,6 +903,9 @@ impl<D: Dial> Session<D> {
                 let _ = reply.send(Ok(()));
             }
             Internal::QuitAnswered(outcome) => self.quit_answered(outcome),
+            Internal::Checked(outcome) => self.checked(outcome),
+            Internal::DrainAnswered(outcome) => self.drain_answered(outcome),
+            Internal::AgentGone(gone) => self.agent_gone(gone),
         }
     }
 
