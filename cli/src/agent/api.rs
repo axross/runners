@@ -1,12 +1,15 @@
 //! what a connection asks of the agent, parsed from the wire: the methods that reach
 //! the agent's one task, and the errors they answer with.
 
+use std::fmt;
+
 use serde::Deserialize;
 use tokio::sync::oneshot;
 
 use crate::runtime::secret::Secret;
 use crate::token_store::{StoreError, TokenKey, TokenRefusal, accepted_token};
 
+use super::config::Problem;
 use super::wire::{ErrorBody, ErrorCode, StoreFault, TOPIC_GITHUB, TOPIC_STATE};
 
 /// an error with its stable code.
@@ -15,6 +18,7 @@ pub struct ApiError {
     pub code: ErrorCode,
     pub message: String,
     pub store: Option<StoreFault>,
+    pub problems: Box<[Problem]>,
 }
 
 impl ApiError {
@@ -24,6 +28,7 @@ impl ApiError {
             code,
             message: message.into(),
             store: None,
+            problems: Box::default(),
         }
     }
 
@@ -46,6 +51,7 @@ impl ApiError {
     pub fn body(&self) -> ErrorBody {
         ErrorBody {
             store: self.store.clone(),
+            problems: self.problems.clone(),
             ..ErrorBody::new(self.code, &self.message)
         }
     }
@@ -74,6 +80,26 @@ pub enum Method {
         version: String,
         requester: Option<oneshot::Receiver<()>>,
     },
+    ConfigRead,
+    /// `edits` is read against the agent's profile, which the parser does not know.
+    ConfigEdit {
+        revision: String,
+        edits: Edits,
+        check: bool,
+    },
+    ConfigReload {
+        revision: String,
+        check: bool,
+    },
+}
+
+/// the edits of a `config_edit` as they came; `Debug` leaves out their values.
+pub struct Edits(pub serde_json::Value);
+
+impl fmt::Debug for Edits {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Edits(<redacted>)")
+    }
 }
 
 /// a method and where its result goes.
@@ -164,6 +190,21 @@ fn is_version(text: &str) -> bool {
         && rest.len() != 1
 }
 
+#[derive(Deserialize)]
+struct ConfigEditParams {
+    revision: String,
+    edits: serde_json::Value,
+    #[serde(default)]
+    check: bool,
+}
+
+#[derive(Deserialize)]
+struct ConfigReloadParams {
+    revision: String,
+    #[serde(default)]
+    check: bool,
+}
+
 fn invalid(message: &str) -> ApiError {
     ApiError::new(ErrorCode::InvalidRequest, message)
 }
@@ -219,6 +260,23 @@ pub fn parse(method: &str, value: serde_json::Value) -> Result<Parsed, ApiError>
                 version,
                 requester: None,
             }
+        }
+        "config_read" => Method::ConfigRead,
+        "config_edit" => {
+            let ConfigEditParams {
+                revision,
+                edits,
+                check,
+            } = params(value)?;
+            Method::ConfigEdit {
+                revision,
+                edits: Edits(edits),
+                check,
+            }
+        }
+        "config_reload" => {
+            let ConfigReloadParams { revision, check } = params(value)?;
+            Method::ConfigReload { revision, check }
         }
         _ => {
             return Err(ApiError::new(

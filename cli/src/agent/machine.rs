@@ -38,12 +38,16 @@ use crate::validate::{CheckoutRule, Plan};
 
 use super::api::{ApiError, ApiResult, Call, Method};
 use super::builder::ImageBuilder;
-use super::core::AgentCore;
+use super::core::{AgentCore, ApplyOrder};
 use super::snapshot::{BuildInfo, MAX_SNAPSHOT_BYTES, Snapshot};
 use super::state::{Action, Drain, Inner, Phase, Reason};
 use super::tokens::StoreTokens;
 use super::view::{View, migration_failure_text, millis};
 use super::wire::{ENDING_UPDATE, ErrorCode, UpdateEnding};
+
+mod configure;
+
+use configure::{Mode, Request};
 
 /// the reason the agent ends when asked to by a client.
 pub const QUIT: &str = "quit";
@@ -118,6 +122,9 @@ enum Routed {
     Stop(Reply),
     /// the method ends the agent, and the exit is set; the reply waits for the stop.
     Quit(Reply),
+    /// a change of the configuration while the runners run, which may check an image
+    /// before it is answered.
+    Configure(Request, bool, Reply),
 }
 
 enum CycleEnd {
@@ -173,6 +180,10 @@ pub struct Agent<'a, B, K, R, D> {
     /// set once a drain's last steps have begun, after which a closed requester no
     /// longer cancels it.
     drain_ending: Cell<bool>,
+    /// sends an apply to the core that runs now, `None` while none runs.
+    orders: RefCell<Option<mpsc::UnboundedSender<ApplyOrder>>>,
+    /// how the core's latest apply ended; see [`AgentCore::applied`].
+    applied: watch::Sender<Option<String>>,
 }
 
 /// a drain for an update, as the running phase keeps it.
@@ -242,6 +253,8 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             exit: Cell::new(None),
             containers_removed: Cell::new(true),
             force: watch::Sender::new(false),
+            orders: RefCell::new(None),
+            applied: watch::Sender::new(None),
             admitted: watch::Sender::new(false),
             drain: watch::Sender::new(false),
             update: RefCell::new(None),
@@ -380,6 +393,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                     Err(error) => Err(ApiError::store_failed("saved", &error)),
                 })
             }
+            Method::ConfigRead => Ok(Ok(self.config_read())),
             Method::TokenRemove { key } => Ok(match self.tokens.remove(&key) {
                 Ok(()) => {
                     self.publish();
@@ -532,6 +546,8 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             admitted: &self.admitted,
             drain: &self.drain,
             times: self.settings.times,
+            steps: self.steps(),
+            applied: &self.applied,
         }
     }
 
@@ -603,6 +619,9 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                             return Next::Exit;
                         }
                         Routed::Stop(reply) => self.reply_state(reply),
+                        Routed::Configure(_, _, reply) => {
+                            let _ = reply.send(self.busy());
+                        }
                     }
                 }
             }
@@ -661,6 +680,9 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
         let mut cycle = Box::pin(self.core_cycle(plan, stop_receiver));
         let mut ticker = ticker();
         let mut draining: Option<Draining> = None;
+        let mut applied = self.applied.subscribe();
+        // the change that checks its image, which one connection's call waits for
+        let mut configuring: Option<Pin<Box<dyn Future<Output = ()> + '_>>> = None;
         loop {
             let deadline = draining.as_ref().map(|drain| drain.deadline);
             tokio::select! {
@@ -715,6 +737,16 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                         self.publish();
                     }
                 }
+                () = async {
+                    match configuring.as_mut() {
+                        Some(change) => change.await,
+                        None => pending().await,
+                    }
+                } => configuring = None,
+                Ok(()) = applied.changed() => {
+                    let failure = applied.borrow_and_update().clone();
+                    self.apply_ended(failure);
+                }
                 _ = admitted.wait_for(|admitted| *admitted), if resuming => {
                     resuming = false;
                     // the pools are prepared, which removed the stale containers that
@@ -765,6 +797,16 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                             draining = Some(self.begin_drain(version, requester, reply));
                         }
                         Routed::Begin(_, reply) => self.reply_state(reply),
+                        Routed::Configure(_, _, reply) if configuring.is_some() => {
+                            let _ = reply.send(Err(ApiError::new(
+                                ErrorCode::ConfigApplying,
+                                "an edit of the configuration is being checked",
+                            )));
+                        }
+                        Routed::Configure(request, check, reply) => {
+                            configuring =
+                                Some(Box::pin(self.configure_running(request, check, reply)));
+                        }
                     }
                 }
             }
@@ -871,6 +913,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
 
     /// what a core that ended without a stop means for the agent.
     fn cycle_ended(&self, end: CycleEnd) -> Next {
+        self.apply_cut_short("failed", Some("the runtime core ended".to_string()));
         self.capture_skips();
         let reason = match end {
             CycleEnd::StopRequested | CycleEnd::Drained => Reason::by_you(),
@@ -904,6 +947,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
     ) {
         let containers = self.backend.running_containers();
         let _ = stop.send(true);
+        self.apply_cut_short("abandoned", None);
         self.set_phase(Phase::Stopping);
         let steps_done = Cell::new(false);
         let work = async {
@@ -991,6 +1035,10 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                 self.reply_state(reply);
                 false
             }
+            Routed::Configure(_, _, reply) => {
+                let _ = reply.send(self.busy());
+                false
+            }
         }
     }
 
@@ -1005,6 +1053,23 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             }
             Err(method) => method,
         };
+        if matches!(
+            method,
+            Method::ConfigEdit { .. } | Method::ConfigReload { .. }
+        ) {
+            let request = self
+                .config_mode()
+                .and_then(|mode| Ok((mode, self.config_request(method)?)));
+            let result = match request {
+                Ok((Mode::Apply, (request, check))) => {
+                    return Routed::Configure(request, check, reply);
+                }
+                Ok((Mode::Write, (request, check))) => self.configure_stopped(request, check),
+                Err(error) => Err(error),
+            };
+            let _ = reply.send(result);
+            return Routed::Answered;
+        }
         match self.action(&method) {
             Action::Begin => Routed::Begin(method, reply),
             Action::Stop => Routed::Stop(reply),
@@ -1047,7 +1112,17 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
     /// or a stop is asked for.
     async fn core_cycle(&self, plan: &Plan, mut stop: watch::Receiver<bool>) -> CycleEnd {
         loop {
-            let result = CatchPanic(Box::pin(self.core().run(plan, stop.clone()))).await;
+            // an edit written since the start is the configuration a restart runs
+            let plan = self
+                .inner
+                .borrow()
+                .plan()
+                .cloned()
+                .unwrap_or_else(|| plan.clone());
+            let (orders, received) = mpsc::unbounded_channel();
+            *self.orders.borrow_mut() = Some(orders);
+            let result = CatchPanic(Box::pin(self.core().run(&plan, stop.clone(), received))).await;
+            *self.orders.borrow_mut() = None;
             let failed_at = self.clock.now();
             if *stop.borrow() {
                 return CycleEnd::StopRequested;
@@ -1086,6 +1161,10 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             }
             self.log
                 .warn(&format!("The runtime core failed: {message}"));
+            self.apply_cut_short(
+                "failed",
+                Some(format!("the runtime core failed: {message}")),
+            );
             if draining {
                 // a drain starts nothing again, and its last steps begin here
                 self.drain_ending.set(true);
@@ -1177,6 +1256,9 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                             waiting.push(reply);
                         }
                         Routed::Begin(_, reply) => self.reply_state(reply),
+                        Routed::Configure(_, _, reply) => {
+                            let _ = reply.send(self.busy());
+                        }
                     },
                 },
             }

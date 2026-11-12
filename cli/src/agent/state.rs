@@ -5,10 +5,11 @@ use std::time::SystemTime;
 
 use crate::host_config::{Loaded, Migration, MigrationFailure};
 use crate::image::check::ImageCheck;
-use crate::validate::Plan;
+use crate::validate::{Entry, Plan};
 
 use super::api::Method;
-use super::snapshot::{BuildInfo, Reason as WireReason};
+use super::config::Effect;
+use super::snapshot::{ApplyInfo, BuildInfo, Reason as WireReason};
 
 /// why the agent is stopped; the codes are an open set on the wire.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -143,6 +144,10 @@ pub struct Inner {
     pub image: Option<(String, Option<ImageCheck>)>,
     /// the drain for an update under way.
     pub drain: Option<Drain>,
+    /// the apply of an edit that runs now.
+    pub applying: Option<Applying>,
+    /// how the latest apply of an edit ended, or that it runs.
+    pub last_apply: Option<ApplyInfo>,
 }
 
 /// a drain for an update under way, as the snapshot shows it.
@@ -151,6 +156,14 @@ pub struct Drain {
     pub version: String,
     pub waiting: u32,
     pub deadline: SystemTime,
+}
+
+/// an apply that runs: the pools it removes, which the snapshot lists until their
+/// slots have stopped, and its effect on each pool.
+#[derive(Debug)]
+pub struct Applying {
+    pub removed: Vec<Entry>,
+    pub effects: Vec<Effect>,
 }
 
 impl Inner {
@@ -165,6 +178,8 @@ impl Inner {
             restart_due: None,
             image: None,
             drain: None,
+            applying: None,
+            last_apply: None,
         }
     }
 }

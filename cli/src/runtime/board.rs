@@ -44,6 +44,9 @@ pub enum SlotState {
     Running(String),
     /// registers nothing while the agent drains for an update.
     Drained,
+    /// being stopped for good, for this reason, such as an edit of the configuration
+    /// that removes the slot.
+    Leaving(String),
 }
 
 impl fmt::Display for SlotState {
@@ -54,6 +57,7 @@ impl fmt::Display for SlotState {
             Self::Held(reason) => write!(f, "held: {reason}"),
             Self::Running(name) => write!(f, "running container {name}"),
             Self::Drained => f.write_str("drained for an update"),
+            Self::Leaving(reason) => write!(f, "stopping: {reason}"),
         }
     }
 }
@@ -105,7 +109,25 @@ impl Board {
 
     /// records a slot's state, under the name a `status` line shows.
     pub fn set_slot(&self, slot: &str, state: SlotState) {
-        upsert(&self.slots, slot.to_string(), state);
+        // a slot that is leaving stays so while its worker winds down
+        let leaving = self
+            .slots
+            .borrow()
+            .iter()
+            .any(|row| row.name == slot && matches!(row.state, SlotState::Leaving(_)));
+        if !leaving || matches!(state, SlotState::Leaving(_)) {
+            upsert(&self.slots, slot.to_string(), state);
+        }
+    }
+
+    /// forgets one slot, which no longer runs.
+    pub fn remove_slot(&self, slot: &str) {
+        self.slots.borrow_mut().retain(|row| row.name != slot);
+    }
+
+    /// forgets one pool, which no longer runs.
+    pub fn remove_pool(&self, pool: &str) {
+        self.pools.borrow_mut().retain(|row| row.name != pool);
     }
 
     /// forgets every pool and slot; the latest image check stays.

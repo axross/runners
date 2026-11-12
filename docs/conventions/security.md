@@ -1310,6 +1310,47 @@ Residual risks, accepted on a single-user host:
 - The write path does not flush the folder after the rename. A crash right after a
   write can leave the old file, and cannot leave a partial one.
 
+## Editing the Configuration Through the Agent Moves No Trust Boundary
+
+The agent's `config_read`, `config_edit` and `config_reload` methods change the
+configuration, which decides the repositories runners register to, their labels and
+the folder diagnostics are exported to. [CLI](../operations/cli.md#editing-the-configuration)
+owns the methods; these are the properties they keep.
+
+- Only the agent's own user reaches the channel, under
+  [One Instance per Machine, Reached Only by Its User](#one-instance-per-machine-reached-only-by-its-user),
+  and that user can already edit the file. No request names a file for the agent to
+  read or write: the agent edits only `config.toml` at its fixed path.
+- No request or response carries a token. `config_read` sends only the keys the
+  schema defines that the file sets with a value of the right type; an undefined key
+  or a wrong-typed value appears only as a problem, which quotes no value, so a token
+  pasted into the file does not reach the window. A problem names a key path, as the
+  first residual risk of
+  [The TOML Configuration Holds No Token and Quotes No Line](#the-toml-configuration-holds-no-token-and-quotes-no-line)
+  describes.
+- An edit goes through the write path and then through the checks the agent loads
+  with, the checkout rule at the diagnostic directory's own place included, so a file
+  the app writes is one the agent would load. An edit that sets a pool's
+  `diagnostic_directory` gets the same checkout rule and sink checks as a value
+  written in a text editor, and is refused when it fails them.
+- An edit of `schema_version` or of `[lifecycle]` is refused before the file is
+  read.
+- A `config_edit` whose `revision` no longer matches the file is refused, and the
+  write path compares the file again just before it replaces it.
+
+Residual risks, accepted on a single-user host:
+
+- A same-user client can point a pool's diagnostics at any folder that passes the
+  sink checks, as it could by editing the file.
+- The revision is std's default hasher over the file's bytes, with their length:
+  SipHash with fixed keys today, which std does not promise to keep. It detects an
+  edit made elsewhere; it is not meant to resist a file crafted to collide, and a
+  same-user writer needs no collision to change the file. An agent built with
+  another Rust may compute another revision for the same bytes, which a client sees
+  as `config_changed` and reads the file again.
+- A repository no pool names any more keeps its stored token until the client
+  removes it with `token_remove`; the agent does not remove it on its own.
+
 ## Diagnostic Evidence Stays Private
 
 A diagnostic container's bundle holds what the collector observed during a job, and
