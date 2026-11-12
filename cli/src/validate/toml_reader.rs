@@ -5,9 +5,10 @@
 use crate::json::Object;
 use crate::profile::Profile;
 
-use super::limits::{CPU_RANGE, format_nanos};
-use super::problem::{Key, KeyPath, Kind, Location, Problem, Segment};
-use super::reader::Reader;
+use super::problem::{
+    Key, KeyPath, Kind, Location, OwnKind, Problem, RuleText, Segment, Wording, rule_text,
+};
+use super::reader::{Format, Reader};
 use super::toml_document::{Layout, Spot};
 use super::toml_schema::{Table, key_name};
 
@@ -51,28 +52,8 @@ impl<'a> TomlReader<'a> {
 }
 
 impl Reader for TomlReader<'_> {
-    fn routing_label(&self) -> Option<&str> {
-        None
-    }
-
-    fn carries_settings(&self) -> bool {
-        true
-    }
-
-    fn may_omit_os_and_volumes(&self) -> bool {
-        true
-    }
-
-    fn windows_pool_has_os(&self) -> bool {
-        true
-    }
-
-    fn joins_owner_and_repository(&self) -> bool {
-        true
-    }
-
-    fn applies_token_path_rules(&self) -> bool {
-        false
+    fn format(&self) -> Format<'_> {
+        Format::Toml
     }
 
     fn entry_path(&self, index: usize) -> String {
@@ -132,84 +113,37 @@ impl Reader for TomlReader<'_> {
 
 impl TomlReader<'_> {
     fn message(&self, kind: &Kind) -> String {
-        let host = self.host();
-        let runners = key_name(Key::Slots);
-        match kind {
-            Kind::Missing => "required key is missing".to_string(),
-            Kind::MustBe(what) => format!("must be {}", expectation(what)),
-            Kind::MustBeIntegerUpTo(max) => format!("must be an integer from 1 to {max}"),
-            Kind::CpuCountOutOfRange => CPU_RANGE.to_string(),
-            Kind::CpuCountRoundsToZero => format!(
-                "{CPU_RANGE}, and large enough not to be written as 0, which Docker reads as no limit"
-            ),
-            Kind::UnknownField(_) => "unknown key".to_string(),
-            Kind::Unreadable(_) => "could not be read".to_string(),
-            Kind::NoRepositories => "must list at least one pool".to_string(),
-            Kind::LabelShape => "each label must be a string of letters, digits and . _ : / - starting with a letter or digit".to_string(),
-            Kind::PlatformLabel(label) => {
-                format!("'{label}' is always added, so list only non-platform labels")
-            }
-            Kind::ForeignPlatformLabel {
-                label,
-                os: Some(os),
-            } => format!(
-                "'{label}' is a platform label that a {os} pool on {host} cannot provide, so list only non-platform labels"
-            ),
-            Kind::ForeignPlatformLabel { label, os: None } => {
+        let entry_path = |index| self.entry_path(index);
+        let wording = Wording {
+            host: self.host(),
+            key_name,
+            entry_path: &entry_path,
+        };
+        let own = match rule_text(kind, &wording) {
+            RuleText::Shared(text) => return text,
+            RuleText::Own(own) => own,
+        };
+        match own {
+            OwnKind::Missing => "required key is missing".to_string(),
+            OwnKind::MustBe(what) => format!("must be {}", expectation(what)),
+            OwnKind::UnknownField(_) => "unknown key".to_string(),
+            OwnKind::Unreadable(_) => "could not be read".to_string(),
+            OwnKind::NoRepositories => "must list at least one pool".to_string(),
+            OwnKind::ForeignPlatformLabel(label) => {
                 format!("'{label}' is a platform label, so use a label that is not one")
             }
-            Kind::DuplicateLabel(label) => format!("duplicate label '{label}'"),
-            Kind::VolumesUnsupported => {
-                format!("not supported on {host}, because VM pools keep no volumes")
-            }
-            Kind::OsUnsupported(os) => format!("a {os} pool is not supported on {host}"),
-            Kind::NewerSchemaVersion => "this file was written by a newer Marshal".to_string(),
-            Kind::MountPathHasDotDot => "must not contain '..'".to_string(),
-            Kind::DuplicateSuffix(suffix) => format!("duplicate suffix '{suffix}'"),
-            Kind::DuplicateMountPath(mount_path) => {
-                format!("duplicate mount path '{mount_path}'")
-            }
-            Kind::NameTooLong { length, max } => format!(
-                "name is {length} characters, at most {max} are allowed because it starts every runner name"
-            ),
-            Kind::RequiresDiagnostics => format!("requires {}", key_name(Key::Diagnostics)),
-            Kind::DotPathComponents => "must not contain dot path components".to_string(),
-            Kind::InsideCheckout => "must be outside the checkout".to_string(),
-            Kind::NameCollision {
+            OwnKind::NewerSchemaVersion => "this file was written by a newer Marshal".to_string(),
+            OwnKind::NameCollision {
                 name,
                 other_name,
                 other,
             } => format!(
                 "name '{name}' collides with '{other_name}' at {}; set a distinct name on one pool",
-                self.entry_path(*other)
+                self.entry_path(other)
             ),
-            Kind::TokenFileDiffers { .. } | Kind::TokenFileReused { .. } => {
+            OwnKind::TokenFileDiffers { .. } | OwnKind::TokenFileReused { .. } => {
                 "pools are tied to a token file, which this format does not have".to_string()
             }
-            Kind::AmbiguousRouting { labels, other } => format!(
-                "ambiguous same-repository routing; labels '{labels}' also appear at {}",
-                self.entry_path(*other)
-            ),
-            Kind::MacosVmsOverLimit { total, limit } => format!(
-                "macOS pools total {total} VMs (the sum of their {runners}), above the limit of {limit}"
-            ),
-            Kind::CpuBudgetExceeded {
-                total_nanos,
-                budget_nanos,
-            } => format!(
-                "pools total {} CPUs (the sum of {runners} times {}), above the budget of {}",
-                format_nanos(*total_nanos),
-                key_name(Key::Cpus),
-                format_nanos(*budget_nanos)
-            ),
-            Kind::MemoryBudgetExceeded { total, budget } => format!(
-                "pools total {total} GB of memory (the sum of {runners} times {}), above the budget of {budget} GB",
-                key_name(Key::MemoryGb)
-            ),
-            Kind::DiskBudgetExceeded { total, budget } => format!(
-                "pools total {total} GB of disk (the sum of {runners} times {}), above the budget of {budget} GB",
-                key_name(Key::DiskGb)
-            ),
         }
     }
 }
@@ -244,17 +178,5 @@ fn table_at(path: &KeyPath) -> Option<Table> {
 
 /// the path as `pool[0].labels`; the root has none.
 pub(crate) fn path_text(path: &KeyPath) -> String {
-    let mut text = String::new();
-    for segment in path.segments() {
-        match segment {
-            Segment::Key(key) => {
-                if !text.is_empty() {
-                    text.push('.');
-                }
-                text.push_str(key_name(*key));
-            }
-            Segment::Index(index) => text.push_str(&format!("[{index}]")),
-        }
-    }
-    text
+    path.text(key_name)
 }

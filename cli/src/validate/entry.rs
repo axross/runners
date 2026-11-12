@@ -1,6 +1,8 @@
 //! one repository entry: its fields, then whether it takes part in the cross-entry
 //! checks.
 
+use std::path::Path;
+
 use serde::Deserialize;
 
 use crate::json::Value;
@@ -9,7 +11,9 @@ use crate::profile::{Os, Profile};
 use super::Context;
 use super::fields::{self, Errors, Field};
 use super::labels::registration_labels;
-use super::limits::{self, DEFAULT_CPUS, DEFAULT_MEMORY_GB, MAX_DISK_GB, MAX_MEMORY_GB, MAX_SLOTS};
+use super::limits::{
+    self, DEFAULT_CPUS, DEFAULT_MEMORY_GB, MAX_DISK_GB, MAX_MEMORY_GB, MAX_SLOTS, MIN_LINUX_DISK_GB,
+};
 use super::paths;
 use super::patterns;
 use super::plan::{Entry, PlannedVolume};
@@ -89,11 +93,11 @@ pub fn read_entry(
         limits::read_bounded_integer(value, &slots_path, MAX_SLOTS, &mut cx.errors)
     });
     let name = read_name(&node.name, &path, &mut cx.errors);
-    let cpus = read_cpus(&node.cpus, &path, &mut cx.errors);
+    let cpus = read_cpus(&node.cpus, &path, profile, &mut cx.errors);
     let memory_gb = read_memory(&node.memory_gb, &path, &mut cx.errors);
     let disk_gb = match profile {
         Profile::Axpc => Some(None),
-        Profile::Axmc => read_disk(&node.disk_gb, &path, &mut cx.errors).map(Some),
+        Profile::Axmc => read_disk(&node.disk_gb, &path, os, &mut cx.errors).map(Some),
     };
     let (diagnostics, raw_records) = read_diagnostic_flags(&node, &path, &mut cx.errors);
     let diagnostic_directory =
@@ -151,7 +155,7 @@ fn read_token_path<'a>(
     path: &KeyPath,
     cx: &mut Context,
 ) -> Option<Option<&'a str>> {
-    if !cx.reader.applies_token_path_rules() {
+    if !cx.reader.format().has_token_paths() {
         return Some(None);
     }
     let field_path = path.key(Key::TokenPath);
@@ -187,7 +191,7 @@ fn read_owner_and_repository<'a>(
         "a GitHub owner name (letters, digits and hyphens)",
         "a GitHub repository name (letters, digits and . _ -)",
     );
-    if !cx.reader.joins_owner_and_repository() {
+    if !cx.reader.format().joins_owner_and_repository() {
         let owner = fields::string(
             &node.owner,
             &owner_path,
@@ -238,14 +242,14 @@ fn read_owner_and_repository<'a>(
 
 /// whether the pool has an `os` under this host and format.
 fn has_os(cx: &Context) -> bool {
-    cx.profile == Profile::Axmc || cx.reader.windows_pool_has_os()
+    cx.profile == Profile::Axmc || cx.reader.format().may_omit_os_and_volumes()
 }
 
 fn read_os(field: &Field, path: &KeyPath, cx: &mut Context) -> Option<Os> {
     if !has_os(cx) {
         return None;
     }
-    if cx.reader.may_omit_os_and_volumes() && field.get().is_none() {
+    if cx.reader.format().may_omit_os_and_volumes() && field.get().is_none() {
         return Some(Os::Linux);
     }
     let field_path = path.key(Key::Os);
@@ -305,10 +309,14 @@ fn read_name(name: &Field, path: &KeyPath, errors: &mut Errors) -> Option<String
     Some(name.to_string())
 }
 
-fn read_cpus(cpus: &Field, path: &KeyPath, errors: &mut Errors) -> Option<f64> {
-    match cpus.get() {
-        None => Some(DEFAULT_CPUS),
-        Some(value) => limits::cpu_count(value, &path.key(Key::Cpus), errors),
+fn read_cpus(cpus: &Field, path: &KeyPath, profile: Profile, errors: &mut Errors) -> Option<f64> {
+    let Some(value) = cpus.get() else {
+        return Some(DEFAULT_CPUS);
+    };
+    let field = path.key(Key::Cpus);
+    match profile {
+        Profile::Axpc => limits::cpu_count(value, &field, errors),
+        Profile::Axmc => limits::whole_cpu_count(value, &field, errors),
     }
 }
 
@@ -319,10 +327,15 @@ fn read_memory(memory_gb: &Field, path: &KeyPath, errors: &mut Errors) -> Option
     limits::read_bounded_integer(value, &path.key(Key::MemoryGb), MAX_MEMORY_GB, errors)
 }
 
-fn read_disk(disk_gb: &Field, path: &KeyPath, errors: &mut Errors) -> Option<u32> {
+fn read_disk(disk_gb: &Field, path: &KeyPath, os: Option<Os>, errors: &mut Errors) -> Option<u32> {
     let field = path.key(Key::DiskGb);
     let value = fields::required(disk_gb, &field, errors)?;
-    limits::read_bounded_integer(value, &field, MAX_DISK_GB, errors)
+    let disk = limits::read_bounded_integer(value, &field, MAX_DISK_GB, errors)?;
+    if os == Some(Os::Linux) && disk < MIN_LINUX_DISK_GB {
+        errors.add(field, Kind::LinuxDiskTooSmall(MIN_LINUX_DISK_GB));
+        return None;
+    }
+    Some(disk)
 }
 
 /// returns the two diagnostic switches, each false when absent or not a boolean.
@@ -369,13 +382,21 @@ fn read_diagnostic_directory(
     if cx.profile == Profile::Axpc && paths::has_windows_dot_component(directory) {
         cx.errors.add(field.clone(), Kind::DotPathComponents);
     }
-    match cx.checkout {
-        Some(checkout) => {
-            if paths::is_inside_checkout(directory, checkout, cx.profile) {
-                cx.errors.add(field, Kind::InsideCheckout);
-            }
-        }
-        None => cx.checkout_rule_skipped = true,
+    // the checkout of the sink's own place, when the rule asks for it and the path is
+    // one of this host; a Windows path read on another host names no place here
+    let at_sink = Some(Path::new(directory))
+        .filter(|path| cx.at_sink && path.is_absolute())
+        .and_then(crate::checkout::find_at_or_above);
+    let checkouts = [cx.checkout, at_sink.as_deref()];
+    if checkouts.iter().all(Option::is_none) {
+        cx.checkout_rule_skipped = !cx.at_sink;
+    }
+    if checkouts
+        .into_iter()
+        .flatten()
+        .any(|checkout| paths::is_inside_checkout(directory, checkout, cx.profile))
+    {
+        cx.errors.add(field, Kind::InsideCheckout);
     }
     Some(directory.to_string())
 }

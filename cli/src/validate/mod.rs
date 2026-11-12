@@ -36,7 +36,7 @@ pub use limits::{format_cpu_count, format_nanos};
 pub use paths::is_inside_checkout;
 pub use plan::{Budget, Entry, Lifecycle, Plan, PlannedVolume, Settings};
 pub use problem::{Key, KeyPath, Kind, Location, Problem, Segment};
-pub use reader::Reader;
+pub use reader::{Format, Reader};
 pub use settings::SCHEMA_VERSION;
 use toml_reader::TomlReader;
 pub(crate) use toml_reader::path_text as toml_path_text;
@@ -79,10 +79,23 @@ struct RootFields {
     budget: Field,
 }
 
+/// where the checkout that a diagnostic directory must lie outside comes from.
+#[derive(Debug, Clone, Copy)]
+pub enum CheckoutRule<'a> {
+    /// the one given, which is the one above the configuration file; none skips the
+    /// rule.
+    Above(Option<&'a Path>),
+    /// the one given and, for each diagnostic directory, the one found at or above that
+    /// directory, for a configuration that lives outside any checkout. The rule is
+    /// then never skipped: the directory's own place was examined.
+    AboveAndAtSink(Option<&'a Path>),
+}
+
 struct Context<'a> {
     profile: Profile,
     reader: &'a dyn Reader,
     checkout: Option<&'a Path>,
+    at_sink: bool,
     errors: Errors,
     checkout_rule_skipped: bool,
 }
@@ -91,7 +104,13 @@ struct Context<'a> {
 /// that private directories must lie outside, when one is known.
 #[must_use]
 pub fn validate(bytes: &[u8], profile: Profile, checkout: Option<&Path>) -> Validation {
-    validate_with(bytes, profile, &JsonReader::new(profile), checkout)
+    validate_with(bytes, profile, CheckoutRule::Above(checkout))
+}
+
+/// validates a JSON configuration against a profile under a [`CheckoutRule`].
+#[must_use]
+pub fn validate_with(bytes: &[u8], profile: Profile, rule: CheckoutRule<'_>) -> Validation {
+    validate_json_as(bytes, profile, &JsonReader::new(profile), rule)
 }
 
 /// validates TOML bytes for a host: the file is read into the tree the JSON reader
@@ -105,7 +124,7 @@ pub fn validate_toml(bytes: &[u8], profile: Profile, checkout: Option<&Path>) ->
             &document.tree,
             profile,
             &TomlReader::new(profile, &document),
-            checkout,
+            CheckoutRule::Above(checkout),
         ),
         Err(problem) => Validation {
             outcome: Err(Failure::Unreadable(problem)),
@@ -116,14 +135,14 @@ pub fn validate_toml(bytes: &[u8], profile: Profile, checkout: Option<&Path>) ->
 
 /// validates JSON bytes under the rules the reader supplies; the problems are worded
 /// by the reader.
-fn validate_with(
+fn validate_json_as(
     bytes: &[u8],
     profile: Profile,
     reader: &dyn Reader,
-    checkout: Option<&Path>,
+    rule: CheckoutRule<'_>,
 ) -> Validation {
     match json::parse(bytes) {
-        Ok(root) => validate_tree(&root, profile, reader, checkout),
+        Ok(root) => validate_tree(&root, profile, reader, rule),
         Err(error) => Validation {
             outcome: Err(Failure::Unreadable(error.to_string())),
             checkout_rule_skipped: false,
@@ -135,12 +154,17 @@ fn validate_tree(
     root: &Value,
     profile: Profile,
     reader: &dyn Reader,
-    checkout: Option<&Path>,
+    rule: CheckoutRule<'_>,
 ) -> Validation {
+    let (checkout, at_sink) = match rule {
+        CheckoutRule::Above(checkout) => (checkout, false),
+        CheckoutRule::AboveAndAtSink(checkout) => (checkout, true),
+    };
     let mut cx = Context {
         profile,
         reader,
         checkout,
+        at_sink,
         errors: Errors::default(),
         checkout_rule_skipped: false,
     };
@@ -157,7 +181,7 @@ fn validate_tree(
 fn read_root(root: &Value, cx: &mut Context) -> Option<Plan> {
     let profile = cx.profile;
     let reader = cx.reader;
-    let has_settings = reader.carries_settings();
+    let has_settings = reader.format().carries_settings();
     if has_settings
         && settings::check_schema_version(root, &mut cx.errors) == settings::Schema::Newer
     {
@@ -165,7 +189,7 @@ fn read_root(root: &Value, cx: &mut Context) -> Option<Plan> {
     }
     let root = fields::read_object::<RootFields>(root, &KeyPath::root(), reader, &mut cx.errors)?;
 
-    let routing_label = match reader.routing_label() {
+    let routing_label = match reader.format().routing_label() {
         Some(label) => Some(label.to_string()),
         None => settings::read_routing_label(&root.routing_label, &mut cx.errors),
     };
@@ -203,8 +227,8 @@ fn read_root(root: &Value, cx: &mut Context) -> Option<Plan> {
     })
 }
 
-/// reads the image name: required on axpc, optional on axmc, where its use is
-/// undecided, and checked the same way where present.
+/// reads the image name: required on axpc, optional on axmc, where it defaults to
+/// `actions-runner:local`, and checked the same way where present.
 fn read_image_name(image_name: &Field, cx: &mut Context) -> Option<String> {
     let path = KeyPath::root().key(Key::ImageName);
     let expectation = "a local Docker image name with a tag, such as name:tag";
@@ -262,7 +286,6 @@ mod tests {
 
     use crate::de::{Deserializer, Error};
     use crate::json::Object;
-    use crate::profile::Os;
 
     use super::*;
 
@@ -366,33 +389,15 @@ mod tests {
         reads_any_value::<volumes::VolumeFields>();
     }
 
-    /// a reader with another format's answers, to show the rule set takes them from
-    /// the reader and leaves the wording to it.
+    /// a reader with its own routing label, path form and wording, to show the rule
+    /// set takes them from the reader.
     struct OtherFormat;
 
     impl Reader for OtherFormat {
-        fn routing_label(&self) -> Option<&str> {
-            Some("custom")
-        }
-
-        fn carries_settings(&self) -> bool {
-            false
-        }
-
-        fn may_omit_os_and_volumes(&self) -> bool {
-            true
-        }
-
-        fn windows_pool_has_os(&self) -> bool {
-            false
-        }
-
-        fn joins_owner_and_repository(&self) -> bool {
-            false
-        }
-
-        fn applies_token_path_rules(&self) -> bool {
-            false
+        fn format(&self) -> Format<'_> {
+            Format::Json {
+                routing_label: "custom",
+            }
         }
 
         fn entry_path(&self, index: usize) -> String {
@@ -416,50 +421,36 @@ mod tests {
     }
 
     fn validate_other_format(text: &str, profile: Profile) -> Validation {
-        validate_with(text.as_bytes(), profile, &OtherFormat, None)
+        validate_json_as(
+            text.as_bytes(),
+            profile,
+            &OtherFormat,
+            CheckoutRule::Above(None),
+        )
     }
 
     #[test]
-    fn a_reader_decides_the_routing_label_and_what_a_pool_may_omit() {
-        let axpc = validate_other_format(
-            r#"{ "imageName": "image:tag", "repositories": [
-                { "owner": "o", "repository": "r", "name": "a", "slots": 1 }] }"#,
-            Profile::Axpc,
-        );
-        let plan = axpc.outcome.unwrap();
-        let entry = plan.entries.first().unwrap();
-        assert!(entry.volumes.is_empty());
-        assert_eq!(entry.token_path, None);
-        assert_eq!(entry.path, "pool[0]");
-        assert_eq!(entry.labels.last().map(String::as_str), Some("custom"));
-
-        let axmc = validate_other_format(
-            r#"{ "budget": { "cpus": 4, "memoryGb": 8, "diskGb": 40 }, "repositories": [
-                { "owner": "o", "repository": "r", "name": "a", "slots": 1, "diskGb": 40 }] }"#,
-            Profile::Axmc,
-        );
-        let plan = axmc.outcome.unwrap();
-        assert_eq!(plan.entries.first().unwrap().os, Some(Os::Linux));
-    }
-
-    #[test]
-    fn pools_of_a_reader_without_token_paths_share_a_token_file_freely() {
+    fn a_reader_decides_the_routing_label_and_the_path_of_a_pool() {
         let found = validate_other_format(
             r#"{ "imageName": "image:tag", "repositories": [
-                { "owner": "o", "repository": "r", "name": "a", "slots": 1 },
-                { "owner": "o", "repository": "r", "name": "b", "slots": 1, "labels": ["x"] },
-                { "owner": "o", "repository": "s", "name": "c", "slots": 1 }] }"#,
+                { "owner": "o", "repository": "r", "name": "a", "slots": 1,
+                  "tokenPath": "C:\\t\\r", "labels": [], "volumes": [] }] }"#,
             Profile::Axpc,
         );
-        assert!(found.outcome.is_ok());
+        let plan = found.outcome.unwrap();
+        let entry = plan.entries.first().unwrap();
+        assert_eq!(entry.path, "pool[0]");
+        assert_eq!(entry.labels.last().map(String::as_str), Some("custom"));
     }
 
     #[test]
     fn a_reader_words_and_places_the_problems_the_rule_set_records() {
         let found = validate_other_format(
             r#"{ "imageName": "image:tag", "repositories": [
-                { "owner": "o", "repository": "r", "name": "a", "slots": 0 },
-                { "owner": "o", "repository": "r", "name": "a", "slots": 1 }] }"#,
+                { "owner": "o", "repository": "r", "name": "a", "slots": 0,
+                  "tokenPath": "C:\\t\\r", "labels": [], "volumes": [] },
+                { "owner": "o", "repository": "r", "name": "a", "slots": 1,
+                  "tokenPath": "C:\\t\\r", "labels": [], "volumes": [] }] }"#,
             Profile::Axpc,
         );
         let Err(Failure::Invalid(lines)) = found.outcome else {
@@ -469,8 +460,10 @@ mod tests {
 
         let found = validate_other_format(
             r#"{ "imageName": "image:tag", "repositories": [
-                { "owner": "o", "repository": "r", "name": "a", "slots": 1 },
-                { "owner": "o", "repository": "s", "name": "a", "slots": 1 }] }"#,
+                { "owner": "o", "repository": "r", "name": "a", "slots": 1,
+                  "tokenPath": "C:\\t\\r", "labels": [], "volumes": [] },
+                { "owner": "o", "repository": "s", "name": "a", "slots": 1,
+                  "tokenPath": "C:\\t\\s", "labels": [], "volumes": [] }] }"#,
             Profile::Axpc,
         );
         let Err(Failure::Invalid(lines)) = found.outcome else {

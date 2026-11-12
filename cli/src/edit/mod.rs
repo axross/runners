@@ -82,8 +82,11 @@ pub enum EditError {
         operation: Operation,
         kind: io::ErrorKind,
     },
-    /// an edit names a place the document does not have, or one of another kind; the
-    /// text names the edit.
+    /// an edit names a place the document does not have, or one of another kind, which
+    /// is a mistake of the caller; or the file is written in a form the write path does
+    /// not edit, which only the user can change: it holds the removal marker, or the
+    /// edit goes inside an inline table written over several lines. the text names the
+    /// edit and the reason.
     Inapplicable(String),
 }
 

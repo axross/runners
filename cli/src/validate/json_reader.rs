@@ -5,9 +5,10 @@ use crate::json::Object;
 use crate::profile::Profile;
 
 use super::budget::BUDGET_FIELDS;
-use super::limits::{CPU_RANGE, format_nanos};
-use super::problem::{Key, KeyPath, Kind, Location, Problem, Segment};
-use super::reader::Reader;
+use super::problem::{
+    Key, KeyPath, Kind, Location, OwnKind, Problem, RuleText, Segment, Wording, rule_text,
+};
+use super::reader::{Format, Reader};
 use super::volumes::VOLUME_FIELDS;
 
 /// reads a host configuration written as JSON for one host profile.
@@ -42,28 +43,10 @@ impl JsonReader {
 }
 
 impl Reader for JsonReader {
-    fn routing_label(&self) -> Option<&str> {
-        Some(self.profile.routing_label())
-    }
-
-    fn carries_settings(&self) -> bool {
-        false
-    }
-
-    fn may_omit_os_and_volumes(&self) -> bool {
-        false
-    }
-
-    fn windows_pool_has_os(&self) -> bool {
-        false
-    }
-
-    fn joins_owner_and_repository(&self) -> bool {
-        false
-    }
-
-    fn applies_token_path_rules(&self) -> bool {
-        true
+    fn format(&self) -> Format<'_> {
+        Format::Json {
+            routing_label: self.profile.routing_label(),
+        }
     }
 
     fn entry_path(&self, index: usize) -> String {
@@ -85,94 +68,41 @@ impl Reader for JsonReader {
 
     fn render(&self, problem: &Problem) -> String {
         let path = path_text(&problem.path);
-        let profile = self.profile;
-        let slots = key_name(Key::Slots);
-        match &problem.kind {
-            Kind::Missing => format!("{path}: required field is missing"),
-            Kind::MustBe(what) => format!("{path}: must be {what}"),
-            Kind::MustBeIntegerUpTo(max) => format!("{path}: must be an integer from 1 to {max}"),
-            Kind::CpuCountOutOfRange => format!("{path}: {CPU_RANGE}"),
-            Kind::CpuCountRoundsToZero => format!(
-                "{path}: {CPU_RANGE}, and large enough not to be written as 0, which Docker reads as no limit"
-            ),
-            Kind::UnknownField(name) => format!("{path}.{name}: unknown field"),
-            Kind::Unreadable(message) => format!("{path}: {message}"),
-            Kind::NoRepositories => format!("{path}: must list at least one repository"),
-            Kind::LabelShape => format!(
-                "{path}: each label must be a string of letters, digits and . _ : / - starting with a letter or digit"
-            ),
-            Kind::PlatformLabel(label) => {
-                format!("{path}: '{label}' is always added, so list only non-platform labels")
-            }
-            Kind::ForeignPlatformLabel {
-                label,
-                os: Some(os),
-            } => format!(
-                "{path}: '{label}' is a platform label that a {os} pool on {profile} cannot provide, so list only non-platform labels"
-            ),
-            Kind::ForeignPlatformLabel { label, os: None } => {
+        let entry_path = |index| self.entry_path(index);
+        let wording = Wording {
+            host: self.profile.name(),
+            key_name,
+            entry_path: &entry_path,
+        };
+        let own = match rule_text(&problem.kind, &wording) {
+            RuleText::Shared(text) => return format!("{path}: {text}"),
+            RuleText::Own(own) => own,
+        };
+        match own {
+            OwnKind::UnknownField(name) => format!("{path}.{name}: unknown field"),
+            OwnKind::Missing => format!("{path}: required field is missing"),
+            OwnKind::MustBe(what) => format!("{path}: must be {what}"),
+            OwnKind::Unreadable(message) => format!("{path}: {message}"),
+            OwnKind::NoRepositories => format!("{path}: must list at least one repository"),
+            OwnKind::ForeignPlatformLabel(label) => {
                 format!("{path}: '{label}' is a platform label, so list only non-platform labels")
             }
-            Kind::DuplicateLabel(label) => format!("{path}: duplicate label '{label}'"),
-            Kind::VolumesUnsupported => {
-                format!("{path}: not supported on {profile}, because VM pools keep no volumes")
-            }
-            Kind::OsUnsupported(os) => {
-                format!("{path}: a {os} pool is not supported on {profile}")
-            }
-            Kind::NewerSchemaVersion => format!("{path}: written by a newer version"),
-            Kind::MountPathHasDotDot => format!("{path}: must not contain '..'"),
-            Kind::DuplicateSuffix(suffix) => format!("{path}: duplicate suffix '{suffix}'"),
-            Kind::DuplicateMountPath(mount_path) => {
-                format!("{path}: duplicate mount path '{mount_path}'")
-            }
-            Kind::NameTooLong { length, max } => format!(
-                "{path}: name is {length} characters, at most {max} are allowed because it starts every runner name"
-            ),
-            Kind::RequiresDiagnostics => {
-                format!("{path}: requires {}", key_name(Key::Diagnostics))
-            }
-            Kind::DotPathComponents => format!("{path}: must not contain dot path components"),
-            Kind::InsideCheckout => format!("{path}: must be outside the checkout"),
-            Kind::NameCollision {
+            OwnKind::NewerSchemaVersion => format!("{path}: written by a newer version"),
+            OwnKind::NameCollision {
                 name,
                 other_name,
                 other,
             } => format!(
                 "{path}: name '{name}' collides with '{other_name}' at {}; set a distinct name on one entry",
-                self.entry_path(*other)
+                self.entry_path(other)
             ),
-            Kind::TokenFileDiffers { other } => format!(
+            OwnKind::TokenFileDiffers { other } => format!(
                 "{path}: pools for the same repository must use the same token file as {}",
-                self.entry_path(*other)
+                self.entry_path(other)
             ),
-            Kind::TokenFileReused { token_path, other } => format!(
+            OwnKind::TokenFileReused { token_path, other } => format!(
                 "{path}: token file '{token_path}' is already used at {}; each repository needs its own token",
-                self.entry_path(*other)
-            ),
-            Kind::AmbiguousRouting { labels, other } => format!(
-                "{path}: ambiguous same-repository routing; labels '{labels}' also appear at {}",
-                self.entry_path(*other)
-            ),
-            Kind::MacosVmsOverLimit { total, limit } => format!(
-                "{path}: macOS pools total {total} VMs (the sum of their {slots}), above the limit of {limit}"
-            ),
-            Kind::CpuBudgetExceeded {
-                total_nanos,
-                budget_nanos,
-            } => format!(
-                "{path}: pools total {} CPUs (the sum of {slots} times {}), above the budget of {}",
-                format_nanos(*total_nanos),
-                key_name(Key::Cpus),
-                format_nanos(*budget_nanos)
-            ),
-            Kind::MemoryBudgetExceeded { total, budget } => format!(
-                "{path}: pools total {total} GB of memory (the sum of {slots} times {}), above the budget of {budget} GB",
-                key_name(Key::MemoryGb)
-            ),
-            Kind::DiskBudgetExceeded { total, budget } => format!(
-                "{path}: pools total {total} GB of disk (the sum of {slots} times {}), above the budget of {budget} GB",
-                key_name(Key::DiskGb)
+                self.entry_path(other)
             ),
         }
     }
@@ -217,19 +147,7 @@ fn path_text(path: &KeyPath) -> String {
     if path.segments().is_empty() {
         return "configuration".to_string();
     }
-    let mut text = String::new();
-    for segment in path.segments() {
-        match segment {
-            Segment::Key(key) => {
-                if !text.is_empty() {
-                    text.push('.');
-                }
-                text.push_str(key_name(*key));
-            }
-            Segment::Index(index) => text.push_str(&format!("[{index}]")),
-        }
-    }
-    text
+    path.text(key_name)
 }
 
 #[cfg(test)]

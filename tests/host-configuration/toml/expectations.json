@@ -21,7 +21,7 @@
       "routing_label: axmc",
       "lifecycle: start_at_login=unset start_runners_on_launch=unset keep_awake=true resume_after_stop=unset",
       "image_name: example-image:tag",
-      "budget: cpus=8 memory_gb=32 disk_gb=150",
+      "budget: cpus=8 memory_gb=32 disk_gb=180",
       "pool[0]: name=alpha repository=octo/hello runners=1 os=macos cpus=4 memory_gb=16 disk_gb=60 labels=[self-hosted, macOS, ARM64, axmc] volumes=[] diagnostics=false diagnostic_directory=none raw_records=false token_path=none",
       "pool[1]: name=beta repository=octo/hello runners=2 os=linux cpus=2 memory_gb=8 disk_gb=40 labels=[self-hosted, linux, ARM64, linux-vm] volumes=[] diagnostics=false diagnostic_directory=none raw_records=false token_path=none"
     ],
@@ -189,7 +189,7 @@
     "profile": "axmc",
     "outcome": "reject",
     "problems": [
-      "line 5: budget.cpus: must be a number greater than 0 and at most 64",
+      "line 5: budget.cpus: must be an integer from 1 to 64",
       "line 4: budget.memory_gb: required key is missing",
       "line 4: budget.disk_gb: required key is missing"
     ],
@@ -209,7 +209,7 @@
     "problems": [
       "line 3: budget: pools total 2 CPUs (the sum of runners times cpus), above the budget of 1",
       "line 3: budget: pools total 2 GB of memory (the sum of runners times memory_gb), above the budget of 1 GB",
-      "line 3: budget: pools total 2 GB of disk (the sum of runners times disk_gb), above the budget of 1 GB"
+      "line 3: budget: pools total 80 GB of disk (the sum of runners times disk_gb, plus 40 GB for the golden VM and Tart's image cache), above the budget of 1 GB"
     ],
     "contains": [],
     "lacks": []
@@ -594,7 +594,7 @@
   "rejected/syntax-dotted-key-too-deep.toml": {
     "profile": "axpc",
     "outcome": "reject",
-    "problems": ["syntax error: recursion limit"],
+    "problems": ["line 5, column 1: syntax error: recursion limit"],
     "contains": [],
     "lacks": []
   },
@@ -681,7 +681,7 @@
   "rejected/syntax-table-header-too-deep.toml": {
     "profile": "axpc",
     "outcome": "reject",
-    "problems": ["syntax error: recursion limit"],
+    "problems": ["line 5, column 2: syntax error: recursion limit"],
     "contains": [],
     "lacks": []
   },

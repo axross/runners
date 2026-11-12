@@ -1021,11 +1021,237 @@ pool = [
         added.contains("{ suffix = \"cache\", mount_path = \"/cache\" }, { suffix = \"tools\", mount_path = \"/tools\" }"),
         "{added}"
     );
+    assert_eq!(
+        edited(&[Edit::AddEntry {
+            array: volumes_of(0),
+            values: volume("tools", "/tools"),
+        }]),
+        before.replace(
+            "cpus = 2 }",
+            "cpus = 2, volumes = [{ suffix = \"tools\", mount_path = \"/tools\" }] }"
+        )
+    );
     let removed = edited(&[Edit::RemoveEntry {
         path: path(&[K(Key::Repositories), I(0)]),
     }]);
     assert!(!removed.contains("\"alpha\""), "{removed}");
     assert!(removed.contains("\"beta\""), "{removed}");
+}
+
+#[test]
+fn an_entry_removed_from_a_list_written_over_several_lines_takes_only_its_own_comments() {
+    let head = "\
+schema_version = 1
+routing_label = \"axpc\"
+image_name = \"i:1\"
+
+[[pool]]
+name = \"alpha\"
+repository = \"octo/hello\"
+runners = 1
+";
+    let remove = |list: &str, index: usize| {
+        let before = format!("{head}{list}");
+        let edit = Edit::RemoveEntry {
+            path: path(&[K(Key::Repositories), I(0), K(Key::Volumes), I(index)]),
+        };
+        let bytes = rewrite(before.as_bytes(), Profile::Axpc, None, &[edit]).unwrap();
+        String::from_utf8(bytes).unwrap()
+    };
+    let after = |list: &str| format!("{head}{list}");
+    let a = "{ suffix = \"a\", mount_path = \"/a\" }";
+    let b = "{ suffix = \"b\", mount_path = \"/b\" }";
+    let c = "{ suffix = \"c\", mount_path = \"/c\" }";
+
+    let trailing =
+        format!("volumes = [ # volumes\n  {a}, # first\n  {b}, # second\n  {c}, # third\n]\n");
+    assert_eq!(
+        remove(&trailing, 0),
+        after(&format!(
+            "volumes = [ # volumes\n  {b}, # second\n  {c}, # third\n]\n"
+        ))
+    );
+    assert_eq!(
+        remove(&trailing, 1),
+        after(&format!(
+            "volumes = [ # volumes\n  {a}, # first\n  {c}, # third\n]\n"
+        ))
+    );
+    assert_eq!(
+        remove(&trailing, 2),
+        after(&format!(
+            "volumes = [ # volumes\n  {a}, # first\n  {b}, # second\n]\n"
+        ))
+    );
+
+    let above = format!("volumes = [\n  # first\n  {a},\n  # second\n  {b},\n]\n");
+    assert_eq!(
+        remove(&above, 0),
+        after(&format!("volumes = [\n  # second\n  {b},\n]\n"))
+    );
+    assert_eq!(
+        remove(&above, 1),
+        after(&format!("volumes = [\n  # first\n  {a},\n]\n"))
+    );
+
+    let one_line = format!("volumes = [{a}, {b}]\n");
+    assert_eq!(remove(&one_line, 0), after(&format!("volumes = [{b}]\n")));
+    assert_eq!(remove(&one_line, 1), after(&format!("volumes = [{a}]\n")));
+
+    let set_apart =
+        |last: &str| format!("volumes = [\n  {a}, # a\n\n  # storage volumes\n\n  {b},\n{last}]\n");
+    assert_eq!(
+        remove(&set_apart(&format!("  {c},\n")), 1),
+        after(&format!(
+            "volumes = [\n  {a}, # a\n\n  # storage volumes\n\n  {c},\n]\n"
+        ))
+    );
+    assert_eq!(
+        remove(&set_apart(""), 1),
+        after(&format!(
+            "volumes = [\n  {a}, # a\n\n  # storage volumes\n\n]\n"
+        ))
+    );
+
+    let shared_line = format!("volumes = [\n  {a},\n  {b}, {c} # bc\n]\n");
+    assert_eq!(
+        remove(&shared_line, 2),
+        after(&format!("volumes = [\n  {a},\n  {b}\n]\n"))
+    );
+}
+
+#[test]
+fn an_edit_inside_an_inline_table_written_over_several_lines_is_refused() {
+    let before = "\
+schema_version = 1
+routing_label = \"axpc\"
+image_name = \"i:1\"
+pool = [
+  {
+    name = \"alpha\", # the name
+    repository = \"octo/hello\", # the repo
+    cpus = 2, # two cpus
+    runners = 1, # one runner
+    volumes = [{ suffix = \"a\", mount_path = \"/a\" }],
+  },
+  { name = \"beta\", repository = \"octo/other\", runners = 1 },
+]
+";
+    let edit = |edit: Edit| rewrite(before.as_bytes(), Profile::Axpc, None, &[edit]);
+    for refused in [
+        set(pool(0, Key::Cpus), Value::Integer(3)),
+        set(pool(0, Key::MemoryGb), Value::Integer(4)),
+        Edit::Remove {
+            path: pool(0, Key::Cpus),
+        },
+        Edit::AddEntry {
+            array: volumes_of(0),
+            values: volume("b", "/b"),
+        },
+    ] {
+        let error = edit(refused.clone()).unwrap_err();
+        assert!(
+            matches!(&error, EditError::Inapplicable(reason) if reason.contains("several lines")),
+            "{refused:?}: {error:?}"
+        );
+    }
+    let changed =
+        String::from_utf8(edit(set(pool(1, Key::Cpus), Value::Integer(3))).unwrap()).unwrap();
+    assert_eq!(
+        changed,
+        before.replace("runners = 1 }", "runners = 1, cpus = 3 }")
+    );
+    let removed = String::from_utf8(
+        edit(Edit::RemoveEntry {
+            path: path(&[K(Key::Repositories), I(0)]),
+        })
+        .unwrap(),
+    )
+    .unwrap();
+    assert!(!removed.contains("alpha"), "{removed}");
+    assert!(removed.contains("{ name = \"beta\""), "{removed}");
+
+    let lifecycle = before.replace(
+        "pool = [\n",
+        "lifecycle = {\n  keep_awake = true, # awake\n}\npool = [\n",
+    );
+    for refused in [
+        set(
+            path(&[K(Key::Lifecycle), K(Key::StartAtLogin)]),
+            Value::Bool(false),
+        ),
+        Edit::Remove {
+            path: path(&[K(Key::Lifecycle), K(Key::KeepAwake)]),
+        },
+    ] {
+        let error = rewrite(
+            lifecycle.as_bytes(),
+            Profile::Axpc,
+            None,
+            std::slice::from_ref(&refused),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(&error, EditError::Inapplicable(reason) if reason.contains("several lines")),
+            "{refused:?}: {error:?}"
+        );
+    }
+}
+
+#[test]
+fn an_entry_added_to_a_list_written_over_several_lines_goes_on_a_line_of_its_own() {
+    let head = "\
+schema_version = 1
+routing_label = \"axpc\"
+image_name = \"i:1\"
+
+[[pool]]
+name = \"alpha\"
+repository = \"octo/hello\"
+runners = 1
+";
+    let edited = |list: &str, edit: Edit| {
+        let before = format!("{head}{list}");
+        let bytes = rewrite(before.as_bytes(), Profile::Axpc, None, &[edit]).unwrap();
+        String::from_utf8(bytes).unwrap()
+    };
+    let add = |list: &str| {
+        edited(
+            list,
+            Edit::AddEntry {
+                array: volumes_of(0),
+                values: volume("n", "/n"),
+            },
+        )
+    };
+    let after = |list: &str| format!("{head}{list}");
+    let a = "{ suffix = \"a\", mount_path = \"/a\" }";
+    let b = "{ suffix = \"b\", mount_path = \"/b\" }";
+    let n = "{ suffix = \"n\", mount_path = \"/n\" }";
+
+    let commented = format!("volumes = [\n  {a}, # a\n  {b}, # b\n]\n");
+    let added = add(&commented);
+    assert_eq!(
+        added,
+        after(&format!("volumes = [\n  {a}, # a\n  {b}, # b\n  {n},\n]\n"))
+    );
+    let new_entry = path(&[K(Key::Repositories), I(0), K(Key::Volumes), I(2)]);
+    assert_eq!(
+        edited(
+            added.strip_prefix(head).unwrap(),
+            Edit::RemoveEntry { path: new_entry }
+        ),
+        after(&commented)
+    );
+
+    assert_eq!(
+        add(&format!("volumes = [\n  {a},\n  {b}\n]\n")),
+        after(&format!("volumes = [\n  {a},\n  {b},\n  {n}\n]\n"))
+    );
+    assert_eq!(
+        add(&format!("volumes = [\n  {a},\n  {b} # b\n]\n")),
+        after(&format!("volumes = [\n  {a},\n  {b}, # b\n  {n}\n]\n"))
+    );
 }
 
 const DOTTED: &str = "\

@@ -101,12 +101,10 @@ impl Drop for Temporary {
     }
 }
 
-/// creates a new temporary file next to `target`, private to the user on Unix.
+/// creates a new temporary file next to `target`, private to the user on Unix. its
+/// name starts with [`CONFIG_FILE_NAME`] whatever `target` is called, so the clean-up
+/// recognises it.
 pub(super) fn create_temporary(target: &Path) -> io::Result<(Temporary, File)> {
-    let name = target
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
     let folder = target
         .parent()
         .filter(|folder| !folder.as_os_str().is_empty())
@@ -120,7 +118,7 @@ pub(super) fn create_temporary(target: &Path) -> io::Result<(Temporary, File)> {
     }
     let mut last = io::Error::from(io::ErrorKind::AlreadyExists);
     for _ in 0..NAME_ATTEMPTS {
-        let path = folder.join(temporary_name(name, &random_id()));
+        let path = folder.join(temporary_name(&random_id()));
         match options.open(&path) {
             Ok(file) => {
                 return Ok((
@@ -138,9 +136,9 @@ pub(super) fn create_temporary(target: &Path) -> io::Result<(Temporary, File)> {
     Err(last)
 }
 
-/// the name of a temporary file for `file_name`: the one place the format is written.
-fn temporary_name(file_name: &str, random: &str) -> String {
-    format!("{file_name}.{random}{TEMPORARY_SUFFIX}")
+/// the name of a temporary file: the one place the format is written.
+fn temporary_name(random: &str) -> String {
+    format!("{CONFIG_FILE_NAME}.{random}{TEMPORARY_SUFFIX}")
 }
 
 /// two 16-digit parts, [`RANDOM_DIGITS`] lower-case hexadecimal digits that differ for
@@ -233,14 +231,14 @@ mod tests {
     }
 
     fn leftover_name(number: u128) -> String {
-        temporary_name(CONFIG_FILE_NAME, &format!("{number:032x}"))
+        temporary_name(&format!("{number:032x}"))
     }
 
     #[test]
     fn the_names_the_writer_makes_are_the_names_the_clean_up_matches() {
         assert_eq!(random_id().len(), RANDOM_DIGITS);
         for _ in 0..16 {
-            let name = temporary_name(CONFIG_FILE_NAME, &random_id());
+            let name = temporary_name(&random_id());
             assert!(is_temporary_name(&name), "{name}");
         }
         assert_eq!(
@@ -334,9 +332,8 @@ mod tests {
     #[test]
     fn the_temporary_names_differ_and_hold_the_pattern() {
         let dir = scratch("names");
-        let target = dir.join("config.toml");
-        let first = create_temporary(&target).unwrap();
-        let second = create_temporary(&target).unwrap();
+        let first = create_temporary(&dir.join("config.toml")).unwrap();
+        let second = create_temporary(&dir.join("settings.toml")).unwrap();
         assert_ne!(first.0.path, second.0.path);
         for (temporary, _) in [&first, &second] {
             let name = temporary.path.file_name().unwrap().to_str().unwrap();

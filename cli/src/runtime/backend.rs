@@ -10,6 +10,7 @@ use tokio::time::Instant;
 use crate::image::check::ImageCheck;
 use crate::validate::PlannedVolume;
 
+use super::name::is_own_container_name;
 use super::retained::Retained;
 use super::secret::Secret;
 
@@ -164,6 +165,42 @@ pub struct CpuRequest {
     pub offset: u64,
 }
 
+/// the slot a job host serves, which is how a backend names the host: a slot has at
+/// most one at a time.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JobHost {
+    pub pool: String,
+    pub slot: u32,
+}
+
+/// what preparing a job host needs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostRequest {
+    pub host: JobHost,
+    /// the host's vCPUs, which the job container's quota and affinity cover.
+    pub vcpus: u64,
+    pub memory_gb: u32,
+    /// the disk of a host that has one of its own.
+    pub disk_gb: Option<u32>,
+    /// the slot's pool has diagnostics on, so the host may come to hold evidence.
+    pub diagnostic: bool,
+}
+
+/// how preparing a job host went.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HostPreparation {
+    /// the host can take the job.
+    Ready,
+    /// the host could not be made, and the slot backs off.
+    Failed(BackendError),
+    /// a host prerequisite refuses the boot, so nothing was started: the slot is held,
+    /// warns, and retries on the backoff schedule. It is no failure of the core.
+    Held(String),
+}
+
+/// the budget a job host's release gets outside a stop.
+pub const RELEASE_WITHIN: Duration = Duration::from_secs(30);
+
 /// a pool's containers a name filter found, and which of them carry the
 /// diagnostics label.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -182,7 +219,18 @@ pub struct StopRequest {
 }
 
 pub trait Backend {
-    /// completes once the backend can take commands, retrying until then.
+    /// the command a job container runs after the launcher verifies its CPUs.
+    fn run_command(&self) -> &str;
+
+    /// what the engine is called where `status` says a pool waits for it.
+    fn engine_name(&self) -> &'static str;
+
+    /// how long the core waits between checks while the engine does not answer.
+    fn engine_poll_interval(&self) -> Duration;
+
+    /// completes once the backend can take commands, retrying until then. An engine
+    /// that does not answer is waited for here, or reported as
+    /// [`ImageCheck::Unavailable`], never as a failed [`HostPreparation`].
     fn wait_until_available(&self) -> impl Future<Output = ()>;
 
     /// classifies the image `image` names, as `docker run` resolves it, within the
@@ -190,9 +238,42 @@ pub trait Backend {
     /// never a mismatch.
     fn check_image(&self, image: &str) -> impl Future<Output = ImageCheck>;
 
+    /// checks the host prerequisites once before anything is started, and returns the
+    /// refusal's message when one refuses. A prerequisite that does not answer is
+    /// waited for later, never refused here. Only `start` and a resume call it, and each
+    /// program it runs gets `each_read` to answer.
+    fn check_prerequisites(
+        &self,
+        _each_read: Duration,
+    ) -> impl Future<Output = Result<(), String>> {
+        async { Ok(()) }
+    }
+
+    /// the warnings of the last prerequisite check that passed, such as a newer
+    /// patch than the tested version, which `status` shows.
+    fn prerequisite_warnings(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// whether `candidate` is one of `pool`'s own leftovers by the name form the
+    /// backend gives its containers, or its hosts.
+    fn is_own_name(&self, pool: &str, candidate: &str) -> bool {
+        is_own_container_name(pool, candidate)
+    }
+
+    /// whether a diagnostic container's evidence lives in a job host that is deleted
+    /// without an export when the host is not trusted with it: preparing a pool
+    /// deletes each leftover through [`remove_containers`](Backend::remove_containers)
+    /// and a forced stop deletes the hosts of the containers it would otherwise end
+    /// and keep, and each reports the evidence a diagnostics-enabled pool loses by
+    /// that.
+    fn deletes_leftovers_unexported(&self) -> bool {
+        false
+    }
+
     /// lists the containers whose names contain `pool` and a hyphen, which Docker's
     /// filter matches anywhere in a name, and those carrying the diagnostics label;
-    /// callers keep only the names `is_own_container_name` accepts.
+    /// callers keep only the names [`is_own_name`](Backend::is_own_name) accepts.
     fn list_pool_containers(
         &self,
         pool: &str,
@@ -219,6 +300,40 @@ pub trait Backend {
         &self,
         request: &CpuRequest,
     ) -> impl Future<Output = Result<String, BackendError>>;
+
+    /// makes the host the slot's next job runs on, after the image check and before
+    /// any registration. The backend counts the host as prepared from the start of
+    /// the call, whatever it returns, until it is released.
+    fn prepare_job_host(&self, request: &HostRequest) -> impl Future<Output = HostPreparation>;
+
+    /// gets rid of the slot's host within `budget`. The worker calls it once after
+    /// every [`prepare_job_host`](Backend::prepare_job_host), whatever that
+    /// returned, and before any backoff, unless a stop has ended the worker while the
+    /// host [awaits finalisation](Backend::host_awaits_finalisation); the stop
+    /// sequence calls it again for each host still prepared. So it does nothing for a
+    /// host that is not prepared, and may run twice at once for one host.
+    fn release_job_host(
+        &self,
+        host: &JobHost,
+        budget: Duration,
+    ) -> impl Future<Output = Result<(), BackendError>>;
+
+    /// whether the host still holds a diagnostic container's evidence that a
+    /// finalisation has not removed. A worker that a stop has ended leaves such a host
+    /// to the stop sequence, which exports it, deletes it with the container's
+    /// removal and releases whatever remains.
+    fn host_awaits_finalisation(&self, _host: &JobHost) -> bool {
+        false
+    }
+
+    /// the hosts prepared and not yet released.
+    fn prepared_hosts(&self) -> Vec<JobHost>;
+
+    /// the time the stop sequence reserves, after its container steps, to release
+    /// the prepared hosts; zero for a backend without hosts. Both columns of the
+    /// container steps, the ordinary and the diagnostic, end that much before the exit
+    /// deadline.
+    fn release_budget(&self) -> Duration;
 
     /// runs one job container to its end and returns its exit code; the JIT
     /// configuration reaches it through the environment of the one client that

@@ -10,14 +10,11 @@ use crate::profile::Profile;
 use super::fields::{self, Errors, Field};
 use super::patterns;
 use super::plan::Lifecycle;
-use super::problem::{Key, KeyPath, Kind};
+use super::problem::{Key, KeyPath, Kind, LABEL_SHAPE};
 use super::reader::Reader;
 
 /// the only schema version this program reads.
 pub const SCHEMA_VERSION: u32 = 1;
-
-const LABEL_SHAPE: &str =
-    "a string of letters, digits and . _ : / - starting with a letter or digit";
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

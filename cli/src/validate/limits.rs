@@ -8,8 +8,29 @@ use super::problem::{KeyPath, Kind};
 /// says what a CPU count may be, after the path.
 pub const CPU_RANGE: &str = "must be a number greater than 0 and at most 64";
 
+/// says what a disk budget total includes beyond the pools' own disks, after the key
+/// it is the sum of; empty when nothing is reserved.
+#[must_use]
+pub fn disk_reserve(reserve_gb: u64) -> String {
+    if reserve_gb == 0 {
+        String::new()
+    } else {
+        format!(", plus {reserve_gb} GB for the golden VM and Tart's image cache")
+    }
+}
+
+/// says what a Linux pool's disk must be, after the path.
+#[must_use]
+pub fn linux_disk_too_small(min_gb: u32) -> String {
+    format!("must be at least {min_gb} on a Linux pool, the golden VM's disk size")
+}
+
 pub const DEFAULT_CPUS: f64 = 2.0;
 pub const MAX_CPUS: f64 = 64.0;
+pub const MAX_VM_CPUS: u32 = 64;
+/// the disk of the base image `golden::pins::BASE_REFERENCE` pins, which the golden
+/// VM keeps; the pin holds no constant for it, so this is the one place it is stated.
+pub const MIN_LINUX_DISK_GB: u32 = 20;
 pub const DEFAULT_MEMORY_GB: u32 = 8;
 pub const MAX_MEMORY_GB: u32 = 256;
 pub const MAX_SLOTS: u32 = 16;
@@ -45,6 +66,11 @@ pub fn read_bounded_integer(
         errors.add(path.clone(), Kind::MustBeIntegerUpTo(max));
     }
     integer
+}
+
+/// reads a whole vCPU count from 1 to [`MAX_VM_CPUS`], as a VM has no fractional CPUs.
+pub fn whole_cpu_count(value: &Value, path: &KeyPath, errors: &mut Errors) -> Option<f64> {
+    read_bounded_integer(value, path, MAX_VM_CPUS, errors).map(f64::from)
 }
 
 /// reads a CPU count above 0 and at most 64 and large enough that its text form is

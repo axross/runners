@@ -1,6 +1,6 @@
 # Writing and Recovery
 
-Apply this reference when an assignment writes, an execution stops unexpectedly, or an effect's outcome is unknown.
+Apply this reference when an assignment writes, a run changes a runtime target other sessions share, an execution stops unexpectedly, or an effect's outcome is unknown.
 
 ## Writing Coordination
 
@@ -15,6 +15,24 @@ The assignment, not this skill, states the workspace arrangement. Concurrent wri
 - MUST triage a permission request a delegated executor raises by what it asks for: apply the current host permission policy to an approved-scope operation the assignment already covers; deny an out-of-scope or destructive one and ask that executor for a safe alternative; and return a product, security, privacy, or platform decision to the human instead of answering it on their behalf.
 - MUST surface a required human authorization rather than manufacturing one, and leave writing responsibility with the executor while its request is pending.
 - MUST verify actual workspace identity before writing: shared workspaces require coordination; separated workspaces require explicit material transfer, retrieval, integration, and verification. A message is not a file transfer, and a behavioral ownership contract is not an enforced lock.
+
+### Shared Runtime Targets
+
+Simulators, emulators, attached devices, ports and the app installed on them are surfaces too, and every session on the machine shares them. Two sessions using one at once rarely fail loudly: one session's install replaces another's build, app data and device-wide settings carry across, and a force-stop ends another session's app. The cost shows up as a wrong observation recorded as evidence. A claim is how sessions keep out of each other's way. It is cooperative rather than enforced, and the project supplies its mechanism.
+
+| Situation                                  | Response                                                                                      |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| Another session holds the emulator's claim | Do not install. Report the held target and end the turn, or ask the human.                    |
+| A claim whose owner looks finished         | Ask the human; do not break it.                                                               |
+| The project provides no claim mechanism    | Say the target is shared, run only what the check needs, and qualify the observation as such. |
+
+**Guidelines:**
+
+- MUST, where the project provides a claim mechanism, claim a target before installing, uninstalling, launching, changing or restoring a setting on, or stopping an app on it, and release the claim when the exercise ends.
+- MUST NOT change a target another session holds; report the held target and end the turn, or ask the human, and arm no poll, subscription or wake to watch the claim.
+- MUST NOT break another session's claim without the human, including one whose owner looks finished.
+- MUST, where the project provides no claim mechanism, state that the target is shared, limit the exercise to what the check needs, and report its observation as taken on a target another session could have changed rather than assume exclusive use.
+- MUST treat a claim as a cooperative convention, never as proof that no other session touched the target.
 
 ## Changed Plan and Decisions
 
