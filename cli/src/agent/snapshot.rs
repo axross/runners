@@ -79,8 +79,8 @@ pub struct UpdateInfo {
     /// the version the agent drains for.
     #[serde(default)]
     pub version: String,
-    /// the runners the drain still waits for: those whose job has started, or whose
-    /// output has not said yet whether it is ready.
+    /// the runners the drain still waits for: those still running a container,
+    /// including an idle runner until its container has stopped.
     #[serde(default)]
     pub waiting: u32,
     /// when the drain stops the remaining runners, in milliseconds since the Unix

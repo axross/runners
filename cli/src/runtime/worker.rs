@@ -216,8 +216,8 @@ impl Pause {
 }
 
 /// warns that a slot waits and for what, then waits out the backoff, ending early on
-/// a stop or a drain; a slot whose attempt a drain ended neither warns nor lengthens
-/// its backoff.
+/// a stop or a drain; while the agent drains, the reason is logged at info level and
+/// the slot neither waits nor lengthens its backoff.
 async fn back_off<K: Clock>(
     report: &Report<'_>,
     clock: &K,
@@ -226,6 +226,11 @@ async fn back_off<K: Clock>(
     pause: Pause,
 ) {
     if halt.draining() {
+        report.log.info(&format!(
+            "{}: {} - not retried while the agent drains.",
+            report.label,
+            pause.words()
+        ));
         return;
     }
     report.log.warn(&format!(

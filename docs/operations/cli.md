@@ -1618,8 +1618,8 @@ W4 ([#78](https://github.com/axross/runners/issues/78)) adds `drain_for_update` 
 protocol version 2, under its rules for added methods and fields. Before the app
 installs an update, it asks the agent to drain: to stop registering runners and to end
 once the jobs already running have finished, within 6 hours. The `version` param is
-the version of the update, three numbers and an optional suffix of at most 64
-characters; anything else is `invalid_request`.
+the version of the update, three numbers and an optional suffix, at most 64
+characters in all; anything else is `invalid_request`.
 
 A runner is busy once its container's output has carried a line that reads
 `Running job:` after the runner's timestamp, and idle once it has carried
@@ -1628,18 +1628,18 @@ neither line is waited for, as if busy. Both streams count, a mark never clears,
 no other line, such as `Runner reconnected.`, changes it. Only the fixed text is
 compared: a job's name is never kept, shown or forwarded.
 
-| When                                                     | Result                                                                             |
-| -------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `drain_for_update`, while `running`                      | Drains: the answer is `{state, update}`, and `agent.update` appears                |
-| `drain_for_update`, while `stopped`                      | Ends for the update at once; `stopped_by_you` is true when stopped by you          |
-| `drain_for_update`, in any other state or while draining | `refused`, and nothing changes                                                     |
-| `start_all` or `build`, while draining                   | `refused`, and nothing changes                                                     |
-| `stop_all`, while draining                               | Stops every runner, so running jobs fail, then ends for the update, stopped by you |
-| `quit`, while draining                                   | Stops and ends as a `quit` does; the `ending` names `quit`                         |
-| The connection that asked closes, while draining         | The drain is cancelled, the agent keeps running, and the slots register again      |
-| A runtime core failure, while draining                   | The container steps run, as after any failure; the core does not start again       |
-| No runner is waited for any more                         | The container steps run, then the agent ends for the update                        |
-| 6 hours pass                                             | The container steps run, so the jobs still running fail, then the agent ends       |
+| When                                                     | Result                                                                                                          |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `drain_for_update`, while `running`                      | Drains: the answer is `{state, update}`, and `agent.update` appears                                             |
+| `drain_for_update`, while `stopped`                      | Ends for the update at once; `stopped_by_you` is true when stopped by you                                       |
+| `drain_for_update`, in any other state or while draining | `refused`, and nothing changes                                                                                  |
+| `start_all` or `build`, while draining                   | `refused`, and nothing changes                                                                                  |
+| `stop_all`, while draining                               | Stops every runner, so running jobs fail, then ends for the update, stopped by you                              |
+| `quit`, while draining                                   | Stops and ends as a `quit` does; the `ending` names `quit`                                                      |
+| The connection that asked closes, while draining         | The drain is cancelled, the agent keeps running, and the slots register again                                   |
+| A runtime core failure, while draining                   | The container steps run, so running jobs fail; the core does not start again, and the agent ends for the update |
+| No runner is waited for any more                         | The container steps run, then the agent ends for the update                                                     |
+| 6 hours pass                                             | The container steps run, so the jobs still running fail, then the agent ends                                    |
 
 While the agent drains, nothing registers a runner: not a slot, not a pool prepared
 after a core failure or when Docker comes back, and not a pool that waited for a token.
@@ -1649,7 +1649,7 @@ and a busy runner's container runs
 until it exits; its slot then finalises it as after any job and registers nothing. A
 drained slot is listed `stopped` with the reason "stopped for an update". The agent's
 state stays `running`, so an older app shows it running; `agent.update.waiting` counts
-the runners still waited for, `deadline` is the bound's time in milliseconds since the
+the slots still running a container, an idle one until its stop ends, `deadline` is the bound's time in milliseconds since the
 Unix epoch, and `pid` is the agent's process ID, which the app waits on. Before the
 agent ends for an update, every connection receives `ending` with the reason `update`
 and an `update` field naming the version and whether the runners were stopped by you.

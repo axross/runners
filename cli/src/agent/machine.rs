@@ -23,7 +23,6 @@ use crate::runtime::backend::Backend;
 use crate::runtime::board::{Board, PoolState, SlotState};
 use crate::runtime::clock::Clock;
 use crate::runtime::image::check_image;
-use crate::runtime::job_marks::Activity;
 use crate::runtime::log::Log;
 use crate::runtime::registration::Registrar;
 use crate::runtime::scrub::scrub_error_text;
@@ -528,26 +527,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                     match self.route(call) {
                         Routed::Answered => {}
                         Routed::Begin(Method::DrainForUpdate { version, .. }, reply) => {
-                            let by_you = matches!(
-                                &self.inner.borrow().phase,
-                                Phase::Stopped(reason) if reason.code == Reason::BY_YOU
-                            );
-                            self.log.info(&format!(
-                                "A drain for the update to {version} was asked for while the runners are stopped, so the agent ends for it now."
-                            ));
-                            self.exit.set(Some(UPDATE));
-                            *self.update.borrow_mut() = Some(UpdateEnding::new(&version, by_you));
-                            self.inner.borrow_mut().drain = Some(Drain {
-                                version,
-                                waiting: 0,
-                                deadline: SystemTime::now(),
-                            });
-                            self.set_phase(Phase::Quitting);
-                            let _ = reply.send(Ok(json!({
-                                "state": self.phase_name(),
-                                "update": self.snapshot().agent.update,
-                            })));
-                            return Next::Exit;
+                            return self.end_stopped_for_update(version, reply);
                         }
                         Routed::Begin(Method::Build, reply) => return Next::Build(reply),
                         Routed::Begin(_, reply) => return Next::Resume(Some(reply)),
@@ -741,10 +721,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
         });
         self.drain.send_replace(true);
         self.publish();
-        let _ = reply.send(Ok(json!({
-            "state": self.phase_name(),
-            "update": self.snapshot().agent.update,
-        })));
+        let _ = reply.send(Ok(self.drain_answer()));
         Draining {
             version,
             deadline: Instant::now() + bound,
@@ -752,16 +729,44 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
         }
     }
 
-    /// the runners a drain waits for: those running a container that is not idle.
+    /// ends the agent at once for an update to `version` asked for while the runners
+    /// are stopped, stopped by you when the stop was yours, and answers `reply`.
+    fn end_stopped_for_update(&self, version: String, reply: Reply) -> Next {
+        let by_you = matches!(
+            &self.inner.borrow().phase,
+            Phase::Stopped(reason) if reason.code == Reason::BY_YOU
+        );
+        self.log.info(&format!(
+            "A drain for the update to {version} was asked for while the runners are stopped, so the agent ends for it now."
+        ));
+        self.exit.set(Some(UPDATE));
+        *self.update.borrow_mut() = Some(UpdateEnding::new(&version, by_you));
+        self.inner.borrow_mut().drain = Some(Drain {
+            version,
+            waiting: 0,
+            deadline: SystemTime::now(),
+        });
+        self.set_phase(Phase::Quitting);
+        let _ = reply.send(Ok(self.drain_answer()));
+        Next::Exit
+    }
+
+    /// the answer to `drain_for_update`: the state and the drain the snapshot shows.
+    fn drain_answer(&self) -> serde_json::Value {
+        json!({
+            "state": self.phase_name(),
+            "update": self.snapshot().agent.update,
+        })
+    }
+
+    /// the runners a drain waits for: every slot still running a container, which
+    /// includes an idle runner until its stop ends and one whose stop and kill failed.
     fn waited_for(&self) -> u32 {
         let waited = self
             .board
             .slot_rows()
             .into_iter()
-            .filter(|row| match &row.state {
-                SlotState::Running(name) => self.backend.job_activity(name) != Activity::Idle,
-                _ => false,
-            })
+            .filter(|row| matches!(row.state, SlotState::Running(_)))
             .count();
         u32::try_from(waited).unwrap_or(u32::MAX)
     }
@@ -772,7 +777,6 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
         if let Some(drain) = self.inner.borrow_mut().drain.as_mut() {
             drain.waiting = waiting;
         }
-        self.publish();
         self.board
             .slot_rows()
             .iter()
