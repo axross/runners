@@ -11,7 +11,8 @@ operator procedure for the axpc host: prerequisites, installing `marshal`, token
 health checks, recovery, and rolling back. [CLI](../../docs/operations/cli.md) owns
 what each `marshal` command does and what `marshal validate` accepts. This
 directory holds `runner-host.example.json`, an example host configuration with two
-repositories, `config.example.toml`, the same configuration as the agent reads it, using obviously fake names, and this reference for every field of the
+repositories using obviously fake names; `config.example.toml`, the same
+configuration as the agent reads it; and this reference for every field of the
 configuration.
 
 ## Host configuration

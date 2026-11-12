@@ -12,7 +12,7 @@
 mod support;
 
 use marshal_cli::profile::Profile;
-use marshal_cli::validate::{CheckoutRule, Failure, validate_toml_with, validate_with};
+use marshal_cli::validate::{CheckoutRule, Failure, validate_with};
 use support::TempDir;
 
 const OUTSIDE: &str = "repositories[0].diagnosticDirectory: must be outside the checkout";
@@ -136,6 +136,8 @@ fn the_checkout_above_the_configuration_is_still_applied_beside_the_sink_s() {
 #[cfg(unix)]
 #[test]
 fn a_sink_inside_a_checkout_in_config_toml_is_refused_from_the_sinks_own_place() {
+    use marshal_cli::validate::validate_toml_with;
+
     let tree = checkout();
     let inside = tree.path().join("checkout").join("evidence");
     let document = format!(

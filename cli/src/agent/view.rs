@@ -408,7 +408,6 @@ mod tests {
                     settings: None,
                 },
                 read_at: SystemTime::now(),
-                checkout_rule_skipped: false,
             }),
             migration: Migration::None,
             problems: Vec::new(),

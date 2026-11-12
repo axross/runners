@@ -172,7 +172,6 @@ impl<K: Checks, C: Clock> Loader<'_, K, C> {
                 origin: Origin::File,
                 plan,
                 read_at: self.clock.now(),
-                checkout_rule_skipped: validation.checkout_rule_skipped,
             }),
             Err(failure) => FileRead::Problems {
                 status: match failure {
@@ -207,7 +206,6 @@ impl<K: Checks, C: Clock> Loader<'_, K, C> {
             origin: Origin::Json,
             plan,
             read_at: self.clock.now(),
-            checkout_rule_skipped: validation.checkout_rule_skipped,
         };
         let document = match self
             .checks

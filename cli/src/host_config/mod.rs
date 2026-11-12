@@ -10,7 +10,7 @@
 //! caller and the rules that check the files from a [`Checks`], so the caller decides
 //! the checkout rule.
 //!
-//! two choices the plan leaves open:
+//! three choices the plan leaves open:
 //!
 //! - an error of the system while reading `config.toml` is [`FileStatus::Unreadable`],
 //!   and so is a file the validator cannot read as a TOML document, which is
@@ -66,9 +66,6 @@ pub struct InUse {
     /// when the configuration was read, which a later load that keeps it does not
     /// change.
     pub read_at: SystemTime,
-    /// true when a diagnostic directory could not be compared with a checkout because
-    /// the checks knew none.
-    pub checkout_rule_skipped: bool,
 }
 
 /// why a migration ended without a `config.toml` of its own writing.

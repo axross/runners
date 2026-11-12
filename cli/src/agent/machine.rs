@@ -29,7 +29,7 @@ use crate::runtime::board::{Board, PoolState, SlotState};
 use crate::runtime::clock::Clock;
 use crate::runtime::image::check_image;
 use crate::runtime::log::Log;
-use crate::runtime::pool::DEFAULT_IMAGE_NAME;
+use crate::runtime::pool::image_name;
 use crate::runtime::registration::Registrar;
 use crate::runtime::scrub::scrub_error_text;
 use crate::runtime::worker::sleep_or_stop;
@@ -132,14 +132,6 @@ enum CycleEnd {
 enum Reloaded {
     Run(Plan),
     Stopped(Reason),
-}
-
-/// the image a plan runs: its own, or on axmc, where the key is optional, the
-/// default `build` uses too.
-fn image_name(plan: &Plan) -> Option<String> {
-    plan.image_name
-        .clone()
-        .or_else(|| (plan.profile == Profile::Axmc).then(|| DEFAULT_IMAGE_NAME.to_string()))
 }
 
 fn ticker() -> tokio::time::Interval {
@@ -648,14 +640,9 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             Ok(plan) => plan,
             Err(reason) => return Reloaded::Stopped(reason),
         };
-        let Some(image) = image_name(&plan) else {
-            return Reloaded::Stopped(Reason::new(
-                Reason::INVALID_CONFIGURATION,
-                "the configuration names no image",
-            ));
-        };
-        let check = check_image(self.backend, &self.board, &image).await;
-        match check.refusal(&image) {
+        let image = image_name(&plan);
+        let check = check_image(self.backend, &self.board, image).await;
+        match check.refusal(image) {
             Some(refusal) => Reloaded::Stopped(Reason::new(Reason::IMAGE_UNUSABLE, refusal)),
             None => Reloaded::Run(plan),
         }
@@ -1220,11 +1207,10 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                 .to_string()
         })?;
         match image_name(&plan) {
-            None => Err("the configuration names no image to build".to_string()),
-            Some(image) if image.contains('@') => Err(format!(
+            image if image.contains('@') => Err(format!(
                 "the image name {image} names a digest, which cannot be tagged; give it a tag instead"
             )),
-            Some(image) => Ok(image),
+            image => Ok(image.to_string()),
         }
     }
 

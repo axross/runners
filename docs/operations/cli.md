@@ -178,7 +178,9 @@ the checkout and is refused, while on Linux it is another directory. It also app
 the checkout above its configuration file where one exists. A sink at or under either
 is a configuration problem, `pool[n].diagnostic_directory: must be outside the
 checkout` in `config.toml` (or `repositories[n].diagnosticDirectory` in a `config.json`
-it migrates), in the snapshot, and the agent stops for `invalid_configuration`. The agent
+it migrates), in the snapshot. With no configuration held the agent stops for
+`invalid_configuration`; at a Start all it keeps the last valid one, as [The Agent's
+Configuration](#the-agents-configuration) describes. The agent
 looks from a sink only when the path is one of the host it runs on, so a Windows path
 read on another host is not compared. Because the sink's own place was examined, the
 agent writes no note that the rule was skipped. `start`, `validate` and `build` are
