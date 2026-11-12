@@ -2,19 +2,18 @@
 //! a verified update, asks its agent to drain for it once the agent is running or
 //! stopped, waits for the agent's process to exit after `ending`, writes the record of
 //! "stopped by you", and starts the installer. An older agent that drains is replaced
-//! the same way, with no install. Every other end of the agent is handled as W1's app
-//! handles one.
+//! the same way, with no install. Every other end of the agent is handled as any
+//! drop: the list stays under lost contact and the agent is started once more.
 
 use std::sync::Arc;
 use std::time::Duration;
 
-use marshal_cli::agent::Launch;
 use marshal_cli::agent::wire::UpdateEnding;
 use marshal_feed::{DEVELOPMENT_VERSION, newer};
 use marshal_view::{Cause, Connection};
 use tokio::time::Instant;
 
-use super::{CALL_WITHIN, Ended, Internal, Session, Stage, stopped_by_you};
+use super::{CALL_WITHIN, Ended, Internal, Session, Stage, launch_for, stopped_by_you};
 use crate::seam::{AgentInfo, Dial, Failure, Link, Process};
 
 /// how often the feed is read while the app runs.
@@ -174,7 +173,7 @@ impl<D: Dial> Session<D> {
             "Asking the agent to drain for {}.",
             match purpose {
                 Purpose::Install => format!("the update to {version}"),
-                Purpose::ReplaceOlder => format!("this app's version, {version}"),
+                Purpose::ReplaceOlder => format!("the version of this app's agent, {version}"),
             }
         ));
         self.drain = Some(Drain {
@@ -334,7 +333,7 @@ impl<D: Dial> Session<D> {
     }
 
     /// the agent's process exited, or did not within 60 s: install, start this app's
-    /// own agent, or handle the agent's end as W1 does.
+    /// own agent, or handle the agent's end as any drop.
     pub(super) fn agent_gone(&mut self, gone: bool) {
         let Some(drain) = self.drain.take() else {
             return;
@@ -342,11 +341,7 @@ impl<D: Dial> Session<D> {
         let stopped = drain.ending.unwrap_or(false);
         // every start after this one leaves the runners as `ending` said, not as the
         // last snapshot, which shows the agent quitting or stopping
-        self.next_launch = Some(if stopped {
-            Launch::Stopped
-        } else {
-            Launch::Running
-        });
+        self.next_launch = Some(launch_for(stopped));
         self.stage = Stage::Attempting;
         if !gone {
             self.log.warn(&format!(
@@ -407,7 +402,7 @@ impl<D: Dial> Session<D> {
     /// the connection dropped during this app's drain: when the agent's process has
     /// exited it ended unexpectedly, and the app goes on as if it had said so; when it
     /// still runs, the app reaches it again without starting another and asks again.
-    /// `false` when no drain was answered on it, and the drop is W1's to handle.
+    /// `false` when no drain was answered on it, and the drop is handled as any other.
     pub(super) fn drain_closed(&mut self) -> bool {
         let Some(drain) = self.drain.as_mut() else {
             return false;
@@ -490,7 +485,7 @@ impl<D: Dial> Session<D> {
             self.ending_unannounced();
         } else {
             // with no handle the app cannot tell the agent ended, so it starts it once
-            // more, as W1 does after a drop
+            // more, as after any drop
             self.drain = None;
             self.restart_after_drop();
         }

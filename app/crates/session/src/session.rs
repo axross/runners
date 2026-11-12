@@ -470,11 +470,7 @@ impl<D: Dial> Session<D> {
     // ---- reaching the agent
 
     fn launch_mode(&self) -> Launch {
-        if self.snapshot.as_ref().is_some_and(stopped_by_you) {
-            Launch::Stopped
-        } else {
-            Launch::Running
-        }
+        launch_for(self.snapshot.as_ref().is_some_and(stopped_by_you))
     }
 
     fn begin_attempt(&mut self) {
@@ -614,11 +610,7 @@ impl<D: Dial> Session<D> {
                 // an end for an update still says how the runners were left, which the
                 // start after it keeps
                 if let Some(update) = update {
-                    self.next_launch = Some(if update.stopped_by_you {
-                        Launch::Stopped
-                    } else {
-                        Launch::Running
-                    });
+                    self.next_launch = Some(launch_for(update.stopped_by_you));
                 }
             }
             Pushed::Closed => self.closed(),
@@ -642,7 +634,7 @@ impl<D: Dial> Session<D> {
         self.restart_after_drop();
     }
 
-    /// what W1's app does when its agent is gone: keep the list under lost contact and
+    /// what the app does when its agent is gone: keep the list under lost contact and
     /// start the agent once more.
     fn restart_after_drop(&mut self) {
         self.reconnect_after_drop(true);
@@ -1033,6 +1025,16 @@ fn shows(snapshot: &Snapshot, pending: Pending) -> bool {
         PendingKind::StopBuild => state == "building",
     };
     !unchanged || snapshot.agent.since >= pending.since_ms
+}
+
+/// how the agent starts so that it leaves the runners as they were: stopped when they
+/// were stopped by you, else running.
+fn launch_for(stopped_by_you: bool) -> Launch {
+    if stopped_by_you {
+        Launch::Stopped
+    } else {
+        Launch::Running
+    }
 }
 
 /// whether the last state heard is "stopped by you", which a restart keeps.

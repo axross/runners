@@ -88,7 +88,7 @@ async fn a_process_that_does_not_exit_in_60_s_installs_nothing_and_the_agent_sta
     assert_eq!(
         session.world.started(),
         [Launch::Running],
-        "as W1 restarts it"
+        "as after any drop, it is started once more"
     );
     assert!(!session.is_over());
     // the feed is read again an hour later
@@ -168,7 +168,7 @@ async fn another_clients_drain_is_waited_for_and_its_end_installs_nothing() {
     assert_eq!(
         session.world.started(),
         [Launch::Running],
-        "as W1 handles an end"
+        "handled as any drop"
     );
 }
 
@@ -305,9 +305,9 @@ async fn a_lost_connection_with_no_agent_answering_waits_for_its_process_then_in
         session.updates.installed().is_empty(),
         "its process still runs"
     );
-    assert_ne!(
+    assert_eq!(
         what(&session.screen.view()),
-        "lost contact (restart failed)",
+        "lost contact (dropped)",
         "nothing was started, and Try Again is not taken while the app waits"
     );
     session.updates.exit(PID);
@@ -366,7 +366,7 @@ async fn an_older_agent_that_drains_is_replaced_keeping_stopped_by_you() {
     assert_eq!(
         drains(&agent),
         ["1.3.0"],
-        "drained for the app's own version"
+        "drained for the version of the app's own agent"
     );
     agent.end_for_update("1.3.0", true);
     agent.close();
