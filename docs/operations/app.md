@@ -78,7 +78,8 @@ which has no operating system dependency. Its tests build views from the recorde
 snapshots in `app/crates/view/tests/fixtures/`.
 
 A runner row writes its state out beside a mark: "Container running" with a check,
-"Registering" with a ring, "Backing off" and "Held" with the history mark, and
+"Saving diagnostics" with a check while the runner's diagnostic container is
+finalising, "Registering" with a ring, "Backing off" and "Held" with the history mark, and
 "Stopped" with the stop mark. A backing-off or held runner shows the agent's reason under
 its state, and a held one is a runner whose job host a host prerequisite refuses, so
 its reason says which. A state the app does not know shows the runner's own reason as
