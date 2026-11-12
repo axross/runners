@@ -6,6 +6,9 @@ use std::collections::HashMap;
 use std::ops::Range;
 
 use toml_edit::{Document, Item, Table as TomlTable, TomlError, Value as TomlValue};
+use toml_parser::decoder::Encoding;
+use toml_parser::parser::{EventReceiver, parse_document};
+use toml_parser::{ErrorSink, Source, Span};
 
 use crate::command::MAX_CONFIG_BYTES;
 use crate::json::{Number, Object, Value};
@@ -16,6 +19,10 @@ use super::toml_schema::{Child, Table};
 /// stands in the tree for a date or time, which no key of the schema holds: it fits
 /// no pattern, so the rules report a value of the wrong type.
 const DATE_OR_TIME: &str = "\u{0}";
+
+/// the most dotted parts a key may have: `toml_edit` refuses a longer key, in a table
+/// header or before a value, with no span.
+const MAX_KEY_PARTS: u32 = 80;
 
 /// a file read into the tree, and where its keys are.
 pub(super) struct Layout {
@@ -95,18 +102,67 @@ pub(super) fn read(bytes: &[u8]) -> Result<Layout, String> {
     Ok(Layout { tree, root })
 }
 
-/// the fixed text of a syntax error. the parser gives a key or a table header nested
-/// past its limit no span, and no position is better than a false one.
+/// the fixed text of a syntax error. the parser gives a key of too many dotted parts
+/// no span, so the first such key is found here; an error still without a place names
+/// none, as no position is better than a false one.
 fn syntax_error(lines: &Lines, error: &TomlError) -> String {
-    match error.span() {
-        Some(span) => {
-            let (line, column) = lines.position(span.start);
+    let start = error
+        .span()
+        .map(|span| span.start)
+        .or_else(|| first_overlong_key(lines.text));
+    match start {
+        Some(start) => {
+            let (line, column) = lines.position(start);
             format!(
                 "line {line}, column {column}: syntax error: {}",
                 error.message()
             )
         }
         None => format!("syntax error: {}", error.message()),
+    }
+}
+
+/// the offset where the first key of more than [`MAX_KEY_PARTS`] dotted parts starts.
+fn first_overlong_key(text: &str) -> Option<usize> {
+    let tokens = Source::new(text).lex().into_vec();
+    let mut keys = KeyParts::default();
+    parse_document(&tokens, &mut keys, &mut ());
+    keys.found
+}
+
+/// counts the dotted parts of each key as the parser reports them.
+#[derive(Default)]
+struct KeyParts {
+    start: usize,
+    parts: u32,
+    after_dot: bool,
+    found: Option<usize>,
+}
+
+impl EventReceiver for KeyParts {
+    fn simple_key(&mut self, span: Span, _kind: Option<Encoding>, _error: &mut dyn ErrorSink) {
+        if self.after_dot {
+            self.parts += 1;
+        } else {
+            self.start = span.start();
+            self.parts = 1;
+        }
+        self.after_dot = false;
+        if self.parts > MAX_KEY_PARTS && self.found.is_none() {
+            self.found = Some(self.start);
+        }
+    }
+
+    fn key_sep(&mut self, _span: Span, _error: &mut dyn ErrorSink) {
+        self.after_dot = true;
+    }
+
+    fn key_val_sep(&mut self, _span: Span, _error: &mut dyn ErrorSink) {
+        self.after_dot = false;
+    }
+
+    fn error(&mut self, _span: Span, _error: &mut dyn ErrorSink) {
+        self.after_dot = false;
     }
 }
 

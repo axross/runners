@@ -594,7 +594,7 @@
   "rejected/syntax-dotted-key-too-deep.toml": {
     "profile": "axpc",
     "outcome": "reject",
-    "problems": ["syntax error: recursion limit"],
+    "problems": ["line 5, column 1: syntax error: recursion limit"],
     "contains": [],
     "lacks": []
   },
@@ -681,7 +681,7 @@
   "rejected/syntax-table-header-too-deep.toml": {
     "profile": "axpc",
     "outcome": "reject",
-    "problems": ["syntax error: recursion limit"],
+    "problems": ["line 5, column 2: syntax error: recursion limit"],
     "contains": [],
     "lacks": []
   },

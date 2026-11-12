@@ -72,6 +72,7 @@ rustls = { version = "0.23.46", default-features = false, features = ["ring", "s
 serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
 keyring-core = { version = "1.0.1", default-features = false }
 toml_edit = { version = "0.25.18", default-features = false, features = ["parse", "display"] }
+toml_parser = { version = "1.1.5", default-features = false, features = ["std"] }
 
 # the instance lock and control channel are named pipes on Windows: interprocess
 # owns the pipe calls, winsafe reads the current user's SID, and win32job puts
