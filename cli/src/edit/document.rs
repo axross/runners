@@ -327,8 +327,8 @@ fn cut_marked(text: &str, marked: Marked) -> Option<String> {
 }
 
 /// the first line of the entry whose marker is on line `marker`: the comment lines
-/// directly above its header go with it. a blank line above, the one that set the
-/// entry apart, goes too unless another entry follows closely.
+/// directly above its header go with it. the blank lines above, which set the entry
+/// apart, go too unless another entry follows closely.
 fn entry_start(lines: &[&str], marker: usize) -> Option<usize> {
     let header = marker.checked_sub(1)?;
     if !lines.get(header)?.trim_start().starts_with("[[") {

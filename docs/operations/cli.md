@@ -589,7 +589,7 @@ tables and arrays.
   written over several lines, and a comment above it stays.
 - A removed pool or volume takes its keys, a pool's volumes, and the comment lines
   directly above its header. When a blank line or the end of the file follows it, the
-  blank line above it goes too. A comment set apart from the header by a blank line
+  blank lines above it go too. A comment set apart from the header by a blank line
   stays.
 - An added entry goes after the last entry of its array, with a blank line before it.
   A comment that ends the file stays at its end.
