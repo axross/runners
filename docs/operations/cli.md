@@ -626,12 +626,14 @@ bytes in each case:
   carries the path, which of the three failed, and the kind of error, and no file text.
 - `Inapplicable`: the edit names a place the document lacks or of another kind, such as
   a table on the way that is missing, a `Set` on a key that holds a table, or an entry
-  that does not exist. It is a mistake of the caller, so it carries no file text, only
-  the edit and the reason. A file that already holds the text the write path uses to
-  mark a removal is refused the same way, and so is an edit inside an inline table
-  written over several lines, which TOML 1.1 allows: its members' comments sit where
-  the edit would move them. Removing such a table from its list, or adding one, is
-  not refused.
+  that does not exist, which is a mistake of the caller. It carries no file text, only
+  the edit and the reason. Two refusals come from the file instead, and only the user
+  can change it: a file that already holds the text the write path uses to mark a
+  removal, and an edit inside an inline table written over several lines, which TOML
+  1.1 allows, since its members' comments sit where the edit would move them. A caller
+  shows these as a file to rewrite, for example that table on one line or as a
+  `[table]`, not as its own error. Removing such a table from its list, or adding one,
+  is not refused.
 
 **One step.** The write path creates `config.toml.<32 lower-case hexadecimal digits>.tmp`
 in the same folder, with a name that does not exist yet and, on Unix, mode 0600. It

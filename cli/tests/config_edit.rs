@@ -1160,6 +1160,32 @@ pool = [
     .unwrap();
     assert!(!removed.contains("alpha"), "{removed}");
     assert!(removed.contains("{ name = \"beta\""), "{removed}");
+
+    let lifecycle = before.replace(
+        "pool = [\n",
+        "lifecycle = {\n  keep_awake = true, # awake\n}\npool = [\n",
+    );
+    for refused in [
+        set(
+            path(&[K(Key::Lifecycle), K(Key::StartAtLogin)]),
+            Value::Bool(false),
+        ),
+        Edit::Remove {
+            path: path(&[K(Key::Lifecycle), K(Key::KeepAwake)]),
+        },
+    ] {
+        let error = rewrite(
+            lifecycle.as_bytes(),
+            Profile::Axpc,
+            None,
+            std::slice::from_ref(&refused),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(&error, EditError::Inapplicable(reason) if reason.contains("several lines")),
+            "{refused:?}: {error:?}"
+        );
+    }
 }
 
 #[test]
