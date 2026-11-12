@@ -155,7 +155,7 @@ fn read_token_path<'a>(
     path: &KeyPath,
     cx: &mut Context,
 ) -> Option<Option<&'a str>> {
-    if !cx.reader.schema().has_token_paths() {
+    if !cx.reader.format().has_token_paths() {
         return Some(None);
     }
     let field_path = path.key(Key::TokenPath);
@@ -191,7 +191,7 @@ fn read_owner_and_repository<'a>(
         "a GitHub owner name (letters, digits and hyphens)",
         "a GitHub repository name (letters, digits and . _ -)",
     );
-    if !cx.reader.schema().joins_owner_and_repository() {
+    if !cx.reader.format().joins_owner_and_repository() {
         let owner = fields::string(
             &node.owner,
             &owner_path,
@@ -242,14 +242,14 @@ fn read_owner_and_repository<'a>(
 
 /// whether the pool has an `os` under this host and format.
 fn has_os(cx: &Context) -> bool {
-    cx.profile == Profile::Axmc || cx.reader.schema().may_omit_os_and_volumes()
+    cx.profile == Profile::Axmc || cx.reader.format().may_omit_os_and_volumes()
 }
 
 fn read_os(field: &Field, path: &KeyPath, cx: &mut Context) -> Option<Os> {
     if !has_os(cx) {
         return None;
     }
-    if cx.reader.schema().may_omit_os_and_volumes() && field.get().is_none() {
+    if cx.reader.format().may_omit_os_and_volumes() && field.get().is_none() {
         return Some(Os::Linux);
     }
     let field_path = path.key(Key::Os);

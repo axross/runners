@@ -36,7 +36,7 @@ pub use limits::{format_cpu_count, format_nanos};
 pub use paths::is_inside_checkout;
 pub use plan::{Budget, Entry, Lifecycle, Plan, PlannedVolume, Settings};
 pub use problem::{Key, KeyPath, Kind, Location, Problem, Segment};
-pub use reader::{Reader, Schema};
+pub use reader::{Format, Reader};
 pub use settings::SCHEMA_VERSION;
 use toml_reader::TomlReader;
 pub(crate) use toml_reader::path_text as toml_path_text;
@@ -181,7 +181,7 @@ fn validate_tree(
 fn read_root(root: &Value, cx: &mut Context) -> Option<Plan> {
     let profile = cx.profile;
     let reader = cx.reader;
-    let has_settings = reader.schema().carries_settings();
+    let has_settings = reader.format().carries_settings();
     if has_settings
         && settings::check_schema_version(root, &mut cx.errors) == settings::Schema::Newer
     {
@@ -189,7 +189,7 @@ fn read_root(root: &Value, cx: &mut Context) -> Option<Plan> {
     }
     let root = fields::read_object::<RootFields>(root, &KeyPath::root(), reader, &mut cx.errors)?;
 
-    let routing_label = match reader.schema().routing_label() {
+    let routing_label = match reader.format().routing_label() {
         Some(label) => Some(label.to_string()),
         None => settings::read_routing_label(&root.routing_label, &mut cx.errors),
     };
@@ -394,8 +394,8 @@ mod tests {
     struct OtherFormat;
 
     impl Reader for OtherFormat {
-        fn schema(&self) -> Schema<'_> {
-            Schema::Json {
+        fn format(&self) -> Format<'_> {
+            Format::Json {
                 routing_label: "custom",
             }
         }

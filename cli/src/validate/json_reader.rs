@@ -5,8 +5,10 @@ use crate::json::Object;
 use crate::profile::Profile;
 
 use super::budget::BUDGET_FIELDS;
-use super::problem::{Key, KeyPath, Kind, Location, Problem, Segment, Wording, rule_text};
-use super::reader::{Reader, Schema};
+use super::problem::{
+    Key, KeyPath, Kind, Location, OwnKind, Problem, RuleText, Segment, Wording, rule_text,
+};
+use super::reader::{Format, Reader};
 use super::volumes::VOLUME_FIELDS;
 
 /// reads a host configuration written as JSON for one host profile.
@@ -41,8 +43,8 @@ impl JsonReader {
 }
 
 impl Reader for JsonReader {
-    fn schema(&self) -> Schema<'_> {
-        Schema::Json {
+    fn format(&self) -> Format<'_> {
+        Format::Json {
             routing_label: self.profile.routing_label(),
         }
     }
@@ -72,37 +74,36 @@ impl Reader for JsonReader {
             key_name,
             entry_path: &entry_path,
         };
-        if let Some(text) = rule_text(&problem.kind, &wording) {
-            return format!("{path}: {text}");
-        }
-        match &problem.kind {
-            Kind::UnknownField(name) => format!("{path}.{name}: unknown field"),
-            Kind::Missing => format!("{path}: required field is missing"),
-            Kind::MustBe(what) => format!("{path}: must be {what}"),
-            Kind::Unreadable(message) => format!("{path}: {message}"),
-            Kind::NoRepositories => format!("{path}: must list at least one repository"),
-            Kind::ForeignPlatformLabel { label, .. } => {
+        let own = match rule_text(&problem.kind, &wording) {
+            RuleText::Shared(text) => return format!("{path}: {text}"),
+            RuleText::Own(own) => own,
+        };
+        match own {
+            OwnKind::UnknownField(name) => format!("{path}.{name}: unknown field"),
+            OwnKind::Missing => format!("{path}: required field is missing"),
+            OwnKind::MustBe(what) => format!("{path}: must be {what}"),
+            OwnKind::Unreadable(message) => format!("{path}: {message}"),
+            OwnKind::NoRepositories => format!("{path}: must list at least one repository"),
+            OwnKind::ForeignPlatformLabel(label) => {
                 format!("{path}: '{label}' is a platform label, so list only non-platform labels")
             }
-            Kind::NewerSchemaVersion => format!("{path}: written by a newer version"),
-            Kind::NameCollision {
+            OwnKind::NewerSchemaVersion => format!("{path}: written by a newer version"),
+            OwnKind::NameCollision {
                 name,
                 other_name,
                 other,
             } => format!(
                 "{path}: name '{name}' collides with '{other_name}' at {}; set a distinct name on one entry",
-                self.entry_path(*other)
+                self.entry_path(other)
             ),
-            Kind::TokenFileDiffers { other } => format!(
+            OwnKind::TokenFileDiffers { other } => format!(
                 "{path}: pools for the same repository must use the same token file as {}",
-                self.entry_path(*other)
+                self.entry_path(other)
             ),
-            Kind::TokenFileReused { token_path, other } => format!(
+            OwnKind::TokenFileReused { token_path, other } => format!(
                 "{path}: token file '{token_path}' is already used at {}; each repository needs its own token",
-                self.entry_path(*other)
+                self.entry_path(other)
             ),
-            // rule_text words every other kind
-            _ => format!("{path}: {:?}", problem.kind),
         }
     }
 }

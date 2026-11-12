@@ -4,13 +4,14 @@ use crate::json::Object;
 
 use super::problem::{KeyPath, Kind, Location, Problem};
 
-/// the rules that differ by format. they change together, so a format names one
-/// schema rather than answering each rule on its own.
+/// the rules that differ by format. they change together, so a reader names its format
+/// rather than answering each rule on its own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Schema<'a> {
+pub enum Format<'a> {
     /// the JSON file of earlier releases: the profile fixes the routing label, the
-    /// file carries no settings, and every pool names its `os`, its `volumes`, its
-    /// owner and repository apart, and its token file.
+    /// file carries no settings, and a pool names its owner and repository apart and
+    /// its token file, and leaves out neither `os` nor `volumes` where its host has
+    /// them.
     Json { routing_label: &'a str },
     /// `config.toml`: the file sets its routing label and settings, and a pool may
     /// leave out `os` and `volumes`, names `owner/name` in one key, and has no token
@@ -18,7 +19,7 @@ pub enum Schema<'a> {
     Toml,
 }
 
-impl Schema<'_> {
+impl Format<'_> {
     /// the label a pool without labels carries besides the platform's, when the
     /// format fixes it; `None` when the file sets it and the rules read it.
     pub fn routing_label(&self) -> Option<&str> {
@@ -57,8 +58,8 @@ impl Schema<'_> {
 /// pool's owner and repository as two keys unless the format joins them; a format
 /// with one key names both under that key when it renders.
 pub trait Reader {
-    /// the rules of the format.
-    fn schema(&self) -> Schema<'_>;
+    /// the format the reader reads.
+    fn format(&self) -> Format<'_>;
 
     /// where the `index`th pool sits in the file, in the format's path form.
     fn entry_path(&self, index: usize) -> String;

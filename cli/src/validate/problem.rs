@@ -253,10 +253,41 @@ pub struct Wording<'a> {
     pub entry_path: &'a dyn Fn(usize) -> String,
 }
 
-/// the text of a problem, after its path, when it reads the same in every format
-/// apart from the names `wording` gives; `None` when each format words it itself.
+/// a problem as `rule_text` hands it back: its text, after its path, when it reads
+/// the same in every format apart from the names a `Wording` gives, or the kind for
+/// the format to word itself.
+pub enum RuleText<'k> {
+    Shared(String),
+    Own(OwnKind<'k>),
+}
+
+/// the kinds each format words itself, with the values the wording needs.
+pub enum OwnKind<'k> {
+    Missing,
+    MustBe(&'static str),
+    UnknownField(&'k str),
+    Unreadable(&'k str),
+    NoRepositories,
+    /// a platform label of another host.
+    ForeignPlatformLabel(&'k str),
+    NewerSchemaVersion,
+    NameCollision {
+        name: &'k str,
+        other_name: &'k str,
+        other: usize,
+    },
+    TokenFileDiffers {
+        other: usize,
+    },
+    TokenFileReused {
+        token_path: &'k str,
+        other: usize,
+    },
+}
+
+/// words `kind` when it reads the same in every format, and hands back the rest.
 #[must_use]
-pub fn rule_text(kind: &Kind, wording: &Wording) -> Option<String> {
+pub fn rule_text<'k>(kind: &'k Kind, wording: &Wording) -> RuleText<'k> {
     let Wording {
         host,
         key_name,
@@ -323,16 +354,35 @@ pub fn rule_text(kind: &Kind, wording: &Wording) -> Option<String> {
             disk_reserve(*reserve)
         ),
         Kind::LinuxDiskTooSmall(min) => linux_disk_too_small(*min),
-        Kind::Missing
-        | Kind::MustBe(_)
-        | Kind::UnknownField(_)
-        | Kind::Unreadable(_)
-        | Kind::NoRepositories
-        | Kind::ForeignPlatformLabel { os: None, .. }
-        | Kind::NewerSchemaVersion
-        | Kind::NameCollision { .. }
-        | Kind::TokenFileDiffers { .. }
-        | Kind::TokenFileReused { .. } => return None,
+        Kind::Missing => return RuleText::Own(OwnKind::Missing),
+        Kind::MustBe(what) => return RuleText::Own(OwnKind::MustBe(what)),
+        Kind::UnknownField(name) => return RuleText::Own(OwnKind::UnknownField(name)),
+        Kind::Unreadable(message) => return RuleText::Own(OwnKind::Unreadable(message)),
+        Kind::NoRepositories => return RuleText::Own(OwnKind::NoRepositories),
+        Kind::ForeignPlatformLabel { label, os: None } => {
+            return RuleText::Own(OwnKind::ForeignPlatformLabel(label));
+        }
+        Kind::NewerSchemaVersion => return RuleText::Own(OwnKind::NewerSchemaVersion),
+        Kind::NameCollision {
+            name,
+            other_name,
+            other,
+        } => {
+            return RuleText::Own(OwnKind::NameCollision {
+                name,
+                other_name,
+                other: *other,
+            });
+        }
+        Kind::TokenFileDiffers { other } => {
+            return RuleText::Own(OwnKind::TokenFileDiffers { other: *other });
+        }
+        Kind::TokenFileReused { token_path, other } => {
+            return RuleText::Own(OwnKind::TokenFileReused {
+                token_path,
+                other: *other,
+            });
+        }
     };
-    Some(text)
+    RuleText::Shared(text)
 }

@@ -36,7 +36,7 @@ pub fn volume_definitions(
     reader: &dyn Reader,
     errors: &mut Errors,
 ) -> Option<Vec<Volume>> {
-    if reader.schema().may_omit_os_and_volumes() && volumes.get().is_none() {
+    if reader.format().may_omit_os_and_volumes() && volumes.get().is_none() {
         return Some(Vec::new());
     }
     let field = path.key(Key::Volumes);

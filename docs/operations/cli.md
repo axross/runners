@@ -506,17 +506,17 @@ words, byte for byte, which the shared fixtures pin. The TOML reader renders the
 and words above. What differs by format is what the reader supplies, through the
 `Reader` trait:
 
-- its `Schema`, the rules that change together by format. `Schema::Json` carries the
-  profile's routing label: the file carries no settings, and a pool names its `os`,
-  its `volumes`, its owner and repository as two keys, and its token file, whose rules
-  apply. `Schema::Toml` reads `schema_version`, `routing_label` and `[lifecycle]` from
+- its `Format`, which fixes the rules that change together by format. `Format::Json`
+  carries the profile's routing label: the file carries no settings, and a pool names
+  its owner and repository as two keys and its token file, whose rules apply, and
+  leaves out neither `os` nor `volumes` where its host has them. `Format::Toml` reads `schema_version`, `routing_label` and `[lifecycle]` from
   the file: a pool may omit `os` and `volumes`, so a Windows pool has an `os`, names
   `owner/name` in one key, and has no token file;
 - the path form of a pool, which a plan entry also records as its source path;
 - which keys the format leaves undefined for the host, and where the file holds a key;
 - how a problem reads. A rule that reads the same in both formats, apart from the
-  host's name, the key names and a pool's path, is worded once in `rule_text`; each
-  reader words the rest itself.
+  host's name, the key names and a pool's path, is worded once in `rule_text`, which
+  hands each reader the rest to word itself as a value it matches in full.
 
 `validate` is the JSON entry point and `validate_toml(bytes, host, checkout)` the TOML
 one. Both return a `Validation` with the same two outcomes: a `Plan`, or a `Failure`

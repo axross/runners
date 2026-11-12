@@ -5,8 +5,10 @@
 use crate::json::Object;
 use crate::profile::Profile;
 
-use super::problem::{Key, KeyPath, Kind, Location, Problem, Segment, Wording, rule_text};
-use super::reader::{Reader, Schema};
+use super::problem::{
+    Key, KeyPath, Kind, Location, OwnKind, Problem, RuleText, Segment, Wording, rule_text,
+};
+use super::reader::{Format, Reader};
 use super::toml_document::{Layout, Spot};
 use super::toml_schema::{Table, key_name};
 
@@ -50,8 +52,8 @@ impl<'a> TomlReader<'a> {
 }
 
 impl Reader for TomlReader<'_> {
-    fn schema(&self) -> Schema<'_> {
-        Schema::Toml
+    fn format(&self) -> Format<'_> {
+        Format::Toml
     }
 
     fn entry_path(&self, index: usize) -> String {
@@ -117,32 +119,31 @@ impl TomlReader<'_> {
             key_name,
             entry_path: &entry_path,
         };
-        if let Some(text) = rule_text(kind, &wording) {
-            return text;
-        }
-        match kind {
-            Kind::Missing => "required key is missing".to_string(),
-            Kind::MustBe(what) => format!("must be {}", expectation(what)),
-            Kind::UnknownField(_) => "unknown key".to_string(),
-            Kind::Unreadable(_) => "could not be read".to_string(),
-            Kind::NoRepositories => "must list at least one pool".to_string(),
-            Kind::ForeignPlatformLabel { label, .. } => {
+        let own = match rule_text(kind, &wording) {
+            RuleText::Shared(text) => return text,
+            RuleText::Own(own) => own,
+        };
+        match own {
+            OwnKind::Missing => "required key is missing".to_string(),
+            OwnKind::MustBe(what) => format!("must be {}", expectation(what)),
+            OwnKind::UnknownField(_) => "unknown key".to_string(),
+            OwnKind::Unreadable(_) => "could not be read".to_string(),
+            OwnKind::NoRepositories => "must list at least one pool".to_string(),
+            OwnKind::ForeignPlatformLabel(label) => {
                 format!("'{label}' is a platform label, so use a label that is not one")
             }
-            Kind::NewerSchemaVersion => "this file was written by a newer Marshal".to_string(),
-            Kind::NameCollision {
+            OwnKind::NewerSchemaVersion => "this file was written by a newer Marshal".to_string(),
+            OwnKind::NameCollision {
                 name,
                 other_name,
                 other,
             } => format!(
                 "name '{name}' collides with '{other_name}' at {}; set a distinct name on one pool",
-                self.entry_path(*other)
+                self.entry_path(other)
             ),
-            Kind::TokenFileDiffers { .. } | Kind::TokenFileReused { .. } => {
+            OwnKind::TokenFileDiffers { .. } | OwnKind::TokenFileReused { .. } => {
                 "pools are tied to a token file, which this format does not have".to_string()
             }
-            // rule_text words every other kind
-            _ => format!("{kind:?}"),
         }
     }
 }
