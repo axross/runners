@@ -29,6 +29,28 @@ path = "helpers/fake_docker.rs"
 test = false
 doc = false
 
+# a stand-in for the `tart` client, for the same reason as fake-docker.
+[[bin]]
+name = "fake-tart"
+path = "helpers/fake_tart.rs"
+test = false
+doc = false
+
+# a stand-in for `softnet`, for the same reason as fake-docker.
+[[bin]]
+name = "fake-softnet"
+path = "helpers/fake_softnet.rs"
+test = false
+doc = false
+
+# a stand-in for the macOS programs the signals run (`caffeinate`, `route` and
+# `arp`), for the same reason as fake-docker.
+[[bin]]
+name = "fake-macos"
+path = "helpers/fake_macos.rs"
+test = false
+doc = false
+
 # a stand-in for a second process, for the lock and channel tests and the CI step
 # that runs it as another user. a release must not ship it.
 [[bin]]
@@ -39,7 +61,7 @@ doc = false
 
 # `serde` is declared without its default features: its derive runs procedural
 # macros (`serde_derive`, `syn`, `quote`, `proc-macro2`) at build time, and the
-# JSON reader is in this crate.
+# validator's JSON reader is in this crate.
 [dependencies]
 clap = { version = "4.6.7", default-features = false, features = ["std", "help", "usage", "error-context"] }
 regex = { version = "1.13.1", default-features = false, features = ["std", "unicode-perl"] }
@@ -47,12 +69,15 @@ serde = { version = "1.0.229", default-features = false, features = ["std", "der
 tokio = { version = "1.54.1", default-features = false, features = ["rt", "time", "sync", "io-util", "process", "macros", "net", "signal"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider"] }
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
+serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
+keyring-core = { version = "1.0.1", default-features = false }
 
 # the instance lock and control channel are named pipes on Windows: interprocess
 # owns the pipe calls, winsafe reads the current user's SID, and win32job puts
 # `start` in a Job Object that kills its children when it ends.
 [target.'cfg(windows)'.dependencies]
-interprocess = { version = "2.4.7", default-features = false }
+interprocess = { version = "2.4.7", default-features = false, features = ["tokio"] }
+windows-native-keyring-store = { version = "1.1.0", default-features = false }
 winsafe = { version = "0.0.29", default-features = false, features = ["advapi"] }
 win32job = { version = "2.0.3", default-features = false }
 

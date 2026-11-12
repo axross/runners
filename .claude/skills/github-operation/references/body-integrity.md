@@ -43,3 +43,14 @@ An extractor often adds a newline and shell command substitution strips trailing
 - MUST compare exact structured response fields with the intended text, not an extractor's stdout or a shell capture, without whitespace or line-ending normalization.
 - MUST re-read the current body before replacement and reconcile any intervening change rather than overwriting another actor's work.
 - MUST apply [publication-and-recovery.md](./publication-and-recovery.md) to read back a body write; if fidelity cannot be established, report an unverified result rather than success.
+
+## Attach Images and Videos
+
+An `--attach` write, once [qualified](./channel-selection.md#qualify-attachment-uploads), treats the body by subcommand. `create` takes the body composed directly. `edit` with a body file replaces the body with that file. `edit` without a body flag keeps the stored body and appends the attachments. A visual that belongs beside specific content, such as an acceptance criterion, is written there as a relative reference, which `--attach` rewrites to the uploaded `user-attachments` URL; an attachment with no reference is appended to the end of the body, so leave it to a comment instead.
+
+**Guidelines:**
+
+- MUST build the body file for an `edit` from the byte-faithful stored body, not from a sanitized read.
+- SHOULD place a visual that belongs beside specific content as a relative reference in the body, and attach unreferenced visuals in a comment rather than appended to the body.
+- MUST NOT attach into a body that holds a canonical plan, whose identity a change loop derives from its stored bytes: a rewrite or append changes the plan. Attach in a comment instead.
+- MUST re-read the stored body after any `--attach` write under the comparison rules above, and accept as differences only the relative-reference to `user-attachments` URL rewrites and the appended attachments.

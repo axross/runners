@@ -1,6 +1,8 @@
 //! one repository entry: its fields, then whether it takes part in the cross-entry
 //! checks.
 
+use std::path::Path;
+
 use serde::Deserialize;
 
 use crate::json::Value;
@@ -9,7 +11,9 @@ use crate::profile::{Os, Profile};
 use super::Context;
 use super::fields::{self, Errors, Field};
 use super::labels::registration_labels;
-use super::limits::{self, DEFAULT_CPUS, DEFAULT_MEMORY_GB, MAX_DISK_GB, MAX_MEMORY_GB, MAX_SLOTS};
+use super::limits::{
+    self, DEFAULT_CPUS, DEFAULT_MEMORY_GB, MAX_DISK_GB, MAX_MEMORY_GB, MAX_SLOTS, MIN_LINUX_DISK_GB,
+};
 use super::macos_pool;
 use super::paths;
 use super::patterns;
@@ -108,7 +112,7 @@ pub fn read_entry(value: &Value, path: &str, cx: &mut Context) -> Option<Entry> 
     let cpus = if macos {
         macos_pool::read_cpus(&node.cpus, path, &mut cx.errors)
     } else {
-        read_cpus(&node.cpus, path, &mut cx.errors)
+        read_cpus(&node.cpus, path, profile, &mut cx.errors)
     };
     let memory_gb = if macos {
         macos_pool::read_memory(&node.memory_gb, path, &mut cx.errors)
@@ -120,7 +124,7 @@ pub fn read_entry(value: &Value, path: &str, cx: &mut Context) -> Option<Entry> 
         (Profile::Axmc, true) => {
             macos_pool::read_disk(&node.disk_gb, path, &mut cx.errors).map(Some)
         }
-        (Profile::Axmc, false) => read_disk(&node.disk_gb, path, &mut cx.errors).map(Some),
+        (Profile::Axmc, false) => read_disk(&node.disk_gb, path, os, &mut cx.errors).map(Some),
     };
     let (diagnostics, raw_records) = read_diagnostic_flags(&node, path, &mut cx.errors);
     if macos && diagnostics {
@@ -233,10 +237,14 @@ fn read_slots(slots: &Field, path: &str, errors: &mut Errors) -> Option<u32> {
     limits::read_bounded_integer(value, &field, MAX_SLOTS, errors)
 }
 
-fn read_cpus(cpus: &Field, path: &str, errors: &mut Errors) -> Option<f64> {
-    match cpus.get() {
-        None => Some(DEFAULT_CPUS),
-        Some(value) => limits::cpu_count(value, &format!("{path}.cpus"), errors),
+fn read_cpus(cpus: &Field, path: &str, profile: Profile, errors: &mut Errors) -> Option<f64> {
+    let Some(value) = cpus.get() else {
+        return Some(DEFAULT_CPUS);
+    };
+    let field = format!("{path}.cpus");
+    match profile {
+        Profile::Axpc => limits::cpu_count(value, &field, errors),
+        Profile::Axmc => limits::whole_cpu_count(value, &field, errors),
     }
 }
 
@@ -247,10 +255,17 @@ fn read_memory(memory_gb: &Field, path: &str, errors: &mut Errors) -> Option<u32
     limits::read_bounded_integer(value, &format!("{path}.memoryGb"), MAX_MEMORY_GB, errors)
 }
 
-fn read_disk(disk_gb: &Field, path: &str, errors: &mut Errors) -> Option<u32> {
+fn read_disk(disk_gb: &Field, path: &str, os: Option<Os>, errors: &mut Errors) -> Option<u32> {
     let field = format!("{path}.diskGb");
     let value = fields::required(disk_gb, &field, errors)?;
-    limits::read_bounded_integer(value, &field, MAX_DISK_GB, errors)
+    let disk = limits::read_bounded_integer(value, &field, MAX_DISK_GB, errors)?;
+    if os == Some(Os::Linux) && disk < MIN_LINUX_DISK_GB {
+        errors.add(format!(
+            "{field}: must be at least {MIN_LINUX_DISK_GB} on a Linux pool, the golden VM's disk size"
+        ));
+        return None;
+    }
+    Some(disk)
 }
 
 /// returns the two diagnostic switches, each false when absent or not a boolean.
@@ -298,14 +313,22 @@ fn read_diagnostic_directory(
         cx.errors
             .add(format!("{field}: must not contain dot path components"));
     }
-    match cx.checkout {
-        Some(checkout) => {
-            if paths::is_inside_checkout(directory, checkout, cx.profile) {
-                cx.errors
-                    .add(format!("{field}: must be outside the checkout"));
-            }
-        }
-        None => cx.checkout_rule_skipped = true,
+    // the checkout of the sink's own place, when the rule asks for it and the path is
+    // one of this host; a Windows path read on another host names no place here
+    let at_sink = Some(Path::new(directory))
+        .filter(|path| cx.at_sink && path.is_absolute())
+        .and_then(crate::checkout::find_at_or_above);
+    let checkouts = [cx.checkout, at_sink.as_deref()];
+    if checkouts.iter().all(Option::is_none) {
+        cx.checkout_rule_skipped = !cx.at_sink;
+    }
+    if checkouts
+        .into_iter()
+        .flatten()
+        .any(|checkout| paths::is_inside_checkout(directory, checkout, cx.profile))
+    {
+        cx.errors
+            .add(format!("{field}: must be outside the checkout"));
     }
     Some(directory.to_string())
 }

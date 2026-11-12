@@ -11,7 +11,8 @@ use crate::image::check::{ImageCheck, status_fields};
 /// where a pool is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PoolState {
-    WaitingForDocker,
+    /// waiting for the backend's engine, named as `engine_name` gives it, to answer.
+    WaitingForEngine(&'static str),
     /// its stale containers are being removed and its volumes prepared.
     Preparing,
     Running,
@@ -21,7 +22,7 @@ pub enum PoolState {
 impl fmt::Display for PoolState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::WaitingForDocker => f.write_str("waiting for Docker"),
+            Self::WaitingForEngine(engine) => write!(f, "waiting for {engine}"),
             Self::Preparing => f.write_str("preparing"),
             Self::Running => f.write_str("running"),
             Self::Skipped(reason) => write!(f, "skipped: {reason}"),
@@ -32,9 +33,13 @@ impl fmt::Display for PoolState {
 /// where a slot is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SlotState {
-    /// probing its CPUs and asking GitHub for a registration.
+    /// preparing its host, probing its CPUs and asking GitHub for a registration.
     Registering,
-    BackingOff,
+    /// waiting to try again, for this reason (scrubbed, and with the log's masks applied).
+    BackingOff(String),
+    /// boots nothing because a host prerequisite refuses, for this reason, and
+    /// retries on the backoff schedule.
+    Held(String),
     /// running the job container of this name.
     Running(String),
 }
@@ -43,7 +48,8 @@ impl fmt::Display for SlotState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Registering => f.write_str("registering"),
-            Self::BackingOff => f.write_str("backing off"),
+            Self::BackingOff(_) => f.write_str("backing off"),
+            Self::Held(reason) => write!(f, "held: {reason}"),
             Self::Running(name) => write!(f, "running container {name}"),
         }
     }
@@ -59,16 +65,32 @@ struct ImageRecord {
 /// image they run.
 #[derive(Debug, Default)]
 pub struct Board {
-    pools: RefCell<Vec<(String, PoolState)>>,
-    slots: RefCell<Vec<(String, SlotState)>>,
+    pools: RefCell<Vec<Row<PoolState>>>,
+    slots: RefCell<Vec<Row<SlotState>>>,
     image: RefCell<Option<ImageRecord>>,
 }
 
-fn upsert<T>(entries: &RefCell<Vec<(String, T)>>, key: String, value: T) {
+/// a pool or slot, its state, and when it entered that state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Row<T> {
+    pub name: String,
+    pub state: T,
+    pub since: SystemTime,
+}
+
+fn upsert<T: PartialEq>(entries: &RefCell<Vec<Row<T>>>, name: String, state: T) {
     let mut entries = entries.borrow_mut();
-    match entries.iter_mut().find(|(held, _)| *held == key) {
-        Some(entry) => entry.1 = value,
-        None => entries.push((key, value)),
+    match entries.iter_mut().find(|row| row.name == name) {
+        Some(row) if row.state == state => {}
+        Some(row) => {
+            row.state = state;
+            row.since = SystemTime::now();
+        }
+        None => entries.push(Row {
+            name,
+            state,
+            since: SystemTime::now(),
+        }),
     }
 }
 
@@ -112,6 +134,27 @@ impl Board {
         }
     }
 
+    /// every pool with its state and since when, in the order first reported.
+    #[must_use]
+    pub fn pool_rows(&self) -> Vec<Row<PoolState>> {
+        self.pools.borrow().clone()
+    }
+
+    /// every slot with its state and since when, in the order first reported.
+    #[must_use]
+    pub fn slot_rows(&self) -> Vec<Row<SlotState>> {
+        self.slots.borrow().clone()
+    }
+
+    /// the image the pools run and its latest check, or `None` before one is named.
+    #[must_use]
+    pub fn image_record(&self) -> Option<(String, Option<ImageCheck>)> {
+        self.image
+            .borrow()
+            .as_ref()
+            .map(|record| (record.name.clone(), record.check.clone()))
+    }
+
     /// the `status` lines of the image, its ages counted to `now`; none before an
     /// image is named.
     #[must_use]
@@ -132,13 +175,13 @@ impl Board {
             .pools
             .borrow()
             .iter()
-            .map(|(name, state)| ("pool", format!("{name}: {state}")))
+            .map(|row| ("pool", format!("{}: {}", row.name, row.state)))
             .collect::<Vec<_>>();
         let slots = self
             .slots
             .borrow()
             .iter()
-            .map(|(name, state)| ("slot", format!("{name}: {state}")))
+            .map(|row| ("slot", format!("{}: {}", row.name, row.state)))
             .collect::<Vec<_>>();
         pools.into_iter().chain(slots).collect()
     }
@@ -151,7 +194,7 @@ mod tests {
     #[test]
     fn each_pool_and_slot_keeps_its_place_and_its_latest_state() {
         let board = Board::default();
-        board.set_pool("alpha", PoolState::WaitingForDocker);
+        board.set_pool("alpha", PoolState::WaitingForEngine("Docker"));
         board.set_pool("beta", PoolState::Skipped("no token".to_string()));
         board.set_slot("alpha slot 1", SlotState::Registering);
         board.set_pool("alpha", PoolState::Running);
@@ -174,11 +217,22 @@ mod tests {
     #[test]
     fn the_states_read_as_status_prints_them() {
         assert_eq!(
-            PoolState::WaitingForDocker.to_string(),
+            PoolState::WaitingForEngine("Docker").to_string(),
             "waiting for Docker"
         );
+        assert_eq!(
+            PoolState::WaitingForEngine("Tart").to_string(),
+            "waiting for Tart"
+        );
         assert_eq!(PoolState::Preparing.to_string(), "preparing");
-        assert_eq!(SlotState::BackingOff.to_string(), "backing off");
+        assert_eq!(
+            SlotState::BackingOff("why".to_string()).to_string(),
+            "backing off"
+        );
         assert_eq!(SlotState::Registering.to_string(), "registering");
+        assert_eq!(
+            SlotState::Held("Softnet is not set up".to_string()).to_string(),
+            "held: Softnet is not set up"
+        );
     }
 }

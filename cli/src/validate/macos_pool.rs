@@ -7,11 +7,11 @@
 use crate::json::Value;
 
 use super::fields::{Errors, Field};
-use super::limits::{self, MAX_DISK_GB, MAX_MEMORY_GB, MAX_SLOTS};
+use super::limits::{self, MAX_DISK_GB, MAX_MEMORY_GB, MAX_SLOTS, MAX_VM_CPUS};
 
 pub const DEFAULT_SLOTS: u32 = 1;
-pub const DEFAULT_CPUS: f64 = 4.0;
-pub const MIN_CPUS: f64 = 2.0;
+pub const DEFAULT_CPUS: u32 = 4;
+pub const MIN_CPUS: u32 = 2;
 pub const DEFAULT_MEMORY_GB: u32 = 8;
 pub const MIN_MEMORY_GB: u32 = 4;
 pub const DEFAULT_DISK_GB: u32 = 50;
@@ -26,20 +26,15 @@ pub(super) fn read_slots(slots: &Field, path: &str, errors: &mut Errors) -> Opti
     limits::read_bounded_integer(value, &format!("{path}.slots"), MAX_SLOTS, errors)
 }
 
-/// reads `cpus`: absent is [`DEFAULT_CPUS`], and a count below [`MIN_CPUS`] after
-/// the rounding the limit itself gets is an error.
+/// reads `cpus`: absent is [`DEFAULT_CPUS`]; a VM has whole vCPUs, as on every
+/// axmc pool, and a count below [`MIN_CPUS`] is an error.
 pub(super) fn read_cpus(cpus: &Field, path: &str, errors: &mut Errors) -> Option<f64> {
     let field = format!("{path}.cpus");
     let Some(value) = cpus.get() else {
-        return Some(DEFAULT_CPUS);
+        return Some(f64::from(DEFAULT_CPUS));
     };
-    let cpus = limits::cpu_count(value, &field, errors)?;
-    if limits::nanos(cpus) < limits::nanos(MIN_CPUS) {
-        errors.add(format!(
-            "{field}: must be at least {MIN_CPUS} on a macOS pool"
-        ));
-    }
-    Some(cpus)
+    let cpus = read_at_least(value, &field, MAX_VM_CPUS, MIN_CPUS, "", errors)?;
+    Some(f64::from(cpus))
 }
 
 /// reads `memoryGb`: absent is [`DEFAULT_MEMORY_GB`].
@@ -129,8 +124,8 @@ mod tests {
 
     #[test]
     fn a_value_below_a_minimum_is_refused_with_the_pools_index() {
-        let (cpus, errors) = read(read_cpus, &field("1.5"));
-        assert_eq!(cpus, Some(1.5));
+        let (cpus, errors) = read(read_cpus, &field("1"));
+        assert_eq!(cpus, Some(1.0));
         assert_eq!(
             errors,
             ["repositories[2].cpus: must be at least 2 on a macOS pool"]
@@ -152,12 +147,13 @@ mod tests {
     }
 
     #[test]
-    fn the_cpu_minimum_applies_after_the_rounding_the_limit_gets() {
+    fn a_fractional_cpu_count_is_a_type_error_not_a_minimum() {
+        let (cpus, errors) = read(read_cpus, &field("2.5"));
+        assert_eq!(cpus, None);
         assert_eq!(
-            read(read_cpus, &field("1.9999999996")).1,
-            Vec::<String>::new()
+            errors,
+            ["repositories[2].cpus: must be an integer from 1 to 64"]
         );
-        assert_eq!(read(read_cpus, &field("1.999999999")).1.len(), 1);
     }
 
     #[test]

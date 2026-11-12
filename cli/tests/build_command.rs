@@ -471,23 +471,58 @@ fn docker_that_fails_to_answer_ends_the_build_at_once() {
     assert_eq!(host.invocations(), [vec!["info".to_string()]]);
 }
 
-#[test]
-fn the_axmc_profile_validates_then_refuses_to_build_a_golden_vm_and_a_usage_error_exits_2() {
-    let host = host();
+fn axmc_config(host: &Host) -> PathBuf {
     let fixture =
         repository_root().join("tests/host-configuration/rust/accepted/axmc-defaults.json");
-    let axmc = host.root.write("axmc.json", &fs::read(fixture).unwrap());
+    host.root.write("axmc.json", &fs::read(fixture).unwrap())
+}
+
+#[cfg(unix)]
+#[test]
+fn the_axmc_profile_validates_then_checks_tart() {
+    let host = host();
     let output = host
         .command(&["build", "--profile", "axmc", "--config"])
-        .arg(&axmc)
+        .arg(axmc_config(&host))
+        .env("MARSHAL_TEST_TART", "/nonexistent/marshal-test-tart")
+        .output()
+        .unwrap();
+    let (_, stderr) = texts(&output);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(
+        stderr.contains("error: Tart could not be started"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("cannot build axmc"), "{stderr}");
+    assert!(host.invocations().is_empty());
+}
+
+#[cfg(windows)]
+#[test]
+fn the_axmc_profile_is_refused_on_windows_before_any_tart_or_docker_call() {
+    let host = host();
+    let tart = host.root.path().join("tart");
+    fs::create_dir_all(&tart).unwrap();
+    let output = host
+        .command(&["build", "--profile", "axmc", "--config"])
+        .arg(axmc_config(&host))
+        .env("MARSHAL_TEST_TART", support::tart::FAKE_TART)
+        .env("FAKE_TART_DIR", &tart)
         .output()
         .unwrap();
     let (_, stderr) = texts(&output);
     assert_eq!(output.status.code(), Some(1), "{stderr}");
     assert_eq!(
         stderr.trim_end(),
-        "error: the configuration is valid, but this version of marshal cannot build axmc's golden VM yet"
+        "error: the axmc profile runs only on macOS"
     );
+    assert!(support::tart::invocations(&tart).is_empty());
+    assert!(host.invocations().is_empty());
+}
+
+#[test]
+fn a_usage_error_exits_2_and_an_invalid_configuration_exits_1() {
+    let host = host();
     assert_eq!(host.client(&["build"]).status.code(), Some(2));
     assert_eq!(
         host.client(&["build", "--config", "x", "--profile", "other"])

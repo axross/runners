@@ -12,7 +12,7 @@
       "os": "macos",
       "slots": 2,
       "tokenPath": "/path/to/example-repo-1.token",
-      "cpus": 2.5,
+      "cpus": 3,
       "memoryGb": 16,
       "diskGb": 80
     }

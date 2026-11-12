@@ -5,8 +5,8 @@ repository's highest-priority review-only policy and complements the
 [Code Review](./.claude/skills/code-review/SKILL.md) methodology. Where
 posted-report instructions differ, this file governs. The Claude adapter in
 [claude-review.yaml](./.github/workflows/claude-review.yaml) supplies the policy
-through its system prompt; [AGENTS.md](./AGENTS.md) instructs reviewers to read
-and apply it. Availability does not prove consumption or compliance: check the
+through its system prompt, the Amp review child thread's assignment names it,
+and [AGENTS.md](./AGENTS.md) instructs reviewers to read and apply it. Availability does not prove consumption or compliance: check the
 reviewer-origin result against this policy, and treat unobserved provider input
 as unknown, not as proof of a failed review.
 [Development Workflow](./docs/operations/development-workflow.md) owns provider
@@ -18,11 +18,11 @@ This is a **strict** review: run every mandatory check and report every finding
 within the scope below. Review the acceptance criteria carried in the pull
 request body's **Acceptance criteria** section. Do not open the tracking issue
 to find them; an absent criteria section is itself a finding (Important in
-Claude review).
+Claude and Amp review).
 
 ## Adopted review arrangements
 
-Substantive checks apply to both routes. These arrangements replace conflicting
+Substantive checks apply to every route. These arrangements replace conflicting
 presentation and reporting-scope defaults in this file and Code Review:
 
 - **Codex** — accept native priorities, inline findings, summaries, no-findings
@@ -39,6 +39,12 @@ presentation and reporting-scope defaults in this file and Code Review:
   all-findings reporting, summary scope, and the tally remain required,
   including `0 important, 0 nits` for a clean round. This review is advisory,
   with no APPROVE or REQUEST_CHANGES verdict.
+- **Amp** — the Amp review child thread follows the Claude arrangement, with two
+  differences. It posts its diff-anchored inline findings and its one summary
+  together as a single submitted COMMENT-type review, never APPROVE or
+  REQUEST_CHANGES. Its summary also carries the `<!-- ai-agent -->` marker, the
+  child thread's URL, and the reviewed commit, because the review is posted
+  under the same GitHub account as the change it reviews.
 
 Accepting native scope accepts the risk of unreported omissions, not proof of
 exhaustive checking. Explicitly unchecked required scope, outstanding findings,
@@ -47,8 +53,8 @@ under [Loop Engineering](.claude/skills/loop-engineering/SKILL.md).
 
 ## Severity labels for posted reviews
 
-Claude review uses Code Review's two posted labels, **Important** and **Nit**,
-instead of its internal Critical/Major/Minor/Nit triage or an
+Claude and Amp review use Code Review's two posted labels, **Important** and
+**Nit**, instead of its internal Critical/Major/Minor/Nit triage or an
 Approve/Request-Changes verdict. Codex managed review uses native priority
 labels; its presentation and reporting scope follow the adopted arrangements
 above. In this repository, a hard project rule includes every MUST rule of a
@@ -62,8 +68,9 @@ boundary.
 **Guidelines:**
 
 - MUST flag an applicable hard-rule violation and cite its owning skill or
-  project convention and rule. Claude review MUST label it Important; Codex
-  review uses its native priority label without implying an exact equivalence.
+  project convention and rule. Claude and Amp review MUST label it Important;
+  Codex review uses its native priority label without implying an exact
+  equivalence.
 
 ## Mandatory checks
 
@@ -79,18 +86,20 @@ Run the following checks on every review and raise findings within their scope:
   under [Code Review's review lenses](./.claude/skills/code-review/references/review-lenses.md),
   Acceptance Criteria boundary. Report violations demonstrable by inspecting
   the changed material, inline where a changed line supports the finding.
-  Claude review labels these Important; Codex uses its native priorities. A
-  real-host result, machine-specific measurement, or other external verification
-  does not become a finding solely because it cannot be confirmed from the diff
-  or lacks an evidence link, whether designated or not. Do not re-run or judge
-  external evidence in this inspection check. Contributor verification and
-  required evidence remain separate readiness obligations in
+  Claude and Amp review label these Important; Codex uses its native
+  priorities. A real-host result, machine-specific measurement, or other
+  external verification does not become a finding solely because it cannot be
+  confirmed from the diff or lacks an evidence link, whether designated or not.
+  Do not re-run or judge external evidence in this inspection check.
+  Contributor verification and required evidence remain separate readiness
+  obligations in
   [Development Workflow](./docs/operations/development-workflow.md).
 - **Public-repository safety** - this repository is public and is meant to hold
   nothing that identifies a person or a machine. Verify the
   [safety lenses](#public-repository-safety-lenses) below for every changed
-  file, and apply the [language lenses](#language-lenses) for each kind of file
-  in the diff.
+  file, apply the [VM runtime lenses](#vm-runtime-lenses) to a change of the
+  axmc Linux VM runtime, and apply the [language lenses](#language-lenses) for
+  each kind of file in the diff.
 - **Refactoring opportunities** - examine changed code, scripts, workflow
   definitions, and documentation for concrete ways to simplify
   responsibilities, remove duplication, or reduce unnecessary complexity. Report
@@ -113,8 +122,8 @@ contributor's verification.
 
 ## Public-repository safety lenses
 
-Each lens is a hard project rule. Claude review labels a violation Important;
-Codex review uses its native priority label.
+Each lens is a hard project rule. Claude and Amp review label a violation
+Important; Codex review uses its native priority label.
 
 - **No credentials or host-identifying values.** No token, key, password,
   registration or JIT configuration, `.env` value, internal hostname, IP
@@ -123,7 +132,8 @@ Codex review uses its native priority label.
   comment, or a test fixture. The public maintainer handle and the owner and
   repository names of this repository and of `axross/skills` are allowed, and so
   are the default runner labels `axpc` and `axmc`, the two committed host labels,
-  kept by the maintainer's decision (see
+  kept by the maintainer's decision, and the macOS signing team ID and designated
+  requirement that a later CLI record may hold, as Security records (see
   [Security](docs/conventions/security.md#nothing-identifying-or-secret-is-committed)).
   An example uses an obviously fake
   placeholder (`<owner>`, `<repo>`, `example.invalid`). A value a runner needs
@@ -179,7 +189,63 @@ Codex review uses its native priority label.
   directory without a stated need are findings.
 - **Secrets stay out of logs and images.** A secret is never echoed, passed on
   a command line that a process listing exposes, written into an image layer
-  (`ENV`, `ARG`, `COPY`), or left in a build cache.
+  (`ENV`, `ARG`, `COPY`), or left in a build cache. Two exceptions for a
+  credential are recorded, both in `sign-macos`: `security`'s password arguments, and
+  `notarytool`'s `--key-id` and `--issuer` arguments for the notary key's ID and issuer
+  ID. The `.p8` key reaches `notarytool` only as a file path. Any other change to how
+  the key's ID, issuer ID or `.p8` reaches `notarytool` is a finding to raise (see
+  [Security](docs/conventions/security.md#nothing-identifying-or-secret-is-committed)).
+
+## VM runtime lenses
+
+These lenses apply to a change of the axmc Linux VM runtime: `cli/src/runtime/tart/`,
+`cli/src/macos/`, `cli/src/golden/`, the golden VM's provisioning assets, and the
+macOS host document. Each is a hard project rule, owned by
+[Security](docs/conventions/security.md#a-linux-job-on-axmc-runs-in-a-per-job-vm)
+and the sections after it. Claude and Amp review label a violation Important;
+Codex review uses its native priority label.
+
+- **No JIT configuration in an argument list.** The JIT configuration reaches the
+  guest only on the standard input of a `tart exec -i` call, never with `-t`, and
+  inside the VM only the launcher puts it in the Docker client's environment. It is
+  never an argument of `tart`, `tart exec`, the launcher or `docker`, never a log
+  line, and never part of the VM's image.
+- **Guest output is bounded.** Every guest-agent call's captured output is cut off
+  at a fixed bound (64 KiB), and the CLI never parses it beyond its expected form.
+  The one exception is the diagnostics export's `docker cp` archive, which
+  `VmCopy` streams; the strict archive reader and the bundle limits bound it
+  instead. An unbounded read of any other guest call, or a parse that trusts its
+  shape, is a finding.
+- **Deletion on every failure path.** Every exit from a slot's cycle after the
+  clone, and from a build until its rename, deletes that VM within a budget: an
+  error, a failed probe, a boot failure, a stop, an interrupt and a timeout. After
+  the rename the build VM is the golden VM and is not deleted. A new early return,
+  `?` or `break` between the clone and the deletion is checked for it. The shim
+  deletes the VM when the liveness pipe closes, which covers a CLI that ended at the
+  exit deadline or died, and a VM neither deleted is left to the next `start` or
+  `build`. No shim or other child inherits the instance lock.
+- **The Softnet check and rules on every boot.** Every `tart run` follows a Softnet
+  file check and a version check, and carries the two Softnet rules from
+  [Security](docs/conventions/security.md#softnet-confines-a-job-vms-network) and no
+  other network option. A boot path that skips the check, a cached result, a
+  `marshal` that sets Softnet's SUID bit, and a fallback to Tart's default network
+  are findings.
+- **No shared directory, clipboard, audio, USB accessories or Rosetta.** Every
+  `tart run` turns off graphics, the clipboard, audio and USB accessories, and
+  carries no `--dir` and no `--rosetta`. Every Tart call sets `TART_NO_AUTO_PRUNE`,
+  gets `marshal`'s `PATH`, and has a standard output that is not a terminal.
+- **Names and cleanup stay exact.** Cleanup at `start` matches only the job VMs of
+  configured pools by their name form, so it never deletes a golden VM or a build
+  VM. Only `build` deletes golden VMs, and only `build` and a build VM's own shim
+  delete a build VM. A looser match could delete a VM `marshal` does not own.
+- **Pins hold.** The base image is pinned by digest, the current pin is never on
+  the retired list, Docker Engine comes from Docker's apt repository at pinned
+  versions after the signing key's fingerprint is checked, and the tested Tart and
+  Softnet versions agree between the CLI and the host document.
+
+The Dockerfile lens's rule against `apt-get upgrade` is about the runner image. The
+golden VM's provisioning upgrades the base's Ubuntu packages on purpose, so a
+rebuild picks up security fixes; that is not a finding.
 
 ## Language lenses
 
@@ -206,16 +272,42 @@ Apply the lens for each kind of file in the diff.
   `timeout-minutes`. `concurrency` cancels superseded pull request runs only.
 - **Release workflows.** A change to
   [`release-build.yaml`](./.github/workflows/release-build.yaml),
-  [`release.yaml`](./.github/workflows/release.yaml), the release-build job in
-  `merge-checks.yaml`, the scripts under `.github/scripts/`, the release tooling
-  under [`release/`](./release), or `cli/.cargo/config.toml` is checked against
-  each bullet of the release record in
+  [`release.yaml`](./.github/workflows/release.yaml), the release-build job and the
+  `Install Blocks` job in `merge-checks.yaml`, the scripts under `.github/scripts/`,
+  the release tooling under [`release/`](./release), or `cli/.cargo/config.toml` is
+  checked against each bullet of the release record in
   [Security](docs/conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main).
-  A publish or attest step outside `release.yaml`, a job that both runs the npm
-  tree and holds `id-token: write`, an asset other than the two named binaries and
-  `SHA256SUMS`, such as a helper binary, or a departure from the record that the
-  change does not also make to the record, is a finding. A change that relaxes the
-  record needs the maintainer's review.
+  A publish or attest step outside `release.yaml`, a job that both runs the npm tree
+  and holds `id-token: write`, an asset other than the two named binaries, the two
+  installers named for them, and `SHA256SUMS`, such as a helper binary, an installer
+  that carries a script or a custom action that runs code, a download that is none of
+  the pinned WiX package, the recorded Rust toolchain exception, or the Node that
+  `actions/setup-node` installs (recorded under Security's Pinning Convention), or a
+  departure from the record that the change does not also make to the record, is a
+  finding. Install-time verification is optional for the installers, so a document or
+  comment that presents the check block as required of an operator is a finding, and
+  so is a change that weakens a pin or drops one of the check block's four checks, or
+  any check of the bare-binary blocks that roll back to `v0.1.0`. The signing job's
+  rules are also findings when broken: an `environment:` in any job but `sign-macos`,
+  or in a workflow a pull request triggers or a job such a workflow calls; a signing
+  secret read by any job but `sign-macos`; `sign-macos` holding more than
+  `contents: read`, running a checkout, an action besides `actions/download-artifact` and
+  `actions/upload-artifact`, a package manager, a fetch, a file from the repository,
+  or a `${{ }}` inside `run:`, or calling a signing tool by anything but its system path; a
+  signing step that a later job can pass without, such as `continue-on-error`, a
+  job-level `always()`, `!cancelled()` or `failure()`, a step condition in
+  `sign-macos` beyond the `if: always()` of the clean-up and the notary-log upload, a
+  step condition in `verify-macos` or `assemble-signed`, or one in `attest` or
+  `release` that skips a step, which the shape check does not see; an attest or release job that reads
+  the unsigned set or does not follow every signing step; a secret printed, or passed
+  on a command line apart from `security`'s password arguments and `notarytool`'s
+  `--key-id` and `--issuer` arguments in `sign-macos`, the two exceptions for a
+  credential that Security records; a change to how the notary
+  key's ID, issuer ID or `.p8` key reaches `notarytool`; a change to the identifier
+  `app.axross.marshal`, the team pin, or the G2 intermediate's pin without its source and the record's update;
+  and a signing job or step added without being added to `check-release-shape.mjs` and
+  its test. A change that relaxes the record, or touches the signing job, needs the
+  maintainer's review.
 - **Rust.** The CLI under `cli/` has no `unsafe` and no panic on an input path
   (`unwrap`, `expect`, `panic!`, indexing); it collects every error in the order
   [CLI](docs/operations/cli.md) states under Validation Rules rather than returning
@@ -236,13 +328,19 @@ Apply the lens for each kind of file in the diff.
   a container an earlier process left: no record exists, so a startup with the
   pool's diagnostics on adopts it with the pool's current settings. A path that
   removes one without trying its export while its clock allows, or finalises one
-  the backend already retains with a later plan's settings, is a finding. The sink checks refuse and never create, repair,
-  or relax, and a new log line, warning, or channel answer names only the pool,
-  the container, and the gap, never bundle contents. The exporter child and each
-  of its `docker` clients end by their deadline and with `start`; a new wait in
-  that path that has no bound, or that polls for liveness instead of a closed pipe
-  or a process handle, is a finding (see
-  [CLI](docs/operations/cli.md#diagnostics) and
+  the backend already retains with a later plan's settings, is a finding. A
+  diagnostic VM on axmc is deleted without an export by design in exactly three
+  cases: a second SIGINT, a `start` that ends while it still holds the VM (the VM
+  shim), and a leftover at the next `start`, each reporting the diagnostic gap. A
+  fourth export-less deletion of a VM, or any of the three that reports no gap, is a
+  finding (see [CLI](docs/operations/cli.md#tart-backend), the paragraph "Evidence a
+  VM loses"). The sink checks refuse and never create, repair, or relax, and a new
+  log line, warning, or channel answer names only the pool, the container, and the
+  gap, never bundle contents. The exporter child and each of its clients, the
+  `docker` clients on axpc and the `tart exec` clients on axmc, end by their
+  deadline and with `start`; a new wait in that path that has no bound,
+  or that polls for liveness instead of a closed pipe or a process handle, is a
+  finding (see [CLI](docs/operations/cli.md#diagnostics) and
   [Security](docs/conventions/security.md#diagnostic-evidence-stays-private)).
 - **Image contract.** A change to the run contract, which is the argument lists,
   the launcher, and the labels the CLI reads, or to what the runner image must
@@ -332,7 +430,7 @@ verification or evidence obligations.
 
 **Guidelines:**
 
-- Model-authored review prose MUST NOT include either provider's review trigger
+- Model-authored review prose MUST NOT include any provider's review trigger
   phrase, documented in
   [the independent review](./docs/operations/development-workflow.md#the-independent-review),
   anywhere in a summary or an inline comment. Refer to it by name instead, for

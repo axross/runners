@@ -15,7 +15,7 @@ use crate::diagnostics::{EXPORT_COMMAND, ExportRequest};
 use crate::profile::Profile;
 use crate::start::{StartRequest, start};
 use crate::summary::plan_summary;
-use crate::validate::{Failure, Plan, validate};
+use crate::validate::{CheckoutRule, Failure, Plan, validate_with};
 
 /// the largest configuration `validate` reads; it only stops a mistaken or hostile
 /// path from being read whole.
@@ -98,6 +98,7 @@ fn command() -> Command {
                 .arg(Arg::new("pool").long("pool").required(true))
                 .arg(Arg::new("directory").long("directory").required(true))
                 .arg(Arg::new("container").long("container"))
+                .arg(Arg::new("vm").long("vm"))
                 .arg(
                     Arg::new("raw-records")
                         .long("raw-records")
@@ -140,6 +141,20 @@ fn command() -> Command {
                     .value_parser(value_parser!(OsString)),
             ),
     );
+    #[cfg(unix)]
+    let command = command.subcommand(
+        Command::new(crate::vm_shim::VM_SHIM_COMMAND)
+            .hide(true)
+            .arg(Arg::new("name").long("name").required(true))
+            .arg(Arg::new("diagnostic-pool").long("diagnostic-pool"))
+            .arg(
+                Arg::new("client")
+                    .required(true)
+                    .num_args(1)
+                    .last(true)
+                    .value_parser(value_parser!(OsString)),
+            ),
+    );
     command
 }
 
@@ -177,8 +192,22 @@ pub fn run(
         Some((EXPORT_COMMAND, export_matches)) => run_export(export_matches),
         #[cfg(unix)]
         Some((crate::shim::SHIM_COMMAND, shim_matches)) => run_shim(shim_matches),
+        #[cfg(unix)]
+        Some((crate::vm_shim::VM_SHIM_COMMAND, shim_matches)) => run_vm_shim(shim_matches),
         _ => ExitCode::from(EXIT_USAGE),
     }
+}
+
+#[cfg(unix)]
+fn run_vm_shim(matches: &ArgMatches) -> ExitCode {
+    let (Some(name), Some(program)) = (
+        matches.get_one::<String>("name"),
+        matches.get_one::<OsString>("client"),
+    ) else {
+        return ExitCode::from(EXIT_USAGE);
+    };
+    let pool = matches.get_one::<String>("diagnostic-pool");
+    crate::vm_shim::run(name, program, pool.map(String::as_str))
 }
 
 #[cfg(unix)]
@@ -208,6 +237,7 @@ fn run_export(matches: &ArgMatches) -> ExitCode {
     let request = ExportRequest {
         pool: pool.clone(),
         container: matches.get_one::<String>("container").cloned(),
+        vm: matches.get_one::<String>("vm").cloned(),
         directory: directory.clone(),
         raw_records: matches.get_flag("raw-records"),
         checkout: matches.get_one::<PathBuf>("checkout").cloned(),
@@ -355,6 +385,13 @@ pub(crate) struct Loaded {
 
 /// reads the file and validates it for `profile`.
 pub(crate) fn load_plan(config: &Path, profile: Profile) -> Loaded {
+    load_plan_under(config, profile, false)
+}
+
+/// reads the file and validates it for `profile`; with `at_sink`, each diagnostic
+/// directory is also compared with the checkout at or above it, as the agent's
+/// configuration lives outside any checkout.
+pub(crate) fn load_plan_under(config: &Path, profile: Profile, at_sink: bool) -> Loaded {
     let bytes = match read_limited(config) {
         Ok(bytes) => bytes,
         Err(error) => {
@@ -373,7 +410,12 @@ pub(crate) fn load_plan(config: &Path, profile: Profile) -> Loaded {
         }
     };
     let checkout = checkout::find(config);
-    let validation = validate(&bytes, profile, checkout.as_deref());
+    let rule = if at_sink {
+        CheckoutRule::AboveAndAtSink(checkout.as_deref())
+    } else {
+        CheckoutRule::Above(checkout.as_deref())
+    };
+    let validation = validate_with(&bytes, profile, rule);
     let outcome = validation.outcome.map_err(|failure| match failure {
         Failure::Unreadable(problem) => {
             LoadError::Unreadable(format!("Host configuration is not valid JSON: {problem}"))

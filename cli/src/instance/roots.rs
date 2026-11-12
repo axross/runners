@@ -42,6 +42,7 @@ pub struct Roots {
     #[cfg(windows)]
     pipe_suffix: String,
     log_directory: PathBuf,
+    config_file: PathBuf,
 }
 
 impl Roots {
@@ -55,6 +56,7 @@ impl Roots {
         let home = std::env::home_dir().ok_or(RootsError::NoHomeDirectory)?;
         Ok(Self {
             lock_file: PathBuf::from("/Users/Shared/.marshal-instance.lock"),
+            config_file: home.join("Library/Application Support/marshal/config.json"),
             channel_directory: home.join("Library/Application Support/marshal"),
             log_directory: home.join("Library/Logs/marshal"),
         })
@@ -70,9 +72,11 @@ impl Roots {
         let local = std::env::var_os("LOCALAPPDATA")
             .filter(|value| !value.is_empty())
             .ok_or(RootsError::NoLocalAppData)?;
+        let directory = PathBuf::from(local).join("marshal");
         Ok(Self {
             pipe_suffix: String::new(),
-            log_directory: PathBuf::from(local).join("marshal").join("logs"),
+            log_directory: directory.join("logs"),
+            config_file: directory.join("config.json"),
         })
     }
 
@@ -85,6 +89,7 @@ impl Roots {
             lock_file: root.join(".marshal-instance.lock"),
             channel_directory: root.join("channel"),
             log_directory: root.join("logs"),
+            config_file: root.join("config.json"),
         }
     }
 
@@ -99,6 +104,7 @@ impl Roots {
         Self {
             pipe_suffix: format!("-test-{:016x}", hasher.finish()),
             log_directory: root.join("logs"),
+            config_file: root.join("config.json"),
         }
     }
 
@@ -118,6 +124,14 @@ impl Roots {
     #[must_use]
     pub fn log_directory(&self) -> &std::path::Path {
         &self.log_directory
+    }
+
+    /// where the agent reads the host configuration: `config.json` in the
+    /// `marshal` folder of `%LOCALAPPDATA%` on Windows, and in the socket's folder on
+    /// macOS; a test root holds it directly.
+    #[must_use]
+    pub fn config_file(&self) -> &std::path::Path {
+        &self.config_file
     }
 }
 

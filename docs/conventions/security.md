@@ -2,7 +2,8 @@
 
 This project's supply-chain and runner-trust conventions: how a `uses:` reference
 under [`.github/`](../../.github) is pinned, what a workflow may be granted, how a
-release of the CLI is published, where
+release of the CLI is published and its
+macOS files are signed, where
 a self-hosted runner may and may not run, what a runner's shared storage exposes,
 and what is never committed. It does not cover application-level security, such as
 input validation or the OWASP-style concerns the installed `application-security`
@@ -11,7 +12,9 @@ capability owns.
 The runner image under [`images/actions-runner/`](../../images/actions-runner) and
 the host configuration under
 [`hosts/windows-docker-desktop/`](../../hosts/windows-docker-desktop) exist and are
-reviewed against the sections on runner trust and shared storage below. The
+reviewed against the sections on runner trust and shared storage below, and the
+macOS host's Linux VM runtime ([#74](https://github.com/axross/runners/issues/74))
+against the sections on a per-job VM, Softnet and the pinned programs. The
 agent-host configuration this repository is also for does not exist yet; those
 sections are the constraints it will be reviewed against.
 
@@ -93,6 +96,51 @@ computed from the real download, and are not covered by Dependabot. Dependabot
 does cover the CLI's own dependencies: its `cargo` and `rust-toolchain` entries
 for `/cli` propose the crate and toolchain refreshes as pull requests.
 
+The Windows installer's tool is pinned the same way. Besides the Rust toolchain,
+whose exception is recorded below, WiX is the one tool the release build fetches.
+[`fetch-wix.sh`](../../.github/scripts/fetch-wix.sh) downloads the NuGet package
+`wix` 7.0.1 from
+`https://api.nuget.org/v3-flatcontainer/wix/7.0.1/wix.7.0.1.nupkg`, refuses it
+unless its SHA-256 is
+`25209a1f73b20106621f11abe5e1a4e87c1d9f5c596795d246de7bb64446df17`, and only then
+installs it with `dotnet tool install --tool-path`. `dotnet` reads a NuGet.Config
+that clears every source and lists one folder holding the checked package, so no
+other source is consulted, and the package has no dependencies. `mise run
+test:fetch-wix` feeds the script a package with another SHA-256 and shows the
+refusal. No WiX extension is used, so nothing else is downloaded.
+
+WiX 7 is released under the Open Source Maintenance Fee (OSMF) EULA, and
+`wix build` refuses to run without `-acceptEula wix7`, which
+[`build-msi.ps1`](../../.github/scripts/build-msi.ps1) passes. The EULA asks a
+maintenance fee of users with revenue-generating use whose annual gross revenue
+reaches its threshold. The maintainer accepted the EULA for this project's use and
+assesses that fee themself, in approving the installers' plan
+([#71](https://github.com/axross/runners/issues/71)). Dependabot does not cover
+WiX. To bump it:
+
+1. Look up the latest WiX release, never recall it.
+2. Download `wix.<version>.nupkg` from the URL above with the new version, and
+   compute its SHA-256 from that download.
+3. Change `version` and `sha256` in `fetch-wix.sh` together, and run
+   `mise run test:fetch-wix`.
+4. If the major version changed, read the new EULA, have the maintainer accept it
+   again, and change the number in `-acceptEula wix7`.
+
+The change needs the maintainer's review, since it changes the supply-chain
+surface (see [REVIEW.md](../../REVIEW.md)).
+
+The macOS signing job pins the one certificate it embeds. Apple's Developer ID G2
+intermediate certificate is embedded in `sign-macos` as base64, because the runner
+image's trust in it is unknown and the job fetches nothing. The job refuses it
+unless its SHA-256 is
+`f16cd3c54c7f83cea4bf1a3e6a0819c8aaa8e4a1528fd144715f350643d2df3a`, and that check
+comes before the first `security` call. Its source is
+`https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer`, fetched on
+2026-11-03 PST, and it expires on 2031-09-17. To replace it, fetch the certificate
+again from that URL, compute its SHA-256 from the download, and change the embedded
+text and the pin together, with the maintainer's review. The job downloads only the
+run's own artifacts.
+
 The Rust toolchain is one of two downloads in this repository that are not
 checksum-pinned, and the maintainer accepted that exception when approving the
 CLI's plan. `rustup` fetches a channel manifest over HTTPS and checks each
@@ -165,9 +213,10 @@ is passed into a step through an `env:` variable and quoted, never expanded insi
 ## A Release Is Published Only From a Dispatch on Main
 
 [`release.yaml`](../../.github/workflows/release.yaml) releases the CLI with
-semantic-release, and [`release-build.yaml`](../../.github/workflows/release-build.yaml)
-builds the binaries; [CLI](../operations/cli.md#releases) owns the steps. This is
-the record a change to either workflow, to the build call in
+semantic-release and signs the macOS files in the `release` Environment, and
+[`release-build.yaml`](../../.github/workflows/release-build.yaml) builds the binaries
+and their installers; [CLI](../operations/cli.md#releases) owns the steps. This is the
+record a change to either workflow, to the build call in
 [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml), to
 [`release/`](../../release), or to the scripts under
 [`.github/scripts/`](../../.github/scripts) is checked against:
@@ -175,12 +224,15 @@ the record a change to either workflow, to the build call in
 - **A manual dispatch is the only trigger.** `release.yaml` runs on
   `workflow_dispatch` and on nothing else: no push, tag, pull request, schedule, or
   `workflow_run` trigger. The dispatch is the maintainer's decision to release.
-  There is no Environment and no approval step.
+  `sign-macos` then waits for the maintainer's approval in the `release`
+  Environment, which follows the commit check in
+  [Each Release](../operations/development-workflow.md#each-release). No other job
+  declares an Environment or waits for an approval.
 - **The branch guard is advisory.** Every job in `release.yaml` has
   `if: github.ref == 'refs/heads/main'`. A dispatch on another branch runs that
   branch's own copy of the file, which could drop the guard, so it binds only the
-  copy on main. The controls are the install-side `--source-ref refs/heads/main`
-  and the compare-API check that the commit is on main.
+  copy on main. The controls are the optional check's `--source-ref refs/heads/main`
+  and its compare-API check that the commit is on main, for an operator who runs it.
 - **The build is split from the release.** The build is a reusable workflow that
   `merge-checks.yaml` calls on every pull request as the dry run, with the version
   `0.0.0-dryrun.<run number>`, and `release.yaml` calls with the version its plan
@@ -195,16 +247,22 @@ the record a change to either workflow, to the build call in
   - the plan job holds `contents: write`, for the `git push --dry-run` that
     semantic-release's dry run makes, and runs the npm tree;
   - the build job holds `contents: read`;
+  - `sign-macos` holds `contents: read` and declares the `release` Environment, and
+    `verify-macos` and `assemble-signed` hold `contents: read` alone and declare no
+    Environment. None of the three runs the npm tree, and the signing record below
+    says what `sign-macos` may do;
   - the attest job holds `id-token: write` and `attestations: write`, and nothing
     else. It checks nothing out and installs no npm package: it downloads the
-    files, checks them, and runs `actions/attest`;
+    signed set from `assemble-signed`, checks it, and runs `actions/attest`;
   - the release job holds `contents: write`, to push the tag and its note and to
     create the release, and runs the npm tree.
 
   A job that runs the npm tree can push tags and edit releases, and its token can
-  fast-forward main, but it cannot mint an attestation, so a binary it substitutes
-  fails `gh attestation verify` at install. A change it pushes to main is another
-  matter, as the residual risks below say. One release job with all three scopes
+  fast-forward main, but it cannot mint an attestation, so a file it substitutes
+  fails `gh attestation verify` for an operator who runs the optional check before
+  opening it. An operator who skips the check opens the substituted file, as the
+  residual risks below say. A change it pushes to main is another matter, as they
+  also say. One release job with all three scopes
   was rejected: any package in the npm tree could then attest any binary as
   `release.yaml` on `refs/heads/main`. No job needs `artifact-metadata: write`,
   which is for storage records in a registry. `@semantic-release/github`'s comments
@@ -215,11 +273,110 @@ the record a change to either workflow, to the build call in
 - **The files are checked twice before they are used.** The attest job, and the
   release gate [`verify-release.sh`](../../.github/scripts/verify-release.sh) that
   semantic-release runs before it tags anything, each refuse unless the files are
-  exactly the two binaries named for the version and `SHA256SUMS`, `SHA256SUMS`
-  lists exactly those two, and `sha256sum --check --strict` passes. The gate checks
-  against the version semantic-release worked out in its own run.
+  exactly the two binaries and the two installers named for the version and
+  `SHA256SUMS`, `SHA256SUMS` lists exactly those four, and
+  `sha256sum --check --strict` passes. The attest job attests the four files
+  `SHA256SUMS` lists, after signing. The installers are an MSI and a flat package
+  that the build legs pack the release binary into unchanged and test; the MSI is
+  not signed, the package is signed and notarized by `sign-macos`, and neither
+  carries a script or a custom action that runs code. One script,
+  [`assemble-release.sh`](../../.github/scripts/assemble-release.sh), writes every
+  `SHA256SUMS`. The gate checks against the version semantic-release worked out in
+  its own run.
   `@semantic-release/github` skips an asset that is missing rather than failing, so
   the gate is what holds the file set.
+- **Signing happens in one job, in one Environment.** `sign-macos` is the only job
+  that declares an Environment or reads a signing secret;
+  [CLI](../operations/cli.md#signing-the-macos-files) gives its steps and the
+  contracts. The record it is checked against:
+  - **The Environment `release`** is created and maintained by the maintainer.
+    Deployment branches are selected branches, `main` only and no tags. Required
+    reviewers are the maintainer, with "Prevent self-review" off, because the
+    maintainer is the only reviewer and
+    [the roadmap](https://github.com/axross/runners/issues/72) requires
+    self-approval. "Allow administrators to bypass" is off. The maintainer reports
+    the settings on the tracking issue, because agents cannot read them.
+  - **Its secrets** are the six Environment secrets `MACOS_APPLICATION_P12_BASE64`,
+    `MACOS_INSTALLER_P12_BASE64`, `MACOS_P12_PASSWORD`, `MACOS_NOTARY_KEY_P8`,
+    `MACOS_NOTARY_KEY_ID` and `MACOS_NOTARY_ISSUER_ID`, and its variable is
+    `MACOS_TEAM_ID`, which is not secret. A job reads them only if it declares the
+    Environment, and only after the reviewer approves it. No repository secret is
+    added for signing.
+  - **`sign-macos` holds `contents: read`**, checks nothing out, runs no repository
+    file and no package manager, and uses no action but `actions/download-artifact`
+    and `actions/upload-artifact`. It fetches no tool or certificate. Each signing
+    tool it calls is called by its absolute system path, so nothing earlier on
+    `PATH` can stand in for one; its other commands are shell built-ins and macOS
+    base utilities, such as `base64` and `mktemp`, called by name. The Developer ID
+    G2 intermediate it imports is embedded and checked against the pin under
+    [Pinning Convention](#pinning-convention). Every context value reaches its
+    scripts through `env:`. The job's inline steps are not repository code: they are
+    the job's own definition in `release.yaml`, which the maintainer's approval
+    covers, and the maintainer confirmed that reading at the plan gate.
+  - **Only `sign-macos` reads the signing secrets.** `verify-macos` runs a
+    repository script on a runner that holds no signing identity and no secret, and
+    `assemble-signed` and every other job hold none either. That script also checks
+    that the unsigned files are the ones the build's `SHA256SUMS` lists and that the
+    notary log is of the submission `sign-macos` made.
+  - **The signing identifier** `app.axross.marshal` and the team are fixed and
+    checked at each release, so the designated requirement of the code object that
+    carries it stays the same. Changing either breaks the Keychain trust that later
+    work relies on and goes through a roadmap revision.
+  - **A signing failure stops the release before any tag.** Every signing step
+    comes before `release`, no job continues past a failure, and the notarization
+    result is read from the status, not the exit code.
+  - **Pull requests never sign or reach the Environment.** The dry run builds
+    unsigned, and no workflow a pull request triggers declares an Environment.
+    [`check-release-shape.mjs`](../../.github/scripts/check-release-shape.mjs) in
+    `mise run check` fails if the signing jobs drift from this record, including if
+    any job in any workflow but `sign-macos` in `release.yaml` reads a signing
+    secret.
+    [CLI](../operations/cli.md#what-the-signing-tests-cover) lists its rules. A pull
+    request can edit it, so it guards against mistakes, not against a hostile pull
+    request, and [CLI](../operations/cli.md#extending-the-release-workflows) names
+    what it does not read. What keeps pull requests away is the branch rule on the
+    Environment and that `release.yaml` runs only on a dispatch.
+  - **No secret is printed.** Secret values reach the scripts through `env:` and
+    files written with mode 0600 under the runner's temporary directory, and each
+    line of the `.p8` is masked. The keychain and those files are deleted whether the
+    job passes or fails, and the notary log, which holds no secret, is uploaded.
+    The certificates' subjects name the maintainer's Apple developer account and
+    team, as every Developer ID signature does; nothing of that is committed, except
+    that a later documentation change records the team ID and the exact designated
+    requirement in the CLI document, as the exception under [Nothing Identifying or
+    Secret Is Committed](#nothing-identifying-or-secret-is-committed) describes.
+  - **Extensions** by later work add their signing jobs or steps to the shape check
+    and keep these rules: only signing jobs declare the Environment, a signing job
+    holds `contents: read` and runs no repository code, checksums and attestation
+    follow every signing step, no pull-request run reaches the Environment, and
+    F0's and M2's signing jobs use only operating-system signing tools. W4's
+    update-signing job is the one exception to that last rule: it runs `tauri-cli`'s
+    `signer sign`, built with `--locked` in a tool job without the Environment from a
+    crate archive whose SHA-256 equals one committed in the repository. The signing
+    job checks the binary it receives against the SHA-256 that the tool job outputs,
+    before it runs it.
+    [CLI](../operations/cli.md#extending-the-release-workflows) names the points.
+- **The documented install blocks run against the dry run's installers on hosted
+  runners.** The `Install Blocks` job in
+  [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) needs the dry run,
+  downloads its artifact, and holds `contents: read`. It stubs `gh` and runs the
+  blocks of [CLI](../operations/cli.md#installing-updating-and-rolling-back) with
+  the real installers, so it installs and removes the dry run's own MSI and pkg on
+  a runner that is discarded afterwards. On Windows it also creates a local user
+  outside the Administrators group, runs the check block and the install as that
+  user through a secondary logon with its profile loaded, and removes the user at
+  the end. Nothing changes a user right. The test sets the Windows Installer
+  policy `DisableMSI` to 0 for the run, because the GitHub-hosted Windows Server
+  image blocks a non-elevated per-user install, and restores it at the end. The
+  runner is discarded after the job either way.
+  It uses no secret, attests nothing, and adds no action beyond the `actions/*`
+  already used. This job and the build legs upload their installer logs, from
+  `msiexec /l*v` and `installer -dumplog`, as workflow artifacts. They ask for 14
+  days. The repository's artifact retention limit applies instead when it is
+  shorter, and it cut the build legs' installer logs to 7 days in a pull request's
+  dry run.
+  The logs may hold the ephemeral GitHub-hosted runner's machine and account names,
+  which the job log's "Set up job" section already shows, and they hold no secret.
 - **No credential stays in a checkout.** Every checkout sets
   `persist-credentials: false`. Under GitHub Actions, semantic-release builds an
   `x-access-token:` URL from `GITHUB_TOKEN` for its own git commands.
@@ -231,14 +388,17 @@ the record a change to either workflow, to the build call in
 - **Pins.** `actions/checkout`, `actions/setup-node`, `actions/upload-artifact`,
   `actions/download-artifact`, and `actions/attest` stay on major tags, under
   [`actions/*` Stays on Major Tags](#actions-stays-on-major-tags). Neither release
-  workflow uses a third-party action. `jdx/mise-action` was rejected for Node here:
-  at this repository's pin it caches by default, installs every mise tool, and
+  workflow uses a third-party action, and the one tool the build fetches besides
+  the recorded Rust toolchain exception is WiX, pinned under
+  [Pinning Convention](#pinning-convention). `jdx/mise-action` was rejected for Node
+  here: at this repository's pin it caches by default, installs every mise tool, and
   receives the job token. `actions/setup-node` installs Node `24.21.0`, the version
   in `mise.toml`, and the Node download is trusted under the same joint-trust
   decision, not by a checksum; see [Pinning Convention](#pinning-convention).
   `release/package.json` names an exact version of semantic-release and of each
-  plugin and preset, `release/package-lock.json` records each package's integrity hash, and
-  `npm ci --ignore-scripts` installs exactly that and runs no install script.
+  plugin and preset, `release/package-lock.json` records each package's integrity
+  hash, and `npm ci --ignore-scripts` installs exactly that and runs no install
+  script.
   Dependabot's `npm` entry proposes the refreshes. `release/` keeps these packages
   out of the repository root and out of mise's tool locks.
 - **A release run is never cancelled.** Only the two calling workflows declare
@@ -263,11 +423,19 @@ What protects a release is outside the workflow files:
 - Only accounts with write access can dispatch a workflow or push a tag here. On
   this user-owned repository that is the maintainer, and the agents that share the
   maintainer's identity.
-- The install pins `--signer-workflow` to `release.yaml`, `--source-ref` to
+- Install-time verification is optional. Opening the installer is the main install
+  procedure, and the check block that goes with it is recommended, not required, so
+  nothing stops an operator who skips it from opening a file that nothing has
+  checked. The block pins `--signer-workflow` to `release.yaml`, `--source-ref` to
   `refs/heads/main`, and `--source-digest` to the tag's commit, denies self-hosted
-  runners, and refuses a commit the compare API does not place on main. An
-  attestation from any other workflow, branch, or commit is refused; see
-  [CLI](../operations/cli.md#installing-updating-and-rolling-back).
+  runners, and refuses a commit the compare API does not place on main, a checksum
+  that `SHA256SUMS` does not list, and an installer whose binary is not the
+  version's. An attestation from any other workflow, branch, or commit is refused
+  there; see
+  [CLI](../operations/cli.md#installing-updating-and-rolling-back). The
+  attestation's role is to make that check possible. The bare-binary blocks that
+  roll back to `v0.1.0` keep every one of those checks as a requirement of their
+  procedure.
 - Immutable releases are turned on for the repository before the first dispatch,
   so a published release's assets cannot be replaced and its tag cannot be moved
   or deleted.
@@ -276,25 +444,29 @@ Immutable releases are a repository setting, not a file here;
 [Cutting a Release](../operations/development-workflow.md#cutting-a-release) gives
 the setting and its read-back.
 
-An agent never dispatches `release.yaml`, never pushes, moves, or deletes a `v*`
-tag, and never changes release settings, such as immutable releases or an
-Environment or ruleset that applies to releases. This rule is absolute, and it is
+An agent never dispatches `release.yaml`, never approves a deployment of it,
+including the `release` Environment's approval of `sign-macos`, never pushes,
+moves, or deletes a `v*` tag, and never changes release settings, such as
+immutable releases or an Environment or ruleset that applies to releases. This rule
+is absolute, and it is
 stricter than the
 [delivery grant](../operations/development-workflow.md#authorizing-delivery-operations).
 The grant lets an explicit human instruction cover release, deployment, and
 settings effects. These release effects have no such path: an agent never performs
 one, even when the maintainer asks in the session or another agent relays it.
 Agent sessions share the maintainer's GitHub identity, so to GitHub a dispatch by an
-agent and one by the maintainer are the same. With no approval step and no tag
-ruleset, this rule is the only control on agents.
+agent and one by the maintainer are the same, and so are an approval by each. With
+no tag ruleset, this rule is the only control on agents.
 
 Residual risks, accepted:
 
 - **The npm tree runs with `contents: write`.** A compromised package in the plan
   or release job can push, move, or delete tags; create, edit, or delete draft and
   published releases; and push to any branch that no rule protects. It cannot mint
-  an attestation, so a binary it substitutes fails `gh attestation verify` at
-  install. It can deny a release, or publish one whose binaries hosts then refuse.
+  an attestation, so a file it substitutes fails `gh attestation verify` for an
+  operator who runs the optional check. An operator who skips it opens the
+  substituted installer, which the next risk below describes. It can deny a
+  release, or publish one whose files operators who check them then refuse.
 - **The npm tree can push to main.** The ruleset on main blocks only deleting the
   branch and pushes that are not fast-forwards. The plan and release jobs'
   `GITHUB_TOKEN` can therefore fast-forward main with a source change that touches
@@ -309,24 +481,59 @@ Residual risks, accepted:
 - **The attest job attests whatever passes its checks.** `SHA256SUMS` comes from
   the same build artifact, so the check catches transport damage, not a compromised
   build leg.
-- **No approval step and no tag ruleset.** Any account with write access can
-  dispatch a release, and that is the account the agents run as. The rule above is
-  the only control on agents. The maintainer accepted this in choosing a manual
-  dispatch with no ruleset.
+- **No tag ruleset.** Any account with write access can dispatch a release, and
+  dispatching needs only that access. That is the account the agents run as. The rule
+  above is the only control on agents. The maintainer accepted this in choosing a
+  manual dispatch with no ruleset.
+- **A hostile change on main gets signed if it is approved.** `sign-macos` signs
+  whatever the dispatched commit builds, with the maintainer's Developer ID. The
+  control is the check in
+  [Each Release](../operations/development-workflow.md#each-release), before each
+  dispatch and before the approval, that every commit on main since the last `v*`
+  tag came from a merged pull request. A stronger option is a rule on main that
+  requires a pull request, which is the maintainer's choice and is not in place.
+- **One identity can dispatch and approve.** The Environment allows self-approval,
+  because the roadmap requires it and the maintainer is the only reviewer, and agents
+  share the maintainer's GitHub identity. A session could therefore dispatch and
+  approve a signed release. The rule above, which now covers approving a deployment,
+  is the control, and a second reviewer is not an option here.
+- **A certificate or membership lapse stops signing.** The Developer ID certificates
+  are expected to last one year, which the maintainer confirms from the certificates'
+  dates, and `sign-macos` refuses an expired one and warns within 90 days.
+  Signatures made with a secure timestamp stay valid after the certificate expires.
+  Whether an older release's package still installs after its Installer certificate
+  expires is not confirmed, and Apple's pages disagree, which bears on rolling back
+  through that package. A membership lapse leaves signed software working but allows
+  no new certificate. [Development
+  Workflow](../operations/development-workflow.md#renewing-the-certificates) records
+  the dates and the renewal.
+- **An early dispatch creates an empty Environment.** A dispatch before the maintainer
+  creates the `release` Environment makes GitHub create one with no protection rules
+  and no secrets. `sign-macos` refuses on the empty secrets before it imports
+  anything, and [Before the First
+  Release](../operations/development-workflow.md#before-the-first-release) creates the
+  Environment first. Until the maintainer reports its settings, nothing in the
+  repository shows that its branch rule and reviewer are in place.
+- **The first signed release is the first run of signing.** Nothing before merge can
+  exercise the Environment, the certificates or notarization, and `verify-macos`
+  first runs for real there. The stand-in suites and the shape check cover the flow,
+  not Apple's answers. A failure stops that release before its tag.
 - **Unprotected tags change the next version.** Any account with write access can
   push, move, or delete a `v*` tag that has no published release, `v0.0.0`
   included, and that changes the version semantic-release works out next.
   Immutable releases lock only the tags of published releases.
 - **A weaker install pin.** `--source-ref refs/heads/main` proves that the build
   ran from main, not from a particular tag. `--source-digest` and the reachability
-  check still tie the binary to one commit on main, but no longer to a version.
-  The install therefore checks the downloaded binary's `--version` before it
-  replaces the installed one, so an older genuine binary under a newer version's
-  name is refused without touching the install path. On Windows that refusal, like
-  the install's other refusals, is not yet verified on axpc
-  ([#56](https://github.com/axross/runners/issues/56)): the refusal checks were not
-  run there, because installation is to move to winget and Homebrew
-  ([#70](https://github.com/axross/runners/issues/70)).
+  check still tie the file to one commit on main, but no longer to a version. The
+  optional check therefore runs the binary inside the downloaded installer and
+  refuses unless it prints the version's `--version`, so an older genuine installer
+  under a newer version's name is refused by an operator who runs the check. The
+  bare-binary blocks make the same check of the downloaded binary before they
+  replace the installed one, and refuse without touching the install path. CI runs
+  the check block's refusals against stand-ins and the dry run's installers, and the
+  bare-binary blocks' refusals against stand-ins. Neither has run on axpc or the
+  Mac ([#56](https://github.com/axross/runners/issues/56)); the refusal checks of the
+  bare-binary block were not run on axpc.
 - **A green run can release nothing.** If main moves after the dispatch, the
   release job logs that the local branch is behind the remote one and ends without
   a tag or a release, after the binaries are attested.
@@ -355,15 +562,62 @@ Residual risks, accepted:
   Checks loads `release/.releaserc.json`, so a Dependabot bump in `release/` that
   breaks the plan job merges green and fails only on the next dispatch, before any
   tag or release is made.
-- The binaries are not code-signed or notarised, so macOS Gatekeeper and Windows
-  SmartScreen may warn or block. The install removes the macOS quarantine
-  attribute. On axpc the installed Windows copy had no `Zone.Identifier`
+- **An installer opened without the check runs before anything has checked it.**
+  The maintainer chose opening the installer as the main install procedure and the
+  check as optional. The release job's npm tree can replace published files (the
+  first risk above), and an operator who skips the check opens whatever the release
+  page then holds. On Windows that is a file nothing has checked. On macOS,
+  Gatekeeper is expected to assess a package that carries the download mark, but it
+  is not expected to tie the package to the maintainer's team, as the next entry
+  says. Signing the MSI, or making the check required again, is the remedy in a later
+  change.
+- **A replaced installer can run code.** A replaced MSI could carry a custom action
+  that runs code as the user, or ask for elevation behind a prompt the procedure
+  has taught operators to pass. A replaced pkg could carry scripts that run as root
+  once the administrator password is entered. Gatekeeper is expected to block a
+  replaced pkg that is unsigned or not notarized, or whose signature or notarization
+  is revoked, but only when it assesses the file, which it does for a file that
+  carries the download mark (`com.apple.quarantine`), as a browser download does. A
+  pkg fetched with `gh` or `curl` has no mark. Gatekeeper is also expected to accept
+  a pkg signed with any Developer ID and notarized, so it does not tie the pkg to the
+  maintainer's team. That is a residual risk: until the CLI document records the team
+  ID after the first signed release, nothing in the install procedure compares a
+  downloaded package's team with the maintainer's. An operator who runs the optional
+  check block verifies the attestation, which ties the file to `release.yaml`'s build
+  on `main`, the build that signed it; the attestation does not tie the file to the
+  team. An operator who wants the team checked reads `pkgutil --check-signature` and
+  compares the team ID once it is recorded. All of this is expected, not yet observed on a
+  Mac, and no control is added for it here. The genuine installers carry neither a
+  script nor a custom action that runs code, and the build tests that they do not.
+- **On axpc, code running as the operator can read what the operator can**,
+  including the token files `marshal start` reads. A replaced installer runs as the
+  operator, so it can read them; the per-file access control step in
+  [Windows Runner Host](../operations/windows-runner-host.md) restricts those files
+  to other accounts, not to this one.
+- **The pkg's downgrade behaviour is only what the macOS build leg measured.** The
+  MSI refuses a lower version, which stops an older genuine MSI under a newer name
+  from replacing a newer installed version on Windows even when the operator skips
+  the check. The pkg has no such refusal that this project designed; what a lower
+  pkg does over a higher one is the outcome that
+  [CLI](../operations/cli.md#installing-updating-and-rolling-back) states, and the
+  documented rollback does not depend on it.
+- **The Windows procedure asks operators to pass prompts for unsigned files.** The
+  Windows installer and binary are not code-signed, so Windows SmartScreen and the
+  browser warn or block, and the procedure tells the operator to choose "Run anyway"
+  and to keep the download. An operator who has learned to pass those prompts passes
+  the same prompt for a replaced file. The macOS package is signed and notarized, so
+  its procedure teaches no prompt to pass. The prompts are
+  described as expected until the first install on each host records them. On axpc, a
+  binary fetched with `gh release download` had no `Zone.Identifier`
   ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511048211)), and
-  SmartScreen did not prompt, with "Check apps and files" On and Smart App Control
-  Off ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511120441)).
-  So with Smart App Control Off, the unsigned binary the install places, which
-  carries no Mark of the Web, is not blocked on axpc. A copy that carries one, such
-  as a browser download, or a host with Smart App Control On, could be.
+  SmartScreen did not prompt, with "Check apps and files" On and Smart App Control Off
+  ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511120441)). The
+  bare-binary blocks remove the macOS quarantine attribute from what they download;
+  the installers' procedure removes no mark.
+- **Smart App Control On may block the installers.** It blocks unsigned code unless
+  its cloud service predicts the file safe, whether or not the file carries a Mark
+  of the Web, and whether it evaluates an unsigned `.msi` is not verified. It is Off
+  on axpc. Signing the MSI is the remedy in a later change.
 - The runner image's definition is embedded in the binary, so a runner bump reaches
   a host only through a new release and an update.
 
@@ -600,14 +854,80 @@ built: its names, modes, and checks.
 - The control channel is per user: only the instance's own user can reach it, and
   no remote client can. Another user who takes this user's pipe name first stops
   the channel from opening, which is also accepted on a single-user host.
+  On Windows the agent's client does not rely on the name alone: it checks that the
+  process serving the pipe runs as the current user before it sends a byte, and a
+  server it cannot show to be that user is refused. `start`'s commands do not
+  check, and a squatted name there is the accepted cost above.
 - No request carries a configuration path for the instance to read, and no
   response carries a token or a JIT configuration. A resume names a path only so
   the instance can compare it with the one it started with.
+- The resident agent takes the same lock and opens the same channel with the same
+  access rules, so only its user reaches it, and it serves protocol version 2
+  there; [CLI](../operations/cli.md#the-agent) owns the protocol. A first line
+  that is not a `hello` is refused and the connection closed, so no version 1
+  request reaches the agent. A silent or stalled client cannot hold the agent:
+  every connection limit is a timer, a client that stops reading is closed after
+  5 s, and the agent ends and frees its lock without waiting for the pipe crate's
+  blocking flush thread that a stalled Windows client can keep alive (a process
+  test shows it). Such a thread is at most one for each final message to a client
+  that never reads and never closes, which is accepted on a single-user host.
+- Both Windows channels, `start`'s and the agent's, take their pipe name, byte
+  mode, refusal of remote clients and the only-user descriptor from one function,
+  `instance::windows::control_pipe_options`, so the two cannot differ. A test on
+  Windows shows a second pipe of the same name is refused as taken.
 - Only a debug build can move the lock, the channel, the log directory, or their
   roots, for the tests; a release build always uses the host's fixed locations,
   and a CI step checks in the release profile that it ignores the request. The
   `instance-helper` binary that the tests and CI run does nothing in a release
-  build.
+  build, including its mode that runs the agent.
+
+## The Agent Keeps Tokens in the Operating System's Store
+
+The resident agent reads each repository's token from the operating system's
+credential store, not from a file, and it receives a token from a client over its
+control channel. [CLI](../operations/cli.md#the-token-store) owns how the store is
+named and used.
+
+- On Windows a token is a generic credential in the user's Credential Manager,
+  named `app.axross.marshal:github.com/<owner>/<name>`, with **local** persistence.
+  The crate's default persistence is the enterprise one, which roams with the user's
+  profile and so would carry a repository's token to other machines of a domain
+  account; the store asks for the local one, and a test on Windows reads the
+  persistence back. Any process of the same user can read the credential, as any
+  can read a token file the user owns: the Credential Manager is not a boundary
+  against the user's other programs.
+- On macOS and Linux the agent has no store, so it skips every pool with "no token
+  store" rather than falling back to a file; it never reads `tokenPath`.
+- The `token_set` request is the first message in which a secret travels, from the
+  client to the agent. The token is held as a `Secret` once the request is parsed,
+  is masked in the log from then on, and is never repeated: not in the
+  response, an event, a snapshot, an error, or a log line. An error about a token
+  names its cause, such as an empty or too long token, and never the params. A
+  store failure names its kind and the platform's code, which hold no token. The
+  request is only as private as the channel: only the agent's user can send it, and
+  on Windows the client sends it only after it has checked that the pipe's server
+  runs as that user, so a squatter of another account receives nothing and a failure
+  to verify is a refusal. The residual risks are a squatter of the same user, which
+  is accepted on a single-user host, and the tiny window in which a process ID is
+  reused between the connection and the check.
+- A token longer than 1280 UTF-16 code units or empty is refused before it reaches the
+  store, so each token's size is bounded. The repository is not limited to the
+  configuration's: `token_set` accepts any well-formed `owner/name`, because a token
+  may be entered while the configuration is invalid.
+
+Residual risks, accepted on a single-user host:
+
+- A same-user client can create store entries for any well-formed repository name,
+  one token of at most 1280 units each, and the agent never removes one it did not
+  hear of. The agent's in-memory record of which repositories have a token also gains
+  an entry for each new name a `token_set` or `token_remove` names, until the next
+  configuration read replaces it; each key is bounded by the form of `owner/name`.
+- Another process of the same user that connects to the channel can set or remove
+  a token, stop the runners or quit the agent, as it can for `start`'s
+  commands.
+- The agent holds a token in memory for as long as a registration needs it, and a
+  JIT configuration a runtime-core panic's message carried would reach the log
+  unmasked, as for `start`.
 
 ## Tokens Stay Out of the Log, and Job Clients End With `start`
 
@@ -622,9 +942,11 @@ owns how the log is written and masked and how its children are contained.
   keeps it, rather than removing it, so its evidence survives for the next
   finalisation. A forced stop and the Windows console close do the same on purpose.
 - Each export runs in an exporter child that ends at its deadline or when its
-  liveness pipe from `start` closes, and kills its own `docker` clients first. Its
-  clients run in process groups of their own with the JIT variable cleared, and on
-  Windows the child is also in `start`'s Job Object. `start` closes the pipe at the
+  liveness pipe from `start` closes, and kills its own clients first: on axpc its
+  `docker` clients, and on axmc its `tart exec` clients, which run `docker` in the
+  VM. Its clients run in process groups of their own, killed when their call is
+  dropped, with the JIT variable cleared, and on Windows the child is also in
+  `start`'s Job Object. `start` closes the pipe at the
   export deadline and kills the child 1 s later if it has not ended, so the child
   outlives neither its deadline nor `start`.
 - The log directory and its files are per user and private to that user.
@@ -646,9 +968,10 @@ Residual risks, accepted on a single-user host:
   already ended with its job. On Windows a hard kill of `start` leaves
   a diagnostic job running, as it does an ordinary one, until the next `start`.
 - An exporter child that `start` has to kill, because it did not end within 1 s of
-  its pipe closing, cannot kill its `docker` clients. On Unix they run until each
-  ends by itself; on Windows the Job Object ends them when `start` ends. They carry
-  no JIT configuration.
+  its pipe closing, cannot kill its clients: its `docker` clients on axpc, and its
+  `tart exec` clients on axmc, which run `docker` in the VM. On Unix they run until
+  each ends by itself, and macOS has no Job Object; on Windows the Job Object ends
+  them when `start` ends. They carry no JIT configuration.
 
 ## Diagnostic Evidence Stays Private
 
@@ -661,6 +984,13 @@ how a bundle is written.
   the repository's files. The CLI refuses a sink that fails its checks and never
   creates, repairs, or relaxes one; the checks and the modes a bundle is written
   with are under Sink checks in [CLI](../operations/cli.md#diagnostics).
+- For `start` the checkout is the one above the configuration file; the agent's
+  configuration lives outside any checkout, so the agent finds the checkout from
+  the sink itself, the first directory at or above it that holds both `.git` and
+  `cli/Cargo.toml`, and refuses a sink at or under it, with the same lexical,
+  link-free comparison and the per-profile case rule ([The Checkout
+  Rule](../operations/cli.md#the-checkout-rule)). A sink the agent could not look at
+  from its own place, such as a path of another host, is not compared.
 - On Windows the CLI does not check the sink's owner or access rules, because no
   safe call reads them; a bundle inherits the sink's rules. The operator's ACL step
   in
@@ -679,6 +1009,13 @@ how a bundle is written.
   recovery, so a later `start` with the pool's diagnostics off does not destroy its
   evidence. [CLI](../operations/cli.md#diagnostics) owns when a finalisation
   exports, and the cases where it removes a container without an export.
+- A diagnostic VM on axmc is the exception, by design: the VM is the retained
+  container, and it is deleted without an export in three cases only, a forced stop
+  (a second SIGINT), a `start` that ends while it still holds the VM, whose VM shim
+  deletes it, and a leftover at the next `start`. Each reports a diagnostic gap that
+  names only the pool, the VM or container, and the gap. The paragraph "Evidence a
+  VM loses" in the [Tart backend](../operations/cli.md#tart-backend) section of the
+  CLI document owns the cases.
 
 ## `build` Builds Only What the Binary Embeds
 
@@ -732,6 +1069,164 @@ The operator procedure tells operators to run the host only on a network they
 would trust the listed repositories' workflows with. Revisit the exception when a
 blocking mechanism is verified.
 
+## A Linux Job on axmc Runs in a Per-Job VM
+
+The axmc host runs each `os: "linux"` pool's job in its own Tart virtual machine
+(VM), cloned from the golden VM for that job and deleted after it, so a job meets a
+single-tenant kernel and filesystem that nothing outlives. This section and the
+four after it are the constraints the VM runtime of
+[#74](https://github.com/axross/runners/issues/74) is reviewed against.
+[macOS Runner Host](../operations/macos-runner-host.md) owns the procedure, and
+[CLI](../operations/cli.md) the runtime.
+
+- A job VM MUST be a fresh clone of the golden VM, and MUST be deleted when its job
+  ends, on every failure path, at a stop, and by the next `start` if the CLI died.
+  A shim per VM holds its Tart process and deletes the VM when the CLI's liveness
+  pipe closes, so a hard-killed CLI leaves no VM behind. Cleanup at `start` matches
+  only the job VMs of configured pools by their name form, so it never deletes a
+  golden VM, a build VM, a VM of an unconfigured pool, or a VM `marshal` does not
+  own.
+- A job VM MUST share no host directory, clipboard or audio, MUST attach no USB
+  accessories, Rosetta or display, and MUST NOT accept the base image's password
+  SSH login, which the golden VM disables. A shared directory is a path from the
+  job to the Mac's files, and Rosetta, the clipboard and the accessories widen the
+  host-facing surface for no job's benefit.
+- The JIT configuration MUST reach the guest only through the guest agent's
+  standard input, and inside the VM only the golden VM's launcher passes it to
+  `docker run`, in the Docker client's environment, as on axpc. It MUST NOT be an
+  argument of any `tart` call, appear in a log line, or be written into the VM's
+  image.
+- Guest-agent output is data. Each call's captured output MUST be cut off at a fixed
+  bound (64 KiB), and `marshal` MUST NOT parse it beyond its expected form. Logged
+  text is scrubbed and masked as container output is. The one exception is the
+  diagnostics export, which streams the `docker cp` archive out of the VM: the
+  strict archive reader and the bundle limits of
+  [Diagnostic Evidence Stays Private](#diagnostic-evidence-stays-private) bound it
+  instead.
+- Every `tart` call MUST set `TART_NO_AUTO_PRUNE`, so a clone never deletes an image
+  another program cached; MUST get `marshal`'s own `PATH`, which `marshal` also uses
+  to find `tart` and `softnet`; and MUST have a standard output that is not a
+  terminal, so Tart never offers to change Softnet's privilege. Only `build`
+  deletes golden and build VMs.
+- A VM MUST have a fixed vCPU count, memory size and disk cap, the pool's `cpus`,
+  `memoryGb` and `diskGb`, so one job's use of the Mac's CPU, memory and disk is
+  bounded by its pool. The disk cap bounds what a root job can write to the Mac's
+  disk.
+
+## CPU Placement Inside a Job VM
+
+Inside a job VM, [CPU Placement Is Not Resource Reservation](#cpu-placement-is-not-resource-reservation)
+holds with one difference: the VM is single-tenant, so the runner container's quota
+and affinity MUST equal all of the VM's vCPUs, 0 to `cpus` - 1, and its memory limit
+MUST equal the VM's memory. Nothing else runs there to share CPUs with, so no
+allocation among slots is needed, and the VM's own vCPU count is the bound. The
+probe and the guard that read the effective placement back MUST run through the
+guest agent, and a failed probe MUST end the slot's cycle before a runner
+registers. A job that exhausts memory meets the guest's out-of-memory killer, and
+the VM is deleted either way. The Mac's scheduler, not `marshal`, shares its cores
+among VMs, so a pool's `cpus` is a count of vCPUs, not a reservation of the Mac's
+cores.
+
+## Softnet Confines a Job VM's Network
+
+Every axmc VM runs on Softnet, Tart's filtering network, so a job cannot reach the
+local network, another VM, a multicast group or an IPv6 address, and reaches the
+Mac itself only for DNS. No acceptance in
+[LAN Egress From Runner Containers (Accepted Risk)](#lan-egress-from-runner-containers-accepted-risk)
+extends to axmc: that section is about Docker Desktop's default network, and a VM on
+Tart's default network would reach the LAN, the host and other VMs.
+
+- Each `tart run` MUST pass Softnet two rules. `--net-softnet-allow` carries
+  `out proto udp @host port 53,out proto tcp @host port 53`, and
+  `--net-softnet-block` carries `out @host,224.0.0.0/4`. A rule with a port outranks
+  one without, so DNS to the Mac's address on Softnet's bridge (the gateway) passes
+  and every other packet to the gateway and all multicast do not. With Softnet's
+  defaults, which block the private, shared, link-local and loopback IPv4 ranges and
+  every IPv6 frame, a VM can then send only to globally routable IPv4 addresses and
+  to the gateway's DNS. Softnet's defaults alone let a VM reach every port on the
+  gateway, a Mac service listening on all interfaces among them, and forward
+  multicast, so they are not enough. A `tart run` MUST carry no other network option.
+- Softnet's privilege is a SUID bit on its binary, with no `sudoers` rule.
+  `marshal` MUST check it before every VM boot and MUST NOT set it. It finds `softnet`
+  as Tart does, as the first match on the `PATH` it gives Tart, follows links, and
+  requires a regular file owned by root, with the SUID bit set and no write
+  permission for its group or others. Otherwise it refuses and boots nothing. A
+  `softnet` that an unprivileged user can write would let that user run code as
+  root, and Homebrew installs a new binary without the bit at each upgrade, so the
+  check runs at every boot rather than once. `marshal` never handles a root-owned
+  file itself, and a `softnet` that does not answer `--version` counts as a
+  refusal. Only a debug build can name the `tart` client (`MARSHAL_TEST_TART`) or
+  replace the owner and mode read from Softnet's file
+  (`MARSHAL_TEST_SOFTNET_OWNER_MODE`), for the tests; a release build always runs
+  `tart` and judges the real file. `cli/tests/release_overrides.rs` checks this,
+  and the Merge Checks step "Test That A Release Build Ignores The Debug-Only
+  Overrides" runs it in the release profile. Likewise, only a debug build can name
+  the `route`, `arp` and `caffeinate` programs (`MARSHAL_TEST_ROUTE`,
+  `MARSHAL_TEST_ARP`, `MARSHAL_TEST_CAFFEINATE`) or script the sleep, the primary
+  network and the keep-awake hold from a directory (`MARSHAL_TEST_SIGNALS`); a
+  release build runs `/sbin/route`, `/usr/sbin/arp` and `/usr/bin/caffeinate` and
+  reads the Mac's own signals, and the same test checks both.
+- Softnet's rules make it track every flow a VM starts, in a table of 32,768
+  entries that refuses new connections while full. A job that opens more than that
+  within about 5 minutes has new connections refused, and the failure stays inside
+  that job.
+- The filtering rests on a reading of Softnet's source, which already contradicts
+  Tart's documentation about host access. No host run has probed it, and the
+  maintainer accepted it as unverified
+  ([#74](https://github.com/axross/runners/issues/74#issuecomment-6784246305)).
+
+## The Accepted Host-Facing Surface of a Job VM
+
+These are what an axmc job VM can still touch, or depends on, and the maintainer
+accepts them. The acceptance holds only while no public repository and no fork pull
+request reaches axmc: a pool serves private repositories whose workflows the
+maintainer controls. A change that routes a public repository or a fork pull
+request to axmc ends it and needs a new decision.
+
+- **Softnet**, a SUID-root component that every axmc pool depends on. A flaw in it
+  is a flaw in the Mac's root boundary, which is why it is pinned and checked.
+- **Tart**, a pinned external program that `marshal` calls and never bundles.
+- **Guest-agent output**, which the CLI bounds and treats as data.
+- **Host disk use by a root job**, limited by the per-VM disk cap.
+- **A globally routable address on one of the Mac's interfaces**, which Softnet's
+  global allowance would reach through the gateway. The maintainer runs the host on
+  networks that give the Mac private addresses.
+- **DNS through the Mac's resolver**, which can answer the names of the Mac's
+  networks and VPNs, though their addresses stay blocked.
+- **The JIT configuration**, which the job can read inside its VM. It is single-use
+  and already in the runner's environment.
+
+## Tart, Softnet, and the Golden VM Are Pinned
+
+`marshal` neither bundles, installs nor repairs Tart or Softnet: the maintainer
+installs both with Homebrew, and `marshal` calls them as external programs. What
+they and the golden VM are built from is pinned, so that a rebuild changes only
+what a reviewed change changes.
+
+- Tart and Softnet are each pinned to one tested version, recorded in the CLI and
+  in [macOS Runner Host](../operations/macos-runner-host.md#installing-tart-and-softnet).
+  The tested version runs. A newer patch of the tested minor version runs with a
+  warning that names the tested version. Any other version, and any output other
+  than three dot-separated numbers (which Softnet alone follows with
+  `-<short commit>`), is refused. A minor release can change isolation flags or
+  `tart exec`, so an untested minor version does not run. Each host run records the
+  versions in use.
+- The golden VM's base image, `ghcr.io/cirruslabs/ubuntu:24.04`, MUST be pinned by
+  digest. A change of the pin adds the old digest to the CLI's list of retired
+  pins, and `build` removes from Tart's cache only the digests on that list, never
+  the current pin.
+- Docker Engine in the golden VM MUST come from Docker's apt repository at pinned
+  package versions, held there, after the repository's signing key is checked
+  against a recorded fingerprint. A mismatch fails the build.
+- The golden VM is built on each host and never published to a registry. A rebuild
+  upgrades the base's Ubuntu packages, so it picks up security fixes; the golden VM
+  version goes up whenever the pin, the provisioning steps, the launcher or the
+  Docker Engine versions change.
+- The runner image's arm64 build in CI runs on `ubuntu-24.04-arm`, a GitHub-hosted
+  runner, tags the image on the runner and never pushes it, and its job holds only
+  `contents: read`.
+- The VM runtime adds no crate to the CLI.
+
 ## Nothing Identifying or Secret Is Committed
 
 The repository is public and is meant to be reusable by anyone, so it holds no
@@ -745,14 +1240,33 @@ environment or supplied at run time. The exceptions are the two default runner l
 and `axmc`, which a host adds when `labels` is absent or empty and which are
 committed by the maintainer's decision: `axpc` names the Windows Docker Desktop
 host and `axmc` the macOS host. Every other host, consumer, or machine value stays
-a parameter.
+a parameter. The one further exception is the macOS signing team ID and the exact
+designated requirement, which a documentation change records in the CLI document
+after the first signed release as the contract text for later work. The team ID is
+public in every signed file, so recording it discloses nothing; it is not an account
+credential.
 
 [`.gitignore`](../../.gitignore) excludes `settings.local.json`, `.env.local`,
 token files, and private keys so that a local working file cannot be committed by
-accident; it is a backstop, not the control. The only repository secret the
-workflows read is `CLAUDE_CODE_OAUTH_TOKEN`, used by `claude-review.yaml` and
-added by the maintainer. A secret value is never echoed, passed on a command line,
-or written into an image layer or build cache.
+accident; it is a backstop, not the control. The workflows read one repository
+secret, `CLAUDE_CODE_OAUTH_TOKEN`, used by `claude-review.yaml` and added by the
+maintainer. `sign-macos` reads six Environment secrets of the `release` Environment,
+`MACOS_APPLICATION_P12_BASE64`, `MACOS_INSTALLER_P12_BASE64`, `MACOS_P12_PASSWORD`,
+`MACOS_NOTARY_KEY_P8`, `MACOS_NOTARY_KEY_ID` and `MACOS_NOTARY_ISSUER_ID`, and one
+Environment variable that is not secret, `MACOS_TEAM_ID`; the maintainer creates
+them, and no value is committed. A secret value is never echoed, passed on a command
+line, or written into an image layer or build cache. Two exceptions for a
+credential on a command line are recorded, both in `sign-macos`. The password
+arguments of `security` were allowed at the plan gate. The `--key-id` and `--issuer`
+arguments of `notarytool`, which carry the API key's ID and issuer ID, were allowed
+by the maintainer on 2026-11-04 PST. Neither tool has a non-interactive alternative:
+`security` has none for its password, and `notarytool` and its `store-credentials`
+command take the IDs only as arguments or through a keychain profile that is itself
+created from those arguments, with no documented environment variable or
+configuration file. The runner is discarded after the job, and a request is
+authenticated by a token signed with the `.p8` private key, which reaches `notarytool`
+only as a file path. GitHub masks secret values in the
+log, not in a process listing.
 
 ## The Review Gate Admits One Bot Identity by Login, Not Association
 

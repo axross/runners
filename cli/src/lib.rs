@@ -2,6 +2,7 @@
 //! `docs/operations/cli.md`.
 
 pub mod affinity;
+pub mod agent;
 pub mod build;
 pub mod checkout;
 pub mod command;
@@ -9,6 +10,7 @@ pub mod control;
 pub mod de;
 pub mod diagnostics;
 pub mod fold;
+pub mod golden;
 pub mod image;
 pub mod instance;
 pub mod json;
@@ -21,4 +23,7 @@ pub mod runtime;
 pub mod shim;
 pub mod start;
 pub mod summary;
+pub mod token_store;
 pub mod validate;
+#[cfg(unix)]
+pub mod vm_shim;
