@@ -81,7 +81,7 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   the agent it starts: the one executable and its modes, the debug-only test
   variables, how the app connects to and restarts its agent, the logs, the
   commands and events between the Rust side and the web view, the page, the icons
-  and the glyph files, the bundled font and colour values,
+  and the glyph files, the bundled font and colour values, the licence notices,
   building the app and the `tauri-cli` pin, the install layout, rolling back to the
   command line, what its tests do and do not show, and the sections other children
   add.
