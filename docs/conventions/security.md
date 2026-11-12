@@ -814,9 +814,12 @@ registration, storage, and containers are kept apart from every other's. The rul
 for [`hosts/windows-docker-desktop/`](../../hosts/windows-docker-desktop) and any
 later host:
 
-- One token per target repository, a fine-grained personal access token limited to
-  that repository's Administration permission. A token MUST NOT cover several
-  repositories or be stored as a GitHub Actions secret. A token that covers
+- One token per target repository for a repository pool, a fine-grained personal
+  access token limited to that repository's Administration permission, and Actions:
+  read where [A Token Carries Only Its Pool Kind's
+  Permissions](#a-token-carries-only-its-pool-kinds-permissions) allows. A
+  repository pool's token MUST NOT cover several repositories or be stored as a
+  GitHub Actions secret. A token that covers
   several repositories, or a classic token, would let one leak register runners
   for all of them, and a secret that can register runners for the automation that
   reads it is not a boundary. The token is read from a file on the host on every
@@ -864,8 +867,11 @@ later host:
   passed to `docker run` by name. It MUST NOT be placed on a command line, in a log
   line, or in an image layer.
 - The CLI's registration request (see [CLI](../operations/cli.md#registration)) is
-  one HTTPS `POST` to `https://api.github.com` that follows no redirect, so a
-  redirect cannot carry the token to another host. It fails a connection after
+  one HTTPS `POST` to `https://api.github.com`, and the agent's GitHub status reads
+  (see [CLI](../operations/cli.md#github-status)) are `GET`s there through the same
+  client; neither follows a redirect, so a redirect cannot carry the token to
+  another host, and a status read follows a next page only on the same origin and
+  endpoint path. It fails a connection after
   10 s, a request after 30 s, and a response over 1 MiB. The token lives in a type
   with no `Display` and a redacted `Debug`, the header that carries it is marked
   sensitive, and error text has the token replaced before it is logged. Only a
@@ -890,6 +896,44 @@ later host:
   step.
 - `docker run` uses `--pull never`, so a missing local image fails instead of
   pulling a same-named public image.
+
+## A Token Carries Only Its Pool Kind's Permissions
+
+What a token may do is set when the operator creates it, and GitHub cannot report a
+token's permissions to Marshal, so limiting each token to its pool kind's permissions
+is an operator rule and a review rule, not a check.
+
+- A repository pool's token, whoever owns the repository, has that repository as
+  its only repository and carries Administration: Read and write, which registration
+  needs. It MAY add Actions: read, so the window can show the job a busy runner runs.
+  It carries nothing else.
+- Actions: read costs this: a leaked token can also read the repository's workflow
+  runs, their logs and their artifacts. Without it the window still shows whether
+  each runner is busy.
+- A 403 from the workflow-runs endpoint, or from a run's jobs, that is not a
+  rate-limit response means Actions: read is missing; Marshal hides job names for
+  that repository rather than failing, and logs GitHub's message and its
+  `X-Accepted-GitHub-Permissions` header.
+- Organisation pools are planned (X2) and no release configures one yet. An
+  organisation pool's token is created by an owner of the organisation, has the
+  organisation as its resource owner, and carries the organisation permission
+  Self-hosted runners: Read and write. It carries no repository permission, and its
+  repository access is public repositories only. One token serves one
+  organisation.
+- A leaked organisation token lets its holder register their own runner into any
+  runner group of the organisation, including the default group; set any group's
+  repositories to any repository the organisation owns, or open a group to public
+  repositories; and move runners between groups, change their labels and delete
+  runners. A rogue runner then receives the jobs, checked-out code, `GITHUB_TOKEN`
+  and secrets of every repository its group admits. The token cannot delete a
+  repository or change branch protection.
+- The GitHub status reads keep the registration's outbound limits and secret
+  handling, and no `github` value, view state or log line carries a token. The
+  workflow and job names GitHub returns are untrusted text: the agent removes
+  control and Unicode bidirectional formatting characters and cuts them before it
+  publishes them, and a reader shows them as plain text, never as markup or an
+  address. A reader builds a job's address itself from its configured repository
+  and the two numbers it was given.
 
 ## One Instance per Machine, Reached Only by Its User
 
@@ -979,7 +1023,8 @@ Residual risks, accepted on a single-user host:
 - Another process of the same user that connects to the channel can set or remove
   a token, stop the runners or quit the agent, as it can for `start`'s
   commands.
-- The agent holds a token in memory for as long as a registration needs it, and a
+- The agent holds a token in memory for as long as a registration or a GitHub status
+  check needs it, and a
   JIT configuration a runtime-core panic's message carried would reach the log
   unmasked, as for `start`.
 
