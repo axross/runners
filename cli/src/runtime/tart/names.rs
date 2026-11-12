@@ -15,7 +15,7 @@ use super::list::{VmEntry, VmSource};
 
 /// the number the golden VM's name records; it goes up whenever the base digest,
 /// the provisioning steps, the launcher or the Docker Engine versions change.
-pub const GOLDEN_VM_VERSION: u32 = 1;
+pub const GOLDEN_VM_VERSION: u32 = 2;
 
 const JOB_PREFIX: &str = "marshal-job-";
 const GOLDEN_PREFIX: &str = "marshal-golden-linux-";

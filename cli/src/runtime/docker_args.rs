@@ -21,6 +21,10 @@ pub const DIAGNOSTIC_LABEL: &str = "runners.diagnostic-lifecycle=1";
 /// the label that marks a CPU probe container.
 pub const PROBE_LABEL: &str = "runners.cpu-probe=1";
 
+/// where a job VM's own Docker Engine listens, in the VM and, from contract 2, in the
+/// runner container the VM runtime starts.
+pub const VM_DOCKER_SOCKET: &str = "/var/run/docker.sock";
+
 /// what the probe container runs to print the CPUs it may use.
 pub const PROBE_READER: &str = "while read -r key value; do if [ \"$key\" = Cpus_allowed_list: ]; then printf \"%s\\n\" \"$value\"; exit; fi; done < /proc/self/status; exit 1";
 
@@ -82,9 +86,22 @@ fn mount_arguments(mounts: &[Mount]) -> Vec<String> {
 
 /// the arguments of the one `docker run` that starts a job container, the
 /// diagnostic variant for a diagnostics-enabled pool's; the options come before the
-/// image, because Docker reads what follows it as the container's own command.
+/// image, because Docker reads what follows it as the container's own command. The
+/// Docker runtime runs this list, and it mounts no socket.
 #[must_use]
 pub fn job_run_arguments(spec: &ContainerSpec) -> Vec<String> {
+    run_arguments(spec, None)
+}
+
+/// the same list for a job VM's runner container, which also mounts the VM's own
+/// Docker socket, [`VM_DOCKER_SOCKET`]. The socket belongs to the disposable VM,
+/// not to a host, and only the VM runtime runs this list.
+#[must_use]
+pub fn vm_job_run_arguments(spec: &ContainerSpec) -> Vec<String> {
+    run_arguments(spec, Some(VM_DOCKER_SOCKET))
+}
+
+fn run_arguments(spec: &ContainerSpec, socket: Option<&str>) -> Vec<String> {
     let (removal, label, launcher): (&[&str], &[&str], String) = match &spec.diagnostic {
         Some(record) => (
             &[],
@@ -109,6 +126,12 @@ pub fn job_run_arguments(spec: &ContainerSpec) -> Vec<String> {
         &memory,
     ]));
     arguments.extend(mount_arguments(&spec.mounts));
+    if let Some(path) = socket {
+        arguments.extend(strings(&[
+            "--mount",
+            &format!("type=bind,source={path},target={path}"),
+        ]));
+    }
     arguments.extend(strings(&[
         "-e",
         JIT_VARIABLE,
@@ -323,6 +346,48 @@ mod tests {
             "/home/runner/run.sh",
         ];
         assert_eq!(arguments, expected);
+    }
+
+    #[test]
+    fn the_docker_runtime_mounts_no_socket_and_the_vm_runtime_mounts_the_vms_alone() {
+        use crate::runtime::backend::DiagnosticRecord;
+        let mut diagnostic = spec(Vec::new());
+        diagnostic.diagnostic = Some(DiagnosticRecord {
+            pool: "example-repo-one".to_string(),
+            directory: "C:\\diag".to_string(),
+            raw_records: false,
+        });
+        for spec in [spec(Vec::new()), diagnostic] {
+            let host = job_run_arguments(&spec);
+            assert!(
+                host.iter().all(|argument| !argument.contains("docker.sock")
+                    && !argument.contains("type=bind")
+                    && argument != "--privileged"),
+                "{host:?}"
+            );
+            let vm = vm_job_run_arguments(&spec);
+            let socket_mount = "type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock";
+            assert_eq!(
+                vm.iter()
+                    .filter(|argument| argument.as_str() == socket_mount)
+                    .count(),
+                1
+            );
+            let mut without = vm.clone();
+            let at = without
+                .iter()
+                .position(|argument| argument == socket_mount)
+                .unwrap();
+            assert_eq!(without.remove(at - 1), "--mount");
+            without.remove(at - 1);
+            assert_eq!(without, host, "the socket is the only difference");
+            assert!(
+                at < vm
+                    .iter()
+                    .position(|argument| argument == &spec.image)
+                    .unwrap()
+            );
+        }
     }
 
     #[test]
