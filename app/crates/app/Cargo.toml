@@ -38,9 +38,11 @@ marshal-view = { path = "../view" }
 tauri = { version = "2.12", default-features = false, features = ["wry", "common-controls-v6", "tray-icon"] }
 tauri-plugin-single-instance = "2.5"
 serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
+# the code `generate_context!` writes for the configuration's `plugins` section names
+# `serde_json`; the version the session already builds, so this adds no crate.
+serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
 
 [dev-dependencies]
-serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
 tauri = { version = "2.12", default-features = false, features = ["test"] }
 tokio = { version = "1.54.1", default-features = false, features = ["rt", "time", "macros", "net", "io-util"] }
 

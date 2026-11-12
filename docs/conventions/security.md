@@ -272,7 +272,9 @@ app is built for, `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`.
   `=2.14.1`, on Windows only, with its defaults off and only `rustls-tls` on, so it
   links no zip reader and reads no system proxy; `winsafe` 0.0.29's `kernel` feature on
   Windows, the crate the library already uses, to wait on the agent's process without
-  `unsafe` code; and `tokio`'s `time` feature on Windows for that wait. The
+  `unsafe` code; `tokio`'s `time` feature on Windows for that wait; and `serde_json`,
+  at the version the session builds, which the code `generate_context!` writes for the
+  updater's configuration needs. The
   `marshal-feed` crate takes `minisign-verify`, `base64`, `semver`, `url` and `sha2`,
   each at the version the updater plugin or the library already links on Windows, so
   that its feed check verifies exactly as the plugin does; on macOS they add
