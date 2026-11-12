@@ -460,9 +460,12 @@ the fake `docker` sees on Linux and macOS; no safe API reads a Windows process's
 creation flags back. On Windows every client and the exporter child also get
 `CREATE_NO_WINDOW`, so a resident agent that has no console does not open a console
 window for each `docker` call. This applies to the
-foreground commands too, since they share the builders. Their piped input and output
-and their process group are unchanged. How a terminal run behaves on Windows with the
-flag, including `start` and Ctrl+C, is not established here: the Windows CI tests and
+foreground commands too, since they share the builders. Their process group is
+unchanged. Most clients have piped or closed standard streams, but on Windows two
+children inherit the CLI's own: in terminal mode `build`'s `docker build` inherits its standard output
+and standard error, and the exporter child inherits its standard error. How a terminal
+run behaves on Windows with the flag, including `start`, Ctrl+C and whether a terminal
+`build` still streams its output, is not established here: the Windows CI tests and
 the axpc run are what confirm it. The one function that applies the flags is called by the client builder and
 by the exporter's command builder, and a test build records what each applied, so
 two unit tests assert both flags at the two builders, which every client and exporter

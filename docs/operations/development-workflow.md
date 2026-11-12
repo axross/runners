@@ -280,10 +280,9 @@ hosted runner holds `contents: read` and runs clippy and the tests of the app's
 mode-dispatch crate, which covers the dispatch of the Unix shims there, then runs
 that crate's tests in the release profile, and an `app` job on a Windows hosted
 runner holds `contents: read` and lints and tests every crate of the app's
-workspace. It uses no cache, and its timeout is 15 minutes, twice the 5 min 12 s
-that checkout, the toolchain, clippy and the tests took on
-[#95](https://github.com/axross/runners/pull/95)'s green run, rounded up to whole 5
-minutes. The workflow also builds the
+workspace. Neither job uses a cache action, and the `app` job's timeout is 15
+minutes; [App](./app.md#verification-status) records how it was set. The workflow
+also builds the
 runner image for linux/arm64 on the hosted `ubuntu-24.04-arm` runner, in a job of its
 own that builds and never pushes and runs no smoke test, since those assume x86_64
 ([#74](https://github.com/axross/runners/issues/74)). Its release-build job is the
