@@ -27,9 +27,6 @@ pub const DOWNLOAD_HOST: &str = "github.com";
 /// releases.
 pub const DOWNLOAD_PATH: &str = "/axross/runners/releases/download/";
 
-/// the feed's entry the Windows app reads.
-pub const WINDOWS: &str = "windows-x86_64";
-
 /// the version a build carries before a release stamps its own; such a build never
 /// checks for an update.
 pub const DEVELOPMENT_VERSION: &str = "0.0.0-dev";

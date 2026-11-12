@@ -194,9 +194,9 @@ pub trait Verified: Send + 'static {
     /// the version it installs.
     fn version(&self) -> &str;
 
-    /// starts its installer, which replaces Marshal and starts the new app. On Windows
-    /// the app's process ends here when the installer started, so `Ok` returns only to a
-    /// test.
+    /// starts its installer, which replaces Marshal and, through `AUTOLAUNCHAPP`, starts
+    /// the new app. On Windows the app's process ends here when the installer started,
+    /// so `Ok` returns only to a test.
     fn install(self: Box<Self>) -> Result<(), String>;
 }
 

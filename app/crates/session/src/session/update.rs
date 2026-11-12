@@ -337,6 +337,13 @@ impl<D: Dial> Session<D> {
             return;
         };
         let stopped = drain.ending.unwrap_or(false);
+        // every start after this one leaves the runners as `ending` said, not as the
+        // last snapshot, which shows the agent quitting or stopping
+        self.next_launch = Some(if stopped {
+            Launch::Stopped
+        } else {
+            Launch::Running
+        });
         self.stage = Stage::Attempting;
         if !gone {
             self.log.warn(&format!(
@@ -355,11 +362,6 @@ impl<D: Dial> Session<D> {
                 self.log.info(
                     "The older agent has exited; this app starts its own, as the older one left the runners.",
                 );
-                self.next_launch = Some(if stopped {
-                    Launch::Stopped
-                } else {
-                    Launch::Running
-                });
                 self.restart_after_drop();
             }
         }
@@ -441,18 +443,27 @@ impl<D: Dial> Session<D> {
     fn ended_unannounced(&mut self) {
         self.log
             .warn("The agent's process ended during the drain without saying so.");
+        if let Some(drain) = self.drain.as_mut() {
+            drain.gone = true;
+        }
+        self.ending_unannounced();
+    }
+
+    /// goes on as if the agent had said it is ending, with the runners stopped by you if
+    /// that is the last state the app heard, and waits for its process to exit.
+    fn ending_unannounced(&mut self) {
         let stopped = self.snapshot.as_ref().is_some_and(stopped_by_you);
         if let Some(drain) = self.drain.as_mut() {
             drain.ending = Some(stopped);
-            drain.gone = true;
-            drain.waiting = true;
+            drain.answered = true;
         }
         self.stage = Stage::Ending;
-        self.agent_gone(true);
+        self.begin_exit_wait();
     }
 
     /// no agent answered while the app reached it again after a drop during its drain:
-    /// if the agent's process has exited, it ended unexpectedly.
+    /// if the agent's process has exited, it ended unexpectedly; if it still runs, the
+    /// app waits for it to exit as after `ending`.
     pub(super) fn unreached_during_drain(&mut self) {
         let lost = self.drain.as_ref().is_some_and(|drain| drain.lost);
         if !lost {
@@ -465,7 +476,10 @@ impl<D: Dial> Session<D> {
         if self.agent_exited() {
             self.ended_unannounced();
         } else if watched {
-            self.drain = None;
+            self.log.warn(
+                "No agent answered, but its process still runs; the app waits for it to exit.",
+            );
+            self.ending_unannounced();
         } else {
             // with no handle the app cannot tell the agent ended, so it starts it once
             // more, as W1 does after a drop

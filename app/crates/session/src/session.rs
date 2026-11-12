@@ -458,6 +458,7 @@ impl<D: Dial> Session<D> {
         if settled {
             self.pending = None;
             self.answered = None;
+            self.maybe_drain();
         }
     }
 
@@ -887,6 +888,7 @@ impl<D: Dial> Session<D> {
                             .is_some_and(|pending| pending.since_ms == since_ms)
                         {
                             self.pending = None;
+                            self.maybe_drain();
                         }
                     }
                 }

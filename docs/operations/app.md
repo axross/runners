@@ -629,16 +629,20 @@ update with the runners stopped by you; Quit installs nothing.
 snapshot gave. It then writes the record below if `ending` said the runners were
 stopped by you, and starts `msiexec.exe /i <msi> /passive /promptrestart
 AUTOLAUNCHAPP=True LAUNCHAPPARGS="<its own arguments>"`; the plugin then ends the app.
-The installer shows Windows Installer's progress window and starts the new app, which
-starts its agent. If the process has not exited in 60 s, or the installer does not
+The installer shows Windows Installer's progress window. Starting the new app, which
+starts its agent, depends on the MSI honouring `AUTOLAUNCHAPP` and `LAUNCHAPPARGS`;
+that is a criterion of W1's installer pull request, and until it merges there is no
+app MSI on main. If the process has not exited in 60 s, or the installer does not
 start, the app drops the update and the record, handles the agent's end as any other,
 and checks again an hour later. An end for an update another client asked for is
 handled as any other end.
 
 **A lost connection during the drain.** If the agent's process still runs, the app
-reaches it again without starting another and asks again. If it has exited, the agent
-ended unexpectedly: the app installs as above, and writes the record if the last state
-it heard was stopped by you.
+reaches it again without starting another and asks again; if no agent answers while
+the process still runs, the app waits for it to exit as after `ending`. If it has
+exited, the agent ended unexpectedly: the app installs as above, and writes the record
+if the last state it heard was stopped by you. When nothing installs, the agent is
+started again stopped or running as `ending`, or that last state, said.
 
 **The record.** `update-stopped-by-you.json` in `%LOCALAPPDATA%\marshal\` names the
 update's version and when it was written. A launch of that version within 30 minutes

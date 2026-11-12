@@ -3,7 +3,7 @@
 //! every end of the agent that installs nothing.
 
 use marshal_cli::agent::Launch;
-use marshal_session::{AgentInfo, CHECK_EVERY, EXIT_WITHIN, Ended, Failure};
+use marshal_session::{Act, AgentInfo, CHECK_EVERY, EXIT_WITHIN, Ended, Failure};
 
 use crate::support::{
     Agent, Answer, Called, RecordEvent, Running, Updates, World, fixture, patched, secs, start_as,
@@ -108,6 +108,37 @@ async fn an_installer_that_does_not_start_drops_the_update() {
     assert!(session.updates.record().contains(&RecordEvent::Removed));
     assert_eq!(session.world.started(), [Launch::Running]);
     assert!(!session.is_over());
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_process_that_does_not_exit_starts_the_agent_again_stopped_as_ending_said() {
+    let (agent, session) = offered().await;
+    agent.end_for_update("1.4.0", true);
+    agent.close();
+    session.wait(EXIT_WITHIN + secs(1)).await;
+    assert!(session.updates.installed().is_empty());
+    assert_eq!(
+        session.world.started(),
+        [Launch::Stopped],
+        "the last snapshot showed the runners running, but `ending` said stopped by you"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_snapshot_that_settles_an_action_lets_the_held_update_drain() {
+    let (agent, connected) = Agent::new();
+    agent.answer_pid(PID);
+    let world = World::default();
+    world.then(Answer::Agent(connected));
+    let updates = Updates::default();
+    updates.offer("1.4.0").process(PID);
+    let session = start_as(world, updates, "1.3.0", Launch::Running);
+    session.settle().await;
+    session.handle.act(Act::StopAll).await.unwrap();
+    // the agent's last snapshot, a single `stopped` after Stop all, settles the action
+    agent.push(fixture("stopped_by_you"));
+    session.settle().await;
+    assert_eq!(drains(&agent), ["1.4.0"]);
 }
 
 #[tokio::test(start_paused = true)]
@@ -233,6 +264,25 @@ async fn a_lost_connection_with_the_agent_still_running_reconnects_and_asks_agai
     session.settle().await;
     assert_eq!(drains(&again), ["1.4.0"]);
     assert!(session.updates.installed().is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_lost_connection_with_no_agent_answering_waits_for_its_process_then_installs() {
+    let (agent, session) = offered().await;
+    session.world.then(Answer::NoAgent);
+    agent.close();
+    session.settle().await;
+    assert!(
+        session.updates.installed().is_empty(),
+        "its process still runs"
+    );
+    session.updates.exit(PID);
+    session.settle().await;
+    assert!(
+        session.world.started().is_empty(),
+        "the agent is not started again"
+    );
+    assert_eq!(session.updates.installed(), ["1.4.0"]);
 }
 
 #[tokio::test(start_paused = true)]
