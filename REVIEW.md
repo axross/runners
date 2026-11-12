@@ -419,8 +419,10 @@ mechanical defect named below:
   (`mise run deny:rust`). The advisory check runs in its own workflow and is not
   required.
 - The app's clippy (`mise run lint:app`), tests (`mise run test:app`), licence,
-  source, and duplicate checks (`mise run deny:app`), and toolchain pin check
-  (`mise run check:app-pins`).
+  source, and duplicate checks (`mise run deny:app`), toolchain pin check
+  (`mise run check:app-pins`), main window page tests
+  (`mise run test:app-frontend`), and the test of the `tauri-cli` pin's reader
+  (`mise run test:tauri-cli-version`).
 - The agreement of `skills-lock.json` with `.claude/skills/`
   (`mise run check:skills`). Whether an installed copy matches its upstream
   source is not checked in CI and remains reportable.
