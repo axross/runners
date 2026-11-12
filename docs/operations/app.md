@@ -415,11 +415,14 @@ minutes.
 
 The agent reads the JSON configuration from `%LOCALAPPDATA%\marshal\config.json` on
 Windows and `~/Library/Application Support/marshal/config.json` on macOS, which is
-also the macOS control socket's folder, so the agent keeps it private (0700). K1
-replaces the JSON with TOML at the same place. The agent reads each pool's token
+also the macOS control socket's folder, so the agent keeps it private (0700). K1's
+first pull request, #98, added the TOML format to the library only, as
+[The TOML Configuration](./cli.md#the-toml-configuration) says; the agent moves to
+TOML at the same place in the second pull request of
+[#77](https://github.com/axross/runners/issues/77). The agent reads each pool's token
 from the token store when it admits the pool and at each registration, never from a
 file: it ignores the configuration's `tokenPath`, which the shared validation still
-requires until K1's TOML has none. On Windows a token is a Credential Manager entry
+requires of a JSON configuration and the TOML format does not have. On Windows a token is a Credential Manager entry
 for the repository, entered in the main window's Tokens tab; the app never shows a
 stored token and never reads the store itself. Before the Mac has a store, the agent
 skips every pool there with "no token store".
