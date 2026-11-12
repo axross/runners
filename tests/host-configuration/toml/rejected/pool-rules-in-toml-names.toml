@@ -1,0 +1,20 @@
+schema_version = 1
+routing_label = "axpc"
+image_name = "example-image:tag"
+
+[[pool]]
+name = "an-extremely-long-name-that-goes-on-and-on-past-the-sixty-four-character-limit"
+repository = "octo/hello"
+runners = 0
+cpus = 65
+memory_gb = 0
+diagnostic_directory = "C:\\diagnostics"
+diagnostic_raw_records = true
+
+[[pool]]
+name = "beta"
+repository = "octo/other"
+runners = 1
+cpus = 0.0000000001
+diagnostics = true
+diagnostic_directory = "C:\\diagnostics\\..\\beta"

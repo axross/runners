@@ -1,0 +1,12 @@
+schema_version = 1
+routing_label = "axpc"
+image_name = "example-image:tag"
+
+[lifecycle]
+Keep_Awake = true
+startAtLogin = true
+
+[[pool]]
+name = "alpha"
+repository = "octo/hello"
+runners = 1
