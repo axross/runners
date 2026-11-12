@@ -865,7 +865,7 @@ mod tests {
     }
 
     #[test]
-    fn a_client_command_has_no_console_window_and_a_process_group_of_its_own_on_windows() {
+    fn the_client_builder_applies_create_new_process_group_and_create_no_window() {
         applied::take();
         let _ = client_command(OsStr::new("docker"), &[], &["ps".to_string()]);
         assert_eq!(

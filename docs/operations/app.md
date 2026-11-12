@@ -45,8 +45,8 @@ unchanged. Most clients have piped or closed standard streams, but in terminal m
 `marshal build`'s `docker build` inherits the CLI's standard output and standard error,
 and the exporter child inherits its standard error. What a terminal run does with the
 flag on Windows, including whether a terminal `marshal build` still streams its output,
-is to be confirmed by the Windows CI tests and the axpc run (see
-[CLI](./cli.md#running-a-host)).
+is shown only by the axpc run: the Windows CI tests record the flags or run the CLI
+with piped output (see [CLI](./cli.md#running-a-host)).
 Whether a window still appears is shown only on axpc. The agent mode is kept to one
 by the machine-wide lock the library's agent takes, as `start` is, so the app and the
 command line never run the pools together.

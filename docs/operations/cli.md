@@ -465,8 +465,8 @@ unchanged. Most clients have piped or closed standard streams, but on Windows tw
 children inherit the CLI's own: in terminal mode `build`'s `docker build` inherits its standard output
 and standard error, and the exporter child inherits its standard error. How a terminal
 run behaves on Windows with the flag, including `start`, Ctrl+C and whether a terminal
-`build` still streams its output, is not established here: the Windows CI tests and
-the axpc run are what confirm it. The one function that applies the flags is called by the client builder and
+`build` still streams its output, is not established here: the Windows CI tests only
+record the flags or run the CLI with piped output, so only the axpc run shows it. The one function that applies the flags is called by the client builder and
 by the exporter's command builder, and a test build records what each applied, so
 two unit tests assert both flags at the two builders, which every client and exporter
 call site goes through. Whether Windows shows a window is not observable here and is
@@ -2951,7 +2951,7 @@ the gates that cover it, so a change to the library knows what the app relies on
   the CLI's channel, and Dependabot is set to bump both files in one pull request. The CLI's
   `Cargo.lock`, `deny.toml`, and dependency table do not change for the app: the
   table under Dependencies lists the CLI's crates only, and
-  [Security](../conventions/security.md#pinning-convention) holds the policy for the
+  [Security](../conventions/security.md#the-apps-dependencies) holds the policy for the
   app's own.
 - Every app crate forbids `unsafe_code` and takes the CLI's lint set through
   `[lints] workspace = true`.
