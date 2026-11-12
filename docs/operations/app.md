@@ -41,9 +41,13 @@ The hidden modes are internal. They have no window, no icon and no console, and 
 compatibility promise: their arguments are what the app and the library pass each
 other, not an interface for a person or a script. Each `docker` client the agent
 starts and the exporter child get `CREATE_NO_WINDOW` on Windows, set by the library's
-two command builders and asserted by a unit test at each; their standard streams and
-process groups are unchanged, and what a terminal run does with the flag on Windows is
-confirmed by the Windows CI tests and on axpc (see [CLI](./cli.md#running-a-host)).
+two command builders and asserted by a unit test at each; their process groups are
+unchanged. Most clients have piped or closed standard streams, but in terminal mode
+`marshal build`'s `docker build` inherits the CLI's standard output and standard error,
+and the exporter child inherits its standard error. What a terminal run does with the
+flag on Windows, including whether a terminal `marshal build` still streams its output,
+is to be confirmed by the Windows CI tests and the axpc run (see
+[CLI](./cli.md#running-a-host)).
 Whether a window still appears is shown only on axpc. The agent mode is kept to one
 by the machine-wide lock the library's agent takes, as `start` is, so the app and the
 command line never run the pools together.
@@ -101,5 +105,7 @@ does not take a test for a host that has run it:
   minutes.
 - **Not shown by any check:** that no console window appears from the exporter or the
   agent's `docker` clients (the flags are asserted at the command builders, and the
-  window is not observable without `unsafe`). The axpc results are recorded on the
+  window is not observable without `unsafe`), and that a terminal `marshal build` on
+  Windows still streams `docker build`'s output with `CREATE_NO_WINDOW`, which is
+  checked on axpc. The axpc results are recorded on the
   tracking issue, not here.
