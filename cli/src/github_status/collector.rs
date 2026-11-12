@@ -23,6 +23,7 @@ use super::budget::{Level, Tracker};
 use super::clean;
 use super::http::{Fetch, Get, next_page, repository_id};
 use super::{GithubStatus, Job, RepositoryStatus, RunnerStatus};
+use crate::runtime::scrub::replace_secret;
 
 /// runners per page of the runner list.
 pub const RUNNERS_PER_PAGE: u32 = 100;
@@ -626,10 +627,10 @@ impl<'a, F: Fetch> Collector<'a, F> {
         if endpoint != Endpoint::Runners && matches!(answer.status, 403 | 404) {
             line.push_str(&format!(
                 " GitHub's message: {}. X-Accepted-GitHub-Permissions: {}.",
-                answer
-                    .message
-                    .as_deref()
-                    .map_or_else(|| "none".to_string(), |message| scrub(message, token)),
+                answer.message.as_deref().map_or_else(
+                    || "none".to_string(),
+                    |message| replace_secret(message, token.expose())
+                ),
                 answer.accepted_permissions.as_deref().unwrap_or("none")
             ));
         }
@@ -913,15 +914,6 @@ impl<'a, F: Fetch> Collector<'a, F> {
                 ));
             }
         }
-    }
-}
-
-/// GitHub's text with the token replaced, should GitHub ever repeat it.
-fn scrub(text: &str, token: &Secret) -> String {
-    if token.expose().is_empty() {
-        text.to_string()
-    } else {
-        text.replace(token.expose(), "<token>")
     }
 }
 

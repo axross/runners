@@ -12,6 +12,7 @@ use crate::json::{self, Value};
 use crate::runtime::registration::{
     ACCEPT_VALUE, API_VERSION, HttpLimits, SetupError, https_client, resolve_base_url,
 };
+use crate::runtime::scrub::replace_secret;
 use crate::runtime::secret::Secret;
 
 use super::answer::{Answer, Cause, Next};
@@ -116,14 +117,10 @@ fn message(body: &[u8], token: &Secret) -> Option<String> {
         return None;
     };
     object.iter().find_map(|(key, value)| match value {
-        Value::String(text) if key == "message" => {
-            let text = if token.expose().is_empty() {
-                text.clone()
-            } else {
-                text.replace(token.expose(), "<token>")
-            };
-            Some(clean::cut(&text, clean::MESSAGE_CHARS))
-        }
+        Value::String(text) if key == "message" => Some(clean::cut(
+            &replace_secret(text, token.expose()),
+            clean::MESSAGE_CHARS,
+        )),
         _ => None,
     })
 }
