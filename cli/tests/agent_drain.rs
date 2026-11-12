@@ -456,6 +456,87 @@ async fn a_core_failure_during_a_drain_runs_the_container_steps_and_starts_nothi
     assert!(ended.kept.is_empty(), "{:?}", ended.kept);
 }
 
+/// fails the core at its first job container only, as a core that broke once.
+fn break_the_core_once(rig: &Rig) {
+    let broke = std::cell::Cell::new(false);
+    rig.backend.state.borrow_mut().on_run = Some(Box::new(move || {
+        if !broke.replace(true) {
+            panic!("the core broke");
+        }
+    }));
+}
+
+fn waits_for_docker(rig: &Rig) -> usize {
+    rig.backend
+        .calls()
+        .iter()
+        .filter(|call| matches!(call, Call::WaitUntilAvailable))
+        .count()
+}
+
+/// a drain that begins while a failed core waits to restart ends the agent for the
+/// update without starting the core again.
+#[tokio::test(flavor = "current_thread")]
+async fn a_drain_during_a_cores_restart_wait_starts_nothing_again() {
+    let rig = rig(ONE_POOL);
+    rig.clock.pause.set(Duration::from_secs(30));
+    break_the_core_once(&rig);
+    let rig = &rig;
+    let (ended, ()) = rig
+        .drive(Launch::Running, |mut conn| async move {
+            conn.until("a restart due", |s| s.agent.restart_due.is_some())
+                .await;
+            let before = containers(rig).len();
+            conn.client.subscribe().await.unwrap();
+            let asked = std::time::Instant::now();
+            assert_eq!(drain(&conn).await["state"], "running");
+            let (reason, update) = ending(&mut conn).await;
+            // the drain cut the 30 s wait short
+            assert!(
+                asked.elapsed() < Duration::from_secs(10),
+                "{:?}",
+                asked.elapsed()
+            );
+            assert_eq!(reason, UPDATE);
+            assert_eq!(update, Some(UpdateEnding::new("1.4.0", false)));
+            assert_eq!(containers(rig).len(), before, "the core started again");
+        })
+        .await;
+    assert_eq!(ended.reason, UPDATE);
+}
+
+/// a drain that begins while a restarted core waits for Docker drops that preparation,
+/// so no runner registers, and the agent ends for the update.
+#[tokio::test(flavor = "current_thread")]
+async fn a_drain_while_a_restarted_core_waits_for_docker_registers_nothing() {
+    let rig = rig(ONE_POOL);
+    rig.clock.pause.set(Duration::from_millis(100));
+    break_the_core_once(&rig);
+    let gate = std::rc::Rc::new(tokio::sync::Notify::new());
+    let rig = &rig;
+    let (ended, ()) = rig
+        .drive(Launch::Running, |mut conn| async move {
+            conn.until("a restart due", |s| s.agent.restart_due.is_some())
+                .await;
+            let waits = waits_for_docker(rig);
+            // Docker is down when the core starts again
+            rig.backend.state.borrow_mut().available_gate = Some(gate.clone());
+            conn.eventually("the restarted core waiting for Docker", || {
+                waits_for_docker(rig) > waits
+            })
+            .await;
+            let before = containers(rig).len();
+            conn.client.subscribe().await.unwrap();
+            drain(&conn).await;
+            let (reason, update) = ending(&mut conn).await;
+            assert_eq!(reason, UPDATE);
+            assert_eq!(update, Some(UpdateEnding::new("1.4.0", false)));
+            assert_eq!(containers(rig).len(), before, "a runner registered");
+        })
+        .await;
+    assert_eq!(ended.reason, UPDATE);
+}
+
 /// a requester that closes while a failed core's container steps run, the drain's last
 /// steps, does not cancel the drain or start the core again.
 #[tokio::test(flavor = "current_thread")]
