@@ -28,8 +28,8 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   signing Environment, the accepted LAN-egress risk, the axmc Linux runtime's per-job
   VM, CPU placement in it, Softnet and its SUID check, the accepted host-facing
   surface, the pinned Tart, Softnet, and golden VM base, how the resident agent
-  keeps tokens and receives them, what the Windows app's processes may do, the
-  app's dependency policy, what is never committed, and
+  keeps tokens and receives them, what the Windows app's web view, capabilities
+  and process may do, the app's dependency policy, what is never committed, and
   why the review
   gate admits one bot identity by login.
 - [conventions/documentation.md](./conventions/documentation.md) - which
@@ -77,10 +77,14 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   optional check of a download, migrating, updating, uninstalling, and rolling back
   (including to the bare-binary `v0.1.0`), the tests of those blocks, the allowed
   dependencies, and why the CLI's name is fixed.
-- [operations/app.md](./operations/app.md) - the Windows app's workspace: the one
-  executable and its modes, the debug-only test variables, what the window, menu
-  and icon show for a snapshot, how the app connects to and restarts its agent, the
-  logs, the icons and the glyph files, and what its tests do and do not show.
+- [operations/app.md](./operations/app.md) - the Windows notification-area app and
+  the agent it starts: the one executable and its modes, the debug-only test
+  variables, how the app connects to and restarts its agent, the logs, the
+  commands and events between the Rust side and the web view, the page, the icons
+  and the glyph files, the bundled font and colour values,
+  building the app and the `tauri-cli` pin, the install layout, rolling back to the
+  command line, what its tests do and do not show, and the sections other children
+  add.
 - [operations/agent-skills.md](./operations/agent-skills.md) - installing and
   refreshing the skills from `axross/skills`, the drift checks, and the register
   of deviations and gaps.

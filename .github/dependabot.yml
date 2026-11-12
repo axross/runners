@@ -33,7 +33,9 @@ updates:
       prefix: "build"
       include: "scope"
 
-  # the app's crates, which include its path dependency on the CLI's library.
+  # the app's crates, which include its path dependency on the CLI's library. the
+  # tauri-cli pin in app/tauri-cli.version is not a crate of the workspace and is
+  # refreshed by hand.
   - package-ecosystem: "cargo"
     directory: "/app"
     schedule:

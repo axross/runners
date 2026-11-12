@@ -74,9 +74,10 @@ depends = ["rust:require", "fetch:rust"]
 dir = "cli"
 run = "cargo deny --locked check bans licenses sources"
 
-# the app's workspace under app/ holds the platform-independent crates, which the lint
-# and test tasks name; the Windows job in merge-checks.yaml lints and tests the whole
-# workspace.
+# the app's workspace under app/ holds the platform-independent crates and the Tauri
+# crate. Only the former build without the web view's libraries, so the lint and test
+# tasks name them; the Windows job in merge-checks.yaml builds, lints and tests the
+# whole workspace.
 [tasks."fetch:app"]
 description = "Fetch the crates in app/Cargo.lock, which cargo deny reads"
 depends = ["rust:require"]
@@ -96,7 +97,7 @@ dir = "app"
 run = "cargo fmt --all --check"
 
 [tasks."lint:app"]
-description = "Lint the app's platform-independent crates (the modes, the view, the session and the icon) with clippy, warnings as errors"
+description = "Lint the app's platform-independent crates (the modes, the view, the session and the icon) with clippy, warnings as errors; the Tauri crate is linted by the Windows job"
 depends = ["rust:require"]
 dir = "app"
 run = "cargo clippy --locked --package marshal-modes --package marshal-view --package marshal-session --package marshal-tray --all-targets -- -D warnings"
@@ -107,6 +108,10 @@ depends = ["rust:require"]
 dir = "app"
 run = "cargo test --locked --package marshal-modes --package marshal-view --package marshal-session --package marshal-tray"
 
+[tasks."test:app-frontend"]
+description = "Run the main window page's own tests with Node, which check the order it draws views in"
+run = "node --test app/crates/app/tests/frontend/*.test.mjs"
+
 [tasks."deny:app"]
 description = "Check the crates the app's executable links for banned versions, unreviewed licences, and other sources, for the Windows and macOS builds; the advisory check runs in its own workflow"
 depends = ["rust:require", "fetch:app"]
@@ -114,7 +119,7 @@ dir = "app"
 run = "cargo deny --locked check bans licenses sources"
 
 [tasks."check:app-pins"]
-description = "Check that both Rust toolchain files name one channel"
+description = "Check that both Rust toolchain files name one channel and that app/tauri-cli.version holds one exact version"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
@@ -128,7 +133,12 @@ if [ -z "$cli" ] || [ "$cli" != "$app" ]; then
   exit 1
 fi
 echo "Both toolchain files name ${cli}."
+echo "tauri-cli is pinned at $(bash .github/scripts/tauri-cli-version.sh)."
 '''
+
+[tasks."test:tauri-cli-version"]
+description = "Check the script that reads the tauri-cli pin and refuses a file that is not one exact version"
+run = "bash .github/scripts/tests/test-tauri-cli-version.sh"
 
 [tasks.format]
 description = "Rewrite Markdown, JSON, YAML, and TypeScript files with Prettier, and Rust files with rustfmt, the app's included"
@@ -354,7 +364,7 @@ description = "Run the signed package check, which verify-macos runs, against st
 run = "bash .github/scripts/tests/test-signed-pkg-refusals.sh"
 
 [tasks.check]
-description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, release script tests, release shape check and its test, sign-macos, signed package and assemble tests, installer version and WiX fetch tests, install block tests, Rust tests, Rust dependency check, the app's toolchain pin check, tests and dependency check"
+description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, release script tests, release shape check and its test, sign-macos, signed package and assemble tests, installer version and WiX fetch tests, install block tests, Rust tests, Rust dependency check, the app's toolchain and tauri-cli pin checks, tests, page tests and dependency check"
 depends = [
   "format:check",
   "lint",
@@ -375,6 +385,8 @@ depends = [
   "test:rust",
   "deny:rust",
   "check:app-pins",
+  "test:tauri-cli-version",
   "test:app",
+  "test:app-frontend",
   "deny:app",
 ]

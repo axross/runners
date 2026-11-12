@@ -157,12 +157,13 @@ Important; Codex review uses its native priority label.
   [Security](docs/conventions/security.md#actions-stays-on-major-tags); do not
   report it. A reusable workflow, a `docker://` reference, and a `run:` step
   that downloads and executes remote code without a checksum are held to the
-  same standard. There are two recorded exceptions, both in
+  same standard. There are three recorded exceptions, all in
   [Security](docs/conventions/security.md#pinning-convention): a step that
   installs the Rust toolchain `cli/rust-toolchain.toml` or
-  `app/rust-toolchain.toml` names through `rustup`, and the Node that
-  `actions/setup-node` installs in `release.yaml`. Any other unpinned download
-  is still a finding.
+  `app/rust-toolchain.toml` names through `rustup`, the Node that
+  `actions/setup-node` installs in `release.yaml`, and `tauri-cli`, installed
+  from source with `cargo install --locked` at the one version in
+  `app/tauri-cli.version`. Any other unpinned download is still a finding.
 - **Least-privilege workflow permissions.** Every workflow declares a
   top-level `permissions:` block that starts from `contents: read`. A broader
   scope is granted on the job that needs it, is justified in a comment or in
@@ -320,12 +321,31 @@ Apply the lens for each kind of file in the diff.
   procedural-macro crate, such as one a derive feature brings, is flagged for the
   maintainer's review, and so is a new duplicate-version skip. No token or JIT
   configuration reaches a `Debug` form, a log line, an error message, a command
-  line, or a control-channel response; a new log line or response that could carry
+  line, a control-channel response, or, in the app, the page, a view state or an
+  event; a new log line or response that could carry
   one unmasked is a finding (see
   [Security](docs/conventions/security.md#tokens-stay-out-of-the-log-and-job-clients-end-with-start)).
   A change to a validation rule changes the shared fixtures
   and their expectations in the same change. Give `file:line` evidence as in the other
   lenses.
+- **The app's web view.** A change under `app/` is also checked against the app's
+  record in [Security](docs/conventions/security.md#the-app-surface), its web view,
+  capability and token bullets. The content security policy in `tauri.conf.json`
+  stays the one Security states in full, and `tauri.conf.json` keeps the web view
+  on bundled files with no developer tools in the release build. The two
+  capabilities, the main window's and the confirmation window's, and the permission
+  files Tauri generates keep to the permissions Security lists; a permission, a
+  capability or Tauri feature added, such as `dynamic-acl`, is a finding. The
+  pages stay text-only: `dom.js` refuses `style`, `href`, `src`, `action` and `on*`,
+  and text from the configuration, Docker or the agent is set as text, never as
+  markup, with no inline script, remote asset or npm package. No token sits in the
+  page, a view state or an event after `token_set` is called. A change to the
+  policy, a capability, a permission file, `tauri.conf.json` or the element builder
+  needs the maintainer's review. The test manifest `build.rs` links into the
+  integration tests holds only the version 6 common controls dependency and only on
+  a Windows MSVC target; another entry in it, such as an execution level, a second
+  `embed-resource` call, or a test skipped or cfg-ed out to avoid it, is a finding
+  and needs the maintainer's review.
 - **Diagnostics.** A labelled diagnostic container is removed only by a
   finalisation, which tries its export while its clock allows and uses its recorded
   settings, or by the manual recovery. The one exception to the recorded settings is

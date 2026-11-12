@@ -1,5 +1,7 @@
 *.sh text eol=lf
 Dockerfile text eol=lf
 tests/host-configuration/rust/raw/** -text
+app/tauri-cli.version text eol=lf
+app/crates/app/frontend/fonts/** -text
 app/crates/tray/glyphs/** text eol=lf
 cli/src/golden/fixtures/*.txt text eol=lf

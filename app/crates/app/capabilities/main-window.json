@@ -1,0 +1,19 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-window",
+  "description": "What the main window may call",
+  "windows": ["main"],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "allow-read-view",
+    "allow-start-all",
+    "allow-stop-all",
+    "allow-build",
+    "allow-stop-build",
+    "allow-try-again",
+    "allow-set-token",
+    "allow-remove-token",
+    "allow-hide-window"
+  ]
+}

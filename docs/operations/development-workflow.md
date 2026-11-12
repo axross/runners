@@ -258,8 +258,9 @@ GitHub-hosted runner with `contents: read`, checks out the pull request, and run
 `mise run check`, which executes the pull request's own task definitions and the
 linters they call, including the CLI's Rust gates and, for the app under `app/`, its
 formatting, the lint and tests of its platform-independent crates, its cargo-deny
-run, and a check that both Rust toolchain files name one channel. The same workflow
-also runs a
+run, and a check
+that both Rust toolchain files name one channel and that `app/tauri-cli.version`
+holds one exact version. The same workflow also runs a
 `rust` job that formats, lints, and tests the CLI on Linux, Windows, and macOS hosted
 runners, with four more steps on Linux only: the release-profile tests of the
 debug-only overrides, the test definition `build` reads among them; a build of the
@@ -278,16 +279,21 @@ descriptor back with PowerShell 7, failing unless it grants the current user alo
 Neither step needs a new action, permission, or secret. An `app-modes` job on a macOS
 hosted runner holds `contents: read` and runs clippy and the tests of the app's
 mode-dispatch crate, which covers the dispatch of the Unix shims there, then runs
-that crate's tests in the release profile, and an `app` job on a Windows hosted
-runner holds `contents: read` and lints and tests every crate of the app's
-workspace. It uses no cache, and its timeout is 15 minutes, twice the 5 min 12 s
-that checkout, the toolchain, clippy and the tests took on
+that crate's tests in the release profile, without building the web view, and an `app` job on a Windows
+hosted runner holds `contents: read` and builds the app's whole workspace: it
+installs `tauri-cli` with `cargo install --locked` at the version in
+`app/tauri-cli.version`, the one place that pin is set, lints and tests every crate,
+runs `cargo tauri build --no-bundle`, fails if the build changed a tracked file or
+left a file that is neither tracked nor ignored, and keeps the built
+`marshal-app.exe` as the run's artifact. It uses no cache, so `tauri-cli` compiles
+on every run, and its timeout is 45 minutes, twice the 20 min 37 s the whole job took on
 [#95](https://github.com/axross/runners/pull/95)'s green run, rounded up to whole 5
-minutes. The workflow also builds the
+minutes.
+The workflow also builds the
 runner image for linux/arm64 on the hosted `ubuntu-24.04-arm` runner, in a job of its
 own that builds and never pushes and runs no smoke test, since those assume x86_64
-([#74](https://github.com/axross/runners/issues/74)). Its release-build job is the
-release build's dry run: it calls
+([#74](https://github.com/axross/runners/issues/74)). Its release-build
+job is the release build's dry run: it calls
 [`release-build.yaml`](../../.github/workflows/release-build.yaml), which builds the
 Windows x64 and macOS arm64 release binaries on their hosted runners, runs the
 release-profile tests on each, checks each binary's `--version` and, on Windows, that
