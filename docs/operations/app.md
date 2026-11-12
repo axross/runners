@@ -1,8 +1,8 @@
 # App
 
 The Windows app's Cargo workspace under [`app/`](../../app): the one executable and
-its modes, the debug-only test variables, and the app's tests and what they do and
-do not show.
+its modes, the debug-only test variables, what the window, menu and icon show for a
+snapshot, and the app's tests and what they do and do not show.
 
 [CLI](./cli.md) owns the library the app and the agent are built on: the agent's
 state, the token store, protocol version 2 and the snapshot. [Security](../conventions/security.md)
@@ -12,15 +12,16 @@ pools with the command line, which is how axpc runs them today.
 
 ## What Exists
 
-The workspace holds the mode dispatch and its tests, but nothing builds the app's
+The workspace holds the mode dispatch, the view and their tests, but nothing builds the app's
 executable, installs it or releases it. `marshal` is still built and released, and
 axpc still runs its pools with it.
 
-| Part                                             | State                                                                                          |
-| ------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
-| The mode dispatch, the `marshal-modes` crate     | Tested by `mise run check` on Linux, the `app-modes` job on macOS and the `app` job on Windows |
-| The agent's resident mode and protocol version 2 | In the `marshal-cli` library, which the mode dispatch runs in its agent mode                   |
-| Verification on axpc                             | Not done; see [Verification Status](#verification-status)                                      |
+| Part                                                          | State                                                                                          |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| The mode dispatch, the `marshal-modes` crate                  | Tested by `mise run check` on Linux, the `app-modes` job on macOS and the `app` job on Windows |
+| What the window, menu and icon show, the `marshal-view` crate | Tested by `mise run check` on Linux and the `app` job on Windows                               |
+| The agent's resident mode and protocol version 2              | In the `marshal-cli` library, which the mode dispatch runs in its agent mode                   |
+| Verification on axpc                                          | Not done; see [Verification Status](#verification-status)                                      |
 
 ## The Executable and Its Modes
 
@@ -65,6 +66,25 @@ environment moves a release build's lock, channel, files, `docker` or GitHub add
 test of that in the release profile, which the `app-modes` job runs on a macOS hosted
 runner with `cargo test --release`, as a Linux step runs the library's own options in
 that profile. `mise run check` runs the crate's tests in the debug profile only.
+
+## The View
+
+What the window and menu show for a snapshot is computed in the `marshal-view` crate,
+which has no operating system dependency. Its tests build views from the recorded
+snapshots in `app/crates/view/tests/fixtures/`.
+
+A runner row writes its state out beside a mark: "Container running" with a check,
+"Registering" with a ring, "Backing off" and "Held" with the history mark, and
+"Stopped" with the stop mark. A backing-off or held runner shows the agent's reason under
+its state, and a held one is a runner whose job host a host prerequisite refuses, so
+its reason says which. A state the app does not know shows the runner's own reason as
+its words, with the unknown mark, or the state's word when there is no reason, as the version
+rules in [CLI](./cli.md#version-rules) require.
+
+From `app/`, `cargo run -p marshal-view --example dump_view -- <fixture.json>` prints a
+recorded snapshot's view as JSON, with options to set the connection, a pending
+action, an open token form, a token result and the settled count, which the example's
+header comment lists.
 
 ## Verification Status
 

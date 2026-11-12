@@ -78,8 +78,8 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   (including to the bare-binary `v0.1.0`), the tests of those blocks, the allowed
   dependencies, and why the CLI's name is fixed.
 - [operations/app.md](./operations/app.md) - the Windows app's workspace: the one
-  executable and its modes, the debug-only test variables, and what its tests do
-  and do not show.
+  executable and its modes, the debug-only test variables, what the window, menu
+  and icon show for a snapshot, and what its tests do and do not show.
 - [operations/agent-skills.md](./operations/agent-skills.md) - installing and
   refreshing the skills from `axross/skills`, the drift checks, and the register
   of deviations and gaps.

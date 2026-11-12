@@ -1793,7 +1793,9 @@ So a client written against today's agent keeps working against a later agent of
 version 2, and a later client works against today's agent by calling only what
 `welcome` lists. The library's `Client` ignores an unknown message type, field and
 topic and calls and subscribes only to what `welcome` lists, and its types are
-`#[non_exhaustive]`, as Protocol Version 2 above says. A change that removes or reinterprets anything above is a version 3, which is a new
+`#[non_exhaustive]`, as Protocol Version 2 above says. The app's view crate shows a
+state or reason it does not know in words instead of failing. A
+change that removes or reinterprets anything above is a version 3, which is a new
 framing decision for the maintainer, not an addition.
 
 ### The Snapshot
@@ -2937,11 +2939,12 @@ the gates that cover it, so a change to the library knows what the app relies on
   small exports: the stop reason codes as `agent::StopReason`, the handshake
   timeout `agent::HANDSHAKE_TIMEOUT`, the registration error's marker of a token
   GitHub rejects as `runtime::registration::REJECTED_MARK`, and the restart limit
-  as `instance::restart::WINDOW`, `DELAYS` and `STOPPING_FAILURE`. A later change to a public item the app uses
+  as `instance::restart::WINDOW`, `DELAYS` and `STOPPING_FAILURE`, whose figures the
+  app's banners quote. A later change to a public item the app uses
   breaks the app's build, which `mise run check` and the Windows job show, so the
   change and the app move together.
-- The app reads the library for the agent's entry and options and the hidden
-  `export`, `shim` and `vm-shim` commands. It adds no message to the protocol: a new
+- The app reads the library for the protocol's types, the agent's entry and options,
+  and the hidden `export`, `shim` and `vm-shim` commands. It adds no message to the protocol: a new
   message follows [Version Rules](#version-rules).
 - The app has its own `Cargo.lock`, [`deny.toml`](../../app/deny.toml) and
   [`rust-toolchain.toml`](../../app/rust-toolchain.toml). The toolchain file names
@@ -2960,8 +2963,8 @@ lints and tests them on Windows.
 | -------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | `fetch:app`                      | `cargo fetch --locked` in `app/`, which `cargo deny` reads                                                           |
 | `format:app`, `format:check:app` | `cargo fmt --all`, and `cargo fmt --all --check`, in `app/`                                                          |
-| `lint:app`                       | `cargo clippy --locked --all-targets -- -D warnings` over the `marshal-modes` package                                |
-| `test:app`                       | `cargo test --locked` over the same package                                                                          |
+| `lint:app`                       | `cargo clippy --locked --all-targets -- -D warnings` over the `marshal-modes` and `marshal-view` packages            |
+| `test:app`                       | `cargo test --locked` over the same two packages                                                                     |
 | `deny:app`                       | `cargo deny --locked check bans licenses sources` in `app/`, for `x86_64-pc-windows-msvc` and `aarch64-apple-darwin` |
 | `check:app-pins`                 | Both toolchain files name one channel                                                                                |
 
