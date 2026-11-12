@@ -30,8 +30,8 @@ use crate::runtime::clock::Clock;
 use crate::runtime::diagnostic::join_all;
 use crate::runtime::docker::{RunningGuard, forward_lines};
 use crate::runtime::docker_args::{
-    RUN_COMMAND, info_arguments, job_run_arguments, kill_arguments, probe_run_arguments,
-    remove_arguments, stop_arguments,
+    RUN_COMMAND, info_arguments, kill_arguments, probe_run_arguments, remove_arguments,
+    stop_arguments, vm_job_run_arguments,
 };
 use crate::runtime::exports::Exports;
 use crate::runtime::log::Log;
@@ -775,7 +775,7 @@ impl<C: Clock> Backend for TartBackend<C> {
             .borrow_mut()
             .insert(spec.name.clone(), vm.clone());
         let mut child = Guest::new(&self.client, &vm)
-            .launch(&job_run_arguments(spec))
+            .launch(&vm_job_run_arguments(spec))
             .map_err(|error| BackendError::new(text_of(&error)))?;
         if let Some(mut input) = child.stdin.take() {
             // a launcher that ends without reading all of it shows in its exit code;
