@@ -591,9 +591,12 @@ tables and arrays.
   directly above its header. When a blank line or the end of the file follows it, the
   blank lines above it go too. A comment set apart from the header by a blank line
   stays. In a list written inline, a removed entry takes the comment after it on its
-  line and the comment lines directly above it; the other entries keep theirs.
+  line and the comment lines directly above it; the other entries keep theirs, and
+  so does a comment set apart from it by a blank line.
 - An added entry goes after the last entry of its array, with a blank line before it.
-  A comment that ends the file stays at its end.
+  A comment that ends the file stays at its end. In a list written inline over
+  several lines, an added entry goes on a line of its own after the last entry, with
+  that entry's indentation, and the comment on the last entry's line stays there.
 - A new root table goes before the first `[[pool]]`, so a new `[lifecycle]` reads
   before the pools. When the file writes its pools inline, it goes at the end of the
   file.

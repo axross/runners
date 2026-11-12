@@ -1087,6 +1087,83 @@ runners = 1
     let one_line = format!("volumes = [{a}, {b}]\n");
     assert_eq!(remove(&one_line, 0), after(&format!("volumes = [{b}]\n")));
     assert_eq!(remove(&one_line, 1), after(&format!("volumes = [{a}]\n")));
+
+    let set_apart =
+        |last: &str| format!("volumes = [\n  {a}, # a\n\n  # storage volumes\n\n  {b},\n{last}]\n");
+    assert_eq!(
+        remove(&set_apart(&format!("  {c},\n")), 1),
+        after(&format!(
+            "volumes = [\n  {a}, # a\n\n  # storage volumes\n\n  {c},\n]\n"
+        ))
+    );
+    assert_eq!(
+        remove(&set_apart(""), 1),
+        after(&format!(
+            "volumes = [\n  {a}, # a\n\n  # storage volumes\n\n]\n"
+        ))
+    );
+
+    let shared_line = format!("volumes = [\n  {a},\n  {b}, {c} # bc\n]\n");
+    assert_eq!(
+        remove(&shared_line, 2),
+        after(&format!("volumes = [\n  {a},\n  {b}\n]\n"))
+    );
+}
+
+#[test]
+fn an_entry_added_to_a_list_written_over_several_lines_goes_on_a_line_of_its_own() {
+    let head = "\
+schema_version = 1
+routing_label = \"axpc\"
+image_name = \"i:1\"
+
+[[pool]]
+name = \"alpha\"
+repository = \"octo/hello\"
+runners = 1
+";
+    let edited = |list: &str, edit: Edit| {
+        let before = format!("{head}{list}");
+        let bytes = rewrite(before.as_bytes(), Profile::Axpc, None, &[edit]).unwrap();
+        String::from_utf8(bytes).unwrap()
+    };
+    let add = |list: &str| {
+        edited(
+            list,
+            Edit::AddEntry {
+                array: volumes_of(0),
+                values: volume("n", "/n"),
+            },
+        )
+    };
+    let after = |list: &str| format!("{head}{list}");
+    let a = "{ suffix = \"a\", mount_path = \"/a\" }";
+    let b = "{ suffix = \"b\", mount_path = \"/b\" }";
+    let n = "{ suffix = \"n\", mount_path = \"/n\" }";
+
+    let commented = format!("volumes = [\n  {a}, # a\n  {b}, # b\n]\n");
+    let added = add(&commented);
+    assert_eq!(
+        added,
+        after(&format!("volumes = [\n  {a}, # a\n  {b}, # b\n  {n},\n]\n"))
+    );
+    let new_entry = path(&[K(Key::Repositories), I(0), K(Key::Volumes), I(2)]);
+    assert_eq!(
+        edited(
+            added.strip_prefix(head).unwrap(),
+            Edit::RemoveEntry { path: new_entry }
+        ),
+        after(&commented)
+    );
+
+    assert_eq!(
+        add(&format!("volumes = [\n  {a},\n  {b}\n]\n")),
+        after(&format!("volumes = [\n  {a},\n  {b},\n  {n}\n]\n"))
+    );
+    assert_eq!(
+        add(&format!("volumes = [\n  {a},\n  {b} # b\n]\n")),
+        after(&format!("volumes = [\n  {a},\n  {b}, # b\n  {n}\n]\n"))
+    );
 }
 
 const DOTTED: &str = "\

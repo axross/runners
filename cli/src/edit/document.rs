@@ -268,7 +268,7 @@ fn add_entry(root: &mut Table, array: &KeyPath, values: &[(Key, Value)]) -> Resu
     }
     match parent.get_mut(name) {
         Some(Item::ArrayOfTables(tables)) => tables.push(entry),
-        Some(Item::Value(TomlValue::Array(list))) => list.push(entry.into_inline_table()),
+        Some(Item::Value(TomlValue::Array(list))) => push_to_list(list, entry.into_inline_table()),
         Some(_) => return Err("the key does not hold a list of tables"),
         None => {
             let mut tables = toml_edit::ArrayOfTables::new();
@@ -307,37 +307,33 @@ fn remove_entry(root: &mut Table, path: &KeyPath) -> Result<Option<Marked>, Reas
 
 /// removes the entry at `index` of an inline list with its own comments, and keeps
 /// the comments of the others. a list keeps the text before an entry in that entry's
-/// prefix, and the text after the last entry in its trailing text. up to the first
-/// line break, that text ends the line before: the comment after the previous
-/// entry's comma, or after the `[`. after the line break, it is the entry's own: the
-/// comment lines above it and its indentation.
-fn remove_from_list(list: &mut toml_edit::Array, index: usize) {
-    let removed = list
-        .get(index)
-        .and_then(|value| value.decor().prefix())
-        .and_then(|prefix| prefix.as_str())
-        .map(str::to_string);
+/// prefix, and the text after the last entry in its trailing text, or in that entry's
+/// suffix when no comma follows it. up to the first line break, that text ends the
+/// line before: the comment after the previous entry's comma, or after the `[`. after
+/// the line break come the entry's own comment lines and its indentation; comment
+/// lines that a blank line sets apart from the entry are not its own and stay.
+fn remove_from_list(list: &mut Array, index: usize) {
+    let removed = list.get(index).and_then(prefix_of);
+    let removed_suffix = (index + 1 == list.len())
+        .then(|| list.get(index).and_then(suffix_of))
+        .flatten();
     list.remove(index);
     let Some(removed) = removed else {
         return;
     };
     let (line_end, own) = split_at_line_break(&removed);
     let line_end = line_end.trim_end();
+    let kept = own.map_or("", set_apart);
     match list.get_mut(index) {
         Some(next) => {
-            let Some(after) = next
-                .decor()
-                .prefix()
-                .and_then(|prefix| prefix.as_str())
-                .map(str::to_string)
-            else {
+            let Some(after) = prefix_of(next) else {
                 return;
             };
             let prefix = match (own, split_at_line_break(&after).1) {
-                (_, Some(next_own)) => format!("{line_end}\n{next_own}"),
+                (_, Some(next_own)) => format!("{line_end}\n{kept}{next_own}"),
                 (Some(own), None) => {
                     let indentation = own.rsplit('\n').next().unwrap_or(own);
-                    format!("{line_end}\n{indentation}")
+                    format!("{line_end}\n{kept}{indentation}")
                 }
                 (None, None) => removed.clone(),
             };
@@ -347,14 +343,82 @@ fn remove_from_list(list: &mut toml_edit::Array, index: usize) {
             let Some(trailing) = list.trailing().as_str().map(str::to_string) else {
                 return;
             };
-            let trailing = match (own, split_at_line_break(&trailing).1) {
-                (_, Some(closing)) => format!("{line_end}\n{closing}"),
-                (Some(_), None) => format!("{line_end}\n"),
+            let closing = split_at_line_break(&trailing).1.or_else(|| {
+                removed_suffix
+                    .as_deref()
+                    .and_then(|s| split_at_line_break(s).1)
+            });
+            let trailing = match (own, closing) {
+                (_, Some(closing)) => format!("{line_end}\n{kept}{closing}"),
+                (Some(_), None) => format!("{line_end}\n{kept}"),
                 (None, None) => return,
             };
             list.set_trailing(trailing);
         }
     }
+}
+
+/// the part of an entry's own text that is not the entry's: everything up to and
+/// including its last blank line.
+fn set_apart(own: &str) -> &str {
+    let mut end = 0;
+    let mut at = 0;
+    for line in own.split_inclusive('\n') {
+        at += line.len();
+        if line.ends_with('\n') && line.trim().is_empty() {
+            end = at;
+        }
+    }
+    own.get(..end).unwrap_or_default()
+}
+
+/// appends `entry` to an inline list. in a list written over several lines it goes on
+/// a line of its own with the last entry's indentation, and the comment after the
+/// last entry stays on that entry's line.
+fn push_to_list(list: &mut Array, entry: toml_edit::InlineTable) {
+    let indentation = list
+        .iter()
+        .last()
+        .and_then(prefix_of)
+        .and_then(|prefix| prefix.rsplit_once('\n').map(|(_, rest)| rest.to_string()));
+    let Some(indentation) = indentation else {
+        list.push(entry);
+        return;
+    };
+    let mut value = TomlValue::InlineTable(entry);
+    let last_suffix = list.iter().last().and_then(suffix_of);
+    match last_suffix.as_deref().map(split_at_line_break) {
+        // no comma follows the last entry, so its line ends in its suffix: the comma
+        // goes before that line's comment, and the line break moves to the new entry.
+        Some((line_end, Some(rest))) => {
+            value
+                .decor_mut()
+                .set_prefix(format!("{}\n{indentation}", line_end.trim_end()));
+            value.decor_mut().set_suffix(format!("\n{rest}"));
+            if let Some(last) = list.iter_mut().last() {
+                last.decor_mut().set_suffix("");
+            }
+        }
+        _ => {
+            let trailing = list.trailing().as_str().unwrap_or_default().to_string();
+            let (line_end, rest) = split_at_line_break(&trailing);
+            value
+                .decor_mut()
+                .set_prefix(format!("{}\n{indentation}", line_end.trim_end()));
+            list.set_trailing(rest.map_or_else(String::new, |rest| format!("\n{rest}")));
+        }
+    }
+    list.push_formatted(value);
+}
+
+/// the text before `value` in its list, when it is held as text.
+fn prefix_of(value: &TomlValue) -> Option<String> {
+    value.decor().prefix()?.as_str().map(str::to_string)
+}
+
+/// the text after `value` in its list, before any comma, when it is held as text.
+fn suffix_of(value: &TomlValue) -> Option<String> {
+    value.decor().suffix()?.as_str().map(str::to_string)
 }
 
 /// `text` up to its first line break, and what follows the break when it has one.
