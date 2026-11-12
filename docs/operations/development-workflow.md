@@ -258,7 +258,9 @@ GitHub-hosted runner with `contents: read`, checks out the pull request, and run
 `mise run check`, which executes the pull request's own task definitions and the
 linters they call, including the CLI's Rust gates and, for the app under `app/`, its
 formatting, the lint and tests of its platform-independent crates, its cargo-deny
-run, and a check that both Rust toolchain files name one channel. The same workflow
+run, a check that both Rust toolchain files name one channel, and `check:app-lock`,
+which fails when the app's lockfile resolves a crate `marshal-cli` builds with to
+another version than the CLI's. The same workflow
 also runs a
 `rust` job that formats, lints, and tests the CLI on Linux, Windows, and macOS hosted
 runners, with four more steps on Linux only: the release-profile tests of the

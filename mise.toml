@@ -153,8 +153,15 @@ tree() {
 }
 status=0
 for target in x86_64-pc-windows-msvc aarch64-apple-darwin x86_64-unknown-linux-gnu; do
+  # each list is captured, so a failed cargo metadata or jq stops the task here
+  cli="$(tree cli "$target")"
+  app="$(tree app "$target")"
+  if [ -z "$cli" ] || [ -z "$app" ]; then
+    echo "error: no crates of marshal-cli were listed for ${target} from cli/Cargo.lock or app/Cargo.lock; the comparison cannot run." >&2
+    exit 1
+  fi
   if ! diff -u --label "cli/Cargo.lock (${target})" --label "app/Cargo.lock (${target})" \
-    <(tree cli "$target") <(tree app "$target"); then
+    <(echo "$cli") <(echo "$app"); then
     echo "error: app/Cargo.lock resolves marshal-cli's crates for ${target} to other versions than cli/Cargo.lock; pin them to the CLI's with 'cargo update -p <crate>@<version> --precise <version>' in app/." >&2
     status=1
   fi
