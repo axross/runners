@@ -161,6 +161,8 @@ pub struct Agent<'a, B, K, R, D> {
     drain: watch::Sender<bool>,
     /// what `ending` says when the agent ends for an update.
     update: RefCell<Option<UpdateEnding>>,
+    /// set when a stop all arrives during a drain's last steps, so the update keeps it.
+    stopped_in_drain: Cell<bool>,
 }
 
 /// a drain for an update, as the running phase keeps it.
@@ -233,6 +235,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             admitted: watch::Sender::new(false),
             drain: watch::Sender::new(false),
             update: RefCell::new(None),
+            stopped_in_drain: Cell::new(false),
         };
         agent.publish();
         agent
@@ -463,6 +466,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             board: &self.board,
             admitted: &self.admitted,
             drain: &self.drain,
+            times: self.settings.times,
         }
     }
 
@@ -533,8 +537,16 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                             ));
                             self.exit.set(Some(UPDATE));
                             *self.update.borrow_mut() = Some(UpdateEnding::new(&version, by_you));
+                            self.inner.borrow_mut().drain = Some(Drain {
+                                version,
+                                waiting: 0,
+                                deadline: SystemTime::now(),
+                            });
                             self.set_phase(Phase::Quitting);
-                            self.reply_state(reply);
+                            let _ = reply.send(Ok(json!({
+                                "state": self.phase_name(),
+                                "update": self.snapshot().agent.update,
+                            })));
                             return Next::Exit;
                         }
                         Routed::Begin(Method::Build, reply) => return Next::Build(reply),
@@ -617,6 +629,13 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                     return self.after_stop(Reason::by_you());
                 }
                 end = &mut cycle => {
+                    if matches!(end, CycleEnd::Drained) && draining.is_none() {
+                        // the drain was cancelled while the core ended for it, so the
+                        // runners run again
+                        self.log.info("The drain was cancelled as the runtime core ended, so it starts again.");
+                        cycle = Box::pin(self.core_cycle(plan, stop.subscribe()));
+                        continue;
+                    }
                     if let Some(drain) = &draining {
                         // nothing runs any more; the retained diagnostic containers are
                         // finalised as a stop does
@@ -764,6 +783,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
     fn end_for_update(&self, version: &str, stopped_by_you: bool) -> Next {
         self.inner.borrow_mut().drain = None;
         if self.exit.get().is_none() {
+            let stopped_by_you = stopped_by_you || self.stopped_in_drain.get();
             self.exit.set(Some(UPDATE));
             *self.update.borrow_mut() = Some(UpdateEnding::new(version, stopped_by_you));
         }
@@ -871,6 +891,9 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
         match self.route(call) {
             Routed::Answered => false,
             Routed::Stop(reply) => {
+                if self.inner.borrow().drain.is_some() {
+                    self.stopped_in_drain.set(true);
+                }
                 let _ = reply.send(Ok(json!({ "state": "stopped" })));
                 true
             }

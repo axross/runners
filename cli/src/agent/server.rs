@@ -606,6 +606,7 @@ impl<W: AsyncWrite + Abandon + Unpin> Session<'_, W> {
             Ok(Parsed::Call(mut method)) => {
                 if let Method::DrainForUpdate { requester, .. } = &mut method {
                     let (alive, closed) = oneshot::channel();
+                    self.drain_requests.retain(|sender| !sender.is_closed());
                     self.drain_requests.push(alive);
                     *requester = Some(closed);
                 }

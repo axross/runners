@@ -10,7 +10,7 @@ use std::task::Poll;
 
 use tokio::sync::watch;
 
-use crate::instance::lifecycle::{CoreFailure, Ending};
+use crate::instance::lifecycle::{CoreFailure, Ending, StopTimes};
 use crate::instance::runtime_core::{failure, verify_image};
 use crate::runtime::backend::Backend;
 use crate::runtime::board::Board;
@@ -40,6 +40,8 @@ pub struct AgentCore<'a, B, K, R> {
     /// true while the agent drains for an update: nothing registers, and no pool is
     /// prepared or started.
     pub drain: &'a watch::Sender<bool>,
+    /// the times of a stop, which an idle runner's stop during a drain uses.
+    pub times: StopTimes,
 }
 
 impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
@@ -52,6 +54,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
             log: self.log,
             board: self.board,
             drain: Some(self.drain),
+            stop_times: self.times,
         }
     }
 

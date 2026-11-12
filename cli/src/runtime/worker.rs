@@ -21,6 +21,7 @@ use super::pool::SlotSpec;
 use super::registration::{JitRequest, Registrar};
 use super::scrub::scrub_error_text;
 use super::token::{TokenFiles, TokenSource};
+use crate::instance::lifecycle::StopTimes;
 
 /// the delay after a slot's first failure.
 pub const INITIAL_BACKOFF: Duration = Duration::from_secs(5);
@@ -215,14 +216,18 @@ impl Pause {
 }
 
 /// warns that a slot waits and for what, then waits out the backoff, ending early on
-/// a stop; returns whether a stop was asked for.
+/// a stop or a drain; a slot whose attempt a drain ended neither warns nor lengthens
+/// its backoff.
 async fn back_off<K: Clock>(
     report: &Report<'_>,
     clock: &K,
     halt: &mut Halt,
     backoff: &mut Backoff,
     pause: Pause,
-) -> bool {
+) {
+    if halt.draining() {
+        return;
+    }
     report.log.warn(&format!(
         "{}: {} - retrying in {}s.",
         report.label,
@@ -230,7 +235,7 @@ async fn back_off<K: Clock>(
         backoff.current().as_secs()
     ));
     report.state(pause.state(report.log));
-    halt.sleep(clock, backoff.fail()).await
+    halt.sleep(clock, backoff.fail()).await;
 }
 
 /// how one attempt, from the host's preparation to its release, ended.
@@ -251,6 +256,7 @@ struct Context<'a, B, K, R> {
     registrar: &'a R,
     tokens: &'a dyn TokenSource,
     report: &'a Report<'a>,
+    times: StopTimes,
 }
 
 impl<B: Backend, K: Clock, R: Registrar> Context<'_, B, K, R> {
@@ -382,10 +388,11 @@ impl<B: Backend, K: Clock, R: Registrar> Context<'_, B, K, R> {
 }
 
 impl<B: Backend, K: Clock, R: Registrar> Context<'_, B, K, R> {
-    /// stops an idle runner's container during a drain, with a stop's grace; its run
+    /// stops an idle runner's container during a drain, with a stop's grace, and kills
+    /// it when the stop fails, which keeps the container for a finalisation; its run
     /// then ends, and the slot finalises it as after any job.
     async fn stop_idle(&self, name: &str) {
-        let times = crate::instance::lifecycle::StopTimes::default();
+        let times = self.times;
         self.report.log.info(&format!(
             "{}: the runner is idle during a drain for an update, so its container {name} is stopped.",
             self.report.label
@@ -395,9 +402,20 @@ impl<B: Backend, K: Clock, R: Registrar> Context<'_, B, K, R> {
             grace: times.grace,
             budget: times.stop_budget,
         };
-        if let Err(error) = self.backend.stop_containers(&request).await {
+        let Err(error) = self.backend.stop_containers(&request).await else {
+            return;
+        };
+        self.report.log.warn(&format!(
+            "{}: stopping the idle container {name} failed ({error}), so it is killed.",
+            self.report.label
+        ));
+        if let Err(error) = self
+            .backend
+            .kill_containers(&request.names, times.remove_budget)
+            .await
+        {
             self.report.log.warn(&format!(
-                "{}: stopping the idle container {name} failed: {error}",
+                "{}: killing the idle container {name} failed ({error}); the drain waits for it as if busy.",
                 self.report.label
             ));
         }
@@ -427,6 +445,7 @@ pub async fn run_slot<B: Backend, K: Clock, R: Registrar>(
         log,
         board,
         drain: None,
+        stop_times: StopTimes::default(),
     };
     run_slot_with(slot, &services, stop).await;
 }
@@ -443,6 +462,8 @@ pub struct Services<'a, B, K, R> {
     /// turns true while the agent drains for an update: the slot registers nothing,
     /// lets a busy job run to its end, stops an idle one, and waits until the drain ends.
     pub drain: Option<&'a watch::Sender<bool>>,
+    /// the times of a stop, which an idle runner's stop during a drain uses.
+    pub stop_times: StopTimes,
 }
 
 impl<B, K, R> Clone for Services<'_, B, K, R> {
@@ -467,6 +488,7 @@ pub async fn run_slot_with<B: Backend, K: Clock, R: Registrar>(
         log,
         board,
         drain,
+        stop_times,
     } = *services;
     let report = Report {
         log,
@@ -479,6 +501,7 @@ pub async fn run_slot_with<B: Backend, K: Clock, R: Registrar>(
         registrar,
         tokens,
         report: &report,
+        times: stop_times,
     };
     let mut halt = Halt {
         stop,
@@ -523,6 +546,7 @@ pub async fn run_slot_with<B: Backend, K: Clock, R: Registrar>(
 
         let pause = match context.attempt(slot, &mut halt).await {
             Attempt::Halted => continue,
+            Attempt::Ended if halt.draining() => continue,
             Attempt::Ended => {
                 log.info(&format!(
                     "{}: container exited successfully (GitHub owns the job result) - starting a replacement.",

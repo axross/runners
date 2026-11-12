@@ -14,6 +14,7 @@ use std::time::Duration;
 use marshal_cli::agent::Push;
 use marshal_cli::agent::machine::{Launch, UPDATE};
 use marshal_cli::agent::wire::UpdateEnding;
+use marshal_cli::runtime::backend::Backend;
 use marshal_cli::runtime::fake::Call;
 use serde_json::json;
 use support::agent::{Conn, ONE_POOL, Rig, TOKEN, TWO_POOLS};
@@ -191,7 +192,11 @@ async fn a_drain_while_stopped_by_you_ends_at_once_and_keeps_stopped_by_you() {
     let (ended, ()) = rig
         .drive(Launch::Stopped, |mut conn| async move {
             conn.client.subscribe().await.unwrap();
-            drain(&conn).await;
+            let answer = drain(&conn).await;
+            // the app waits on this process before it installs
+            assert_eq!(answer["state"], "quitting");
+            assert_eq!(answer["update"]["version"], "1.4.0");
+            assert_eq!(answer["update"]["pid"], std::process::id());
             let (reason, update) = ending(&mut conn).await;
             assert_eq!(reason, UPDATE);
             assert_eq!(update, Some(UpdateEnding::new("1.4.0", true)));
@@ -393,4 +398,99 @@ async fn a_core_failure_during_a_drain_runs_the_container_steps_and_starts_nothi
         "the busy runner's container was not finalised"
     );
     assert!(ended.kept.is_empty(), "{:?}", ended.kept);
+}
+
+/// a stop all that arrives while the drain's last container steps run, here held by a
+/// diagnostic export at the bound, still keeps the runners stopped after the update.
+#[tokio::test(flavor = "current_thread")]
+async fn stop_all_during_the_drains_last_steps_keeps_stopped_by_you() {
+    let rig = rig(ONE_POOL);
+    rig.write_config(&with_diagnostics(ONE_POOL));
+    rig.drain_bound.set(Duration::from_millis(300));
+    let gate = std::rc::Rc::new(tokio::sync::Notify::new());
+    let rig = &rig;
+    let (ended, ()) = rig
+        .drive(Launch::Running, |mut conn| async move {
+            let names = started(&conn, rig, 1).await;
+            rig.backend.print(&names[0], JOB);
+            conn.client.subscribe().await.unwrap();
+            rig.backend.state.borrow_mut().export_gate = Some(gate.clone());
+            drain(&conn).await;
+            conn.eventually("the export at the bound", || exported(rig, &names[0]))
+                .await;
+            let answer = conn.ok("stop_all").await;
+            assert_eq!(answer["state"], "stopped");
+            gate.notify_waiters();
+            let (reason, update) = ending(&mut conn).await;
+            assert_eq!(reason, UPDATE);
+            assert_eq!(update, Some(UpdateEnding::new("1.4.0", true)));
+        })
+        .await;
+    assert_eq!(ended.update, Some(UpdateEnding::new("1.4.0", true)));
+}
+
+/// a slot that backs off when the drain begins does not register again.
+#[tokio::test(flavor = "current_thread")]
+async fn a_backing_off_slot_registers_nothing_during_a_drain() {
+    let rig = rig(TWO_POOLS);
+    rig.clock.pause.set(Duration::from_millis(300));
+    let rig = &rig;
+    let (ended, ()) = rig
+        .drive(Launch::Running, |mut conn| async move {
+            let names = started(&conn, rig, 2).await;
+            rig.backend.print(&names[1], JOB);
+            conn.client.subscribe().await.unwrap();
+            // the first runner's job fails, so its slot backs off
+            rig.backend.state.borrow_mut().exits.push_back(Ok(1));
+            rig.backend
+                .stop_containers(&marshal_cli::runtime::backend::StopRequest {
+                    names: vec![names[0].clone()],
+                    grace: Duration::ZERO,
+                    budget: Duration::from_secs(1),
+                })
+                .await
+                .unwrap();
+            conn.until("a slot backing off", |s| {
+                s.pools
+                    .iter()
+                    .flat_map(|p| &p.runners)
+                    .any(|r| r.state == "backing_off")
+            })
+            .await;
+            drain(&conn).await;
+            tokio::time::sleep(Duration::from_millis(900)).await;
+            assert_eq!(containers(rig).len(), 2, "the backing-off slot registered");
+            rig.end_jobs().await;
+            assert_eq!(ending(&mut conn).await.0, UPDATE);
+        })
+        .await;
+    assert_eq!(ended.reason, UPDATE);
+    assert_eq!(containers(rig).len(), 2);
+}
+
+/// a pool that waited for a token does not start during a drain, and starts once the
+/// drain is cancelled.
+#[tokio::test(flavor = "current_thread")]
+async fn a_pool_waiting_for_a_token_starts_only_after_the_drain_is_cancelled() {
+    let rig = Rig::new(TWO_POOLS);
+    rig.store_token("o", "r", TOKEN);
+    rig.hold_jobs();
+    rig.backend.state.borrow_mut().hold_runs_by_name = true;
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            let names = started(&conn, rig, 1).await;
+            rig.backend.print(&names[0], JOB);
+            let requester = conn.another().await;
+            drain(&requester).await;
+            conn.set_token("o/d", TOKEN).await.unwrap();
+            tokio::time::sleep(Duration::from_millis(600)).await;
+            assert_eq!(containers(rig).len(), 1, "a pool started during the drain");
+            drop(requester);
+            conn.eventually("the late pool started", || containers(rig).len() >= 2)
+                .await;
+            rig.mark_running();
+            conn.ok("quit").await;
+        })
+        .await;
 }

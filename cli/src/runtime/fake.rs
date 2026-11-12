@@ -399,7 +399,7 @@ impl Backend for FakeBackend {
         if hold {
             let since = self.state.borrow().ended_names.len();
             loop {
-                ended_wait(&self.ended).await;
+                self.ended.notified().await;
                 if self.run_ended(&spec.name, since) {
                     break;
                 }
@@ -510,10 +510,6 @@ impl Backend for FakeBackend {
         let counted = state.bundle_counts.pop_front();
         counted.unwrap_or_else(|| Some(bundles_of(&state, &record.pool)))
     }
-}
-
-async fn ended_wait(ended: &Notify) {
-    ended.notified().await;
 }
 
 /// how many bundles the fake wrote for `pool`.

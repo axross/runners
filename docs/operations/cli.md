@@ -1644,7 +1644,8 @@ compared: a job's name is never kept, shown or forwarded.
 While the agent drains, nothing registers a runner: not a slot, not a pool prepared
 after a core failure or when Docker comes back, and not a pool that waited for a token.
 A slot that is registering or backing off stops without starting a container, an idle
-runner's container is stopped with a stop's grace, and a busy runner's container runs
+runner's container is stopped with a stop's grace, and killed when the stop fails,
+and a busy runner's container runs
 until it exits; its slot then finalises it as after any job and registers nothing. A
 drained slot is listed `stopped` with the reason "stopped for an update". The agent's
 state stays `running`, so an older app shows it running; `agent.update.waiting` counts
@@ -1652,6 +1653,13 @@ the runners still waited for, `deadline` is the bound's time in milliseconds sin
 Unix epoch, and `pid` is the agent's process ID, which the app waits on. Before the
 agent ends for an update, every connection receives `ending` with the reason `update`
 and an `update` field naming the version and whether the runners were stopped by you.
+A `drain_for_update` while stopped answers `{state, update}` with the state
+`quitting`, so the app has the process ID it waits on. A Stop all during the drain's
+last container steps also ends the agent with `stopped_by_you` true. If the requesting
+connection closes as the core ends for the drain, the core starts again. Only the
+container backend reads a runner's output today; a backend that does not, such as
+axmc's Tart backend, reports every runner as waited for, so its drain ends at the
+bound.
 
 ### The Token Store
 
