@@ -5,9 +5,8 @@ use crate::json::Object;
 use crate::profile::Profile;
 
 use super::budget::BUDGET_FIELDS;
-use super::limits::{CPU_RANGE, disk_reserve, format_nanos, linux_disk_too_small};
-use super::problem::{Key, KeyPath, Kind, Location, Problem, Segment};
-use super::reader::Reader;
+use super::problem::{Key, KeyPath, Kind, Location, Problem, Segment, Wording, rule_text};
+use super::reader::{Reader, Schema};
 use super::volumes::VOLUME_FIELDS;
 
 /// reads a host configuration written as JSON for one host profile.
@@ -42,28 +41,10 @@ impl JsonReader {
 }
 
 impl Reader for JsonReader {
-    fn routing_label(&self) -> Option<&str> {
-        Some(self.profile.routing_label())
-    }
-
-    fn carries_settings(&self) -> bool {
-        false
-    }
-
-    fn may_omit_os_and_volumes(&self) -> bool {
-        false
-    }
-
-    fn windows_pool_has_os(&self) -> bool {
-        false
-    }
-
-    fn joins_owner_and_repository(&self) -> bool {
-        false
-    }
-
-    fn applies_token_path_rules(&self) -> bool {
-        true
+    fn schema(&self) -> Schema<'_> {
+        Schema::Json {
+            routing_label: self.profile.routing_label(),
+        }
     }
 
     fn entry_path(&self, index: usize) -> String {
@@ -85,55 +66,25 @@ impl Reader for JsonReader {
 
     fn render(&self, problem: &Problem) -> String {
         let path = path_text(&problem.path);
-        let profile = self.profile;
-        let slots = key_name(Key::Slots);
+        let entry_path = |index| self.entry_path(index);
+        let wording = Wording {
+            host: self.profile.name(),
+            key_name,
+            entry_path: &entry_path,
+        };
+        if let Some(text) = rule_text(&problem.kind, &wording) {
+            return format!("{path}: {text}");
+        }
         match &problem.kind {
+            Kind::UnknownField(name) => format!("{path}.{name}: unknown field"),
             Kind::Missing => format!("{path}: required field is missing"),
             Kind::MustBe(what) => format!("{path}: must be {what}"),
-            Kind::MustBeIntegerUpTo(max) => format!("{path}: must be an integer from 1 to {max}"),
-            Kind::CpuCountOutOfRange => format!("{path}: {CPU_RANGE}"),
-            Kind::CpuCountRoundsToZero => format!(
-                "{path}: {CPU_RANGE}, and large enough not to be written as 0, which Docker reads as no limit"
-            ),
-            Kind::UnknownField(name) => format!("{path}.{name}: unknown field"),
             Kind::Unreadable(message) => format!("{path}: {message}"),
             Kind::NoRepositories => format!("{path}: must list at least one repository"),
-            Kind::LabelShape => format!(
-                "{path}: each label must be a string of letters, digits and . _ : / - starting with a letter or digit"
-            ),
-            Kind::PlatformLabel(label) => {
-                format!("{path}: '{label}' is always added, so list only non-platform labels")
-            }
-            Kind::ForeignPlatformLabel {
-                label,
-                os: Some(os),
-            } => format!(
-                "{path}: '{label}' is a platform label that a {os} pool on {profile} cannot provide, so list only non-platform labels"
-            ),
-            Kind::ForeignPlatformLabel { label, os: None } => {
+            Kind::ForeignPlatformLabel { label, .. } => {
                 format!("{path}: '{label}' is a platform label, so list only non-platform labels")
             }
-            Kind::DuplicateLabel(label) => format!("{path}: duplicate label '{label}'"),
-            Kind::VolumesUnsupported => {
-                format!("{path}: not supported on {profile}, because VM pools keep no volumes")
-            }
-            Kind::OsUnsupported(os) => {
-                format!("{path}: a {os} pool is not supported on {profile}")
-            }
             Kind::NewerSchemaVersion => format!("{path}: written by a newer version"),
-            Kind::MountPathHasDotDot => format!("{path}: must not contain '..'"),
-            Kind::DuplicateSuffix(suffix) => format!("{path}: duplicate suffix '{suffix}'"),
-            Kind::DuplicateMountPath(mount_path) => {
-                format!("{path}: duplicate mount path '{mount_path}'")
-            }
-            Kind::NameTooLong { length, max } => format!(
-                "{path}: name is {length} characters, at most {max} are allowed because it starts every runner name"
-            ),
-            Kind::RequiresDiagnostics => {
-                format!("{path}: requires {}", key_name(Key::Diagnostics))
-            }
-            Kind::DotPathComponents => format!("{path}: must not contain dot path components"),
-            Kind::InsideCheckout => format!("{path}: must be outside the checkout"),
             Kind::NameCollision {
                 name,
                 other_name,
@@ -150,38 +101,8 @@ impl Reader for JsonReader {
                 "{path}: token file '{token_path}' is already used at {}; each repository needs its own token",
                 self.entry_path(*other)
             ),
-            Kind::AmbiguousRouting { labels, other } => format!(
-                "{path}: ambiguous same-repository routing; labels '{labels}' also appear at {}",
-                self.entry_path(*other)
-            ),
-            Kind::MacosVmsOverLimit { total, limit } => format!(
-                "{path}: macOS pools total {total} VMs (the sum of their {slots}), above the limit of {limit}"
-            ),
-            Kind::CpuBudgetExceeded {
-                total_nanos,
-                budget_nanos,
-            } => format!(
-                "{path}: pools total {} CPUs (the sum of {slots} times {}), above the budget of {}",
-                format_nanos(*total_nanos),
-                key_name(Key::Cpus),
-                format_nanos(*budget_nanos)
-            ),
-            Kind::MemoryBudgetExceeded { total, budget } => format!(
-                "{path}: pools total {total} GB of memory (the sum of {slots} times {}), above the budget of {budget} GB",
-                key_name(Key::MemoryGb)
-            ),
-            Kind::DiskBudgetExceeded {
-                total,
-                reserve,
-                budget,
-            } => format!(
-                "{path}: pools total {total} GB of disk (the sum of {slots} times {}{}), above the budget of {budget} GB",
-                key_name(Key::DiskGb),
-                disk_reserve(*reserve)
-            ),
-            Kind::LinuxDiskTooSmall(min) => {
-                format!("{path}: {}", linux_disk_too_small(*min))
-            }
+            // rule_text words every other kind
+            _ => format!("{path}: {:?}", problem.kind),
         }
     }
 }

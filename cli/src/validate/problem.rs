@@ -5,6 +5,8 @@
 
 use crate::profile::Os;
 
+use super::limits::{CPU_RANGE, disk_reserve, format_nanos, linux_disk_too_small};
+
 /// a key of the host configuration, whatever a format calls it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Key {
@@ -237,4 +239,100 @@ pub struct Problem {
     pub kind: Kind,
     /// where the reader found the key, when its format has positions.
     pub location: Option<Location>,
+}
+
+/// says what a label must look like.
+pub const LABEL_SHAPE: &str =
+    "a string of letters, digits and . _ : / - starting with a letter or digit";
+
+/// what a format's wording of a rule depends on: the host's name, the keys' names, and
+/// where an earlier pool sits.
+pub struct Wording<'a> {
+    pub host: &'a str,
+    pub key_name: fn(Key) -> &'static str,
+    pub entry_path: &'a dyn Fn(usize) -> String,
+}
+
+/// the text of a problem, after its path, when it reads the same in every format
+/// apart from the names `wording` gives; `None` when each format words it itself.
+#[must_use]
+pub fn rule_text(kind: &Kind, wording: &Wording) -> Option<String> {
+    let Wording {
+        host,
+        key_name,
+        entry_path,
+    } = wording;
+    let per_pool = key_name(Key::Slots);
+    let text = match kind {
+        Kind::MustBeIntegerUpTo(max) => format!("must be an integer from 1 to {max}"),
+        Kind::CpuCountOutOfRange => CPU_RANGE.to_string(),
+        Kind::CpuCountRoundsToZero => format!(
+            "{CPU_RANGE}, and large enough not to be written as 0, which Docker reads as no limit"
+        ),
+        Kind::LabelShape => format!("each label must be {LABEL_SHAPE}"),
+        Kind::PlatformLabel(label) => {
+            format!("'{label}' is always added, so list only non-platform labels")
+        }
+        Kind::ForeignPlatformLabel {
+            label,
+            os: Some(os),
+        } => format!(
+            "'{label}' is a platform label that a {os} pool on {host} cannot provide, so list only non-platform labels"
+        ),
+        Kind::DuplicateLabel(label) => format!("duplicate label '{label}'"),
+        Kind::VolumesUnsupported => {
+            format!("not supported on {host}, because VM pools keep no volumes")
+        }
+        Kind::OsUnsupported(os) => format!("a {os} pool is not supported on {host}"),
+        Kind::MountPathHasDotDot => "must not contain '..'".to_string(),
+        Kind::DuplicateSuffix(suffix) => format!("duplicate suffix '{suffix}'"),
+        Kind::DuplicateMountPath(mount_path) => format!("duplicate mount path '{mount_path}'"),
+        Kind::NameTooLong { length, max } => format!(
+            "name is {length} characters, at most {max} are allowed because it starts every runner name"
+        ),
+        Kind::RequiresDiagnostics => format!("requires {}", key_name(Key::Diagnostics)),
+        Kind::DotPathComponents => "must not contain dot path components".to_string(),
+        Kind::InsideCheckout => "must be outside the checkout".to_string(),
+        Kind::AmbiguousRouting { labels, other } => format!(
+            "ambiguous same-repository routing; labels '{labels}' also appear at {}",
+            entry_path(*other)
+        ),
+        Kind::MacosVmsOverLimit { total, limit } => format!(
+            "macOS pools total {total} VMs (the sum of their {per_pool}), above the limit of {limit}"
+        ),
+        Kind::CpuBudgetExceeded {
+            total_nanos,
+            budget_nanos,
+        } => format!(
+            "pools total {} CPUs (the sum of {per_pool} times {}), above the budget of {}",
+            format_nanos(*total_nanos),
+            key_name(Key::Cpus),
+            format_nanos(*budget_nanos)
+        ),
+        Kind::MemoryBudgetExceeded { total, budget } => format!(
+            "pools total {total} GB of memory (the sum of {per_pool} times {}), above the budget of {budget} GB",
+            key_name(Key::MemoryGb)
+        ),
+        Kind::DiskBudgetExceeded {
+            total,
+            reserve,
+            budget,
+        } => format!(
+            "pools total {total} GB of disk (the sum of {per_pool} times {}{}), above the budget of {budget} GB",
+            key_name(Key::DiskGb),
+            disk_reserve(*reserve)
+        ),
+        Kind::LinuxDiskTooSmall(min) => linux_disk_too_small(*min),
+        Kind::Missing
+        | Kind::MustBe(_)
+        | Kind::UnknownField(_)
+        | Kind::Unreadable(_)
+        | Kind::NoRepositories
+        | Kind::ForeignPlatformLabel { os: None, .. }
+        | Kind::NewerSchemaVersion
+        | Kind::NameCollision { .. }
+        | Kind::TokenFileDiffers { .. }
+        | Kind::TokenFileReused { .. } => return None,
+    };
+    Some(text)
 }
