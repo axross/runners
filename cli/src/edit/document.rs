@@ -298,10 +298,70 @@ fn remove_entry(root: &mut Table, path: &KeyPath) -> Result<Option<Marked>, Reas
             Ok(Some(Marked::Entry))
         }
         Some(Item::Value(TomlValue::Array(list))) if *index < list.len() => {
-            list.remove(*index);
+            remove_from_list(list, *index);
             Ok(None)
         }
         _ => Err("the entry does not exist"),
+    }
+}
+
+/// removes the entry at `index` of an inline list with its own comments, and keeps
+/// the comments of the others. a list keeps the text before an entry in that entry's
+/// prefix, and the text after the last entry in its trailing text. up to the first
+/// line break, that text ends the line before: the comment after the previous
+/// entry's comma, or after the `[`. after the line break, it is the entry's own: the
+/// comment lines above it and its indentation.
+fn remove_from_list(list: &mut toml_edit::Array, index: usize) {
+    let removed = list
+        .get(index)
+        .and_then(|value| value.decor().prefix())
+        .and_then(|prefix| prefix.as_str())
+        .map(str::to_string);
+    list.remove(index);
+    let Some(removed) = removed else {
+        return;
+    };
+    let (line_end, own) = split_at_line_break(&removed);
+    let line_end = line_end.trim_end();
+    match list.get_mut(index) {
+        Some(next) => {
+            let Some(after) = next
+                .decor()
+                .prefix()
+                .and_then(|prefix| prefix.as_str())
+                .map(str::to_string)
+            else {
+                return;
+            };
+            let prefix = match (own, split_at_line_break(&after).1) {
+                (_, Some(next_own)) => format!("{line_end}\n{next_own}"),
+                (Some(own), None) => {
+                    let indentation = own.rsplit('\n').next().unwrap_or(own);
+                    format!("{line_end}\n{indentation}")
+                }
+                (None, None) => removed.clone(),
+            };
+            next.decor_mut().set_prefix(prefix);
+        }
+        None => {
+            let Some(trailing) = list.trailing().as_str().map(str::to_string) else {
+                return;
+            };
+            let trailing = match (own, split_at_line_break(&trailing).1) {
+                (_, Some(closing)) => format!("{line_end}\n{closing}"),
+                (Some(_), None) => format!("{line_end}\n"),
+                (None, None) => return,
+            };
+            list.set_trailing(trailing);
+        }
+    }
+}
+
+/// `text` up to its first line break, and what follows the break when it has one.
+fn split_at_line_break(text: &str) -> (&str, Option<&str>) {
+    match text.split_once('\n') {
+        Some((line_end, rest)) => (line_end, Some(rest)),
+        None => (text, None),
     }
 }
 

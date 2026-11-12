@@ -1028,6 +1028,67 @@ pool = [
     assert!(removed.contains("\"beta\""), "{removed}");
 }
 
+#[test]
+fn an_entry_removed_from_a_list_written_over_several_lines_takes_only_its_own_comments() {
+    let head = "\
+schema_version = 1
+routing_label = \"axpc\"
+image_name = \"i:1\"
+
+[[pool]]
+name = \"alpha\"
+repository = \"octo/hello\"
+runners = 1
+";
+    let remove = |list: &str, index: usize| {
+        let before = format!("{head}{list}");
+        let edit = Edit::RemoveEntry {
+            path: path(&[K(Key::Repositories), I(0), K(Key::Volumes), I(index)]),
+        };
+        let bytes = rewrite(before.as_bytes(), Profile::Axpc, None, &[edit]).unwrap();
+        String::from_utf8(bytes).unwrap()
+    };
+    let after = |list: &str| format!("{head}{list}");
+    let a = "{ suffix = \"a\", mount_path = \"/a\" }";
+    let b = "{ suffix = \"b\", mount_path = \"/b\" }";
+    let c = "{ suffix = \"c\", mount_path = \"/c\" }";
+
+    let trailing =
+        format!("volumes = [ # volumes\n  {a}, # first\n  {b}, # second\n  {c}, # third\n]\n");
+    assert_eq!(
+        remove(&trailing, 0),
+        after(&format!(
+            "volumes = [ # volumes\n  {b}, # second\n  {c}, # third\n]\n"
+        ))
+    );
+    assert_eq!(
+        remove(&trailing, 1),
+        after(&format!(
+            "volumes = [ # volumes\n  {a}, # first\n  {c}, # third\n]\n"
+        ))
+    );
+    assert_eq!(
+        remove(&trailing, 2),
+        after(&format!(
+            "volumes = [ # volumes\n  {a}, # first\n  {b}, # second\n]\n"
+        ))
+    );
+
+    let above = format!("volumes = [\n  # first\n  {a},\n  # second\n  {b},\n]\n");
+    assert_eq!(
+        remove(&above, 0),
+        after(&format!("volumes = [\n  # second\n  {b},\n]\n"))
+    );
+    assert_eq!(
+        remove(&above, 1),
+        after(&format!("volumes = [\n  # first\n  {a},\n]\n"))
+    );
+
+    let one_line = format!("volumes = [{a}, {b}]\n");
+    assert_eq!(remove(&one_line, 0), after(&format!("volumes = [{b}]\n")));
+    assert_eq!(remove(&one_line, 1), after(&format!("volumes = [{a}]\n")));
+}
+
 const DOTTED: &str = "\
 schema_version = 1
 routing_label = \"axpc\"

@@ -590,7 +590,8 @@ tables and arrays.
 - A removed pool or volume takes its keys, a pool's volumes, and the comment lines
   directly above its header. When a blank line or the end of the file follows it, the
   blank lines above it go too. A comment set apart from the header by a blank line
-  stays.
+  stays. In a list written inline, a removed entry takes the comment after it on its
+  line and the comment lines directly above it; the other entries keep theirs.
 - An added entry goes after the last entry of its array, with a blank line before it.
   A comment that ends the file stays at its end.
 - A new root table goes before the first `[[pool]]`, so a new `[lifecycle]` reads
