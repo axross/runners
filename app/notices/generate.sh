@@ -100,11 +100,16 @@ own_copyright_lines() {
 # texts than its clarification names files (one, for a choice of licences). cargo-about drops a
 # clarification whose checksum no longer matches with only a warning, and the crate
 # then falls back to the files it finds, which this notices.
+# sha256sum is in GNU coreutils; macOS without it has shasum, which prints the same.
+sha256() {
+  if command -v sha256sum >/dev/null; then sha256sum; else shasum -a 256; fi
+}
+
 clarified() {
   local hashes="${out}/copyright-lines.txt"
   { grep -h 'Copyright' "$1" || true; } | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' |
     LC_ALL=C sort -u | while IFS= read -r text; do
-    printf '%s\t%s\n' "$(printf '%s' "$text" | sha256sum | cut -d ' ' -f 1)" "$text"
+    printf '%s\t%s\n' "$(printf '%s' "$text" | sha256 | cut -d ' ' -f 1)" "$text"
   done >"$hashes"
   awk -v hashes="$hashes" -v about="${here}/about.toml" '
     BEGIN {
