@@ -43,10 +43,54 @@ pub const DOCKER_POLL_INTERVAL: Duration = Duration::from_secs(5);
 
 const MAX_LINE_BYTES: u64 = 64 * 1024;
 
-/// the Windows flag that gives a client its own process group, so a console Ctrl+C
+/// the Windows flag that gives a child its own process group, so a console Ctrl+C
 /// does not reach it.
-#[cfg(windows)]
-pub(crate) const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+#[cfg(any(windows, test))]
+const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+
+/// the Windows flag that keeps a console program from opening a console window of
+/// its own, which one started by a process with no console, such as the resident
+/// agent, would otherwise get for each child.
+#[cfg(any(windows, test))]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// the Windows creation flags of every client and exporter child, which every
+/// command builder applies through [`apply_creation_flags`].
+#[cfg(any(windows, test))]
+const CHILD_CREATION_FLAGS: u32 = CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW;
+
+/// gives `command` the Windows creation flags of a client or exporter child; its
+/// standard handles and its process group keep working. A test build records the
+/// flags on every platform, because a command does not report the flags it carries.
+#[cfg(any(windows, test))]
+pub(crate) fn apply_creation_flags(command: &mut Command) {
+    #[cfg(windows)]
+    command.creation_flags(CHILD_CREATION_FLAGS);
+    #[cfg(not(windows))]
+    let _ = command;
+    #[cfg(test)]
+    applied::record(CHILD_CREATION_FLAGS);
+}
+
+/// the creation flags the builders applied on this thread, for a test that cannot
+/// read them back from a command.
+#[cfg(test)]
+pub(crate) mod applied {
+    use std::cell::Cell;
+
+    thread_local! {
+        static LAST: Cell<Option<u32>> = const { Cell::new(None) };
+    }
+
+    pub(super) fn record(flags: u32) {
+        LAST.with(|last| last.set(Some(flags)));
+    }
+
+    /// the flags applied since the last call, if any were.
+    pub(crate) fn take() -> Option<u32> {
+        LAST.with(Cell::take)
+    }
+}
 
 /// the time bounds on the clients other than a job container's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -159,7 +203,8 @@ impl Captured {
 
 /// builds a client command with the JIT variable cleared, so only the one `run`
 /// that sets it carries a registration; the client is killed when its future is
-/// dropped and starts in its own process group, so a Ctrl+C reaches only the CLI.
+/// dropped and starts in its own process group, so a Ctrl+C reaches only the CLI,
+/// and on Windows without a console window of its own.
 pub(crate) fn client_command(
     program: &OsStr,
     environment: &[(OsString, OsString)],
@@ -176,8 +221,8 @@ pub(crate) fn client_command(
     }
     #[cfg(unix)]
     command.process_group(0);
-    #[cfg(windows)]
-    command.creation_flags(CREATE_NEW_PROCESS_GROUP);
+    #[cfg(any(windows, test))]
+    apply_creation_flags(&mut command);
     command
 }
 
@@ -862,5 +907,16 @@ mod tests {
             .map(|line| line.strip_prefix("INFO: ").unwrap())
             .collect();
         assert_eq!(texts, format!("{}<masked> and onnext", "a".repeat(before)));
+    }
+
+    #[test]
+    fn the_client_builder_applies_create_new_process_group_and_create_no_window() {
+        applied::take();
+        let _ = client_command(OsStr::new("docker"), &[], &["ps".to_string()]);
+        assert_eq!(
+            applied::take(),
+            Some(0x0000_0200 | 0x0800_0000),
+            "CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW"
+        );
     }
 }

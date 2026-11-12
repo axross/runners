@@ -192,6 +192,13 @@ of the **Golden VM**, named `marshal-job-<pool>-<slot>-<time>`, booted on
 and deleted when its job ends. A **Slot**'s Job VM is booted and idle while its
 runner waits for a job. See [conventions/security.md](./conventions/security.md#a-linux-job-on-axmc-runs-in-a-per-job-vm).
 
+**VM-Local Docker Socket** - the Docker socket, `/var/run/docker.sock`, of the Docker
+Engine inside a **Job VM**, which the VM runtime mounts into that VM's runner
+container from **Image Contract Version** 2, so a job step can run `docker`. It
+belongs to a VM that one job uses and that is deleted afterwards, never to a host,
+and the Docker runtime on axpc mounts no socket. See
+[conventions/security.md](./conventions/security.md#the-vm-local-docker-socket).
+
 **Build VM** - the temporary VM, named `marshal-build-linux-<time>`, in which
 `build --profile axmc` makes a new **Golden VM**. It is renamed to the golden name
 only when complete, and a failed or interrupted build deletes it, so the previous

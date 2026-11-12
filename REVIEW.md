@@ -159,9 +159,10 @@ Important; Codex review uses its native priority label.
   that downloads and executes remote code without a checksum are held to the
   same standard. There are two recorded exceptions, both in
   [Security](docs/conventions/security.md#pinning-convention): a step that
-  installs the Rust toolchain `cli/rust-toolchain.toml` names through `rustup`,
-  and the Node that `actions/setup-node` installs in `release.yaml`. Any other
-  unpinned download is still a finding.
+  installs the Rust toolchain `cli/rust-toolchain.toml` or
+  `app/rust-toolchain.toml` names through `rustup`, and the Node that
+  `actions/setup-node` installs in `release.yaml`. Any other unpinned download
+  is still a finding.
 - **Least-privilege workflow permissions.** Every workflow declares a
   top-level `permissions:` block that starts from `contents: read`. A broader
   scope is granted on the job that needs it, is justified in a comment or in
@@ -186,7 +187,11 @@ Important; Codex review uses its native priority label.
   per job through a just-in-time configuration. A long-lived registration
   token, a runner reused across jobs without a reset, and a container that
   runs privileged, mounts the Docker socket, or mounts the host's home
-  directory without a stated need are findings.
+  directory without a stated need are findings. The one socket that has a stated
+  need is the VM-local Docker socket that the axmc VM runtime mounts into the
+  runner container of a per-job VM; see
+  [Security](docs/conventions/security.md#the-vm-local-docker-socket). Any other
+  socket mount, and any socket mount on axpc, is a finding.
 - **Secrets stay out of logs and images.** A secret is never echoed, passed on
   a command line that a process listing exposes, written into an image layer
   (`ENV`, `ARG`, `COPY`), or left in a build cache. Two exceptions for a
@@ -234,14 +239,23 @@ Codex review uses its native priority label.
   `tart run` turns off graphics, the clipboard, audio and USB accessories, and
   carries no `--dir` and no `--rosetta`. Every Tart call sets `TART_NO_AUTO_PRUNE`,
   gets `marshal`'s `PATH`, and has a standard output that is not a terminal.
+- **The VM-local socket is the only socket.** The VM runtime's job container mounts
+  the job VM's own `/var/run/docker.sock` and nothing else of a host, and is never
+  privileged. The Docker runtime's run arguments (`job_run_arguments`) carry no
+  socket and no bind mount. A mount of any other socket, a host path, a socket on
+  axpc, a VM that serves more than one job, and a change to the socket's mount that
+  does not raise the image contract version with a new approved fingerprint are
+  findings. The image's Docker client and `docker` group id stay equal to the golden
+  VM's pins.
 - **Names and cleanup stay exact.** Cleanup at `start` matches only the job VMs of
   configured pools by their name form, so it never deletes a golden VM or a build
   VM. Only `build` deletes golden VMs, and only `build` and a build VM's own shim
   delete a build VM. A looser match could delete a VM `marshal` does not own.
 - **Pins hold.** The base image is pinned by digest, the current pin is never on
-  the retired list, Docker Engine comes from Docker's apt repository at pinned
-  versions after the signing key's fingerprint is checked, and the tested Tart and
-  Softnet versions agree between the CLI and the host document.
+  the retired list, Docker Engine, and the runner image's Docker client, come from
+  Docker's apt repository at pinned versions after the signing key's fingerprint is
+  checked, and the tested Tart and Softnet versions agree between the CLI and the
+  host document.
 
 The Dockerfile lens's rule against `apt-get upgrade` is about the runner image. The
 golden VM's provisioning upgrades the base's Ubuntu packages on purpose, so a
@@ -308,11 +322,14 @@ Apply the lens for each kind of file in the diff.
   and a signing job or step added without being added to `check-release-shape.mjs` and
   its test. A change that relaxes the record, or touches the signing job, needs the
   maintainer's review.
-- **Rust.** The CLI under `cli/` has no `unsafe` and no panic on an input path
-  (`unwrap`, `expect`, `panic!`, indexing); it collects every error in the order
+- **Rust.** The CLI under `cli/` and the app's crates under `app/` have no
+  `unsafe` and no panic on an input path (`unwrap`, `expect`, `panic!`,
+  indexing). The CLI collects every error in the order
   [CLI](docs/operations/cli.md) states under Validation Rules rather than returning
-  the first. A new crate has an
-  entry in [CLI](docs/operations/cli.md) and passes `cli/deny.toml`. A new
+  the first. A new CLI crate has an
+  entry in [CLI](docs/operations/cli.md) and passes `cli/deny.toml`; a new direct
+  dependency of an app crate is recorded in [Security](docs/conventions/security.md#the-apps-dependencies)
+  and passes `app/deny.toml`. A new
   procedural-macro crate, such as one a derive feature brings, is flagged for the
   maintainer's review, and so is a new duplicate-version skip. No token or JIT
   configuration reaches a `Debug` form, a log line, an error message, a command
@@ -394,6 +411,9 @@ mechanical defect named below:
   CLI's tests (`mise run test:rust`), and its licence, source, and duplicate checks
   (`mise run deny:rust`). The advisory check runs in its own workflow and is not
   required.
+- The app's clippy (`mise run lint:app`), tests (`mise run test:app`), licence,
+  source, and duplicate checks (`mise run deny:app`), toolchain pin check
+  (`mise run check:app-pins`), and lockfile check (`mise run check:app-lock`).
 - The agreement of `skills-lock.json` with `.claude/skills/`
   (`mise run check:skills`). Whether an installed copy matches its upstream
   source is not checked in CI and remains reportable.

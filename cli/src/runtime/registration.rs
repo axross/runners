@@ -21,6 +21,10 @@ pub const GITHUB_API: &str = "https://api.github.com";
 /// repository-level runner has none to choose.
 pub const RUNNER_GROUP_ID: u64 = 1;
 
+/// what a registration's error text holds when GitHub does not accept the token, which
+/// is its 401; the app recognises a rejected token by it.
+pub const REJECTED_MARK: &str = "status code does not indicate success: 401";
+
 /// the API version every request names.
 pub const API_VERSION: &str = "2022-11-28";
 /// the media type every request accepts.

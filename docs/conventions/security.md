@@ -5,16 +5,17 @@ under [`.github/`](../../.github) is pinned, what a workflow may be granted, how
 release of the CLI is published and its
 macOS files are signed, where
 a self-hosted runner may and may not run, what a runner's shared storage exposes,
-and what is never committed. It does not cover application-level security, such as
-input validation or the OWASP-style concerns the installed `application-security`
-capability owns.
+what the Windows app's processes may do, and what is never committed. It
+does not cover general application-level security, such as input validation or the
+OWASP-style concerns the installed `application-security` capability owns.
 
 The runner image under [`images/actions-runner/`](../../images/actions-runner) and
 the host configuration under
 [`hosts/windows-docker-desktop/`](../../hosts/windows-docker-desktop) exist and are
 reviewed against the sections on runner trust and shared storage below, and the
 macOS host's Linux VM runtime ([#74](https://github.com/axross/runners/issues/74))
-against the sections on a per-job VM, Softnet and the pinned programs. The
+against the sections on a per-job VM, the VM-local Docker socket, Softnet and the
+pinned programs. The
 agent-host configuration this repository is also for does not exist yet; those
 sections are the constraints it will be reviewed against.
 
@@ -100,6 +101,17 @@ computed from the real download, and are not covered by Dependabot. Dependabot
 does cover the CLI's own dependencies: its `cargo` and `rust-toolchain` entries
 for `/cli` propose the crate and toolchain refreshes as pull requests.
 
+The app under [`app/`](../../app) is pinned the same way, with its own
+[`app/Cargo.lock`](../../app/Cargo.lock), used with `--locked` everywhere, its own
+[`app/deny.toml`](../../app/deny.toml), and
+[`app/rust-toolchain.toml`](../../app/rust-toolchain.toml), which names the CLI's
+channel; `mise run check:app-pins` fails when the two files differ, and Dependabot's
+`rust-toolchain` entry bumps both in one pull request. `mise run check:app-lock`
+fails when the app's lockfile resolves a crate `marshal-cli` builds with to another
+version than the CLI's. Its `cargo` entry covers the
+app's crates, and the weekly advisory check covers its lockfile. [The App's
+Dependencies](#the-apps-dependencies) holds the rest of its policy.
+
 The Windows installer's tool is pinned the same way. Besides the Rust toolchain,
 whose exception is recorded below, WiX is the one tool the release build fetches.
 [`fetch-wix.sh`](../../.github/scripts/fetch-wix.sh) downloads the NuGet package
@@ -152,7 +164,8 @@ component's hash against that manifest, but it does not verify the manifest's
 signature, so the trust rests on the HTTPS connection to the Rust project's
 distribution server. Recording the manifest's hash here would need a refresh for
 every release without adding a signature check. A step that installs the toolchain
-`cli/rust-toolchain.toml` names through `rustup` is this recorded exception.
+`cli/rust-toolchain.toml` or `app/rust-toolchain.toml` names through `rustup` is this
+recorded exception.
 
 The other is the Node that `actions/setup-node` installs in `release.yaml`, at the
 exact version in `mise.toml`. It takes Node from the runner's tool cache or from
@@ -166,6 +179,41 @@ nodejs.org, again with no checksum. That path is outside the joint-trust argumen
 since the Node.js project is a separate party, and it is accepted as a residual
 risk of the release workflow, below. Any other unpinned download remains a
 finding.
+
+## The App's Dependencies
+
+The app's workspace under [`app/`](../../app) links the `marshal-cli` library, and
+its policy differs from the CLI's in the duplicates and procedural macros it accepts.
+The pinning of the lockfile and the toolchain is in
+[Pinning Convention](#pinning-convention).
+[`app/deny.toml`](../../app/deny.toml) is the app's `cargo-deny` configuration, and
+`mise run deny:app` runs its bans, licences and sources checks for the two targets the
+app is built for, `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`.
+
+- **Registry and licences.** crates.io only, and the CLI's licence allowlist: `MIT`,
+  `Apache-2.0`, `Unicode-3.0`, `ISC`, `BSD-3-Clause` and `0BSD`, an `OR` expression
+  accepted when one alternative is on the list. Any crate under another licence
+  returns to the maintainer.
+- **Duplicates are reported, not denied.** `deny.toml` sets `multiple-versions` to
+  `warn`, so a duplicate version needs no skip. This is the app only: the CLI's
+  duplicates stay denied beyond its two listed skips. Wildcard version requirements
+  are denied except for the path dependencies the app's crates and `marshal-cli` have
+  on each other.
+- **Procedural macros are accepted as a class, in the app only.** A review of each
+  crate would add nothing the lockfile's checksums and `cargo-deny` do not already
+  give. `app/Cargo.lock` holds exactly the crates and versions `cli/Cargo.lock`
+  resolves for `marshal-cli`, for Windows, macOS and Linux, and `mise run check`
+  fails otherwise (`check:app-lock`), so a procedural-macro crate that enters through
+  `marshal-cli` changes `cli/Cargo.lock`, and the CLI's rule, which needs the
+  maintainer's review, applies to it there.
+- **Direct dependencies.** The `marshal-modes` crate depends only on `marshal-cli`,
+  by path. The token store's crates come through the library, and
+  [CLI](../operations/cli.md#dependencies) lists them. A new direct dependency of an
+  app crate MUST be added here with its reason, and needs the maintainer's review.
+- **Refreshes.** Dependabot's `cargo` entry for `/app` proposes the crate refreshes,
+  and a red pull request is fixed there, as for the CLI. A refresh of a crate
+  `marshal-cli` uses fails `check:app-lock` until `cli/Cargo.lock` takes the same
+  version in the same change.
 
 ## `actions/*` Stays on Major Tags
 
@@ -753,7 +801,9 @@ Design rules that follow, which REVIEW.md applies:
 - A container does not run privileged, does not mount the host's container socket
   or home directory, and has its egress limited where the host's network reaches
   anything sensitive. A justified exception is stated where it is declared;
-  the LAN egress section below is one.
+  the LAN egress section below is one, and [The VM-Local Docker Socket](#the-vm-local-docker-socket)
+  is another: the one socket a container may mount is that of the per-job VM it runs
+  in, never a host's.
 - Each shared mount is declared with the reason it exists and the trust level of
   every job that can write to it.
 
@@ -978,6 +1028,36 @@ Residual risks, accepted on a single-user host:
   JIT configuration a runtime-core panic's message carried would reach the log
   unmasked, as for `start`.
 
+## The App Surface
+
+The Windows app will run as the signed-in user, beside an agent of the same
+executable that holds the pools' tokens, so the question is what the app may do with
+that reach. Nothing builds the app's executable yet, so these rules bind the crates
+that will make it up.
+[App](../operations/app.md) owns how it works.
+
+- **The app process is a client only.** It never holds the instance lock, reads the
+  configuration, touches the token store or runs Docker: it talks to the agent in
+  protocol version 2 and will pass a newly entered token to it in `token_set`, then
+  drop it. One executable runs as both, so the operating system cannot enforce the rule
+  for the app mode. Only the `marshal-modes` crate reaches the library's agent entry,
+  and only when the executable is started in its agent mode. A review checks that no
+  other app crate takes the lock, opens the store or starts `docker`.
+- **The debug-only test variables are ignored in a release build.** A debug build's
+  agent reads `MARSHAL_TEST_ROOT`, `MARSHAL_TEST_DOCKER` and
+  `MARSHAL_TEST_GITHUB_API`, so a test can run the executable against a scratch host.
+  A release build ignores all three, so no environment can move the lock, channel,
+  log, configuration, `docker` program or GitHub address of an installed Marshal, as
+  for the CLI under [One Instance per Machine](#one-instance-per-machine-reached-only-by-its-user).
+
+Residual risks, accepted on a single-user host:
+
+- Whether the exporter or one of the agent's `docker` clients shows a console window
+  (each is created with `CREATE_NO_WINDOW`, asserted at its command builder, but no
+  check observes the window) is shown only on axpc;
+  [App](../operations/app.md#verification-status) lists what has and has not been
+  shown.
+
 ## Tokens Stay Out of the Log, and Job Clients End With `start`
 
 `start` holds every pool's token and each slot's JIT configuration for as long as it
@@ -1159,7 +1239,7 @@ blocking mechanism is verified.
 The axmc host runs each `os: "linux"` pool's job in its own Tart virtual machine
 (VM), cloned from the golden VM for that job and deleted after it, so a job meets a
 single-tenant kernel and filesystem that nothing outlives. This section and the
-four after it are the constraints the VM runtime of
+five after it are the constraints the VM runtime of
 [#74](https://github.com/axross/runners/issues/74) is reviewed against.
 [macOS Runner Host](../operations/macos-runner-host.md) owns the procedure, and
 [CLI](../operations/cli.md) the runtime.
@@ -1273,6 +1353,12 @@ request to axmc ends it and needs a new decision.
 - **Tart**, a pinned external program that `marshal` calls and never bundles.
 - **Guest-agent output**, which the CLI bounds and treats as data.
 - **Host disk use by a root job**, limited by the per-VM disk cap.
+- **Root in the VM, held by any job**, since the VM-local Docker socket gives it with
+  one `docker run --privileged`. The job can send raw frames and rewrite the guest's
+  network stack, so Softnet's filtering is the only network boundary in front of the
+  host. It can also replace the guest's binaries, including the guest agent, so
+  guest-agent output is controlled by the job and bounded only by the 64 KiB cut-off
+  and, for the diagnostics export, the strict archive reader.
 - **A globally routable address on one of the Mac's interfaces**, which Softnet's
   global allowance would reach through the gateway. The maintainer runs the host on
   networks that give the Mac private addresses.
@@ -1280,6 +1366,55 @@ request to axmc ends it and needs a new decision.
   networks and VPNs, though their addresses stay blocked.
 - **The JIT configuration**, which the job can read inside its VM. It is single-use
   and already in the runner's environment.
+
+## The VM-Local Docker Socket
+
+From image contract 2, the runner container of an axmc job mounts the Docker socket of
+the VM it runs in, `/var/run/docker.sock`, so a job step can use `docker run`. The
+socket belongs to the VM's own Docker Engine, in a VM that is cloned for one job and
+deleted afterwards, and not to a host, so no other job and no host process shares it.
+That is why the rule that a container never mounts a container socket does not reach
+it. The permission is narrow:
+
+- The runtime that mounts it is the VM runtime, and only into the runner container,
+  as the one extra option `--mount type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock`
+  of `vm_job_run_arguments`. The Docker runtime on axpc MUST NOT mount any socket,
+  because Docker Desktop's engine is the host's and serves every pool, and its list,
+  `job_run_arguments`, carries none. `marshal` MUST NOT start a runner container
+  privileged, with a host's Docker socket, or with any other bind mount. Tests in
+  `docker_backend.rs`, `tart_backend.rs` and `runtime::docker_args` hold each side,
+  and the socket mount is part of the fingerprint in `image::contract` that approves
+  contract 2.
+- A job that can use the socket is root in its VM: it can start privileged containers,
+  mount the VM's filesystem, and read the JIT configuration, which was already in the
+  runner's environment. Before the socket a job was root only inside an unprivileged
+  container, so root in the VM needed a container escape; now one
+  `docker run --privileged` gives it. The container stops being a layer in front of
+  Softnet and the guest-agent channel, and
+  [the accepted host-facing surface](#the-accepted-host-facing-surface-of-a-job-vm)
+  names what that root can touch. It reaches nothing beyond the VM except what the VM
+  can already reach, under [Softnet's rules](#softnet-confines-a-job-vms-network), the
+  per-VM disk cap, and the VM's own vCPUs and memory.
+- The containers a job starts through the socket are siblings of the runner container
+  inside the VM, not children of it. The runner container's CPU quota, affinity and
+  memory limit, which [CPU Placement Inside a Job VM](#cpu-placement-inside-a-job-vm)
+  holds equal to the VM's, do not reach them, and the VM's vCPUs and memory bound them
+  instead.
+- The socket's group is the VM's `docker` group, which the golden VM creates with the
+  id 123 (`golden::pins::DOCKER_GROUP_ID`). The runner image's `docker` group, which
+  its `runner` user belongs to, has that id too. Docker gives a container's user the
+  groups that the image's `/etc/group` lists for it, so the runner uses the socket
+  with no `--group-add` and no change to the container's user. The match grants
+  nothing the mount does not, since the socket is root in the VM already. A base
+  image that gave the group another id fails the image build, and a VM whose `docker`
+  group has another id fails the golden VM build.
+- The runner image's Docker client is pinned like the golden VM's Docker Engine; see
+  [Tart, Softnet, and the Golden VM Are Pinned](#tart-softnet-and-the-golden-vm-are-pinned).
+
+The permission holds only inside a per-job VM. A change that mounts a socket on axpc,
+mounts a host's socket, or gives a VM to more than one job ends it and needs a new
+decision. [macOS Runner Host](../operations/macos-runner-host.md) records that the
+mount and the group match have not run on a Mac.
 
 ## Tart, Softnet, and the Golden VM Are Pinned
 
@@ -1307,9 +1442,14 @@ what a reviewed change changes.
   upgrades the base's Ubuntu packages, so it picks up security fixes; the golden VM
   version goes up whenever the pin, the provisioning steps, the launcher or the
   Docker Engine versions change.
-- The runner image's arm64 build in CI runs on `ubuntu-24.04-arm`, a GitHub-hosted
-  runner, tags the image on the runner and never pushes it, and its job holds only
-  `contents: read`.
+- The runner image's Docker client MUST come from Docker's apt repository at a pinned
+  package version, after the repository's signing key is checked against the same
+  recorded fingerprint, and the image keeps neither the repository's source nor its
+  key. The image's pins are the golden VM's, and a unit test holds the Dockerfile to
+  `golden::pins`, so a change of one without the other fails.
+- The runner image's arm64 build and smoke test in CI run on `ubuntu-24.04-arm`, a
+  GitHub-hosted runner, tag the image on the runner and never push it, and their job
+  holds only `contents: read`.
 - The VM runtime adds no crate to the CLI.
 
 ## Nothing Identifying or Secret Is Committed
