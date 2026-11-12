@@ -458,8 +458,8 @@ Every client starts in its own process group: `process_group(0)` on Unix, and
 only, which can stop the containers in order. A test reads the group of every client
 the fake `docker` sees on Linux and macOS; no safe API reads a Windows process's
 creation flags back. On Windows every client and the exporter child also get
-`CREATE_NO_WINDOW`, so a resident agent that has no console does not open a console
-window for each `docker` call. This applies to the
+`CREATE_NO_WINDOW`, so a resident agent that has no console, as the app's agent has
+none, does not open a console window for each `docker` call. This applies to the
 foreground commands too, since they share the builders. Their piped input and output
 and their process group are unchanged. How a terminal run behaves on Windows with the
 flag, including `start` and Ctrl+C, is not established here: the Windows CI tests and
@@ -1794,7 +1794,8 @@ version 2, and a later client works against today's agent by calling only what
 `welcome` lists. The library's `Client` ignores an unknown message type, field and
 topic and calls and subscribes only to what `welcome` lists, and its types are
 `#[non_exhaustive]`, as Protocol Version 2 above says. The app's view crate shows a
-state or reason it does not know in words instead of failing. A
+state or reason it does not know in words instead of failing, and an `ending` reason
+it does not know is logged and ignored, so a later reason does not end the app. A
 change that removes or reinterprets anything above is a version 3, which is a new
 framing decision for the maintainer, not an addition.
 
@@ -2943,9 +2944,10 @@ the gates that cover it, so a change to the library knows what the app relies on
   app's banners quote. A later change to a public item the app uses
   breaks the app's build, which `mise run check` and the Windows job show, so the
   change and the app move together.
-- The app reads the library for the protocol's types, the agent's entry and options,
-  and the hidden `export`, `shim` and `vm-shim` commands. It adds no message to the protocol: a new
-  message follows [Version Rules](#version-rules).
+- The app reads the library for the protocol's types and client, the agent's entry
+  and options, the token store's interface and refusals, the instance roots, the
+  hidden `export`, `shim` and `vm-shim` commands, and the `Secret` type that masks a token. It
+  adds no message to the protocol: a new message follows [Version Rules](#version-rules).
 - The app has its own `Cargo.lock`, [`deny.toml`](../../app/deny.toml) and
   [`rust-toolchain.toml`](../../app/rust-toolchain.toml). The toolchain file names
   the CLI's channel, and Dependabot is set to bump both files in one pull request. The CLI's
@@ -2959,14 +2961,14 @@ the gates that cover it, so a change to the library knows what the app relies on
 **Gates.** `mise run check` covers the app's crates on Linux, and the Windows job
 lints and tests them on Windows.
 
-| Task                             | Runs                                                                                                                 |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `fetch:app`                      | `cargo fetch --locked` in `app/`, which `cargo deny` reads                                                           |
-| `format:app`, `format:check:app` | `cargo fmt --all`, and `cargo fmt --all --check`, in `app/`                                                          |
-| `lint:app`                       | `cargo clippy --locked --all-targets -- -D warnings` over the `marshal-modes` and `marshal-view` packages            |
-| `test:app`                       | `cargo test --locked` over the same two packages                                                                     |
-| `deny:app`                       | `cargo deny --locked check bans licenses sources` in `app/`, for `x86_64-pc-windows-msvc` and `aarch64-apple-darwin` |
-| `check:app-pins`                 | Both toolchain files name one channel                                                                                |
+| Task                             | Runs                                                                                                                                         |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fetch:app`                      | `cargo fetch --locked` in `app/`, which `cargo deny` reads                                                                                   |
+| `format:app`, `format:check:app` | `cargo fmt --all`, and `cargo fmt --all --check`, in `app/`                                                                                  |
+| `lint:app`                       | `cargo clippy --locked --all-targets -- -D warnings` over the `marshal-modes`, `marshal-view`, `marshal-session` and `marshal-tray` packages |
+| `test:app`                       | `cargo test --locked` over the same four packages                                                                                            |
+| `deny:app`                       | `cargo deny --locked check bans licenses sources` in `app/`, for `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`                         |
+| `check:app-pins`                 | Both toolchain files name one channel                                                                                                        |
 
 `format:check` and `lint` call the app's formatting and lint tasks, and `check` calls
 the rest, so one run covers both workspaces.

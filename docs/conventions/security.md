@@ -199,7 +199,12 @@ app is built for, `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`.
 - **Direct dependencies.** The `marshal-modes` crate depends only on `marshal-cli`,
   by path, and the `marshal-view` crate on `marshal-cli`, by path, `serde`, which
   serialises the view, and `serde_json`, which reads GitHub's message from a refused
-  token's reason, at versions the library already builds, so they add no crate. The token store's crates come through the library, and
+  token's reason, at versions the library already builds, so they add no crate. The
+  `marshal-session` crate depends on those three by path, on `serde` and
+  `serde_json`, and on `tokio` for the session's timers and its one task, at the
+  version the library already builds, so it adds no crate either. The `marshal-tray`
+  crate depends on `marshal-view`, by path, and on `windows-registry` 0.6 on Windows,
+  which reads the taskbar's mode and the time zone's bias without `unsafe` code. The token store's crates come through the library, and
   [CLI](../operations/cli.md#dependencies) lists them. A new direct dependency of an
   app crate MUST be added here with its reason, and needs the maintainer's review.
 - **Refreshes.** Dependabot's `cargo` entry for `/app` proposes the crate refreshes,
@@ -984,20 +989,32 @@ that will make it up.
   protocol version 2 and will pass a newly entered token to it in `token_set`, then
   drop it. One executable runs as both, so the operating system cannot enforce the rule
   for the app mode. Only the `marshal-modes` crate reaches the library's agent entry,
-  and only when the executable is started in its agent mode. A review checks that no
+  and only when the executable is started in its agent mode; the app's session
+  reaches the agent through the library's client alone. A review checks that no
   other app crate takes the lock, opens the store or starts `docker`.
+- **A token passes only through `token_set`.** The session trims it, refuses an empty
+  one or one over 1280 UTF-16 code units, wraps it in the library's `Secret`, sends it
+  once and drops it. No view state, log line or error text of the app holds a token,
+  and the app's log masks a word shaped like a GitHub token as defence in depth.
 - **The debug-only test variables are ignored in a release build.** A debug build's
   agent reads `MARSHAL_TEST_ROOT`, `MARSHAL_TEST_DOCKER` and
   `MARSHAL_TEST_GITHUB_API`, so a test can run the executable against a scratch host.
   A release build ignores all three, so no environment can move the lock, channel,
   log, configuration, `docker` program or GitHub address of an installed Marshal, as
   for the CLI under [One Instance per Machine](#one-instance-per-machine-reached-only-by-its-user).
+- **The app starts its agent from a file it checked.** It starts it from its own
+  executable's absolute path as a plain detached child, never through Tauri's shell
+  plugin, and never from a file that is missing or is no longer the file the app
+  started from. The agent ends within 5 s of the file it started from being moved,
+  renamed, replaced or deleted, with the reason `executable_changed`, and the app ends
+  with it.
 
 Residual risks, accepted on a single-user host:
 
-- Whether the exporter or one of the agent's `docker` clients shows a console window
-  (each is created with `CREATE_NO_WINDOW`, asserted at its command builder, but no
-  check observes the window) is shown only on axpc;
+- Whether the agent, the exporter or one of their `docker` clients shows a console
+  window (the agent is created with `DETACHED_PROCESS`, and the exporter and the
+  clients with `CREATE_NO_WINDOW`, each asserted at its command builder, but no check
+  observes the window) is shown only on axpc;
   [App](../operations/app.md#verification-status) lists what has and has not been
   shown.
 

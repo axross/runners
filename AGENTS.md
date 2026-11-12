@@ -15,8 +15,8 @@ example host configuration, and the CLI under `cli/`, a Rust command line tool
 that validates a host configuration, builds its runner image with `build`, and
 runs a host's pools with `start`, `stop`, `restart`, `status`, and `diagnostics`,
 and the Windows app's Cargo workspace under `app/`, which so far holds the mode
-dispatch that runs the CLI library's resident agent and the view of the agent's
-snapshot, tested in CI and not yet built
+dispatch that runs the CLI library's resident agent, the view of the agent's
+snapshot, the app's session with that agent and the icons, tested in CI and not yet built
 into an executable, installed or released. The axpc host runs its pools with the CLI. The axmc host,
 an Apple silicon Mac, runs its Linux pools with the CLI in Tart VMs, and `build`
 makes their golden VM; the agent-host configuration is still planned.
@@ -245,5 +245,5 @@ adds the document that owns its procedure and the row that routes to it.
 | Runner image (`images/actions-runner/`), the Windows host configuration (`hosts/windows-docker-desktop/`), tokens, updating, rolling back, and recovery                                              | [Windows Runner Host](./docs/operations/windows-runner-host.md), with the per-repository isolation rules in [Security](./docs/conventions/security.md)                                                                  |
 | The CLI (`cli/`), its commands, its profiles (`axpc`, `axmc`), the shared fixtures (`tests/host-configuration/`), and its Rust toolchain and gates                                                   | [CLI](./docs/operations/cli.md), with [Security](./docs/conventions/security.md) for labels, paths, and the dependency surface                                                                                          |
 | The macOS host (`hosts/macos/`): Tart, Softnet, the golden VM, the axmc host configuration, and the runtime that runs its Linux pools (`cli/src/runtime/tart/`, `cli/src/macos/`, `cli/src/golden/`) | [macOS Runner Host](./docs/operations/macos-runner-host.md), with [Security](./docs/conventions/security.md) for the per-job VM, Softnet, and the pins, and [CLI](./docs/operations/cli.md) for the runtime seam        |
-| The Windows app (`app/`) and its agent mode                                                                                                                                                          | [App](./docs/operations/app.md), with [Security](./docs/conventions/security.md) for the process rules and the app's dependency policy, and [CLI](./docs/operations/cli.md) for what the library gives it and its gates |
+| The Windows app (`app/`), its agent mode and its icons                                                                                                                                               | [App](./docs/operations/app.md), with [Security](./docs/conventions/security.md) for the process rules and the app's dependency policy, and [CLI](./docs/operations/cli.md) for what the library gives it and its gates |
 | Planned agent-host configuration (`agent-hosts/{claude-code,amp}/`)                                                                                                                                  | The operations document that change adds; until then [Security](./docs/conventions/security.md) and [REVIEW.md](./REVIEW.md)                                                                                            |
