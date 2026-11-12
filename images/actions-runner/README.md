@@ -16,6 +16,8 @@ a registry.
   `~/.rustup`, and `~/.npm` directories, all owned by `runner`. They are the
   mount points the host configuration's cache volumes usually target, and being
   pre-created keeps a fresh volume writable.
+- The [Docker client](#docker-client), `docker-ce-cli` at an exact version, on
+  every architecture.
 - On Linux x64, Android NDK `27.0.12077973` (r27) and `27.1.12297006` (r27b)
   under `/home/runner/.android/sdk/ndk`, owned by `runner`. Both
   `ANDROID_HOME` and `ANDROID_SDK_ROOT` select that SDK root. Other base-image
@@ -76,6 +78,36 @@ failure.
 Private host retention, quotas, incomplete export and operator interpretation
 are owned by [Windows Runner Host](../../docs/operations/windows-runner-host.md).
 Diagnostics supply evidence, not a resource remedy or tool-reuse correction.
+
+## Docker client
+
+The base image ships a static Docker client with no version this repository
+chooses. The Dockerfile replaces `/usr/bin/docker` with the `docker-ce-cli` package
+from Docker's apt repository at one exact version, `5:29.9.3-1~ubuntu.24.04~noble`,
+on both architectures. It downloads the repository's key, checks that the key file
+holds exactly one primary key and that its fingerprint is the recorded one, and fails
+the build on a mismatch. The repository's source and key are removed after the
+install, and the package index with them; `gpg`, which reads the key, stays, because
+the base image may already have it. The base's other Docker binaries, such as
+`dockerd`, and its `docker-buildx` plugin stay as the base ships them; the image
+needs no daemon and starts none.
+
+The key, the version and the `docker` group id are also the golden VM's, in
+`cli/src/golden/pins.rs`, and a unit test in the CLI fails when this Dockerfile and
+those pins differ. To change the client, change both in one pull request, raise the
+golden VM version, and check the version against Docker's repository for both
+architectures.
+
+The Docker runtime on axpc mounts no Docker socket, so the client has no engine
+there. The axmc host's job VMs mount their own VM's socket,
+`/var/run/docker.sock`, into the runner container. The socket's group is the VM's
+`docker` group, which has the id of the base's `docker` group that `runner` belongs to,
+so `runner` can use it;
+[Security](../../docs/conventions/security.md#the-vm-local-docker-socket) says why that
+needs no `--group-add`. The Dockerfile fails the build if the base's group has another
+id. The image contract version is 2 with this
+client and group; [CLI](../../docs/operations/cli.md#the-image-contract) says what
+that means for a built image.
 
 ## Android NDK contract
 
@@ -246,15 +278,15 @@ container lifecycle checks without production registration or networking. That
 command needs PowerShell 7 (`pwsh`) on the Linux test host for the real private
 export path; the existing hosted image job supplies it.
 
-CI runs these Linux x64 checks on every pull request without pushing the
-result. The smoke test uses no network or mounts and checks:
+CI runs these checks on every pull request without pushing the result, once on
+linux/amd64 and once on linux/arm64. The smoke test uses no network or mounts and
+checks, on both architectures:
 
-- JDK compilation and execution.
-- Offline SDK inventory and SDK executables.
-- The Gradle ZIP's checksum and integrity, with offline execution of its extracted distribution.
-- Arm64 C++ compile/link and ELF properties for both NDKs.
-- Absence of image-declared volumes and entrypoints, and of generated Gradle user-home state.
-- Isolation of SDK, JDK, and ZIP mutations between fresh containers.
+- The Docker client: its package version, that `/usr/bin/docker` belongs to that
+  package and is a binary of the image's own architecture, that the repository
+  source and key are gone, that no Docker socket is present, and that `runner`
+  belongs to the `docker` group with the id the golden VM gives its own.
+- Absence of image-declared volumes and entrypoints.
 - Actual host launch-contract CPU affinity for ordinary, diagnostic, and raw
   modes, compared with a quota-only control. It verifies requested Docker settings,
   parent/child process sets, effective cgroup cpuset and quota, distributed slots,
@@ -264,10 +296,22 @@ result. The smoke test uses no network or mounts and checks:
   64 CPUs cannot cover this smoke's subset/capacity controls and fails as
   incomplete evidence; unsupported cgroup readback does too.
 
+On amd64 it also checks:
+
+- JDK compilation and execution.
+- Offline SDK inventory and SDK executables.
+- The Gradle ZIP's checksum and integrity, with offline execution of its extracted distribution.
+- Arm64 C++ compile/link and ELF properties for both NDKs.
+- Absence of generated Gradle user-home state.
+- Isolation of SDK, JDK, and ZIP mutations between fresh containers.
+
+On arm64 it checks instead that the image has no Android toolchain: an empty SDK
+`ndk` directory, tool cache and Gradle home.
+
 The download test rejects corrupt
 NDK input before extraction and checks that non-x64 NDK installation is skipped.
 The new tool provisioning also skips non-x64 architectures before download or
-execution; builds on those architectures are not covered by this Linux x64 smoke.
+execution, and the arm64 smoke checks that nothing of it is installed there.
 
 Windows Docker Desktop verification remains the maintainer's post-merge
 responsibility. The [historical Linux SDK interoperability evidence](https://github.com/axross/runners/issues/13#issuecomment-5963049851)
