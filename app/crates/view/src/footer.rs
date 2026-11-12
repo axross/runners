@@ -121,7 +121,7 @@ fn warning(kind: &WarningKind, warning: &ImageWarning) -> Option<String> {
     })
 }
 
-fn migration_state<'a>(configuration: &'a ConfigurationInfo) -> Option<&'a str> {
+fn migration_state(configuration: &ConfigurationInfo) -> Option<&str> {
     configuration
         .migration
         .as_ref()
