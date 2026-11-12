@@ -74,9 +74,10 @@ depends = ["rust:require", "fetch:rust"]
 dir = "cli"
 run = "cargo deny --locked check bans licenses sources"
 
-# the app's workspace under app/ holds the platform-independent crates, which the lint
-# and test tasks name; the Windows job in merge-checks.yaml lints and tests the whole
-# workspace.
+# the app's workspace under app/ holds the platform-independent crates and the Tauri
+# crate. Only the former build without the web view's libraries, so the lint and test
+# tasks name them; the Windows job in merge-checks.yaml builds, lints and tests the
+# whole workspace.
 [tasks."fetch:app"]
 description = "Fetch the crates in app/Cargo.lock, which cargo deny reads"
 depends = ["rust:require"]
@@ -96,7 +97,7 @@ dir = "app"
 run = "cargo fmt --all --check"
 
 [tasks."lint:app"]
-description = "Lint the app's platform-independent crates (the modes, the view, the session and the icon) with clippy, warnings as errors"
+description = "Lint the app's platform-independent crates (the modes, the view, the session and the icon) with clippy, warnings as errors; the Tauri crate is linted by the Windows job"
 depends = ["rust:require"]
 dir = "app"
 run = "cargo clippy --locked --package marshal-modes --package marshal-view --package marshal-session --package marshal-tray --all-targets -- -D warnings"
@@ -107,6 +108,10 @@ depends = ["rust:require"]
 dir = "app"
 run = "cargo test --locked --package marshal-modes --package marshal-view --package marshal-session --package marshal-tray"
 
+[tasks."test:app-frontend"]
+description = "Run the main window page's own tests with Node, which check the order it draws views in and that it clears a typed token"
+run = "node --test app/crates/app/tests/frontend/*.test.mjs"
+
 [tasks."deny:app"]
 description = "Check the crates the app's executable links for banned versions, unreviewed licences, and other sources, for the Windows and macOS builds; the advisory check runs in its own workflow"
 depends = ["rust:require", "fetch:app"]
@@ -114,7 +119,7 @@ dir = "app"
 run = "cargo deny --locked check bans licenses sources"
 
 [tasks."check:app-pins"]
-description = "Check that both Rust toolchain files name one channel"
+description = "Check that both Rust toolchain files name one channel and that app/tauri-cli.version holds one exact version"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
@@ -128,22 +133,32 @@ if [ -z "$cli" ] || [ "$cli" != "$app" ]; then
   exit 1
 fi
 echo "Both toolchain files name ${cli}."
+echo "tauri-cli is pinned at $(bash .github/scripts/tauri-cli-version.sh)."
 '''
 
+[tasks."test:tauri-cli-version"]
+description = "Check the script that reads the tauri-cli pin and refuses a file that is not one exact version"
+run = "bash .github/scripts/tests/test-tauri-cli-version.sh"
+
 # marshal-cli is not a member of the app's workspace, so the CLI's tests cover its
-# crates only at the versions cli/Cargo.lock holds; the app must link those.
+# crates only at the versions cli/Cargo.lock holds; the app must link those. A crate a
+# feature the app turns on adds to a shared crate is the app's own, so the app's tree is
+# followed only through crates the CLI's tree names.
 [tasks."check:app-lock"]
-description = "Fail when app/Cargo.lock resolves any crate marshal-cli depends on, for Windows, macOS or Linux, to another version than cli/Cargo.lock"
+description = "Fail when app/Cargo.lock resolves any crate marshal-cli builds with in the CLI, for Windows, macOS or Linux, to another version than cli/Cargo.lock"
 depends = ["rust:require", "fetch:rust", "fetch:app"]
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 # prints "name version" for every crate marshal-cli builds with, dev-dependencies aside,
-# as workspace $1 resolves it for target $2.
+# as workspace $1 resolves it for target $2, following only crates named in the JSON
+# object $3, when it is given.
 tree() {
-  (cd "$1" && cargo metadata --quiet --locked --offline --format-version 1 --filter-platform "$2") | jq -r '
-    (.packages | map({key: .id, value: "\(.name) \(.version)"}) | from_entries) as $names
-    | (.resolve.nodes | map({key: .id, value: [.deps[] | select(any(.dep_kinds[]; .kind != "dev")) | .pkg]}) | from_entries) as $deps
+  (cd "$1" && cargo metadata --quiet --locked --offline --format-version 1 --filter-platform "$2") |
+    jq -r --argjson held "${3:-null}" '
+    (.packages | map({key: .id, value: .name}) | from_entries) as $name
+    | (.packages | map({key: .id, value: "\(.name) \(.version)"}) | from_entries) as $names
+    | (.resolve.nodes | map({key: .id, value: [.deps[] | select(any(.dep_kinds[]; .kind != "dev")) | .pkg | select($held == null or $held[$name[.]])]}) | from_entries) as $deps
     | (.packages[] | select(.name == "marshal-cli") | .id) as $root
     | {seen: {}, todo: $deps[$root]}
     | until(.todo | length == 0;
@@ -155,9 +170,14 @@ status=0
 for target in x86_64-pc-windows-msvc aarch64-apple-darwin x86_64-unknown-linux-gnu; do
   # each list is captured, so a failed cargo metadata or jq stops the task here
   cli="$(tree cli "$target")"
-  app="$(tree app "$target")"
-  if [ -z "$cli" ] || [ -z "$app" ]; then
-    echo "error: no crates of marshal-cli were listed for ${target} from cli/Cargo.lock or app/Cargo.lock; the comparison cannot run." >&2
+  if [ -z "$cli" ]; then
+    echo "error: no crates of marshal-cli were listed for ${target} from cli/Cargo.lock; the comparison cannot run." >&2
+    exit 1
+  fi
+  held="$(echo "$cli" | jq -R -s 'split("\n") | map(select(. != "") | split(" ")[0] | {(.): true}) | add')"
+  app="$(tree app "$target" "$held")"
+  if [ -z "$app" ]; then
+    echo "error: no crates of marshal-cli were listed for ${target} from app/Cargo.lock; the comparison cannot run." >&2
     exit 1
   fi
   if ! diff -u --label "cli/Cargo.lock (${target})" --label "app/Cargo.lock (${target})" \
@@ -394,7 +414,7 @@ description = "Run the signed package check, which verify-macos runs, against st
 run = "bash .github/scripts/tests/test-signed-pkg-refusals.sh"
 
 [tasks.check]
-description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, release script tests, release shape check and its test, sign-macos, signed package and assemble tests, installer version and WiX fetch tests, install block tests, Rust tests, Rust dependency check, the app's toolchain pin check, lockfile check, tests and dependency check"
+description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, release script tests, release shape check and its test, sign-macos, signed package and assemble tests, installer version and WiX fetch tests, install block tests, Rust tests, Rust dependency check, the app's toolchain and tauri-cli pin checks, lockfile check, tests, page tests and dependency check"
 depends = [
   "format:check",
   "lint",
@@ -415,7 +435,9 @@ depends = [
   "test:rust",
   "deny:rust",
   "check:app-pins",
+  "test:tauri-cli-version",
   "check:app-lock",
   "test:app",
+  "test:app-frontend",
   "deny:app",
 ]

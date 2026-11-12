@@ -1,11 +1,10 @@
 name: Merge Checks
 
 # the repository's own CI: the gates behind mise run check, the CLI tests on
-# Linux, Windows, and macOS, the app's lint and tests on Windows and its mode
-# dispatch on macOS, the image build and smoke test on amd64 and arm64, the
-# release dry run, and the documented install blocks against the dry run's
-# installers. GitHub-hosted runners only, because this repository is public; see
-# docs/conventions/security.md.
+# Linux, Windows, and macOS, the app's build on Windows and its mode dispatch on
+# macOS, the image build and smoke test on amd64 and arm64, the release dry run,
+# and the documented install blocks against the dry run's installers. GitHub-hosted
+# runners only, because this repository is public; see docs/conventions/security.md.
 
 on:
   pull_request:
@@ -119,8 +118,9 @@ jobs:
         if: runner.os == 'Linux'
         run: cargo test --locked --test real_docker_build -- --ignored
 
-  # the mode dispatch, including the Unix shims, on macOS. Linux runs the same tests in
-  # mise run check. no cache action, for the reason the rust job gives.
+  # the mode dispatch, including the Unix shims, on macOS: the app's crate for it builds
+  # without the web view, so this job never builds the Tauri crate. Linux runs the same
+  # tests in mise run check. no cache action, for the reason the rust job gives.
   app-modes:
     name: Test App Modes On macOS
     runs-on: macos-latest
@@ -154,12 +154,15 @@ jobs:
           MARSHAL_TEST_GITHUB_API: http://127.0.0.1:9
         run: cargo test --locked --release --package marshal-modes
 
-  # the app's whole workspace, linted and tested on Windows. no cache action, for the
-  # reason the rust job gives. docs/operations/app.md records how the timeout was set.
+  # the app's whole workspace, which needs the Windows web view and so cannot run in
+  # mise run check. `tauri-cli` is installed from source at the pin in
+  # app/tauri-cli.version, the one place the pin is set, so it compiles on every run.
+  # no cache action, for the reason the rust job gives. docs/operations/app.md records
+  # how the timeout was set.
   app:
-    name: Test App On Windows
+    name: Build App On Windows
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
     defaults:
       run:
         shell: bash
@@ -171,10 +174,37 @@ jobs:
           persist-credentials: false
       - name: Install Pinned Rust Toolchain
         run: rustup show active-toolchain || rustup toolchain install
+      - name: Install tauri-cli At The Pin
+        run: |
+          version="$(bash ../.github/scripts/tauri-cli-version.sh)"
+          cargo install tauri-cli --version "=${version}" --locked --root "${RUNNER_TEMP}/tauri-cli"
+          echo "${RUNNER_TEMP}/tauri-cli/bin" >> "$GITHUB_PATH"
       - name: Lint With Clippy
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Run Tests
         run: cargo test --locked --workspace --no-fail-fast
+      - name: Build The App
+        working-directory: app/crates/app
+        run: cargo tauri build --no-bundle
+      # the manifest carries the feature lists tauri-cli would write, and the
+      # generated permission files are checked in, so a build changes nothing.
+      - name: Fail If The Build Changed A Tracked File
+        run: |
+          git diff --exit-code
+          untracked="$(git ls-files --others --exclude-standard --full-name -- :/)"
+          if [[ -n "$untracked" ]]; then
+            echo "error: the build left files that are neither tracked nor ignored:" >&2
+            echo "$untracked" >&2
+            exit 1
+          fi
+      - name: Keep The Built App
+        uses: actions/upload-artifact@v7
+        with:
+          name: marshal-app-windows
+          path: app/target/release/marshal-app.exe
+          retention-days: 14
+          if-no-files-found: error
+          overwrite: true
 
   # the same reusable workflow release.yaml calls, at a dry-run version; it
   # publishes and attests nothing.

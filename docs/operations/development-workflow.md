@@ -258,10 +258,12 @@ GitHub-hosted runner with `contents: read`, checks out the pull request, and run
 `mise run check`, which executes the pull request's own task definitions and the
 linters they call, including the CLI's Rust gates and, for the app under `app/`, its
 formatting, the lint and tests of its platform-independent crates, its cargo-deny
-run, a check that both Rust toolchain files name one channel, and `check:app-lock`,
-which fails when the app's lockfile resolves a crate `marshal-cli` builds with to
-another version than the CLI's. The same workflow
-also runs a
+run, the main window page's Node tests, a check
+that both Rust toolchain files name one channel and that `app/tauri-cli.version`
+holds one exact version, the test of the script that reads that version
+(`test:tauri-cli-version`), and `check:app-lock`, which fails when the app's
+lockfile resolves a crate `marshal-cli` builds with to another version than the
+CLI's. The same workflow also runs a
 `rust` job that formats, lints, and tests the CLI on Linux, Windows, and macOS hosted
 runners, with four more steps on Linux only: the release-profile tests of the
 debug-only overrides, the test definition `build` reads among them; a build of the
@@ -280,11 +282,16 @@ descriptor back with PowerShell 7, failing unless it grants the current user alo
 Neither step needs a new action, permission, or secret. An `app-modes` job on a macOS
 hosted runner holds `contents: read` and runs clippy and the tests of the app's
 mode-dispatch crate, which covers the dispatch of the Unix shims there, then runs
-that crate's tests in the release profile, and an `app` job on a Windows hosted
-runner holds `contents: read` and lints and tests every crate of the app's
-workspace. Neither job uses a cache action, and the `app` job's timeout is 15
-minutes; [App](./app.md#verification-status) records how it was set. The workflow
-also builds the
+that crate's tests in the release profile, without building the web view, and an `app` job on a Windows
+hosted runner holds `contents: read` and builds the app's whole workspace: it
+installs `tauri-cli` with `cargo install --locked` at the version in
+`app/tauri-cli.version`, the one place that pin is set, lints and tests every crate,
+runs `cargo tauri build --no-bundle`, fails if the build changed a tracked file or
+left a file that is neither tracked nor ignored, and keeps the built
+`marshal-app.exe` as the run's artifact. Neither job uses a cache action, so
+`tauri-cli` compiles on every run, and the `app` job's timeout is 45 minutes;
+[App](./app.md#building-the-app) records how it was set.
+The workflow also builds the
 runner image for linux/arm64 on the hosted `ubuntu-24.04-arm` runner, in a job of its
 own that builds the image, runs the same smoke test, which expects no Android toolchain
 on arm64, and never pushes ([#74](https://github.com/axross/runners/issues/74)). Its release-build job is the

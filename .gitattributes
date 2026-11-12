@@ -2,5 +2,7 @@
 Dockerfile text eol=lf
 tests/host-configuration/rust/raw/** -text
 tests/host-configuration/toml/** text eol=lf
+app/tauri-cli.version text eol=lf
+app/crates/app/frontend/fonts/** -text
 app/crates/tray/glyphs/** text eol=lf
 cli/src/golden/fixtures/*.txt text eol=lf

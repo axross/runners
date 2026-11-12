@@ -1,0 +1,1034 @@
+/* the look of both windows: Juicio's type, controls and focus on the colour tokens. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  background: var(--list-card-ground);
+  color: var(--text-neutral-high);
+  font-family:
+    "IBM Plex Sans",
+    system-ui,
+    "Segoe UI",
+    -apple-system,
+    sans-serif;
+  font-size: 16px;
+  line-height: 20px;
+}
+
+h1,
+h2,
+h3,
+p,
+ul {
+  margin: 0;
+  padding: 0;
+}
+
+ul {
+  list-style: none;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+svg {
+  display: block;
+  flex: none;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+/* text that only assistive technology reads */
+.vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.low {
+  color: var(--text-neutral-low);
+}
+
+.wrap {
+  overflow-wrap: anywhere;
+}
+
+.heading {
+  font-size: 18px;
+  line-height: 23px;
+  font-weight: 600;
+}
+
+.description {
+  font-size: 14px;
+  line-height: 24px;
+}
+
+.caption {
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.label {
+  font-weight: 500;
+}
+
+.row-label {
+  font-size: 16px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+/* focus: one outline everywhere, 3 px at a 2 px offset, and inside the edge of the list */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 3px solid var(--border-neutral-unselected-control);
+  outline-offset: 2px;
+}
+
+.pools:focus-visible {
+  outline-offset: -3px;
+}
+
+/* ---- the window */
+
+.window {
+  position: relative;
+  height: 100%;
+  min-width: 0;
+}
+
+/* the content of the window: the header, the list that scrolls, and the footer */
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+}
+
+.header {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  padding: 18px 24px 16px;
+  background: var(--list-card-ground);
+}
+
+.summary {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.summary h1 {
+  align-self: flex-start;
+}
+
+.actions {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+@media (max-width: 772px) {
+  .header[data-buttons="3"] .actions {
+    flex-basis: 100%;
+  }
+}
+
+@media (max-width: 609px) {
+  .header[data-buttons="2"] .actions {
+    flex-basis: 100%;
+  }
+}
+
+.notice {
+  flex: 0 0 100%;
+  color: var(--text-destructive-low);
+}
+
+.scroller {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 4px 24px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--list-card-ground);
+}
+
+.scroller > * {
+  flex: none;
+}
+
+.footer {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 24px 14px;
+  background: var(--background-neutral-subtle);
+}
+
+.footer .warning {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.footer .warning svg {
+  margin-top: 2px;
+}
+
+/* ---- controls */
+
+.tipwrap {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: var(--control-height);
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.button.solid {
+  background: var(--solid-accent-rest);
+  color: var(--text-accent-on-solid);
+}
+
+.button.solid:hover {
+  background: var(--solid-accent-hovered);
+}
+
+.button.tonal {
+  background: var(--component-accent-rest);
+  border-color: var(--border-accent-subtle);
+  color: var(--text-accent-high);
+}
+
+.button.tonal:hover {
+  background: var(--component-accent-hovered);
+}
+
+.button.neutral {
+  background: var(--component-neutral-rest);
+  color: var(--text-neutral-high);
+}
+
+.button.neutral:hover {
+  background: var(--component-neutral-hovered);
+}
+
+.button.destructive {
+  background: var(--component-destructive-rest);
+  color: var(--text-destructive-low);
+}
+
+.button.destructive:hover {
+  background: var(--component-destructive-hovered);
+  color: var(--text-destructive-high);
+}
+
+/* an unavailable control takes the neutral look, stays focusable and is never dimmed */
+.button[aria-disabled="true"],
+.pill[aria-disabled="true"] {
+  background: var(--component-neutral-rest);
+  border-color: var(--border-neutral-subtle);
+  color: var(--text-neutral-low);
+}
+
+.button[aria-disabled="true"]:hover,
+.pill[aria-disabled="true"]:hover {
+  background: var(--component-neutral-rest);
+  color: var(--text-neutral-low);
+}
+
+.pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: var(--pill-action-height);
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  font-size: 14px;
+  line-height: 18px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: default;
+}
+
+/* a 44 px target around the 32 px pill */
+.pill::after {
+  content: "";
+  position: absolute;
+  inset: -6px 0;
+}
+
+.pill.solid {
+  background: var(--solid-accent-rest);
+  color: var(--text-accent-on-solid);
+}
+
+.pill.tonal {
+  background: var(--component-accent-rest);
+  border-color: var(--border-accent-subtle);
+  color: var(--text-accent-high);
+}
+
+.pill.tonal:hover {
+  background: var(--component-accent-hovered);
+}
+
+.pill.neutral {
+  background: var(--component-neutral-rest);
+  color: var(--text-neutral-high);
+}
+
+.pill.neutral:hover {
+  background: var(--component-neutral-hovered);
+}
+
+.pill.destructive {
+  background: var(--component-destructive-rest);
+  color: var(--text-destructive-low);
+}
+
+.pill.destructive:hover {
+  background: var(--component-destructive-hovered);
+  color: var(--text-destructive-high);
+}
+
+/* the balloon that says why a control is unavailable */
+.tip {
+  position: absolute;
+  top: calc(100% + 12px);
+  z-index: 20;
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  padding: var(--space-x16);
+  border: 1px solid var(--border-neutral-interactive);
+  border-radius: var(--radius-sm);
+  background: var(--background-neutral-app);
+  color: var(--text-neutral-high);
+  font-size: 14px;
+  line-height: 24px;
+  white-space: normal;
+}
+
+.tip.narrow {
+  width: 240px;
+}
+
+.tip.end {
+  right: 0;
+}
+
+.tip.start {
+  left: 0;
+}
+
+/* the gap between the control and the balloon belongs to the balloon, so the pointer
+   can cross it */
+.tip::before {
+  content: "";
+  position: absolute;
+  top: -14px;
+  left: 0;
+  right: 0;
+  height: 14px;
+}
+
+.tip .tail {
+  position: absolute;
+  top: -9px;
+}
+
+.tip.end .tail {
+  right: 24px;
+}
+
+.tip.start .tail {
+  left: 24px;
+}
+
+/* near the bottom of the window the balloon opens above its control */
+.tip.above {
+  top: auto;
+  bottom: calc(100% + 12px);
+}
+
+.tip.above::before {
+  top: auto;
+  bottom: -14px;
+}
+
+.tip.above .tail {
+  top: auto;
+  bottom: -9px;
+  transform: scaleY(-1);
+}
+
+.tail path:first-child {
+  fill: var(--background-neutral-app);
+}
+
+.tail path:last-child {
+  fill: none;
+  stroke: var(--border-neutral-interactive);
+}
+
+/* ---- tabs */
+
+.tabs-row {
+  flex: 0 0 100%;
+  display: flex;
+}
+
+.tabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 4px;
+  border-radius: var(--radius-full);
+  background: var(--component-neutral-rest);
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 18px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-neutral-low);
+  font-weight: 500;
+  cursor: default;
+}
+
+.tab[aria-selected="true"] {
+  background: var(--list-card-fill);
+  color: var(--text-accent-high);
+  box-shadow: var(--shadow-segmented-pill);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-full);
+  background: var(--solid-destructive-rest);
+  color: var(--text-destructive-on-solid);
+}
+
+/* ---- marks */
+
+.mark {
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+
+.mark.check {
+  color: var(--text-accent-brand);
+}
+
+.mark.history,
+.mark.stop,
+.mark.unknown {
+  color: var(--text-neutral-high);
+}
+
+.flag {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-full);
+  background: var(--solid-destructive-rest);
+  color: var(--text-destructive-on-solid);
+}
+
+.ring {
+  width: 14px;
+  height: 14px;
+  margin: 3px;
+  border: 2px solid var(--text-accent-brand);
+  border-right-color: transparent;
+  border-radius: 50%;
+}
+
+/* ---- banners */
+
+.banner {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  border: 1px solid var(--border-neutral-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--list-card-fill);
+  box-shadow: var(--shadow-sheet);
+}
+
+.banner-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.banner-action {
+  margin-top: 4px;
+}
+
+.details {
+  display: flex;
+  flex-direction: column;
+  max-height: 152px;
+  overflow: auto;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--component-neutral-rest);
+}
+
+/* ---- pool cards */
+
+.pools {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card {
+  border-radius: var(--radius-xl);
+  background: var(--list-card-fill);
+  box-shadow: var(--shadow-list-card);
+}
+
+.card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  padding: 14px 16px 6px;
+}
+
+.card-head .grow {
+  flex: 1;
+}
+
+.card-state {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  gap: 8px;
+  color: var(--text-neutral-low);
+}
+
+.card-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 0 16px 14px 46px;
+}
+
+.card-note p {
+  min-width: 0;
+}
+
+.runners {
+  padding-bottom: 8px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns:
+    20px 76px minmax(130px, max-content) minmax(0, 1fr)
+    84px;
+  grid-template-areas:
+    "m n s c t"
+    ". . d d d";
+  column-gap: 12px;
+  row-gap: 2px;
+  align-items: center;
+  min-height: 44px;
+  padding: 8px 16px;
+}
+
+.row > .m {
+  grid-area: m;
+}
+
+.row > .n {
+  grid-area: n;
+  font-weight: 500;
+}
+
+.row > .s {
+  grid-area: s;
+}
+
+.row > .c {
+  grid-area: c;
+}
+
+.row > .t {
+  grid-area: t;
+  text-align: right;
+}
+
+.row > .d {
+  grid-area: d;
+}
+
+/* from 720 px down, the container's name moves to a second line */
+@media (max-width: 720px) {
+  .row {
+    grid-template-columns: 20px 76px minmax(0, 1fr) 84px;
+    grid-template-areas:
+      "m n s t"
+      ". . c c"
+      ". . d d";
+  }
+}
+
+.stale .row .n,
+.stale .row .s {
+  color: var(--text-neutral-low);
+}
+
+.diagnostics {
+  margin: 0 16px;
+  padding: 12px 0 14px;
+  border-top: 1px solid var(--border-neutral-subtle);
+}
+
+.diagnostics-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+}
+
+.diagnostics-head h3 {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+.diagnostics .notes {
+  margin-top: 2px;
+}
+
+.diagnostic-items {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.diagnostic {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  grid-template-areas:
+    "m x"
+    ". c";
+  column-gap: 12px;
+  row-gap: 2px;
+  align-items: start;
+}
+
+.diagnostic > .m {
+  grid-area: m;
+}
+
+.diagnostic > .x {
+  grid-area: x;
+}
+
+.diagnostic > .c {
+  grid-area: c;
+}
+
+.dot {
+  display: block;
+  width: 6px;
+  height: 6px;
+  margin: 7px;
+  border-radius: 50%;
+  background: var(--text-neutral-low);
+}
+
+.pools-note {
+  padding: 40px 0;
+  text-align: center;
+}
+
+/* ---- tokens */
+
+.intro {
+  max-width: 720px;
+  padding: 0 4px;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.token-list {
+  border-radius: var(--radius-xl);
+  background: var(--list-card-fill);
+  box-shadow: var(--shadow-list-card);
+}
+
+.token-row {
+  padding: 12px 16px 14px;
+}
+
+.token-row + .token-row {
+  border-top: 1px solid var(--border-neutral-subtle);
+}
+
+.token-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 284px;
+  grid-template-areas: "r s a";
+  column-gap: 16px;
+  row-gap: 6px;
+  align-items: center;
+}
+
+.token-line > .r {
+  grid-area: r;
+}
+
+.token-line > .s {
+  grid-area: s;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.token-line > .s svg {
+  margin-top: 2px;
+}
+
+.token-line > .a {
+  grid-area: a;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+@media (max-width: 720px) {
+  .token-line {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "r a"
+      "s s";
+  }
+}
+
+.token-status {
+  margin-top: 8px;
+}
+
+.token-form,
+.token-confirm {
+  display: flex;
+  flex-direction: column;
+  max-width: 560px;
+  margin-top: 12px;
+}
+
+.token-form label {
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+.token-form .hint {
+  margin-top: 8px;
+}
+
+.field {
+  display: block;
+  width: 100%;
+  height: var(--control-height);
+  padding: 0 14px;
+  border: 1px solid var(--border-neutral-unselected-control);
+  border-radius: var(--radius-md);
+  background: var(--component-neutral-rest);
+  box-shadow: var(--shadow-text-field-rest);
+  color: var(--text-neutral-high);
+  letter-spacing: 0.06em;
+}
+
+.field:focus {
+  box-shadow:
+    var(--shadow-text-field-rest),
+    0 0 0 0.5px var(--text-accent-brand),
+    0 0 10px 0 var(--text-field-focus-glow);
+}
+
+.field[aria-invalid="true"] {
+  border-color: var(--text-destructive-low);
+  box-shadow: var(--shadow-text-field-error);
+}
+
+.field[aria-invalid="true"]:focus {
+  box-shadow:
+    var(--shadow-text-field-error),
+    0 0 0 0.5px var(--border-destructive-hovered);
+}
+
+.field-error {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-top: 8px;
+  color: var(--text-destructive-low);
+}
+
+.field-error svg {
+  margin-top: 2px;
+}
+
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.token-confirm .form-actions {
+  margin-top: 12px;
+}
+
+/* ---- full-window states */
+
+.full {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-x24);
+  padding: 0 24px;
+  overflow: auto;
+  background: var(--background-neutral-app);
+}
+
+.full-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  background: var(--component-neutral-rest);
+  color: var(--text-neutral-high);
+}
+
+.full-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-x4);
+  max-width: 640px;
+  text-align: center;
+}
+
+/* ---- the confirmation, in the window and in its own window */
+
+.scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-x16);
+  background: var(--scrim);
+}
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-x24);
+  width: 340px;
+  max-width: var(--dialog-max-width);
+  padding: var(--space-x24);
+  border-radius: var(--radius-lg);
+  background: var(--background-neutral-subtle);
+}
+
+.dialog-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-x12);
+  text-align: center;
+}
+
+.dialog-text p {
+  font-size: 16px;
+  line-height: 28px;
+  color: var(--text-neutral-low);
+}
+
+.dialog-actions {
+  display: flex;
+  gap: var(--space-x12);
+}
+
+.dialog-button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: var(--button-height);
+  padding: 0 var(--space-x12);
+  border: 0;
+  border-radius: var(--radius-md);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.dialog-button.cancel {
+  background: var(--component-neutral-rest);
+  color: var(--text-neutral-low);
+}
+
+.dialog-button.cancel:hover {
+  background: var(--component-neutral-hovered);
+  color: var(--text-neutral-high);
+}
+
+.dialog-button.confirm {
+  background: var(--component-destructive-rest);
+  color: var(--text-destructive-low);
+}
+
+.dialog-button.confirm:hover {
+  background: var(--component-destructive-hovered);
+  color: var(--text-destructive-high);
+}
+
+/* the menu's own confirmation window is the dialog on the whole window */
+.own-window {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  background: var(--background-neutral-subtle);
+}
+
+.own-window .dialog {
+  width: 100%;
+  max-width: none;
+  border-radius: 0;
+}
+
+/* ---- a Windows contrast theme: the fills drop out, and controls keep a border */
+
+@media (forced-colors: active) {
+  .button,
+  .pill,
+  .tab,
+  .dialog-button,
+  .field {
+    border: 1px solid ButtonText;
+    background: ButtonFace;
+    color: ButtonText;
+  }
+
+  .button[aria-disabled="true"],
+  .pill[aria-disabled="true"] {
+    border-color: GrayText;
+    color: GrayText;
+  }
+
+  .tab[aria-selected="true"] {
+    border-color: Highlight;
+    border-width: 2px;
+  }
+
+  .card,
+  .banner,
+  .token-list,
+  .dialog,
+  .tip,
+  .details {
+    border: 1px solid CanvasText;
+  }
+
+  .flag,
+  .chip {
+    background: ButtonFace;
+    border: 1px solid ButtonText;
+    color: ButtonText;
+  }
+
+  :focus-visible {
+    outline-color: Highlight;
+  }
+}

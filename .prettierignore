@@ -25,3 +25,4 @@ cli/target/
 *.wxs
 
 app/target/
+app/crates/app/gen/
