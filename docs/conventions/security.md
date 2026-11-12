@@ -1005,8 +1005,8 @@ that will make it up.
   for the CLI under [One Instance per Machine](#one-instance-per-machine-reached-only-by-its-user).
 - **The app starts its agent from a file it checked.** It starts it from its own
   executable's absolute path as a plain detached child, never through Tauri's shell
-  plugin, and never from a file that is missing or is no longer the file the app
-  started from. The agent ends within 5 s of the file it started from being moved,
+  plugin, and never from a file that is missing, that it could not read when it
+  started, or that is no longer the file the app started from. The agent ends within 5 s of the file it started from being moved,
   renamed, replaced or deleted, with the reason `executable_changed`, and the app ends
   with it.
 

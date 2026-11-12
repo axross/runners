@@ -94,7 +94,8 @@ web view.
   fresh launch starts the agent running its pools, because the launch is the user's
   own action. The restart after a dropped connection starts it stopped when the last
   state the app heard was "stopped by you", and running otherwise. It never starts
-  an agent from a file that is missing or no longer the file the app started from.
+  an agent from a file that is missing, that it could not read when it started, or
+  that is no longer the file the app started from.
 - **A dropped connection** that is not a quit keeps the last list, marked with its
   time, under a lost-contact banner. The app starts the agent again once and then
   offers Try Again.
@@ -179,8 +180,8 @@ lighter than the near-black set because white on a dark ground looks heavier.
 
 To change a glyph, edit the text in both files and run `mise run test:app`. The
 tests in `app/crates/tray/tests/glyphs.rs` fail on a missing or malformed block, an
-edge pixel, a mostly blank image or two states that differ by fewer than 16 whole
-pixels at 16 px, which is how the five states stay apart. The tray crate's
+edge pixel, a mostly blank image or two states whose white glyphs differ in fewer
+than 12 whole pixels at any size, which is how the five states stay apart. The tray crate's
 `Watch` replaces the icon's image only when the icon's state, the taskbar's mode or
 the primary display's scaling changes. An unreadable or absent mode counts as dark,
 and is logged once.
