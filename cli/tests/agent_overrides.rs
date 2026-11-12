@@ -21,7 +21,7 @@ use marshal_cli::agent::server::Limits;
 use marshal_cli::agent::tokens::{NO_TOKEN_STORE, StoreTokens};
 use marshal_cli::agent::{AgentOptions, log::AgentLog};
 use marshal_cli::profile::Profile;
-use marshal_cli::token_store::{MemoryTokenStore, RepositoryKey};
+use marshal_cli::token_store::{MemoryTokenStore, TokenKey};
 
 #[test]
 fn the_profile_is_the_one_ci_asked_for() {
@@ -86,7 +86,7 @@ fn a_store_override_leaves_a_release_agent_with_no_store_of_the_test() {
     let watched = Path::new("/tmp/not-the-agent");
     let applied = applied_overrides(&asked_for_everything(watched));
     let tokens = StoreTokens::new(applied.store);
-    let key = RepositoryKey::of("o", "r");
+    let key = TokenKey::of("o", "r");
     let error = tokens.read(&key).unwrap_err();
     if cfg!(debug_assertions) {
         assert_ne!(error, NO_TOKEN_STORE, "the override store was not used");

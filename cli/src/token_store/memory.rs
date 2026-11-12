@@ -6,11 +6,11 @@ use std::sync::Mutex;
 
 use crate::runtime::secret::Secret;
 
-use super::{RepositoryKey, StoreError, TokenStore};
+use super::{StoreError, TokenKey, TokenStore};
 
 #[derive(Default)]
 struct Held {
-    tokens: BTreeMap<RepositoryKey, String>,
+    tokens: BTreeMap<TokenKey, String>,
     failure: Option<StoreError>,
 }
 
@@ -45,9 +45,9 @@ impl MemoryTokenStore {
         self.held().failure = error;
     }
 
-    /// the repositories that have a token.
+    /// the keys that have a token.
     #[must_use]
-    pub fn keys(&self) -> Vec<RepositoryKey> {
+    pub fn keys(&self) -> Vec<TokenKey> {
         self.held().tokens.keys().cloned().collect()
     }
 
@@ -57,20 +57,20 @@ impl MemoryTokenStore {
 }
 
 impl TokenStore for MemoryTokenStore {
-    fn get(&self, key: &RepositoryKey) -> Result<Option<Secret>, StoreError> {
+    fn get(&self, key: &TokenKey) -> Result<Option<Secret>, StoreError> {
         let held = self.held();
         Self::checked(&held)?;
         Ok(held.tokens.get(key).cloned().map(Secret::new))
     }
 
-    fn set(&self, key: &RepositoryKey, token: &Secret) -> Result<(), StoreError> {
+    fn set(&self, key: &TokenKey, token: &Secret) -> Result<(), StoreError> {
         let mut held = self.held();
         Self::checked(&held)?;
         held.tokens.insert(key.clone(), token.expose().to_string());
         Ok(())
     }
 
-    fn remove(&self, key: &RepositoryKey) -> Result<(), StoreError> {
+    fn remove(&self, key: &TokenKey) -> Result<(), StoreError> {
         let mut held = self.held();
         Self::checked(&held)?;
         held.tokens.remove(key);
@@ -85,7 +85,7 @@ mod tests {
     #[test]
     fn a_token_is_set_replaced_and_removed_by_key() {
         let store = MemoryTokenStore::default();
-        let key = RepositoryKey::of("o", "r");
+        let key = TokenKey::of("o", "r");
         assert!(store.get(&key).unwrap().is_none());
         store
             .set(&key, &Secret::new("ghp_fake_one".to_string()))
@@ -100,9 +100,33 @@ mod tests {
     }
 
     #[test]
+    fn a_repository_and_an_organization_of_one_name_keep_their_own_tokens() {
+        let store = MemoryTokenStore::default();
+        let repository = TokenKey::of("o", "o");
+        let organization = TokenKey::parse_organization("O").unwrap();
+        store
+            .set(&repository, &Secret::new("ghp_fake_repo".to_string()))
+            .unwrap();
+        store
+            .set(&organization, &Secret::new("ghp_fake_org".to_string()))
+            .unwrap();
+        assert_eq!(
+            store.get(&repository).unwrap().unwrap().expose(),
+            "ghp_fake_repo"
+        );
+        assert_eq!(
+            store.get(&organization).unwrap().unwrap().expose(),
+            "ghp_fake_org"
+        );
+        store.remove(&organization).unwrap();
+        assert!(store.get(&organization).unwrap().is_none());
+        assert_eq!(store.keys(), vec![repository]);
+    }
+
+    #[test]
     fn a_failing_store_fails_every_call_and_recovers() {
         let store = MemoryTokenStore::default();
-        let key = RepositoryKey::of("o", "r");
+        let key = TokenKey::of("o", "r");
         store.fail_with(Some("the store is locked"));
         assert_eq!(
             store.get(&key).unwrap_err().to_string(),
@@ -123,7 +147,7 @@ mod tests {
         let store = MemoryTokenStore::default();
         store
             .set(
-                &RepositoryKey::of("o", "r"),
+                &TokenKey::of("o", "r"),
                 &Secret::new("ghp_fake".to_string()),
             )
             .unwrap();

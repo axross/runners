@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use marshal_cli::agent::snapshot::Snapshot;
 use marshal_cli::agent::{EXECUTABLE_CHANGED, Launch, QUIT, StopReason};
-use marshal_cli::token_store::{RepositoryKey, TokenRefusal, accepted_token};
+use marshal_cli::token_store::{TokenKey, TokenRefusal, accepted_token};
 use marshal_view::{
     Cause, Connection, Input, NotSaved, Pending, PendingKind, TokenResult, TokenUi, Tracker,
     Update, View, pools_started_by,
@@ -670,7 +670,7 @@ impl<D: Dial> Session<D> {
     }
 
     fn set_token(&mut self, repository: &str, token: String, reply: Reply<()>) {
-        let Ok(key) = RepositoryKey::parse(repository) else {
+        let Ok(key) = TokenKey::parse(repository) else {
             let _ = reply.send(Err("A repository is written owner/name.".to_string()));
             return;
         };
@@ -723,7 +723,7 @@ impl<D: Dial> Session<D> {
     }
 
     fn remove_token(&mut self, repository: &str, reply: Reply<()>) {
-        let Ok(key) = RepositoryKey::parse(repository) else {
+        let Ok(key) = TokenKey::parse(repository) else {
             let _ = reply.send(Err("A repository is written owner/name.".to_string()));
             return;
         };

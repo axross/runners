@@ -33,7 +33,7 @@ use crate::runtime::pool::image_name;
 use crate::runtime::registration::Registrar;
 use crate::runtime::scrub::scrub_error_text;
 use crate::runtime::worker::sleep_or_stop;
-use crate::token_store::RepositoryKey;
+use crate::token_store::TokenKey;
 use crate::validate::{CheckoutRule, Plan};
 
 use super::api::{ApiError, ApiResult, Call, Method};
@@ -513,10 +513,10 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
     }
 
     fn refresh_tokens(&self, plan: &Plan) {
-        let keys: Vec<RepositoryKey> = plan
+        let keys: Vec<TokenKey> = plan
             .entries
             .iter()
-            .map(|entry| RepositoryKey::of(&entry.owner, &entry.repository))
+            .map(|entry| TokenKey::of(&entry.owner, &entry.repository))
             .collect();
         self.tokens.refresh(&keys);
     }

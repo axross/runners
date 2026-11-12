@@ -16,7 +16,7 @@ use tokio::time::{Instant, sleep_until};
 use crate::agent::snapshot::Snapshot;
 use crate::runtime::log::Log;
 use crate::runtime::secret::Secret;
-use crate::token_store::{RepositoryKey, TokenStore};
+use crate::token_store::{TokenKey, TokenStore};
 
 use super::answer::{Answer, Cause, Endpoint, Next, Outcome, Wait, classify};
 use super::budget::{Level, Tracker};
@@ -116,7 +116,7 @@ enum Names {
 
 /// what the collector keeps for a repository, across subscriptions.
 struct Repository {
-    key: RepositoryKey,
+    key: TokenKey,
     pages: BTreeMap<String, Page>,
     /// when its last check started.
     checked: Option<Instant>,
@@ -146,7 +146,7 @@ struct Repository {
 }
 
 impl Repository {
-    fn new(key: RepositoryKey) -> Self {
+    fn new(key: TokenKey) -> Self {
         Self {
             key,
             pages: BTreeMap::new(),
@@ -216,19 +216,19 @@ impl Repository {
 /// the repositories to check now: each whose pools have a registered runner and
 /// whose token the store had at the last look, with those runners' names.
 #[must_use]
-pub fn wanted(snapshot: &Snapshot) -> BTreeMap<RepositoryKey, BTreeSet<String>> {
+pub fn wanted(snapshot: &Snapshot) -> BTreeMap<TokenKey, BTreeSet<String>> {
     let with_token: BTreeSet<&str> = snapshot
         .repositories
         .iter()
         .filter(|repository| repository.has_token)
         .map(|repository| repository.repository.as_str())
         .collect();
-    let mut wanted: BTreeMap<RepositoryKey, BTreeSet<String>> = BTreeMap::new();
+    let mut wanted: BTreeMap<TokenKey, BTreeSet<String>> = BTreeMap::new();
     for pool in &snapshot.pools {
         if !pool.has_token && !with_token.contains(pool.repository.as_str()) {
             continue;
         }
-        let Ok(key) = RepositoryKey::parse(&pool.repository) else {
+        let Ok(key) = TokenKey::parse(&pool.repository) else {
             continue;
         };
         let names: BTreeSet<String> = pool
@@ -263,12 +263,12 @@ pub struct Collector<'a, F: Fetch> {
     now: Box<dyn Fn() -> u64 + 'a>,
     tracker: Tracker,
     level: Level,
-    repositories: BTreeMap<RepositoryKey, Repository>,
+    repositories: BTreeMap<TokenKey, Repository>,
     /// no display request starts before this, after a rate limit.
     host_wait: Option<Instant>,
     secondary: Duration,
     published: watch::Sender<Arc<GithubStatus>>,
-    shown: BTreeSet<RepositoryKey>,
+    shown: BTreeSet<TokenKey>,
     active: watch::Receiver<bool>,
 }
 
@@ -335,8 +335,8 @@ impl<'a, F: Fetch> Collector<'a, F> {
     /// the repository due first, and when.
     fn next(
         &mut self,
-        wanted: &BTreeMap<RepositoryKey, BTreeSet<String>>,
-    ) -> Option<(RepositoryKey, Instant)> {
+        wanted: &BTreeMap<TokenKey, BTreeSet<String>>,
+    ) -> Option<(TokenKey, Instant)> {
         let now_ms = (self.now)();
         self.note_level(now_ms);
         let level = self.tracker.level(now_ms);
@@ -372,8 +372,8 @@ impl<'a, F: Fetch> Collector<'a, F> {
     }
 
     /// publishes the value for the repositories wanted now.
-    fn show(&mut self, wanted: &BTreeMap<RepositoryKey, BTreeSet<String>>) {
-        let shown: BTreeSet<RepositoryKey> = wanted.keys().cloned().collect();
+    fn show(&mut self, wanted: &BTreeMap<TokenKey, BTreeSet<String>>) {
+        let shown: BTreeSet<TokenKey> = wanted.keys().cloned().collect();
         if shown != self.shown {
             self.shown = shown;
             self.publish();
@@ -405,7 +405,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
     }
 
     /// one repository's turn: the runner list, then the job lookup.
-    async fn turn(&mut self, key: &RepositoryKey, names: &BTreeSet<String>) {
+    async fn turn(&mut self, key: &TokenKey, names: &BTreeSet<String>) {
         let token = match self.store.as_ref().map(|store| store.get(key)) {
             Some(Ok(Some(token))) => {
                 self.log.mask(&token);
@@ -459,7 +459,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
     }
 
     /// records a failure of the runner list and when it is tried again.
-    fn fail(&mut self, key: &RepositoryKey, cause: Cause) {
+    fn fail(&mut self, key: &TokenKey, cause: Cause) {
         let now_ms = (self.now)();
         let level = self.tracker.level(now_ms);
         let Some(repository) = self.repositories.get_mut(key) else {
@@ -483,7 +483,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
     /// each answer; `follow` reads past the first page.
     async fn read(
         &mut self,
-        key: &RepositoryKey,
+        key: &TokenKey,
         token: &Secret,
         first: &str,
         endpoint: Endpoint,
@@ -636,7 +636,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
     /// takes a fresh runner list; returns whether a runner became busy.
     fn take_runners(
         &mut self,
-        key: &RepositoryKey,
+        key: &TokenKey,
         names: &BTreeSet<String>,
         pages: Vec<RunnersPage>,
     ) -> bool {
@@ -698,7 +698,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
 
     /// the job lookup of a repository's turn: at most two requests while a busy
     /// runner's job is not known, or one to try hidden names again.
-    async fn lookup(&mut self, key: &RepositoryKey, token: &Secret, became_busy: bool) {
+    async fn lookup(&mut self, key: &TokenKey, token: &Secret, became_busy: bool) {
         let Some(repository) = self.repositories.get(key) else {
             return;
         };
@@ -778,7 +778,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
 
     /// records a failed lookup: job names are unreadable, and lookups wait 15 s,
     /// doubling to 5 minutes, never less than the level's interval.
-    fn lookup_failed(&mut self, key: &RepositoryKey, cause: Cause) {
+    fn lookup_failed(&mut self, key: &TokenKey, cause: Cause) {
         let now_ms = (self.now)();
         let level = self.tracker.level(now_ms);
         self.names(key, Names::Unreadable(cause));
@@ -790,7 +790,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
     }
 
     /// records a lookup GitHub answered.
-    fn lookup_answered(&mut self, key: &RepositoryKey) {
+    fn lookup_answered(&mut self, key: &TokenKey) {
         if let Some(repository) = self.repositories.get_mut(key) {
             repository.lookup_backoff = FAILURE_BACKOFF;
             repository.lookup_retry = None;
@@ -799,7 +799,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
     }
 
     /// reads the in-progress runs; true when they were read.
-    async fn read_runs(&mut self, key: &RepositoryKey, token: &Secret) -> bool {
+    async fn read_runs(&mut self, key: &TokenKey, token: &Secret) -> bool {
         let path = format!(
             "/repos/{}/actions/runs?status=in_progress&per_page={RUNS_PER_PAGE}",
             key.as_str()
@@ -843,7 +843,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
         }
     }
 
-    fn names(&mut self, key: &RepositoryKey, names: Names) {
+    fn names(&mut self, key: &TokenKey, names: Names) {
         if let Some(repository) = self.repositories.get_mut(key)
             && repository.names != names
         {
@@ -864,7 +864,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
         }
     }
 
-    fn take_jobs(&mut self, key: &RepositoryKey, waiting: &[String], pages: Vec<JobsPage>) {
+    fn take_jobs(&mut self, key: &TokenKey, waiting: &[String], pages: Vec<JobsPage>) {
         let Some(repository) = self.repositories.get_mut(key) else {
             return;
         };
