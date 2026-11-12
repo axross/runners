@@ -442,14 +442,14 @@ fn lost_contact(context: &Context<'_>, last_heard_ms: u64, cause: Cause) -> Bann
         "The list below is from {} and may be out of date.",
         context.input.clock.when(last_heard_ms)
     );
-    let (line, action) = match cause {
+    let (why, action) = match cause {
         Cause::Dropped => (
-            format!("{from} Reconnecting; Marshal starts the agent once."),
+            "Reconnecting; Marshal starts the agent once.".to_string(),
             None,
         ),
         Cause::RestartFailed => (
             format!(
-                "{from} Marshal started the agent again and it did not answer; {}.",
+                "Marshal started the agent again and it did not answer; {}.",
                 log_says_why()
             ),
             Some(control(
@@ -461,7 +461,7 @@ fn lost_contact(context: &Context<'_>, last_heard_ms: u64, cause: Cause) -> Bann
             )),
         ),
         Cause::Busy => (
-            format!("{from} The agent is busy; Marshal tries again every 5 s."),
+            "The agent is busy; Marshal tries again every 5 s.".to_string(),
             Some(control(
                 context,
                 Action::TryAgain,
@@ -476,8 +476,8 @@ fn lost_contact(context: &Context<'_>, last_heard_ms: u64, cause: Cause) -> Bann
             BannerKind::LostContact,
             Tone::Warning,
             heading,
-            vec![line],
-            heading.to_string(),
+            vec![format!("{from} {why}")],
+            spoken(heading, &why),
         ),
         action,
     )

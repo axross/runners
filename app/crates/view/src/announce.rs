@@ -29,17 +29,24 @@ pub struct Announcer {
     summary_at_ms: Option<u64>,
 }
 
-/// the banners or the full-window state `view` shows, keyed so that a banner whose
-/// words change with time, like a build's elapsed time, is still one banner.
+/// the banners or the full-window state `view` shows, keyed by what the live region
+/// says of them, so a banner whose lines change with time, like a build's elapsed time,
+/// is still one banner, and one whose cause changes under the same heading is a new one.
 fn spoken(view: &View) -> Vec<(String, String)> {
     match &view.window.body {
-        Body::Full(full) => vec![(format!("full:{}", full.heading), full.announcement.clone())],
+        Body::Full(full) => vec![(
+            format!("full:{}", full.announcement),
+            full.announcement.clone(),
+        )],
         Body::List(list) => list
             .banners
             .iter()
             .map(|banner| {
                 (
-                    format!("{:?}:{}", banner.kind, banner.heading),
+                    format!(
+                        "{:?}:{}:{}",
+                        banner.kind, banner.heading, banner.announcement
+                    ),
                     banner.announcement.clone(),
                 )
             })
