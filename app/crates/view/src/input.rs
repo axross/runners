@@ -79,6 +79,11 @@ pub enum TokenResult {
     NotSaved(NotSaved),
     /// a removal that failed, with why; the token is still stored.
     NotRemoved(String),
+    /// a save or a removal the agent did not answer within the call's limit; it may
+    /// still do it, so the snapshot says where the token stands.
+    NotAnswered {
+        removal: bool,
+    },
 }
 
 /// the token forms as the page has them open. The view never holds a token or what is

@@ -17,7 +17,7 @@
   "repositories": [
     {
       "repository": "owner/app",
-      "has_token": true,
+      "has_token": false,
       "pools": ["app"]
     }
   ],
@@ -26,8 +26,8 @@
       "name": "app",
       "repository": "owner/app",
       "state": "stopped",
-      "reason": "the token store failed: access was refused (kind access_refused, code 5)",
-      "has_token": true,
+      "reason": "repositories[0]: the token store failed: access was refused (kind access_refused, code 5).",
+      "has_token": false,
       "runners_up": 0,
       "slots": 2,
       "runners": [

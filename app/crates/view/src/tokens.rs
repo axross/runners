@@ -3,7 +3,7 @@
 //! registration GitHub refused, and what the last save came to.
 
 use marshal_cli::agent::snapshot::{PoolInfo, RunnerState, Snapshot};
-use marshal_cli::agent::tokens::NO_TOKEN;
+use marshal_cli::agent::tokens::{NO_TOKEN, NO_TOKEN_STORE, STORE_FAILED};
 use marshal_cli::runtime::registration::REJECTED_MARK;
 use serde::Serialize;
 
@@ -60,6 +60,33 @@ pub fn repositories(context: &Context<'_>) -> Vec<Repository> {
     found
 }
 
+/// why the agent skipped a pool, without the configuration path it puts first: a
+/// skip's reason reads `repositories[0]: no token.`.
+pub(crate) fn skip_cause(reason: &str) -> &str {
+    let why = reason
+        .split_once("]: ")
+        .filter(|(path, _)| path.starts_with("repositories["))
+        .map_or(reason, |(_, why)| why);
+    why.strip_suffix('.').unwrap_or(why)
+}
+
+/// whether a pool was skipped for want of a token.
+fn skipped_for_no_token(pool: &PoolInfo) -> bool {
+    pool.reason.as_deref().map(skip_cause) == Some(NO_TOKEN)
+}
+
+/// why the agent could not read the repository's token, from a pool it skipped for
+/// that: the store failed, or there is none.
+pub(crate) fn store_problem(context: &Context<'_>, repository: &str) -> Option<String> {
+    context
+        .pools
+        .iter()
+        .filter(|pool| plain(&pool.repository) == repository)
+        .filter_map(|pool| pool.reason.as_deref().map(skip_cause))
+        .find(|cause| cause.starts_with(STORE_FAILED) || *cause == NO_TOKEN_STORE)
+        .map(|cause| format!("{}.", capitalised(&plain(cause))))
+}
+
 /// the pools a save for `repository`, as the view keys it, starts at once: those
 /// skipped for want of a token, while the agent runs. The app reads them before it sends the token.
 #[must_use]
@@ -73,7 +100,7 @@ pub fn pools_started_by(snapshot: &Snapshot, repository: &str) -> Vec<String> {
         .filter(|pool| {
             plain(&pool.repository) == repository
                 && pool.state == "skipped"
-                && pool.reason.as_deref() == Some(NO_TOKEN)
+                && skipped_for_no_token(pool)
         })
         .map(|pool| plain(&pool.name))
         .collect()
@@ -117,7 +144,9 @@ pub enum TokenState {
 
 fn state_of(context: &Context<'_>, repository: &Repository) -> (TokenState, String) {
     if !repository.has_token {
-        return (TokenState::Missing, "No token".to_string());
+        let text =
+            store_problem(context, &repository.key).unwrap_or_else(|| "No token".to_string());
+        return (TokenState::Missing, text);
     }
     match rejection(context, &repository.key) {
         Some(text) => (TokenState::Rejected, text),
@@ -175,8 +204,10 @@ pub fn pool_note(
                 None,
             ),
         )),
+        // a pool skipped for another reason keeps the agent's words on its card
+        (TokenState::Missing, _) if pool.reason.is_some() && !skipped_for_no_token(pool) => None,
         (TokenState::Missing, _) => {
-            let skipped = pool.reason.as_deref() == Some(NO_TOKEN);
+            let skipped = skipped_for_no_token(pool);
             let text = if skipped {
                 format!("No token for {key}. Start All skipped this pool.")
             } else if matches!(context.resident, Resident::Running | Resident::Resuming)
@@ -412,6 +443,10 @@ impl TokenResult {
             Self::NotRemoved(why) => format!(
                 "Token for {repository} not removed: {}. It is still stored.",
                 plain(why).trim_end_matches('.')
+            ),
+            Self::NotAnswered { removal } => format!(
+                "The agent has not answered yet about {} the token for {repository}. It may still do it; this row shows where the token stands.",
+                if *removal { "removing" } else { "saving" }
             ),
         }
     }

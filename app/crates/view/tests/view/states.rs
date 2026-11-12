@@ -380,6 +380,15 @@ fn a_finished_build_says_the_image_is_ready_and_a_stopped_one_names_the_image() 
             "The build was stopped. Check the image actions-runner:local: a stopped build may already have replaced it."
         ]
     );
+    let unnamed = view_of(&patched("build_cancelled", |value| {
+        value["images"][0]["name"] = "".into();
+    }));
+    assert_eq!(
+        unnamed.window.footer.warnings,
+        [
+            "The build was stopped. Check the runner image: a stopped build may already have replaced it."
+        ]
+    );
 }
 
 #[test]
@@ -565,9 +574,24 @@ fn no_pool_could_start_for_another_reason_points_to_the_pools() {
         first_banner(&view).lines,
         ["Each pool below says why. Fix them, then choose Start All."]
     );
+    let list = list(&view);
     assert_eq!(
-        list(&view).pools[0].note.as_deref(),
-        Some("the token store failed: access was refused (kind access_refused, code 5)")
+        list.pools[0].note.as_deref(),
+        Some(
+            "repositories[0]: the token store failed: access was refused (kind access_refused, code 5)."
+        ),
+        "the card keeps the agent's reason, not \"No token\""
+    );
+    assert_eq!(list.pools[0].pill, None);
+    assert_eq!(
+        list.tokens.rows[0].state_text,
+        "The token store failed: access was refused (kind access_refused, code 5)."
+    );
+    assert!(
+        view.banners()
+            .iter()
+            .all(|banner| banner.heading != "No repository has a token yet"),
+        "a store that failed does not show that no token is stored"
     );
 }
 

@@ -459,6 +459,34 @@ fn a_removal_that_failed_says_the_token_is_still_stored() {
 }
 
 #[test]
+fn a_call_the_agent_has_not_answered_says_so_and_leaves_the_token_to_the_snapshot() {
+    for (removal, verb) in [(false, "saving"), (true, "removing")] {
+        let unanswered = TokenResult::NotAnswered { removal };
+        let expected = format!(
+            "The agent has not answered yet about {verb} the token for owner/app. It may still do it; this row shows where the token stands."
+        );
+        assert_eq!(unanswered.announcement("owner/app"), expected);
+        let view = with_ui(
+            "running",
+            &ui(Some("owner/app"), None, &[("owner/app", unanswered)]),
+        );
+        let row = list(&view)
+            .tokens
+            .rows
+            .iter()
+            .find(|row| row.repository == "owner/app")
+            .expect("row");
+        assert_eq!(row.status.as_deref(), Some(expected.as_str()));
+        assert_eq!(row.state, TokenState::Set, "the snapshot decides");
+        assert_eq!(
+            row.form.as_ref().and_then(|form| form.error.as_deref()),
+            None,
+            "nothing asks for the token again"
+        );
+    }
+}
+
+#[test]
 fn a_result_is_the_rows_status_line() {
     let saved = TokenResult::Saved {
         started: vec!["docs".into()],
