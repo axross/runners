@@ -881,6 +881,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                 biased;
                 output = &mut work => return Some(output),
                 () = self.exit_asked() => {
+                    self.abandon_drain();
                     if abortable {
                         return None;
                     }
@@ -916,6 +917,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                 true
             }
             Routed::Quit(reply) => {
+                self.abandon_drain();
                 let _ = reply.send(Ok(json!({ "state": "quitting" })));
                 true
             }

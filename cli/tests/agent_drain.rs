@@ -485,6 +485,31 @@ async fn stop_all_during_the_drains_last_steps_keeps_stopped_by_you() {
     assert_eq!(ended.update, Some(UpdateEnding::new("1.4.0", true)));
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn quit_during_the_drains_last_steps_drops_the_drain_from_the_snapshot() {
+    let rig = rig(ONE_POOL);
+    rig.write_config(&with_diagnostics(ONE_POOL));
+    rig.drain_bound.set(Duration::from_millis(300));
+    let gate = std::rc::Rc::new(tokio::sync::Notify::new());
+    let rig = &rig;
+    let (ended, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            let names = started(&conn, rig, 1).await;
+            rig.backend.print(&names[0], JOB);
+            rig.backend.state.borrow_mut().export_gate = Some(gate.clone());
+            drain(&conn).await;
+            conn.eventually("the export at the bound", || exported(rig, &names[0]))
+                .await;
+            assert_eq!(conn.ok("quit").await["state"], "quitting");
+            // the export still holds the last steps open
+            assert_eq!(conn.status().await.agent.update, None);
+            gate.notify_waiters();
+        })
+        .await;
+    assert_eq!(ended.reason, "quit");
+    assert_eq!(ended.update, None);
+}
+
 /// a slot that backs off when the drain begins does not register again.
 #[tokio::test(flavor = "current_thread")]
 async fn a_backing_off_slot_registers_nothing_during_a_drain() {
