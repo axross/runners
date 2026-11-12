@@ -140,14 +140,14 @@ impl Halt {
         stopped(stop)
     }
 
-    /// sleeps `delay` unless a stop or a drain arrives first; true when one did.
-    async fn sleep<K: Clock>(&mut self, clock: &K, delay: Duration) -> bool {
+    /// sleeps `delay` unless a stop or a drain arrives first.
+    async fn sleep<K: Clock>(&mut self, clock: &K, delay: Duration) {
         if self.halted() {
-            return true;
+            return;
         }
         tokio::select! {
-            () = clock.sleep(delay) => self.halted(),
-            () = self.wait() => true,
+            () = clock.sleep(delay) => {}
+            () = self.wait() => {}
         }
     }
 

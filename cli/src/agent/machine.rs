@@ -605,6 +605,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             tokio::select! {
                 biased;
                 () = self.exit_asked() => {
+                    self.abandon_drain();
                     self.wind_down(&stop, cycle, requests).await;
                     return self.after_stop(Reason::by_you());
                 }
@@ -672,6 +673,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                 call = requests.recv() => {
                     let Some(call) = call else {
                         self.requests_closed();
+                        self.abandon_drain();
                         self.wind_down(&stop, cycle, requests).await;
                         return self.after_stop(Reason::by_you());
                     };
@@ -687,6 +689,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                             return next;
                         }
                         Routed::Quit(reply) => {
+                            self.abandon_drain();
                             self.wind_down(&stop, cycle, requests).await;
                             let next = self.after_stop(Reason::by_you());
                             self.reply_state(reply);
@@ -749,6 +752,12 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
         self.set_phase(Phase::Quitting);
         let _ = reply.send(Ok(self.drain_answer()));
         Next::Exit
+    }
+
+    /// forgets a drain the agent gives up for an end of another kind, so the snapshot
+    /// stops showing it before the stop begins.
+    fn abandon_drain(&self) {
+        self.inner.borrow_mut().drain = None;
     }
 
     /// the answer to `drain_for_update`: the state and the drain the snapshot shows.

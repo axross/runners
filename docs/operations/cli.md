@@ -330,6 +330,7 @@ layer, and the tests also drive it through its seams.
 | `runtime::name`                                          | Runner and container names, and the test for a pool's own                                                    |
 | `runtime::pool`                                          | Pools from a plan, and their preparation                                                                     |
 | `runtime::worker`                                        | The slot loop and its backoff                                                                                |
+| `runtime::job_marks`                                     | What a runner's output says about its job, idle, busy or unknown, which a drain reads                        |
 | `runtime::retained`                                      | The diagnostic containers the backend retains, their records, and who finalises each                         |
 | `runtime::diagnostic`                                    | Finalising diagnostic containers at job end, in the container steps, and at startup                          |
 | `diagnostics`, `diagnostics::exporter`                   | The exporter child and the lines and exit codes it answers with                                              |
@@ -1506,22 +1507,25 @@ The agent is `running`, `resuming`, `stopping`, `stopped`, `building`, or
 transition is answered at once, never queued behind it. It starts `running` or
 `stopped` as the caller asks.
 
-| Method         | Answer                                                                                                                                                                    |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `status`       | The snapshot, in any state                                                                                                                                                |
-| `start_all`    | Stopped: reads the configuration again and checks the image, then answers `resuming`, or `stopped` with the reason it could not. Running: the state it is in              |
-| `stop_all`     | Running: runs the stop sequence (the same grace, budget and exit deadline of 28 s as `stop`) and answers `stopped` when it is done. Stopped: `stopped`                    |
-| `build`        | Stopped: answers `building` with the start time once the build began, and the snapshot tells the rest. Running: `refused`. A configuration that cannot be used: `refused` |
-| `quit`         | Runs the stop sequence if runners run, cancels a build, answers `quitting`, and ends the agent; the lock is free within a second of the answer                            |
-| `token_set`    | Stores the repository's token in any state                                                                                                                                |
-| `token_remove` | Removes it in any state                                                                                                                                                   |
+| Method             | Answer                                                                                                                                                                    |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `status`           | The snapshot, in any state                                                                                                                                                |
+| `start_all`        | Stopped: reads the configuration again and checks the image, then answers `resuming`, or `stopped` with the reason it could not. Running: the state it is in              |
+| `stop_all`         | Running: runs the stop sequence (the same grace, budget and exit deadline of 28 s as `stop`) and answers `stopped` when it is done. Stopped: `stopped`                    |
+| `build`            | Stopped: answers `building` with the start time once the build began, and the snapshot tells the rest. Running: `refused`. A configuration that cannot be used: `refused` |
+| `quit`             | Runs the stop sequence if runners run, cancels a build, answers `quitting`, and ends the agent; the lock is free within a second of the answer                            |
+| `token_set`        | Stores the repository's token in any state                                                                                                                                |
+| `token_remove`     | Removes it in any state                                                                                                                                                   |
+| `drain_for_update` | See [The Update Drain](#the-update-drain)                                                                                                                                 |
 
 A request that arrives while the agent is `resuming`, `stopping`, `building` or
 `quitting` and is not one of `status`, `token_set` and `token_remove`, a stop or a
-quit, is answered `busy`. The agent is `resuming` from the moment it begins to read
+quit, is answered `busy`, except `drain_for_update`, which is `refused` there. The
+agent is `resuming` from the moment it begins to read
 the configuration until the runners' pools are admitted, so a `start_all` or a
 `build` in that time is `busy`, not answered as if the runners ran. One table in the
-code decides all of it, for every phase; this is what it says:
+code decides all of it, for every phase; this is what it says, and while a drain runs
+the table in [The Update Drain](#the-update-drain) takes its place:
 
 | State      | `stop_all`                           | `start_all` | `build`                                          | `quit`                     |
 | ---------- | ------------------------------------ | ----------- | ------------------------------------------------ | -------------------------- |
@@ -1635,7 +1639,7 @@ compared: a job's name is never kept, shown or forwarded.
 | `drain_for_update`, in any other state or while draining | `refused`, and nothing changes                                                                                  |
 | `start_all` or `build`, while draining                   | `refused`, and nothing changes                                                                                  |
 | `stop_all`, while draining                               | Stops every runner, so running jobs fail, then ends for the update, stopped by you                              |
-| `quit`, while draining                                   | Stops and ends as a `quit` does; the `ending` names `quit`                                                      |
+| `quit`, while draining                                   | Stops and ends as a `quit` does; `agent.update` is gone once the stop begins, and the `ending` names `quit`     |
 | The connection that asked closes, while draining         | The drain is cancelled, the agent keeps running, and the slots register again                                   |
 | A runtime core failure, while draining                   | The container steps run, so running jobs fail; the core does not start again, and the agent ends for the update |
 | No runner is waited for any more                         | The container steps run, then the agent ends for the update                                                     |
@@ -1907,7 +1911,10 @@ change nothing. `tests/agent_channel.rs` covers the socket's mode, the peer's us
 and a directory open to others on Unix. `tests/agent_channel_windows.rs` shows a pipe
 of a taken name is refused and a client passes the check of the server's user. `tests/agent_process.rs` runs the agent as a process on
 the fake `docker` and a GitHub stub, a second agent refused, and the log continued
-with ten files kept.
+with ten files kept. `tests/agent_drain.rs` covers the update drain: idle, busy and
+unknown runners, the bound, the reachable rows of its state table, a cancelled drain,
+a backing-off slot, a pool waiting for a token, a core failure, and diagnostic
+finalisation.
 
 The Windows CI step `tests/ci/control-pipe-security.ps1` runs its checks against
 the `serve` mode of the helper and against `serve-agent`, which opens the agent's

@@ -14,6 +14,7 @@ use std::time::Duration;
 use marshal_cli::agent::Push;
 use marshal_cli::agent::machine::{Launch, UPDATE};
 use marshal_cli::agent::wire::UpdateEnding;
+use marshal_cli::instance::lifecycle::StopTimes;
 use marshal_cli::runtime::backend::Backend;
 use marshal_cli::runtime::fake::Call;
 use serde_json::json;
@@ -256,6 +257,11 @@ async fn a_drain_is_refused_while_the_agent_resumes() {
 #[tokio::test(flavor = "current_thread")]
 async fn quit_during_a_drain_ends_the_agent_as_a_quit() {
     let rig = rig(ONE_POOL);
+    rig.backend.state.borrow_mut().stop_hangs = true;
+    rig.times.set(StopTimes {
+        exit_deadline: Duration::from_secs(1),
+        ..StopTimes::default()
+    });
     let rig = &rig;
     let (ended, ()) = rig
         .drive(Launch::Running, |conn| async move {
@@ -263,7 +269,15 @@ async fn quit_during_a_drain_ends_the_agent_as_a_quit() {
             rig.backend.print(&names[0], JOB);
             rig.mark_running();
             drain(&conn).await;
-            conn.ok("quit").await;
+            // the stop hangs until the exit deadline, so the abandoned drain must have
+            // left the snapshot while the agent still stops
+            let other = conn.another().await;
+            let quit = async { conn.ok("quit").await };
+            let meanwhile = async {
+                let snapshot = other.until_state("stopping").await;
+                assert_eq!(snapshot.agent.update, None);
+            };
+            tokio::join!(quit, meanwhile);
         })
         .await;
     assert_eq!(ended.reason, "quit");
