@@ -89,11 +89,15 @@ mod tests {
         base_reference, final_stage_labels, local_copy_sources, reference_tag,
     };
     use super::*;
+    use crate::golden::pins::{
+        DOCKER_GROUP_ID, DOCKER_KEY_FINGERPRINT, DOCKER_KEY_URL, DOCKER_PACKAGES,
+        DOCKER_REPOSITORY_URI, DOCKER_SUITE,
+    };
     use crate::runtime::backend::{ContainerSpec, DiagnosticRecord, Mount};
     use crate::runtime::docker_args::{
         RUN_COMMAND, image_inspect_arguments, image_list_arguments, job_run_arguments,
         pool_diagnostic_list_arguments, pool_list_arguments, probe_run_arguments,
-        volume_chown_arguments,
+        vm_job_run_arguments, volume_chown_arguments,
     };
     use crate::validate::PlannedVolume;
 
@@ -104,7 +108,8 @@ mod tests {
     /// each contract version with the fingerprint of the run contract it was
     /// approved for; a change to the run contract bumps the version and adds a row,
     /// and the old rows stay.
-    const APPROVED_CONTRACTS: &[(u32, u64)] = &[(1, 0xd875_2700_4418_2c5d)];
+    const APPROVED_CONTRACTS: &[(u32, u64)] =
+        &[(1, 0xd875_2700_4418_2c5d), (2, 0xe31b_192f_60bd_b1d1)];
 
     fn dockerfile() -> String {
         String::from_utf8(DOCKERFILE.to_vec()).unwrap()
@@ -308,6 +313,9 @@ mod tests {
             job_run_arguments(&spec),
             job_run_arguments(&diagnostic(false)),
             job_run_arguments(&diagnostic(true)),
+            vm_job_run_arguments(&spec),
+            vm_job_run_arguments(&diagnostic(false)),
+            vm_job_run_arguments(&diagnostic(true)),
             probe_run_arguments("pool-cpu-probe-1", &spec.image),
             volume_chown_arguments(&spec.image, &volumes),
             pool_list_arguments("pool"),
@@ -370,6 +378,47 @@ mod tests {
         assert!(problem.contains("bump"), "{problem}");
         let problem = contract_problem(2, fingerprint(&changed), table).unwrap();
         assert!(problem.contains("no row"), "{problem}");
+    }
+
+    #[test]
+    fn the_image_installs_the_docker_client_the_golden_vm_pins() {
+        let text = dockerfile();
+        let client = DOCKER_PACKAGES
+            .iter()
+            .find(|package| package.name == "docker-ce-cli")
+            .unwrap();
+        for wanted in [
+            DOCKER_KEY_FINGERPRINT.to_string(),
+            DOCKER_KEY_URL.to_string(),
+            format!("URIs: {DOCKER_REPOSITORY_URI}"),
+            format!("Suites: {DOCKER_SUITE}"),
+            format!("{}; \\\n", client.apt_specification()),
+            format!("= {}; \\\n", client.version),
+            format!("docker:x:{DOCKER_GROUP_ID}:*"),
+        ] {
+            assert!(text.contains(&wanted), "the Dockerfile lost: {wanted}");
+        }
+        assert_eq!(text.matches("docker-ce-cli=").count(), 1);
+        let smoke = std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../images/actions-runner/tests/smoke-test.sh"),
+        )
+        .unwrap();
+        let version = client.version;
+        for wanted in [
+            format!("'{version}'"),
+            format!("docker:x:{DOCKER_GROUP_ID}:*"),
+            version
+                .split_once(':')
+                .unwrap()
+                .1
+                .split('-')
+                .next()
+                .unwrap()
+                .replace('.', "\\."),
+        ] {
+            assert!(smoke.contains(&wanted), "smoke-test.sh lost: {wanted}");
+        }
     }
 
     #[test]

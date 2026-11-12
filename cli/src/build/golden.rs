@@ -13,8 +13,8 @@ use tokio::time::Instant;
 use crate::golden::key::check_key_listing;
 use crate::golden::pins::BASE_REFERENCE;
 use crate::golden::steps::{
-    GuestCall, build_vm_docker_command, disable_ssh_call, fetch_key_call, install_docker_call,
-    install_launcher_call, list_key_call, prepare_call,
+    GuestCall, build_vm_docker_command, disable_ssh_call, fetch_key_call, flush_disk_call,
+    install_docker_call, install_launcher_call, list_key_call, prepare_call,
 };
 use crate::image::check::{ImageCheck, ImageLabels, checked_reference};
 use crate::macos::prerequisites::{
@@ -51,7 +51,8 @@ pub struct GoldenTimings {
     pub engine_call: Duration,
     /// the bound on each other `docker` client the image build runs.
     pub docker_call: Duration,
-    /// the wait Tart gives the build VM to shut itself down, and the bound on the call.
+    /// the wait `tart stop` gives `tart run` to end before it kills it, and the bound
+    /// on the call.
     pub shutdown_grace: Duration,
     pub shutdown_budget: Duration,
     /// how long `tart run` has to end once the VM has stopped.
@@ -505,9 +506,17 @@ impl GoldenBuild<'_> {
         }
     }
 
-    /// stops the build VM gracefully, so its disk is complete, and waits for its
-    /// `tart run` to end.
+    /// writes the files the build VM has not yet written to its disk, stops it, and
+    /// waits for its `tart run` to end.
     async fn shut_down(&self, session: &Session, vm: &str) -> Result<(), Abort> {
+        self.log
+            .info(&format!("Writing the build VM {vm}'s files to its disk."));
+        self.guard(self.guest(
+            vm,
+            &flush_disk_call(),
+            "writing the build VM's files to its disk",
+        ))
+        .await?;
         self.log.info(&format!("Shutting the build VM {vm} down."));
         let timings = self.timings;
         self.guard(async {
