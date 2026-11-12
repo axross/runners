@@ -26,11 +26,11 @@ pub(crate) const EXIT_FAILED: u8 = 1;
 pub(crate) const EXIT_USAGE: u8 = 2;
 
 // the four test-override variables below: only a debug build honours them, see docs/operations/cli.md
-const TEST_ROOT_VARIABLE: &str = "MARSHAL_TEST_ROOT";
+pub const TEST_ROOT_VARIABLE: &str = "MARSHAL_TEST_ROOT";
 
-const TEST_GITHUB_API_VARIABLE: &str = "MARSHAL_TEST_GITHUB_API";
+pub const TEST_GITHUB_API_VARIABLE: &str = "MARSHAL_TEST_GITHUB_API";
 
-const TEST_DOCKER_VARIABLE: &str = "MARSHAL_TEST_DOCKER";
+pub const TEST_DOCKER_VARIABLE: &str = "MARSHAL_TEST_DOCKER";
 
 const TEST_BUILD_DEFINITION_VARIABLE: &str = "MARSHAL_TEST_BUILD_DEFINITION";
 

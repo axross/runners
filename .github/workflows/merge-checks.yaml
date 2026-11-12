@@ -144,10 +144,14 @@ jobs:
       # same tests in the release profile, which is the only profile that runs the
       # test that a release build ignores them. MARSHAL_EXPECT_RELEASE makes a test
       # fail if built in the wrong profile, as in the rust job's step of the same kind,
-      # so a dropped --release cannot pass quietly.
+      # so a dropped --release cannot pass quietly. the three variables are set so that
+      # the test that a release build ignores them fails if it does not.
       - name: Test That A Release Build Ignores The Debug-Only Variables
         env:
           MARSHAL_EXPECT_RELEASE: "1"
+          MARSHAL_TEST_ROOT: /nonexistent/marshal-test-root
+          MARSHAL_TEST_DOCKER: /nonexistent/docker
+          MARSHAL_TEST_GITHUB_API: http://127.0.0.1:9
         run: cargo test --locked --release --package marshal-modes
 
   # the app's whole workspace, which needs the Windows web view and so cannot run in

@@ -811,7 +811,7 @@ svg {
   width: 100%;
   height: var(--control-height);
   padding: 0 14px;
-  border: 1px solid transparent;
+  border: 1px solid var(--border-neutral-unselected-control);
   border-radius: var(--radius-md);
   background: var(--component-neutral-rest);
   box-shadow: var(--shadow-text-field-rest);
@@ -827,7 +827,7 @@ svg {
 }
 
 .field[aria-invalid="true"] {
-  border-color: var(--border-destructive-interactive);
+  border-color: var(--text-destructive-low);
   box-shadow: var(--shadow-text-field-error);
 }
 

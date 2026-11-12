@@ -2,8 +2,8 @@
 //! the glyph's colour, all as pure functions of the clock a test sets.
 
 use marshal_view::{
-    Announced, Announcer, Clock, Connection, FALL_DELAY_MS, GlyphColour, IconState, Input, Rgb,
-    SUMMARY_INTERVAL_MS, Settled, TaskbarMode, Tracker, build, elapsed,
+    Announced, Announcer, Cause, Clock, Connection, FALL_DELAY_MS, GlyphColour, IconState, Input,
+    Rgb, SUMMARY_INTERVAL_MS, Settled, TaskbarMode, Tracker, build, elapsed,
 };
 
 use crate::support::*;
@@ -376,4 +376,69 @@ fn a_near_black_glyph_is_legible_on_a_light_taskbar() {
     };
     assert!(contrast(GlyphColour::NEAR_BLACK, Rgb(0xf3, 0xf3, 0xf3)) > 3.0);
     assert!(contrast(GlyphColour::WHITE, Rgb(0x20, 0x20, 0x20)) > 3.0);
+}
+
+#[test]
+fn each_change_of_why_contact_is_lost_is_announced() {
+    let running = load("running");
+    let lost = |cause| Connection::LostContact {
+        last_heard_ms: at(3, 50, 0),
+        cause,
+    };
+    let mut tracker = Tracker::new();
+    let mut step = |connection, offset_s: u64| {
+        let clock = Clock::new(at(3, 52, 0) + offset_s * SECOND, 0);
+        tracker
+            .update(Input::new(connection, Some(&running), clock))
+            .announced
+            .messages
+    };
+    assert!(step(Connection::Connected, 0).is_empty(), "the baseline");
+    let dropped = step(lost(Cause::Dropped), 1);
+    assert!(
+        dropped
+            .iter()
+            .any(|message| message.contains("Reconnecting")),
+        "{dropped:?}"
+    );
+    let failed = step(lost(Cause::RestartFailed), 2);
+    assert!(
+        failed
+            .iter()
+            .any(|message| message.contains("did not answer")),
+        "{failed:?}"
+    );
+    let busy = step(lost(Cause::Busy), 3);
+    assert!(
+        busy.iter().any(|message| message.contains("busy")),
+        "{busy:?}"
+    );
+    assert!(
+        step(lost(Cause::Busy), 4).is_empty(),
+        "the same banner is said once"
+    );
+}
+
+#[test]
+fn the_full_window_announces_a_change_of_why_the_agent_cannot_be_reached() {
+    let mut tracker = Tracker::new();
+    let mut step = |connection, offset_s: u64| {
+        let clock = Clock::new(at(3, 52, 0) + offset_s * SECOND, 0);
+        tracker
+            .update(Input::new(connection, None, clock))
+            .announced
+            .messages
+    };
+    step(Connection::NoAgent, 0);
+    let busy = step(
+        Connection::LostContact {
+            last_heard_ms: at(3, 50, 0),
+            cause: Cause::Busy,
+        },
+        1,
+    );
+    assert!(
+        busy.iter().any(|message| message.contains("busy")),
+        "{busy:?}"
+    );
 }

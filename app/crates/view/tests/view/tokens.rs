@@ -440,6 +440,25 @@ fn a_failure_with_the_field_closed_stays_as_the_rows_status() {
 }
 
 #[test]
+fn a_removal_that_failed_says_the_token_is_still_stored() {
+    // a token-shaped word in the reason, built from pieces, is never shown
+    let token = format!("ghp_{}", "Q".repeat(36));
+    let failed = TokenResult::NotRemoved(format!("Access is denied {token}"));
+    let expected = "Token for owner/app not removed. Access is denied <token>. It is still stored.";
+    assert_eq!(failed.status_line("owner/app"), expected);
+    assert_eq!(failed.announcement("owner/app"), expected);
+    let view = with_ui("running", &ui(None, None, &[("owner/app", failed)]));
+    let row = list(&view)
+        .tokens
+        .rows
+        .iter()
+        .find(|row| row.repository == "owner/app")
+        .expect("row");
+    assert_eq!(row.status.as_deref(), Some(expected));
+    assert_eq!(row.state, TokenState::Set, "the token is still stored");
+}
+
+#[test]
 fn a_result_is_the_rows_status_line() {
     let saved = TokenResult::Saved {
         started: vec!["docs".into()],
