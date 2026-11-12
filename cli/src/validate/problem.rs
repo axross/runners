@@ -99,6 +99,25 @@ impl KeyPath {
         Self::default()
     }
 
+    /// the path as a format writes it, with each key spelled by `name`: keys joined by
+    /// dots and positions in brackets; the root is empty.
+    #[must_use]
+    pub fn text(&self, name: fn(Key) -> &'static str) -> String {
+        let mut text = String::new();
+        for segment in self.segments() {
+            match segment {
+                Segment::Key(key) => {
+                    if !text.is_empty() {
+                        text.push('.');
+                    }
+                    text.push_str(name(*key));
+                }
+                Segment::Index(index) => text.push_str(&format!("[{index}]")),
+            }
+        }
+        text
+    }
+
     #[must_use]
     pub fn key(&self, key: Key) -> Self {
         self.with(Segment::Key(key))

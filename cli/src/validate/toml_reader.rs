@@ -250,17 +250,5 @@ fn table_at(path: &KeyPath) -> Option<Table> {
 
 /// the path as `pool[0].labels`; the root has none.
 pub(crate) fn path_text(path: &KeyPath) -> String {
-    let mut text = String::new();
-    for segment in path.segments() {
-        match segment {
-            Segment::Key(key) => {
-                if !text.is_empty() {
-                    text.push('.');
-                }
-                text.push_str(key_name(*key));
-            }
-            Segment::Index(index) => text.push_str(&format!("[{index}]")),
-        }
-    }
-    text
+    path.text(key_name)
 }
