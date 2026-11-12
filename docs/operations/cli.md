@@ -509,9 +509,10 @@ and words above. What differs by format is what the reader supplies, through the
 - its `Format`, which fixes the rules that change together by format. `Format::Json`
   carries the profile's routing label: the file carries no settings, and a pool names
   its owner and repository as two keys and its token file, whose rules apply, and
-  leaves out neither `os` nor `volumes` where its host has them. `Format::Toml` reads `schema_version`, `routing_label` and `[lifecycle]` from
-  the file: a pool may omit `os` and `volumes`, so a Windows pool has an `os`, names
-  `owner/name` in one key, and has no token file;
+  leaves out neither `os` nor `volumes` where its host has them. `Format::Toml` reads
+  `schema_version`, `routing_label` and `[lifecycle]` from the file: a pool names
+  `owner/name` in one key, has no token file, and may omit `os` and `volumes`, which
+  gives a Linux pool without volumes, so a Windows pool also has an `os`;
 - the path form of a pool, which a plan entry also records as its source path;
 - which keys the format leaves undefined for the host, and where the file holds a key;
 - how a problem reads. A rule that reads the same in both formats, apart from the
