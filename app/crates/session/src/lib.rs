@@ -21,5 +21,5 @@ pub use seam::{
     Connected, Dial, DialError, Failure, Launcher, Link, Log, Method, Present, Pushed, Shown,
     TimeSource,
 };
-pub use session::{Act, Ended, Forms, Handle, Seams, Session};
+pub use session::{Act, Ended, Forms, GITHUB_ASK_AGAIN, Handle, RENEW_EVERY, Seams, Session};
 pub use wall::WallClock;

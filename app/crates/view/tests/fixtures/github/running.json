@@ -1,0 +1,54 @@
+{
+  "budget": {
+    "limit": 5000,
+    "remaining": 4210,
+    "resets_at": 1793765100000,
+    "seen_at": 1793764300000,
+    "level": "normal"
+  },
+  "repositories": [
+    {
+      "repository": "owner/app",
+      "checked_at": 1793764300000,
+      "status": "ok",
+      "retry_at": null,
+      "job_names": "shown",
+      "job_names_cause": null,
+      "job_names_retry_at": null,
+      "runners": [
+        {
+          "name": "app-1-20261104031522114",
+          "github": "busy",
+          "job": {
+            "workflow": "CI",
+            "name": "test (ubuntu-latest)",
+            "run_id": 123,
+            "job_id": 456
+          }
+        },
+        {
+          "name": "app-2-20261104031530871",
+          "github": "idle",
+          "job": null
+        }
+      ]
+    },
+    {
+      "repository": "owner/site",
+      "checked_at": 1793764300000,
+      "status": "ok",
+      "retry_at": null,
+      "job_names": "unknown",
+      "job_names_cause": null,
+      "job_names_retry_at": null,
+      "runners": [
+        {
+          "name": "site-1-20261104033907412",
+          "github": "busy",
+          "job": null
+        }
+      ]
+    }
+  ],
+  "omitted_runners": 0
+}

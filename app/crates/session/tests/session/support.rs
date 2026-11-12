@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use marshal_cli::agent::Launch;
 use marshal_cli::agent::snapshot::Snapshot;
+use marshal_cli::github_status::GithubStatus;
 use marshal_session::{
     Connected, Dial, DialError, Ended, Failure, Handle, Launcher, Link, Log, Method, Present,
     Pushed, Seams, Session, Shown, TimeSource,
@@ -57,6 +58,8 @@ pub enum Called {
     Quit,
     TokenSet { repository: String, token: String },
     TokenRemove { repository: String },
+    SubscribeGithub,
+    RenewGithub,
 }
 
 #[derive(Default)]
@@ -65,6 +68,9 @@ struct AgentState {
     /// the answers to calls, by name; a call not named is answered `Ok`.
     answers: Vec<(&'static str, Result<(), Failure>)>,
     subscribe: Option<Result<(), Failure>>,
+    /// the answers to `github` subscriptions and renewals, in order; then `Ok`.
+    subscribe_github: VecDeque<Result<(), Failure>>,
+    renew_github: VecDeque<Result<(), Failure>>,
     /// a call that is held until the test lets it go.
     held: Vec<(&'static str, Arc<tokio::sync::Notify>)>,
 }
@@ -94,6 +100,18 @@ fn name(method: &Method) -> &'static str {
 impl Link for FakeLink {
     async fn subscribe(&self) -> Result<(), Failure> {
         locked(&self.state).subscribe.clone().unwrap_or(Ok(()))
+    }
+
+    async fn subscribe_github(&self) -> Result<(), Failure> {
+        let mut state = locked(&self.state);
+        state.calls.push(Called::SubscribeGithub);
+        state.subscribe_github.pop_front().unwrap_or(Ok(()))
+    }
+
+    async fn renew_github(&self) -> Result<(), Failure> {
+        let mut state = locked(&self.state);
+        state.calls.push(Called::RenewGithub);
+        state.renew_github.pop_front().unwrap_or(Ok(()))
     }
 
     async fn call(&self, method: Method) -> Result<(), Failure> {
@@ -150,6 +168,25 @@ impl Agent {
 
     pub fn push(&self, snapshot: Snapshot) {
         let _ = self.pushes.send(Pushed::Snapshot(Box::new(snapshot)));
+    }
+
+    pub fn push_github(&self, status: GithubStatus) {
+        let _ = self.pushes.send(Pushed::Github(Box::new(status)));
+    }
+
+    /// whether the session has let go of this connection, as closing it would.
+    pub fn let_go(&self) -> bool {
+        self.pushes.is_closed()
+    }
+
+    /// what the next `github` subscription on this connection answers.
+    pub fn github_answer(&self, answer: Result<(), Failure>) {
+        locked(&self.state).subscribe_github.push_back(answer);
+    }
+
+    /// what the next renewal on this connection answers.
+    pub fn renew_answer(&self, answer: Result<(), Failure>) {
+        locked(&self.state).renew_github.push_back(answer);
     }
 
     pub fn heartbeat(&self) {

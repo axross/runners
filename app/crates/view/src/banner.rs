@@ -37,6 +37,7 @@ pub enum BannerKind {
     Truncated,
     Quitting,
     UnknownState,
+    GithubPaused,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -689,5 +690,6 @@ pub fn banners(context: &Context<'_>) -> Vec<Banner> {
         .chain(leftover_banner(context))
         .chain(no_tokens(context))
         .chain(truncated(context))
+        .chain(crate::github::paused_banner(context))
         .collect()
 }

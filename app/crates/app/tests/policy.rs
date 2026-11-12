@@ -16,7 +16,7 @@ use serde_json::Value;
 /// the plan's content security policy, in full.
 const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; frame-ancestors 'none'";
 
-const MAIN_WINDOW_COMMANDS: [&str; 9] = [
+const MAIN_WINDOW_COMMANDS: [&str; 10] = [
     "read_view",
     "start_all",
     "stop_all",
@@ -26,6 +26,7 @@ const MAIN_WINDOW_COMMANDS: [&str; 9] = [
     "set_token",
     "remove_token",
     "hide_window",
+    "open_job",
 ];
 
 const CONFIRMATION_COMMANDS: [&str; 2] = ["read_confirmation", "answer_confirmation"];
@@ -65,7 +66,7 @@ fn the_content_security_policy_is_exactly_the_plans() {
 }
 
 #[test]
-fn the_main_window_may_listen_and_call_its_nine_commands_and_nothing_else() {
+fn the_main_window_may_listen_and_call_its_ten_commands_and_nothing_else() {
     let capability = json("capabilities/main-window.json");
     assert_eq!(strings(&capability["windows"]), ["main".to_string()].into());
     let expected: BTreeSet<String> = MAIN_WINDOW_COMMANDS
@@ -175,4 +176,35 @@ fn the_main_window_opens_at_880_by_680_with_a_minimum_width_of_480() {
     assert_eq!(main["minWidth"], 480);
     assert_eq!(config["identifier"], "app.axross.marshal");
     assert_eq!(config["app"]["withGlobalTauri"], true);
+}
+
+#[test]
+fn the_opener_plugins_page_script_is_off_and_no_capability_names_it() {
+    let source = std::fs::read_to_string(app_file("src/app.rs")).unwrap();
+    assert!(
+        source.contains(
+            "tauri_plugin_opener::Builder::new()\n        .open_js_links_on_click(false)"
+        ),
+        "the app builds the opener plugin with its page script off"
+    );
+    assert!(!source.contains("tauri_plugin_opener::init"));
+    assert!(!source.contains("tauri_plugin_opener::Builder::default"));
+    assert_eq!(
+        source.matches("tauri_plugin_opener::").count(),
+        1,
+        "the opener is built in one place"
+    );
+    assert!(
+        source.contains(".plugin(opener())"),
+        "and registered from it"
+    );
+    for file in ["main-window.json", "confirmation-window.json"] {
+        let capability = json(&format!("capabilities/{file}"));
+        assert!(
+            strings(&capability["permissions"])
+                .iter()
+                .all(|permission| !permission.starts_with("opener:")),
+            "{file} grants none of the opener plugin's commands"
+        );
+    }
 }

@@ -11,6 +11,7 @@
 
 mod availability;
 mod diagnostics;
+mod github;
 mod newer_agent;
 mod privacy;
 mod states;

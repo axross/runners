@@ -5,6 +5,7 @@ use marshal_session::{Act, Forms, Shown, Then};
 use marshal_view::Confirmation;
 use tauri::ipc::Invoke;
 use tauri::{AppHandle, Runtime, State, Window};
+use tauri_plugin_opener::OpenerExt;
 
 use crate::app::hide_main_window;
 use crate::confirmation;
@@ -63,6 +64,26 @@ pub fn hide_window<R: Runtime>(window: Window<R>) -> Result<(), String> {
     hide_main_window(&window).map_err(|error| error.to_string())
 }
 
+/// opens the job `pool`'s runner named `runner` is running, on github.com in the default
+/// browser. The page names the runner and never an address: the session builds the
+/// address from the pool's configured repository and the two numbers GitHub gave, and a
+/// pool it does not know is refused. When the job has ended nothing opens, and the
+/// pool's card says so.
+#[tauri::command]
+pub async fn open_job<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    pool: String,
+    runner: String,
+) -> Result<(), String> {
+    let Some(page) = state.handle.open_job(pool, runner).await? else {
+        return Ok(());
+    };
+    app.opener()
+        .open_url(page, None::<&str>)
+        .map_err(|error| format!("The job's page did not open: {error}"))
+}
+
 /// the question the confirmation window shows.
 #[tauri::command]
 pub fn read_confirmation(state: State<'_, AppState>) -> Result<Confirmation, String> {
@@ -116,5 +137,6 @@ pub fn handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync + 'stat
         hide_window,
         read_confirmation,
         answer_confirmation,
+        open_job,
     ]
 }

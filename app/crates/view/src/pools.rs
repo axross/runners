@@ -6,6 +6,7 @@ use serde::Serialize;
 
 use crate::control::Control;
 use crate::diagnostics::{Diagnostics, section};
+use crate::github::{self, GithubNote, OpenRun};
 use crate::state::{Context, Resident};
 use crate::text::{humanised, plain};
 use crate::tokens::{Repository, pool_note, repositories};
@@ -42,7 +43,14 @@ pub struct RunnerRow {
     pub since: Option<String>,
     /// why a runner backs off or is held, in the agent's words.
     pub detail: Option<String>,
-    /// what Narrator reads: the pool, the runner and its state.
+    /// "GitHub: idle", while the window shows GitHub status for the runner.
+    pub github: Option<String>,
+    /// "checked 03:41", while the GitHub state is the last known, not a fresh one.
+    pub github_checked: Option<String>,
+    /// the job a busy runner runs: "CI · test (ubuntu-latest)".
+    pub job: Option<String>,
+    pub open_run: Option<OpenRun>,
+    /// what Narrator reads: the pool, the runner, its state and its GitHub state.
     pub label: String,
 }
 
@@ -65,6 +73,9 @@ pub struct PoolCard {
     pub note: Option<String>,
     /// Set Token or Replace Token, which opens the Tokens tab on the repository's row.
     pub pill: Option<Control>,
+    /// what GitHub status says of the pool: hidden or unreadable job names, a repository
+    /// GitHub cannot answer for, a job that has ended.
+    pub github_notes: Vec<GithubNote>,
     pub runners: Vec<RunnerRow>,
     pub diagnostics: Option<Diagnostics>,
 }
@@ -116,9 +127,18 @@ fn runner_row(context: &Context<'_>, pool: &PoolInfo, runner: &RunnerInfo) -> Ru
     let lowered = state.chars().next().map_or_else(String::new, |first| {
         first.to_lowercase().chain(state.chars().skip(1)).collect()
     });
+    let github = github::runner(context, pool, runner);
+    let mut label = format!("{}, {name}, {lowered}", plain(&pool.name));
+    if let Some(github) = &github {
+        label.push_str(&format!(", {}", github.state));
+    }
     RunnerRow {
         slot: runner.slot,
-        label: format!("{}, {name}, {lowered}", plain(&pool.name)),
+        label,
+        github: github.as_ref().map(|github| github.state.clone()),
+        github_checked: github.as_ref().and_then(|github| github.checked.clone()),
+        job: github.as_ref().and_then(|github| github.job.clone()),
+        open_run: github.and_then(|github| github.open_run),
         name,
         mark: (!context.is_stale()).then_some(mark),
         container: runner.workload.as_deref().map(plain),
@@ -150,6 +170,7 @@ fn card(context: &Context<'_>, repositories: &[Repository], pool: &PoolInfo) -> 
         Some((text, pill)) => (Some(text), Some(pill)),
         None => (pool.reason.as_deref().map(plain), None),
     };
+    let github_notes = github::notes(context, pool, pill.is_some());
     let every_runner_stopped = pool
         .runners
         .iter()
@@ -165,6 +186,7 @@ fn card(context: &Context<'_>, repositories: &[Repository], pool: &PoolInfo) -> 
         line: line.join(" · "),
         note,
         pill,
+        github_notes,
         runners: if every_runner_stopped {
             Vec::new()
         } else {
