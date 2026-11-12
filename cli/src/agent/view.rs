@@ -17,7 +17,7 @@ use crate::validate::Entry;
 use super::snapshot::{
     AgentInfo, ConfigurationInfo, DiagnosticContainer, DiagnosticFinding, DiagnosticsInfo,
     ImageInfo, ImageLine, ImageWarning, InUseInfo, Leftover, MigrationInfo, PoolInfo,
-    RepositoryInfo, RunnerInfo, Snapshot,
+    RepositoryInfo, RunnerInfo, Snapshot, UpdateInfo,
 };
 use super::state::{Inner, Phase};
 use super::tokens::StoreTokens;
@@ -171,6 +171,12 @@ impl View<'_> {
                 since: millis(inner.since),
                 build: inner.build.clone(),
                 restart_due: inner.restart_due.map(millis),
+                update: inner.drain.as_ref().map(|drain| UpdateInfo {
+                    version: drain.version.clone(),
+                    waiting: drain.waiting,
+                    deadline: millis(drain.deadline),
+                    pid: std::process::id(),
+                }),
             },
             configuration: configuration(self.config_path, inner),
             leftovers: self
@@ -244,6 +250,9 @@ impl View<'_> {
                             SlotState::BackingOff(why) => ("backing_off", None, Some(why.clone())),
                             SlotState::Held(why) => ("held", None, Some(why.clone())),
                             SlotState::Running(name) => ("running", Some(name.clone()), None),
+                            SlotState::Drained => {
+                                ("stopped", None, Some("stopped for an update".to_string()))
+                            }
                         };
                         RunnerInfo {
                             slot: number,

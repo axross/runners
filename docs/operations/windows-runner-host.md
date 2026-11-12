@@ -15,7 +15,7 @@ and the example host configuration, with the reference for every field, is under
 is reviewed against are in [Security](../conventions/security.md).
 
 **Verification status.** CI builds the image and runs a smoke test on it for every
-pull request, and runs the CLI's tests on GitHub-hosted Linux, Windows, and macOS
+pull request, on linux/amd64 and on linux/arm64, and runs the CLI's tests on GitHub-hosted Linux, Windows, and macOS
 runners; [CLI](./cli.md) says what each covers. The CLI's tests check the
 configuration rules against the fixtures in
 [`tests/host-configuration/`](../../tests/host-configuration). The steps below that
@@ -180,7 +180,10 @@ write**. Create one **fine-grained personal access token per target repository**
 under **Settings, Developer settings, Fine-grained personal access tokens**:
 
 - **Repository access:** only that one repository.
-- **Permissions:** Administration, read and write, and nothing else.
+- **Permissions:** Administration, read and write. Actions, read, is optional: with
+  it the agent can name the job a busy runner runs, at the cost the token permission
+  section of [Security](../conventions/security.md#a-token-carries-only-its-pool-kinds-permissions)
+  names. Nothing else.
 
 Save each token in a file on this machine, holding the raw token text, at the
 `tokenPath` of the repository's pool entries, and keep these files outside any
@@ -490,6 +493,13 @@ configured name on its previous image. CI runs `marshal build` only against a sm
 test definition on Linux; a full build of the image on Docker Desktop is verified on
 axpc (maintainer's report,
 [#56](https://github.com/axross/runners/issues/56#issuecomment-6511344317)).
+
+The image carries a Docker client at a pinned version, which `build` installs from
+Docker's apt repository after checking its signing key. The Docker runtime mounts no
+Docker socket into a job container, so the client reaches no engine here; the image
+has it for the axmc host, whose job VMs mount their own. The image contract version
+is 2 with it, so an image built before the release that carries contract 2 is refused
+until `marshal build` runs once; [CLI](./cli.md#the-image-contract) has the check.
 
 The Android NDK contract, Java/SDK/Gradle inputs, and Build sections of the
 [image README](../../images/actions-runner/README.md) own version/checksum
@@ -955,7 +965,9 @@ pull), and whatever each repository's jobs reach on a GitHub-hosted runner. The
 image build, whenever `marshal build` runs, also reaches the Ubuntu package archives
 that the base image's apt sources name, over port 80 or 443 (by default
 `archive.ubuntu.com` and `security.ubuntu.com`; check the base image's sources
-before filtering). Linux x64 tool provisioning also needs HTTPS to
+before filtering). It also needs HTTPS to `download.docker.com` for the Docker
+client's signing key and its apt package, which every build installs. Linux x64 tool
+provisioning also needs HTTPS to
 `dl.google.com` for the checksum-pinned Android SDK/NDK/CMake archives,
 `github.com` and `release-assets.githubusercontent.com` for Temurin, and
 `services.gradle.org` for the Gradle distribution, including its redirects to

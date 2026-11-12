@@ -7,9 +7,9 @@ use std::time::Duration;
 
 use super::key::VerifiedKey;
 use super::pins::{
-    DOCKER_ARCHITECTURE, DOCKER_COMPONENT, DOCKER_KEY_PATH, DOCKER_KEY_URL, DOCKER_PACKAGES,
-    DOCKER_REPOSITORY_URI, DOCKER_SOURCES_PATH, DOCKER_SUITE, GUEST_USER, LAUNCHER_PATH,
-    PackagePin,
+    DOCKER_ARCHITECTURE, DOCKER_COMPONENT, DOCKER_GROUP_ID, DOCKER_KEY_PATH, DOCKER_KEY_URL,
+    DOCKER_PACKAGES, DOCKER_REPOSITORY_URI, DOCKER_SOURCES_PATH, DOCKER_SUITE, GUEST_USER,
+    LAUNCHER_PATH, PackagePin,
 };
 
 /// the launcher the golden VM runs `docker` through.
@@ -25,6 +25,7 @@ const DISABLE_SSH: &str = include_str!("scripts/disable-ssh.sh");
 const PACKAGE_STEP_BUDGET: Duration = Duration::from_secs(20 * 60);
 const DOWNLOAD_BUDGET: Duration = Duration::from_secs(2 * 60);
 const QUICK_STEP_BUDGET: Duration = Duration::from_secs(60);
+const FLUSH_BUDGET: Duration = Duration::from_secs(2 * 60);
 
 /// one call through the guest agent: pass `command` to `tart exec`, with `-i` and
 /// `input` on its standard input when there is some, and give it `budget`.
@@ -107,9 +108,10 @@ pub fn docker_sources() -> String {
     )
 }
 
-/// step 4: installs the apt source, then the four packages at their pinned versions,
-/// holds them, and adds the guest user to the `docker` group, which takes effect
-/// when the guest agent next starts. It takes the proof that the key passed the
+/// step 4: installs the apt source, creates the `docker` group with
+/// [`DOCKER_GROUP_ID`], installs the four packages at their pinned versions, holds
+/// them, and adds the guest user to the group, which takes effect when the guest
+/// agent next starts. It takes the proof that the key passed the
 /// check, so nothing from Docker's repository is installed before that.
 #[must_use]
 pub fn install_docker_call(_key: &VerifiedKey) -> GuestCall {
@@ -117,7 +119,8 @@ pub fn install_docker_call(_key: &VerifiedKey) -> GuestCall {
         .iter()
         .map(PackagePin::apt_specification)
         .collect();
-    let mut arguments = vec![DOCKER_SOURCES_PATH, GUEST_USER];
+    let docker_gid = DOCKER_GROUP_ID.to_string();
+    let mut arguments = vec![DOCKER_SOURCES_PATH, GUEST_USER, docker_gid.as_str()];
     arguments.extend(packages.iter().map(String::as_str));
     script_call(
         true,
@@ -153,6 +156,22 @@ pub fn disable_ssh_call() -> GuestCall {
         &[GUEST_USER],
         None,
         QUICK_STEP_BUDGET,
+    )
+}
+
+/// writes the files the guest has not yet written to its disk, and fails when the
+/// root filesystem reports a write error. `tart stop` ends the VM at once, with no
+/// shutdown inside it, so the build VM runs this before it stops, or the files
+/// written last would be missing from the golden VM.
+#[must_use]
+pub fn flush_disk_call() -> GuestCall {
+    script_call(
+        true,
+        "marshal-flush-disk",
+        "sync && sync -f /",
+        &[],
+        None,
+        FLUSH_BUDGET,
     )
 }
 
@@ -204,6 +223,17 @@ mod tests {
     #[test]
     fn the_calls_are_exact() {
         assert_eq!(
+            flush_disk_call().command,
+            words(&[
+                "sudo",
+                "-n",
+                "bash",
+                "-c",
+                "sync && sync -f /",
+                "marshal-flush-disk"
+            ])
+        );
+        assert_eq!(
             prepare_call().command,
             [
                 words(&["sudo", "-n", "bash", "-c"]),
@@ -243,6 +273,7 @@ mod tests {
                     "marshal-install-docker",
                     "/etc/apt/sources.list.d/docker.sources",
                     "admin",
+                    "123",
                     "docker-ce=5:29.9.3-1~ubuntu.24.04~noble",
                     "docker-ce-cli=5:29.9.3-1~ubuntu.24.04~noble",
                     "containerd.io=2.4.2-3~ubuntu.24.04~noble",

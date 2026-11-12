@@ -12,6 +12,7 @@ pub mod de;
 pub mod diagnostics;
 pub mod edit;
 pub mod fold;
+pub mod github_status;
 pub mod golden;
 pub mod host_config;
 pub mod image;

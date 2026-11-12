@@ -4,7 +4,7 @@ set -euo pipefail
 image="${1:?Usage: bash images/actions-runner/tests/smoke-test.sh <image>}"
 test "$(docker image inspect --format '{{json (index .Config "Volumes")}}' "$image")" = null
 test "$(docker image inspect --format '{{json (index .Config "Entrypoint")}}' "$image")" = null
-docker run --rm --network none -i "$image" bash -s <<'SMOKE'
+docker run --rm --network none -i "$image" bash -s <<'COMMON'
 set -euo pipefail
 test "$(id -un)" = runner
 test -x /home/runner/run.sh
@@ -17,6 +17,37 @@ test ! -e /tmp/install-ndks.sh
 test -z "${ANDROID_NDK_HOME:-}"
 test -w "$HOME/.android"
 printf 'sdk download cache can be written\n' > "$HOME/.android/cache/smoke"
+
+test "$(command -v docker)" = /usr/bin/docker
+docker --version | grep -E '^Docker version 29\.9\.3, build [0-9a-f]+$'
+test "$(dpkg-query --show --showformat='${Version}' docker-ce-cli)" = '5:29.9.3-1~ubuntu.24.04~noble'
+case "$(dpkg-query --search /usr/bin/docker)" in docker-ce-cli*': /usr/bin/docker') ;; *) exit 1 ;; esac
+case "$(uname -m)" in
+  x86_64) machine='Advanced Micro Devices X86-64' ;;
+  aarch64) machine='AArch64' ;;
+  *) echo "unexpected architecture: $(uname -m)" >&2; exit 1 ;;
+esac
+readelf -h /usr/bin/docker | grep -E "Machine:[[:space:]]+${machine}\$"
+test ! -e /etc/apt/sources.list.d/docker.sources
+test ! -e /etc/apt/keyrings/docker.asc
+case "$(getent group docker)" in docker:x:123:*) ;; *) exit 1 ;; esac
+id -nG | tr ' ' '\n' | grep -Fx docker
+test ! -e /var/run/docker.sock
+COMMON
+
+smoke_without_android() {
+  docker run --rm --network none -i "$image" bash -s <<'NO_ANDROID'
+set -euo pipefail
+test "$(ls -A "$ANDROID_SDK_ROOT")" = ndk
+test -z "$(ls -A "$ANDROID_SDK_ROOT/ndk")"
+test -z "$(ls -A "$RUNNER_TOOL_CACHE")"
+test -z "$(find "$HOME/.gradle" -type f)"
+NO_ANDROID
+}
+
+smoke_with_android() {
+  docker run --rm --network none -i "$image" bash -s <<'ANDROID'
+set -euo pipefail
 work_dir="$(mktemp -d)"
 trap 'rm -rf -- "$work_dir"' EXIT
 printf 'sdk metadata can be written\n' > "$ANDROID_SDK_ROOT/repositories.cfg"
@@ -87,21 +118,33 @@ for version in 27.0.12077973 27.1.12297006; do
   readelf -h "$work_dir/$version.so" | grep -E 'Machine:.*AArch64'
   readelf --dyn-syms --wide "$work_dir/$version.so" | grep -w ndk_smoke
 done
-SMOKE
+ANDROID
 
-docker run --rm --network none "$image" bash -c \
-  'set -euo pipefail
-   printf "poisoned\n" > "$ANDROID_SDK_ROOT/ndk/27.1.12297006/source.properties"
-   printf "poisoned\n" > "$ANDROID_SDK_ROOT/cmdline-tools/20.0/bin/sdkmanager"
-   printf "poisoned\n" > "$RUNNER_TOOL_CACHE/Java_Temurin-Hotspot_jdk/17.0.20-101/x64/release"
-   printf "poisoned\n" > "$HOME/.gradle/wrapper/dists/gradle-9.3.1-bin/23ovyewtku6u96viwx3xl3oks/gradle-9.3.1-bin.zip"'
-docker run --rm --network none "$image" bash -c \
-  'set -euo pipefail
-   grep -Fx "Pkg.Revision = 27.1.12297006" "$ANDROID_SDK_ROOT/ndk/27.1.12297006/source.properties"
-   export JAVA_HOME="$RUNNER_TOOL_CACHE/Java_Temurin-Hotspot_jdk/17.0.20-101/x64"
-   grep -Fx '\''JAVA_RUNTIME_VERSION="17.0.20.1+1"'\'' "$JAVA_HOME/release"
-   "$ANDROID_SDK_ROOT/cmdline-tools/20.0/bin/sdkmanager" --version | grep -Fx "20.0"
-   archive="$HOME/.gradle/wrapper/dists/gradle-9.3.1-bin/23ovyewtku6u96viwx3xl3oks/gradle-9.3.1-bin.zip"
-   printf "%s  %s\n" "b266d5ff6b90eada6dc3b20cb090e3731302e553a27c5d3e4df1f0d76beaff06" "$archive" | sha256sum --check --strict'
+  docker run --rm --network none "$image" bash -c \
+    'set -euo pipefail
+     printf "poisoned\n" > "$ANDROID_SDK_ROOT/ndk/27.1.12297006/source.properties"
+     printf "poisoned\n" > "$ANDROID_SDK_ROOT/cmdline-tools/20.0/bin/sdkmanager"
+     printf "poisoned\n" > "$RUNNER_TOOL_CACHE/Java_Temurin-Hotspot_jdk/17.0.20-101/x64/release"
+     printf "poisoned\n" > "$HOME/.gradle/wrapper/dists/gradle-9.3.1-bin/23ovyewtku6u96viwx3xl3oks/gradle-9.3.1-bin.zip"'
+  docker run --rm --network none "$image" bash -c \
+    'set -euo pipefail
+     grep -Fx "Pkg.Revision = 27.1.12297006" "$ANDROID_SDK_ROOT/ndk/27.1.12297006/source.properties"
+     export JAVA_HOME="$RUNNER_TOOL_CACHE/Java_Temurin-Hotspot_jdk/17.0.20-101/x64"
+     grep -Fx '\''JAVA_RUNTIME_VERSION="17.0.20.1+1"'\'' "$JAVA_HOME/release"
+     "$ANDROID_SDK_ROOT/cmdline-tools/20.0/bin/sdkmanager" --version | grep -Fx "20.0"
+     archive="$HOME/.gradle/wrapper/dists/gradle-9.3.1-bin/23ovyewtku6u96viwx3xl3oks/gradle-9.3.1-bin.zip"
+     printf "%s  %s\n" "b266d5ff6b90eada6dc3b20cb090e3731302e553a27c5d3e4df1f0d76beaff06" "$archive" | sha256sum --check --strict'
+}
+
+architecture="$(docker run --rm --network none "$image" uname -m)"
+case "$architecture" in
+  x86_64) smoke_with_android ;;
+  aarch64) smoke_without_android ;;
+  *)
+    echo "Unsupported architecture: $architecture" >&2
+    exit 1
+    ;;
+esac
+
 bash images/actions-runner/tests/diagnostic-smoke.sh "$image"
-echo "Runner image smoke and tool isolation checks passed."
+echo "Runner image smoke checks passed on $architecture."

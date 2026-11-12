@@ -130,8 +130,16 @@ see [operations/cli.md](./operations/cli.md#the-instance-layer).
 and told what to do over its channel: it stops and starts all runners, builds the
 **Runner Image**, quits, and stays up when its configuration, image or pools fail.
 It takes the instance's lock, channel and log directory, so it and `start` never
-run on one machine together. Not to be confused with an **Agent Host**. See
+run on one machine together. The **Marshal App**'s executable runs it in its agent
+mode. Not to be confused with an **Agent Host**. See
 [operations/cli.md](./operations/cli.md#the-agent).
+
+**Marshal App** - the Windows notification-area app under `app/`: one executable that
+shows the icon, its menu and the main window and, started again with `agent` as its
+first argument, runs the **Resident Agent** in a separate hidden process that outlives
+it. The app is a client of **Protocol Version 2** only; it never holds the lock, reads
+the configuration, touches the **Token Store** or runs Docker. It is built in CI and
+not yet installed or released. See [operations/app.md](./operations/app.md).
 
 **Token Store** - where the **Resident Agent** keeps each **Target Repository**'s
 token, by the repository's lower-case `owner/name`: the Windows Credential Manager
@@ -139,8 +147,8 @@ on Windows, with local persistence, and none yet elsewhere, where every pool is
 skipped. See [operations/cli.md](./operations/cli.md#the-token-store).
 
 **Protocol Version 2** - the line-based JSON messages the **Resident Agent**
-serves on the instance's channel: `hello`, requests and responses, a subscribed
-`state` topic with events, heartbeats and `ending`. A first line that is not a
+serves on the instance's channel: `hello`, requests and responses, subscribed
+`state` and `github` topics with events, heartbeats and `ending`. A first line that is not a
 `hello` is refused, so version 1's requests never reach the agent. See
 [operations/cli.md](./operations/cli.md#protocol-version-2).
 
@@ -148,6 +156,20 @@ serves on the instance's channel: `hello`, requests and responses, a subscribed
 `status` method: its state and reason, its pools and runners, its images and what a
 stop left behind, from local state, cut to 64 KiB. It never holds a token. See
 [operations/cli.md](./operations/cli.md#the-snapshot).
+
+**GitHub State** - what GitHub's runner list says of one runner of this host:
+offline, idle or busy, with the job a busy runner runs once it is known, or not
+listed. It is separate from the runner's local state in the **Snapshot**; the
+**Resident Agent** reads it only while a client holds the `github` topic, and only
+for a **Target Repository** with a registered runner. See
+[operations/cli.md](./operations/cli.md#github-status).
+
+**Request Budget** - the hourly count of GitHub API requests left to the token's
+account, as the `x-ratelimit-*` headers of the **Resident Agent**'s GitHub status
+reads report it, with the level it sets: normal, slowed at 25% left, and paused at
+10% until the reset. Registrations use the same budget but their responses are
+not read for it. See
+[operations/cli.md](./operations/cli.md#github-status).
 
 **Diagnostic Container** - a job container of an **Execution Pool** with
 `diagnostics` on. It runs the runner under the image's collector, carries the
@@ -177,6 +199,13 @@ of the **Golden VM**, named `marshal-job-<pool>-<slot>-<time>`, booted on
 **Softnet** with no shared directory, clipboard, audio, USB accessories or Rosetta,
 and deleted when its job ends. A **Slot**'s Job VM is booted and idle while its
 runner waits for a job. See [conventions/security.md](./conventions/security.md#a-linux-job-on-axmc-runs-in-a-per-job-vm).
+
+**VM-Local Docker Socket** - the Docker socket, `/var/run/docker.sock`, of the Docker
+Engine inside a **Job VM**, which the VM runtime mounts into that VM's runner
+container from **Image Contract Version** 2, so a job step can run `docker`. It
+belongs to a VM that one job uses and that is deleted afterwards, never to a host,
+and the Docker runtime on axpc mounts no socket. See
+[conventions/security.md](./conventions/security.md#the-vm-local-docker-socket).
 
 **Build VM** - the temporary VM, named `marshal-build-linux-<time>`, in which
 `build --profile axmc` makes a new **Golden VM**. It is renamed to the golden name

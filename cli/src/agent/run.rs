@@ -11,6 +11,8 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, watch};
 
 use crate::command::{EXIT_FAILED, EXIT_OK, print_error};
+use crate::github_status::collector::Collector;
+use crate::github_status::http::GitHubReader;
 use crate::instance::channel::ChannelError;
 use crate::instance::lifecycle::StopTimes;
 use crate::instance::lock::{InstanceLock, LockError};
@@ -28,7 +30,7 @@ use super::builder::{DockerImageBuilder, ImageBuilder};
 use super::channel::AgentChannel;
 use super::executable::{CHECK_EVERY, Executable};
 use super::log::AgentLog;
-use super::machine::{Agent, Ended, Launch, Seams, Settings};
+use super::machine::{Agent, DRAIN_BOUND, Ended, Launch, Seams, Settings};
 use super::server::Limits;
 use super::snapshot::Snapshot;
 use super::tokens::StoreTokens;
@@ -39,6 +41,8 @@ pub struct Resident<'a, B, K, R, D> {
     pub backend: &'a B,
     pub clock: &'a K,
     pub registrar: &'a R,
+    /// reads GitHub status for the window, only while a client wants it.
+    pub reader: &'a GitHubReader,
     pub builder: &'a D,
     /// `None` on a host with no store; every pool is then skipped.
     pub store: Option<Arc<dyn TokenStore>>,
@@ -63,16 +67,29 @@ where
     R: Registrar,
     D: ImageBuilder,
 {
+    let store = resident.store.clone();
     let tokens = StoreTokens::new(resident.store);
     let (calls, mut requests) = mpsc::unbounded_channel();
     let (snapshots, receiver) = watch::channel(Arc::new(Snapshot::default()));
-    let channel = AgentChannel::open(
+    let followed = receiver.clone();
+    let mut channel = AgentChannel::open(
         resident.lock,
         resident.roots,
         calls,
         receiver,
         resident.limits,
     )?;
+    let clock = resident.clock;
+    let collector = channel.github_feed().map(|feed| {
+        Collector::new(
+            resident.reader,
+            store,
+            resident.log,
+            Box::new(move || super::view::millis(clock.now())),
+            feed.published,
+            feed.active,
+        )
+    });
     resident.log.info(&format!(
         "The agent is running. Its channel is {}.",
         channel.address()
@@ -105,10 +122,22 @@ where
             executable,
         },
     );
-    let ended = agent.run(&mut requests).await;
+    let collecting = async {
+        if let Some(collector) = collector {
+            collector.run(followed).await;
+        }
+        std::future::pending::<()>().await;
+    };
+    let ended = tokio::select! {
+        ended = agent.run(&mut requests) => ended,
+        // collection never ends on its own
+        () = collecting => std::future::pending::<Ended>().await,
+    };
     drop(agent);
     watcher.abort();
-    channel.close(ended.reason, ANSWERS_WITHIN).await;
+    channel
+        .close(ended.reason, ended.update.clone(), ANSWERS_WITHIN)
+        .await;
     Ok(ended)
 }
 
@@ -264,6 +293,10 @@ pub fn run(options: AgentOptions<'_>, err: &mut dyn Write) -> u8 {
         Ok(registrar) => registrar,
         Err(error) => return log_error(&*log, &error),
     };
+    let reader = match GitHubReader::new(options.github_api, HttpLimits::default()) {
+        Ok(reader) => reader,
+        Err(error) => return log_error(&*log, &error),
+    };
     let runtime = match single_threaded_runtime() {
         Ok(runtime) => runtime,
         Err(error) => {
@@ -293,6 +326,7 @@ pub fn run(options: AgentOptions<'_>, err: &mut dyn Write) -> u8 {
         backend: &backend,
         clock: &SystemClock,
         registrar: &registrar,
+        reader: &reader,
         builder: &builder,
         store,
         log: &*log,
@@ -304,6 +338,7 @@ pub fn run(options: AgentOptions<'_>, err: &mut dyn Write) -> u8 {
             profile: applied.profile,
             times: StopTimes::default(),
             launch: options.launch,
+            drain_bound: DRAIN_BOUND,
         },
         executable: applied.executable,
         limits: applied.limits,

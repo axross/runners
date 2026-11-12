@@ -256,7 +256,14 @@ Creating the draft pull request and pushing fixes while it is open trigger
 [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml). It runs on a
 GitHub-hosted runner with `contents: read`, checks out the pull request, and runs
 `mise run check`, which executes the pull request's own task definitions and the
-linters they call, including the CLI's Rust gates. The same workflow also runs a
+linters they call, including the CLI's Rust gates and, for the app under `app/`, its
+formatting, the lint and tests of its platform-independent crates, its cargo-deny
+run, the main window page's Node tests, a check
+that both Rust toolchain files name one channel and that `app/tauri-cli.version`
+holds one exact version, the test of the script that reads that version
+(`test:tauri-cli-version`), and `check:app-lock`, which fails when the app's
+lockfile resolves a crate `marshal-cli` builds with to another version than the
+CLI's. The same workflow also runs a
 `rust` job that formats, lints, and tests the CLI on Linux, Windows, and macOS hosted
 runners, with four more steps on Linux only: the release-profile tests of the
 debug-only overrides, the test definition `build` reads among them; a build of the
@@ -272,10 +279,22 @@ helper and runs a copy of the helper as `nobody` through the hosted runner's
 passwordless `sudo`, failing unless that other user is refused the lock. On Windows a
 further step has the helper open the control pipe and reads the live pipe's security
 descriptor back with PowerShell 7, failing unless it grants the current user alone.
-Neither step needs a new action, permission, or secret. The workflow also builds the
+Neither step needs a new action, permission, or secret. An `app-modes` job on a macOS
+hosted runner holds `contents: read` and runs clippy and the tests of the app's
+mode-dispatch crate, which covers the dispatch of the Unix shims there, then runs
+that crate's tests in the release profile, without building the web view, and an `app` job on a Windows
+hosted runner holds `contents: read` and builds the app's whole workspace: it
+installs `tauri-cli` with `cargo install --locked` at the version in
+`app/tauri-cli.version`, the one place that pin is set, lints and tests every crate,
+runs `cargo tauri build --no-bundle`, fails if the build changed a tracked file or
+left a file that is neither tracked nor ignored, and keeps the built
+`marshal-app.exe` as the run's artifact. Neither job uses a cache action, so
+`tauri-cli` compiles on every run, and the `app` job's timeout is 45 minutes;
+[App](./app.md#building-the-app) records how it was set.
+The workflow also builds the
 runner image for linux/arm64 on the hosted `ubuntu-24.04-arm` runner, in a job of its
-own that builds and never pushes and runs no smoke test, since those assume x86_64
-([#74](https://github.com/axross/runners/issues/74)). Its release-build job is the
+own that builds the image, runs the same smoke test, which expects no Android toolchain
+on arm64, and never pushes ([#74](https://github.com/axross/runners/issues/74)). Its release-build job is the
 release build's dry run: it calls
 [`release-build.yaml`](../../.github/workflows/release-build.yaml), which builds the
 Windows x64 and macOS arm64 release binaries on their hosted runners, runs the
@@ -296,9 +315,10 @@ only `gh` stubbed. On Windows a standard local user without administrator rights
 runs the check block and installs the MSI. A pull request from a fork runs without
 repository secrets.
 [`rust-advisories.yaml`](../../.github/workflows/rust-advisories.yaml) checks the
-CLI's locked crates against the RustSec advisory database every week, on manual
-dispatch, and on a pull request that changes `cli/Cargo.lock`, `cli/deny.toml`, or the
-workflow itself. It needs the network and moves with the outside world, so it is not
+CLI's locked crates and, in a second step, the app's, against the RustSec advisory
+database every week, on manual dispatch, and on a pull request that changes
+`cli/Cargo.lock`, `cli/deny.toml`, `app/Cargo.lock`, `app/deny.toml`, or the workflow
+itself. It needs the network and moves with the outside world, so it is not
 part of `mise run check` and is not a required check: a new advisory turns it red and
 the maintainer triages it. Codex review may:
 
@@ -421,13 +441,26 @@ the contract tests in `cli/src/image/contract.rs` ask for by name:
    [`cli/tests/build-definition/Dockerfile`](../../cli/tests/build-definition/Dockerfile)
    to the same base and values.
 
-Nothing else needs an edit: the tests that depend on the declared runner version
-and date read them from the two Dockerfiles.
+Nothing else needs an edit for the version: the tests that depend on the declared
+runner version and date read them from the two Dockerfiles.
+
+Before the bump merges, check that the new runner still prints the two lines the
+update drain reads, `Listening for Jobs` and `Running job:`, in the same form: search
+for both strings in the new release's source on the
+[actions/runner](https://github.com/actions/runner) repository, at its tag. A runner
+that drops or rewords `Running job:` but keeps `Listening for Jobs` makes a drain
+stop busy runners mid-job, as [CLI](./cli.md#the-update-drain) describes; if either
+line changed, change the line marks in `cli/src/runtime/job_marks.rs` in the same
+pull request.
 
 A runner bump changes no part of the run contract, so the contract version stays.
 When the new runner changes something the run contract relies on, such as a path or
 the user it runs as, [REVIEW.md](../../REVIEW.md) asks for the contract version to
-be raised, as [CLI](./cli.md#the-image-contract) describes.
+be raised, as [CLI](./cli.md#the-image-contract) describes. The `docker` group id
+is one such thing: the Dockerfile fails the build when a new base gives the group
+an id other than `DOCKER_GROUP_ID`, which the golden VM's `docker` group has, so a bump that
+changes it also changes `DOCKER_GROUP_ID`, the Dockerfile and the smoke test
+together, and raises the golden VM version and the contract version.
 
 The CLI embeds the runner image's definition, so a host that runs the CLI builds the
 new runner only once it has a binary built after the bump. Keep the pull request's
@@ -674,9 +707,12 @@ that subject, so the title decides the release:
   major version. On `0.x` it releases `1.0.0`, not the next minor.
 - `build(deps)` releases a patch, through the `releaseRules` in
   [`release/.releaserc.json`](../../release/.releaserc.json). That is the subject
-  Dependabot writes for the runner image and the CLI's crates and toolchain, so
+  Dependabot writes for the runner image, the CLI's crates and the toolchain, so
   such a bump reaches hosts in a release. Its notes list it under Dependencies,
-  through the notes generator's `presetConfig.types` in the same file.
+  through the notes generator's `presetConfig.types` in the same file. Dependabot's
+  entry for the app's crates writes the same subject, so until the release carries
+  the app, a bump of a crate only the app links releases a patch that changes
+  nothing in the released `marshal`.
 - Every other subject releases nothing. That includes `build(deps-dev)`, since
   dev-dependencies are not in the binary, though such a bump can still change a
   crate the binary shares in `Cargo.lock`; the CLI has no dev-dependencies today.

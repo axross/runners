@@ -25,14 +25,14 @@ use marshal_cli::runtime::backend::{
 use marshal_cli::runtime::board::Board;
 use marshal_cli::runtime::clock::Clock;
 use marshal_cli::runtime::diagnostic::finalize_at_job_end;
-use marshal_cli::runtime::docker_args::{job_run_arguments, probe_run_arguments};
+use marshal_cli::runtime::docker_args::{probe_run_arguments, vm_job_run_arguments};
 use marshal_cli::runtime::log::Log;
 use marshal_cli::runtime::name::{cpu_probe_name, job_container_name};
 use marshal_cli::runtime::pool::{PoolSpec, pools_from_plan};
 use marshal_cli::runtime::secret::Secret;
 use marshal_cli::runtime::tart::args::run_arguments;
 use marshal_cli::runtime::tart::names::GoldenVmName;
-use marshal_cli::runtime::tart::{TartTimings, VmLauncher};
+use marshal_cli::runtime::tart::{GOLDEN_VM_VERSION, TartTimings, VmLauncher};
 use marshal_cli::validate::validate;
 use support::rig::{
     LAUNCHER, POOL, Rig, SLOT, TestClock, golden_name, host, job_vm, quick_timings, request,
@@ -149,7 +149,7 @@ async fn the_golden_vm_check_reads_the_listing_and_nothing_boots() {
     assert_eq!(
         missing.refusal(IMAGE).unwrap(),
         format!(
-            "the golden VM is missing; this CLI needs one with golden VM version 1 and image contract {CONTRACT_VERSION}"
+            "the golden VM is missing; this CLI needs one with golden VM version {GOLDEN_VM_VERSION} and image contract {CONTRACT_VERSION}"
         )
     );
 
@@ -161,8 +161,9 @@ async fn the_golden_vm_check_reads_the_listing_and_nothing_boots() {
     assert_eq!(
         mismatched.refusal(IMAGE).unwrap(),
         format!(
-            "the golden VM {other} has golden VM version 2 and image contract {CONTRACT_VERSION}, \
-             but this CLI needs golden VM version 1 and image contract {CONTRACT_VERSION}"
+            "the golden VM {other} has golden VM version {} and image contract {CONTRACT_VERSION}, \
+             but this CLI needs golden VM version {GOLDEN_VM_VERSION} and image contract {CONTRACT_VERSION}",
+            GOLDEN_VM_VERSION + 1
         )
     );
 }
@@ -1082,6 +1083,54 @@ async fn a_cpu_set_needs_a_prepared_vm() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn the_runner_container_mounts_the_vms_own_docker_socket_and_nothing_else_of_a_host() {
+    let rig = Rig::new();
+    prepared(&rig).await;
+    let vm = job_vm();
+    let spec = spec(&container_name(), None);
+    let jit = Secret::new(JIT.to_string());
+    rig.log.mask(&jit);
+    rig.docker_script("run_prints_jit", "");
+
+    assert_eq!(rig.backend.run_container(&spec, &jit).await.unwrap(), 0);
+
+    let launch = rig
+        .fake
+        .invocations()
+        .into_iter()
+        .find(|call| call.arguments.contains(&LAUNCHER.to_string()))
+        .expect("the launcher is started through tart exec");
+    assert_eq!(launch.arguments[..3], ["exec", "-i", vm.as_str()]);
+    let mounts: Vec<&String> = launch
+        .arguments
+        .iter()
+        .filter(|argument| argument.starts_with("type="))
+        .collect();
+    assert_eq!(
+        mounts,
+        ["type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock"],
+        "the VM's socket is the one mount, and it is inside the VM"
+    );
+    assert!(
+        !launch
+            .arguments
+            .iter()
+            .any(|argument| argument == "--privileged")
+    );
+    for call in rig.fake.invocations() {
+        if call.arguments != launch.arguments {
+            assert!(
+                call.arguments
+                    .iter()
+                    .all(|argument| !argument.contains("docker.sock")),
+                "only the job container's run carries the socket: {:?}",
+                call.arguments
+            );
+        }
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn the_jit_configuration_reaches_the_guest_only_on_standard_input() {
     let rig = Rig::new();
     prepared(&rig).await;
@@ -1107,7 +1156,7 @@ async fn the_jit_configuration_reaches_the_guest_only_on_standard_input() {
         vm,
         LAUNCHER.to_string(),
     ];
-    expected.extend(job_run_arguments(&spec));
+    expected.extend(vm_job_run_arguments(&spec));
     assert_eq!(launch.arguments, expected);
     assert_eq!(launch.stdin.as_deref(), Some(JIT.as_bytes()));
     assert!(

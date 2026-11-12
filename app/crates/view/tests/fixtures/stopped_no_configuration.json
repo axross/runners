@@ -1,0 +1,21 @@
+{
+  "agent": {
+    "version": "0.1.0",
+    "state": "stopped",
+    "since": 1793763660000,
+    "reason": {
+      "code": "no_configuration",
+      "message": "there is no configuration at C:\\Users\\<user>\\AppData\\Local\\marshal\\config.json"
+    }
+  },
+  "configuration": {
+    "path": "C:\\Users\\<user>\\AppData\\Local\\marshal\\config.json",
+    "problems": []
+  },
+  "runners_up": 0,
+  "runners_wanted": 0,
+  "repositories": [],
+  "pools": [],
+  "leftovers": [],
+  "images": []
+}

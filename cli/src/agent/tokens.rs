@@ -20,6 +20,9 @@ pub const NO_TOKEN: &str = "no token";
 /// store is added behind the interface.
 pub const NO_TOKEN_STORE: &str = "no token store";
 
+/// how the reason of a pool skipped because the token store failed begins.
+pub const STORE_FAILED: &str = "the token store failed";
+
 /// the agent's view of the token store.
 pub struct StoreTokens {
     store: Option<Arc<dyn TokenStore>>,
@@ -87,7 +90,7 @@ impl StoreTokens {
         match store.get(key) {
             Ok(Some(token)) => Ok(token),
             Ok(None) => Err(NO_TOKEN.to_string()),
-            Err(error) => Err(format!("the token store failed: {}", error.describe())),
+            Err(error) => Err(format!("{STORE_FAILED}: {}", error.describe())),
         }
     }
 }
