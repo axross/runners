@@ -252,8 +252,8 @@ pub fn applied_overrides(options: &AgentOptions<'_>) -> Applied {
     applied
 }
 
-/// the platform's token store: the Credential Manager on Windows, and none elsewhere
-/// until a store is added behind the interface.
+/// the platform's token store: the Credential Manager on Windows, the login keychain
+/// on macOS, and none elsewhere.
 fn platform_store(log: &dyn Log) -> Option<Arc<dyn TokenStore>> {
     #[cfg(windows)]
     {
@@ -265,7 +265,20 @@ fn platform_store(log: &dyn Log) -> Option<Arc<dyn TokenStore>> {
             }
         }
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        match crate::token_store::macos::login_keychain() {
+            Ok(store) => Some(Arc::new(store)),
+            Err(error) => {
+                log.warn(&format!(
+                    "The Keychain store cannot be opened: {}",
+                    error.describe()
+                ));
+                None
+            }
+        }
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         let _ = log;
         None
