@@ -456,6 +456,57 @@ async fn a_core_failure_during_a_drain_runs_the_container_steps_and_starts_nothi
     assert!(ended.kept.is_empty(), "{:?}", ended.kept);
 }
 
+/// a requester that closes while a failed core's container steps run, the drain's last
+/// steps, does not cancel the drain or start the core again.
+#[tokio::test(flavor = "current_thread")]
+async fn a_requester_that_closes_after_a_core_failure_in_a_drain_cancels_nothing() {
+    let rig = rig(TWO_POOLS);
+    rig.write_config(&with_diagnostics(TWO_POOLS));
+    let gate = std::rc::Rc::new(tokio::sync::Notify::new());
+    let rig = &rig;
+    let (ended, ()) = rig
+        .drive(Launch::Running, |mut conn| async move {
+            let names = started(&conn, rig, 2).await;
+            rig.backend.print(&names[0], LISTENING);
+            rig.backend.print(&names[1], JOB);
+            // the idle runner's export breaks the core (the fake drops the hook as it
+            // panics); the failure's container steps then wait on the gate
+            rig.backend.state.borrow_mut().on_export = Some(Box::new(|| {
+                panic!("the core broke during the drain");
+            }));
+            rig.backend.state.borrow_mut().export_gate = Some(gate.clone());
+            conn.client.subscribe().await.unwrap();
+            let requester = conn.another().await;
+            drain(&requester).await;
+            let busy = names[1].clone();
+            conn.eventually("the failure's container steps", || exported(rig, &busy))
+                .await;
+            drop(requester);
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            let release = async {
+                loop {
+                    gate.notify_waiters();
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+            };
+            let (reason, update) = tokio::select! {
+                end = ending(&mut conn) => end,
+                () = release => unreachable!(),
+            };
+            assert_eq!(reason, UPDATE);
+            assert_eq!(update, Some(UpdateEnding::new("1.4.0", false)));
+        })
+        .await;
+    assert_eq!(ended.reason, UPDATE);
+    let lines = rig.log.lines().join("\n");
+    assert!(!lines.contains("starts again"), "{lines}");
+    assert_eq!(
+        containers(rig).len(),
+        2,
+        "a runner registered after the failure"
+    );
+}
+
 /// a stop all that arrives while the drain's last container steps run, here held by a
 /// diagnostic export at the bound, still keeps the runners stopped after the update.
 #[tokio::test(flavor = "current_thread")]

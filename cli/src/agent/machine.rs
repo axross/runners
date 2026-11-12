@@ -162,6 +162,9 @@ pub struct Agent<'a, B, K, R, D> {
     update: RefCell<Option<UpdateEnding>>,
     /// set when a stop all arrives during a drain's last steps, so the update keeps it.
     stopped_in_drain: Cell<bool>,
+    /// set once a drain's last steps have begun, after which a closed requester no
+    /// longer cancels it.
+    drain_ending: Cell<bool>,
 }
 
 /// a drain for an update, as the running phase keeps it.
@@ -235,6 +238,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             drain: watch::Sender::new(false),
             update: RefCell::new(None),
             stopped_in_drain: Cell::new(false),
+            drain_ending: Cell::new(false),
         };
         agent.publish();
         agent
@@ -639,7 +643,12 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                     }
                 }
                 () = requester_closed(&mut draining) => {
-                    if let Some(drain) = draining.take() {
+                    if self.drain_ending.get() {
+                        // the last steps have begun, so the drain goes on to its end
+                        if let Some(drain) = draining.as_mut() {
+                            drain.requester = None;
+                        }
+                    } else if let Some(drain) = draining.take() {
                         self.log.info(&format!(
                             "The connection that asked for the drain for the update to {} closed, so the drain is cancelled and the runners register again.",
                             drain.version
@@ -1021,7 +1030,8 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             self.log
                 .warn(&format!("The runtime core failed: {message}"));
             if draining {
-                // a drain starts nothing again
+                // a drain starts nothing again, and its last steps begin here
+                self.drain_ending.set(true);
                 self.container_steps(failure.containers).await;
                 return CycleEnd::Drained;
             }

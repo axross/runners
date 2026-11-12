@@ -1668,8 +1668,7 @@ Unix epoch, and `pid` is the agent's process ID, which the app waits on. Before 
 agent ends for an update, every connection receives `ending` with the reason `update`
 and an `update` field naming the version and whether the runners were stopped by you.
 A `drain_for_update` while stopped answers `{state, update}` with the state
-`quitting`, so the app has the process ID it waits on. A Stop all during the drain's
-last container steps also ends the agent with `stopped_by_you` true. If the requesting
+`quitting`, so the app has the process ID it waits on. If the requesting
 connection's close is seen before the core ends for the drain, the drain is cancelled
 and the core starts again; if the core's end is seen first, the last steps have begun. Only the
 container backend reads a runner's output today; a backend that does not, such as
