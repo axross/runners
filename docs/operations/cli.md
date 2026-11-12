@@ -1967,9 +1967,9 @@ binary is compiled, so the two cannot drift inside one binary; a Dockerfile with
 a well-formed version does not compile. The version rises when the run contract
 changes or the image must provide something it did not. The two runner lines the
 [update drain](#the-update-drain) reads are not part of it: they come from the
-runner, which every image of a contract shares at its pinned version, so a runner
-bump checks them instead, as
-[Bumping the Runner](./development-workflow.md#bumping-the-runner) describes.
+runner, and a runner bump keeps the contract version, so the bump checks them
+instead, as [Bumping the Runner](./development-workflow.md#bumping-the-runner)
+describes.
 Contract 1 is the run
 contract as Phase 2 left it, plus the diagnostic variant's use of the collector's
 path and output directory.

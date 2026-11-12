@@ -334,9 +334,11 @@ impl<B: Backend, K: Clock, R: Registrar> Context<'_, B, K, R> {
                 .await
                 .map_err(|error| error.to_string())
         };
+        // a stop or a drain is seen before the request starts, so neither lets one begin
         let registered = tokio::select! {
-            result = registration => result,
+            biased;
             () = halt.wait() => return Attempt::Halted,
+            result = registration => result,
         };
         let jit = match registered {
             Ok(jit) => jit,
