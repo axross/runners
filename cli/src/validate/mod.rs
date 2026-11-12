@@ -41,6 +41,7 @@ pub use settings::SCHEMA_VERSION;
 use toml_reader::TomlReader;
 pub(crate) use toml_reader::path_text as toml_path_text;
 pub(crate) use toml_schema::key_name as toml_key_name;
+pub(crate) use toml_schema::parse_path as parse_toml_path;
 
 use fields::{Errors, Field};
 
