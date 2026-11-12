@@ -19,20 +19,29 @@ pub(super) enum Refusal {
     Syntax,
     /// the document has no place for the edit; the text says which edit.
     Inapplicable(String),
+    /// the file is written in a form the edit cannot change without moving the user's
+    /// text; the text says which edit, or that the file holds the marker.
+    FileForm(String),
 }
 
 /// the text after the edits, each addressed against the document as the edits before
 /// it left it.
 pub(super) fn apply(text: &str, edits: &[Edit]) -> Result<String, Refusal> {
     if text.contains(MARKER) {
-        return Err(Refusal::Inapplicable(
+        return Err(Refusal::FileForm(
             "the file holds the text that marks a removal".to_string(),
         ));
     }
     let mut document: DocumentMut = text.parse().map_err(|_| Refusal::Syntax)?;
     for edit in edits {
-        let marked = apply_one(&mut document, edit)
-            .map_err(|reason| Refusal::Inapplicable(format!("{}: {reason}", describe(edit))))?;
+        let marked = apply_one(&mut document, edit).map_err(|reason| {
+            let reason = format!("{}: {reason}", describe(edit));
+            if reason.ends_with(OVER_LINES) {
+                Refusal::FileForm(reason)
+            } else {
+                Refusal::Inapplicable(reason)
+            }
+        })?;
         if let Some(marked) = marked {
             document = cut_marked(&document.to_string(), marked)
                 .and_then(|text| text.parse().ok())

@@ -634,11 +634,13 @@ bytes in each case:
 - `Inapplicable`: the edit names a place the document lacks or of another kind, such as
   a table on the way that is missing, a `Set` on a key that holds a table, or an entry
   that does not exist, which is a mistake of the caller. It carries no file text, only
-  the edit and the reason. Two refusals come from the file instead, and only the user
-  can change it: a file that already holds the text the write path uses to mark a
-  removal, and an edit inside an inline table written over several lines, which TOML
-  1.1 allows, since its members' comments sit where the edit would move them. A caller
-  shows these as a file to rewrite, for example that table on one line or as a
+  the edit and the reason.
+- `FileForm`: the file is written in a form the write path does not edit, which only
+  the user can change: a file that already holds the text the write path uses to mark
+  a removal, or an edit inside an inline table written over several lines, which TOML
+  1.1 allows, since its members' comments sit where the edit would move them. Like
+  `Inapplicable` it carries only the edit, or the marker, and the reason. A caller
+  shows it as a file to rewrite, for example that table on one line or as a
   `[table]`, not as its own error. Removing such a table from its list, or adding one,
   is not refused.
 
