@@ -9,7 +9,7 @@
     }
   },
   "configuration": {
-    "path": "C:\\Users\\<user>\\AppData\\Local\\marshal\\config.json",
+    "path": "C:\\Users\\<user>\\AppData\\Local\\marshal\\config.toml",
     "problems": ["repositories[1].slots: must be an integer from 1 to 16"]
   },
   "runners_up": 0,

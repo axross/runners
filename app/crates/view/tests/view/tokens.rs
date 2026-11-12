@@ -106,8 +106,17 @@ fn a_running_window_with_all_tokens_set_has_no_chip_and_opens_on_pools() {
 
 #[test]
 fn a_skipped_pool_says_why_and_offers_set_token_where_the_chip_counts_one() {
-    let view = view_of(&load("running"));
-    let list = list(&view);
+    // the agent names the pool by its place in config.json or in config.toml
+    for reason in ["repositories[2]: no token.", "pool[2]: no token."] {
+        let snapshot = patched("running", |value| {
+            value["pools"][2]["reason"] = reason.into();
+        });
+        assert_skipped_for_no_token(&view_of(&snapshot));
+    }
+}
+
+fn assert_skipped_for_no_token(view: &marshal_view::View) {
+    let list = list(view);
     assert_eq!(
         list.header.tokens_chip.as_deref(),
         Some("1 repository needs attention")

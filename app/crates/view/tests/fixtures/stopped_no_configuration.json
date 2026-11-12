@@ -5,11 +5,11 @@
     "since": 1793763660000,
     "reason": {
       "code": "no_configuration",
-      "message": "there is no configuration at C:\\Users\\<user>\\AppData\\Local\\marshal\\config.json"
+      "message": "there is no configuration at C:\\Users\\<user>\\AppData\\Local\\marshal\\config.toml"
     }
   },
   "configuration": {
-    "path": "C:\\Users\\<user>\\AppData\\Local\\marshal\\config.json",
+    "path": "C:\\Users\\<user>\\AppData\\Local\\marshal\\config.toml",
     "problems": []
   },
   "runners_up": 0,

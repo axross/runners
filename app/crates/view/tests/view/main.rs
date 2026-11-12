@@ -10,6 +10,7 @@
 )]
 
 mod availability;
+mod configuration;
 mod diagnostics;
 mod newer_agent;
 mod privacy;

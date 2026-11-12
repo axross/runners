@@ -61,11 +61,12 @@ pub fn repositories(context: &Context<'_>) -> Vec<Repository> {
 }
 
 /// why the agent skipped a pool, without the configuration path it puts first: a
-/// skip's reason reads `repositories[0]: no token.`.
+/// skip's reason reads `pool[0]: no token.` from `config.toml`, and
+/// `repositories[0]: no token.` from an agent that read `config.json`.
 pub(crate) fn skip_cause(reason: &str) -> &str {
     let why = reason
         .split_once("]: ")
-        .filter(|(path, _)| path.starts_with("repositories["))
+        .filter(|(path, _)| path.starts_with("pool[") || path.starts_with("repositories["))
         .map_or(reason, |(_, why)| why);
     why.strip_suffix('.').unwrap_or(why)
 }
