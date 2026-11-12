@@ -260,8 +260,10 @@ linters they call, including the CLI's Rust gates and, for the app under `app/`,
 formatting, the lint and tests of its platform-independent crates, its cargo-deny
 run, the main window page's Node tests, a check
 that both Rust toolchain files name one channel and that `app/tauri-cli.version`
-holds one exact version, and the test of the script that reads that version
-(`test:tauri-cli-version`). The same workflow also runs a
+holds one exact version, the test of the script that reads that version
+(`test:tauri-cli-version`), and `check:app-lock`, which fails when the app's
+lockfile resolves a crate `marshal-cli` builds with to another version than the
+CLI's. The same workflow also runs a
 `rust` job that formats, lints, and tests the CLI on Linux, Windows, and macOS hosted
 runners, with four more steps on Linux only: the release-profile tests of the
 debug-only overrides, the test definition `build` reads among them; a build of the
