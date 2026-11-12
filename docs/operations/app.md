@@ -129,7 +129,8 @@ web view.
 A token travels to the agent only in `token_set`. The session trims
 it, refuses an empty one or one over 1280 UTF-16 code units before sending, wraps it
 in the library's `Secret`, sends it once and drops it; it is in no field, log line,
-error text or view.
+error text or view. A removal that fails, or that is asked for with no connection,
+shows as not removed, with the token still stored.
 
 ## Logs
 
@@ -138,7 +139,8 @@ named `marshal-<time>-<pid>.log`, continued in a new file at 10 MiB with the new
 ten kept. The app writes to the same folder under its own name, `app-<time>-<pid>.log`,
 with the same limits. A log that cannot write stops and drops its lines for 30 s
 before it tries a new file, as the agent's does, so a full disk does not replace the
-kept files with empty ones. Each side prunes only its own files, so neither takes the
+kept files with empty ones; the first line of the next file says how many lines were
+not written. Each side prunes only its own files, so neither takes the
 other's place, and a test shows it. Every line passes through the
 view crate's `plain`, which also replaces a word shaped like a GitHub token, though
 neither the app nor the agent logs one.

@@ -410,8 +410,8 @@ impl TokenResult {
             Self::Removed => format!("Token for {repository} removed."),
             Self::NotSaved(failure) => failure.message(),
             Self::NotRemoved(why) => format!(
-                "Token for {repository} not removed: {}. It is still stored.",
-                plain(why).trim_end_matches('.')
+                "Token for {repository} not removed. {}. It is still stored.",
+                capitalised(plain(why).trim_end_matches('.'))
             ),
         }
     }

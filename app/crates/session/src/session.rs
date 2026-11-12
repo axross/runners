@@ -729,10 +729,7 @@ impl<D: Dial> Session<D> {
         };
         let key = key.as_str().to_string();
         let Some(link) = self.link() else {
-            self.record(
-                &key,
-                TokenResult::NotSaved(NotSaved::Refused(Failure::Lost.words())),
-            );
+            self.record(&key, TokenResult::NotRemoved(not_removed(&Failure::Lost)));
             self.refresh();
             let _ = reply.send(Ok(()));
             return;
@@ -819,10 +816,17 @@ impl<D: Dial> Session<D> {
                     if removal { "removed" } else { "saved" },
                     failure.words()
                 ));
-                TokenResult::NotSaved(not_saved(failure))
+                if removal {
+                    TokenResult::NotRemoved(not_removed(&failure))
+                } else {
+                    TokenResult::NotSaved(not_saved(failure))
+                }
             }
         };
-        if !matches!(result, TokenResult::NotSaved(_)) {
+        if !matches!(
+            result,
+            TokenResult::NotSaved(_) | TokenResult::NotRemoved(_)
+        ) {
             // the form closes on success and stays open, with its error, on failure
             if self.tokens.editing.as_deref() == Some(repository) {
                 self.tokens.editing = None;
@@ -904,6 +908,16 @@ fn stopped_by_you(snapshot: &Snapshot) -> bool {
             .reason
             .as_ref()
             .is_some_and(|reason| reason.code == StopReason::BY_YOU)
+}
+
+/// why a removal failed, with the token store's kind and code when the agent gave them.
+fn not_removed(failure: &Failure) -> String {
+    match failure {
+        Failure::Store {
+            detail: Some(detail),
+        } => format!("The token store refused the request ({detail})"),
+        other => other.words(),
+    }
 }
 
 fn not_saved(failure: Failure) -> NotSaved {

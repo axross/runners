@@ -2950,8 +2950,10 @@ the gates that cover it, so a change to the library knows what the app relies on
   change and the app move together.
 - The app reads the library for the protocol's types and client, the agent's entry
   and options, the token store's interface and refusals, the instance roots, the
-  hidden `export`, `shim` and `vm-shim` commands, and the `Secret` type that masks a token. It
-  adds no message to the protocol: a new message follows [Version Rules](#version-rules).
+  hidden `export`, `shim` and `vm-shim` commands, the `Secret` type that masks a token,
+  the executable's identity (`agent::executable::Executable` and `Look`), the private
+  log folder and file mode (`private::current_uid`, `ensure_private_directory` and
+  `FILE_MODE`), and the log's timestamp (`runtime::name::stamp`). It adds no message to the protocol: a new message follows [Version Rules](#version-rules).
 - The app has its own `Cargo.lock`, [`deny.toml`](../../app/deny.toml) and
   [`rust-toolchain.toml`](../../app/rust-toolchain.toml). The toolchain file names
   the CLI's channel, and Dependabot is set to bump both files in one pull request. The CLI's

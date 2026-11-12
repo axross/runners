@@ -257,6 +257,49 @@ async fn removing_a_token_asks_the_agent_and_closes_the_question() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_removal_the_store_refuses_says_the_token_was_not_removed() {
+    let (agent, session) = connected("running").await;
+    agent.answer(
+        "token_remove",
+        Err(Failure::Store {
+            detail: Some("kind other, code 1312".to_string()),
+        }),
+    );
+    session
+        .handle
+        .remove_token("owner/app".to_string())
+        .await
+        .unwrap();
+    session.settle().await;
+    let view = session.screen.view();
+    let status = row(&view, "owner/app").status.clone().unwrap_or_default();
+    assert!(status.contains("not removed"), "{status}");
+    assert!(status.contains("It is still stored"), "{status}");
+    assert!(!status.contains("Not saved"), "{status}");
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_removal_without_a_connection_says_the_token_was_not_removed() {
+    let (agent, session) = connected("running").await;
+    agent.close();
+    session.settle().await;
+    session
+        .handle
+        .remove_token("owner/app".to_string())
+        .await
+        .unwrap();
+    session.settle().await;
+    let announced = session.screen.announced();
+    assert!(
+        announced
+            .iter()
+            .any(|said| said.starts_with("Token for owner/app not removed")
+                && said.ends_with("It is still stored.")),
+        "{announced:?}"
+    );
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_token_entered_without_a_connection_is_not_saved_and_not_kept() {
     let session = start(World::default());
     session.wait(secs(30)).await;
