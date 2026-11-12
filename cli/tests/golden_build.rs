@@ -76,6 +76,7 @@ fn the_build_runs_its_calls_in_order_and_commits_by_renaming() {
                 "docker image inspect",
                 "docker tag",
                 "docker image rm",
+                "exec marshal-flush-disk",
                 "stop ",
                 "rename ",
                 "list ",
@@ -360,6 +361,15 @@ fn a_failed_image_build_deletes_the_build_vm_and_keeps_the_old_golden_vm() {
 #[test]
 fn a_failed_shutdown_or_rename_deletes_the_build_vm_and_keeps_the_old_golden_vm() {
     big_stack(|| async {
+        let rig = fails(
+            |rig| {
+                rig.fake
+                    .script("fail-exec-marshal-flush-disk", "sync went wrong")
+            },
+            "writing the build VM's files to its disk failed",
+        )
+        .await;
+        assert!(rig.position("rename ").is_none(), "{:?}", rig.calls());
         fails(
             |rig| {
                 rig.fake.script("stop_ignored", "");

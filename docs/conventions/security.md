@@ -14,7 +14,8 @@ the host configuration under
 [`hosts/windows-docker-desktop/`](../../hosts/windows-docker-desktop) exist and are
 reviewed against the sections on runner trust and shared storage below, and the
 macOS host's Linux VM runtime ([#74](https://github.com/axross/runners/issues/74))
-against the sections on a per-job VM, Softnet and the pinned programs. The
+against the sections on a per-job VM, the VM-local Docker socket, Softnet and the
+pinned programs. The
 agent-host configuration this repository is also for does not exist yet; those
 sections are the constraints it will be reviewed against.
 
@@ -753,7 +754,9 @@ Design rules that follow, which REVIEW.md applies:
 - A container does not run privileged, does not mount the host's container socket
   or home directory, and has its egress limited where the host's network reaches
   anything sensitive. A justified exception is stated where it is declared;
-  the LAN egress section below is one.
+  the LAN egress section below is one, and [The VM-Local Docker Socket](#the-vm-local-docker-socket)
+  is another: the one socket a container may mount is that of the per-job VM it runs
+  in, never a host's.
 - Each shared mount is declared with the reason it exists and the trust level of
   every job that can write to it.
 
@@ -1114,7 +1117,7 @@ blocking mechanism is verified.
 The axmc host runs each `os: "linux"` pool's job in its own Tart virtual machine
 (VM), cloned from the golden VM for that job and deleted after it, so a job meets a
 single-tenant kernel and filesystem that nothing outlives. This section and the
-four after it are the constraints the VM runtime of
+five after it are the constraints the VM runtime of
 [#74](https://github.com/axross/runners/issues/74) is reviewed against.
 [macOS Runner Host](../operations/macos-runner-host.md) owns the procedure, and
 [CLI](../operations/cli.md) the runtime.
@@ -1228,6 +1231,12 @@ request to axmc ends it and needs a new decision.
 - **Tart**, a pinned external program that `marshal` calls and never bundles.
 - **Guest-agent output**, which the CLI bounds and treats as data.
 - **Host disk use by a root job**, limited by the per-VM disk cap.
+- **Root in the VM, held by any job**, since the VM-local Docker socket gives it with
+  one `docker run --privileged`. The job can send raw frames and rewrite the guest's
+  network stack, so Softnet's filtering is the only network boundary in front of the
+  host. It can also replace the guest's binaries, including the guest agent, so
+  guest-agent output is controlled by the job and bounded only by the 64 KiB cut-off
+  and, for the diagnostics export, the strict archive reader.
 - **A globally routable address on one of the Mac's interfaces**, which Softnet's
   global allowance would reach through the gateway. The maintainer runs the host on
   networks that give the Mac private addresses.
@@ -1235,6 +1244,55 @@ request to axmc ends it and needs a new decision.
   networks and VPNs, though their addresses stay blocked.
 - **The JIT configuration**, which the job can read inside its VM. It is single-use
   and already in the runner's environment.
+
+## The VM-Local Docker Socket
+
+From image contract 2, the runner container of an axmc job mounts the Docker socket of
+the VM it runs in, `/var/run/docker.sock`, so a job step can use `docker run`. The
+socket belongs to the VM's own Docker Engine, in a VM that is cloned for one job and
+deleted afterwards, and not to a host, so no other job and no host process shares it.
+That is why the rule that a container never mounts a container socket does not reach
+it. The permission is narrow:
+
+- The runtime that mounts it is the VM runtime, and only into the runner container,
+  as the one extra option `--mount type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock`
+  of `vm_job_run_arguments`. The Docker runtime on axpc MUST NOT mount any socket,
+  because Docker Desktop's engine is the host's and serves every pool, and its list,
+  `job_run_arguments`, carries none. `marshal` MUST NOT start a runner container
+  privileged, with a host's Docker socket, or with any other bind mount. Tests in
+  `docker_backend.rs`, `tart_backend.rs` and `runtime::docker_args` hold each side,
+  and the socket mount is part of the fingerprint in `image::contract` that approves
+  contract 2.
+- A job that can use the socket is root in its VM: it can start privileged containers,
+  mount the VM's filesystem, and read the JIT configuration, which was already in the
+  runner's environment. Before the socket a job was root only inside an unprivileged
+  container, so root in the VM needed a container escape; now one
+  `docker run --privileged` gives it. The container stops being a layer in front of
+  Softnet and the guest-agent channel, and
+  [the accepted host-facing surface](#the-accepted-host-facing-surface-of-a-job-vm)
+  names what that root can touch. It reaches nothing beyond the VM except what the VM
+  can already reach, under [Softnet's rules](#softnet-confines-a-job-vms-network), the
+  per-VM disk cap, and the VM's own vCPUs and memory.
+- The containers a job starts through the socket are siblings of the runner container
+  inside the VM, not children of it. The runner container's CPU quota, affinity and
+  memory limit, which [CPU Placement Inside a Job VM](#cpu-placement-inside-a-job-vm)
+  holds equal to the VM's, do not reach them, and the VM's vCPUs and memory bound them
+  instead.
+- The socket's group is the VM's `docker` group, which the golden VM creates with the
+  id 123 (`golden::pins::DOCKER_GROUP_ID`). The runner image's `docker` group, which
+  its `runner` user belongs to, has that id too. Docker gives a container's user the
+  groups that the image's `/etc/group` lists for it, so the runner uses the socket
+  with no `--group-add` and no change to the container's user. The match grants
+  nothing the mount does not, since the socket is root in the VM already. A base
+  image that gave the group another id fails the image build, and a VM whose `docker`
+  group has another id fails the golden VM build.
+- The runner image's Docker client is pinned like the golden VM's Docker Engine; see
+  [Tart, Softnet, and the Golden VM Are Pinned](#tart-softnet-and-the-golden-vm-are-pinned).
+
+The permission holds only inside a per-job VM. A change that mounts a socket on axpc,
+mounts a host's socket, or gives a VM to more than one job ends it and needs a new
+decision. [macOS Runner Host](../operations/macos-runner-host.md) records that the
+mount and the group match have not run on a Mac.
 
 ## Tart, Softnet, and the Golden VM Are Pinned
 
@@ -1262,9 +1320,14 @@ what a reviewed change changes.
   upgrades the base's Ubuntu packages, so it picks up security fixes; the golden VM
   version goes up whenever the pin, the provisioning steps, the launcher or the
   Docker Engine versions change.
-- The runner image's arm64 build in CI runs on `ubuntu-24.04-arm`, a GitHub-hosted
-  runner, tags the image on the runner and never pushes it, and its job holds only
-  `contents: read`.
+- The runner image's Docker client MUST come from Docker's apt repository at a pinned
+  package version, after the repository's signing key is checked against the same
+  recorded fingerprint, and the image keeps neither the repository's source nor its
+  key. The image's pins are the golden VM's, and a unit test holds the Dockerfile to
+  `golden::pins`, so a change of one without the other fails.
+- The runner image's arm64 build and smoke test in CI run on `ubuntu-24.04-arm`, a
+  GitHub-hosted runner, tag the image on the runner and never push it, and their job
+  holds only `contents: read`.
 - The VM runtime adds no crate to the CLI.
 
 ## Nothing Identifying or Secret Is Committed
