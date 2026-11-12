@@ -159,9 +159,10 @@ Important; Codex review uses its native priority label.
   that downloads and executes remote code without a checksum are held to the
   same standard. There are two recorded exceptions, both in
   [Security](docs/conventions/security.md#pinning-convention): a step that
-  installs the Rust toolchain `cli/rust-toolchain.toml` names through `rustup`,
-  and the Node that `actions/setup-node` installs in `release.yaml`. Any other
-  unpinned download is still a finding.
+  installs the Rust toolchain `cli/rust-toolchain.toml` or
+  `app/rust-toolchain.toml` names through `rustup`, and the Node that
+  `actions/setup-node` installs in `release.yaml`. Any other unpinned download
+  is still a finding.
 - **Least-privilege workflow permissions.** Every workflow declares a
   top-level `permissions:` block that starts from `contents: read`. A broader
   scope is granted on the job that needs it, is justified in a comment or in
@@ -308,11 +309,14 @@ Apply the lens for each kind of file in the diff.
   and a signing job or step added without being added to `check-release-shape.mjs` and
   its test. A change that relaxes the record, or touches the signing job, needs the
   maintainer's review.
-- **Rust.** The CLI under `cli/` has no `unsafe` and no panic on an input path
+- **Rust.** The CLI under `cli/` and the app's crates under `app/` have no
+  `unsafe`. The CLI has no panic on an input path
   (`unwrap`, `expect`, `panic!`, indexing); it collects every error in the order
   [CLI](docs/operations/cli.md) states under Validation Rules rather than returning
-  the first. A new crate has an
-  entry in [CLI](docs/operations/cli.md) and passes `cli/deny.toml`. A new
+  the first. A new CLI crate has an
+  entry in [CLI](docs/operations/cli.md) and passes `cli/deny.toml`; a new crate of
+  the app is recorded in [Security](docs/conventions/security.md#the-apps-dependencies)
+  and passes `app/deny.toml`. A new
   procedural-macro crate, such as one a derive feature brings, is flagged for the
   maintainer's review, and so is a new duplicate-version skip. No token or JIT
   configuration reaches a `Debug` form, a log line, an error message, a command

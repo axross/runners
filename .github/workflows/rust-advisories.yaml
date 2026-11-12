@@ -1,9 +1,10 @@
 name: Rust Advisories
 
-# runs cargo-deny's advisory check on the locked crates. it needs the network,
-# so it is outside mise run check and not required: a new advisory turns it red
-# and the maintainer triages it. the database is data, so it needs no pin. runs
-# on GitHub-hosted runners only; see docs/conventions/security.md.
+# runs cargo-deny's advisory check on the locked crates of the CLI and of the
+# app. it needs the network, so it is outside mise run check and not required: a
+# new advisory turns it red and the maintainer triages it. the database is data,
+# so it needs no pin. runs on GitHub-hosted runners only; see
+# docs/conventions/security.md.
 
 on:
   schedule:
@@ -13,6 +14,8 @@ on:
     paths:
       - cli/Cargo.lock
       - cli/deny.toml
+      - app/Cargo.lock
+      - app/deny.toml
       - .github/workflows/rust-advisories.yaml
 
 concurrency:
@@ -32,9 +35,13 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
-      # cargo-deny reads the crate metadata, which needs the pinned toolchain.
+      # cargo-deny reads the crate metadata, which needs the pinned toolchain. both
+      # toolchain files name one channel, which `mise run check:app-pins` enforces.
       - name: Install Pinned Rust Toolchain
         working-directory: cli
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: Install Pinned Rust Toolchain For The App
+        working-directory: app
         run: rustup show active-toolchain || rustup toolchain install
       - name: Install Pinned Tools
         uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5.0.0
@@ -45,4 +52,11 @@ jobs:
           sha256: 63049bc35fb9065e8dc35ac8b25fdae53e9bd6f1885a843aedeba398e046a1ee
       - name: Check Advisories
         working-directory: cli
+        run: mise exec -- cargo deny --locked check advisories
+      # the app's lockfile covers everything its executable links, `marshal-cli`'s
+      # crates included, for the Windows and macOS targets its deny.toml names. it runs
+      # when the CLI's check failed too, so one advisory cannot hide the other result.
+      - name: Check The App's Advisories
+        if: ${{ !cancelled() }}
+        working-directory: app
         run: mise exec -- cargo deny --locked check advisories

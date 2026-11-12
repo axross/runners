@@ -12,7 +12,8 @@ snapshot), the image contract every runner image declares and the
 check of it, running a host with `build` (the runner image on axpc, the golden VM on
 axmc), `start`, `stop`, `restart`, `status`, and
 `diagnostics`, the diagnostic containers and VMs a diagnostics-enabled pool runs and their
-export, the toolchain and the gates that cover it, how a release is built, signed,
+export, the toolchain and the gates that cover it, the app's workspace that builds on
+the library and the gates it adds, how a release is built, signed,
 and installed, and why its name is fixed. The binary is `marshal`. axpc runs its pools
 with it, as [Windows Runner Host](./windows-runner-host.md) describes, including how
 to roll back to the previous release, and axmc runs its Linux pools with it in Tart
@@ -456,8 +457,18 @@ Every client starts in its own process group: `process_group(0)` on Unix, and
 `CREATE_NEW_PROCESS_GROUP` on Windows. A Ctrl+C in the terminal then reaches the CLI
 only, which can stop the containers in order. A test reads the group of every client
 the fake `docker` sees on Linux and macOS; no safe API reads a Windows process's
-creation flags, so the Windows flag is checked by review. A client is killed when
-the future that waits for it is dropped.
+creation flags back. On Windows every client and the exporter child also get
+`CREATE_NO_WINDOW`, so a resident agent that has no console does not open a console
+window for each `docker` call. This applies to the
+foreground commands too, since they share the builders. Their piped input and output
+and their process group are unchanged. How a terminal run behaves on Windows with the
+flag, including `start` and Ctrl+C, is not established here: the Windows CI tests and
+the axpc run are what confirm it. The one function that applies the flags is called by the client builder and
+by the exporter's command builder, and a test build records what each applied, so
+two unit tests assert both flags at the two builders, which every client and exporter
+call site goes through. Whether Windows shows a window is not observable here and is
+listed with the axpc checks. A client is killed when the future that waits for it is
+dropped.
 
 Every client other than a job container is bounded. A listing, a volume command,
 and an info call are bounded at 120 s. A removal and a stop take the budget their caller passes; stale cleanup removes
@@ -1473,11 +1484,12 @@ the same process model as `start`: the agent takes the same single-instance lock
 opens the same control channel, writes a log in the same directory and, on Windows,
 runs inside the same kind of Job Object, so `start` and the agent never run on one
 machine at once, and a second agent is refused as a second `start` is. It has no
-command or flag of its own yet; `agent::run` is the entry that wires the container
-backend, GitHub, the token store, the lock, the channel and the log, and the tests
-start it through `instance-helper agent`. A later release gives it a program to run
-in. Only a debug build lets a test replace the agent's token store, channel limits,
-watched file, log size and `docker` environment; a release build ignores each
+command or flag of its own: `agent::run` is the entry that wires the container
+backend, GitHub, the token store, the lock, the channel and the log, and the app's
+`marshal-modes` crate runs it in the hidden agent mode, as
+[App](./app.md#the-executable-and-its-modes) describes. The CLI's tests start it through `instance-helper agent`. Only a debug
+build lets a test replace the agent's token store, channel limits, watched file, log
+size and `docker` environment; a release build ignores each
 request, as it does the roots and the GitHub address, and `tests/agent_overrides.rs`
 shows both halves and runs again in the release profile in CI.
 
@@ -1570,7 +1582,9 @@ is unchanged. A `start_all` answers
 becomes `running` once they are, or `stopped` with one of the reasons above when
 they could not be.
 
-The set is open: a reader keeps a code it does not know as text. A pool skipped for
+The set is open: a reader keeps a code it does not know as text. The library exports
+the codes as the constants of `agent::StopReason`, so a reader compares a reason with
+them rather than repeating the words. A pool skipped for
 want of a token does not stop the others: it is listed `skipped` with its reason,
 and when a token for its repository is set, it starts without a restart. When no
 pool is left running, the agent is stopped for `no_pool_started`, and each pool
@@ -1663,8 +1677,7 @@ client message is at most 16 KiB and an agent message at most 64 KiB, line break
 included. The first line a client sends MUST be `hello`; anything else, including
 `start`'s version 1 requests, is answered with `unsupported_protocol` and the
 connection is closed, so today's commands exit 1 against an agent and change
-nothing. A later slice of version 2 may add methods, topics, error codes and fields
-but never rename or remove one.
+nothing. [Version Rules](#version-rules) says what a later agent of version 2 may add.
 
 | Message     | Fields                                                                                               |
 | ----------- | ---------------------------------------------------------------------------------------------------- |
@@ -1763,6 +1776,25 @@ nor the release of the lock waits for such a thread, and
 shows a `quit` ends it within a second or so while a subscribed client reads
 nothing. On Unix the socket has the checks of
 [Control Channel](#control-channel).
+
+### Version Rules
+
+These rules bind every agent and every client of protocol version 2, including the
+ones other children add. The sections above describe what version 2 holds today;
+this one says how it may grow without a new version.
+
+Within version 2 an agent may add methods, topics, fields, error codes, runner
+states, images, image warnings, and the reasons a state or `ending` carries, and
+lists its methods and topics in `welcome`. A client ignores what it does not know,
+shows an unknown runner state by the runner's reason, and calls only methods listed.
+Removing one, or changing its meaning, needs version 3.
+
+So a client written against today's agent keeps working against a later agent of
+version 2, and a later client works against today's agent by calling only what
+`welcome` lists. The library's `Client` ignores an unknown message type, field and
+topic and calls and subscribes only to what `welcome` lists, and its types are
+`#[non_exhaustive]`, as Protocol Version 2 above says. A change that removes or reinterprets anything above is a version 3, which is a new
+framing decision for the maintainer, not an addition.
 
 ### The Snapshot
 
@@ -2888,6 +2920,65 @@ with the marker files at test time. The advisory check, `cargo deny --locked che
 fetches the RustSec database, so it runs in
 [`rust-advisories.yaml`](../../.github/workflows/rust-advisories.yaml) and not in
 `mise run check`; see [Development Workflow](./development-workflow.md).
+
+## The App Workspace
+
+[`app/`](../../app) is a second Cargo workspace beside `cli/`, for the Windows app,
+whose `marshal-modes` crate runs the resident agent and the library's hidden commands.
+[App](./app.md) owns what it does. This section owns what the library gives it and
+the gates that cover it, so a change to the library knows what the app relies on.
+
+**Contract.**
+
+- The workspace depends on the `marshal-cli` library by path, through the crate's
+  public items only, so the app's lockfile, `cargo deny` run and advisory check cover everything its executable links, the library's crates
+  included. It never runs the `marshal` binary.
+- No file under `cli/src` moves for the app. The library's additions for it are
+  small exports: the stop reason codes as `agent::StopReason`, the handshake
+  timeout `agent::HANDSHAKE_TIMEOUT`, the registration error's marker of a token
+  GitHub rejects as `runtime::registration::REJECTED_MARK`, and the restart limit
+  as `instance::restart::WINDOW`, `DELAYS` and `STOPPING_FAILURE`. A later change to a public item the app uses
+  breaks the app's build, which `mise run check` and the Windows job show, so the
+  change and the app move together.
+- The app reads the library for the agent's entry and options and the hidden
+  `export`, `shim` and `vm-shim` commands. It adds no message to the protocol: a new
+  message follows [Version Rules](#version-rules).
+- The app has its own `Cargo.lock`, [`deny.toml`](../../app/deny.toml) and
+  [`rust-toolchain.toml`](../../app/rust-toolchain.toml). The toolchain file names
+  the CLI's channel, and Dependabot is set to bump both files in one pull request. The CLI's
+  `Cargo.lock`, `deny.toml`, and dependency table do not change for the app: the
+  table under Dependencies lists the CLI's crates only, and
+  [Security](../conventions/security.md#pinning-convention) holds the policy for the
+  app's own.
+- Every app crate forbids `unsafe_code` and takes the CLI's lint set through
+  `[lints] workspace = true`.
+
+**Gates.** `mise run check` covers the app's crates on Linux, and the Windows job
+lints and tests them on Windows.
+
+| Task                             | Runs                                                                                                                 |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `fetch:app`                      | `cargo fetch --locked` in `app/`, which `cargo deny` reads                                                           |
+| `format:app`, `format:check:app` | `cargo fmt --all`, and `cargo fmt --all --check`, in `app/`                                                          |
+| `lint:app`                       | `cargo clippy --locked --all-targets -- -D warnings` over the `marshal-modes` package                                |
+| `test:app`                       | `cargo test --locked` over the same package                                                                          |
+| `deny:app`                       | `cargo deny --locked check bans licenses sources` in `app/`, for `x86_64-pc-windows-msvc` and `aarch64-apple-darwin` |
+| `check:app-pins`                 | Both toolchain files name one channel                                                                                |
+
+`format:check` and `lint` call the app's formatting and lint tasks, and `check` calls
+the rest, so one run covers both workspaces.
+
+The `app` job in [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) runs
+on a Windows hosted runner: clippy and the tests over the whole workspace. An
+`app-modes` job runs clippy and the tests of `marshal-modes` on a macOS hosted runner,
+which covers the dispatch of both Unix shims, `shim` and `vm-shim`, there, and runs the
+crate's tests again in the release profile, where the debug-only variables are
+ignored. Linux runs the dispatch tests in the debug
+profile in `mise run check`. The advisory check,
+`cargo deny --locked check advisories` in `app/`, runs in
+[`rust-advisories.yaml`](../../.github/workflows/rust-advisories.yaml) beside the CLI's
+and is not part of `mise run check`; see [Development Workflow](./development-workflow.md).
+[Development Workflow](./development-workflow.md) describes each job's permissions.
 
 ## Releases
 
