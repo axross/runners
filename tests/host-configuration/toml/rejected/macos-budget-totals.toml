@@ -1,0 +1,25 @@
+schema_version = 1
+routing_label = "axmc"
+
+[budget]
+cpus = 4
+memory_gb = 16
+disk_gb = 100
+
+[[pool]]
+name = "alpha"
+repository = "octo/hello"
+runners = 2
+os = "macos"
+cpus = 4
+memory_gb = 16
+disk_gb = 60
+
+[[pool]]
+name = "beta"
+repository = "octo/other"
+runners = 1
+os = "macos"
+cpus = 4
+memory_gb = 16
+disk_gb = 60

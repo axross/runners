@@ -1,0 +1,9 @@
+# a file from a later schema: its other keys are not this program's to judge
+routing_label = "axpc"
+schema_version = 2
+unheard_of_key = true
+
+[[pool]]
+name = "ALPHA"
+repository = "no-slash"
+runners = 0

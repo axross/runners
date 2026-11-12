@@ -119,6 +119,12 @@ impl Profile {
         }
     }
 
+    /// the platform labels of any host or operating system.
+    #[must_use]
+    pub fn known_platform_labels() -> &'static [&'static str] {
+        &ALL_PLATFORM_LABELS
+    }
+
     #[must_use]
     pub fn root_fields(self) -> &'static [&'static str] {
         match self {

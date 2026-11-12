@@ -1,0 +1,11 @@
+schema_version = 1
+routing_label = "axmc"
+
+[budget]
+cpus = 0
+
+[[pool]]
+name = "alpha"
+repository = "octo/hello"
+runners = 1
+disk_gb = 40

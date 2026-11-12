@@ -28,10 +28,10 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   signing Environment, the accepted LAN-egress risk, the axmc Linux runtime's per-job
   VM, CPU placement in it, Softnet and its SUID check, the accepted host-facing
   surface, the pinned Tart, Softnet, and golden VM base, how the resident agent
-  keeps tokens and receives them, what the Windows app's web view, capabilities
-  and process may do, the app's dependency policy, what is never committed, and
-  why the review
-  gate admits one bot identity by login.
+  keeps tokens and receives them, what the TOML configuration holds and what its
+  problems quote, what the Windows app's web view, capabilities and process may do,
+  the app's dependency policy, what is never committed, and why the review gate
+  admits one bot identity by login.
 - [conventions/documentation.md](./conventions/documentation.md) - which
   document a change to each runner surface invalidates, and what the
   documentation checks cover.
@@ -61,7 +61,9 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   configured, and the verification status.
 - [operations/cli.md](./operations/cli.md) - the CLI under `cli/`: what `validate`
   accepts and prints for the axpc and axmc host profiles, the validation rules and
-  the shared fixtures, the runtime layer
+  the shared fixtures, the TOML configuration format (schema version 1, its
+  extension rule, its problems, the rule set shared with JSON, the conversion from
+  JSON, and the write path that keeps comments) and its fixtures, the runtime layer
   (the container backend, the runtime seam, the Tart backend, JIT registration,
   CPU placement, the slot loop, and the signal source), the
   instance layer (instance state, single-instance lock, and control channel),

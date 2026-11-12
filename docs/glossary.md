@@ -56,7 +56,9 @@ container, runner, and cache-volume namespace.
 **Routing Label** - the label a workflow uses in `runs-on` to select an
 **Execution Pool**. Missing or empty host `labels` default to the host's own
 label, `axpc` or `axmc`; a non-empty list supplies that pool's routing labels
-instead.
+instead. In a TOML host configuration the required `routing_label` key supplies
+the default, so no host's label is built in. See
+[operations/cli.md](./operations/cli.md#schema-version-1).
 
 **Custom Label** - an optional runner label an entry of the **Host Configuration**
 lists beside `self-hosted`, `linux`, and `x64`. A workflow
