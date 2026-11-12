@@ -42,6 +42,8 @@ pub enum SlotState {
     Held(String),
     /// running the job container of this name.
     Running(String),
+    /// registers nothing while the agent drains for an update.
+    Drained,
 }
 
 impl fmt::Display for SlotState {
@@ -51,6 +53,7 @@ impl fmt::Display for SlotState {
             Self::BackingOff(_) => f.write_str("backing off"),
             Self::Held(reason) => write!(f, "held: {reason}"),
             Self::Running(name) => write!(f, "running container {name}"),
+            Self::Drained => f.write_str("drained for an update"),
         }
     }
 }

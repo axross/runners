@@ -690,6 +690,7 @@ layer, and the tests also drive it through its seams.
 | `runtime::name`                                          | Runner and container names, and the test for a pool's own                                                    |
 | `runtime::pool`                                          | Pools from a plan, and their preparation                                                                     |
 | `runtime::worker`                                        | The slot loop and its backoff                                                                                |
+| `runtime::job_marks`                                     | What a runner's output says about its job, idle, busy or unknown, which a drain reads                        |
 | `runtime::retained`                                      | The diagnostic containers the backend retains, their records, and who finalises each                         |
 | `runtime::diagnostic`                                    | Finalising diagnostic containers at job end, in the container steps, and at startup                          |
 | `diagnostics`, `diagnostics::exporter`                   | The exporter child and the lines and exit codes it answers with                                              |
@@ -1880,22 +1881,25 @@ The agent is `running`, `resuming`, `stopping`, `stopped`, `building`, or
 transition is answered at once, never queued behind it. It starts `running` or
 `stopped` as the caller asks.
 
-| Method         | Answer                                                                                                                                                                    |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `status`       | The snapshot, in any state                                                                                                                                                |
-| `start_all`    | Stopped: reads the configuration again and checks the image, then answers `resuming`, or `stopped` with the reason it could not. Running: the state it is in              |
-| `stop_all`     | Running: runs the stop sequence (the same grace, budget and exit deadline of 28 s as `stop`) and answers `stopped` when it is done. Stopped: `stopped`                    |
-| `build`        | Stopped: answers `building` with the start time once the build began, and the snapshot tells the rest. Running: `refused`. A configuration that cannot be used: `refused` |
-| `quit`         | Runs the stop sequence if runners run, cancels a build, answers `quitting`, and ends the agent; the lock is free within a second of the answer                            |
-| `token_set`    | Stores the repository's token in any state                                                                                                                                |
-| `token_remove` | Removes it in any state                                                                                                                                                   |
+| Method             | Answer                                                                                                                                                                    |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `status`           | The snapshot, in any state                                                                                                                                                |
+| `start_all`        | Stopped: reads the configuration again and checks the image, then answers `resuming`, or `stopped` with the reason it could not. Running: the state it is in              |
+| `stop_all`         | Running: runs the stop sequence (the same grace, budget and exit deadline of 28 s as `stop`) and answers `stopped` when it is done. Stopped: `stopped`                    |
+| `build`            | Stopped: answers `building` with the start time once the build began, and the snapshot tells the rest. Running: `refused`. A configuration that cannot be used: `refused` |
+| `quit`             | Runs the stop sequence if runners run, cancels a build, answers `quitting`, and ends the agent; the lock is free within a second of the answer                            |
+| `token_set`        | Stores the repository's token in any state                                                                                                                                |
+| `token_remove`     | Removes it in any state                                                                                                                                                   |
+| `drain_for_update` | See [The Update Drain](#the-update-drain)                                                                                                                                 |
 
 A request that arrives while the agent is `resuming`, `stopping`, `building` or
 `quitting` and is not one of `status`, `token_set` and `token_remove`, a stop or a
-quit, is answered `busy`. The agent is `resuming` from the moment it begins to read
+quit, is answered `busy`, except `drain_for_update`, which is `refused` there. The
+agent is `resuming` from the moment it begins to read
 the configuration until the runners' pools are admitted, so a `start_all` or a
 `build` in that time is `busy`, not answered as if the runners ran. One table in the
-code decides all of it, for every phase; this is what it says:
+code decides all of it, for every phase; this is what it says, and while a drain runs
+the table in [The Update Drain](#the-update-drain) takes its place:
 
 | State      | `stop_all`                           | `start_all` | `build`                                          | `quit`                     |
 | ---------- | ------------------------------------ | ----------- | ------------------------------------------------ | -------------------------- |
@@ -1988,6 +1992,65 @@ A log that cannot write or continue its file stops, and the agent goes on withou
 it. It tries to open a new file again when a line arrives, at most every 30 s, and
 writes one line in the new file that says how many lines were not written.
 
+### The Update Drain
+
+W4 ([#78](https://github.com/axross/runners/issues/78)) adds `drain_for_update` to
+protocol version 2, under its rules for added methods and fields. Before the app
+installs an update, it asks the agent to drain: to stop registering runners and to end
+once the jobs already running have finished, within 6 hours. The `version` param is
+the version of the update, three numbers and an optional suffix, at most 64
+characters in all; anything else is `invalid_request`.
+
+A runner is busy once its container's output has carried a line that reads
+`Running job:` after the runner's timestamp, and idle once it has carried
+`Listening for Jobs` and not `Running job:`. A runner whose output has carried
+neither line is waited for, as if busy. That fallback covers a runner that prints
+neither line, not one that still prints `Listening for Jobs` but rewords or drops
+`Running job:`: its busy runners would read as idle and be stopped mid-job, so
+[Bumping the Runner](./development-workflow.md#bumping-the-runner) checks both lines.
+Both streams count, a mark never clears, and
+no other line, such as `Runner reconnected.`, changes it. Only the fixed text is
+compared: the drain keeps no job name and puts none in the snapshot or a protocol
+message; the line itself reaches the log, as all runner output does.
+
+The drain's last steps begin when the drain ends its runners: when no runner is waited
+for any more, when the 6 hours pass, or when the runtime core ends for the drain or
+fails. In them the container steps run and the agent then ends for the update; the
+drain can no longer be cancelled, because its runners are already stopping.
+
+| When                                                     | Result                                                                                                                                                 |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `drain_for_update`, while `running`                      | Drains: the answer is `{state, update}`, and `agent.update` appears                                                                                    |
+| `drain_for_update`, while `stopped`                      | Ends for the update at once; `stopped_by_you` is true when stopped by you                                                                              |
+| `drain_for_update`, in any other state or while draining | `refused`, and nothing changes                                                                                                                         |
+| `start_all` or `build`, while draining                   | `refused`, and nothing changes                                                                                                                         |
+| `stop_all`, while draining                               | Answers `quitting`, also during the drain's last steps; stops every runner, so running jobs fail, then ends for the update, stopped by you             |
+| `quit`, while draining                                   | Stops and ends as a `quit` does; `agent.update` is gone once the stop begins or, during the drain's last steps, at once, and the `ending` names `quit` |
+| The connection that asked closes, while draining         | Before the last steps, the drain is cancelled, the agent keeps running, and the slots register again; during them, the agent still ends for the update |
+| A runtime core failure, while draining                   | The container steps run, so running jobs fail; the core does not start again, and the agent ends for the update                                        |
+| No runner is waited for any more                         | The container steps run, then the agent ends for the update                                                                                            |
+| 6 hours pass                                             | The container steps run, so the jobs still running fail, then the agent ends                                                                           |
+
+While the agent drains, nothing registers a runner: not a slot, not a pool prepared
+after a core failure or when Docker comes back, and not a pool that waited for a token.
+A slot that is registering or backing off stops without starting a container, an idle
+runner's container is stopped with a stop's grace, and killed when the stop fails,
+and a busy runner's container runs
+until it exits; its slot then finalises it as after any job and registers nothing. A
+drained slot is listed `stopped` with the reason "stopped for an update". The agent's
+state stays `running`, so an older app shows it running; `agent.update.waiting` counts
+the slots still running a container, an idle one until its stop ends, `deadline` is the bound's time in milliseconds since the
+Unix epoch, and `pid` is the agent's process ID, which the app waits on. Before the
+agent ends for an update, every connection receives `ending` with the reason `update`
+and an `update` field naming the version and whether the runners were stopped by you.
+A `drain_for_update` while stopped answers `{state, update}` with the state
+`quitting`, so the app has the process ID it waits on. If the requesting
+connection's close is seen before the core ends for the drain, the drain is cancelled
+and the core starts again; if the core's end is seen first, the last steps have begun. Only the
+container backend reads a runner's output today; a backend that does not, such as
+axmc's Tart backend, reports every runner as waited for, so its drain ends at the
+bound.
+
 ### The Token Store
 
 `token_store` is the one place the agent keeps a repository's token. The interface
@@ -2041,16 +2104,16 @@ included. The first line a client sends MUST be `hello`; anything else, includin
 connection is closed, so today's commands exit 1 against an agent and change
 nothing. [Version Rules](#version-rules) says what a later agent of version 2 may add.
 
-| Message     | Fields                                                                                               |
-| ----------- | ---------------------------------------------------------------------------------------------------- |
-| `hello`     | `versions` (the versions the client speaks), `client` (`name`, `version`), which the agent ignores   |
-| `welcome`   | `version` (2), `agent` (`version`), `methods`, `topics`                                              |
-| `request`   | `id` (an integer of the client's own), `method`, `params`                                            |
-| `response`  | `id`, then `result` or `error`                                                                       |
-| `error`     | `error`, for what answers no request: a failed handshake, `busy`, or a message that is not a request |
-| `event`     | `topic` (`state`), `seq`, `value` (the snapshot)                                                     |
-| `heartbeat` | `seq`, the last event's                                                                              |
-| `ending`    | `reason`: `quit` or `executable_changed`                                                             |
+| Message     | Fields                                                                                                   |
+| ----------- | -------------------------------------------------------------------------------------------------------- |
+| `hello`     | `versions` (the versions the client speaks), `client` (`name`, `version`), which the agent ignores       |
+| `welcome`   | `version` (2), `agent` (`version`), `methods`, `topics`                                                  |
+| `request`   | `id` (an integer of the client's own), `method`, `params`                                                |
+| `response`  | `id`, then `result` or `error`                                                                           |
+| `error`     | `error`, for what answers no request: a failed handshake, `busy`, or a message that is not a request     |
+| `event`     | `topic` (`state`), `seq`, `value` (the snapshot)                                                         |
+| `heartbeat` | `seq`, the last event's                                                                                  |
+| `ending`    | `reason`: `quit`, `executable_changed` or `update`; `update` (`version`, `stopped_by_you`) for an update |
 
 A reader ignores a message type, a field and a topic it does not know, and calls only
 the methods `welcome` lists. The library's `Client` does so, refuses a `welcome` that is not version 2, and
@@ -2063,16 +2126,17 @@ against unknown methods, topics and fields.
 
 The agent answers one connection's requests in order and several connections at once.
 
-| Method         | Params                | Result                                                             |
-| -------------- | --------------------- | ------------------------------------------------------------------ |
-| `status`       | none                  | The snapshot                                                       |
-| `subscribe`    | `topic`: `state`      | `{"topic":"state"}`; the first event follows at once               |
-| `start_all`    | none                  | `{state}`, `resuming` while the pools are admitted                 |
-| `stop_all`     | none                  | `{state}`                                                          |
-| `build`        | none                  | `{state, started}`, `started` in milliseconds since the Unix epoch |
-| `quit`         | none                  | `{state}`                                                          |
-| `token_set`    | `repository`, `token` | `{repository}`, the key it was stored under                        |
-| `token_remove` | `repository`          | `{repository}`                                                     |
+| Method             | Params                | Result                                                             |
+| ------------------ | --------------------- | ------------------------------------------------------------------ |
+| `status`           | none                  | The snapshot                                                       |
+| `subscribe`        | `topic`: `state`      | `{"topic":"state"}`; the first event follows at once               |
+| `start_all`        | none                  | `{state}`, `resuming` while the pools are admitted                 |
+| `stop_all`         | none                  | `{state}`                                                          |
+| `build`            | none                  | `{state, started}`, `started` in milliseconds since the Unix epoch |
+| `quit`             | none                  | `{state}`                                                          |
+| `token_set`        | `repository`, `token` | `{repository}`, the key it was stored under                        |
+| `token_remove`     | `repository`          | `{repository}`                                                     |
+| `drain_for_update` | `version`             | `{state, update}`; see The Update Drain                            |
 
 `token_set` is the one message that carries a secret: the token travels only in its
 `token` param, from the client to the agent, and the agent never sends, logs or
@@ -2166,7 +2230,8 @@ a reader ignores one it does not know.
 
 | Field                          | Holds                                                                                                 |
 | ------------------------------ | ----------------------------------------------------------------------------------------------------- |
-| `agent`                        | `version`, `state`, `reason` (`code`, `message`), `since`, `build`, `restart_due`                     |
+| `agent`                        | `version`, `state`, `reason` (`code`, `message`), `since`, `build`, `restart_due`, `update`           |
+| `agent.update`                 | While a drain for an update runs: `version`, `waiting`, `deadline`, `pid`                             |
 | `agent.build`                  | `started`, `outcome` (`building`, `ready`, `failed`, `cancelled`), `finished`, `message`              |
 | `configuration`                | `path` and `problems`, at most 100                                                                    |
 | `runners_up`, `runners_wanted` | Totals over the listed pools, kept when rows are left out; 0 while `restart_due` is set               |
@@ -2249,7 +2314,10 @@ change nothing. `tests/agent_channel.rs` covers the socket's mode, the peer's us
 and a directory open to others on Unix. `tests/agent_channel_windows.rs` shows a pipe
 of a taken name is refused and a client passes the check of the server's user. `tests/agent_process.rs` runs the agent as a process on
 the fake `docker` and a GitHub stub, a second agent refused, and the log continued
-with ten files kept.
+with ten files kept. `tests/agent_drain.rs` covers the update drain: idle, busy and
+unknown runners, the bound, the reachable rows of its state table, a cancelled drain,
+a backing-off slot, a pool waiting for a token, a core failure, and diagnostic
+finalisation.
 
 The Windows CI step `tests/ci/control-pipe-security.ps1` runs its checks against
 the `serve` mode of the helper and against `serve-agent`, which opens the agent's
@@ -2290,7 +2358,12 @@ two on its command line, because they describe the build, not the definition.
 The CLI's own contract version is read from the same embedded Dockerfile when the
 binary is compiled, so the two cannot drift inside one binary; a Dockerfile without
 a well-formed version does not compile. The version rises when the run contract
-changes or the image must provide something it did not. Contract 1 is the run
+changes or the image must provide something it did not. The two runner lines the
+[update drain](#the-update-drain) reads are not part of it: they come from the
+runner, and a runner bump keeps the contract version, so the bump checks them
+instead, as [Bumping the Runner](./development-workflow.md#bumping-the-runner)
+describes.
+Contract 1 is the run
 contract as Phase 2 left it, plus the diagnostic variant's use of the collector's
 path and output directory.
 
