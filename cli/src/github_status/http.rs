@@ -125,6 +125,15 @@ fn message(body: &[u8], token: &Secret) -> Option<String> {
     })
 }
 
+/// a wait GitHub asks for, at most an hour, the rate limit's own window, so no
+/// header can stop collection for longer or overflow a deadline.
+fn bounded_wait(seconds: u64) -> Duration {
+    Duration::from_secs(seconds.min(MAX_WAIT_SECONDS))
+}
+
+/// the longest wait a `retry-after` or `x-poll-interval` header sets.
+pub const MAX_WAIT_SECONDS: u64 = 3600;
+
 fn answer(status: u16, headers: &HeaderMap, body: Vec<u8>, token: &Secret) -> Answer {
     let fresh = status == 200;
     Answer {
@@ -136,8 +145,8 @@ fn answer(status: u16, headers: &HeaderMap, body: Vec<u8>, token: &Secret) -> An
             used: number(headers, "x-ratelimit-used"),
         },
         etag: header(headers, "etag").map(str::to_string),
-        retry_after: number(headers, "retry-after").map(Duration::from_secs),
-        poll_interval: number(headers, "x-poll-interval").map(Duration::from_secs),
+        retry_after: number(headers, "retry-after").map(bounded_wait),
+        poll_interval: number(headers, "x-poll-interval").map(bounded_wait),
         accepted_permissions: header(headers, "x-accepted-github-permissions")
             .map(|text| clean::cut(text, clean::MESSAGE_CHARS)),
         message: (!fresh).then(|| message(&body, token)).flatten(),
@@ -348,6 +357,22 @@ mod tests {
         let message = message(body.as_bytes(), &Secret::new(token.to_string())).unwrap();
         assert!(!message.contains("github_pat_"), "{message}");
         assert!(message.ends_with("<token> more"), "{message}");
+    }
+
+    #[test]
+    fn a_wait_github_asks_for_counts_for_at_most_an_hour() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "retry-after",
+            HeaderValue::from_static("18446744073709551615"),
+        );
+        headers.insert("x-poll-interval", HeaderValue::from_static("7200"));
+        let bounded = answer(429, &headers, Vec::new(), &Secret::new(String::new()));
+        assert_eq!(bounded.retry_after, Some(Duration::from_secs(3600)));
+        assert_eq!(bounded.poll_interval, Some(Duration::from_secs(3600)));
+        headers.insert("retry-after", HeaderValue::from_static("120"));
+        let kept = answer(429, &headers, Vec::new(), &Secret::new(String::new()));
+        assert_eq!(kept.retry_after, Some(Duration::from_secs(120)));
     }
 
     #[test]

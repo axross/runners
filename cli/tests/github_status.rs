@@ -752,6 +752,32 @@ async fn checks_slow_at_25_percent_and_pause_at_10_percent_until_the_reset() {
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_reset_far_away_pauses_for_at_most_an_hour() {
+    let world = World::new(|_, _, _| {
+        let mut answer = json(&runners(&[]), "\"r\"");
+        answer.etag = None;
+        answer.rate = RateHeaders {
+            reset: Some(u64::MAX),
+            ..rate(100)
+        };
+        Ok(answer)
+    });
+    let (_s, snapshot_rx, _a, active_rx, status_tx, _status_rx) =
+        channels(snapshot(&["app-1-20261112000000000"], true), true);
+    drive(&world, snapshot_rx, active_rx, status_tx, async {
+        sleep(Duration::from_secs(3610)).await;
+    })
+    .await;
+    let at: Vec<u64> = world
+        .fetch
+        .seen()
+        .iter()
+        .map(|seen| seen.at.as_secs())
+        .collect();
+    assert_eq!(at, [0, 3600]);
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_failure_is_tried_again_after_15_s_doubling_and_keeps_the_last_states() {
     let world = World::new(|path, _, at| {
         assert_eq!(path, RUNNERS);

@@ -2067,8 +2067,9 @@ the reason of a pool skipped because the store failed (`the token store failed: 
 (kind needs_user, code 1312)`), and in the log line of a registration that failed
 for the same reason. None of them ever holds a token.
 
-The agent reads a token from the store when a pool is admitted and again at each
-registration, so a `token_set` takes effect at the next registration, and a
+The agent reads a token from the store when a pool is admitted, again at each
+registration, and at each GitHub status check, so a `token_set` takes effect at the
+next registration and check, and a
 `token_remove` makes the next registration fail and its slot back off with "no
 token". A running job container keeps the JIT configuration it was started with.
 
@@ -2332,7 +2333,9 @@ sends no display request until the reset.
 | No connection or a timeout                       | `unreachable`                                                                 | `job_names` `unreadable`, `unreachable`              |
 | The store cannot give the token                  | `token_unreadable`                                                            | No request                                           |
 
-A rate-limit wait holds every display request on the host. A repository whose runner
+A rate-limit wait holds every display request on the host. A `retry-after` or
+`x-poll-interval` counts for at most an hour, and a reset is never taken as more than
+an hour away, which is the rate limit's own window. A repository whose runner
 list fails keeps its last runners and `checked_at`, and is tried again after 15 s,
 doubling to 5 minutes, never sooner than the level allows, with `retry_at`. A failed
 lookup leaves the runner list alone: job names become `unreadable`, and lookups wait

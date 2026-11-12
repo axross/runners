@@ -10,6 +10,9 @@ use super::Budget;
 /// how often a repository is checked at most, at the normal level.
 pub const NORMAL_INTERVAL: Duration = Duration::from_secs(15);
 
+/// the rate limit's window; a reset is never taken as further away than this.
+const HOUR_MS: u64 = 3_600_000;
+
 /// how often a repository is checked at most, once checks are slowed.
 pub const SLOWED_INTERVAL: Duration = Duration::from_secs(60);
 
@@ -78,7 +81,8 @@ impl Tracker {
         else {
             return;
         };
-        let resets_at = reset.saturating_mul(1000);
+        // GitHub's window is an hour, so a later reset is held to an hour from now
+        let resets_at = reset.saturating_mul(1000).min(now.saturating_add(HOUR_MS));
         match &mut self.window {
             Some(window) if resets_at > window.resets_at && now >= window.resets_at => {
                 *window = Window {
@@ -169,6 +173,14 @@ mod tests {
             reset: Some(reset_s),
             used: Some(5000 - remaining),
         }
+    }
+
+    #[test]
+    fn a_reset_is_never_taken_as_more_than_an_hour_away() {
+        let mut tracker = Tracker::default();
+        tracker.observe(&headers(100, u64::MAX), 5_000);
+        assert_eq!(tracker.paused_until(5_000), Some(5_000 + HOUR));
+        assert_eq!(tracker.level(5_000 + HOUR), Level::Normal);
     }
 
     #[test]

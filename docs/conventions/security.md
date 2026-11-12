@@ -972,7 +972,8 @@ Residual risks, accepted on a single-user host:
 - Another process of the same user that connects to the channel can set or remove
   a token, stop the runners or quit the agent, as it can for `start`'s
   commands.
-- The agent holds a token in memory for as long as a registration needs it, and a
+- The agent holds a token in memory for as long as a registration or a GitHub status
+  check needs it, and a
   JIT configuration a runtime-core panic's message carried would reach the log
   unmasked, as for `start`.
 

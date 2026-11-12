@@ -245,8 +245,8 @@ pub fn wanted(snapshot: &Snapshot) -> BTreeMap<RepositoryKey, BTreeSet<String>> 
 
 /// what one paged read ended with.
 enum Read {
-    /// every page, as read or kept.
-    Pages(Vec<Vec<u8>>),
+    /// every page, as read or kept, and the next page when `follow` was off.
+    Pages(Vec<Vec<u8>>, Option<String>),
     /// the turn ends: a rate limit, or collection stopped.
     Stop,
     /// a lookup answered a 403 that is not a rate limit.
@@ -431,7 +431,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
             key.as_str()
         );
         let pages = match self.read(key, &token, &path, Endpoint::Runners, true).await {
-            Read::Pages(pages) => pages,
+            Read::Pages(pages, _) => pages,
             Read::Failed(cause) => {
                 self.fail(key, cause);
                 self.publish();
@@ -460,16 +460,12 @@ impl<'a, F: Fetch> Collector<'a, F> {
 
     /// records a failure of the runner list and when it is tried again.
     fn fail(&mut self, key: &RepositoryKey, cause: Cause) {
-        let level_interval = self
-            .tracker
-            .level((self.now)())
-            .interval()
-            .unwrap_or(Duration::ZERO);
         let now_ms = (self.now)();
+        let level = self.tracker.level(now_ms);
         let Some(repository) = self.repositories.get_mut(key) else {
             return;
         };
-        let wait = repository.backoff.max(level_interval);
+        let (wait, retry, retry_at) = next_try(&mut repository.backoff, level, now_ms);
         if repository.failure != Some(cause) {
             self.log.warn(&format!(
                 "GitHub status: {} failed: {}; trying again in {} s.",
@@ -479,9 +475,8 @@ impl<'a, F: Fetch> Collector<'a, F> {
             ));
         }
         repository.failure = Some(cause);
-        repository.retry = Some(Instant::now() + wait);
-        repository.retry_at = Some(now_ms + u64::try_from(wait.as_millis()).unwrap_or(u64::MAX));
-        repository.backoff = (repository.backoff * 2).min(MAX_FAILURE_BACKOFF);
+        repository.retry = Some(retry);
+        repository.retry_at = Some(retry_at);
     }
 
     /// reads every page of a paged read, conditionally, and takes the budget from
@@ -575,7 +570,8 @@ impl<'a, F: Fetch> Collector<'a, F> {
             match next {
                 Next::Page(next) if follow => path = next,
                 Next::Refused => return Read::Failed(Cause::Error),
-                Next::Page(_) | Next::None => return Read::Pages(bodies),
+                Next::Page(next) => return Read::Pages(bodies, Some(next)),
+                Next::None => return Read::Pages(bodies, None),
             }
         }
         Read::Failed(Cause::Error)
@@ -759,7 +755,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
             return;
         };
         match self.read(key, token, &page, Endpoint::Jobs, false).await {
-            Read::Pages(bodies) => {
+            Read::Pages(bodies, next) => {
                 let parsed: Option<Vec<JobsPage>> = bodies
                     .iter()
                     .map(|body| serde_json::from_slice(body).ok())
@@ -770,15 +766,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
                 };
                 self.lookup_answered(key);
                 self.take_jobs(key, &waiting, parsed);
-                let next = self
-                    .repositories
-                    .get(key)
-                    .and_then(|repository| repository.pages.get(&page))
-                    .and_then(|kept| kept.link.clone())
-                    .map(|link| next_page(&link, self.fetch.base_url(), &page, None));
-                if let (Some(Next::Page(next)), Some(repository)) =
-                    (next, self.repositories.get_mut(key))
-                {
+                if let (Some(next), Some(repository)) = (next, self.repositories.get_mut(key)) {
                     repository.queue.push_front(next);
                 }
             }
@@ -792,18 +780,12 @@ impl<'a, F: Fetch> Collector<'a, F> {
     /// doubling to 5 minutes, never less than the level's interval.
     fn lookup_failed(&mut self, key: &RepositoryKey, cause: Cause) {
         let now_ms = (self.now)();
-        let level_interval = self
-            .tracker
-            .level(now_ms)
-            .interval()
-            .unwrap_or(Duration::ZERO);
+        let level = self.tracker.level(now_ms);
         self.names(key, Names::Unreadable(cause));
         if let Some(repository) = self.repositories.get_mut(key) {
-            let wait = repository.lookup_backoff.max(level_interval);
-            repository.lookup_retry = Some(Instant::now() + wait);
-            repository.lookup_retry_at =
-                Some(now_ms + u64::try_from(wait.as_millis()).unwrap_or(u64::MAX));
-            repository.lookup_backoff = (repository.lookup_backoff * 2).min(MAX_FAILURE_BACKOFF);
+            let (_, retry, retry_at) = next_try(&mut repository.lookup_backoff, level, now_ms);
+            repository.lookup_retry = Some(retry);
+            repository.lookup_retry_at = Some(retry_at);
         }
     }
 
@@ -823,7 +805,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
             key.as_str()
         );
         match self.read(key, token, &path, Endpoint::Runs, false).await {
-            Read::Pages(bodies) => {
+            Read::Pages(bodies, _) => {
                 let Some(page) = bodies
                     .first()
                     .and_then(|body| serde_json::from_slice::<RunsPage>(body).ok())
@@ -915,6 +897,15 @@ impl<'a, F: Fetch> Collector<'a, F> {
             }
         }
     }
+}
+
+/// the next try after a failure: the back-off, never less than the level's interval,
+/// as a wait, a deadline and a wall-clock time; the back-off then doubles.
+fn next_try(backoff: &mut Duration, level: Level, now_ms: u64) -> (Duration, Instant, u64) {
+    let wait = (*backoff).max(level.interval().unwrap_or(Duration::ZERO));
+    *backoff = (*backoff * 2).min(MAX_FAILURE_BACKOFF);
+    let retry_at = now_ms.saturating_add(u64::try_from(wait.as_millis()).unwrap_or(u64::MAX));
+    (wait, Instant::now() + wait, retry_at)
 }
 
 /// a cause in words, for the log.
