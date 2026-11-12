@@ -37,8 +37,9 @@ pub struct AgentCore<'a, B, K, R> {
     pub board: &'a Board,
     /// set once the pools are admitted and prepared, or have been given up on.
     pub admitted: &'a watch::Sender<bool>,
-    /// true while the agent drains for an update: nothing registers, and no pool is
-    /// prepared or started.
+    /// true while the agent drains for an update: nothing registers, and no pool
+    /// begins its preparation; one already preparing finishes, and its slots register
+    /// nothing.
     pub drain: &'a watch::Sender<bool>,
     /// the times of a stop, which an idle runner's stop during a drain uses.
     pub times: StopTimes,
@@ -173,12 +174,19 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
                 }
             }
             tokio::select! {
+                biased;
                 () = wait_for_stop(&mut stop) => return,
                 changed = drain.changed() => {
                     if changed.is_err() { return }
                     continue;
                 }
                 changed = changes.changed() => if changed.is_err() { return },
+            }
+            // a drain that began with the token's change is seen before a preparation;
+            // the change is kept, so the pool is admitted once the drain is cancelled
+            if *drain.borrow() {
+                changes.mark_changed();
+                continue;
             }
             let (ready, still): (Vec<_>, Vec<_>) =
                 waiting.into_iter().partition(|pool| self.admit(pool));

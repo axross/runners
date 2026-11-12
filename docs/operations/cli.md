@@ -1628,7 +1628,11 @@ characters in all; anything else is `invalid_request`.
 A runner is busy once its container's output has carried a line that reads
 `Running job:` after the runner's timestamp, and idle once it has carried
 `Listening for Jobs` and not `Running job:`. A runner whose output has carried
-neither line is waited for, as if busy. Both streams count, a mark never clears, and
+neither line is waited for, as if busy. That fallback covers a runner that prints
+neither line, not one that still prints `Listening for Jobs` but rewords or drops
+`Running job:`: its busy runners would read as idle and be stopped mid-job, so
+[Bumping the Runner](./development-workflow.md#bumping-the-runner) checks both lines.
+Both streams count, a mark never clears, and
 no other line, such as `Runner reconnected.`, changes it. Only the fixed text is
 compared: the drain keeps no job name and puts none in the snapshot or a protocol
 message; the line itself reaches the log, as all runner output does.

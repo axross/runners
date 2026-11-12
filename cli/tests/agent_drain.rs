@@ -135,6 +135,41 @@ async fn an_idle_runner_is_stopped_and_a_busy_one_finishes_before_the_agent_ends
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn an_idle_runner_whose_stop_fails_is_killed() {
+    let rig = rig(ONE_POOL);
+    rig.backend.state.borrow_mut().stop_error = Some(
+        marshal_cli::runtime::backend::BackendError::new("the engine refused"),
+    );
+    let rig = &rig;
+    let (ended, ()) = rig
+        .drive(Launch::Running, |mut conn| async move {
+            let names = started(&conn, rig, 1).await;
+            let idle = names[0].clone();
+            rig.backend.print(&idle, LISTENING);
+            drain(&conn).await;
+            assert_eq!(ending(&mut conn).await.0, UPDATE);
+            let calls = rig.backend.calls();
+            let stop = calls
+                .iter()
+                .position(|call| matches!(call, Call::StopContainers(r) if r.names == vec![idle.clone()]))
+                .expect("the idle runner was not stopped");
+            assert!(
+                calls[stop..]
+                    .iter()
+                    .any(|call| matches!(call, Call::KillContainers(names) if names == &vec![idle.clone()])),
+                "the idle runner was not killed after its stop failed: {calls:?}"
+            );
+        })
+        .await;
+    assert_eq!(ended.reason, UPDATE);
+    assert_eq!(
+        containers(rig).len(),
+        1,
+        "a runner registered during the drain"
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn a_runner_that_printed_neither_line_is_waited_for() {
     let rig = rig(ONE_POOL);
     let rig = &rig;

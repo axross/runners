@@ -424,6 +424,15 @@ the contract tests in `cli/src/image/contract.rs` ask for by name:
 Nothing else needs an edit: the tests that depend on the declared runner version
 and date read them from the two Dockerfiles.
 
+Before the bump merges, check that the new runner still prints the two lines the
+update drain reads, `Listening for Jobs` and `Running job:`, in the same form: search
+for both strings in the new release's source on the
+[actions/runner](https://github.com/actions/runner) repository, at its tag. A runner
+that drops or rewords `Running job:` but keeps `Listening for Jobs` makes a drain
+stop busy runners mid-job, as [CLI](./cli.md#the-update-drain) describes; if either
+line changed, change the line marks in `cli/src/runtime/job_marks.rs` in the same
+pull request.
+
 A runner bump changes no part of the run contract, so the contract version stays.
 When the new runner changes something the run contract relies on, such as a path or
 the user it runs as, [REVIEW.md](../../REVIEW.md) asks for the contract version to
