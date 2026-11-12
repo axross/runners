@@ -50,6 +50,17 @@ pub const JIT: &str = "fake-jit-config-cccc-3333";
 pub const ONE_POOL: &str = r#"{"imageName":"actions-runner:local","repositories":[
     {"owner":"o","repository":"r","name":"r","slots":1,"tokenPath":"C:\\no-such.token","volumes":[]}]}"#;
 
+/// [`ONE_POOL`] as `config.toml` writes it.
+pub const ONE_POOL_TOML: &str = r#"schema_version = 1
+routing_label = "axpc"
+image_name = "actions-runner:local"
+
+[[pool]]
+name = "r"
+repository = "o/r"
+runners = 1
+"#;
+
 /// two pools of two repositories.
 pub const TWO_POOLS: &str = r#"{"imageName":"actions-runner:local","repositories":[
     {"owner":"o","repository":"r","name":"r","slots":1,"tokenPath":"C:\\no-such.token","volumes":[]},
@@ -189,8 +200,20 @@ impl Rig {
             .unwrap();
     }
 
-    pub fn write_config(&self, config: &str) {
+    /// writes `config.json`, which the agent migrates when it starts and finds no
+    /// `config.toml`.
+    pub fn write_json(&self, config: &str) {
         std::fs::write(self.root.path().join("config.json"), config).unwrap();
+    }
+
+    /// writes `config.toml`, the file the agent reads.
+    pub fn write_toml(&self, config: &str) {
+        std::fs::write(self.root.path().join("config.toml"), config).unwrap();
+    }
+
+    /// removes a configuration file of the rig's folder.
+    pub fn remove(&self, name: &str) {
+        std::fs::remove_file(self.root.path().join(name)).unwrap();
     }
 
     /// how long after `since` the agent had ended and released the lock; the instant is
@@ -256,7 +279,8 @@ impl Rig {
                 lock: &lock,
                 settings: Settings {
                     version: "test".to_string(),
-                    config_path: self.root.path().join("config.json"),
+                    config_folder: self.root.path().to_path_buf(),
+                    profile: marshal_cli::profile::Profile::Axpc,
                     times: self.times.get(),
                     launch,
                 },

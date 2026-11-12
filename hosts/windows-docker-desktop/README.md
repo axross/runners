@@ -11,7 +11,7 @@ operator procedure for the axpc host: prerequisites, installing `marshal`, token
 health checks, recovery, and rolling back. [CLI](../../docs/operations/cli.md) owns
 what each `marshal` command does and what `marshal validate` accepts. This
 directory holds `runner-host.example.json`, an example host configuration with two
-repositories, using obviously fake names, and this reference for every field of the
+repositories, `config.example.toml`, the same configuration as the agent reads it, using obviously fake names, and this reference for every field of the
 configuration.
 
 ## Host configuration
@@ -44,6 +44,18 @@ Non-empty `labels` lists no longer add to `axpc`. Before rollout, add `axpc`
 explicitly to an existing general entry's custom-label list to preserve its
 registration, as the example does. Missing or empty lists keep the default.
 The image, resource limits, slots, mounts, and diagnostic settings do not change.
+
+## The agent's configuration
+
+The resident agent does not take `--config`. It reads `config.toml` in
+`%LOCALAPPDATA%\marshal\`, the TOML form of the same configuration, with
+snake_case keys, `repository = "owner/name"` in place of `owner` and `repository`,
+`runners` in place of `slots`, a required `routing_label`, and no `tokenPath`: it
+reads each pool's token from the Credential Manager.
+[`config.example.toml`](./config.example.toml) is the example above in that form.
+When only `config.json` is in that folder, the agent's first start migrates it to
+`config.toml` and leaves `config.json` in place. The keys, the problems it reports,
+and the migration are in [CLI](../../docs/operations/cli.md#the-toml-configuration).
 
 ## Checking a configuration
 

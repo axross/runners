@@ -205,8 +205,9 @@ fn axmc_pools(scratch: &TempDir) -> Vec<PoolSpec> {
         .unwrap();
     let mut pools = pools_from_plan(&plan).unwrap();
     for pool in &mut pools {
-        pool.token_path = scratch.path().join(format!("{}.token", pool.name));
-        write_token_file(&pool.token_path, b"ghp_token\n");
+        let token_path = scratch.path().join(format!("{}.token", pool.name));
+        write_token_file(&token_path, b"ghp_token\n");
+        pool.token_path = Some(token_path);
     }
     pools
 }

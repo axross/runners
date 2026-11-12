@@ -285,7 +285,11 @@ it exits 1 saying that the axmc profile runs only on macOS. `--profile` defaults
 
 [`hosts/macos/runner-host.example.json`](../../hosts/macos/runner-host.example.json)
 is the configuration to copy. It holds placeholders only: replace the owners,
-repositories, names and token paths, and keep the files outside any checkout. Each
+repositories, names and token paths, and keep the files outside any checkout.
+[`hosts/macos/config.example.toml`](../../hosts/macos/config.example.toml) is the
+same configuration in the TOML form the resident agent reads from
+`~/Library/Application Support/marshal/config.toml`, as
+[The Agent's Configuration](./cli.md#the-agents-configuration) describes. Each
 entry is a pool of `slots` runners for one repository:
 
 - `os` is `linux` or `macos`, and `diskGb` is the per-VM disk cap. A VM has whole

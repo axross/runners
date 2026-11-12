@@ -17,7 +17,7 @@ use marshal_cli::agent::{AgentOptions, run};
 use marshal_cli::instance::lifecycle::StopTimes;
 use marshal_cli::runtime::fake::Call;
 use serde_json::{Value, json};
-use support::agent::{Conn, ONE_POOL, Raw, Rig, TOKEN, TWO_POOLS};
+use support::agent::{Conn, ONE_POOL, ONE_POOL_TOML, Raw, Rig, TOKEN, TWO_POOLS};
 use tokio::sync::Notify;
 
 fn running_rig() -> Rig {
@@ -238,8 +238,8 @@ async fn a_second_agent_is_refused_while_the_first_holds_the_lock() {
 async fn stays_up_stopped(config: Option<&str>, code: &str) {
     let rig = Rig::new(ONE_POOL);
     match config {
-        Some(text) => rig.write_config(text),
-        None => std::fs::remove_file(rig.root.path().join("config.json")).unwrap(),
+        Some(text) => rig.write_toml(text),
+        None => rig.remove("config.json"),
     }
     let rig = &rig;
     let code = code.to_string();
@@ -262,7 +262,7 @@ async fn it_stays_up_without_a_configuration() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn it_stays_up_with_an_invalid_configuration() {
-    stays_up_stopped(Some("{ not json"), "invalid_configuration").await;
+    stays_up_stopped(Some("not = [toml"), "invalid_configuration").await;
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -309,14 +309,14 @@ async fn it_stays_up_when_no_pool_can_start() {
 #[tokio::test(flavor = "current_thread")]
 async fn a_start_after_a_repair_runs_the_pools() {
     let rig = Rig::new(ONE_POOL);
-    rig.write_config("{ not json");
+    rig.write_toml("not = [toml");
     rig.store_token("o", "r", TOKEN);
     rig.hold_jobs();
     let rig = &rig;
     let (_, ()) = rig
         .drive(Launch::Running, |conn| async move {
             conn.until_state("stopped").await;
-            rig.write_config(ONE_POOL);
+            rig.write_toml(ONE_POOL_TOML);
             let answer = conn.ok("start_all").await;
             assert_eq!(answer["state"], "resuming");
             conn.until_runner_runs().await;
@@ -330,23 +330,32 @@ async fn a_start_after_a_repair_runs_the_pools() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn start_all_answers_stopped_with_the_reason_when_it_cannot_load_or_use_the_image() {
+    // the agent holds no configuration, so a start that finds none or an invalid one
+    // stops
     let rig = Rig::new(ONE_POOL);
+    rig.remove("config.json");
     rig.store_token("o", "r", TOKEN);
     rig.hold_jobs();
     let rig = &rig;
     let (_, ()) = rig
         .drive(Launch::Stopped, |conn| async move {
-            std::fs::remove_file(rig.root.path().join("config.json")).unwrap();
             let answer = conn.ok("start_all").await;
             assert_eq!(answer["state"], "stopped");
             assert_eq!(answer["reason"]["code"], "no_configuration");
+            assert!(
+                answer["reason"]["message"]
+                    .as_str()
+                    .unwrap()
+                    .ends_with("config.toml"),
+                "{answer}"
+            );
 
-            rig.write_config("{ not json");
+            rig.write_toml("not = [toml");
             let answer = conn.ok("start_all").await;
             assert_eq!(answer["state"], "stopped");
             assert_eq!(answer["reason"]["code"], "invalid_configuration");
 
-            rig.write_config(ONE_POOL);
+            rig.write_toml(ONE_POOL_TOML);
             rig.backend
                 .state
                 .borrow_mut()
@@ -731,18 +740,13 @@ async fn a_successful_build_after_a_missing_image_leaves_the_agent_stopped_by_yo
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn a_successful_build_after_an_invalid_configuration_is_fixed_leaves_it_stopped_by_you() {
-    let rig = Rig::new("{ not json");
+async fn a_build_uses_the_configuration_in_use_and_does_not_read_the_file() {
+    let rig = Rig::new(ONE_POOL);
     let rig = &rig;
     let (_, ()) = rig
-        .drive(Launch::Running, |conn| async move {
-            let snapshot = conn.until_state("stopped").await;
-            assert_eq!(
-                snapshot.agent.reason.as_ref().unwrap().code,
-                "invalid_configuration"
-            );
-            assert!(!snapshot.configuration.problems.is_empty());
-            rig.write_config(ONE_POOL);
+        .drive(Launch::Stopped, |conn| async move {
+            conn.until_state("stopped").await;
+            rig.write_toml(&ONE_POOL_TOML.replace("actions-runner:local", "other:1"));
             conn.ok("build").await;
             let snapshot = conn
                 .until("the build to end", |s| {
@@ -754,6 +758,7 @@ async fn a_successful_build_after_an_invalid_configuration_is_fixed_leaves_it_st
             conn.ok("quit").await;
         })
         .await;
+    assert_eq!(*rig.builder.images.borrow(), ["actions-runner:local"]);
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -834,7 +839,7 @@ async fn quit_cancels_a_build_and_ends_the_agent() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn build_is_refused_while_the_runners_run_and_without_a_usable_configuration() {
+async fn build_is_refused_while_the_runners_run() {
     let rig = running_rig();
     let rig = &rig;
     let (_, ()) = rig
@@ -842,13 +847,6 @@ async fn build_is_refused_while_the_runners_run_and_without_a_usable_configurati
             conn.until_runner_runs().await;
             assert_eq!(conn.code("build", Value::Null).await, "refused");
             rig.mark_running();
-            conn.ok("stop_all").await;
-            rig.write_config("{ not json");
-            assert_eq!(conn.code("build", Value::Null).await, "refused");
-            std::fs::remove_file(rig.root.path().join("config.json")).unwrap();
-            assert_eq!(conn.code("build", Value::Null).await, "refused");
-            // the refusals changed nothing
-            assert_eq!(conn.status().await.agent.state, "stopped");
             conn.ok("quit").await;
         })
         .await;
@@ -856,21 +854,98 @@ async fn build_is_refused_while_the_runners_run_and_without_a_usable_configurati
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn a_subscriber_is_told_of_a_configuration_a_refused_build_found_invalid() {
+async fn build_is_refused_without_a_configuration_in_use_until_a_start_reads_one() {
+    let rig = Rig::new(ONE_POOL);
+    rig.write_toml(&ONE_POOL_TOML.replace("runners = 1", "runners = 0"));
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Stopped, |conn| async move {
+            assert_eq!(conn.code("build", Value::Null).await, "refused");
+            // a valid file is not read by a build, only by a start
+            rig.write_toml(ONE_POOL_TOML);
+            assert_eq!(conn.code("build", Value::Null).await, "refused");
+            // the refusals changed nothing
+            let snapshot = conn.status().await;
+            assert_eq!(snapshot.agent.state, "stopped");
+            assert_eq!(snapshot.configuration.status, "invalid");
+            conn.ok("quit").await;
+        })
+        .await;
+    assert!(rig.builder.images.borrow().is_empty());
+}
+
+// the configuration file --------------------------------------------------------------
+
+#[tokio::test(flavor = "current_thread")]
+async fn the_first_start_migrates_config_json_and_reads_config_toml_from_then_on() {
     let rig = running_rig();
     let rig = &rig;
     let (_, ()) = rig
-        .drive(Launch::Stopped, |mut conn| async move {
+        .drive(Launch::Running, |conn| async move {
+            let snapshot = conn.until_runner_runs().await;
+            let configuration = &snapshot.configuration;
+            assert!(configuration.path.ends_with("config.toml"));
+            assert_eq!(configuration.status, "valid");
+            assert_eq!(configuration.in_use.as_ref().unwrap().source, "file");
+            let migration = configuration.migration.as_ref().unwrap();
+            assert_eq!(migration.state, "migrated");
+            assert!(migration.at.is_some());
+            rig.mark_running();
+            conn.ok("quit").await;
+        })
+        .await;
+    let toml = std::fs::read_to_string(rig.root.path().join("config.toml")).unwrap();
+    assert!(toml.starts_with("# Converted from config.json"), "{toml}");
+    assert!(!toml.contains("token"), "{toml}");
+    assert!(rig.root.path().join("config.json").exists());
+    assert!(
+        rig.log
+            .lines()
+            .join("\n")
+            .contains("Migrated config.json to config.toml")
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_config_json_that_breaks_the_rules_is_not_migrated_and_names_its_problems() {
+    let rig = Rig::new(&ONE_POOL.replace(r#""slots":1"#, r#""slots":0"#));
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            let snapshot = conn.until_state("stopped").await;
+            let reason = snapshot.agent.reason.unwrap();
+            assert_eq!(reason.code, "invalid_configuration");
+            assert!(
+                reason.message.starts_with("config.json is not valid"),
+                "{reason:?}"
+            );
+            assert!(
+                snapshot.configuration.problems[0].starts_with("repositories[0].slots"),
+                "{:?}",
+                snapshot.configuration.problems
+            );
+            assert_eq!(snapshot.configuration.in_use, None);
+            assert_eq!(snapshot.configuration.migration.unwrap().state, "failed");
+            conn.ok("quit").await;
+        })
+        .await;
+    assert!(!rig.root.path().join("config.toml").exists());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_start_with_a_bad_file_runs_the_last_valid_configuration_and_shows_the_problems() {
+    let rig = running_rig();
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Running, |mut conn| async move {
+            conn.until_runner_runs().await;
+            rig.mark_running();
+            conn.ok("stop_all").await;
             conn.client.subscribe().await.unwrap();
-            let first = conn.push().await;
-            let marshal_cli::agent::Push::Event { snapshot, .. } = first else {
-                panic!("the first push was not an event");
-            };
-            assert!(snapshot.configuration.problems.is_empty());
-            // the file is made invalid, and the first thing to read it is a refused build
-            rig.write_config("{ not json");
-            assert_eq!(conn.code("build", Value::Null).await, "refused");
-            let told = tokio::time::timeout(Duration::from_secs(1), async {
+            rig.write_toml(&ONE_POOL_TOML.replace("runners = 1", "runners = 0"));
+            assert_eq!(conn.ok("start_all").await["state"], "resuming");
+            // a subscriber is told of the problems the start found
+            let told = tokio::time::timeout(Duration::from_secs(5), async {
                 loop {
                     if let marshal_cli::agent::Push::Event { snapshot, .. } = conn.push().await
                         && !snapshot.configuration.problems.is_empty()
@@ -880,8 +955,75 @@ async fn a_subscriber_is_told_of_a_configuration_a_refused_build_found_invalid()
                 }
             })
             .await
-            .expect("the subscriber was not told within a second");
-            assert!(!told.configuration.problems.is_empty());
+            .expect("the subscriber was not told");
+            assert_eq!(told.configuration.status, "invalid");
+            assert!(
+                told.configuration.problems[0].contains("pool[0].runners"),
+                "{:?}",
+                told.configuration.problems
+            );
+            assert_eq!(told.configuration.in_use.unwrap().source, "last_valid");
+            conn.until_runner_runs().await;
+
+            // repaired, the next start uses the file and the problems clear
+            rig.mark_running();
+            conn.ok("stop_all").await;
+            rig.write_toml(ONE_POOL_TOML);
+            conn.ok("start_all").await;
+            let snapshot = conn.until_runner_runs().await;
+            assert!(snapshot.configuration.problems.is_empty());
+            assert_eq!(snapshot.configuration.status, "valid");
+            assert_eq!(snapshot.configuration.in_use.unwrap().source, "file");
+            rig.mark_running();
+            conn.ok("quit").await;
+        })
+        .await;
+    assert!(rig.log.lines().join("\n").contains("stays in use"));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_deleted_config_toml_beside_config_json_is_a_migration_for_the_next_start() {
+    let rig = running_rig();
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            conn.until_runner_runs().await;
+            rig.mark_running();
+            conn.ok("stop_all").await;
+            rig.remove("config.toml");
+            conn.ok("start_all").await;
+            let snapshot = conn.until_runner_runs().await;
+            assert_eq!(snapshot.configuration.status, "missing");
+            assert_eq!(snapshot.configuration.in_use.unwrap().source, "last_valid");
+            assert_eq!(snapshot.configuration.migration.unwrap().state, "pending");
+            rig.mark_running();
+            conn.ok("quit").await;
+        })
+        .await;
+    // only a start migrates
+    assert!(!rig.root.path().join("config.toml").exists());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn without_a_configuration_in_use_a_pending_migration_says_to_launch_marshal_again() {
+    // neither file exists at the start, and config.json appears after it
+    let rig = Rig::new(ONE_POOL);
+    rig.remove("config.json");
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Stopped, |conn| async move {
+            rig.write_json(ONE_POOL);
+            let answer = conn.ok("start_all").await;
+            assert_eq!(answer["reason"]["code"], "no_configuration");
+            assert!(
+                answer["reason"]["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("quit Marshal and launch it again"),
+                "{answer}"
+            );
+            let snapshot = conn.status().await;
+            assert_eq!(snapshot.configuration.migration.unwrap().state, "pending");
             conn.ok("quit").await;
         })
         .await;

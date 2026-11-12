@@ -20,6 +20,7 @@ use marshal_cli::agent::run::applied_overrides;
 use marshal_cli::agent::server::Limits;
 use marshal_cli::agent::tokens::{NO_TOKEN_STORE, StoreTokens};
 use marshal_cli::agent::{AgentOptions, log::AgentLog};
+use marshal_cli::profile::Profile;
 use marshal_cli::token_store::{MemoryTokenStore, RepositoryKey};
 
 #[test]
@@ -43,7 +44,20 @@ fn asked_for_everything(watched: &Path) -> AgentOptions<'_> {
         ..Limits::default()
     });
     options.max_log_bytes = Some(1);
+    options.profile = Some(not_the_hosts_profile());
     options
+}
+
+/// the profile of this host, as a release agent takes it.
+fn hosts_profile() -> Profile {
+    Profile::of_this_machine().unwrap_or(Profile::Axpc)
+}
+
+fn not_the_hosts_profile() -> Profile {
+    match hosts_profile() {
+        Profile::Axpc => Profile::Axmc,
+        Profile::Axmc => Profile::Axpc,
+    }
 }
 
 #[test]
@@ -56,12 +70,14 @@ fn every_override_moves_a_setting_in_a_debug_build_only() {
         assert!(applied.store.is_some());
         assert_eq!(applied.limits.connections, 1);
         assert_eq!(applied.executable.as_deref(), Some(watched));
+        assert_eq!(applied.profile, not_the_hosts_profile());
     } else {
         assert_eq!(applied.max_log_bytes, AgentLog::default_max_bytes());
         assert!(applied.environment.is_empty());
         assert!(applied.store.is_none());
         assert_eq!(applied.limits, Limits::default());
         assert_eq!(applied.executable, std::env::current_exe().ok());
+        assert_eq!(applied.profile, hosts_profile());
     }
 }
 

@@ -6,7 +6,7 @@ use std::path::Path;
 use crate::convert::{ConversionFailure, convert_to_toml};
 use crate::profile::Profile;
 use crate::runtime::clock::Clock;
-use crate::validate::{Validation, validate, validate_toml};
+use crate::validate::{CheckoutRule, Validation, validate_toml_with, validate_with};
 
 /// the checks of the two files and the conversion between them.
 pub trait Checks {
@@ -28,21 +28,20 @@ pub trait Checks {
     ) -> Result<String, ConversionFailure>;
 }
 
-/// the library's own rules, under one checkout.
+/// the library's own rules, under one checkout rule.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct StandardChecks<'a> {
-    /// the project checkout that a diagnostic directory must lie outside, when one is
-    /// known.
-    pub checkout: Option<&'a Path>,
+    /// where the checkout that a diagnostic directory must lie outside comes from.
+    pub rule: CheckoutRule<'a>,
 }
 
 impl Checks for StandardChecks<'_> {
     fn check_toml(&self, bytes: &[u8], profile: Profile) -> Validation {
-        validate_toml(bytes, profile, self.checkout)
+        validate_toml_with(bytes, profile, self.rule)
     }
 
     fn check_json(&self, bytes: &[u8], profile: Profile) -> Validation {
-        validate(bytes, profile, self.checkout)
+        validate_with(bytes, profile, self.rule)
     }
 
     fn convert<C: Clock>(
@@ -52,6 +51,6 @@ impl Checks for StandardChecks<'_> {
         source: &Path,
         clock: &C,
     ) -> Result<String, ConversionFailure> {
-        convert_to_toml(json, profile, source, self.checkout, clock)
+        convert_to_toml(json, profile, source, self.rule, clock)
     }
 }

@@ -12,7 +12,7 @@
 mod support;
 
 use marshal_cli::profile::Profile;
-use marshal_cli::validate::{CheckoutRule, Failure, validate_with};
+use marshal_cli::validate::{CheckoutRule, Failure, validate_toml_with, validate_with};
 use support::TempDir;
 
 const OUTSIDE: &str = "repositories[0].diagnosticDirectory: must be outside the checkout";
@@ -133,6 +133,30 @@ fn the_checkout_above_the_configuration_is_still_applied_beside_the_sink_s() {
     assert!(validation.outcome.is_ok());
 }
 
+#[cfg(unix)]
+#[test]
+fn a_sink_inside_a_checkout_in_config_toml_is_refused_from_the_sinks_own_place() {
+    let tree = checkout();
+    let inside = tree.path().join("checkout").join("evidence");
+    let document = format!(
+        "schema_version = 1\nrouting_label = \"axmc\"\n\n[budget]\ncpus = 8\nmemory_gb = 32\n\
+         disk_gb = 200\n\n[[pool]]\nname = \"r\"\nrepository = \"o/r\"\nrunners = 1\n\
+         disk_gb = 40\ndiagnostics = true\ndiagnostic_directory = '{}'\n",
+        inside.display()
+    );
+    let validation = validate_toml_with(
+        document.as_bytes(),
+        Profile::Axmc,
+        CheckoutRule::AboveAndAtSink(None),
+    );
+    let found = errors(validation.outcome);
+    assert_eq!(
+        found,
+        ["line 15: pool[0].diagnostic_directory: must be outside the checkout"]
+    );
+    assert!(!validation.checkout_rule_skipped);
+}
+
 #[cfg(windows)]
 mod windows {
     use super::*;
@@ -179,6 +203,13 @@ mod windows {
         let inside = tree.path().join("checkout").join("evidence");
         let config = String::from_utf8(axpc(inside.to_str().unwrap())).unwrap();
         let rig = Rig::new(&config);
+        // the agent reads config.toml; config.json is then not migrated
+        rig.write_toml(&format!(
+            "schema_version = 1\nrouting_label = \"axpc\"\nimage_name = \"i\"\n\n\
+             [[pool]]\nname = \"r\"\nrepository = \"o/r\"\nrunners = 1\n\
+             diagnostics = true\ndiagnostic_directory = '{}'\n",
+            inside.display()
+        ));
         let rig = &rig;
         let (_, ()) = rig
             .drive(Launch::Running, |conn| async move {
@@ -188,11 +219,8 @@ mod windows {
                     "invalid_configuration"
                 );
                 assert!(
-                    snapshot
-                        .configuration
-                        .problems
-                        .iter()
-                        .any(|problem| problem.ends_with(&OUTSIDE["repositories[0].".len()..])),
+                    snapshot.configuration.problems.iter().any(|problem| problem
+                        .ends_with("pool[0].diagnostic_directory: must be outside the checkout")),
                     "{snapshot:#?}"
                 );
                 conn.ok("quit").await;

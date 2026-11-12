@@ -11,7 +11,8 @@ use crate::profile::{Os, Profile};
 use crate::runtime::clock::Clock;
 use crate::runtime::name::civil_from_days;
 use crate::validate::{
-    Failure, Key, Plan, SCHEMA_VERSION, json_key_name, toml_key_name, validate, validate_toml,
+    CheckoutRule, Failure, Key, Plan, SCHEMA_VERSION, json_key_name, toml_key_name,
+    validate_toml_with, validate_with,
 };
 
 const SECONDS_PER_DAY: u64 = 86_400;
@@ -64,21 +65,21 @@ fn problems(failure: &Failure) -> String {
 }
 
 /// converts the JSON configuration `json` of `host` to a TOML document, after
-/// `validate` accepted it under `checkout`. the document opens with a comment that
+/// `validate` accepted it under the checkout `rule`. the document opens with a comment that
 /// names `source` by its file name and the time of `clock`, uses the host's line
 /// ending, CRLF on Windows and LF on macOS, and carries no `tokenPath`.
 ///
 /// the text is returned only when it passes the TOML rules for the host under the same
-/// `checkout` and [`first_difference`] finds nothing between its configuration and the
+/// `rule` and [`first_difference`] finds nothing between its configuration and the
 /// JSON file's.
 pub fn convert_to_toml(
     json: &[u8],
     host: Profile,
     source: &Path,
-    checkout: Option<&Path>,
+    rule: CheckoutRule<'_>,
     clock: &impl Clock,
 ) -> Result<String, ConversionFailure> {
-    convert_with(json, host, source, checkout, clock, body)
+    convert_with(json, host, source, rule, clock, body)
 }
 
 /// [`convert_to_toml`] with the document's body supplied, so a test can make the
@@ -87,11 +88,11 @@ fn convert_with(
     json: &[u8],
     host: Profile,
     source: &Path,
-    checkout: Option<&Path>,
+    rule: CheckoutRule<'_>,
     clock: &impl Clock,
     write_body: impl FnOnce(&Object, Profile) -> String,
 ) -> Result<String, ConversionFailure> {
-    let accepted = validate(json, host, checkout)
+    let accepted = validate_with(json, host, rule)
         .outcome
         .map_err(ConversionFailure::SourceRejected)?;
     let Ok(Value::Object(root)) = json::parse(json) else {
@@ -106,7 +107,7 @@ fn convert_with(
     );
     let document = with_line_ending(&document, host);
 
-    let converted = validate_toml(document.as_bytes(), host, checkout)
+    let converted = validate_toml_with(document.as_bytes(), host, rule)
         .outcome
         .map_err(ConversionFailure::DocumentRejected)?;
     match first_difference(&accepted, &converted) {
@@ -354,7 +355,7 @@ mod tests {
             WINDOWS_FILE.as_bytes(),
             Profile::Axpc,
             Path::new("config.json"),
-            None,
+            CheckoutRule::default(),
             &FakeClock::at(0),
             write_body,
         )
@@ -429,7 +430,7 @@ mod tests {
     }
 
     fn plan(json: &str) -> Plan {
-        validate(json.as_bytes(), Profile::Axpc, None)
+        crate::validate::validate(json.as_bytes(), Profile::Axpc, None)
             .outcome
             .unwrap()
     }
@@ -439,12 +440,12 @@ mod tests {
             json.as_bytes(),
             Profile::Axpc,
             Path::new("config.json"),
-            None,
+            CheckoutRule::default(),
             &FakeClock::at(0),
             body,
         )
         .unwrap();
-        validate_toml(text.as_bytes(), Profile::Axpc, None)
+        crate::validate::validate_toml(text.as_bytes(), Profile::Axpc, None)
             .outcome
             .unwrap()
     }
