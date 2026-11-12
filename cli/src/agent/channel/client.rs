@@ -19,7 +19,7 @@ use crate::instance::roots::Roots;
 use super::super::snapshot::Snapshot;
 use super::super::wire::{
     AgentMessage, ClientInfo, ClientMessage, ErrorBody, MAX_AGENT_MESSAGE_BYTES,
-    MAX_CLIENT_MESSAGE_BYTES, TOPIC_STATE, VERSION,
+    MAX_CLIENT_MESSAGE_BYTES, TOPIC_STATE, UpdateEnding, VERSION,
 };
 
 /// a client gives up connecting after this long and reads it as no agent.
@@ -113,9 +113,13 @@ pub enum Push {
     Event { seq: u64, snapshot: Box<Snapshot> },
     #[non_exhaustive]
     Heartbeat { seq: u64 },
-    /// the agent is about to end, for this reason (an open set).
+    /// the agent is about to end, for this reason (an open set), with what an end for
+    /// an update adds.
     #[non_exhaustive]
-    Ending { reason: String },
+    Ending {
+        reason: String,
+        update: Option<UpdateEnding>,
+    },
     /// the connection ended.
     Closed,
 }
@@ -412,8 +416,8 @@ async fn read_messages<R: AsyncRead + Unpin>(
             AgentMessage::Heartbeat { seq } => {
                 let _ = pushes.send(Push::Heartbeat { seq });
             }
-            AgentMessage::Ending { reason } => {
-                let _ = pushes.send(Push::Ending { reason });
+            AgentMessage::Ending { reason, update } => {
+                let _ = pushes.send(Push::Ending { reason, update });
             }
             AgentMessage::Welcome { .. }
             | AgentMessage::Error { .. }

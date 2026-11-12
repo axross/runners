@@ -2,8 +2,8 @@
 //! trusts a client's output to be short or valid text; `docs/operations/cli.md`
 //! describes the argument lists, budgets and the shim.
 
-use std::cell::RefCell;
-use std::collections::BTreeSet;
+use std::cell::{Cell, RefCell};
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -32,6 +32,7 @@ use super::docker_args::{
     volume_chown_arguments, volume_create_arguments,
 };
 use super::exports::Exports;
+use super::job_marks::{Activity, JobMarks};
 use super::log::Log;
 use super::retained::Retained;
 use super::scrub::scrub_error_text;
@@ -230,8 +231,24 @@ pub struct DockerBackend<C> {
     clock: C,
     log: Rc<dyn Log>,
     running: RefCell<BTreeSet<String>>,
+    /// what each job container's output has said about its job, while its run lasts.
+    marks: RefCell<BTreeMap<String, Rc<Cell<JobMarks>>>>,
     retained: Retained,
     exports: Exports,
+}
+
+/// keeps a job container's marks while its run lasts, a dropped future included.
+struct MarksGuard<'a> {
+    map: &'a RefCell<BTreeMap<String, Rc<Cell<JobMarks>>>>,
+    name: String,
+}
+
+impl Drop for MarksGuard<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut map) = self.map.try_borrow_mut() {
+            map.remove(&self.name);
+        }
+    }
 }
 
 /// removes a container from the running set when its run ends, a dropped future
@@ -269,6 +286,7 @@ impl<C: Clock> DockerBackend<C> {
             clock,
             log,
             running: RefCell::new(BTreeSet::new()),
+            marks: RefCell::new(BTreeMap::new()),
             retained: Retained::default(),
             exports,
         }
@@ -529,6 +547,15 @@ async fn end_client(child: &mut Child, limit: Duration) {
 /// longer than [`MAX_LINE_BYTES`] goes in pieces, each cut where it splits no masked
 /// secret.
 pub(crate) async fn forward_lines<R: AsyncRead + Unpin>(stream: Option<R>, log: &dyn Log) {
+    forward_marked_lines(stream, log, None).await;
+}
+
+/// [`forward_lines`], also noting in `marks` what each line says about the runner's job.
+pub(crate) async fn forward_marked_lines<R: AsyncRead + Unpin>(
+    stream: Option<R>,
+    log: &dyn Log,
+    marks: Option<&Cell<JobMarks>>,
+) {
     let Some(stream) = stream else {
         return;
     };
@@ -545,6 +572,9 @@ pub(crate) async fn forward_lines<R: AsyncRead + Unpin>(stream: Option<R>, log: 
         let next = piece.split_off(piece.len() - held);
         if !piece.is_empty() {
             let text = String::from_utf8_lossy(&piece);
+            if let Some(marks) = marks {
+                marks.set(marks.get().observe(&text));
+            }
             log.info(text.trim_end_matches(['\n', '\r']));
         }
         if read == 0 {
@@ -752,11 +782,19 @@ impl<C: Clock> Backend for DockerBackend<C> {
             .diagnostic
             .is_none()
             .then(|| RunningGuard::enter(&self.running, &spec.name));
+        let marks = Rc::new(Cell::new(JobMarks::default()));
+        self.marks
+            .borrow_mut()
+            .insert(spec.name.clone(), Rc::clone(&marks));
+        let _marks = MarksGuard {
+            map: &self.marks,
+            name: spec.name.clone(),
+        };
         let (stdout, stderr) = (child.stdout.take(), child.stderr.take());
         let log = &*self.log;
         let (_, _, status) = tokio::join!(
-            forward_lines(stdout, log),
-            forward_lines(stderr, log),
+            forward_marked_lines(stdout, log, Some(&marks)),
+            forward_marked_lines(stderr, log, Some(&marks)),
             child.wait()
         );
         let status = status
@@ -766,6 +804,13 @@ impl<C: Clock> Backend for DockerBackend<C> {
 
     fn running_containers(&self) -> Vec<String> {
         self.running.borrow().iter().cloned().collect()
+    }
+
+    fn job_activity(&self, container: &str) -> Activity {
+        self.marks
+            .borrow()
+            .get(container)
+            .map_or(Activity::Unknown, |marks| marks.get().activity())
     }
 
     async fn stop_containers(&self, request: &StopRequest) -> Result<(), BackendError> {
