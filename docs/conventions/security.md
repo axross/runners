@@ -1070,9 +1070,10 @@ the app may do with that reach. [App](../operations/app.md) owns how it works.
   ```
 
   Tauri adds the scripts' hashes to `script-src`. The pages use no inline script, no
-  `style` attribute and no `eval`, and the page's element builder refuses `style`,
-  `href`, `src`, `action` and `on*` attributes, so nothing it builds can load or run
-  something else. Text from the configuration, Docker or the agent is set as text,
+  `style` attribute and no `eval`. The page's element builder refuses the `style`,
+  `href`, `src`, `srcdoc`, `action` and `formaction` attributes and every `on*`
+  attribute; any other way an element could load or run something is refused by the
+  content security policy above. Text from the configuration, Docker or the agent is set as text,
   never as markup. A change to the policy, to the files it governs or to the element
   builder needs the maintainer's review.
 

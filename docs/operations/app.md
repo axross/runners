@@ -240,14 +240,14 @@ its reason says which. A state the app does not know shows the runner's own reas
 its words, with a dash, or the state's word when there is no reason, as the version
 rules in [CLI](./cli.md#version-rules) require.
 
-| File                                                | Holds                                                                                                                               |
-| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `index.html`, `main.js`, `revision.js`              | The page, the first `read_view`, the `marshal:view`, `marshal:confirm` and `marshal:hidden` listeners; the order views are drawn in |
-| `render.js`, `pools.js`, `tokens.js`                | The header, tabs and footer; the pool cards, runner rows and diagnostics; the token rows                                            |
-| `controls.js`, `tooltip.js`, `dialog.js`, `live.js` | Buttons that stay focusable when unavailable; the balloon; the confirmation; the live region                                        |
-| `dom.js`, `icons.js`                                | The element builder, which refuses `style`, `href`, `src`, `action` and `on*` attributes, and the inline icons                      |
-| `main.css`, `tokens.css`, `fonts.css`               | The window stylesheet; the colour tokens; the one place that names the font files                                                   |
-| `confirmation.html`, `confirmation.js`              | The confirmation window's page, with Cancel focused                                                                                 |
+| File                                                | Holds                                                                                                                                  |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `index.html`, `main.js`, `revision.js`              | The page, the first `read_view`, the `marshal:view`, `marshal:confirm` and `marshal:hidden` listeners; the order views are drawn in    |
+| `render.js`, `pools.js`, `tokens.js`                | The header, tabs and footer; the pool cards, runner rows and diagnostics; the token rows                                               |
+| `controls.js`, `tooltip.js`, `dialog.js`, `live.js` | Buttons that stay focusable when unavailable; the balloon; the confirmation; the live region                                           |
+| `dom.js`, `icons.js`                                | The element builder, which refuses `style`, `href`, `src`, `srcdoc`, `action`, `formaction` and `on*` attributes, and the inline icons |
+| `main.css`, `tokens.css`, `fonts.css`               | The window stylesheet; the colour tokens; the one place that names the font files                                                      |
+| `confirmation.html`, `confirmation.js`              | The confirmation window's page, with Cancel focused                                                                                    |
 
 Esc closes the first of these that is open and does nothing more: a tooltip balloon,
 then a confirmation dialog, then an open token form or removal question, and only then
@@ -272,6 +272,20 @@ to check and update them; `.gitattributes` keeps the files byte for byte. The co
 values in `tokens.css` are copied from Radix Colors 3.0.0, and the file's header
 records the package, its licence and the roles each theme fills; the package's MIT
 notice is kept as `colors-LICENSE.txt` beside it. A font or colour update changes the record in the same commit.
+
+A token field has a 1 px border in `--border-neutral-unselected-control`, which
+turns `--text-destructive-low` when the field is invalid; a Windows contrast theme
+keeps its own system colours. No check measures contrast, so the ratios, by the WCAG
+formula, against the card (`--list-card-fill`) and the field's fill
+(`--component-neutral-rest`) are recorded here, all above the 3:1 a control's
+boundary needs; a change to these tokens measures them again:
+
+| Theme | State   | Border    | Against the card | Against the fill |
+| ----- | ------- | --------- | ---------------- | ---------------- |
+| Light | Rest    | `#80838d` | 3.78:1           | 3.33:1           |
+| Light | Invalid | `#ca244d` | 5.43:1           | 4.77:1           |
+| Dark  | Rest    | `#696e77` | 3.43:1           | 3.10:1           |
+| Dark  | Invalid | `#ff949d` | 8.36:1           | 7.56:1           |
 
 ## The Icons
 
