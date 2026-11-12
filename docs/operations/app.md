@@ -141,7 +141,9 @@ error text or view.
 The agent writes its log where `start` does, `%LOCALAPPDATA%\marshal\logs\`, in files
 named `marshal-<time>-<pid>.log`, continued in a new file at 10 MiB with the newest
 ten kept. The app writes to the same folder under its own name, `app-<time>-<pid>.log`,
-with the same limits. Each side prunes only its own files, so neither takes the
+with the same limits. A log that cannot write stops and drops its lines for 30 s
+before it tries a new file, as the agent's does, so a full disk does not replace the
+kept files with empty ones. Each side prunes only its own files, so neither takes the
 other's place, and a test shows it. Every line passes through the
 view crate's `plain`, which also replaces a word shaped like a GitHub token, though
 neither the app nor the agent logs one.
@@ -182,8 +184,8 @@ lighter than the near-black set because white on a dark ground looks heavier.
 
 To change a glyph, edit the text in both files and run `mise run test:app`. The
 tests in `app/crates/tray/tests/glyphs.rs` fail on a missing or malformed block, an
-edge pixel, a mostly blank image or two states whose white glyphs differ in fewer
-than 12 whole pixels at any size, which is how the five states stay apart. The tray crate's
+edge pixel, a mostly blank image or two states whose glyphs of one colour differ in
+fewer than 12 whole pixels at any size, which is how the five states stay apart. The tray crate's
 `Watch` replaces the icon's image only when the icon's state, the taskbar's mode or
 the primary display's scaling changes. An unreadable or absent mode counts as dark,
 and is logged once.

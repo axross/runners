@@ -1018,6 +1018,9 @@ Residual risks, accepted on a single-user host:
   observes the window) is shown only on axpc;
   [App](../operations/app.md#verification-status) lists what has and has not been
   shown.
+- The app checks its executable and then starts it by path, in two steps, so a file
+  put at that path between the two is started. Whoever can do that can already
+  replace the executable before the app starts.
 
 ## Tokens Stay Out of the Log, and Job Clients End With `start`
 

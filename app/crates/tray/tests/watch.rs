@@ -1,6 +1,6 @@
 //! when the icon's image is replaced.
 
-use marshal_tray::{Look, SIZES, TaskbarReading, Watch, bitmap, size_for_scale};
+use marshal_tray::{Look, TaskbarReading, Watch, bitmap, size_for_scale};
 use marshal_view::{GlyphColour, IconState};
 
 fn polled(watch: &mut Watch, value: u32, scale: f64) -> Option<Look> {
@@ -111,52 +111,6 @@ fn the_sizes_follow_the_scalings_windows_offers() {
         (3.0, 32),
     ] {
         assert_eq!(size_for_scale(scale), size, "at {scale}");
-    }
-}
-
-#[test]
-fn every_state_has_an_image_at_every_size_in_both_colours() {
-    for state in [
-        IconState::AllUp,
-        IconState::SomeNotUp,
-        IconState::Stopped,
-        IconState::StoppedByError,
-        IconState::NotInControl,
-    ] {
-        for colour in [GlyphColour::White, GlyphColour::NearBlack] {
-            for size in SIZES {
-                let image = bitmap(state, colour, size);
-                assert_eq!(image.size, size);
-                assert_eq!(image.rgba.len(), (size * size * 4) as usize);
-                assert!(image.rgba.chunks(4).any(|pixel| pixel[3] == 255));
-            }
-        }
-    }
-}
-
-#[test]
-fn the_five_states_differ_by_shape_at_16_px() {
-    let states = [
-        IconState::AllUp,
-        IconState::SomeNotUp,
-        IconState::Stopped,
-        IconState::StoppedByError,
-        IconState::NotInControl,
-    ];
-    let shapes: Vec<Vec<u8>> = states
-        .iter()
-        .map(|state| {
-            bitmap(*state, GlyphColour::White, 16)
-                .rgba
-                .chunks(4)
-                .map(|pixel| pixel[3])
-                .collect()
-        })
-        .collect();
-    for (i, a) in shapes.iter().enumerate() {
-        for b in &shapes[i + 1..] {
-            assert_ne!(a, b);
-        }
     }
 }
 

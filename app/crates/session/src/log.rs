@@ -9,7 +9,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use marshal_cli::runtime::name::stamp;
 use marshal_view::plain;
@@ -22,6 +22,10 @@ pub const MAX_FILE_BYTES: u64 = 10 * 1024 * 1024;
 /// how many of the app's log files are kept, the newest.
 pub const KEPT_FILES: usize = 10;
 
+/// how long a log that stopped waits before it tries to open a file again, as the
+/// agent's log does.
+const RETRY_EVERY: Duration = Duration::from_secs(30);
+
 const FILE_PREFIX: &str = "app-";
 const FILE_SUFFIX: &str = ".log";
 
@@ -30,6 +34,8 @@ struct Current {
     written: u64,
     /// when the newest file was named, so the next is named later.
     named: SystemTime,
+    /// when a log that stopped may try to open a file again.
+    retry_at: Instant,
 }
 
 pub struct AppLog {
@@ -50,6 +56,7 @@ impl AppLog {
                 file: Some(file),
                 written: 0,
                 named,
+                retry_at: Instant::now(),
             }),
         })
     }
@@ -62,13 +69,18 @@ impl AppLog {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let length = u64::try_from(text.len()).unwrap_or(u64::MAX);
         if current.file.is_none() || current.written.saturating_add(length) > self.max_bytes {
+            // a log that stopped drops its lines until the retry time, so a full disk
+            // does not replace every kept file with a new empty one
+            if current.file.is_none() && Instant::now() < current.retry_at {
+                return;
+            }
             let at = SystemTime::now().max(current.named + Duration::from_millis(1));
-            // a log that cannot continue stops, and tries again with the next line
             current.file = create(&self.directory, at).ok();
             current.written = 0;
             current.named = at;
         }
         let Some(file) = current.file.as_mut() else {
+            current.retry_at = Instant::now() + RETRY_EVERY;
             return;
         };
         if file
@@ -77,6 +89,7 @@ impl AppLog {
             .is_err()
         {
             current.file = None;
+            current.retry_at = Instant::now() + RETRY_EVERY;
         }
         current.written = current.written.saturating_add(length);
     }
@@ -154,5 +167,33 @@ fn prune(directory: &Path) {
     let surplus = files.len().saturating_sub(KEPT_FILES);
     for old in files.iter().take(surplus) {
         let _ = fs::remove_file(old);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_log_that_stopped_makes_no_file_before_its_retry_time() {
+        let directory =
+            std::env::temp_dir().join(format!("marshal-app-log-retry-{}", std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        let logs = directory.join("logs");
+        let log = AppLog::open(&logs, 64).unwrap();
+        // the next line passes the limit, and no file can be made where the folder was
+        fs::remove_dir_all(&logs).unwrap();
+        fs::write(&logs, b"").unwrap();
+        log.info(&"x".repeat(80));
+        fs::remove_file(&logs).unwrap();
+        log.info("dropped until the retry time");
+        assert!(
+            !logs.exists(),
+            "a stopped log made a file before its retry time"
+        );
+        log.current.lock().unwrap().retry_at = Instant::now();
+        log.info("written again");
+        assert_eq!(fs::read_dir(&logs).unwrap().count(), 1);
+        fs::remove_dir_all(directory).unwrap();
     }
 }
