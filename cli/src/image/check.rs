@@ -712,9 +712,12 @@ mod tests {
             "runner 2.337.0 was released 61 days ago, so each job's runner likely updates itself \
              at start; update the CLI to get a newer runner, then rebuild the golden VM"
         );
+        let newer_golden_version = GOLDEN_VM_VERSION + 1;
         let mismatched = ImageCheck::Golden(GoldenCheck::Mismatched {
-            name: "marshal-golden-linux-g2-c1-r2.337.0-19700101001640".to_string(),
-            golden_version: 2,
+            name: format!(
+                "marshal-golden-linux-g{newer_golden_version}-c1-r2.337.0-19700101001640"
+            ),
+            golden_version: newer_golden_version,
             contract_version: 1,
             labels: found,
         });
@@ -723,7 +726,7 @@ mod tests {
             (
                 "image-contract",
                 format!(
-                    "mismatch (golden VM version 2 and image contract 1, CLI golden VM version {GOLDEN_VM_VERSION} and image contract {CONTRACT_VERSION})"
+                    "mismatch (golden VM version {newer_golden_version} and image contract 1, CLI golden VM version {GOLDEN_VM_VERSION} and image contract {CONTRACT_VERSION})"
                 )
             )
         );

@@ -33,9 +33,13 @@ The tested versions are recorded in the CLI (`macos::version`):
 | Tart    | 2.41.1         | `2.41.1`                        |
 | Softnet | 0.25.0         | `softnet 0.25.0-<short commit>` |
 
-Install them with Homebrew, which installs Softnet as a dependency of Tart:
+Install them with Homebrew, which installs Softnet as a dependency of Tart. The
+`openai/tools` tap is not one Homebrew trusts by default, and on the first host run
+Homebrew refused the tap's `softnet` formula until `brew trust` named it:
 
 ```bash
+brew tap openai/tools
+brew trust --formula openai/tools/softnet
 brew install openai/tools/tart
 tart --version
 softnet --version
@@ -141,7 +145,10 @@ defines it, in `runtime::tart`, `golden` and `build::golden`.
     not own.
 - **The golden VM version** is a number in the CLI (`runtime::tart::names`),
   starting at 1. It goes up whenever the base digest, the provisioning steps, the
-  launcher or the Docker Engine versions change.
+  launcher or the Docker Engine versions change. It is 2 with the `docker` group's
+  fixed id, and the golden VM's image contract version is 2 with the runner image's
+  Docker client, so a golden VM built before is refused as mismatched until
+  `marshal build` runs again.
 - **Reading it.** The golden VM's name records its golden VM version, its image
   contract version, its runner version and its build time, so `start`, `restart`,
   each job launch and `status` read them from `tart list` without booting it. The
@@ -163,13 +170,24 @@ defines it, in `runtime::tart`, `golden` and `build::golden`.
   - Docker Engine (`docker-ce`, `docker-ce-cli`, `containerd.io` and
     `docker-buildx-plugin`) comes from Docker's apt repository at pinned package
     versions, which apt holds, after the repository's signing key has matched a
-    recorded fingerprint. Docker Compose is not installed.
+    recorded fingerprint. Docker Compose is not installed. The `docker` group is
+    created after the key check and before any Docker package is installed, with the id
+    in `golden::pins::DOCKER_GROUP_ID`, and the build fails if the group exists with
+    another id.
   - The launcher is `/usr/local/bin/marshal-launch`, owned by root, mode 0755.
   - The `admin` password is locked and SSH is masked, so the base image's
     `admin`/`admin` login cannot be used. The guest agent does not use SSH.
   - The runner image is built inside the VM under the configured `imageName`, which
     is `actions-runner:local` when the configuration gives none, and carries this
     CLI's image contract.
+- **The Docker socket.** The Docker Engine in a job VM listens on
+  `/var/run/docker.sock`, owned by the `docker` group. The job's runner container
+  mounts that socket, so a job step can run `docker` against the VM's own engine. The
+  socket belongs to the job's own VM, which is deleted when the job ends;
+  [Security](../conventions/security.md#the-vm-local-docker-socket) records why that is
+  permitted, what it does not extend to, and why the runner needs no `--group-add`.
+  The image's Docker client is installed from the same repository, at the same
+  version.
 - **The guest user.** The guest agent runs commands as `admin`, the golden VM's
   user, which the golden VM puts in the `docker` group, so `docker` needs no `sudo`
   in a job VM. The source for this is the unit file
@@ -197,7 +215,7 @@ defines it, in `runtime::tart`, `golden` and `build::golden`.
      and runs the CPU probe; a failed probe ends the cycle before a runner registers;
   5. registers a JIT runner, and runs the job container with `--pull never`, with
      the container's CPU quota and affinity covering all the VM's vCPUs and its
-     memory limit equal to the VM's;
+     memory limit equal to the VM's, and with the VM's Docker socket mounted;
   6. when the job ends, exports diagnostics for a diagnostics-enabled pool, stops the
      VM and deletes it, so no job VM outlives its job.
 - **Who deletes what.** A job VM is deleted by its slot, on every path out of the
@@ -245,10 +263,11 @@ the freshness warnings ask for it.
 3. Pulls the base image by its digest and clones it to a new build VM, which keeps
    the base's CPUs and memory.
 4. Boots the build VM on Softnet and waits up to 120 s for its guest agent.
-5. Upgrades the Ubuntu packages, installs Docker Engine at the pinned versions after
-   checking Docker's signing key against its recorded fingerprint, installs the
-   launcher, and disables the SSH login. A key whose fingerprint is not the recorded
-   one fails the build before anything is installed from Docker.
+5. Upgrades the Ubuntu packages, checks Docker's signing key against its recorded
+   fingerprint, creates the `docker` group with the id in `golden::pins::DOCKER_GROUP_ID`,
+   installs Docker Engine at the pinned versions, installs the launcher, and disables the
+   SSH login. A key whose fingerprint is not the recorded one fails the build before
+   anything is installed from Docker.
 6. Builds the runner image inside the VM, from the definition embedded in `marshal`,
    with the arguments `build` gives it on axpc, under the configured `imageName`, and
    checks its image contract label. The image build runs `sudo -n docker`, because
@@ -256,7 +275,8 @@ the freshness warnings ask for it.
    This needs the VM to reach the network: Docker's repository, the Ubuntu archive,
    and the registries the Dockerfile pulls from, on Softnet's rules, which allow
    globally routable addresses.
-7. Shuts the VM down and renames it to the golden name,
+7. Writes the VM's files to its disk with `sync`, stops it, and renames it to the
+   golden name,
    `marshal-golden-linux-g<golden VM version>-c<image contract version>-r<runner version>-<time>`.
    This rename is the moment the new golden VM takes over.
 8. Deletes every other golden VM and the retired base images from Tart's cache. A
@@ -507,6 +527,40 @@ golden VM stays. Its evidence, with the literal output of `tart --version` and
 `softnet --version`, is posted on #74. An item below moves to a verified statement,
 with a link to the evidence, only when a run's evidence covers it.
 
+**The host run.** Jobs come from a workflow in a private repository the maintainer
+chooses, since this repository is public and never uses self-hosted runners. After
+the routing check in [Starting, watching and stopping](#starting-watching-and-stopping),
+the run goes in this order:
+
+1. Confirm that no Docker Desktop is installed, and record the macOS version, the
+   literal output of `tart --version` and `softnet --version`, and Softnet's SUID bit
+   as [Setting Up Softnet](#setting-up-softnet) lists it.
+2. Install `marshal` from the arm64 pull request's own build, not from a release: the
+   macOS arm64 binary in the `marshal-release` artifact of that pull request's Merge
+   Checks run, named `marshal-0.0.0-dryrun.<run number>-macos-arm64`. The dry run
+   signs nothing. Check the binary against its line in `SHA256SUMS`, and record the
+   checksum and the commit the run built. A browser download carries a quarantine
+   attribute that blocks an unsigned binary; `gh run download` leaves none. An Actions
+   artifact keeps no file modes, so run `chmod 0755` on the binary, then put it at
+   `~/.local/bin/marshal`, where
+   [CLI](./cli.md#installing-updating-and-rolling-back) installs a release.
+3. Run `marshal build --config /path/to/runner-host.json`, then
+   `marshal start --config /path/to/runner-host.json`, with the sizing of
+   [the example configuration](../../hosts/macos/runner-host.example.json). Record the
+   golden VM's and Tart's cache's disk use.
+4. Run a job with `runs-on: [axmc, linux]` and a step that uses `docker run`, and
+   confirm with `tart list` that the job's VM runs while it does. Record the
+   runner's labels and the slot's turnaround. This step also covers the mount of the
+   VM's Docker socket and the match of the two `docker` groups.
+5. With no external display attached, close the lid for about 15 s during a job, and
+   switch networks during another job. Confirm that each stops the runners, with the
+   reason in `marshal status`, and that `tart list` then shows no job VM. The Mac
+   takes several seconds to enter sleep after the lid closes, so a close of about 5 s
+   can sleep for less than the 3 s a sleep needs to be seen; on the first host run it
+   slept about 3 s and nothing stopped.
+6. Run `marshal stop`, then confirm with `tart list` that no job or build VM is left
+   and that the golden VM stays.
+
 **What is checked without a Mac.** The CLI's tests run against fake `tart`, `docker`,
 `softnet`, `caffeinate`, `route` and `arp` programs and a scripted signal source:
 
@@ -528,7 +582,13 @@ of an Apple tool as the source prints it, and not on a run:
 
 - The guest agent runs commands as `admin`, and `admin` is in the `docker` group in a
   job VM without `sudo` (from the guest agent's source, not from a running VM).
-- In the build VM, the image build works with `sudo -n docker`.
+- In the build VM, the image build works with `sudo -n docker`, and the build creates
+  the `docker` group on the pinned base, which has no `docker` group with another id.
+- A job step's `docker run` works in the runner container against the VM's own Docker
+  Engine: the VM's socket is mounted and the `runner` user can use it through the group
+  match that [Security](../conventions/security.md#the-vm-local-docker-socket) describes,
+  with no `--group-add`. The Docker client in the
+  image is the pinned version, and the Engine accepts its API version.
 - The image build fits the golden VM's 20 GB disk, with BuildKit's cache, and the
   golden VM, its build and Tart's cache fit the 40 GB reserve; record their sizes.
 - `tart delete` removes a cache entry pulled by digest, which is how `build` removes a
@@ -537,7 +597,7 @@ of an Apple tool as the source prints it, and not on a run:
   `gateway: link#<index>` or no `gateway:` line, which the CLI reads as an interface
   without a router; and `arp -n <router>` prints the form it reads.
 - A sleep is detected: `Instant` stops across a sleep on the pinned toolchain, a short
-  lid close of about 5 s and a long one of about 60 s each stop every slot within 10 s
+  lid close of about 15 s and a long one of about 60 s each stop every slot within 10 s
   of the wake, and a network change stops them within 15 s.
 - `caffeinate -i -w <pid>` holds the Mac awake while runners run and releases it after
   `stop`, as `pmset -g assertions` shows.

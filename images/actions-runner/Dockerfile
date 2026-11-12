@@ -106,6 +106,56 @@ RUN apt-get update \
         libgmp10 \
     && rm -rf /var/lib/apt/lists/*
 
+# the Docker client, for a job whose container gets a Docker Engine socket: the
+# axmc VM's own. the apt package replaces the base's unpinned static client at
+# the golden VM's version, once the key matches its recorded fingerprint;
+# cli/src/golden/pins.rs holds the key fingerprint, the client version and the
+# group id, and a test holds this file to them. the VM's docker group owns the
+# socket, and the golden VM creates it with the id 123 the base's docker group
+# has, so a base bump that changes the id fails the build. the apt source, the
+# key and the package index do not stay; gpg, installed to read the key, does,
+# because the base may already have it.
+# hadolint ignore=DL3008
+RUN set -eu; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends gpg; \
+    install -d -m 0755 /etc/apt/keyrings; \
+    curl -fsSL --proto '=https' --tlsv1.2 --max-filesize 65536 --max-time 60 --retry 3 \
+        https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc; \
+    gnupg_home="$(mktemp -d)"; \
+    LC_ALL=C gpg --homedir "$gnupg_home" --batch --no-tty --show-keys --with-colons \
+        /etc/apt/keyrings/docker.asc > "$gnupg_home/listing"; \
+    summary="$(awk -F: '$1 !~ /^(pub|fpr|uid|sub)$/ { other++ } $1 == "pub" { primaries++ } $1 == "fpr" && fingerprint == "" { fingerprint = $10 } END { print primaries "," fingerprint "," other + 0 }' "$gnupg_home/listing")"; \
+    rm -rf -- "$gnupg_home"; \
+    if [ "$summary" != 1,9DC858229FC7DD38854AE2D88D81803C0EBFCD88,0 ]; then \
+        echo "The Docker signing key is not the one key with the recorded fingerprint: $summary" >&2; exit 1; \
+    fi; \
+    printf '%s\n' \
+        'Types: deb' \
+        'URIs: https://download.docker.com/linux/ubuntu' \
+        'Suites: noble' \
+        'Components: stable' \
+        "Architectures: $(dpkg --print-architecture)" \
+        'Signed-By: /etc/apt/keyrings/docker.asc' \
+        > /etc/apt/sources.list.d/docker.sources; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends docker-ce-cli=5:29.9.3-1~ubuntu.24.04~noble; \
+    rm -f /etc/apt/sources.list.d/docker.sources /etc/apt/keyrings/docker.asc; \
+    rm -rf /var/lib/apt/lists/*; \
+    test "$(dpkg-query --show --showformat='${Version}' docker-ce-cli)" = 5:29.9.3-1~ubuntu.24.04~noble; \
+    case "$(dpkg-query --search /usr/bin/docker)" in \
+        docker-ce-cli*': /usr/bin/docker') ;; \
+        *) echo "/usr/bin/docker is not the pinned package's client." >&2; exit 1;; \
+    esac; \
+    case "$(getent group docker)" in \
+        docker:x:123:*) ;; \
+        *) echo "The docker group does not have id 123, the id the golden VM gives its own." >&2; exit 1;; \
+    esac; \
+    case " $(id -nG runner) " in \
+        *' docker '*) ;; \
+        *) echo "runner is not in the docker group." >&2; exit 1;; \
+    esac
+
 # ruby/setup-ruby resolves its prebuilt Rubies to this fixed path, so the tool
 # cache lives here rather than under the runner work directory.
 ENV RUNNER_TOOL_CACHE=/opt/hostedtoolcache
@@ -142,6 +192,6 @@ USER runner
 # the image contract labels: the CLI embeds this file and reads its contract
 # version from them. a runner bump in the FROM line above edits both runner
 # labels by hand; see docs/operations/cli.md.
-LABEL com.github.axross.runners.contract="1" \
+LABEL com.github.axross.runners.contract="2" \
       com.github.axross.runners.runner-version="2.337.0" \
       com.github.axross.runners.runner-released="2026-08-26"
