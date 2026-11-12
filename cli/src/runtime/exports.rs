@@ -172,7 +172,7 @@ mod tests {
     use crate::runtime::docker::applied;
 
     #[test]
-    fn an_exporter_command_has_no_console_window_and_a_process_group_of_its_own_on_windows() {
+    fn the_exporter_builder_applies_create_new_process_group_and_create_no_window() {
         let exports = Exports::new(Some(PathBuf::from("marshal")), None);
         let request = ExportRequest {
             pool: "pool".to_string(),
