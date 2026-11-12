@@ -1,0 +1,35 @@
+# a commented file: the reader ignores comments and blank lines
+schema_version = 1
+routing_label = "build-hosts"
+image_name = "example-image:tag"
+
+[lifecycle]
+start_at_login = true
+start_runners_on_launch = false
+keep_awake = true
+resume_after_stop = false
+
+[[pool]]
+name = "alpha"
+repository = "octo/hello"
+runners = 2
+os = "linux"
+cpus = 1.5
+memory_gb = 12
+diagnostics = true
+diagnostic_directory = "C:\\diagnostics\\alpha"
+diagnostic_raw_records = true
+
+[[pool.volumes]]
+suffix = "cache"
+mount_path = "/home/runner/.cache"
+
+[[pool.volumes]]
+suffix = "tools"
+mount_path = "/opt/hostedtoolcache"
+
+[[pool]]
+name = "beta"
+repository = "octo/hello"
+runners = 1
+labels = ["gpu"]

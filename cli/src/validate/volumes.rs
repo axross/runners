@@ -8,6 +8,8 @@ use crate::json::Value;
 
 use super::fields::{self, Errors, Field};
 use super::patterns;
+use super::problem::{Key, KeyPath, Kind};
+use super::reader::Reader;
 
 pub(super) const VOLUME_FIELDS: [&str; 2] = ["suffix", "mountPath"];
 
@@ -26,12 +28,21 @@ pub struct Volume {
     pub mount_path: String,
 }
 
-/// returns the volume definitions, or `None` after recording every problem.
-pub fn volume_definitions(volumes: &Field, path: &str, errors: &mut Errors) -> Option<Vec<Volume>> {
-    let field = format!("{path}.volumes");
+/// returns the volume definitions, or `None` after recording every problem; a
+/// pool that lists none has none when the reader allows it.
+pub fn volume_definitions(
+    volumes: &Field,
+    path: &KeyPath,
+    reader: &dyn Reader,
+    errors: &mut Errors,
+) -> Option<Vec<Volume>> {
+    if reader.format().may_omit_os_and_volumes() && volumes.get().is_none() {
+        return Some(Vec::new());
+    }
+    let field = path.key(Key::Volumes);
     let value = fields::required(volumes, &field, errors)?;
     let Value::Array(items) = value else {
-        errors.add(format!("{field}: must be a list"));
+        errors.add(field, Kind::MustBe("a list"));
         return None;
     };
     let mut definitions = Vec::new();
@@ -39,29 +50,28 @@ pub fn volume_definitions(volumes: &Field, path: &str, errors: &mut Errors) -> O
     let mut mount_paths = HashSet::new();
     let mut valid = true;
     for (index, item) in items.iter().enumerate() {
-        let item_path = format!("{field}[{index}]");
-        let Some(volume) =
-            fields::read_object::<VolumeFields>(item, &item_path, &VOLUME_FIELDS, errors)
+        let item_path = field.index(index);
+        let Some(volume) = fields::read_object::<VolumeFields>(item, &item_path, reader, errors)
         else {
             valid = false;
             continue;
         };
         let suffix = fields::string(
             &volume.suffix,
-            &format!("{item_path}.suffix"),
+            &item_path.key(Key::Suffix),
             errors,
             patterns::is_name,
             "lowercase letters, digits and hyphens, starting with a letter or digit",
         );
         let mut mount_path = fields::string(
             &volume.mount_path,
-            &format!("{item_path}.mountPath"),
+            &item_path.key(Key::MountPath),
             errors,
             patterns::is_mount_path,
             "an absolute container path of letters, digits and . _ / -",
         );
         if mount_path.is_some_and(|text| text.contains("..")) {
-            errors.add(format!("{item_path}.mountPath: must not contain '..'"));
+            errors.add(item_path.key(Key::MountPath), Kind::MountPathHasDotDot);
             mount_path = None;
         }
         let (Some(suffix), Some(mount_path)) = (suffix, mount_path) else {
@@ -69,13 +79,17 @@ pub fn volume_definitions(volumes: &Field, path: &str, errors: &mut Errors) -> O
             continue;
         };
         if !suffixes.insert(suffix.to_ascii_lowercase()) {
-            errors.add(format!("{item_path}.suffix: duplicate suffix '{suffix}'"));
+            errors.add(
+                item_path.key(Key::Suffix),
+                Kind::DuplicateSuffix(suffix.to_string()),
+            );
             valid = false;
         }
         if !mount_paths.insert(mount_path.to_ascii_lowercase()) {
-            errors.add(format!(
-                "{item_path}.mountPath: duplicate mount path '{mount_path}'"
-            ));
+            errors.add(
+                item_path.key(Key::MountPath),
+                Kind::DuplicateMountPath(mount_path.to_string()),
+            );
             valid = false;
         }
         definitions.push(Volume {

@@ -118,7 +118,7 @@ pub fn skip_warning(pool: &str) -> String {
 
 /// turns a valid axpc plan, or the Linux pools of an axmc plan, into pools, in the
 /// plan's order; an axmc macOS pool gets none (see [`skipped_pools`]), so a plan of
-/// macOS pools alone gives no pool.
+/// macOS pools alone gives no pool. It fails for an entry without a token file.
 pub fn pools_from_plan(plan: &Plan) -> Result<Vec<PoolSpec>, PlanError> {
     match plan.profile {
         Profile::Axpc => {
@@ -127,19 +127,18 @@ pub fn pools_from_plan(plan: &Plan) -> Result<Vec<PoolSpec>, PlanError> {
                     "the container backend runs the axpc profile only",
                 ));
             };
-            Ok(plan
-                .entries
+            plan.entries
                 .iter()
                 .enumerate()
                 .map(|(index, entry)| pool_from_entry(plan, index, entry, image))
-                .collect())
+                .collect()
         }
-        Profile::Axmc => Ok(plan
+        Profile::Axmc => plan
             .entries
             .iter()
             .filter(|entry| entry.os == Some(Os::Linux))
             .map(|entry| vm_pool_from_entry(entry, image_name(plan)))
-            .collect()),
+            .collect(),
     }
 }
 
@@ -162,14 +161,27 @@ pub fn diagnostic_records(plan: &Plan) -> Vec<DiagnosticRecord> {
     plan.entries.iter().filter_map(diagnostic_record).collect()
 }
 
-fn pool_from_entry(plan: &Plan, index: usize, entry: &Entry, image: &str) -> PoolSpec {
-    PoolSpec {
+/// the token file an entry names, which every pool reads.
+fn entry_token_path(entry: &Entry) -> Result<&str, PlanError> {
+    entry.token_path.as_deref().ok_or(PlanError(
+        "a pool reads its token file, and an entry has none",
+    ))
+}
+
+fn pool_from_entry(
+    plan: &Plan,
+    index: usize,
+    entry: &Entry,
+    image: &str,
+) -> Result<PoolSpec, PlanError> {
+    let token_path = entry_token_path(entry)?;
+    Ok(PoolSpec {
         path: entry.path.clone(),
         name: entry.name.clone(),
         owner: entry.owner.clone(),
         repository: entry.repository.clone(),
         slots: entry.slots,
-        token_path: PathBuf::from(&entry.token_path),
+        token_path: PathBuf::from(token_path),
         labels: entry.labels.clone(),
         cpus: format_cpu_count(entry.cpus),
         cpu_count: affinity_count(entry),
@@ -182,20 +194,20 @@ fn pool_from_entry(plan: &Plan, index: usize, entry: &Entry, image: &str) -> Poo
         slot_offsets: (1..=entry.slots)
             .map(|slot| slot_offset(&plan.entries, index, slot))
             .collect(),
-    }
+    })
 }
 
 /// a Linux pool of virtual machines: each slot's machine has all of the pool's
 /// whole vCPUs and memory, so the job container's quota and affinity cover vCPUs 0
 /// to `cpus` - 1 and its memory limit is the machine's.
-fn vm_pool_from_entry(entry: &Entry, image: &str) -> PoolSpec {
-    PoolSpec {
+fn vm_pool_from_entry(entry: &Entry, image: &str) -> Result<PoolSpec, PlanError> {
+    Ok(PoolSpec {
         path: entry.path.clone(),
         name: entry.name.clone(),
         owner: entry.owner.clone(),
         repository: entry.repository.clone(),
         slots: entry.slots,
-        token_path: PathBuf::from(&entry.token_path),
+        token_path: PathBuf::from(entry_token_path(entry)?),
         labels: entry.labels.clone(),
         cpus: format_cpu_count(entry.cpus),
         cpu_count: affinity_count(entry),
@@ -206,7 +218,7 @@ fn vm_pool_from_entry(entry: &Entry, image: &str) -> PoolSpec {
         diagnostic: diagnostic_record(entry),
         image: image.to_string(),
         slot_offsets: (1..=entry.slots).map(|_| 0).collect(),
-    }
+    })
 }
 
 impl PoolSpec {

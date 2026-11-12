@@ -306,11 +306,12 @@ mod tests {
     fn entry() -> Entry {
         Entry {
             path: String::new(),
+            index: 0,
             owner: "owner".to_string(),
             repository: "repository".to_string(),
             name: "pool".to_string(),
             slots: 2,
-            token_path: String::new(),
+            token_path: None,
             labels: Vec::new(),
             cpus: 1.0,
             memory_gb: 8,
@@ -330,6 +331,7 @@ mod tests {
             image_name: None,
             entries: vec![entry()],
             budget: None,
+            settings: None,
         });
         let retained = Retained::default();
         let tokens = StoreTokens::new(None);
