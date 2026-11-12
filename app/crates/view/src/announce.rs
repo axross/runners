@@ -13,8 +13,8 @@ pub const SUMMARY_INTERVAL_MS: u64 = 5_000;
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Announced {
     pub messages: Vec<String>,
-    /// when a held summary may be announced, in milliseconds since the Unix epoch; the
-    /// caller updates again then.
+    /// when a held summary may be announced or the settled count may fall, in
+    /// milliseconds since the Unix epoch; the caller updates again then.
     pub recheck_at_ms: Option<u64>,
 }
 

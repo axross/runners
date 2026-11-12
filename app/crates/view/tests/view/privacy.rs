@@ -203,51 +203,77 @@ fn the_fixture_list_is_every_fixture() {
 #[test]
 fn no_token_is_in_any_view_state_whatever_text_the_agent_sends() {
     let token = token_like("ghp_");
+    // the rows are keyed by the repository as the view shows it, tainted and plain, so
+    // the form, the removal and the results below reach their rows
+    let key = |repository: &str| plain(&format!("{repository} {token}"));
+    let ui = TokenUi {
+        editing: Some(key("owner/app")),
+        removing: Some(key("owner/site")),
+        results: [
+            (
+                key("owner/app"),
+                TokenResult::NotSaved(NotSaved::Store {
+                    detail: Some(format!("denied {token}")),
+                }),
+            ),
+            (
+                key("owner/site"),
+                TokenResult::NotSaved(NotSaved::Refused(format!("refused {token}"))),
+            ),
+            (
+                key("owner/docs"),
+                // the pool names as `pools_started_by` gives them
+                TokenResult::Saved {
+                    started: vec![plain(&format!("docs {token}"))],
+                },
+            ),
+        ]
+        .into_iter()
+        .collect(),
+    };
+    let announcements: Vec<String> = ui
+        .results
+        .iter()
+        .map(|(repository, result)| result.announcement(repository))
+        .collect();
+    let (mut form_error, mut refused_status, mut confirming) = (false, false, false);
     for name in FIXTURES {
         let mut value = load_json(name);
         tainted(&mut value, &token);
         let snapshot = snapshot_of(value);
         for connection in connections() {
             let mut tracker = Tracker::new();
-            let ui = TokenUi {
-                editing: Some("owner/app".to_string()),
-                removing: Some("owner/site".to_string()),
-                results: [
-                    (
-                        "owner/app".to_string(),
-                        TokenResult::NotSaved(NotSaved::Store {
-                            detail: Some(format!("denied {token}")),
-                        }),
-                    ),
-                    (
-                        "owner/site".to_string(),
-                        TokenResult::NotSaved(NotSaved::Refused(format!("refused {token}"))),
-                    ),
-                    (
-                        "owner/docs".to_string(),
-                        TokenResult::Saved {
-                            started: vec![format!("docs {token}")],
-                        },
-                    ),
-                ]
-                .into_iter()
-                .collect(),
-            };
             let input = Input::new(connection, Some(&snapshot), now()).tokens(&ui);
             let baseline = tracker.update(input);
             let update = tracker
                 .update(Input::new(connection, Some(&snapshot), clock_at(3, 59, 0)).tokens(&ui));
+            for row in update.view.list().iter().flat_map(|list| &list.tokens.rows) {
+                let error = row.form.as_ref().and_then(|form| form.error.as_deref());
+                form_error |= error.is_some_and(|error| error.contains("(denied <token>)"));
+                refused_status |= row
+                    .status
+                    .as_deref()
+                    .is_some_and(|status| status.contains("refused <token>"));
+                confirming |= row.confirming_removal;
+            }
             for text in [
                 serde_json::to_string(&baseline.view).expect("JSON"),
                 serde_json::to_string(&update.view).expect("JSON"),
                 update.announced.messages.join("\n"),
                 format!("{:?}", update.view),
+                announcements.join("\n"),
             ] {
                 assert!(!has_token_shape(&text), "{name} {connection:?}: {text}");
                 assert!(!text.contains(&token), "{name} {connection:?}");
             }
         }
     }
+    assert!(form_error, "no row showed the store's refusal in its form");
+    assert!(
+        refused_status,
+        "no row showed the agent's refusal as its status"
+    );
+    assert!(confirming, "no row asked its removal question");
 }
 
 #[test]

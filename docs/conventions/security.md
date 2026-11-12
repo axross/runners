@@ -157,7 +157,8 @@ component's hash against that manifest, but it does not verify the manifest's
 signature, so the trust rests on the HTTPS connection to the Rust project's
 distribution server. Recording the manifest's hash here would need a refresh for
 every release without adding a signature check. A step that installs the toolchain
-`cli/rust-toolchain.toml` names through `rustup` is this recorded exception.
+`cli/rust-toolchain.toml` or `app/rust-toolchain.toml` names through `rustup` is this
+recorded exception.
 
 The other is the Node that `actions/setup-node` installs in `release.yaml`, at the
 exact version in `mise.toml`. It takes Node from the runner's tool cache or from

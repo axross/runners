@@ -41,8 +41,8 @@ fn runner_of(pool: &str, container: &str) -> Option<String> {
     (digits(slot) && digits(time)).then(|| format!("Runner {slot}"))
 }
 
-/// how an export ended, as the start of a sentence; `None` for a code this reader does
-/// not know.
+/// how an export ended, as the start of a sentence; a code this reader does not know is
+/// shown as it is.
 fn export_text(code: &str, limit: u32) -> String {
     match code {
         "complete" => "Saved".to_string(),
