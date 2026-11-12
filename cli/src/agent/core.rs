@@ -38,8 +38,9 @@ pub struct AgentCore<'a, B, K, R> {
     /// set once the pools are admitted and prepared, or have been given up on.
     pub admitted: &'a watch::Sender<bool>,
     /// true while the agent drains for an update: nothing registers, and no pool
-    /// begins its preparation; one already preparing finishes, and its slots register
-    /// nothing.
+    /// begins its preparation. The run's first preparation, waiting for Docker
+    /// included, is dropped when a drain begins; a late pool already preparing
+    /// finishes, and its slots register nothing.
     pub drain: &'a watch::Sender<bool>,
     /// the times of a stop, which an idle runner's stop during a drain uses.
     pub times: StopTimes,
