@@ -7,7 +7,7 @@ use tokio::sync::oneshot;
 use crate::runtime::secret::Secret;
 use crate::token_store::{RepositoryKey, StoreError, TokenRefusal, accepted_token};
 
-use super::wire::{ErrorBody, ErrorCode, StoreFault, TOPIC_STATE};
+use super::wire::{ErrorBody, ErrorCode, StoreFault, TOPIC_GITHUB, TOPIC_STATE};
 
 /// an error with its stable code.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,8 +61,19 @@ pub enum Method {
     StopAll,
     Build,
     Quit,
-    TokenSet { key: RepositoryKey, token: Secret },
-    TokenRemove { key: RepositoryKey },
+    TokenSet {
+        key: RepositoryKey,
+        token: Secret,
+    },
+    TokenRemove {
+        key: RepositoryKey,
+    },
+    /// drain for an update to `version`; `requester` reports, by closing, that the
+    /// connection that asked has closed, and `None` never does.
+    DrainForUpdate {
+        version: String,
+        requester: Option<oneshot::Receiver<()>>,
+    },
 }
 
 /// a method and where its result goes.
@@ -72,10 +83,38 @@ pub struct Call {
     pub reply: oneshot::Sender<ApiResult>,
 }
 
+/// a topic a connection subscribes to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Topic {
+    State,
+    /// collected only while a subscription to it is renewed.
+    Github,
+}
+
+impl Topic {
+    #[must_use]
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::State => TOPIC_STATE,
+            Self::Github => TOPIC_GITHUB,
+        }
+    }
+
+    fn of(word: &str) -> Result<Self, ApiError> {
+        match word {
+            TOPIC_STATE => Ok(Self::State),
+            TOPIC_GITHUB => Ok(Self::Github),
+            _ => Err(invalid("the agent serves the topics state and github")),
+        }
+    }
+}
+
 /// a request as the connection understands it.
 #[derive(Debug)]
 pub enum Parsed {
-    Subscribe,
+    Subscribe(Topic),
+    /// keeps the connection's `github` subscription alive.
+    Renew(Topic),
     Call(Method),
 }
 
@@ -93,6 +132,36 @@ struct TokenSetParams {
 #[derive(Deserialize)]
 struct TokenRemoveParams {
     repository: String,
+}
+
+#[derive(Deserialize)]
+struct DrainParams {
+    version: String,
+}
+
+/// the longest version a drain takes.
+const MAX_VERSION_CHARS: usize = 64;
+
+/// whether `text` is a version number: three dot-separated numbers, then optionally
+/// `-` or `+` and ASCII letters, digits, dots, hyphens and pluses.
+fn is_version(text: &str) -> bool {
+    if text.is_empty() || text.len() > MAX_VERSION_CHARS {
+        return false;
+    }
+    let (core, rest) = match text.find(['-', '+']) {
+        Some(at) => text.split_at(at),
+        None => (text, ""),
+    };
+    let numbers: Vec<&str> = core.split('.').collect();
+    numbers.len() == 3
+        && numbers
+            .iter()
+            .all(|number| !number.is_empty() && number.bytes().all(|b| b.is_ascii_digit()))
+        && rest
+            .bytes()
+            .skip(1)
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'+'))
+        && rest.len() != 1
 }
 
 fn invalid(message: &str) -> ApiError {
@@ -120,10 +189,14 @@ pub fn parse(method: &str, value: serde_json::Value) -> Result<Parsed, ApiError>
         "quit" => Method::Quit,
         "subscribe" => {
             let SubscribeParams { topic } = params(value)?;
-            if topic != TOPIC_STATE {
-                return Err(invalid("the agent serves the topic state only"));
+            return Ok(Parsed::Subscribe(Topic::of(&topic)?));
+        }
+        "renew" => {
+            let SubscribeParams { topic } = params(value)?;
+            if topic != TOPIC_GITHUB {
+                return Err(invalid("only a github subscription is renewed"));
             }
-            return Ok(Parsed::Subscribe);
+            return Ok(Parsed::Renew(Topic::Github));
         }
         "token_set" => {
             let TokenSetParams { repository, token } = params(value)?;
@@ -135,6 +208,16 @@ pub fn parse(method: &str, value: serde_json::Value) -> Result<Parsed, ApiError>
             let TokenRemoveParams { repository } = params(value)?;
             Method::TokenRemove {
                 key: key(&repository)?,
+            }
+        }
+        "drain_for_update" => {
+            let DrainParams { version } = params(value)?;
+            if !is_version(&version) {
+                return Err(invalid("the version is not a version number"));
+            }
+            Method::DrainForUpdate {
+                version,
+                requester: None,
             }
         }
         _ => {
@@ -173,16 +256,33 @@ mod tests {
     }
 
     #[test]
-    fn subscribe_takes_the_state_topic_only() {
+    fn subscribe_takes_the_state_and_github_topics() {
         assert!(matches!(
             parse("subscribe", json!({"topic": "state"})),
-            Ok(Parsed::Subscribe)
+            Ok(Parsed::Subscribe(Topic::State))
+        ));
+        assert!(matches!(
+            parse("subscribe", json!({"topic": "github"})),
+            Ok(Parsed::Subscribe(Topic::Github))
         ));
         assert_eq!(
             code("subscribe", json!({"topic": "later"})),
             ErrorCode::InvalidRequest
         );
         assert_eq!(code("subscribe", json!(null)), ErrorCode::InvalidRequest);
+    }
+
+    #[test]
+    fn renew_takes_the_github_topic_only() {
+        assert!(matches!(
+            parse("renew", json!({"topic": "github"})),
+            Ok(Parsed::Renew(Topic::Github))
+        ));
+        assert_eq!(
+            code("renew", json!({"topic": "state"})),
+            ErrorCode::InvalidRequest
+        );
+        assert_eq!(code("renew", json!(null)), ErrorCode::InvalidRequest);
     }
 
     #[test]
@@ -230,6 +330,41 @@ mod tests {
         )
         .unwrap_err();
         assert!(!error.message.contains("123456789"), "{}", error.message);
+    }
+
+    #[test]
+    fn drain_for_update_takes_a_version_number_only() {
+        for version in ["1.4.0", "10.0.12", "1.4.0-rc.1", "1.4.0+build.7"] {
+            let parsed = parse("drain_for_update", json!({ "version": version })).unwrap();
+            let Parsed::Call(Method::DrainForUpdate { version: read, .. }) = parsed else {
+                panic!("not a drain");
+            };
+            assert_eq!(read, version);
+        }
+        for version in [
+            "",
+            "1.4",
+            "1.4.0.1",
+            "v1.4.0",
+            "1..0",
+            "1.4.0-",
+            "1.4.0 ",
+            "1.4.0-a b",
+        ] {
+            assert_eq!(
+                code("drain_for_update", json!({ "version": version })),
+                ErrorCode::InvalidRequest,
+                "{version:?}"
+            );
+        }
+        assert_eq!(
+            code("drain_for_update", json!({ "version": "9".repeat(65) })),
+            ErrorCode::InvalidRequest
+        );
+        assert_eq!(
+            code("drain_for_update", json!(null)),
+            ErrorCode::InvalidRequest
+        );
     }
 
     #[test]

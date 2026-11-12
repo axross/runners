@@ -7,6 +7,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use super::snapshot::Snapshot;
+use crate::github_status::GithubStatus;
 
 /// the protocol version this agent serves.
 pub const VERSION: u32 = 2;
@@ -20,8 +21,8 @@ pub const MAX_CLIENT_MESSAGE_BYTES: usize = 16 * 1024;
 /// the longest message the agent sends, its line break included.
 pub const MAX_AGENT_MESSAGE_BYTES: usize = 64 * 1024;
 
-/// the methods `welcome` lists.
-pub const METHODS: [&str; 8] = [
+/// the methods `welcome` lists; `renew` keeps a `github` subscription alive.
+pub const METHODS: [&str; 10] = [
     "status",
     "subscribe",
     "start_all",
@@ -30,13 +31,50 @@ pub const METHODS: [&str; 8] = [
     "quit",
     "token_set",
     "token_remove",
+    "drain_for_update",
+    "renew",
 ];
 
-/// the only topic of version 2's first slice: the snapshot `status` returns.
+/// the `ending` reason of an agent that ends for an update.
+pub const ENDING_UPDATE: &str = "update";
+
+/// what `ending` adds when the agent ends for an update: the version it ends for, and
+/// whether the runners were stopped by you, which the app keeps across the update.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct UpdateEnding {
+    #[serde(default)]
+    pub version: String,
+    #[serde(default)]
+    pub stopped_by_you: bool,
+}
+
+impl UpdateEnding {
+    #[must_use]
+    pub fn new(version: &str, stopped_by_you: bool) -> Self {
+        Self {
+            version: version.to_string(),
+            stopped_by_you,
+        }
+    }
+}
+
+/// why the agent is about to end, as every connection is told.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EndingNotice {
+    pub reason: String,
+    pub update: Option<UpdateEnding>,
+}
+
+/// the snapshot `status` returns.
 pub const TOPIC_STATE: &str = "state";
 
+/// what GitHub says about this host's runners, collected only while a subscription
+/// to it is renewed.
+pub const TOPIC_GITHUB: &str = "github";
+
 /// the topics `welcome` lists.
-pub const TOPICS: [&str; 1] = [TOPIC_STATE];
+pub const TOPICS: [&str; 2] = [TOPIC_STATE, TOPIC_GITHUB];
 
 /// the error codes of this slice; a later slice may add more, so a reader keeps a
 /// code it does not know as text.
@@ -52,6 +90,9 @@ pub enum ErrorCode {
     StoreFailed,
     /// the state does not allow the method.
     Refused,
+    /// a `renew` for a subscription the connection does not hold, such as one that
+    /// ended for want of renewal.
+    NotSubscribed,
 }
 
 impl ErrorCode {
@@ -66,6 +107,7 @@ impl ErrorCode {
             Self::TokenInvalid => "token_invalid",
             Self::StoreFailed => "store_failed",
             Self::Refused => "refused",
+            Self::NotSubscribed => "not_subscribed",
         }
     }
 }
@@ -201,18 +243,49 @@ pub enum AgentMessage {
     Error {
         error: ErrorBody,
     },
+    /// a topic's value; the reader reads it by its topic, as [`Self::snapshot`] and
+    /// [`Self::github`] do.
     Event {
         topic: String,
         seq: u64,
-        value: Box<Snapshot>,
+        value: serde_json::Value,
     },
     Heartbeat {
         seq: u64,
     },
-    /// the agent is about to end; `reason` is an open set.
+    /// the agent is about to end; `reason` is an open set, and `update` is there when
+    /// it ends for an update.
     Ending {
         reason: String,
+        #[serde(default)]
+        update: Option<UpdateEnding>,
     },
+}
+
+impl AgentMessage {
+    /// the snapshot an event of the `state` topic carries.
+    #[must_use]
+    pub fn snapshot(topic: &str, value: &serde_json::Value) -> Option<Box<Snapshot>> {
+        (topic == TOPIC_STATE)
+            .then(|| Snapshot::deserialize(value).ok().map(Box::new))
+            .flatten()
+    }
+
+    /// the value an event of the `github` topic carries.
+    #[must_use]
+    pub fn github(topic: &str, value: &serde_json::Value) -> Option<Box<GithubStatus>> {
+        (topic == TOPIC_GITHUB)
+            .then(|| GithubStatus::deserialize(value).ok().map(Box::new))
+            .flatten()
+    }
+}
+
+/// a topic's value as the agent writes it.
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub enum EventValue<'a> {
+    State(&'a Snapshot),
+    Github(&'a GithubStatus),
 }
 
 /// what the agent sends, as it writes it; borrowed, so a snapshot is not copied.
@@ -238,13 +311,15 @@ pub enum ServerMessage<'a> {
     Event {
         topic: &'static str,
         seq: u64,
-        value: &'a Snapshot,
+        value: EventValue<'a>,
     },
     Heartbeat {
         seq: u64,
     },
     Ending {
         reason: &'a str,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        update: Option<&'a UpdateEnding>,
     },
 }
 
@@ -341,6 +416,39 @@ mod tests {
     }
 
     #[test]
+    fn an_ending_for_an_update_carries_its_field_and_another_does_not() {
+        let update = UpdateEnding::new("1.4.0", true);
+        let line = ServerMessage::Ending {
+            reason: ENDING_UPDATE,
+            update: Some(&update),
+        }
+        .line()
+        .unwrap();
+        assert_eq!(
+            String::from_utf8(line.clone()).unwrap(),
+            "{\"type\":\"ending\",\"reason\":\"update\",\"update\":{\"version\":\"1.4.0\",\"stopped_by_you\":true}}\n"
+        );
+        let read: AgentMessage = serde_json::from_slice(&line).unwrap();
+        assert_eq!(
+            read,
+            AgentMessage::Ending {
+                reason: "update".to_string(),
+                update: Some(update)
+            }
+        );
+        let quit = ServerMessage::Ending {
+            reason: "quit",
+            update: None,
+        }
+        .line()
+        .unwrap();
+        assert_eq!(
+            String::from_utf8(quit).unwrap(),
+            "{\"type\":\"ending\",\"reason\":\"quit\"}\n"
+        );
+    }
+
+    #[test]
     fn the_unsupported_protocol_error_lists_the_versions() {
         let error = ErrorBody::unsupported_protocol();
         assert_eq!(error.code, "unsupported_protocol");
@@ -358,6 +466,7 @@ mod tests {
             ErrorCode::TokenInvalid,
             ErrorCode::StoreFailed,
             ErrorCode::Refused,
+            ErrorCode::NotSubscribed,
         ]
         .into_iter()
         .map(ErrorCode::as_str)
@@ -372,7 +481,8 @@ mod tests {
                 "subscription_limit",
                 "token_invalid",
                 "store_failed",
-                "refused"
+                "refused",
+                "not_subscribed"
             ]
         );
     }

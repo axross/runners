@@ -23,11 +23,13 @@ use marshal_cli::agent::server::Limits;
 use marshal_cli::agent::snapshot::Snapshot;
 use marshal_cli::agent::wire::ClientInfo;
 use marshal_cli::agent::{CallError, Client, Push, RawStream, Resident, connect, run_resident};
+use marshal_cli::github_status::http::GitHubReader;
 use marshal_cli::instance::lifecycle::StopTimes;
 use marshal_cli::instance::lock::InstanceLock;
 use marshal_cli::instance::roots::Roots;
 use marshal_cli::runtime::fake::{Call, FakeBackend, FakeClock, FakeRegistrar, MemoryLog};
 use marshal_cli::runtime::log::Log;
+use marshal_cli::runtime::registration::HttpLimits;
 use marshal_cli::token_store::{MemoryTokenStore, RepositoryKey, TokenStore};
 use serde_json::{Value, json};
 use tokio::io::WriteHalf;
@@ -128,11 +130,15 @@ pub struct Rig {
     pub backend: FakeBackend,
     pub clock: Rc<PacedClock>,
     pub registrar: FakeRegistrar,
+    /// where GitHub status is read from: a loopback stub, or nothing listening.
+    pub github_api: RefCell<String>,
     pub builder: FakeBuilder,
     pub store: Arc<MemoryTokenStore>,
     pub log: MemoryLog,
     pub limits: Cell<Limits>,
     pub times: Cell<StopTimes>,
+    /// how long a drain for an update waits for busy runners.
+    pub drain_bound: Cell<Duration>,
     /// the file the agent watches, when a test asks for it.
     pub executable: RefCell<Option<PathBuf>>,
     /// the agent has no token store, as on a host without one.
@@ -165,11 +171,13 @@ impl Rig {
                 pause: Cell::new(Duration::from_millis(60)),
             }),
             registrar,
+            github_api: RefCell::new("http://127.0.0.1:9".to_string()),
             builder: FakeBuilder::default(),
             store,
             log: MemoryLog::default(),
             limits: Cell::new(Limits::default()),
             times: Cell::new(StopTimes::default()),
+            drain_bound: Cell::new(marshal_cli::agent::machine::DRAIN_BOUND),
             executable: RefCell::new(None),
             no_store: Cell::new(false),
             other_store: RefCell::new(None),
@@ -239,11 +247,17 @@ impl Rig {
             .borrow_mut()
             .take()
             .expect("the rig was driven before");
+        let reader = GitHubReader::new(
+            Some(self.github_api.borrow().as_str()),
+            HttpLimits::default(),
+        )
+        .unwrap();
         let agent = async {
             let resident = Resident {
                 backend: &self.backend,
                 clock: &self.clock,
                 registrar: &self.registrar,
+                reader: &reader,
                 builder: &self.builder,
                 store: (!self.no_store.get()).then(|| {
                     self.other_store
@@ -259,6 +273,7 @@ impl Rig {
                     config_path: self.root.path().join("config.json"),
                     times: self.times.get(),
                     launch,
+                    drain_bound: self.drain_bound.get(),
                 },
                 executable: self.executable.borrow().clone(),
                 limits: self.limits.get(),

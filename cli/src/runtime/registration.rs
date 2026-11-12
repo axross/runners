@@ -21,8 +21,14 @@ pub const GITHUB_API: &str = "https://api.github.com";
 /// repository-level runner has none to choose.
 pub const RUNNER_GROUP_ID: u64 = 1;
 
-const API_VERSION: &str = "2022-11-28";
-const ACCEPT_VALUE: &str = "application/vnd.github+json";
+/// what a registration's error text holds when GitHub does not accept the token, which
+/// is its 401; the app recognises a rejected token by it.
+pub const REJECTED_MARK: &str = "status code does not indicate success: 401";
+
+/// the API version every request names.
+pub const API_VERSION: &str = "2022-11-28";
+/// the media type every request accepts.
+pub const ACCEPT_VALUE: &str = "application/vnd.github+json";
 
 /// the time and size bounds on one registration request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -143,6 +149,28 @@ fn is_loopback_base(text: &str) -> bool {
     digits && port.parse::<u32>().is_ok_and(|number| number <= 65535)
 }
 
+/// the HTTPS client every GitHub request uses: a `User-Agent`, no redirect, the
+/// time limits, HTTPS only for GitHub, and no proxy for a loopback stub; it fails
+/// when the TLS provider cannot be installed or the client cannot be built.
+pub fn https_client(base_url: &str, limits: HttpLimits) -> Result<reqwest::Client, SetupError> {
+    install_tls_provider()?;
+    let user_agent = format!("marshal/{}", env!("CARGO_PKG_VERSION"));
+    let mut builder = reqwest::Client::builder()
+        .user_agent(user_agent)
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(limits.connect_timeout)
+        .timeout(limits.total_timeout);
+    if base_url == GITHUB_API {
+        builder = builder.https_only(true);
+    } else {
+        // a loopback stub is never behind a proxy.
+        builder = builder.no_proxy();
+    }
+    builder
+        .build()
+        .map_err(|error| SetupError(format!("the HTTPS client could not be built: {error}")))
+}
+
 /// the registration client over HTTPS.
 pub struct GitHubRegistrar {
     client: reqwest::Client,
@@ -155,23 +183,8 @@ impl GitHubRegistrar {
     /// [`resolve_base_url`], and it fails when the TLS provider cannot be installed or
     /// the client cannot be built, such as without trusted roots to load.
     pub fn new(base_override: Option<&str>, limits: HttpLimits) -> Result<Self, SetupError> {
-        install_tls_provider()?;
         let base_url = resolve_base_url(base_override)?;
-        let user_agent = format!("marshal/{}", env!("CARGO_PKG_VERSION"));
-        let mut builder = reqwest::Client::builder()
-            .user_agent(user_agent)
-            .redirect(reqwest::redirect::Policy::none())
-            .connect_timeout(limits.connect_timeout)
-            .timeout(limits.total_timeout);
-        if base_url == GITHUB_API {
-            builder = builder.https_only(true);
-        } else {
-            // a loopback stub is never behind a proxy.
-            builder = builder.no_proxy();
-        }
-        let client = builder
-            .build()
-            .map_err(|error| SetupError(format!("the HTTPS client could not be built: {error}")))?;
+        let client = https_client(&base_url, limits)?;
         Ok(Self {
             client,
             base_url,

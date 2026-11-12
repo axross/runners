@@ -22,7 +22,7 @@ updates:
       prefix: "build"
       include: "scope"
 
-  # the CLI's crates and toolchain, both under cli/; docs/operations/cli.md says
+  # the CLI's crates, and with the app's, its toolchain below; docs/operations/cli.md says
   # how a red bump is handled. the rustup-init pin in .agents/install-rust is
   # refreshed by hand with its checksum.
   - package-ecosystem: "cargo"
@@ -33,10 +33,29 @@ updates:
       prefix: "build"
       include: "scope"
 
-  - package-ecosystem: "rust-toolchain"
-    directory: "/cli"
+  # the app's crates, which include its path dependency on the CLI's library. the
+  # tauri-cli pin in app/tauri-cli.version is not a crate of the workspace and is
+  # refreshed by hand.
+  - package-ecosystem: "cargo"
+    directory: "/app"
     schedule:
       interval: "weekly"
+    commit-message:
+      prefix: "build"
+      include: "scope"
+
+  # both toolchain files name one channel, which `mise run check:app-pins` enforces,
+  # so one group bumps them together in one pull request.
+  - package-ecosystem: "rust-toolchain"
+    directories:
+      - "/cli"
+      - "/app"
+    schedule:
+      interval: "weekly"
+    groups:
+      rust-toolchain:
+        patterns:
+          - "*"
     commit-message:
       prefix: "build"
       include: "scope"
