@@ -1612,6 +1612,47 @@ A log that cannot write or continue its file stops, and the agent goes on withou
 it. It tries to open a new file again when a line arrives, at most every 30 s, and
 writes one line in the new file that says how many lines were not written.
 
+### The Update Drain
+
+W4 ([#78](https://github.com/axross/runners/issues/78)) adds `drain_for_update` to
+protocol version 2, under its rules for added methods and fields. Before the app
+installs an update, it asks the agent to drain: to stop registering runners and to end
+once the jobs already running have finished, within 6 hours. The `version` param is
+the version of the update, three numbers and an optional suffix of at most 64
+characters; anything else is `invalid_request`.
+
+A runner is busy once its container's output has carried a line that reads
+`Running job:` after the runner's timestamp, and idle once it has carried
+`Listening for Jobs` and not `Running job:`. A runner whose output has carried
+neither line is waited for, as if busy. Both streams count, a mark never clears, and
+no other line, such as `Runner reconnected.`, changes it. Only the fixed text is
+compared: a job's name is never kept, shown or forwarded.
+
+| When                                                     | Result                                                                             |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `drain_for_update`, while `running`                      | Drains: the answer is `{state, update}`, and `agent.update` appears                |
+| `drain_for_update`, while `stopped`                      | Ends for the update at once; `stopped_by_you` is true when stopped by you          |
+| `drain_for_update`, in any other state or while draining | `refused`, and nothing changes                                                     |
+| `start_all` or `build`, while draining                   | `refused`, and nothing changes                                                     |
+| `stop_all`, while draining                               | Stops every runner, so running jobs fail, then ends for the update, stopped by you |
+| `quit`, while draining                                   | Stops and ends as a `quit` does; the `ending` names `quit`                         |
+| The connection that asked closes, while draining         | The drain is cancelled, the agent keeps running, and the slots register again      |
+| A runtime core failure, while draining                   | The container steps run, as after any failure; the core does not start again       |
+| No runner is waited for any more                         | The container steps run, then the agent ends for the update                        |
+| 6 hours pass                                             | The container steps run, so the jobs still running fail, then the agent ends       |
+
+While the agent drains, nothing registers a runner: not a slot, not a pool prepared
+after a core failure or when Docker comes back, and not a pool that waited for a token.
+A slot that is registering or backing off stops without starting a container, an idle
+runner's container is stopped with a stop's grace, and a busy runner's container runs
+until it exits; its slot then finalises it as after any job and registers nothing. A
+drained slot is listed `stopped` with the reason "stopped for an update". The agent's
+state stays `running`, so an older app shows it running; `agent.update.waiting` counts
+the runners still waited for, `deadline` is the bound's time in milliseconds since the
+Unix epoch, and `pid` is the agent's process ID, which the app waits on. Before the
+agent ends for an update, every connection receives `ending` with the reason `update`
+and an `update` field naming the version and whether the runners were stopped by you.
+
 ### The Token Store
 
 `token_store` is the one place the agent keeps a repository's token. The interface
@@ -1666,16 +1707,16 @@ connection is closed, so today's commands exit 1 against an agent and change
 nothing. A later slice of version 2 may add methods, topics, error codes and fields
 but never rename or remove one.
 
-| Message     | Fields                                                                                               |
-| ----------- | ---------------------------------------------------------------------------------------------------- |
-| `hello`     | `versions` (the versions the client speaks), `client` (`name`, `version`), which the agent ignores   |
-| `welcome`   | `version` (2), `agent` (`version`), `methods`, `topics`                                              |
-| `request`   | `id` (an integer of the client's own), `method`, `params`                                            |
-| `response`  | `id`, then `result` or `error`                                                                       |
-| `error`     | `error`, for what answers no request: a failed handshake, `busy`, or a message that is not a request |
-| `event`     | `topic` (`state`), `seq`, `value` (the snapshot)                                                     |
-| `heartbeat` | `seq`, the last event's                                                                              |
-| `ending`    | `reason`: `quit` or `executable_changed`                                                             |
+| Message     | Fields                                                                                                   |
+| ----------- | -------------------------------------------------------------------------------------------------------- |
+| `hello`     | `versions` (the versions the client speaks), `client` (`name`, `version`), which the agent ignores       |
+| `welcome`   | `version` (2), `agent` (`version`), `methods`, `topics`                                                  |
+| `request`   | `id` (an integer of the client's own), `method`, `params`                                                |
+| `response`  | `id`, then `result` or `error`                                                                           |
+| `error`     | `error`, for what answers no request: a failed handshake, `busy`, or a message that is not a request     |
+| `event`     | `topic` (`state`), `seq`, `value` (the snapshot)                                                         |
+| `heartbeat` | `seq`, the last event's                                                                                  |
+| `ending`    | `reason`: `quit`, `executable_changed` or `update`; `update` (`version`, `stopped_by_you`) for an update |
 
 A reader ignores a message type, a field and a topic it does not know, and calls only
 the methods `welcome` lists. The library's `Client` does so, refuses a `welcome` that is not version 2, and
@@ -1688,16 +1729,17 @@ against unknown methods, topics and fields.
 
 The agent answers one connection's requests in order and several connections at once.
 
-| Method         | Params                | Result                                                             |
-| -------------- | --------------------- | ------------------------------------------------------------------ |
-| `status`       | none                  | The snapshot                                                       |
-| `subscribe`    | `topic`: `state`      | `{"topic":"state"}`; the first event follows at once               |
-| `start_all`    | none                  | `{state}`, `resuming` while the pools are admitted                 |
-| `stop_all`     | none                  | `{state}`                                                          |
-| `build`        | none                  | `{state, started}`, `started` in milliseconds since the Unix epoch |
-| `quit`         | none                  | `{state}`                                                          |
-| `token_set`    | `repository`, `token` | `{repository}`, the key it was stored under                        |
-| `token_remove` | `repository`          | `{repository}`                                                     |
+| Method             | Params                | Result                                                             |
+| ------------------ | --------------------- | ------------------------------------------------------------------ |
+| `status`           | none                  | The snapshot                                                       |
+| `subscribe`        | `topic`: `state`      | `{"topic":"state"}`; the first event follows at once               |
+| `start_all`        | none                  | `{state}`, `resuming` while the pools are admitted                 |
+| `stop_all`         | none                  | `{state}`                                                          |
+| `build`            | none                  | `{state, started}`, `started` in milliseconds since the Unix epoch |
+| `quit`             | none                  | `{state}`                                                          |
+| `token_set`        | `repository`, `token` | `{repository}`, the key it was stored under                        |
+| `token_remove`     | `repository`          | `{repository}`                                                     |
+| `drain_for_update` | `version`             | `{state, update}`; see The Update Drain                            |
 
 `token_set` is the one message that carries a secret: the token travels only in its
 `token` param, from the client to the agent, and the agent never sends, logs or
@@ -1773,7 +1815,8 @@ a reader ignores one it does not know.
 
 | Field                          | Holds                                                                                                 |
 | ------------------------------ | ----------------------------------------------------------------------------------------------------- |
-| `agent`                        | `version`, `state`, `reason` (`code`, `message`), `since`, `build`, `restart_due`                     |
+| `agent`                        | `version`, `state`, `reason` (`code`, `message`), `since`, `build`, `restart_due`, `update`           |
+| `agent.update`                 | While a drain for an update runs: `version`, `waiting`, `deadline`, `pid`                             |
 | `agent.build`                  | `started`, `outcome` (`building`, `ready`, `failed`, `cancelled`), `finished`, `message`              |
 | `configuration`                | `path` and `problems`, at most 100                                                                    |
 | `runners_up`, `runners_wanted` | Totals over the listed pools, kept when rows are left out; 0 while `restart_due` is set               |

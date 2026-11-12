@@ -89,16 +89,32 @@ pub enum Action {
     Refuse(&'static str),
 }
 
+/// why a lifecycle method is refused during a drain for an update.
+pub const DRAINING: &str = "the agent is draining for an update";
+
+/// why a drain is refused outside `running` and `stopped`.
+pub const DRAIN_NOT_NOW: &str = "a drain for an update needs the agent running or stopped";
+
 /// why `build` is refused while the runners run.
 pub const BUILD_WHILE_RUNNING: &str =
     "the runners are running; stop them before building the image";
 
 impl Phase {
-    /// what the lifecycle method `method` does here: the one table every handler of
-    /// a phase follows, so they cannot differ.
+    /// what the lifecycle method `method` does here, `draining` while a drain for an
+    /// update is under way: the one table every handler of a phase follows, so they
+    /// cannot differ.
     #[must_use]
-    pub fn action(&self, method: &Method) -> Action {
+    pub fn action(&self, method: &Method, draining: bool) -> Action {
+        if draining {
+            return match method {
+                Method::StopAll => Action::Stop,
+                Method::Quit => Action::Quit,
+                _ => Action::Refuse(DRAINING),
+            };
+        }
         match (self, method) {
+            (Self::Running | Self::Stopped(_), Method::DrainForUpdate { .. }) => Action::Begin,
+            (_, Method::DrainForUpdate { .. }) => Action::Refuse(DRAIN_NOT_NOW),
             (Self::Stopped(_), Method::StartAll | Method::Build) => Action::Begin,
             (Self::Stopped(_) | Self::Stopping | Self::Quitting, Method::StopAll)
             | (Self::Running, Method::StartAll) => Action::NoChange,
@@ -125,6 +141,16 @@ pub struct Inner {
     pub restart_due: Option<SystemTime>,
     /// the image the latest check named, and what the check found.
     pub image: Option<(String, Option<ImageCheck>)>,
+    /// the drain for an update under way.
+    pub drain: Option<Drain>,
+}
+
+/// a drain for an update under way, as the snapshot shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Drain {
+    pub version: String,
+    pub waiting: u32,
+    pub deadline: SystemTime,
 }
 
 impl Inner {
@@ -139,6 +165,7 @@ impl Inner {
             build: None,
             restart_due: None,
             image: None,
+            drain: None,
         }
     }
 }
@@ -174,8 +201,52 @@ mod tests {
                 Method::Quit,
             ];
             for (method, expected) in methods.iter().zip(expected) {
-                assert_eq!(phase.action(method), expected, "{phase:?} {method:?}");
+                assert_eq!(
+                    phase.action(method, false),
+                    expected,
+                    "{phase:?} {method:?}"
+                );
             }
+        }
+    }
+
+    fn drain() -> Method {
+        Method::DrainForUpdate {
+            version: "1.4.0".to_string(),
+            requester: None,
+        }
+    }
+
+    /// W4's drain table in `docs/operations/cli.md`: a drain begins from running or
+    /// stopped and is refused elsewhere, and while one is under way start all, build
+    /// and another drain are refused while stop all and quit are taken.
+    #[test]
+    fn a_drain_begins_only_from_running_or_stopped_and_refuses_starts_while_under_way() {
+        use Action::{Begin, Quit, Refuse, Stop};
+        for phase in [Phase::Running, Phase::Stopped(Reason::by_you())] {
+            assert_eq!(phase.action(&drain(), false), Begin, "{phase:?}");
+        }
+        for phase in [
+            Phase::Resuming,
+            Phase::Building,
+            Phase::Stopping,
+            Phase::Quitting,
+        ] {
+            assert_eq!(
+                phase.action(&drain(), false),
+                Refuse(DRAIN_NOT_NOW),
+                "{phase:?}"
+            );
+        }
+        let running = Phase::Running;
+        assert_eq!(running.action(&Method::StopAll, true), Stop);
+        assert_eq!(running.action(&Method::Quit, true), Quit);
+        for method in [Method::StartAll, Method::Build, drain()] {
+            assert_eq!(
+                running.action(&method, true),
+                Refuse(DRAINING),
+                "{method:?}"
+            );
         }
     }
 }

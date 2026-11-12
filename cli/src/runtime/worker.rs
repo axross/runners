@@ -7,11 +7,14 @@ use tokio::sync::watch;
 
 use crate::image::check::ImageCheck;
 
-use super::backend::{Backend, ContainerSpec, CpuRequest, HostPreparation, RELEASE_WITHIN};
+use super::backend::{
+    Backend, ContainerSpec, CpuRequest, HostPreparation, RELEASE_WITHIN, StopRequest,
+};
 use super::board::{Board, SlotState};
 use super::clock::Clock;
 use super::diagnostic::finalize_at_job_end;
 use super::image::check_image;
+use super::job_marks::Activity;
 use super::log::{Log, Masked};
 use super::name::job_container_name;
 use super::pool::SlotSpec;
@@ -91,6 +94,87 @@ pub(crate) async fn sleep_or_stop<K: Clock>(
     }
 }
 
+/// what ends a slot's loop before it registers again: a stop, or a drain, which lets a
+/// running job container run to its end and holds the slot until the drain ends.
+pub(crate) struct Halt {
+    stop: watch::Receiver<bool>,
+    drain: Option<watch::Receiver<bool>>,
+}
+
+impl Halt {
+    fn stopped(&self) -> bool {
+        stopped(&self.stop)
+    }
+
+    fn draining(&self) -> bool {
+        self.drain.as_ref().is_some_and(|drain| *drain.borrow())
+    }
+
+    fn halted(&self) -> bool {
+        self.stopped() || self.draining()
+    }
+
+    /// returns once a stop or a drain is asked for.
+    async fn wait(&mut self) {
+        let Self { stop, drain } = self;
+        match drain {
+            None => wait_for_stop(stop).await,
+            Some(drain) => tokio::select! {
+                () = wait_for_stop(stop) => {}
+                _ = drain.wait_for(|draining| *draining) => {}
+            },
+        }
+    }
+
+    /// holds a drained slot until the drain ends, when it goes on, or a stop, when it
+    /// returns true.
+    async fn hold(&mut self) -> bool {
+        let Self { stop, drain } = self;
+        if let Some(drain) = drain {
+            tokio::select! {
+                () = wait_for_stop(stop) => {}
+                _ = drain.wait_for(|draining| !*draining) => {}
+            }
+        }
+        stopped(stop)
+    }
+
+    /// sleeps `delay` unless a stop or a drain arrives first; true when one did.
+    async fn sleep<K: Clock>(&mut self, clock: &K, delay: Duration) -> bool {
+        if self.halted() {
+            return true;
+        }
+        tokio::select! {
+            () = clock.sleep(delay) => self.halted(),
+            () = self.wait() => true,
+        }
+    }
+
+    /// returns once a drain is under way and the container `name` is idle, checking
+    /// its output's marks every [`IDLE_CHECK_EVERY`].
+    async fn idle_in_drain<B: Backend>(&self, backend: &B, name: &str) {
+        let Some(drain) = &self.drain else {
+            return std::future::pending().await;
+        };
+        let mut drain = drain.clone();
+        loop {
+            if drain.wait_for(|draining| *draining).await.is_err() {
+                return std::future::pending().await;
+            }
+            if backend.job_activity(name) == Activity::Idle {
+                return;
+            }
+            tokio::select! {
+                () = tokio::time::sleep(IDLE_CHECK_EVERY) => {}
+                _ = drain.wait_for(|draining| !*draining) => {}
+            }
+        }
+    }
+}
+
+/// how often a drain looks again at a running container that is not idle yet.
+const IDLE_CHECK_EVERY: Duration = Duration::from_millis(250);
+
 struct Report<'a> {
     log: &'a dyn Log,
     board: &'a Board,
@@ -135,7 +219,7 @@ impl Pause {
 async fn back_off<K: Clock>(
     report: &Report<'_>,
     clock: &K,
-    stop: &mut watch::Receiver<bool>,
+    halt: &mut Halt,
     backoff: &mut Backoff,
     pause: Pause,
 ) -> bool {
@@ -146,7 +230,7 @@ async fn back_off<K: Clock>(
         backoff.current().as_secs()
     ));
     report.state(pause.state(report.log));
-    sleep_or_stop(clock, stop, backoff.fail()).await
+    halt.sleep(clock, backoff.fail()).await
 }
 
 /// how one attempt, from the host's preparation to its release, ended.
@@ -157,7 +241,8 @@ enum Attempt {
     Failed(String),
     /// a host prerequisite refused the boot, and the slot waits out the backoff held.
     Held(String),
-    Stopped,
+    /// a stop or a drain ended the attempt before a container started.
+    Halted,
 }
 
 struct Context<'a, B, K, R> {
@@ -172,25 +257,25 @@ impl<B: Backend, K: Clock, R: Registrar> Context<'_, B, K, R> {
     /// prepares the slot's host, runs one job on it, and releases the host on every
     /// path out of the preparation, whatever its outcome and a stop included, before
     /// the caller backs off.
-    async fn attempt(&self, slot: &SlotSpec, stop: &mut watch::Receiver<bool>) -> Attempt {
+    async fn attempt(&self, slot: &SlotSpec, halt: &mut Halt) -> Attempt {
         let request = slot.host_request();
         let prepared = tokio::select! {
             prepared = self.backend.prepare_job_host(&request) => Some(prepared),
-            () = wait_for_stop(stop) => None,
+            () = halt.wait() => None,
         };
         let attempt = match prepared {
-            None => Attempt::Stopped,
-            Some(HostPreparation::Ready) => self.run_job(slot, stop).await,
+            None => Attempt::Halted,
+            Some(HostPreparation::Ready) => self.run_job(slot, halt).await,
             Some(HostPreparation::Failed(error)) => Attempt::Failed(format!(
                 "the job host could not be prepared ({error}); no registration"
             )),
             Some(HostPreparation::Held(reason)) => Attempt::Held(reason),
         };
-        if stopped(stop) && self.backend.host_awaits_finalisation(&request.host) {
+        if halt.stopped() && self.backend.host_awaits_finalisation(&request.host) {
             // the stop sequence exports the host's evidence first, then releases it
             return attempt;
         }
-        let budget = if stopped(stop) {
+        let budget = if halt.stopped() {
             self.backend.release_budget()
         } else {
             RELEASE_WITHIN
@@ -206,7 +291,7 @@ impl<B: Backend, K: Clock, R: Registrar> Context<'_, B, K, R> {
 
     /// probes the host's CPUs, registers, runs one job container to its end and
     /// finalises it.
-    async fn run_job(&self, slot: &SlotSpec, stop: &mut watch::Receiver<bool>) -> Attempt {
+    async fn run_job(&self, slot: &SlotSpec, halt: &mut Halt) -> Attempt {
         let log = self.report.log;
         let request = CpuRequest {
             probe_name: slot.probe_name(),
@@ -239,7 +324,7 @@ impl<B: Backend, K: Clock, R: Registrar> Context<'_, B, K, R> {
         };
         let registered = tokio::select! {
             result = registration => result,
-            () = wait_for_stop(stop) => return Attempt::Stopped,
+            () = halt.wait() => return Attempt::Halted,
         };
         let jit = match registered {
             Ok(jit) => jit,
@@ -249,8 +334,8 @@ impl<B: Backend, K: Clock, R: Registrar> Context<'_, B, K, R> {
         };
 
         let _masked = Masked::new(log, &jit);
-        if stopped(stop) {
-            return Attempt::Stopped;
+        if halt.halted() {
+            return Attempt::Halted;
         }
         log.info(&format!(
             "{}: starting container {name}.",
@@ -267,8 +352,18 @@ impl<B: Backend, K: Clock, R: Registrar> Context<'_, B, K, R> {
             run_command: self.backend.run_command().to_string(),
             diagnostic: slot.diagnostic.clone(),
         };
-        let exit = self.backend.run_container(&spec, &jit).await;
-        if spec.diagnostic.is_some() && !stopped(stop) {
+        let exit = {
+            let mut run = std::pin::pin!(self.backend.run_container(&spec, &jit));
+            tokio::select! {
+                biased;
+                exit = &mut run => exit,
+                () = halt.idle_in_drain(self.backend, &spec.name) => {
+                    let (_, exit) = tokio::join!(self.stop_idle(&spec.name), &mut run);
+                    exit
+                }
+            }
+        };
+        if spec.diagnostic.is_some() && !halt.stopped() {
             finalize_at_job_end(self.backend, log, &spec.name, tokio::time::Instant::now()).await;
         }
         match exit {
@@ -282,6 +377,29 @@ impl<B: Backend, K: Clock, R: Registrar> Context<'_, B, K, R> {
                 // failed run's error text could hold it
                 Attempt::Failed(log.masks().apply(&reason))
             }
+        }
+    }
+}
+
+impl<B: Backend, K: Clock, R: Registrar> Context<'_, B, K, R> {
+    /// stops an idle runner's container during a drain, with a stop's grace; its run
+    /// then ends, and the slot finalises it as after any job.
+    async fn stop_idle(&self, name: &str) {
+        let times = crate::instance::lifecycle::StopTimes::default();
+        self.report.log.info(&format!(
+            "{}: the runner is idle during a drain for an update, so its container {name} is stopped.",
+            self.report.label
+        ));
+        let request = StopRequest {
+            names: vec![name.to_string()],
+            grace: times.grace,
+            budget: times.stop_budget,
+        };
+        if let Err(error) = self.backend.stop_containers(&request).await {
+            self.report.log.warn(&format!(
+                "{}: stopping the idle container {name} failed: {error}",
+                self.report.label
+            ));
         }
     }
 }
@@ -308,6 +426,7 @@ pub async fn run_slot<B: Backend, K: Clock, R: Registrar>(
         tokens: &TokenFiles,
         log,
         board,
+        drain: None,
     };
     run_slot_with(slot, &services, stop).await;
 }
@@ -321,6 +440,9 @@ pub struct Services<'a, B, K, R> {
     pub tokens: &'a dyn TokenSource,
     pub log: &'a dyn Log,
     pub board: &'a Board,
+    /// turns true while the agent drains for an update: the slot registers nothing,
+    /// lets a busy job run to its end, stops an idle one, and waits until the drain ends.
+    pub drain: Option<&'a watch::Sender<bool>>,
 }
 
 impl<B, K, R> Clone for Services<'_, B, K, R> {
@@ -335,7 +457,7 @@ impl<B, K, R> Copy for Services<'_, B, K, R> {}
 pub async fn run_slot_with<B: Backend, K: Clock, R: Registrar>(
     slot: &SlotSpec,
     services: &Services<'_, B, K, R>,
-    mut stop: watch::Receiver<bool>,
+    stop: watch::Receiver<bool>,
 ) {
     let Services {
         backend,
@@ -344,6 +466,7 @@ pub async fn run_slot_with<B: Backend, K: Clock, R: Registrar>(
         tokens,
         log,
         board,
+        drain,
     } = *services;
     let report = Report {
         log,
@@ -357,12 +480,26 @@ pub async fn run_slot_with<B: Backend, K: Clock, R: Registrar>(
         tokens,
         report: &report,
     };
+    let mut halt = Halt {
+        stop,
+        drain: drain.map(watch::Sender::subscribe),
+    };
     let mut backoff = Backoff::default();
-    while !stopped(&stop) {
+    loop {
+        if halt.stopped() {
+            return;
+        }
+        if halt.draining() {
+            report.state(SlotState::Drained);
+            if halt.hold().await {
+                return;
+            }
+            continue;
+        }
         report.state(SlotState::Registering);
         let checked = tokio::select! {
             checked = check_image(backend, board, &slot.image) => checked,
-            () = wait_for_stop(&mut stop) => return,
+            () = halt.wait() => continue,
         };
         let refused = match &checked {
             ImageCheck::Unavailable(reason) => Some(format!(
@@ -373,22 +510,19 @@ pub async fn run_slot_with<B: Backend, K: Clock, R: Registrar>(
                 .map(|refusal| format!("{refusal}; no registration")),
         };
         if let Some(reason) = refused {
-            if back_off(
+            back_off(
                 &report,
                 clock,
-                &mut stop,
+                &mut halt,
                 &mut backoff,
                 Pause::Failed(reason),
             )
-            .await
-            {
-                return;
-            }
+            .await;
             continue;
         }
 
-        let pause = match context.attempt(slot, &mut stop).await {
-            Attempt::Stopped => return,
+        let pause = match context.attempt(slot, &mut halt).await {
+            Attempt::Halted => continue,
             Attempt::Ended => {
                 log.info(&format!(
                     "{}: container exited successfully (GitHub owns the job result) - starting a replacement.",
@@ -400,9 +534,7 @@ pub async fn run_slot_with<B: Backend, K: Clock, R: Registrar>(
             Attempt::Failed(reason) => Pause::Failed(reason),
             Attempt::Held(reason) => Pause::Held(reason),
         };
-        if back_off(&report, clock, &mut stop, &mut backoff, pause).await {
-            return;
-        }
+        back_off(&report, clock, &mut halt, &mut backoff, pause).await;
     }
 }
 

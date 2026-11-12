@@ -20,9 +20,10 @@ use crate::instance::restart::{RestartPolicy, Verdict};
 use crate::instance::steps::{self, Steps};
 use crate::profile::Profile;
 use crate::runtime::backend::Backend;
-use crate::runtime::board::{Board, PoolState};
+use crate::runtime::board::{Board, PoolState, SlotState};
 use crate::runtime::clock::Clock;
 use crate::runtime::image::check_image;
+use crate::runtime::job_marks::Activity;
 use crate::runtime::log::Log;
 use crate::runtime::registration::Registrar;
 use crate::runtime::scrub::scrub_error_text;
@@ -34,16 +35,22 @@ use super::api::{ApiError, ApiResult, Call, Method};
 use super::builder::ImageBuilder;
 use super::core::AgentCore;
 use super::snapshot::{BuildInfo, MAX_SNAPSHOT_BYTES, Snapshot};
-use super::state::{Action, Inner, Phase, Reason};
+use super::state::{Action, Drain, Inner, Phase, Reason};
 use super::tokens::StoreTokens;
 use super::view::{View, millis};
-use super::wire::ErrorCode;
+use super::wire::{ENDING_UPDATE, ErrorCode, UpdateEnding};
 
 /// the reason the agent ends when asked to by a client.
 pub const QUIT: &str = "quit";
 
 /// the reason it ends when the file it started from has changed.
 pub const EXECUTABLE_CHANGED: &str = "executable_changed";
+
+/// the reason it ends for an update.
+pub const UPDATE: &str = ENDING_UPDATE;
+
+/// how long a drain for an update waits for busy runners before it stops them.
+pub const DRAIN_BOUND: Duration = Duration::from_secs(6 * 60 * 60);
 
 /// how often the snapshot is read again for subscribers, the coalescing time of an
 /// event; nothing is collected while no one subscribes.
@@ -64,13 +71,18 @@ pub struct Settings {
     pub config_path: std::path::PathBuf,
     pub times: StopTimes,
     pub launch: Launch,
+    /// how long a drain for an update waits for busy runners; [`DRAIN_BOUND`].
+    pub drain_bound: Duration,
 }
 
 /// how the agent ended.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ended {
-    /// [`QUIT`] or [`EXECUTABLE_CHANGED`].
+    /// [`QUIT`], [`EXECUTABLE_CHANGED`] or [`UPDATE`].
     pub reason: &'static str,
+    /// the version the agent ended for and whether its runners were stopped by you,
+    /// when it ended for an update.
+    pub update: Option<UpdateEnding>,
     /// whether every removal of ordinary containers in the agent's life succeeded.
     pub containers_removed: bool,
     /// the diagnostic containers the backend still retains, which the next start
@@ -103,6 +115,8 @@ enum Routed {
 
 enum CycleEnd {
     StopRequested,
+    /// a drain for an update left the core nothing to run.
+    Drained,
     LimitReached,
     NothingToRun,
     ImageRefused(String),
@@ -143,6 +157,39 @@ pub struct Agent<'a, B, K, R, D> {
     force: watch::Sender<bool>,
     /// whether the pools of the latest start are admitted and prepared.
     admitted: watch::Sender<bool>,
+    /// true while the agent drains for an update.
+    drain: watch::Sender<bool>,
+    /// what `ending` says when the agent ends for an update.
+    update: RefCell<Option<UpdateEnding>>,
+}
+
+/// a drain for an update, as the running phase keeps it.
+struct Draining {
+    version: String,
+    deadline: Instant,
+    /// closes when the connection that asked for the drain closes.
+    requester: Option<oneshot::Receiver<()>>,
+}
+
+/// returns when the connection that asked for the drain has closed; never without a
+/// drain, or for a drain whose requester cannot close.
+async fn requester_closed(draining: &mut Option<Draining>) {
+    match draining
+        .as_mut()
+        .and_then(|draining| draining.requester.as_mut())
+    {
+        Some(requester) => {
+            let _ = requester.await;
+        }
+        None => pending().await,
+    }
+}
+
+async fn drain_deadline(deadline: Option<Instant>) {
+    match deadline {
+        Some(deadline) => sleep_until(deadline).await,
+        None => pending().await,
+    }
 }
 
 /// what the agent works with besides its settings.
@@ -184,6 +231,8 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             containers_removed: Cell::new(true),
             force: watch::Sender::new(false),
             admitted: watch::Sender::new(false),
+            drain: watch::Sender::new(false),
+            update: RefCell::new(None),
         };
         agent.publish();
         agent
@@ -209,8 +258,14 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                 Next::Idle => self.stopped(requests).await,
                 Next::Build(reply) => self.building(requests, reply).await,
                 Next::Exit => {
+                    let reason = self.exit.get().unwrap_or(QUIT);
                     return Ended {
-                        reason: self.exit.get().unwrap_or(QUIT),
+                        reason,
+                        update: if reason == UPDATE {
+                            self.update.borrow().clone()
+                        } else {
+                            None
+                        },
                         containers_removed: self.containers_removed.get(),
                         kept: self.backend.retained().names(),
                     };
@@ -407,6 +462,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             log: self.log,
             board: &self.board,
             admitted: &self.admitted,
+            drain: &self.drain,
         }
     }
 
@@ -467,6 +523,20 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                     };
                     match self.route(call) {
                         Routed::Answered => {}
+                        Routed::Begin(Method::DrainForUpdate { version, .. }, reply) => {
+                            let by_you = matches!(
+                                &self.inner.borrow().phase,
+                                Phase::Stopped(reason) if reason.code == Reason::BY_YOU
+                            );
+                            self.log.info(&format!(
+                                "A drain for the update to {version} was asked for while the runners are stopped, so the agent ends for it now."
+                            ));
+                            self.exit.set(Some(UPDATE));
+                            *self.update.borrow_mut() = Some(UpdateEnding::new(&version, by_you));
+                            self.set_phase(Phase::Quitting);
+                            self.reply_state(reply);
+                            return Next::Exit;
+                        }
                         Routed::Begin(Method::Build, reply) => return Next::Build(reply),
                         Routed::Begin(_, reply) => return Next::Resume(Some(reply)),
                         Routed::Quit(reply) => {
@@ -537,14 +607,48 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
         let (stop, stop_receiver) = watch::channel(false);
         let mut cycle = Box::pin(self.core_cycle(plan, stop_receiver));
         let mut ticker = ticker();
+        let mut draining: Option<Draining> = None;
         loop {
+            let deadline = draining.as_ref().map(|drain| drain.deadline);
             tokio::select! {
                 biased;
                 () = self.exit_asked() => {
                     self.wind_down(&stop, cycle, requests).await;
                     return self.after_stop(Reason::by_you());
                 }
-                end = &mut cycle => return self.cycle_ended(end),
+                end = &mut cycle => {
+                    if let Some(drain) = &draining {
+                        // nothing runs any more; the retained diagnostic containers are
+                        // finalised as a stop does
+                        self.capture_skips();
+                        let containers = self.backend.running_containers();
+                        self.serve(requests, false, self.container_steps(containers)).await;
+                        return self.end_for_update(&drain.version, false);
+                    }
+                    return self.cycle_ended(end);
+                }
+                () = drain_deadline(deadline) => {
+                    if let Some(drain) = draining.take() {
+                        self.log.warn(&format!(
+                            "The drain for the update to {} reached its bound of {} s, so the remaining runners are stopped.",
+                            drain.version,
+                            self.settings.drain_bound.as_secs()
+                        ));
+                        self.wind_down(&stop, cycle, requests).await;
+                        return self.end_for_update(&drain.version, false);
+                    }
+                }
+                () = requester_closed(&mut draining) => {
+                    if let Some(drain) = draining.take() {
+                        self.log.info(&format!(
+                            "The connection that asked for the drain for the update to {} closed, so the drain is cancelled and the runners register again.",
+                            drain.version
+                        ));
+                        self.inner.borrow_mut().drain = None;
+                        self.drain.send_replace(false);
+                        self.publish();
+                    }
+                }
                 _ = admitted.wait_for(|admitted| *admitted), if resuming => {
                     resuming = false;
                     // the pools are prepared, which removed the stale containers that
@@ -552,7 +656,20 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                     self.left.borrow_mut().clear();
                     self.set_phase(Phase::Running);
                 }
-                _ = ticker.tick() => self.refresh(),
+                _ = ticker.tick() => {
+                    if let Some(drain) = &draining
+                        && self.drain_progress()
+                    {
+                        self.log.info(&format!(
+                            "No runner is busy any more, so the agent ends for the update to {}.",
+                            drain.version
+                        ));
+                        let version = drain.version.clone();
+                        self.wind_down(&stop, cycle, requests).await;
+                        return self.end_for_update(&version, false);
+                    }
+                    self.refresh();
+                }
                 call = requests.recv() => {
                     let Some(call) = call else {
                         self.requests_closed();
@@ -561,11 +678,23 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                     };
                     match self.route(call) {
                         Routed::Answered => {}
-                        Routed::Stop(reply) | Routed::Quit(reply) => {
+                        Routed::Stop(reply) => {
+                            self.wind_down(&stop, cycle, requests).await;
+                            let next = match &draining {
+                                Some(drain) => self.end_for_update(&drain.version, true),
+                                None => self.after_stop(Reason::by_you()),
+                            };
+                            self.reply_state(reply);
+                            return next;
+                        }
+                        Routed::Quit(reply) => {
                             self.wind_down(&stop, cycle, requests).await;
                             let next = self.after_stop(Reason::by_you());
                             self.reply_state(reply);
                             return next;
+                        }
+                        Routed::Begin(Method::DrainForUpdate { version, requester }, reply) => {
+                            draining = Some(self.begin_drain(version, requester, reply));
                         }
                         Routed::Begin(_, reply) => self.reply_state(reply),
                     }
@@ -574,11 +703,78 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
         }
     }
 
+    /// starts a drain for an update to `version` and answers `reply` with it.
+    fn begin_drain(
+        &self,
+        version: String,
+        requester: Option<oneshot::Receiver<()>>,
+        reply: Reply,
+    ) -> Draining {
+        let bound = self.settings.drain_bound;
+        self.log.info(&format!(
+            "Draining for the update to {version}: nothing registers, idle runners are stopped, and busy runners finish their jobs, for at most {} s.",
+            bound.as_secs()
+        ));
+        self.inner.borrow_mut().drain = Some(Drain {
+            version: version.clone(),
+            waiting: self.waited_for(),
+            deadline: SystemTime::now() + bound,
+        });
+        self.drain.send_replace(true);
+        self.publish();
+        let _ = reply.send(Ok(json!({
+            "state": self.phase_name(),
+            "update": self.snapshot().agent.update,
+        })));
+        Draining {
+            version,
+            deadline: Instant::now() + bound,
+            requester,
+        }
+    }
+
+    /// the runners a drain waits for: those running a container that is not idle.
+    fn waited_for(&self) -> u32 {
+        let waited = self
+            .board
+            .slot_rows()
+            .into_iter()
+            .filter(|row| match &row.state {
+                SlotState::Running(name) => self.backend.job_activity(name) != Activity::Idle,
+                _ => false,
+            })
+            .count();
+        u32::try_from(waited).unwrap_or(u32::MAX)
+    }
+
+    /// refreshes the count a drain waits for, and says whether every slot is drained.
+    fn drain_progress(&self) -> bool {
+        let waiting = self.waited_for();
+        if let Some(drain) = self.inner.borrow_mut().drain.as_mut() {
+            drain.waiting = waiting;
+        }
+        self.publish();
+        self.board
+            .slot_rows()
+            .iter()
+            .all(|row| row.state == SlotState::Drained)
+    }
+
+    /// ends the agent for an update to `version`, once its runners have stopped.
+    fn end_for_update(&self, version: &str, stopped_by_you: bool) -> Next {
+        self.inner.borrow_mut().drain = None;
+        if self.exit.get().is_none() {
+            self.exit.set(Some(UPDATE));
+            *self.update.borrow_mut() = Some(UpdateEnding::new(version, stopped_by_you));
+        }
+        self.after_stop(Reason::by_you())
+    }
+
     /// what a core that ended without a stop means for the agent.
     fn cycle_ended(&self, end: CycleEnd) -> Next {
         self.capture_skips();
         let reason = match end {
-            CycleEnd::StopRequested => Reason::by_you(),
+            CycleEnd::StopRequested | CycleEnd::Drained => Reason::by_you(),
             CycleEnd::LimitReached => {
                 self.log.warn(
                     "The runtime core failed too often, so the agent is stopped. \
@@ -725,7 +921,8 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
 
     /// what the agent is doing now decides what a lifecycle method does.
     fn action(&self, method: &Method) -> Action {
-        self.inner.borrow().phase.action(method)
+        let inner = self.inner.borrow();
+        inner.phase.action(method, inner.drain.is_some())
     }
 
     /// the answer to a method that changes nothing.
@@ -745,6 +942,10 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             let failed_at = self.clock.now();
             if *stop.borrow() {
                 return CycleEnd::StopRequested;
+            }
+            let draining = *self.drain.borrow();
+            if draining && matches!(result, Ok(Ok(()))) {
+                return CycleEnd::Drained;
             }
             let failure = match result {
                 Ok(Err(failure)) => failure,
@@ -776,6 +977,11 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             }
             self.log
                 .warn(&format!("The runtime core failed: {message}"));
+            if draining {
+                // a drain starts nothing again
+                self.container_steps(failure.containers).await;
+                return CycleEnd::Drained;
+            }
             let verdict = self.policy.borrow_mut().record_failure(failed_at);
             self.container_steps(failure.containers).await;
             match verdict {
@@ -787,10 +993,20 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                     ));
                     self.inner.borrow_mut().restart_due = Some(failed_at + delay);
                     self.publish();
-                    let stopped = sleep_or_stop(self.clock, &mut stop, delay).await;
+                    let mut drain = self.drain.subscribe();
+                    let drained = tokio::select! {
+                        stopped = sleep_or_stop(self.clock, &mut stop, delay) => {
+                            if stopped {
+                                self.inner.borrow_mut().restart_due = None;
+                                return CycleEnd::StopRequested;
+                            }
+                            false
+                        }
+                        _ = drain.wait_for(|draining| *draining) => true,
+                    };
                     self.inner.borrow_mut().restart_due = None;
-                    if stopped {
-                        return CycleEnd::StopRequested;
+                    if drained {
+                        return CycleEnd::Drained;
                     }
                 }
             }
