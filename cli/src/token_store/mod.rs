@@ -29,15 +29,15 @@ pub struct TokenKey(String);
 
 /// why a text is not a repository key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct NotAKey;
+pub struct NotARepository;
 
-impl fmt::Display for NotAKey {
+impl fmt::Display for NotARepository {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("a repository is written owner/name")
     }
 }
 
-impl std::error::Error for NotAKey {}
+impl std::error::Error for NotARepository {}
 
 /// why a text is not an organization key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,12 +71,12 @@ impl TokenKey {
 
     /// reads `owner/name`, in any case, with the patterns a configuration applies to
     /// each part.
-    pub fn parse(text: &str) -> Result<Self, NotAKey> {
-        let (owner, name) = text.split_once('/').ok_or(NotAKey)?;
+    pub fn parse(text: &str) -> Result<Self, NotARepository> {
+        let (owner, name) = text.split_once('/').ok_or(NotARepository)?;
         if is_owner(owner) && is_repository(name) {
             Ok(Self::of(owner, name))
         } else {
-            Err(NotAKey)
+            Err(NotARepository)
         }
     }
 
@@ -246,7 +246,7 @@ mod tests {
             "o/..",
             "../x",
         ] {
-            assert_eq!(TokenKey::parse(text), Err(NotAKey), "{text:?}");
+            assert_eq!(TokenKey::parse(text), Err(NotARepository), "{text:?}");
         }
     }
 

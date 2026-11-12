@@ -1630,7 +1630,8 @@ units, which keeps it inside the Credential Manager's 2560 bytes.
   `app.axross.marshal:github.com/<org>` for an organization, with the token as
   UTF-16 and with local persistence. The crate's default persistence is the enterprise one, which
   roams with the user's profile, so the store asks for the local one.
-  `tests/token_store_windows.rs` sets, reads and removes a real credential, reads
+  `tests/token_store_windows.rs` sets, reads and removes a real credential of each
+  kind, a repository's and an organization's, checks its name with `cmdkey`, reads
   its persistence back from the store's `persistence` attribute, round-trips a token of 1280 UTF-16 units and
   a non-ASCII, non-BMP one, and sends a `token_set` through an agent whose store is
   the Credential Manager to a registration; only the Windows CI job runs it.

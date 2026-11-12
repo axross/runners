@@ -83,6 +83,43 @@ fn a_token_is_a_local_machine_credential_that_round_trips_and_goes() {
     assert!(!text.contains(FAKE));
 }
 
+#[test]
+fn an_organization_token_is_a_credential_named_for_the_login_that_round_trips_and_goes() {
+    let store = credential_manager().unwrap();
+    let login = format!("Marshal-Test-Org-{}", std::process::id());
+    let key = TokenKey::parse_organization(&login).unwrap();
+    let _cleanup = Cleanup(key.clone());
+    let target = target_name(&key);
+    assert_eq!(
+        target,
+        format!(
+            "app.axross.marshal:github.com/{}",
+            login.to_ascii_lowercase()
+        )
+    );
+
+    assert!(store.get(&key).unwrap().is_none());
+    store.set(&key, &Secret::new(FAKE.to_string())).unwrap();
+    assert_eq!(store.get(&key).unwrap().unwrap().expose(), FAKE);
+    assert_eq!(
+        store
+            .attributes(&key)
+            .unwrap()
+            .get("persistence")
+            .map(String::as_str),
+        Some("Local")
+    );
+    let text = listed(&target);
+    assert!(has_entry(&text, &target), "{text}");
+    assert!(!text.contains(FAKE));
+
+    store.remove(&key).unwrap();
+    assert!(store.get(&key).unwrap().is_none());
+    let text = listed(&target);
+    assert!(!has_entry(&text, &target), "{text}");
+    assert!(text.contains("* NONE *"), "{text}");
+}
+
 /// removes a test credential when the test ends, whether it passed or not.
 struct Cleanup(TokenKey);
 

@@ -217,19 +217,11 @@ mod tests {
             ErrorCode::InvalidRequest
         );
         assert_eq!(
+            code("token_remove", json!({"repository": "owner"})),
+            ErrorCode::InvalidRequest
+        );
+        assert_eq!(
             code("token_set", json!({"repository": "o/r"})),
-            ErrorCode::InvalidRequest
-        );
-    }
-
-    #[test]
-    fn token_set_and_token_remove_refuse_an_organization_key() {
-        assert_eq!(
-            code("token_set", json!({"repository": "Axross", "token": "x"})),
-            ErrorCode::InvalidRequest
-        );
-        assert_eq!(
-            code("token_remove", json!({"repository": "Axross"})),
             ErrorCode::InvalidRequest
         );
     }
