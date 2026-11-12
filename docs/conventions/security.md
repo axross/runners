@@ -111,6 +111,11 @@ fails when the app's lockfile resolves a crate `marshal-cli` builds with to anot
 version than the CLI's. Its `cargo` entry covers the
 app's crates, and the weekly advisory check covers its lockfile. [The App's
 Dependencies](#the-apps-dependencies) holds the rest of its policy.
+`cargo-about`, which writes the app's licence notices, is a mise tool like
+`cargo-deny`: pinned in `mise.toml` and installed as the project's prebuilt
+release, with its download URL and checksum in `mise.lock`, so it needs no compile
+in CI and no exception here. [App](../operations/app.md#licence-notices) describes how
+the notices check holds that version.
 
 The Windows installer's tool is pinned the same way. Besides the Rust toolchain,
 whose exception is recorded below, WiX is the one tool the release build fetches.
@@ -222,7 +227,8 @@ app is built for, `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`.
   either fails the check: `MPL-2.0` for `cssparser`, `cssparser-macros`,
   `dtoa-short`, `selectors` and `option-ext`, and `Zlib` for `foldhash`. `MPL-2.0` is
   copyleft at the level of the file, and the crates are linked unmodified, so the
-  obligation is to keep the licence text and say where the source is published. The exceptions match what `cargo deny` reports, and it
+  obligation is to keep the licence text and say where the source is published, which
+  the licence notices do. The exceptions match what `cargo deny` reports, and it
   reports an exception that no crate uses. Any other crate under another licence
   returns to the maintainer.
 - **Duplicates are reported, not denied.** `deny.toml` sets `multiple-versions` to
@@ -270,7 +276,8 @@ app is built for, `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`.
 - **Refreshes.** Dependabot's `cargo` entry for `/app` proposes the crate refreshes,
   and a red pull request is fixed there, as for the CLI. A refresh of a crate
   `marshal-cli` uses fails `check:app-lock` until `cli/Cargo.lock` takes the same
-  version in the same change.
+  version in the same change. The licence notices must be written again whenever the
+  lockfile changes; see [App](../operations/app.md#licence-notices).
 
 **Front end.** The web view's pages are plain files in
 [`app/crates/app/frontend/`](../../app/crates/app/frontend):
@@ -286,13 +293,13 @@ app is built for, `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`.
   under the SIL Open Font License 1.1.
   [`fonts/README.md`](../../app/crates/app/frontend/fonts/README.md) records the
   release, its source, the archive's SHA-256 and each file's, and the files are kept
-  byte for byte by `.gitattributes`. A change to a font file changes that record in
-  the same commit.
+  byte for byte by `.gitattributes`. A change to a font file changes that record and
+  the licence notices in the same commit.
 - **The colour values are a recorded copy.** The values in `tokens.css` are copied
   from Radix Colors 3.0.0, licensed MIT; the file's header names the package and the
   roles, and the package's notice is `colors-LICENSE.txt` beside it. They are
   copied, not imported, so the package is not a dependency, and a change to them
-  changes the header in the same commit.
+  changes the header and the licence notices in the same commit.
 
 ## `actions/*` Stays on Major Tags
 
@@ -1178,7 +1185,7 @@ the app may do with that reach. [App](../operations/app.md) owns how it works.
   with it.
 - **The WebView2 runtime is the operating system's.** Windows 11 ships it and
   updates it, and the app bundles no copy, so the web view's engine is as current as
-  Windows keeps it.
+  Windows keeps it; the loader the app links is covered by the licence notices.
 
 Residual risks, accepted on a single-user host:
 
@@ -1611,11 +1618,23 @@ environment or supplied at run time. The exceptions are the two default runner l
 and `axmc`, which a host adds when `labels` is absent or empty and which are
 committed by the maintainer's decision: `axpc` names the Windows Docker Desktop
 host and `axmc` the macOS host. Every other host, consumer, or machine value stays
-a parameter. The one further exception is the macOS signing team ID and the exact
+a parameter. A further exception is the macOS signing team ID and the exact
 designated requirement, which a documentation change records in the CLI document
 after the first signed release as the contract text for later work. The team ID is
 public in every signed file, so recording it discloses nothing; it is not an account
 credential.
+
+The checked-in licence notices under `app/notices/` reproduce third-party licence
+texts and copyright notices verbatim, as those licences require, including the names
+and e-mail addresses of the people they name. That text is the one exception to the
+rule against committing personal names, account names and e-mail addresses. It covers
+only verbatim licence and copyright text that `app/notices/generate.sh` produces or
+that the repository's licence copies hold (`app/notices/licences/` and the licence
+files beside the window's bundled fonts and colours). It also covers the published
+repository URL that `generate.sh` writes into the notices for each crate, and a
+reference in `docs/operations/app.md` to a third-party crate's public repository,
+today `wravery/webview2-rs` and `madsmtm/objc2`; an account name, personal name or
+e-mail address of any other kind, or anywhere else, is still a finding.
 
 [`.gitignore`](../../.gitignore) excludes `settings.local.json`, `.env.local`,
 token files, and private keys so that a local working file cannot be committed by
