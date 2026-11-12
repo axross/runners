@@ -157,7 +157,7 @@ ring_part() {
   echo
   echo "The copyright notices in ring's source files, each once:"
   echo
-  grep -rhIE --exclude-dir=tests '^[^A-Za-z]*Copyright (\(c\) )?[0-9]' "$dir" |
+  grep -rhIE --exclude-dir=tests '^[^A-Za-z]*(Portions )?Copyright (\(c\) )?[0-9]' "$dir" |
     sed -E 's/^[^A-Za-z]*//; s/[[:space:]]*(\*\/)?[[:space:]]*$//' | LC_ALL=C sort -u
   echo
   echo "The MIT text of the once_cell polyfill, src/polyfill/once_cell/LICENSE-MIT:"

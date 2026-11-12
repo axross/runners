@@ -384,7 +384,7 @@ under the Apache-2.0 text or under ISC with the licence at the top of each file,
 that code from `once_cell` is under that polyfill's own `LICENSE-APACHE` and
 `LICENSE-MIT`. So `generate.sh` adds a part for ring, from the source Cargo fetched:
 its `LICENSE` in full, every distinct copyright line in its published source outside
-its `tests` folder, sorted, and the polyfill's MIT text.
+its `tests` folder, `Portions Copyright` lines included, sorted, and the polyfill's MIT text.
 
 cargo-about drops a clarification whose checksum no longer matches with only a
 warning, so a bump that changes a clarified file would go unnoticed. `generate.sh`

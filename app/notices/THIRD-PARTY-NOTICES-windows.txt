@@ -5858,6 +5858,10 @@ Copyright 2024 Brian Smith.
 Copyright 2024 The BoringSSL Authors
 Copyright 2024-2025 Brian Smith.
 Copyright 2025 Brian Smith.
+Portions Copyright (c) 2014, 2015, Google Inc.
+Portions Copyright (c) 2014, Google Inc.
+Portions Copyright (c) 2016, Google Inc.
+Portions Copyright 2020-2024 Brian Smith.
 
 The MIT text of the once_cell polyfill, src/polyfill/once_cell/LICENSE-MIT:
 
