@@ -597,6 +597,7 @@ tables and arrays.
   A comment that ends the file stays at its end. In a list written inline over
   several lines, an added entry goes on a line of its own after the last entry, with
   that entry's indentation, and the comment on the last entry's line stays there.
+  An entry added to an empty inline list goes straight after its `[`.
 - A new root table goes before the first `[[pool]]`, so a new `[lifecycle]` reads
   before the pools. When the file writes its pools inline, it goes at the end of the
   file.

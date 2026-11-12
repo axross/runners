@@ -1021,6 +1021,16 @@ pool = [
         added.contains("{ suffix = \"cache\", mount_path = \"/cache\" }, { suffix = \"tools\", mount_path = \"/tools\" }"),
         "{added}"
     );
+    assert_eq!(
+        edited(&[Edit::AddEntry {
+            array: volumes_of(0),
+            values: volume("tools", "/tools"),
+        }]),
+        before.replace(
+            "cpus = 2 }",
+            "cpus = 2, volumes = [{ suffix = \"tools\", mount_path = \"/tools\" }] }"
+        )
+    );
     let removed = edited(&[Edit::RemoveEntry {
         path: path(&[K(Key::Repositories), I(0)]),
     }]);

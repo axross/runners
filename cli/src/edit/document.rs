@@ -177,22 +177,28 @@ fn set(root: &mut Table, path: &KeyPath, value: &Value) -> Result<(), Reason> {
         }
         Some(_) => Err("it holds a table, not a value"),
         None => {
-            // in an inline table the space before the closing brace is the last
-            // member's suffix, so it moves to the new last member.
-            let closing = inline
-                .then(|| {
-                    let last = parent.iter_mut().last()?.1.as_value_mut()?;
-                    let suffix = last.decor().suffix().cloned()?;
-                    last.decor_mut().set_suffix("");
-                    Some(suffix)
-                })
-                .flatten();
-            if let Some(closing) = closing {
-                new.decor_mut().set_suffix(closing);
-            }
-            parent.insert(name, Item::Value(new));
+            insert_member(parent, inline, name, Item::Value(new));
             Ok(())
         }
+    }
+}
+
+/// inserts `name` into `parent`. in an inline table the space before the closing
+/// brace is the last member's suffix, so it moves to the new last member.
+fn insert_member(parent: &mut dyn TableLike, inline: bool, name: &str, item: Item) {
+    let closing = inline
+        .then(|| {
+            let last = parent.iter_mut().last()?.1.as_value_mut()?;
+            let suffix = last.decor().suffix().cloned()?;
+            last.decor_mut().set_suffix("");
+            Some(suffix)
+        })
+        .flatten();
+    parent.insert(name, item);
+    if let Some(closing) = closing
+        && let Some(value) = parent.get_mut(name).and_then(Item::as_value_mut)
+    {
+        value.decor_mut().set_suffix(closing);
     }
 }
 
@@ -298,7 +304,10 @@ fn shift_table(table: &mut Table, first: isize) {
 /// or an inline table in an inline list. a missing list is created.
 fn add_entry(root: &mut Table, array: &KeyPath, values: &[(Key, Value)]) -> Result<(), Reason> {
     let (parent, name) = split_key(array)?;
-    let parent = descend(root, parent)?.table;
+    let Found {
+        table: parent,
+        inline,
+    } = descend(root, parent)?;
     let mut entry = Table::new();
     for (key, value) in values {
         entry.insert(toml_key_name(*key), Item::Value(value.to_toml()));
@@ -310,7 +319,7 @@ fn add_entry(root: &mut Table, array: &KeyPath, values: &[(Key, Value)]) -> Resu
         None => {
             let mut tables = toml_edit::ArrayOfTables::new();
             tables.push(entry);
-            parent.insert(name, Item::ArrayOfTables(tables));
+            insert_member(parent, inline, name, Item::ArrayOfTables(tables));
         }
     }
     Ok(())
