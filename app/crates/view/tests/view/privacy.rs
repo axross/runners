@@ -2,7 +2,9 @@
 //! any view state, whatever the agent was sent. The token-shaped words are built here
 //! from pieces, so no token-shaped literal is in any file.
 
-use marshal_view::{Cause, Connection, Input, NotSaved, TokenResult, TokenUi, Tracker, plain};
+use marshal_view::{
+    Cause, Connection, Input, NotSaved, TokenResult, TokenUi, Tracker, plain, pools_started_by,
+};
 use serde_json::Value;
 
 use crate::support::*;
@@ -117,12 +119,31 @@ fn plain_changes_nothing_but_a_token_shaped_word() {
     );
 }
 
-/// every string of `value` followed by a token-shaped word.
+/// the members whose values are codes the view matches, not text it shows.
+const CODES: [&str; 5] = ["state", "code", "outcome", "export", "kind"];
+
+/// the words the view matches in a text member: a pool skipped for want of a token, and
+/// what the image check found.
+const CODE_WORDS: [&str; 3] = ["no token", "missing", "not checked"];
+
+/// every text of `value` followed by a token-shaped word, and GitHub's message inside a
+/// runner's reason given one too; codes and the image lines' names are left as they are,
+/// so each fixture keeps the state that shows its text.
 fn tainted(value: &mut Value, word: &str) {
     match value {
-        Value::String(text) => text.push_str(&format!(" {word}")),
+        Value::String(text) if !CODE_WORDS.contains(&text.as_str()) => {
+            *text = text.replace("\"message\":\"", &format!("\"message\":\"{word} "));
+            text.push_str(&format!(" {word}"));
+        }
         Value::Array(items) => items.iter_mut().for_each(|item| tainted(item, word)),
-        Value::Object(map) => map.values_mut().for_each(|item| tainted(item, word)),
+        Value::Object(map) => {
+            let image_line = map.contains_key("value");
+            for (key, item) in map.iter_mut() {
+                if !CODES.contains(&key.as_str()) && !(image_line && key == "name") {
+                    tainted(item, word);
+                }
+            }
+        }
         _ => {}
     }
 }
@@ -237,10 +258,12 @@ fn no_token_is_in_any_view_state_whatever_text_the_agent_sends() {
         .map(|(repository, result)| result.announcement(repository))
         .collect();
     let (mut form_error, mut refused_status, mut confirming) = (false, false, false);
+    let (mut rejected, mut started) = (false, Vec::new());
     for name in FIXTURES {
         let mut value = load_json(name);
         tainted(&mut value, &token);
         let snapshot = snapshot_of(value);
+        started.extend(pools_started_by(&snapshot, &key("owner/docs")));
         for connection in connections() {
             let mut tracker = Tracker::new();
             let input = Input::new(connection, Some(&snapshot), now()).tokens(&ui);
@@ -255,6 +278,8 @@ fn no_token_is_in_any_view_state_whatever_text_the_agent_sends() {
                     .as_deref()
                     .is_some_and(|status| status.contains("refused <token>"));
                 confirming |= row.confirming_removal;
+                rejected |= row.state_text.contains("rejected the token")
+                    && row.state_text.contains("<token> Bad credentials");
             }
             for text in [
                 serde_json::to_string(&baseline.view).expect("JSON"),
@@ -274,6 +299,14 @@ fn no_token_is_in_any_view_state_whatever_text_the_agent_sends() {
         "no row showed the agent's refusal as its status"
     );
     assert!(confirming, "no row asked its removal question");
+    assert!(rejected, "no row showed GitHub's rejection message");
+    assert!(
+        !started.is_empty(),
+        "no save would start a pool skipped for want of a token"
+    );
+    for name in &started {
+        assert!(!has_token_shape(name), "{name}");
+    }
 }
 
 #[test]

@@ -1,6 +1,7 @@
 //! the banner that leads the list: what the agent is doing or why it is stopped, in
 //! the words of the boards, with the one action that resolves it.
 
+use marshal_cli::agent::snapshot::WarningKind;
 use serde::Serialize;
 
 use crate::clock::elapsed;
@@ -542,15 +543,11 @@ fn out_of_date(context: &Context<'_>) -> Option<Banner> {
     }
     let image = context.snapshot?.images.first()?;
     let (kind, days) = image.known_warnings().find_map(|(kind, warning)| {
-        matches!(
-            kind,
-            marshal_cli::agent::snapshot::WarningKind::ImageOld
-                | marshal_cli::agent::snapshot::WarningKind::PackagesOld
-        )
-        .then_some((kind, warning.days))
+        matches!(kind, WarningKind::ImageOld | WarningKind::PackagesOld)
+            .then_some((kind, warning.days))
     })?;
     let age = days.map_or_else(String::new, |days| {
-        if kind == marshal_cli::agent::snapshot::WarningKind::PackagesOld {
+        if kind == WarningKind::PackagesOld {
             format!(
                 "the image's operating-system packages are {} old and it should be rebuilt",
                 counted(u32::try_from(days).unwrap_or(u32::MAX), "day", "days")
