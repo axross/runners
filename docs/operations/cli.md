@@ -4817,7 +4817,8 @@ change one value in a file and keep the file's comments. The TOML reader walks t
 `toml_edit` document into the same tree of values the JSON parser makes, so the rule
 set reads one kind of tree, and `toml_edit`'s `serde` feature stays off with the other
 default features. For a syntax error the reader uses only the parser's fixed message
-and its byte span, never its display text, which quotes the file; see
+and a position, from the error's byte span or, for a key of too many dotted parts,
+from `toml_parser`'s events, never its display text, which quotes the file; see
 [TOML Problems](#toml-problems).
 
 Allowed licences are `MIT`, `Apache-2.0`, `Unicode-3.0`, `ISC`, `BSD-3-Clause`, and `0BSD`; a
