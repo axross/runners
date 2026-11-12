@@ -388,10 +388,11 @@ its `tests` folder, `Portions Copyright` lines included, sorted, and the polyfil
 
 cargo-about drops a clarification whose checksum no longer matches with only a
 warning, so a bump that changes a clarified file would go unnoticed. `generate.sh`
-looks for a known copyright line of each clarified crate in the licence texts that
-name it (`Copyright (c) Microsoft Corporation.` for the `windows-rs` crates, Jorge
-Aparicio's for `dpi`, the Tauri Programme's for `tauri-plugin-single-instance` and
-Brian Smith's 2015-2025 line for `ring`), and checks the crate appears under no more
+looks for each clarified crate's known copyright line, held in the script as the
+SHA-256 of the line without its surrounding blanks, among the lines of the licence
+texts that name it (the line of each crate's clarified licence file: one for the
+`windows-rs` crates, and one each for `dpi`, `tauri-plugin-single-instance` and
+`ring`), and checks the crate appears under no more
 texts than its clarification names files. It fails when either does not hold, or
 when `about.toml` clarifies a crate it has no line for, until the clarification
 names the new file.
@@ -410,7 +411,9 @@ Two groups ship no licence file, and `generate.sh` fills in their line itself:
   from (in each crate's `.cargo_vcs_info.json`) names no copyright holder; a later
   licence there, from commit `ee9a7ad`, names one, and applies once a release carries
   it. Their notice is the licence text without the template line, after one sentence
-  saying so.
+  saying so. `generate.sh` lists the eleven name and version pairs checked, so any
+  other version of these crates keeps the template line and fails the run until its
+  licence is checked again.
 
 A crate outside these groups that gets the template line fails the run.
 

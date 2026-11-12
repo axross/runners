@@ -37,15 +37,20 @@ template="Copyright (c) <year> <copyright holders>"
 # prints cargo-about's output $1 with the two groups of crates that ship no licence file
 # given what they have instead of the template line: the webview2-rs crates take the
 # copyright line of the repository's copy of their upstream licence, once the copy's
-# words are the licence cargo-about printed, and the objc2 crates, whose licence at the
-# commits they were published from names no copyright holder, have the licence without
-# the line, after a sentence saying so. Any other crate keeps the template line, which
+# words are the licence cargo-about printed, and the objc2 crates at exactly the versions
+# listed below, whose licence at the commits they were published from names no
+# copyright holder, have the licence without the line, after a sentence saying so. Any other crate keeps the template line, which
 # the run refuses.
 own_copyright_lines() {
   local copy="${here}/licences/webview2-com-sys-LICENSE.txt"
   licence "$copy" >/dev/null
   awk -v template="$template" \
+    -v objc2_versions="block2 0.6.2,dispatch2 0.3.1,objc2 0.6.5,objc2-app-kit 0.3.2,objc2-core-foundation 0.3.2,objc2-core-graphics 0.3.2,objc2-encode 4.1.0,objc2-exception-helper 0.1.1,objc2-foundation 0.3.2,objc2-quartz-core 0.3.2,objc2-web-kit 0.3.2" \
     -v objc2="These crate versions ship no licence file, and the licence in their repository at the commits they were published from names no copyright holder; a later licence there, from commit ee9a7ad, names one." '
+    BEGIN {
+      count = split(objc2_versions, pairs, ",")
+      for (i = 1; i <= count; i++) checked[pairs[i]] = 1
+    }
     function words(text) {
       gsub(/[ \t\r]+/, " ", text)
       sub(/^ /, "", text)
@@ -57,7 +62,7 @@ own_copyright_lines() {
       for (i = 1; i <= n; i++) if (block[i] ~ /^  \* /) {
         split(block[i], f, " ")
         k = f[2] ~ /^webview2-com(-macros|-sys)?$/ ? "webview2" : \
-          (f[5] == "https://github.com/madsmtm/objc2" ? "objc2" : "other")
+          ((f[2] " " f[3]) in checked ? "objc2" : "other")
         kind = (kind == "" || kind == k) ? k : "mixed"
         start = i
       }
@@ -90,28 +95,43 @@ own_copyright_lines() {
 }
 
 # fails the run unless every crate about.toml clarifies, in cargo-about's output $1,
-# has its own copyright line below and appears under no more licence texts than its
-# clarification names files (one, for a choice of licences). cargo-about drops a
+# has its own copyright line, held below as the SHA-256 of the line without its
+# surrounding blanks so this script names no one, and appears under no more licence
+# texts than its clarification names files (one, for a choice of licences). cargo-about drops a
 # clarification whose checksum no longer matches with only a warning, and the crate
 # then falls back to the files it finds, which this notices.
 clarified() {
-  awk '
+  local hashes="${out}/copyright-lines.txt"
+  { grep -h 'Copyright' "$1" || true; } | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' |
+    LC_ALL=C sort -u | while IFS= read -r text; do
+    printf '%s\t%s\n' "$(printf '%s' "$text" | sha256sum | cut -d ' ' -f 1)" "$text"
+  done >"$hashes"
+  awk -v hashes="$hashes" -v about="${here}/about.toml" '
     BEGIN {
-      line["windows"] = "Copyright (c) Microsoft Corporation."
-      line["dpi"] = "Copyright (c) 2018 Jorge Aparicio"
-      line["tauri-plugin-single-instance"] = "Copyright (c) 2017 - Present The Tauri Programme in the Commons Conservancy"
-      line["ring"] = "Copyright 2015-2025 Brian Smith."
+      line["windows"] = "7f7a9f0f246a7dca9c3337dad59f29abc61de9ebbaf8e7a778283007b4f3f6e7"
+      line["dpi"] = "1cee0792a39a8b4052ac78110030989b9374b9ed91d53cfcbc0598e9f8c377b9"
+      line["tauri-plugin-single-instance"] = "279bb0a6b9b8181aedb132d9045bf88de6569341a5222f7585ba26064c82fba4"
+      line["ring"] = "b560151d3861940d7a754b25cb9753400462028037d7a8192bd46f5d3ebb8313"
     }
     function own(crate) { return crate ~ /^windows(-|$)/ ? line["windows"] : line[crate] }
-    function flush(   c, i) {
+    function flush(   c, i, text) {
       for (c in named) {
         texts[c]++
-        for (i = 1; i <= n; i++) if (index(block[i], own(c))) found[c] = 1
+        for (i = 1; i <= n; i++) {
+          text = block[i]
+          gsub(/^[ \t\r]+|[ \t\r]+$/, "", text)
+          if ((text in hash) && hash[text] == own(c)) found[c] = 1
+        }
       }
       delete named
       n = 0
     }
-    FNR == NR {
+    FILENAME == hashes {
+      split($0, pair, "\t")
+      hash[substr($0, length(pair[1]) + 2)] = pair[1]
+      next
+    }
+    FILENAME == about {
       if (match($0, /^\[\[[^.]+\.clarify\.files\]\]$/)) files[substr($0, 3, index($0, ".") - 3)]++
       next
     }
@@ -132,7 +152,7 @@ clarified() {
       }
       exit failed
     }
-  ' "${here}/about.toml" "$1"
+  ' "$hashes" "${here}/about.toml" "$1"
 }
 
 # prints ring's LICENSE in full, then every distinct copyright line in its source as
