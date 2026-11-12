@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # writes, or with `check` compares, the licence notices of the app's executable for the
-# Windows and the macOS tree: what cargo-about finds for every crate the app links, then
-# the files kept in this repository for what is not a crate. cargo-about is the version
+# Windows and the macOS tree: what cargo-about finds for every crate the app links or
+# runs as a procedural macro, ring's licence file and the copyright notices in its
+# source, then the files kept in this repository for what is not a crate. cargo-about is the version
 # mise.toml pins, and its version is in each file, so another version fails the check.
 #
 # usage: generate.sh write | check
@@ -88,6 +89,83 @@ own_copyright_lines() {
   ' "$copy" "$1"
 }
 
+# fails the run unless every crate about.toml clarifies, in cargo-about's output $1,
+# has its own copyright line below and appears under no more licence texts than its
+# clarification names files (one, for a choice of licences). cargo-about drops a
+# clarification whose checksum no longer matches with only a warning, and the crate
+# then falls back to the files it finds, which this notices.
+clarified() {
+  awk '
+    BEGIN {
+      line["windows"] = "Copyright (c) Microsoft Corporation."
+      line["dpi"] = "Copyright (c) 2018 Jorge Aparicio"
+      line["tauri-plugin-single-instance"] = "Copyright (c) 2017 - Present The Tauri Programme in the Commons Conservancy"
+      line["ring"] = "Copyright 2015-2025 Brian Smith."
+    }
+    function own(crate) { return crate ~ /^windows(-|$)/ ? line["windows"] : line[crate] }
+    function flush(   c, i) {
+      for (c in named) {
+        texts[c]++
+        for (i = 1; i <= n; i++) if (index(block[i], own(c))) found[c] = 1
+      }
+      delete named
+      n = 0
+    }
+    FNR == NR {
+      if (match($0, /^\[\[[^.]+\.clarify\.files\]\]$/)) files[substr($0, 3, index($0, ".") - 3)]++
+      next
+    }
+    /^=+$/ && length($0) >= 40 { flush(); next }
+    /^  \* / { split($0, f, " "); if (f[2] in files) named[f[2]] = 1 }
+    { block[++n] = $0 }
+    END {
+      flush()
+      for (c in files) {
+        if (!(c in texts)) continue
+        if (own(c) == "") {
+          print "error: about.toml clarifies " c " but generate.sh names no copyright line of it to look for." > "/dev/stderr"
+          failed = 1
+        } else if (!found[c] || texts[c] > files[c]) {
+          print "error: the clarification of " c " in about.toml did not apply; check its files against their checksums." > "/dev/stderr"
+          failed = 1
+        }
+      }
+      exit failed
+    }
+  ' "${here}/about.toml" "$1"
+}
+
+# prints ring's LICENSE in full, then every distinct copyright line in its source as
+# published, outside its tests, and the MIT text of the once_cell polyfill the LICENSE
+# names, from the source of the ring package in target $1's tree, which must hold one.
+ring_part() {
+  local dir
+  dir="$(cd "$app" && cargo metadata --frozen --format-version 1 \
+    --manifest-path crates/app/Cargo.toml --filter-platform "$1" |
+    jq -r '.packages[] | select(.name == "ring") | .manifest_path | rtrimstr("/Cargo.toml")')"
+  if [[ -z "$dir" || "$dir" == *$'\n'* ]]; then
+    echo "error: the ${1} tree does not hold exactly one ring package; change generate.sh's ring part with it." >&2
+    exit 1
+  fi
+  echo "PART 2. RING'S LICENCE FILE AND THE COPYRIGHT NOTICES IN ITS SOURCE"
+  echo "-------------------------------------------------------------------"
+  echo
+  echo "ring ${dir##*/ring-}, under the ISC and Apache-2.0 texts in part 1. Its LICENSE file says"
+  echo "which code each covers:"
+  echo
+  licence "${dir}/LICENSE"
+  echo
+  echo "The copyright notices in ring's source files, each once:"
+  echo
+  grep -rhIE --exclude-dir=tests '^[^A-Za-z]*Copyright (\(c\) )?[0-9]' "$dir" |
+    sed -E 's/^[^A-Za-z]*//; s/[[:space:]]*(\*\/)?[[:space:]]*$//' | LC_ALL=C sort -u
+  echo
+  echo "The MIT text of the once_cell polyfill, src/polyfill/once_cell/LICENSE-MIT:"
+  echo
+  licence "${dir}/src/polyfill/once_cell/LICENSE-MIT"
+  echo
+}
+
 # one file for each tree: the crates differ, and so does what a tree links that is
 # not a crate. $1 is the file's name, $2 the target, $3 the name of the platform.
 notices() {
@@ -96,6 +174,7 @@ notices() {
   (cd "$app" && cargo about generate --frozen --fail \
     --config notices/about.toml --manifest-path crates/app/Cargo.toml \
     --target "$target" --output-file "$crates" notices/notices.hbs)
+  clarified "$crates"
   own_copyright_lines "$crates" >"${crates}.own"
   mv "${crates}.own" "$crates"
   {
@@ -109,7 +188,8 @@ notices() {
     echo
     cat "$crates"
     echo
-    echo "PART 2. IBM PLEX SANS, THE FONT BUNDLED FOR MARSHAL'S WINDOW PAGES"
+    ring_part "$target"
+    echo "PART 3. IBM PLEX SANS, THE FONT BUNDLED FOR MARSHAL'S WINDOW PAGES"
     echo "------------------------------------------------------------------"
     echo
     echo "IBM Plex Sans 1.1.0, by IBM Corp., in the files IBMPlexSans-Regular.woff2,"
@@ -118,7 +198,7 @@ notices() {
     echo
     licence "${frontend}/fonts/LICENSE.txt"
     echo
-    echo "PART 3. RADIX COLORS, THE COLOUR VALUES OF MARSHAL'S WINDOW PAGES"
+    echo "PART 4. RADIX COLORS, THE COLOUR VALUES OF MARSHAL'S WINDOW PAGES"
     echo "-----------------------------------------------------------------"
     echo
     echo "@radix-ui/colors 3.0.0, by Radix, whose values the window's stylesheet copies."
@@ -127,7 +207,7 @@ notices() {
     licence "${frontend}/colors-LICENSE.txt"
     if [[ "$platform" == "Windows" ]]; then
       echo
-      echo "PART 4. THE WEBVIEW2 LOADER"
+      echo "PART 5. THE WEBVIEW2 LOADER"
       echo "---------------------------"
       echo
       echo "The crate webview2-com-sys, whose MIT notice is the first text below, links"

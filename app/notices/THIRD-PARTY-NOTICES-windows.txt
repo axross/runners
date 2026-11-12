@@ -5760,7 +5760,124 @@ the following restrictions:
 3. This notice may not be removed or altered from any source distribution.
 
 
-PART 2. IBM PLEX SANS, THE FONT BUNDLED FOR MARSHAL'S WINDOW PAGES
+PART 2. RING'S LICENCE FILE AND THE COPYRIGHT NOTICES IN ITS SOURCE
+-------------------------------------------------------------------
+
+ring 0.17.14, under the ISC and Apache-2.0 texts in part 1. Its LICENSE file says
+which code each covers:
+
+*ring* uses an "ISC" license, like BoringSSL used to use, for new code
+files. See LICENSE-other-bits for the text of that license.
+
+See LICENSE-BoringSSL for code that was sourced from BoringSSL under the
+Apache 2.0 license. Some code that was sourced from BoringSSL under the ISC
+license. In each case, the license info is at the top of the file.
+
+See src/polyfill/once_cell/LICENSE-APACHE and src/polyfill/once_cell/LICENSE-MIT
+for the license to code that was sourced from the once_cell project.
+
+The copyright notices in ring's source files, each once:
+
+Copyright (c) 2002, Oracle and/or its affiliates. All rights reserved.
+Copyright (c) 2009 The Go Authors. All rights reserved.
+Copyright (c) 2014, Google Inc.
+Copyright (c) 2014, Intel Corporation.
+Copyright (c) 2014, Intel Corporation. All Rights Reserved.
+Copyright (c) 2015 CloudFlare, Inc.
+Copyright (c) 2015, CloudFlare Ltd.
+Copyright (c) 2015, Google Inc.
+Copyright (c) 2015, Intel Inc.
+Copyright (c) 2019, Google Inc.
+Copyright (c) 2020, CloudFlare Ltd.
+Copyright (c) 2022, ARM Inc.
+Copyright 1995-2016 The OpenSSL Project Authors. All Rights Reserved.
+Copyright 1995-2018 The OpenSSL Project Authors. All Rights Reserved.
+Copyright 1999-2016 The OpenSSL Project Authors. All Rights Reserved.
+Copyright 1999-2018 The OpenSSL Project Authors. All Rights Reserved.
+Copyright 2001-2016 The OpenSSL Project Authors. All Rights Reserved.
+Copyright 2002-2016 The OpenSSL Project Authors. All Rights Reserved.
+Copyright 2005-2016 The OpenSSL Project Authors. All Rights Reserved.
+Copyright 2007-2016 The OpenSSL Project Authors. All Rights Reserved.
+Copyright 2009-2016 The OpenSSL Project Authors. All Rights Reserved.
+Copyright 2010-2016 The OpenSSL Project Authors. All Rights Reserved.
+Copyright 2010-2018 The OpenSSL Project Authors. All Rights Reserved.
+Copyright 2011-2016 The OpenSSL Project Authors. All Rights Reserved.
+Copyright 2012-2016 The OpenSSL Project Authors. All Rights Reserved.
+Copyright 2013-2016 The OpenSSL Project Authors. All Rights Reserved.
+Copyright 2014 The BoringSSL Authors
+Copyright 2014-2016 The OpenSSL Project Authors. All Rights Reserved.
+Copyright 2014-2020 The OpenSSL Project Authors. All Rights Reserved.
+Copyright 2015 Brian Smith.
+Copyright 2015 The BoringSSL Authors
+Copyright 2015 The Chromium Authors. All rights reserved.
+Copyright 2015-2016 Brian Smith.
+Copyright 2015-2016 The OpenSSL Project Authors. All Rights Reserved.
+Copyright 2015-2017 Brian Smith.
+Copyright 2015-2019 Brian Smith.
+Copyright 2015-2020 The OpenSSL Project Authors. All Rights Reserved.
+Copyright 2015-2020 the fiat-crypto authors (see the AUTHORS file)
+Copyright 2015-2021 Brian Smith.
+Copyright 2015-2022 Brian Smith.
+Copyright 2015-2023 Brian Smith.
+Copyright 2015-2024 Brian Smith.
+Copyright 2015-2025 Brian Smith.
+Copyright 2016 Brian Smith.
+Copyright 2016 David Judd.
+Copyright 2016 Simon Sapin.
+Copyright 2016 The OpenSSL Project Authors. All Rights Reserved.
+Copyright 2016-2017 Brian Smith.
+Copyright 2016-2019 Brian Smith.
+Copyright 2016-2021 Brian Smith.
+Copyright 2016-2023 Brian Smith.
+Copyright 2016-2024 Brian Smith.
+Copyright 2016-2025 Brian Smith.
+Copyright 2017 Brian Smith.
+Copyright 2017-2023 Brian Smith.
+Copyright 2017-2025 Brian Smith.
+Copyright 2018 Brian Smith.
+Copyright 2018 Trent Clarke.
+Copyright 2018-2024 Brian Smith.
+Copyright 2018-2025 Brian Smith.
+Copyright 2019-2024 Brian Smith.
+Copyright 2019-2025 Brian Smith.
+Copyright 2020 Brian Smith.
+Copyright 2020 The BoringSSL Authors
+Copyright 2021 Brian Smith.
+Copyright 2022 Brian Smith.
+Copyright 2023 Brian Smith.
+Copyright 2023 The BoringSSL Authors
+Copyright 2024 Brian Smith.
+Copyright 2024 The BoringSSL Authors
+Copyright 2024-2025 Brian Smith.
+Copyright 2025 Brian Smith.
+
+The MIT text of the once_cell polyfill, src/polyfill/once_cell/LICENSE-MIT:
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHOR OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+PART 3. IBM PLEX SANS, THE FONT BUNDLED FOR MARSHAL'S WINDOW PAGES
 ------------------------------------------------------------------
 
 IBM Plex Sans 1.1.0, by IBM Corp., in the files IBMPlexSans-Regular.woff2,
@@ -5861,7 +5978,7 @@ DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
 
-PART 3. RADIX COLORS, THE COLOUR VALUES OF MARSHAL'S WINDOW PAGES
+PART 4. RADIX COLORS, THE COLOUR VALUES OF MARSHAL'S WINDOW PAGES
 -----------------------------------------------------------------
 
 @radix-ui/colors 3.0.0, by Radix, whose values the window's stylesheet copies.
@@ -5889,7 +6006,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-PART 4. THE WEBVIEW2 LOADER
+PART 5. THE WEBVIEW2 LOADER
 ---------------------------
 
 The crate webview2-com-sys, whose MIT notice is the first text below, links

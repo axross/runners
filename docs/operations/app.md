@@ -338,15 +338,16 @@ The Windows installer will install a notices file, so the notices are checked in
 for, `THIRD-PARTY-NOTICES-windows.txt` for `x86_64-pc-windows-msvc` and
 `THIRD-PARTY-NOTICES-macos.txt` for `aarch64-apple-darwin`, and what writes them:
 
-| File or folder              | Holds                                                                                                                                           |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `generate.sh`               | `write` or `check`: runs `cargo about generate --frozen --fail` for each tree, fills in the copyright lines below, then appends the files below |
-| `about.toml`, `notices.hbs` | cargo-about's accepted licences, which are `deny.toml`'s allowlist and its two exceptions, and its template                                     |
-| `licences/`                 | The WebView2 loader's licence and the `webview2-rs` crates' licence, for the Windows file only                                                  |
+| File or folder              | Holds                                                                                                                                                                                                |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `generate.sh`               | `write` or `check`: runs `cargo about generate --frozen --fail` for each tree, checks its clarifications applied, fills in the copyright lines below, adds ring's part, then appends the files below |
+| `about.toml`, `notices.hbs` | cargo-about's accepted licences, which are `deny.toml`'s allowlist and its two exceptions, and its template                                                                                          |
+| `licences/`                 | The WebView2 loader's licence and the `webview2-rs` crates' licence, for the Windows file only                                                                                                       |
 
-Each file lists every crate the executable links, grouped by licence, with each
-MPL-2.0 crate's published source named; then IBM Plex Sans, Radix Colors and, for
-Windows, the WebView2 loader. `mise run check:notices` regenerates both files and
+Each file lists every crate the executable links, and every procedural macro run
+while it compiles, grouped by licence, with each MPL-2.0 crate's published source
+named; then ring's part below, IBM Plex Sans, Radix Colors and, for Windows, the
+WebView2 loader. `mise run check:notices` regenerates both files and
 fails on any difference from the checked-in ones, so a lockfile change that adds,
 drops or bumps a crate fails the Check job until `mise run notices:app` writes them
 again and the change commits them. Each file's header names the cargo-about version,
@@ -361,11 +362,25 @@ ships no licence file gets the licence's standard text with its template line
 `notices:app` fail on it. cargo-about also prints the line for some crates whose
 licence file it does not read the copyright line from; `about.toml` clarifies those,
 the `windows-rs` crates, `dpi` and `tauri-plugin-single-instance`, naming each
-crate's own licence files with their SHA-256. It clarifies `ring` the same way, since
-its `LICENSE` only points to its two licence files and cargo-about would otherwise
-list the licence header of each source file. A bump that changes such a file no
-longer matches its checksum, the template line comes back and the run fails until the
-clarification names the new file.
+crate's own licence files with their SHA-256. It clarifies `ring` the same way, to its
+`LICENSE-other-bits` (ISC) and `LICENSE-BoringSSL` (Apache-2.0), since cargo-about
+would otherwise list each of its source files' licence headers as a text of its own.
+ring's `LICENSE` says its new code is under the ISC text, that code from BoringSSL is
+under the Apache-2.0 text or under ISC with the licence at the top of each file, and
+that code from `once_cell` is under that polyfill's own `LICENSE-APACHE` and
+`LICENSE-MIT`. So `generate.sh` adds a part for ring, from the source Cargo fetched:
+its `LICENSE` in full, every distinct copyright line in its published source outside
+its `tests` folder, sorted, and the polyfill's MIT text.
+
+cargo-about drops a clarification whose checksum no longer matches with only a
+warning, so a bump that changes a clarified file would go unnoticed. `generate.sh`
+looks for a known copyright line of each clarified crate in the licence texts that
+name it (`Copyright (c) Microsoft Corporation.` for the `windows-rs` crates, Jorge
+Aparicio's for `dpi`, the Tauri Programme's for `tauri-plugin-single-instance` and
+Brian Smith's 2015-2025 line for `ring`), and checks the crate appears under no more
+texts than its clarification names files. It fails when either does not hold, or
+when `about.toml` clarifies a crate it has no line for, until the clarification
+names the new file.
 
 Two groups ship no licence file, and `generate.sh` fills in their line itself:
 
