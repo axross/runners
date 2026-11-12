@@ -56,8 +56,13 @@ own, and the agent is started with `DETACHED_PROCESS` (see Launch), which leaves
 no console. It has no console for its children to inherit, so each `docker` client it
 starts and the exporter child get `CREATE_NO_WINDOW`, set by the library's two command
 builders and asserted by a unit test at each; the agent's own flags are recorded
-and asserted by a unit test too; their standard streams and process
-groups are unchanged, and what a terminal run does with the flag on Windows is confirmed by the Windows CI tests and on axpc (see [CLI](./cli.md#running-a-host)). Whether a
+and asserted by a unit test too. Their process groups are unchanged. Most clients
+have piped or closed standard streams, but in terminal mode `marshal build`'s
+`docker build` inherits the CLI's standard output and standard error, and the
+exporter child inherits its standard error. What a terminal run does with the flag on
+Windows, including whether a terminal `marshal build` still streams its output, is to
+be confirmed by the Windows CI tests and the axpc run (see
+[CLI](./cli.md#running-a-host)). Whether a
 window still appears is shown only on axpc. Only the app mode takes Tauri's single-instance lock, so a second
 launch brings the first one's window forward and starts nothing. The agent mode is
 kept to one by the machine-wide lock the library's agent takes, as `start` is, so
@@ -106,7 +111,8 @@ web view.
   fresh launch starts the agent running its pools, because the launch is the user's
   own action. The restart after a dropped connection starts it stopped when the last
   state the app heard was "stopped by you", and running otherwise. It never starts
-  an agent from a file that is missing or no longer the file the app started from.
+  an agent from a file that is missing, that it could not read when it started, or
+  that is no longer the file the app started from.
 - **A dropped connection** that is not a quit keeps the last list, marked with its
   time, under a lost-contact banner. The app starts the agent again once and then
   offers Try Again.
@@ -282,8 +288,8 @@ lighter than the near-black set because white on a dark ground looks heavier.
 
 To change a glyph, edit the text in both files and run `mise run test:app`. The
 tests in `app/crates/tray/tests/glyphs.rs` fail on a missing or malformed block, an
-edge pixel, a mostly blank image or two states that differ by fewer than 16 whole
-pixels at 16 px, which is how the five states stay apart. The app polls the
+edge pixel, a mostly blank image or two states whose white glyphs differ in fewer
+than 12 whole pixels at any size, which is how the five states stay apart. The app polls the
 taskbar's mode and the primary display's scaling once a second and replaces the
 icon's image only when one changes. An unreadable or absent mode counts as dark, and
 is logged once. A change is put on the icon from the event loop's thread, which reads
@@ -455,7 +461,9 @@ does not take a build for a host that has run it:
   build only in debug, for the test variables above.
 - **Not shown by any check:** that no console window appears from the agent, the
   exporter or their `docker` clients (the flags are asserted at the command builders,
-  and the window is not observable without `unsafe`), WebView2 itself, a Windows contrast
+  and the window is not observable without `unsafe`), that a terminal `marshal build`
+  on Windows still streams `docker build`'s output with `CREATE_NO_WINDOW`, which is
+  checked on axpc, WebView2 itself, a Windows contrast
   theme, the icon on a real taskbar and its weight at 16 px, the menu opening from the
   keyboard and where its focus goes, the icon following a mode or a scaling change
   within 2 s, a token round trip through the Credential Manager to a registration,

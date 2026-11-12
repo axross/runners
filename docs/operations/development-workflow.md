@@ -285,10 +285,9 @@ installs `tauri-cli` with `cargo install --locked` at the version in
 `app/tauri-cli.version`, the one place that pin is set, lints and tests every crate,
 runs `cargo tauri build --no-bundle`, fails if the build changed a tracked file or
 left a file that is neither tracked nor ignored, and keeps the built
-`marshal-app.exe` as the run's artifact. It uses no cache, so `tauri-cli` compiles
-on every run, and its timeout is 45 minutes, twice the 20 min 37 s the whole job took on
-[#95](https://github.com/axross/runners/pull/95)'s green run, rounded up to whole 5
-minutes.
+`marshal-app.exe` as the run's artifact. Neither job uses a cache action, so
+`tauri-cli` compiles on every run, and the `app` job's timeout is 45 minutes;
+[App](./app.md#building-the-app) records how it was set.
 The workflow also builds the
 runner image for linux/arm64 on the hosted `ubuntu-24.04-arm` runner, in a job of its
 own that builds and never pushes and runs no smoke test, since those assume x86_64

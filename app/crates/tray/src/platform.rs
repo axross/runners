@@ -34,7 +34,7 @@ mod windows {
             .ok()?;
         // Windows stores the bias, minutes to add to local time to get UTC, as a signed
         // value in a DWORD
-        Some(-bias.cast_signed())
+        bias.cast_signed().checked_neg()
     }
 }
 

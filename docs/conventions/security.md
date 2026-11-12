@@ -157,7 +157,8 @@ component's hash against that manifest, but it does not verify the manifest's
 signature, so the trust rests on the HTTPS connection to the Rust project's
 distribution server. Recording the manifest's hash here would need a refresh for
 every release without adding a signature check. A step that installs the toolchain
-`cli/rust-toolchain.toml` names through `rustup` is this recorded exception.
+`cli/rust-toolchain.toml` or `app/rust-toolchain.toml` names through `rustup` is this
+recorded exception.
 
 The second is the Node that `actions/setup-node` installs in `release.yaml`, at the
 exact version in `mise.toml`. It takes Node from the runner's tool cache or from
@@ -1108,8 +1109,8 @@ the app may do with that reach. [App](../operations/app.md) owns how it works.
   for the CLI under [One Instance per Machine](#one-instance-per-machine-reached-only-by-its-user).
 - **The app starts its agent from a file it checked.** It starts it from its own
   executable's absolute path as a plain detached child, never through Tauri's shell
-  plugin, and never from a file that is missing or is no longer the file the app
-  started from. The agent ends within 5 s of the file it started from being moved,
+  plugin, and never from a file that is missing, that it could not read when it
+  started, or that is no longer the file the app started from. The agent ends within 5 s of the file it started from being moved,
   renamed, replaced or deleted, with the reason `executable_changed`, and the app ends
   with it.
 - **The WebView2 runtime is the operating system's.** Windows 11 ships it and
