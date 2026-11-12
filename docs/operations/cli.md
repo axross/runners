@@ -1630,7 +1630,8 @@ A runner is busy once its container's output has carried a line that reads
 `Listening for Jobs` and not `Running job:`. A runner whose output has carried
 neither line is waited for, as if busy. Both streams count, a mark never clears, and
 no other line, such as `Runner reconnected.`, changes it. Only the fixed text is
-compared: a job's name is never kept, shown or forwarded.
+compared: the drain keeps no job name and puts none in the snapshot or a protocol
+message; the line itself reaches the log, as all runner output does.
 
 | When                                                     | Result                                                                                                          |
 | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |

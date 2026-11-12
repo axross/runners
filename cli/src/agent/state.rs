@@ -217,7 +217,7 @@ mod tests {
         }
     }
 
-    /// W4's drain table in `docs/operations/cli.md`: a drain begins from running or
+    /// the table of The Update Drain in `docs/operations/cli.md`: a drain begins from running or
     /// stopped and is refused elsewhere, and while one is under way start all, build
     /// and another drain are refused while stop all and quit are taken.
     #[test]
