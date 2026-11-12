@@ -81,11 +81,14 @@ fn each_file_holds_one_block_for_every_state_and_size() {
 }
 
 #[test]
-fn the_five_states_differ_by_shape_at_every_size_and_clearly_at_16_px() {
-    for size in SIZES {
+fn the_five_states_differ_by_shape_at_every_size_in_both_colours() {
+    for (colour, size) in COLOURS
+        .into_iter()
+        .flat_map(|colour| SIZES.into_iter().map(move |size| (colour, size)))
+    {
         let shapes: Vec<Vec<u8>> = STATES
             .iter()
-            .map(|state| alpha(*state, GlyphColour::White, size))
+            .map(|state| alpha(*state, colour, size))
             .collect();
         let mut closest = usize::MAX;
         for (i, a) in shapes.iter().enumerate() {
@@ -102,7 +105,7 @@ fn the_five_states_differ_by_shape_at_every_size_and_clearly_at_16_px() {
         // notification area, so the closest pair must differ in whole pixels.
         assert!(
             closest >= 12,
-            "the closest pair at {size} px differs in {closest}"
+            "the closest {colour:?} pair at {size} px differs in {closest}"
         );
     }
 }

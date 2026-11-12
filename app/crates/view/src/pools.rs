@@ -8,7 +8,7 @@ use crate::control::Control;
 use crate::diagnostics::{Diagnostics, section};
 use crate::state::{Context, Resident};
 use crate::text::{humanised, plain};
-use crate::tokens::pool_note;
+use crate::tokens::{Repository, pool_note, repositories};
 
 /// the mark that goes with a state's words; the state is always written out too.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -105,8 +105,7 @@ fn runner_row(context: &Context<'_>, pool: &PoolInfo, runner: &RunnerInfo) -> Ru
         RunnerState::Stopped => ("Stopped".to_string(), Mark::Stop),
         RunnerState::Unknown(word) => (
             runner
-                .reason
-                .as_deref()
+                .unknown_state_text()
                 .map_or_else(|| humanised(&plain(&word)), plain),
             Mark::Unknown,
         ),
@@ -130,7 +129,7 @@ fn runner_row(context: &Context<'_>, pool: &PoolInfo, runner: &RunnerInfo) -> Ru
     }
 }
 
-fn card(context: &Context<'_>, pool: &PoolInfo) -> PoolCard {
+fn card(context: &Context<'_>, repositories: &[Repository], pool: &PoolInfo) -> PoolCard {
     let (state, mark) = pool_state(pool);
     let diagnostics = section(pool);
     let count = format!("{} of {} up", pool.runners_up, pool.slots);
@@ -147,7 +146,7 @@ fn card(context: &Context<'_>, pool: &PoolInfo) -> PoolCard {
     let mut line = vec![state.clone(), count.clone()];
     line.extend(tags.iter().cloned());
     line.extend(from.iter().cloned());
-    let (note, pill) = match pool_note(context, pool) {
+    let (note, pill) = match pool_note(context, repositories, pool) {
         Some((text, pill)) => (Some(text), Some(pill)),
         None => (pool.reason.as_deref().map(plain), None),
     };
@@ -180,9 +179,10 @@ fn card(context: &Context<'_>, pool: &PoolInfo) -> PoolCard {
 
 /// every pool of the snapshot, in the agent's order.
 pub fn cards(context: &Context<'_>) -> Vec<PoolCard> {
+    let repositories = repositories(context);
     context
         .pools
         .iter()
-        .map(|pool| card(context, pool))
+        .map(|pool| card(context, &repositories, pool))
         .collect()
 }

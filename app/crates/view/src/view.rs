@@ -162,19 +162,12 @@ fn header(
     banners: &[Banner],
     tokens: &TokensTab,
 ) -> Header {
-    let banner_builds = banners.iter().any(|banner| {
-        banner
-            .action
-            .as_ref()
-            .is_some_and(|action| action.action == Action::BuildImage && action.available)
+    let banner_leads = banners.iter().any(|banner| {
+        banner.action.as_ref().is_some_and(|action| {
+            action.available && matches!(action.action, Action::BuildImage | Action::TryAgain)
+        })
     });
-    let try_again_leads = banners.iter().any(|banner| {
-        banner
-            .action
-            .as_ref()
-            .is_some_and(|action| action.action == Action::TryAgain && action.available)
-    });
-    let start_look = if banner_builds || try_again_leads {
+    let start_look = if banner_leads {
         Look::Neutral
     } else {
         Look::Solid

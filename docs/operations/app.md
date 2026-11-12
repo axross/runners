@@ -60,9 +60,9 @@ and asserted by a unit test too. Their process groups are unchanged. Most client
 have piped or closed standard streams, but in terminal mode `marshal build`'s
 `docker build` inherits the CLI's standard output and standard error, and the
 exporter child inherits its standard error. What a terminal run does with the flag on
-Windows, including whether a terminal `marshal build` still streams its output, is to
-be confirmed by the Windows CI tests and the axpc run (see
-[CLI](./cli.md#running-a-host)). Whether a
+Windows, including whether a terminal `marshal build` still streams its output, is
+shown only by the axpc run: the Windows CI tests record the flags or run the CLI with
+piped output (see [CLI](./cli.md#running-a-host)). Whether a
 window still appears is shown only on axpc. Only the app mode takes Tauri's single-instance lock, so a second
 launch brings the first one's window forward and starts nothing. The agent mode is
 kept to one by the machine-wide lock the library's agent takes, as `start` is, so
@@ -157,7 +157,9 @@ error text or view.
 The agent writes its log where `start` does, `%LOCALAPPDATA%\marshal\logs\`, in files
 named `marshal-<time>-<pid>.log`, continued in a new file at 10 MiB with the newest
 ten kept. The app writes to the same folder under its own name, `app-<time>-<pid>.log`,
-with the same limits. Each side prunes only its own files, so neither takes the
+with the same limits. A log that cannot write stops and drops its lines for 30 s
+before it tries a new file, as the agent's does, so a full disk does not replace the
+kept files with empty ones. Each side prunes only its own files, so neither takes the
 other's place, and a test shows it. A second launch of the app writes no file, because
 the single-instance plugin ends it before the log opens. Every line passes through the
 view crate's `plain`, which also replaces a word shaped like a GitHub token, though
@@ -232,8 +234,9 @@ operating system dependency; the page only draws the view it is given and sets e
 string through `textContent`.
 
 A runner row writes its state out beside a mark: "Container running" with a check,
-"Registering" with a ring, "Backing off" and "Held" with the history mark, and
-"Stopped" with a square. A backing-off or held runner shows the agent's reason under
+"Saving diagnostics" with a check while the runner's diagnostic container is
+finalising, "Registering" with a ring, "Backing off" and "Held" with the history mark,
+and "Stopped" with a square. A backing-off or held runner shows the agent's reason under
 its state, and a held one is a runner whose job host a host prerequisite refuses, so
 its reason says which. A state the app does not know shows the runner's own reason as
 its words, with a dash, or the state's word when there is no reason, as the version
@@ -289,8 +292,8 @@ lighter than the near-black set because white on a dark ground looks heavier.
 
 To change a glyph, edit the text in both files and run `mise run test:app`. The
 tests in `app/crates/tray/tests/glyphs.rs` fail on a missing or malformed block, an
-edge pixel, a mostly blank image or two states whose white glyphs differ in fewer
-than 12 whole pixels at any size, which is how the five states stay apart. The app polls the
+edge pixel, a mostly blank image or two states whose glyphs of one colour differ in
+fewer than 12 whole pixels at any size, which is how the five states stay apart. The app polls the
 taskbar's mode and the primary display's scaling once a second and replaces the
 icon's image only when one changes. An unreadable or absent mode counts as dark, and
 is logged once. A change is put on the icon from the event loop's thread, which reads

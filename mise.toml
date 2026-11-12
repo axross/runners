@@ -113,7 +113,7 @@ dir = "app"
 run = "cargo test --locked --package marshal-modes --package marshal-view --package marshal-session --package marshal-tray"
 
 [tasks."test:app-frontend"]
-description = "Run the main window page's own tests with Node, which check the order it draws views in"
+description = "Run the main window page's own tests with Node, which check the order it draws views in and that it clears a typed token"
 run = "node --test app/crates/app/tests/frontend/*.test.mjs"
 
 [tasks."deny:app"]
