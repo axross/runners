@@ -8,3 +8,6 @@ that signed nothing. No release key is here; the private keys were not kept.
 
 They were made once with Python's `cryptography` package (Ed25519) and `hashlib`'s
 BLAKE2b-512, following the minisign format.
+
+`.gitattributes` keeps these files byte for byte, since a checkout that changed line
+endings would change the signed bytes.
