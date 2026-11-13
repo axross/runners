@@ -14,8 +14,8 @@ use std::time::{Duration, Instant};
 use marshal_app::state::{AppState, Asking, Latest};
 use marshal_app::{HIDDEN_EVENT, commands, on_window_event, opener};
 use marshal_session::{
-    Act, Connected, Dial, DialError, Failure, Launcher, Link, Log, Method, NoUpdates, Present,
-    Pushed, Seams, Session, Shown, Then, WallClock,
+    Act, AgentInfo, Connected, Dial, DialError, Failure, Launcher, Link, Log, Method, NoUpdates,
+    Present, Pushed, Seams, Session, Shown, Then, WallClock,
 };
 use marshal_view::Confirmation;
 use serde_json::json;
@@ -456,6 +456,9 @@ impl Link for Watched {
     async fn renew_github(&self) -> Result<(), Failure> {
         Ok(())
     }
+    async fn drain_for_update(&self, _version: &str) -> Result<Option<u32>, Failure> {
+        Ok(None)
+    }
 }
 
 impl Drop for Watched {
@@ -485,6 +488,7 @@ impl Dial for Answers {
                 github: AtomicBool::new(false),
             },
             pushes,
+            agent: AgentInfo::default(),
         })
     }
 }
@@ -510,6 +514,12 @@ fn showing_the_main_window_opens_the_github_subscription_and_hiding_it_ends_it()
         present: Arc::new(Quiet),
         time: Arc::new(WallClock::new(|| 0)),
         log: Arc::new(Quiet),
+        version: "test".to_string(),
+        agent_version: "test".to_string(),
+        updater: None,
+        processes: Arc::new(NoUpdates),
+        record: Arc::new(NoUpdates),
+        launch: marshal_cli::agent::Launch::Running,
     });
     tauri::async_runtime::spawn(async move {
         session.run().await;
