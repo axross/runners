@@ -8,6 +8,7 @@ use serde::Serialize;
 use crate::clock::elapsed;
 use crate::confirm::confirmation;
 use crate::control::{Action, Control, Look, control};
+use crate::host::HostWords;
 use crate::input::Cause;
 use crate::state::{Context, ImageStatus, Resident, Stop};
 use crate::text::{LOG_FOLDER, counted, plain};
@@ -145,7 +146,7 @@ fn build_started(context: &Context<'_>) -> u64 {
 fn stopped_by_you(context: &Context<'_>) -> Banner {
     let mut lines = Vec::new();
     if built_just_before_the_stop(context, "ready") {
-        lines.push("The runner image is ready.".to_string());
+        lines.push(format!("The {} is ready.", context.input.words.image));
     }
     let not_started_at_launch = context
         .snapshot
@@ -167,7 +168,7 @@ fn stopped_by_you(context: &Context<'_>) -> Banner {
             .collect();
         if !names.is_empty() {
             heading.push_str("; ");
-            heading.push_str(&left_headline(names.len()));
+            heading.push_str(&left_headline(names.len(), &context.input.words));
             lines.insert(0, left_line(&names));
         }
     }
@@ -195,11 +196,11 @@ pub fn built_just_before_the_stop(context: &Context<'_>, outcome: &str) -> bool 
         && matches!(context.resident, Resident::Stopped(Stop::ByYou))
 }
 
-fn left_headline(count: usize) -> String {
+fn left_headline(count: usize, words: &HostWords) -> String {
     if count == 1 {
-        "a container could not be removed".to_string()
+        format!("a {} could not be removed", words.workload)
     } else {
-        "some containers could not be removed".to_string()
+        format!("some {} could not be removed", words.workloads)
     }
 }
 
@@ -227,7 +228,7 @@ fn leftover_banner(context: &Context<'_>) -> Option<Banner> {
         .iter()
         .map(|left| left.name.as_str())
         .collect();
-    let heading = crate::text::capitalised(&left_headline(names.len()));
+    let heading = crate::text::capitalised(&left_headline(names.len(), &context.input.words));
     Some(banner(
         BannerKind::ContainerLeft,
         Tone::Warning,
@@ -299,11 +300,12 @@ fn stopped(context: &Context<'_>, stop: &Stop) -> Banner {
             )
         }
         Stop::ImageUnusable => {
-            let heading = "Stopped: the runner image cannot run jobs";
+            let image = context.input.words.image;
+            let heading = &format!("Stopped: the {image} cannot run jobs");
             let lead = agent_words(message);
             let lines = vec![
                 lead.clone(),
-                "Build the runner image, then choose Start All.".to_string(),
+                format!("Build the {image}, then choose Start All."),
             ];
             with_action(
                 banner(
@@ -396,7 +398,7 @@ fn stopped(context: &Context<'_>, stop: &Stop) -> Banner {
 }
 
 fn build_failed(context: &Context<'_>) -> Banner {
-    let heading = "The image build failed";
+    let heading = &format!("The {} build failed", context.input.words.image_short);
     let build = context
         .snapshot
         .and_then(|snapshot| snapshot.agent.build.as_ref());
@@ -410,7 +412,10 @@ fn build_failed(context: &Context<'_>) -> Banner {
     if let Some(message) = build.and_then(|build| build.message.as_deref()) {
         lines.push(plain(message));
     }
-    lines.push(format!("Docker's output is in the log in {LOG_FOLDER}."));
+    lines.push(format!(
+        "{}'s output is in the log in {LOG_FOLDER}.",
+        context.input.words.engine
+    ));
     let lead = lines.first().cloned().unwrap_or_default();
     with_action(
         banner(
@@ -438,16 +443,17 @@ fn building(context: &Context<'_>, stopping: bool) -> Banner {
             Some(stop_build_control(context)),
         );
     }
-    let heading = "Building the runner image";
+    let heading = &format!("Building the {}", context.input.words.image);
     let so_far = format!(
-        "{} so far. Docker's output goes to the log in {LOG_FOLDER}.",
+        "{} so far. {}'s output goes to the log in {LOG_FOLDER}.",
         elapsed(
             context
                 .input
                 .clock
                 .now_ms
                 .saturating_sub(build_started(context))
-        )
+        ),
+        context.input.words.engine
     );
     let line = match &context.image_name {
         Some(name) => format!("{name} · {so_far}"),
@@ -565,8 +571,8 @@ fn running(context: &Context<'_>) -> Option<Banner> {
         ));
     }
     if context.waiting_for_docker() {
-        let heading = "Waiting for Docker";
-        let line = "Start Docker Desktop. Marshal checks every 5 s.";
+        let heading = context.input.words.waiting;
+        let line = context.input.words.start_engine;
         return Some(banner(
             BannerKind::WaitingForDocker,
             Tone::Warning,
@@ -580,9 +586,14 @@ fn running(context: &Context<'_>) -> Option<Banner> {
         let lines = if context.image.is_unusable() {
             let contract = crate::footer::contract(context).unwrap_or_default();
             vec![
-                format!("Runner image: {contract}."),
-                "The image was replaced outside Marshal. Stop the runners, then choose Build Image."
-                    .to_string(),
+                format!(
+                    "{}: {contract}.",
+                    crate::text::capitalised(context.input.words.image)
+                ),
+                format!(
+                    "The {} was replaced outside Marshal. Stop the runners, then choose Build Image.",
+                    context.input.words.image_short
+                ),
             ]
         } else {
             vec!["Each runner's reason is on its row below.".to_string()]
@@ -612,17 +623,19 @@ fn out_of_date(context: &Context<'_>) -> Option<Banner> {
     let age = days.map_or_else(String::new, |days| {
         if kind == WarningKind::PackagesOld {
             format!(
-                "the image's operating-system packages are {} old and it should be rebuilt",
+                "the {}'s operating-system packages are {} old and it should be rebuilt",
+                context.input.words.image_short,
                 counted(u32::try_from(days).unwrap_or(u32::MAX), "day", "days")
             )
         } else {
             format!(
-                "the image is {} old and should be rebuilt",
+                "the {} is {} old and should be rebuilt",
+                context.input.words.image_short,
                 counted(u32::try_from(days).unwrap_or(u32::MAX), "day", "days")
             )
         }
     });
-    let heading = "The runner image is out of date";
+    let heading = &format!("The {} is out of date", context.input.words.image);
     let mut lines = Vec::new();
     if !age.is_empty() {
         lines.push(age);
@@ -685,6 +698,10 @@ fn no_tokens(context: &Context<'_>) -> Option<Banner> {
 
 fn truncated(context: &Context<'_>) -> Option<Banner> {
     let omitted = &context.snapshot?.omitted;
+    let words = &context.input.words;
+    let leftover = format!("leftover {}", words.workload);
+    let leftovers = format!("leftover {}", words.workloads);
+    let images = format!("{}s", words.image_short);
     let parts: Vec<String> = [
         (omitted.runners, "runner", "runners"),
         (omitted.pools, "pool", "pools"),
@@ -694,12 +711,8 @@ fn truncated(context: &Context<'_>) -> Option<Banner> {
             "configuration problems",
         ),
         (omitted.repositories, "repository", "repositories"),
-        (
-            omitted.leftovers,
-            "leftover container",
-            "leftover containers",
-        ),
-        (omitted.images, "image", "images"),
+        (omitted.leftovers, leftover.as_str(), leftovers.as_str()),
+        (omitted.images, words.image_short, images.as_str()),
     ]
     .into_iter()
     .filter(|(count, _, _)| *count > 0)

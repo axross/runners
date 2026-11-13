@@ -4,6 +4,7 @@
 
 use serde::Serialize;
 
+use crate::host::HostWords;
 use crate::state::{Context, Resident};
 
 /// what a control does. Token actions name the repository, `owner/name` in lower case.
@@ -97,11 +98,11 @@ fn not_in_control(resident: &Resident) -> Option<&'static str> {
     }
 }
 
-fn while_building(stopping: bool) -> &'static str {
+fn while_building(stopping: bool, words: &HostWords) -> String {
     if stopping {
-        "the build is stopping."
+        "the build is stopping.".to_string()
     } else {
-        "the runner image is being built."
+        format!("the {} is being built.", words.image)
     }
 }
 
@@ -161,7 +162,9 @@ fn agent_action(context: &Context<'_>, action: &Action) -> Availability {
                 Availability::yes()
             }
         }
-        (Resident::Building { stopping }, _) => Availability::no(while_building(*stopping)),
+        (Resident::Building { stopping }, _) => {
+            Availability::no(&while_building(*stopping, &context.input.words))
+        }
         (_, Action::StopBuild) => Availability::no("no build is running."),
         _ => Availability::no("the agent is not in a state that allows it."),
     }

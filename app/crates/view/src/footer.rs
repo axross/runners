@@ -8,10 +8,9 @@ use marshal_cli::agent::snapshot::{
 use serde::Serialize;
 
 use crate::banner::built_just_before_the_stop;
+use crate::host::HostWords;
 use crate::state::Context;
 use crate::text::{MIGRATE_ON_NEXT_START, plain};
-
-const NOTE: &str = "Closing this window keeps Marshal running in the notification area.";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Footer {
@@ -47,11 +46,15 @@ fn contract_text(value: &str) -> String {
     }
 }
 
-fn image_line(index: usize, image: &ImageInfo) -> String {
+fn image_line(index: usize, image: &ImageInfo, words: &HostWords) -> String {
     let label = if index == 0 {
-        "Runner image".to_string()
+        crate::text::capitalised(words.image)
     } else {
-        format!("Image {}", plain(&image.name))
+        format!(
+            "{} {}",
+            crate::text::capitalised(words.image_short),
+            plain(&image.name)
+        )
     };
     let known = ["image", "image-contract", "image-built", "runner"];
     let Some(contract) = value(&image.lines, "image-contract") else {
@@ -97,21 +100,22 @@ fn version(warning: &ImageWarning) -> String {
 }
 
 /// a freshness warning in the words of the boards, which name no command.
-fn warning(kind: &WarningKind, warning: &ImageWarning) -> Option<String> {
+fn warning(kind: &WarningKind, warning: &ImageWarning, words: &HostWords) -> Option<String> {
+    let image = words.image_short;
     Some(match kind {
         WarningKind::NotBuiltByMarshal => {
-            "Warning: the image was not built by Marshal, so its build age is unknown.".to_string()
+            format!("Warning: the {image} was not built by Marshal, so its build age is unknown.")
         }
         WarningKind::PackagesOld => format!(
-            "Warning: the image's operating-system packages are {} days old; build the image again.",
+            "Warning: the {image}'s operating-system packages are {} days old; build the {image} again.",
             days(warning)
         ),
         WarningKind::ImageOld => format!(
-            "Warning: the image is {} days old and should be rebuilt.",
+            "Warning: the {image} is {} days old and should be rebuilt.",
             days(warning)
         ),
         WarningKind::RunnerOld => format!(
-            "Warning: {} was released {} days ago, so each job's runner likely updates itself at start; update Marshal to get a newer runner, then build the image again.",
+            "Warning: {} was released {} days ago, so each job's runner likely updates itself at start; update Marshal to get a newer runner, then build the {image} again.",
             version(warning),
             days(warning)
         ),
@@ -208,26 +212,29 @@ pub fn footer(context: &Context<'_>) -> Footer {
         .map(|snapshot| snapshot.images.as_slice())
         .unwrap_or_default();
     let image_lines = if images.is_empty() {
-        vec!["Runner image: not checked".to_string()]
+        vec![format!(
+            "{}: not checked",
+            crate::text::capitalised(context.input.words.image)
+        )]
     } else {
         images
             .iter()
             .enumerate()
-            .map(|(index, image)| image_line(index, image))
+            .map(|(index, image)| image_line(index, image, &context.input.words))
             .collect()
     };
     let mut warnings: Vec<String> = images
         .iter()
         .flat_map(|image| image.warnings.iter())
-        .filter_map(|each| warning(&each.kind(), each))
+        .filter_map(|each| warning(&each.kind(), each, &context.input.words))
         .collect();
     warnings.extend(configuration_warnings(context));
     if built_just_before_the_stop(context, "cancelled") {
         warnings.push(format!(
             "The build was stopped. Check {}: a stopped build may already have replaced it.",
             context.image_name.as_deref().map_or_else(
-                || "the runner image".to_string(),
-                |name| format!("the image {name}")
+                || format!("the {}", context.input.words.image),
+                |name| format!("the {} {name}", context.input.words.image_short)
             )
         ));
     }
@@ -236,6 +243,6 @@ pub fn footer(context: &Context<'_>) -> Footer {
         image_lines,
         warnings,
         configuration: configuration_line(context),
-        note: NOTE.to_string(),
+        note: context.input.words.close_note.to_string(),
     }
 }

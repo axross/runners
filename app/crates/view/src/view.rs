@@ -96,8 +96,6 @@ pub struct View {
     pub github_level: Option<String>,
 }
 
-const LOCK_HELD: &str = "Another Marshal process holds the runner lock, and Marshal cannot tell which: one that is starting or ending, an older version, or another Windows user's. Marshal checks again every 5 s. If it stays, look in Task Manager for marshal.exe or marshal-app.exe, or sign the other user out.";
-
 fn full_window(context: &Context<'_>) -> FullWindow {
     let try_again = || control(context, Action::TryAgain, "Try Again", Look::Solid, None);
     let (heading, lines, action): (&str, Vec<String>, Option<Control>) = match &context.resident {
@@ -124,12 +122,15 @@ fn full_window(context: &Context<'_>) -> FullWindow {
             vec![
                 "Marshal's agent did not answer within 5 s, and its runners may still be running."
                     .to_string(),
-                "End marshal-app.exe in Task Manager, then open Marshal again; the next start removes the containers it left."
-                    .to_string(),
+                context.input.words.end_stuck_agent.to_string(),
             ],
             Some(try_again()),
         ),
-        Resident::LockHeld => ("Another Marshal is running", vec![LOCK_HELD.to_string()], None),
+        Resident::LockHeld => (
+            "Another Marshal is running",
+            vec![context.input.words.lock_held.to_string()],
+            None,
+        ),
         Resident::OutsideApplications => (
             "Move Marshal to Applications",
             vec![
@@ -137,7 +138,13 @@ fn full_window(context: &Context<'_>) -> FullWindow {
                 "Quit this copy, move Marshal to the Applications folder, and open it from there."
                     .to_string(),
             ],
-            Some(control(context, Action::Quit, "Quit Marshal", Look::Solid, None)),
+            Some(control(
+                context,
+                Action::Quit,
+                "Quit Marshal",
+                Look::Solid,
+                None,
+            )),
         ),
         Resident::Quitting => (
             "Quitting Marshal",
