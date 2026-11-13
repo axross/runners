@@ -25,15 +25,15 @@ Until it merges, `marshal` is still built and released, axpc still runs its pool
 with it, and this document describes an app that is built in CI and run from a
 build, not one a host has installed.
 
-| Part                                                 | State                                                                                |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| The app, its menu and its main window                | Built by the Windows job of `merge-checks.yaml`; its build is kept as a run artifact |
-| The agent's resident mode and protocol version 2     | In the `marshal-cli` library, served by the app's executable in its agent mode       |
-| The token store                                      | The Windows Credential Manager, entered in the main window                           |
-| The installer, the release, the install layout below | Planned for W1's installer pull request (pull request 3)                             |
-| Updates                                              | The app's side; the feed and its key come with W4's last pull request                |
-| The command line's removal                           | Planned for the same pull request                                                    |
-| Verification on axpc                                 | Not done; see [Verification Status](#verification-status)                            |
+| Part                                                 | State                                                                                     |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| The app, its menu and its main window                | Built by the Windows job of `merge-checks.yaml`; its build is kept as a run artifact      |
+| The agent's resident mode and protocol version 2     | In the `marshal-cli` library, served by the app's executable in its agent mode            |
+| The token store                                      | The Windows Credential Manager, entered in the main window                                |
+| The installer, the release, the install layout below | Planned for W1's installer pull request (pull request 3)                                  |
+| Updates                                              | The app's side, with the committed public key; the feed comes with W4's last pull request |
+| The command line's removal                           | Planned for the same pull request                                                         |
+| Verification on axpc                                 | Not done; see [Verification Status](#verification-status)                                 |
 
 ## The Executable and Its Modes
 

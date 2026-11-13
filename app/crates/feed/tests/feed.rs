@@ -326,8 +326,8 @@ fn the_updater_is_configured_as_the_plan_says_with_no_dangerous_option() {
         marshal_feed::committed_public_key().ok().as_deref(),
         updater["pubkey"].as_str()
     );
-    // the maintainer's update-feed key, minisign key ID 6F39E3131E21E1E4, as posted on
-    // the plan's issue; a replaced key strands every installed copy
+    // the maintainer's update-feed key, minisign key ID 6F39E3131E21E1E4; a replaced key
+    // strands every installed copy
     assert_eq!(
         updater["pubkey"],
         "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZGMzlFMzEzMUUyMUUxRTQKUldUazRTRWVFK001Yjl3MllpMWlKbzhpUGsyRTd3YW1NY04xTEl4RStZVDlYN25nMEtPbUhhZ3UK"
