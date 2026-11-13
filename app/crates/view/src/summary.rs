@@ -108,7 +108,11 @@ fn phrase(context: &Context<'_>) -> String {
 /// waits for instead.
 fn since_line(context: &Context<'_>) -> String {
     if let Some(updating) = updating(context) {
-        return capitalised(&updating);
+        return format!(
+            "{}{}",
+            capitalised(&updating),
+            github::running_jobs_phrase(context)
+        );
     }
     let clock = &context.input.clock;
     let since = |word: &str| format!("{word} since {}", clock.when_with_day(context.since_ms));
