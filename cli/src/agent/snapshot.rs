@@ -111,6 +111,27 @@ pub struct ConfigurationInfo {
     /// the migration of `config.json` to the file, absent when none applies.
     #[serde(default)]
     pub migration: Option<MigrationInfo>,
+    /// the latest apply of an edit, absent until the first since the agent started.
+    #[serde(default)]
+    pub last_apply: Option<ApplyInfo>,
+}
+
+/// an apply of an edit of the configuration, and how it ended.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct ApplyInfo {
+    /// the revision of the file the edit wrote.
+    #[serde(default)]
+    pub revision: String,
+    /// when it started, in milliseconds since the Unix epoch.
+    #[serde(default)]
+    pub at: u64,
+    /// `applying`, `applied`, `abandoned` (by Stop all or Quit) or `failed`.
+    #[serde(default)]
+    pub outcome: String,
+    /// why it failed; plain text.
+    #[serde(default)]
+    pub reason: Option<String>,
 }
 
 /// where the configuration the agent runs came from, and when it was read.

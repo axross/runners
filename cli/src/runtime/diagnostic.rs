@@ -335,10 +335,22 @@ pub async fn container_steps<B: Backend>(
     clock: StopClock,
     kill_budget: Duration,
 ) {
+    container_steps_where(backend, log, clock, kill_budget, |_| true).await;
+}
+
+/// the diagnostic column of [`container_steps`] for the retained containers `keep`
+/// accepts only, for a stop of some slots while the others run.
+pub async fn container_steps_where<B: Backend>(
+    backend: &B,
+    log: &dyn Log,
+    clock: StopClock,
+    kill_budget: Duration,
+    keep: impl Fn(&str) -> bool,
+) {
     let retained = backend.retained();
     let mut forced = retained.forced();
     let steps = async {
-        let (claims, held) = retained.claim_free();
+        let (claims, held) = retained.claim_free_where(&keep);
         let finalizing = finalize_claimed(backend, log, claims, clock);
         let waiting = join_all(
             held.iter()
@@ -355,7 +367,8 @@ pub async fn container_steps<B: Backend>(
     if !interrupted && !*forced.borrow() {
         return;
     }
-    let names = retained.names();
+    let mut names = retained.names();
+    names.retain(|name| keep(name));
     if names.is_empty() {
         return;
     }

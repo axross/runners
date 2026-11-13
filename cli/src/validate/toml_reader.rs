@@ -36,18 +36,32 @@ impl<'a> TomlReader<'a> {
     /// the place the segments name, and whether all of them were found; when not, the
     /// deepest place that was.
     fn find(&self, segments: &[Segment]) -> (&'a Spot, bool) {
-        let mut spot = self.root;
-        for segment in segments {
-            let next = match segment {
-                Segment::Key(key) => spot.member(key_name(*key)),
-                Segment::Index(index) => spot.items.get(*index),
-            };
-            match next {
-                Some(next) => spot = next,
-                None => return (spot, false),
-            }
+        find(self.root, segments)
+    }
+}
+
+fn find<'a>(root: &'a Spot, segments: &[Segment]) -> (&'a Spot, bool) {
+    let mut spot = root;
+    for segment in segments {
+        let next = match segment {
+            Segment::Key(key) => spot.member(key_name(*key)),
+            Segment::Index(index) => spot.items.get(*index),
+        };
+        match next {
+            Some(next) => spot = next,
+            None => return (spot, false),
         }
-        (spot, true)
+    }
+    (spot, true)
+}
+
+/// the line, counted from 1, where the TOML bytes hold the key the path names; `None`
+/// when they are not a TOML document or do not hold it.
+pub(crate) fn key_line(bytes: &[u8], path: &KeyPath) -> Option<usize> {
+    let layout = super::toml_document::read(bytes).ok()?;
+    match find(&layout.root, path.segments()) {
+        (spot, true) => Some(spot.line),
+        _ => None,
     }
 }
 

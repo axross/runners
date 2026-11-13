@@ -256,6 +256,21 @@ async fn during_a_drain_starts_are_refused_and_stop_all_ends_it_stopped_by_you()
             for method in ["start_all", "build"] {
                 assert_eq!(conn.code(method, json!(null)).await, "refused", "{method}");
             }
+            let before = std::fs::read(rig.root.path().join("config.toml")).unwrap();
+            let edit = json!({
+                "revision": "any",
+                "edits": [{"op": "set", "path": "pool[0].runners", "value": 2}],
+            });
+            assert_eq!(conn.code("config_edit", edit).await, "refused");
+            assert_eq!(
+                conn.code("config_reload", json!({ "revision": "any" }))
+                    .await,
+                "refused"
+            );
+            assert_eq!(
+                std::fs::read(rig.root.path().join("config.toml")).unwrap(),
+                before
+            );
             assert_eq!(
                 conn.code("drain_for_update", json!({ "version": "1.5.0" }))
                     .await,

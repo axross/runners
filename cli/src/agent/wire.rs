@@ -6,6 +6,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
+use super::config::Problem;
 use super::snapshot::Snapshot;
 use crate::github_status::GithubStatus;
 
@@ -22,7 +23,7 @@ pub const MAX_CLIENT_MESSAGE_BYTES: usize = 16 * 1024;
 pub const MAX_AGENT_MESSAGE_BYTES: usize = 64 * 1024;
 
 /// the methods `welcome` lists; `renew` keeps a `github` subscription alive.
-pub const METHODS: [&str; 10] = [
+pub const METHODS: [&str; 13] = [
     "status",
     "subscribe",
     "start_all",
@@ -33,6 +34,9 @@ pub const METHODS: [&str; 10] = [
     "token_remove",
     "drain_for_update",
     "renew",
+    "config_read",
+    "config_edit",
+    "config_reload",
 ];
 
 /// the `ending` reason of an agent that ends for an update.
@@ -93,6 +97,26 @@ pub enum ErrorCode {
     /// a `renew` for a subscription the connection does not hold, such as one that
     /// ended for want of renewal.
     NotSubscribed,
+    /// the file no longer holds the revision the request names.
+    ConfigChanged,
+    /// the result breaks the rules; the error lists the problems.
+    ConfigInvalid,
+    /// the file cannot be parsed, is missing or unreadable, or a migration failed or is
+    /// pending.
+    ConfigUnusable,
+    /// the file could not be replaced.
+    ConfigUnwritable,
+    /// an edit touches `schema_version` or `lifecycle`.
+    ConfigRefused,
+    /// the file is written in a form only the user can change, such as an inline
+    /// table over several lines.
+    ConfigFileForm,
+    /// an edit is being applied.
+    ConfigApplying,
+    /// the runtime core waits to restart after a failure.
+    RuntimeRestarting,
+    /// the image a change names is missing or unusable.
+    ImageUnusable,
 }
 
 impl ErrorCode {
@@ -108,6 +132,15 @@ impl ErrorCode {
             Self::StoreFailed => "store_failed",
             Self::Refused => "refused",
             Self::NotSubscribed => "not_subscribed",
+            Self::ConfigChanged => "config_changed",
+            Self::ConfigInvalid => "config_invalid",
+            Self::ConfigUnusable => "config_unusable",
+            Self::ConfigUnwritable => "config_unwritable",
+            Self::ConfigRefused => "config_refused",
+            Self::ConfigFileForm => "config_file_form",
+            Self::ConfigApplying => "config_applying",
+            Self::RuntimeRestarting => "runtime_restarting",
+            Self::ImageUnusable => "image_unusable",
         }
     }
 }
@@ -119,12 +152,16 @@ pub struct ErrorBody {
     pub code: String,
     pub message: String,
     /// the versions the agent serves, in `unsupported_protocol`.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub versions: Vec<u32>,
+    #[serde(default, skip_serializing_if = "<[u32]>::is_empty")]
+    pub versions: Box<[u32]>,
     /// what a `store_failed` adds: the kind of the store's failure and its platform
     /// code.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub store: Option<StoreFault>,
+    /// what a `config_invalid` lists, each with its TOML key path and line when it has
+    /// them; a problem never quotes the file.
+    #[serde(default, skip_serializing_if = "<[Problem]>::is_empty")]
+    pub problems: Box<[Problem]>,
 }
 
 /// a token store failure as it travels; the kind is an open set (`needs_user`,
@@ -143,15 +180,16 @@ impl ErrorBody {
         Self {
             code: code.as_str().to_string(),
             message: message.to_string(),
-            versions: Vec::new(),
+            versions: Box::default(),
             store: None,
+            problems: Box::default(),
         }
     }
 
     #[must_use]
     pub fn unsupported_protocol() -> Self {
         Self {
-            versions: SUPPORTED_VERSIONS.to_vec(),
+            versions: SUPPORTED_VERSIONS.into(),
             ..Self::new(
                 ErrorCode::UnsupportedProtocol,
                 "this agent speaks protocol version 2; send a hello message first",
@@ -452,7 +490,7 @@ mod tests {
     fn the_unsupported_protocol_error_lists_the_versions() {
         let error = ErrorBody::unsupported_protocol();
         assert_eq!(error.code, "unsupported_protocol");
-        assert_eq!(error.versions, [2]);
+        assert_eq!(*error.versions, [2]);
     }
 
     #[test]

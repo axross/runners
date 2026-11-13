@@ -73,6 +73,9 @@ async fn welcome_lists_the_version_the_methods_and_the_topics() {
                 "token_remove",
                 "drain_for_update",
                 "renew",
+                "config_read",
+                "config_edit",
+                "config_reload",
             ] {
                 assert!(methods.contains(&method), "{method} is not served");
             }

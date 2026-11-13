@@ -7,6 +7,7 @@
 pub mod api;
 pub mod builder;
 pub mod channel;
+pub mod config;
 mod core;
 pub mod executable;
 pub mod log;

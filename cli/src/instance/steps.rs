@@ -65,6 +65,27 @@ async fn release_hosts<B: Backend>(steps: &Steps<'_, B>) {
     diagnostic::join_all(releases).await;
 }
 
+/// stops and removes `containers`, and finalises the retained diagnostic containers
+/// `keep` accepts on their own clock, for a stop of some slots while the others run:
+/// the other diagnostic containers and every host are left alone.
+pub async fn some_container_steps<B: Backend>(
+    steps: &Steps<'_, B>,
+    containers: Vec<String>,
+    keep: impl Fn(&str) -> bool,
+) {
+    let start = tokio::time::Instant::now();
+    tokio::join!(
+        ordinary_steps(steps, containers),
+        diagnostic::container_steps_where(
+            steps.backend,
+            steps.log,
+            StopClock::at(start).shortened_by(steps.times.diagnostic_shortening()),
+            steps.times.remove_budget,
+            keep,
+        )
+    );
+}
+
 /// stops the containers in one call, and removes whatever remains in another; a
 /// forced removal abandons the stop or skips it, and a failed removal is remembered
 /// until the process ends.
