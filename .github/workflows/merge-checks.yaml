@@ -180,7 +180,7 @@ jobs:
           cargo install tauri-cli --version "=${version}" --locked --root "${RUNNER_TEMP}/tauri-cli"
           echo "${RUNNER_TEMP}/tauri-cli/bin" >> "$GITHUB_PATH"
       - name: Lint With Clippy
-        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets --features marshal-app/fake-engine -- -D warnings
       # the process tests need the fake docker client, which only this feature builds
       - name: Run Tests
         run: cargo test --locked --workspace --features marshal-app/fake-engine --no-fail-fast
@@ -203,6 +203,91 @@ jobs:
         with:
           name: marshal-app-windows
           path: app/target/release/marshal-app.exe
+          retention-days: 14
+          if-no-files-found: error
+          overwrite: true
+
+  # the app's whole workspace on macOS, and the Mac app M2 adds: its tests, the
+  # unsigned Marshal.app at bundle version 0.0.0, and an unsigned disk image of it with
+  # the layout docs/operations/app.md gives, both kept for the Mac run. `tauri-cli` is
+  # installed as in the Windows job, from source at the pin with --locked; nothing is
+  # signed, notarized or published here. no cache action, for the reason the rust job
+  # gives.
+  app-macos:
+    name: Build App On macOS
+    runs-on: macos-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+        working-directory: app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install Pinned Rust Toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: Install tauri-cli At The Pin
+        run: |
+          version="$(bash ../.github/scripts/tauri-cli-version.sh)"
+          cargo install tauri-cli --version "=${version}" --locked --root "${RUNNER_TEMP}/tauri-cli"
+          echo "${RUNNER_TEMP}/tauri-cli/bin" >> "$GITHUB_PATH"
+      - name: Lint With Clippy
+        run: cargo clippy --locked --workspace --all-targets --features marshal-app/fake-engine -- -D warnings
+      # the process tests need the fake docker client, which only this feature builds
+      - name: Run Tests
+        run: cargo test --locked --workspace --features marshal-app/fake-engine --no-fail-fast
+      # a debug build lets a test run Marshal from anywhere; this builds the location
+      # rule's tests in the release profile with the variable set, so the test that a
+      # release build ignores it fails if it does not.
+      - name: Test That A Release Build Ignores The Location Variable
+        env:
+          MARSHAL_EXPECT_RELEASE: "1"
+          MARSHAL_TEST_ANY_LOCATION: "1"
+        run: cargo test --locked --release --package marshal-session --lib location
+      # 0.0.0 is the bundle version a dry run gets, since 0.0.0-dev is not a valid one
+      - name: Build The Mac App
+        working-directory: app/crates/app
+        run: cargo tauri build --bundles app --config '{"version":"0.0.0"}'
+      - name: Fail If The Build Changed A Tracked File
+        run: |
+          git diff --exit-code
+          untracked="$(git ls-files --others --exclude-standard --full-name -- :/)"
+          if [[ -n "$untracked" ]]; then
+            echo "error: the build left files that are neither tracked nor ignored:" >&2
+            echo "$untracked" >&2
+            exit 1
+          fi
+      - name: Check The Bundle's Layout
+        run: |
+          app=target/release/bundle/macos/Marshal.app
+          plist="${app}/Contents/Info.plist"
+          [[ "$(ls "${app}/Contents/MacOS")" == marshal-app ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")" == app.axross.marshal ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist")" == 0.0.0 ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$plist")" == 26.0 ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :LSUIElement' "$plist")" == true ]]
+          test -f "${app}/Contents/Resources/icon.icns"
+          test -f "${app}/Contents/Resources/THIRD-PARTY-NOTICES.txt"
+      # an artifact keeps no file modes, so the app goes in a ditto archive, which does
+      - name: Make The Unsigned Disk Image And App Archive
+        run: |
+          /usr/bin/ditto -c -k --keepParent target/release/bundle/macos/Marshal.app \
+            "${RUNNER_TEMP}/marshal-0.0.0-macos-arm64-app.zip"
+          stage="${RUNNER_TEMP}/marshal-dmg"
+          mkdir -p "$stage"
+          /usr/bin/ditto target/release/bundle/macos/Marshal.app "${stage}/Marshal.app"
+          /bin/ln -s /Applications "${stage}/Applications"
+          /usr/bin/hdiutil create -volname Marshal -srcfolder "$stage" -format UDZO -ov \
+            "${RUNNER_TEMP}/marshal-0.0.0-macos-arm64.dmg"
+      - name: Keep The Built App And Disk Image
+        uses: actions/upload-artifact@v7
+        with:
+          name: marshal-app-macos
+          path: |
+            ${{ runner.temp }}/marshal-0.0.0-macos-arm64-app.zip
+            ${{ runner.temp }}/marshal-0.0.0-macos-arm64.dmg
           retention-days: 14
           if-no-files-found: error
           overwrite: true
