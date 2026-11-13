@@ -25,14 +25,15 @@ Until it merges, `marshal` is still built and released, axpc still runs its pool
 with it, and this document describes an app that is built in CI and run from a
 build, not one a host has installed.
 
-| Part                                                 | State                                                                                |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| The app, its menu and its main window                | Built by the Windows job of `merge-checks.yaml`; its build is kept as a run artifact |
-| The agent's resident mode and protocol version 2     | In the `marshal-cli` library, served by the app's executable in its agent mode       |
-| The token store                                      | The Windows Credential Manager, entered in the main window                           |
-| The installer, the release, the install layout below | Planned for W1's installer pull request (pull request 3)                             |
-| The command line's removal                           | Planned for the same pull request                                                    |
-| Verification on axpc                                 | Not done; see [Verification Status](#verification-status)                            |
+| Part                                                 | State                                                                                     |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| The app, its menu and its main window                | Built by the Windows job of `merge-checks.yaml`; its build is kept as a run artifact      |
+| The agent's resident mode and protocol version 2     | In the `marshal-cli` library, served by the app's executable in its agent mode            |
+| The token store                                      | The Windows Credential Manager, entered in the main window                                |
+| The installer, the release, the install layout below | Planned for W1's installer pull request (pull request 3)                                  |
+| Updates                                              | The app's side, with the committed public key; the feed comes with W4's last pull request |
+| The command line's removal                           | Planned for W1's installer pull request                                                   |
+| Verification on axpc                                 | Not done; see [Verification Status](#verification-status)                                 |
 
 ## The Executable and Its Modes
 
@@ -378,8 +379,8 @@ ships no licence file gets the licence's standard text with its template line
 `generate.sh` refuses output with either placeholder, so `check:notices` and
 `notices:app` fail on it. cargo-about also prints the line for some crates whose
 licence file it does not read the copyright line from; `about.toml` clarifies those,
-the `windows-rs` crates, `dpi`, `tauri-plugin-single-instance` and
-`tauri-plugin-opener`, naming each
+the `windows-rs` crates, `dpi`, `tauri-plugin-single-instance`,
+`tauri-plugin-opener`, `tauri-plugin-updater` and `minisign-verify`, naming each
 crate's own licence files with their SHA-256. It clarifies `ring` the same way, to its
 `LICENSE-other-bits` (ISC) and `LICENSE-BoringSSL` (Apache-2.0), since cargo-about
 would otherwise list each of its source files' licence headers as a text of its own.
@@ -396,7 +397,8 @@ looks for each clarified crate's known copyright line, held in the script as the
 SHA-256 of the line without its surrounding blanks, among the lines of the licence
 texts that name it (the line of each crate's clarified licence file: one for the
 `windows-rs` crates, and one each for `dpi`, `tauri-plugin-single-instance`,
-`tauri-plugin-opener` and `ring`), and checks the crate appears under no more
+`tauri-plugin-opener`, `tauri-plugin-updater`, `minisign-verify` and `ring`), and
+checks the crate appears under no more
 texts than its clarification names files. It fails when either does not hold, or
 when `about.toml` clarifies a crate it has no line for, until the clarification
 names the new file.
@@ -623,6 +625,101 @@ does not take a build for a host that has run it:
   Narrator, and containers after a sign-out. The Chromium renders of the pages, in
   both themes at 880, 721, 720 and 480 px, ran outside the repository and are not a
   gate. The axpc results are recorded on the tracking issue, not here.
+
+## Updates
+
+W4 ([#78](https://github.com/axross/runners/issues/78)) owns this section. An
+installed app updates itself from a signed feed: it asks its agent to drain, waits for
+the jobs already running to finish, and installs the new release.
+[Security](../conventions/security.md#updates-come-only-from-the-signed-feed) holds
+the rules the update path is reviewed against, and
+[CLI](./cli.md#the-update-drain) holds the agent's drain.
+
+The maintainer's update-feed public key, minisign key ID `6F39E3131E21E1E4`, is
+committed in `tauri.conf.json`. Until the release run publishes the feed, which W4's
+last pull request adds, a check finds no feed and changes nothing; an app with no
+committed key, or a development build at `0.0.0-dev`, never reads the feed.
+
+**Checking.** The app reads
+`https://github.com/axross/runners/releases/latest/download/latest.json` when it
+starts and every hour after, through Tauri's updater plugin, which only the app mode
+registers. A check gives up after 30 s; a failed one is logged and changes nothing
+else. For a release newer than its own, the app checks the download address (`https`,
+`github.com`, under `/axross/runners/releases/download/`), downloads the MSI within 10
+minutes, and the plugin verifies its signature against the committed key and that the
+signature names the feed's version. Only then does it hold the update, and it does not
+check again while it holds one.
+
+**Draining.** Holding a verified update, the app asks its agent for
+`drain_for_update` once the agent is running or stopped, no drain is under way and no
+action of the window waits for an answer. While the agent resumes, builds or stops,
+or another client's drain is under way, it waits; a refused drain is asked again a
+minute later. While the agent drains, the host summary, the menu's first line and the
+icon's tooltip read `Updating to <version>: waiting for <N> runners to finish`, or
+`Updating to <version>` when it waits for none, and the live region says so; Start
+All and Build stay unavailable. Stop all stops every runner and the agent ends for the
+update with the runners stopped by you; Quit installs nothing.
+
+**Installing.** After the agent's `ending` for this app's drain, the app waits up to
+60 s for the agent's process to exit, from the process ID the drain's answer or the
+snapshot gave. It then writes the record below if `ending` said the runners were
+stopped by you, and starts `msiexec.exe /i <msi> /passive /promptrestart
+AUTOLAUNCHAPP=True LAUNCHAPPARGS="<its own arguments>"`; the plugin then ends the app.
+The installer shows Windows Installer's progress window. Starting the new app, which
+starts its agent, depends on the MSI honouring `AUTOLAUNCHAPP` and `LAUNCHAPPARGS`;
+that is a criterion of W1's installer pull request, and until it merges there is no
+app MSI on main. If the process has not exited in 60 s, or the installer does not
+start, the app drops the update and the record, handles the agent's end as any other,
+and checks again an hour later. An end for an update another client asked for is
+handled as any other end.
+
+**A lost connection during the drain.** If the agent's process still runs, the app
+reaches it again without starting another. If the agent's first snapshot still shows
+this app's drain, for the same version and process, the drain was past its last steps
+and goes on, and its `ending` installs as above; otherwise the app asks again. If no
+agent answers while the process still runs, the app waits for it to exit as after
+`ending`. If it has
+exited, the agent ended unexpectedly: the app installs as above, and writes the record
+if the last state it heard was stopped by you. When nothing installs, the agent is
+started again stopped or running as `ending`, or that last state, said.
+
+**The record.** `update-stopped-by-you.json` in `%LOCALAPPDATA%\marshal\` names the
+update's version and when it was written. A launch of that version within 30 minutes
+of it starts the agent stopped; every launch removes it, so it applies once. Otherwise
+a launch starts the runners, as a fresh launch does. If W3's update record merges
+first, it replaces this one.
+
+**An older agent.** An app that finds a running agent older than the agent it starts,
+for example after an installer was run by hand, asks it to drain for that version and
+then starts its own agent, stopped if `ending` said the runners were stopped by you.
+The comparison is with the version of the `marshal-cli` library the app links, which
+the agent gives in `welcome`, not with the app's own package version, so a release
+that stamps the two differently does not replace the app's own agent again and again.
+An older agent that does not list `drain_for_update` is used as it is, logged once,
+and nothing installs while it runs.
+
+**After a failed install.** Windows Installer rolls back to the installed version,
+but Marshal stays off until it is launched from the Start menu, which starts the
+runners and checks again. Tauri's updater leaves each downloaded MSI in a
+`Marshal-<version>-updater-*` folder under the temporary folder; Windows' storage
+cleanup removes it. The unsigned executable may lose its place in the notification
+area after an update.
+
+**The feed check.** The `marshal-feed` crate holds the address rule and the same
+signature rules the plugin applies, and builds `marshal-feed-check`, which the release
+run uses on the feed it writes before anything is published:
+
+```text
+marshal-feed-check <latest.json> <version> <SHA256SUMS> <platform>=<file>...
+```
+
+It checks the feed's version, that it has exactly the given platforms, each entry's
+address under the release's tag, each file's SHA-256 against `SHA256SUMS`, and each
+signature against the key committed in `tauri.conf.json`, and lists every problem. Its
+tests use throwaway keys in `app/crates/feed/tests/fixtures/`.
+
+The key's generation, its secrets, rotation and recovery come with the feed's pull
+request.
 
 ## GitHub Status in the Window
 

@@ -133,7 +133,9 @@ Important; Codex review uses its native priority label.
   repository names of this repository and of `axross/skills` are allowed, and so
   are the default runner labels `axpc` and `axmc`, the two committed host labels,
   kept by the maintainer's decision, and the macOS signing team ID and designated
-  requirement that a later CLI record may hold, as Security records (see
+  requirement that a later CLI record may hold, and the maintainer's update-feed
+  public key in `app/crates/app/tauri.conf.json` and the test that pins it, as
+  Security records (see
   [Security](docs/conventions/security.md#nothing-identifying-or-secret-is-committed)).
   Verbatim third-party licence and copyright text in the notices under
   `app/notices/` and the licence copies they draw on, the crates' published

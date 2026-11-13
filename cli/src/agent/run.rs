@@ -333,7 +333,7 @@ pub fn run(options: AgentOptions<'_>, err: &mut dyn Write) -> u8 {
         roots: &roots,
         lock: &lock,
         settings: Settings {
-            version: env!("CARGO_PKG_VERSION").to_string(),
+            version: super::PACKAGE_VERSION.to_string(),
             config_folder: roots.config_directory().to_path_buf(),
             profile: applied.profile,
             times: StopTimes::default(),

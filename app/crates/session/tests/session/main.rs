@@ -16,4 +16,5 @@ mod log;
 mod revision;
 mod support;
 mod tokens;
+mod update;
 mod wall;

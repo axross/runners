@@ -101,16 +101,16 @@ dir = "app"
 run = "cargo fmt --all --check"
 
 [tasks."lint:app"]
-description = "Lint the app's platform-independent crates (the modes, the view, the session and the icon) with clippy, warnings as errors; the Tauri crate is linted by the Windows job"
+description = "Lint the app's platform-independent crates (the modes, the view, the session, the icon and the update feed) with clippy, warnings as errors; the Tauri crate is linted by the Windows job"
 depends = ["rust:require"]
 dir = "app"
-run = "cargo clippy --locked --package marshal-modes --package marshal-view --package marshal-session --package marshal-tray --all-targets -- -D warnings"
+run = "cargo clippy --locked --package marshal-modes --package marshal-view --package marshal-session --package marshal-tray --package marshal-feed --all-targets -- -D warnings"
 
 [tasks."test:app"]
-description = "Run the tests of the app's platform-independent crates: the mode dispatch, the view, the session lifecycle and the icon"
+description = "Run the tests of the app's platform-independent crates: the mode dispatch, the view, the session lifecycle, the icon and the update feed"
 depends = ["rust:require"]
 dir = "app"
-run = "cargo test --locked --package marshal-modes --package marshal-view --package marshal-session --package marshal-tray"
+run = "cargo test --locked --package marshal-modes --package marshal-view --package marshal-session --package marshal-tray --package marshal-feed"
 
 [tasks."test:app-frontend"]
 description = "Run the main window page's own tests with Node, which check the order it draws views in and that it clears a typed token"

@@ -1,10 +1,12 @@
 use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
 
+use marshal_cli::agent::Launch;
 use marshal_cli::instance::roots::Roots;
 use marshal_modes::Overrides;
 use marshal_session::{
-    AppLog, Library, Log, MAX_FILE_BYTES, OwnExecutable, Seams, Session, WallClock,
+    AppLog, Library, Log, MAX_FILE_BYTES, OwnExecutable, Processes, RECORD_FILE, RecordFile, Seams,
+    Session, TimeSource, Updater, WallClock,
 };
 use marshal_tray::{Look, SIZES, Watch, utc_offset_minutes};
 use marshal_view::{GlyphColour, IconState};
@@ -99,6 +101,18 @@ impl Log for Discard {
     fn warn(&self, _line: &str) {}
 }
 
+/// where the app updates itself, Windows, the feed and the agent's process handles;
+/// elsewhere neither.
+#[cfg(windows)]
+fn update_seams(app: &AppHandle) -> (Option<Arc<dyn Updater>>, Arc<dyn Processes>) {
+    (crate::updates::feed(app), Arc::new(crate::updates::Handles))
+}
+
+#[cfg(not(windows))]
+fn update_seams(_app: &AppHandle) -> (Option<Arc<dyn Updater>>, Arc<dyn Processes>) {
+    (None, Arc::new(marshal_session::NoUpdates))
+}
+
 /// connects the session to the agent and shows it on the icon and in the window; the
 /// app ends when the session does.
 fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
@@ -111,6 +125,20 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         }
     };
     let launcher = OwnExecutable::current(Arc::clone(&log))?;
+    let version = env!("CARGO_PKG_VERSION");
+    let time = Arc::new(WallClock::new(utc_offset_minutes));
+    // every launch removes the record kept across an update; a launch of the update's
+    // version within 30 minutes of it keeps the runners stopped by you
+    let record = Arc::new(RecordFile::new(roots.config_directory().join(RECORD_FILE)));
+    let launch = if record.take(version, time.now_ms()) {
+        log.info(
+            "This launch follows an update from runners stopped by you, so they stay stopped.",
+        );
+        Launch::Stopped
+    } else {
+        Launch::Running
+    };
+    let (updater, processes) = update_seams(app);
     let watch = Arc::new(Mutex::new(Watch::new()));
     let latest = Arc::new(Latest::default());
     let screen = Screen::new(
@@ -120,11 +148,17 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         Arc::clone(&log),
     );
     let (session, handle) = Session::new(Seams {
-        dial: Library::new(roots, env!("CARGO_PKG_VERSION")),
+        dial: Library::new(roots, version),
         launcher: Arc::new(launcher),
         present: Arc::new(screen),
-        time: Arc::new(WallClock::new(utc_offset_minutes)),
+        time,
         log: Arc::clone(&log),
+        version: version.to_string(),
+        agent_version: marshal_cli::agent::PACKAGE_VERSION.to_string(),
+        updater,
+        processes,
+        record,
+        launch,
     });
     app.manage(AppState::new(handle, latest, Arc::clone(&log)));
     tell_session_shown(app);
@@ -157,7 +191,11 @@ pub fn run() -> ExitCode {
             },
         ))
         .plugin(opener())
-        .setup(|app| start(app.handle()))
+        .setup(|app| start(app.handle()));
+    // only the app mode runs this, so only it registers the updater
+    #[cfg(windows)]
+    let built = built.plugin(crate::updates::plugin());
+    let built = built
         .on_window_event(on_window_event)
         .invoke_handler(commands::handler())
         .build(tauri::generate_context!());

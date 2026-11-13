@@ -417,6 +417,23 @@ fn the_summary_line_counts_running_jobs_and_the_menu_and_tooltip_do_not() {
 }
 
 #[test]
+fn the_summary_line_keeps_counting_running_jobs_while_the_agent_drains() {
+    let status = github_of(|_| {});
+    let snapshot = crate::support::patched("running", |value| {
+        value["agent"]["update"] = serde_json::json!({
+            "version": "1.4.0", "waiting": 2, "deadline": at(9, 15, 0), "pid": 4242
+        });
+    });
+    let view =
+        build(&Input::new(Connection::Connected, Some(&snapshot), now()).github(live(&status)));
+    assert_eq!(
+        list(&view).header.line,
+        "Updating to 1.4.0: waiting for 2 runners to finish · 2 running jobs"
+    );
+    assert_eq!(view.summary.spoken, list(&view).header.line);
+}
+
+#[test]
 fn github_status_unavailable_is_said_in_the_footer_and_no_state_shows() {
     let snapshot = load("running");
     for (feed, text) in [

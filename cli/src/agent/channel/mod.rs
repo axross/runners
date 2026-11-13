@@ -110,7 +110,7 @@ impl AgentChannel {
             ending: ending_receiver,
             limits,
             counts: Arc::clone(&counts),
-            agent_version: env!("CARGO_PKG_VERSION").to_string(),
+            agent_version: crate::agent::PACKAGE_VERSION.to_string(),
         });
         let accepting = tokio::spawn(accept(listener, shared));
         Ok(Self {
