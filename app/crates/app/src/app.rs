@@ -129,13 +129,7 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let time = Arc::new(WallClock::new(utc_offset_minutes));
     // every launch removes the record kept across an update; a launch of the update's
     // version within 30 minutes of it keeps the runners stopped by you
-    let record = Arc::new(RecordFile::new(
-        roots
-            .config_file()
-            .parent()
-            .unwrap_or_else(|| roots.log_directory())
-            .join(RECORD_FILE),
-    ));
+    let record = Arc::new(RecordFile::new(roots.config_directory().join(RECORD_FILE)));
     let launch = if record.take(version, time.now_ms()) {
         log.info(
             "This launch follows an update from runners stopped by you, so they stay stopped.",
