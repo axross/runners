@@ -2276,7 +2276,13 @@ The Credential Manager's failures are all `other`, with the Windows error number
 the code. The Keychain's codes `errSecInteractionNotAllowed` (-25308),
 `errSecInteractionRequired` (-25315) and `errSecAuthFailed` (-25293), which a locked
 keychain returns, are `needs_user`; `errSecItemNotFound` (-25300) is no token, not a
-failure; every other code is `other`, with Apple's code. The kind and the code appear in the `store_failed` error (see Errors), in
+failure; every other code is `other`, with Apple's code. Until the Mac run shows
+which code an item another build of Marshal added returns, a `needs_user` failure's
+words name both causes, a locked login keychain or another build's item, and the
+fix: unlock the keychain in Keychain Access, or enter the token again. A refused
+delete also gives the one command the window shows,
+`security delete-generic-password -s app.axross.marshal -a github.com/<owner>/<name>`
+(`-a github.com/<org>` for an organisation's item). The kind and the code appear in the `store_failed` error (see Errors), in
 the reason of a pool skipped because the store failed (`the token store failed: ...
 (kind needs_user, code 1312)`), and in the log line of a registration that failed
 for the same reason. None of them ever holds a token.
