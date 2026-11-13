@@ -6,11 +6,12 @@
 use std::collections::BTreeSet;
 use std::hash::{DefaultHasher, Hasher};
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde_json::{Value as Json, json};
 
 use crate::checkout;
+use crate::diagnostics::sink::{SinkError, checked_sink};
 use crate::edit::{ConfigFile, Edit, EditError, rewrite};
 use crate::host_config::{Checks, FileStatus, InUse, Loaded, Migration, Origin, StandardChecks};
 use crate::runtime::backend::Backend;
@@ -324,6 +325,7 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'_, B, K, R, D> 
                 return Err(failure_error(&failure));
             }
         };
+        self.check_sinks(&plan, above.as_deref())?;
         let inner = self.inner.borrow();
         let in_use = inner.plan();
         let named = |plan: &Plan| -> BTreeSet<TokenKey> {
@@ -345,6 +347,45 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'_, B, K, R, D> 
             plan,
             edits,
             file,
+        })
+    }
+
+    /// runs the sink checks on each diagnostic directory the change sets or changes,
+    /// as the exporter would before it writes there; one the configuration in use
+    /// already names is left to the exporter, so an unrelated edit is not refused.
+    fn check_sinks(&self, plan: &Plan, above: Option<&Path>) -> Result<(), ApiError> {
+        let inner = self.inner.borrow();
+        let held = |name: &str| {
+            inner
+                .plan()
+                .and_then(|plan| plan.entries.iter().find(|entry| entry.name == name))
+                .and_then(|entry| entry.diagnostic_directory.clone())
+        };
+        let problems: Vec<Problem> = plan
+            .entries
+            .iter()
+            .filter_map(|entry| {
+                let directory = entry.diagnostic_directory.as_deref()?;
+                if held(&entry.name).as_deref() == Some(directory) {
+                    return None;
+                }
+                let error = checked_sink(directory, above).err()?;
+                Some(Problem {
+                    path: Some(format!("pool[{}].diagnostic_directory", entry.index)),
+                    line: None,
+                    message: format!("the diagnostic directory {}", sink_failure(&error)),
+                })
+            })
+            .collect();
+        if problems.is_empty() {
+            return Ok(());
+        }
+        Err(ApiError {
+            problems: problems.into(),
+            ..error(
+                ErrorCode::ConfigInvalid,
+                "a diagnostic directory fails the sink checks",
+            )
         })
     }
 
@@ -543,6 +584,19 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'_, B, K, R, D> 
         StandardChecks {
             rule: CheckoutRule::AboveAndAtSink(above),
         }
+    }
+}
+
+/// why a sink failed its checks, without its path.
+fn sink_failure(error: &SinkError) -> String {
+    match error {
+        SinkError::Missing(_) => "does not exist".to_string(),
+        SinkError::NotADirectory(_) => "is not a directory".to_string(),
+        SinkError::Link(_) => "is, or lies under, a link or a reparse point".to_string(),
+        SinkError::InsideCheckout(_) => "is inside the checkout".to_string(),
+        SinkError::Unreadable(_, kind) => format!("cannot be read: {kind}"),
+        #[cfg(unix)]
+        SinkError::NotPrivate(_) => "is not private to this user".to_string(),
     }
 }
 

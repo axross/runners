@@ -35,8 +35,9 @@ pub(super) fn apply(text: &str, edits: &[Edit]) -> Result<String, Refusal> {
     let mut document: DocumentMut = text.parse().map_err(|_| Refusal::Syntax)?;
     for edit in edits {
         let marked = apply_one(&mut document, edit).map_err(|reason| {
+            let form = reason == OVER_LINES;
             let reason = format!("{}: {reason}", describe(edit));
-            if reason.ends_with(OVER_LINES) {
+            if form {
                 Refusal::FileForm(reason)
             } else {
                 Refusal::Inapplicable(reason)

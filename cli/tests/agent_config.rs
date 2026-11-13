@@ -808,6 +808,33 @@ async fn a_bad_diagnostic_directory_and_a_file_that_cannot_be_replaced_are_refus
                     vec!["pool[0].diagnostic_directory".to_string()]
                 )
             );
+            // a well-formed directory that fails the sink checks: it does not exist
+            let body = match conn
+                .call(
+                    "config_edit",
+                    json!({
+                        "revision": read_revision(&conn).await,
+                        "edits": [
+                            {"op": "set", "path": "pool[0].diagnostics", "value": true},
+                            {"op": "set", "path": "pool[0].diagnostic_directory",
+                             "value": "C:\\no-such-sink"},
+                        ],
+                    }),
+                )
+                .await
+            {
+                Err(CallError::Agent(body)) => body,
+                other => panic!("the sink was not refused: {other:?}"),
+            };
+            assert_eq!(body.code, "config_invalid");
+            assert_eq!(
+                body.problems[0].path.as_deref(),
+                Some("pool[0].diagnostic_directory")
+            );
+            assert!(
+                body.problems[0].message.contains("does not exist"),
+                "{body:?}"
+            );
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
@@ -870,6 +897,52 @@ async fn an_edit_is_refused_while_the_runtime_waits_to_restart() {
             .await;
             assert_eq!(code, "runtime_restarting");
             assert_eq!(file(rig), TWO_POOLS_TOML);
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+/// how often the agent listed `pool`'s containers, as a preparation does.
+fn listings(rig: &Rig, pool: &str) -> usize {
+    rig.backend
+        .calls()
+        .iter()
+        .filter(|call| matches!(call, Call::ListPoolContainers(name) if name == pool))
+        .count()
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_restart_waits_for_its_held_slots_before_it_prepares_the_pool() {
+    let rig = rig();
+    rig.times.set(StopTimes {
+        exit_deadline: Duration::from_secs(1),
+        ..StopTimes::default()
+    });
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            conn.until("three runners", |snapshot| snapshot.runners_up == 3)
+                .await;
+            rig.mark_running();
+            rig.backend.state.borrow_mut().stop_hangs = true;
+            let prepared = listings(rig, "r");
+            set(&conn, "pool[0].labels", json!(["big"])).await.unwrap();
+            // both slots' stops run late, so the pool is not prepared over them
+            let held = until_applied(&conn).await;
+            assert_eq!(held.pools[0].state, "skipped", "{held:#?}");
+            assert_eq!(listings(rig, "r"), prepared);
+
+            rig.backend.state.borrow_mut().stop_hangs = false;
+            rig.end_jobs().await;
+            let after = conn
+                .until("pool r running again", |snapshot| {
+                    snapshot.pools[0].runners_up == 2
+                })
+                .await;
+            assert_eq!(after.pools[0].state, "running");
+            assert_eq!(listings(rig, "r"), prepared + 1);
+            assert!(last_labels(rig, "r").contains(&"big".to_string()));
+            rig.mark_running();
             conn.ok("quit").await;
         })
         .await;

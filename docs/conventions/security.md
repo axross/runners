@@ -1321,18 +1321,22 @@ owns the methods; these are the properties they keep.
   [One Instance per Machine, Reached Only by Its User](#one-instance-per-machine-reached-only-by-its-user),
   and that user can already edit the file. No request names a file for the agent to
   read or write: the agent edits only `config.toml` at its fixed path.
-- No request or response carries a token. `config_read` sends only the keys the
-  schema defines that the file sets with a value of the right type; an undefined key
-  or a wrong-typed value appears only as a problem, which quotes no value, so a token
-  pasted into the file does not reach the window. A problem names a key path, as the
-  first residual risk of
+- No request or response carries a token as such. `config_read` sends only the keys
+  the schema defines that the file sets with a value of the right type, also while
+  the file breaks other rules; an undefined key or a wrong-typed value appears only as
+  a problem, which quotes no value. A token pasted on a line of its own, under a key
+  of its own, or into a number or a boolean therefore does not reach the window. A
+  problem names a key path, as the first residual risk of
   [The TOML Configuration Holds No Token and Quotes No Line](#the-toml-configuration-holds-no-token-and-quotes-no-line)
   describes.
 - An edit goes through the write path and then through the checks the agent loads
   with, the checkout rule at the diagnostic directory's own place included, so a file
-  the app writes is one the agent would load. An edit that sets a pool's
-  `diagnostic_directory` gets the same checkout rule and sink checks as a value
-  written in a text editor, and is refused when it fails them.
+  the app writes is one the agent would load. An edit or a reload that sets or
+  changes a pool's `diagnostic_directory` also runs the exporter's sink checks on it
+  (it exists, is a directory, is no link, lies outside the checkout, and is private
+  on Unix) and is refused when it fails them; the problem names the key and the
+  check, not the path. A directory the configuration in use already names is left
+  to the exporter's own checks, as before.
 - An edit of `schema_version` or of `[lifecycle]` is refused before the file is
   read.
 - A `config_edit` whose `revision` no longer matches the file is refused, and the
@@ -1342,6 +1346,9 @@ Residual risks, accepted on a single-user host:
 
 - A same-user client can point a pool's diagnostics at any folder that passes the
   sink checks, as it could by editing the file.
+- A token pasted into the value of a defined text key, such as a pool's name or a
+  label, is a value of the right type, so `config_read` sends it to the window, which
+  shows it in that field. The window is the same user's, who wrote the file.
 - The revision is std's default hasher over the file's bytes, with their length:
   SipHash with fixed keys today, which std does not promise to keep. It detects an
   edit made elsewhere; it is not meant to resist a file crafted to collide, and a

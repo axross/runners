@@ -17,7 +17,7 @@ use crate::instance::lifecycle::{CoreFailure, Ending, StopTimes};
 use crate::instance::runtime_core::{failure, verify_image};
 use crate::instance::steps::{Steps, some_container_steps};
 use crate::runtime::backend::{Backend, JobHost};
-use crate::runtime::board::{Board, SlotState};
+use crate::runtime::board::{Board, PoolState, SlotState};
 use crate::runtime::clock::Clock;
 use crate::runtime::log::Log;
 use crate::runtime::name::parse_stamp;
@@ -92,7 +92,14 @@ struct Running<'a> {
     /// worker sets as it ends.
     late: RefCell<Vec<(SlotKey, watch::Receiver<bool>)>>,
     late_added: Notify,
+    /// the pools an apply restarts or adds while slots of theirs are still held, by
+    /// a stop that ran late or for their evidence; each is prepared once none is.
+    deferred: RefCell<Vec<PoolSpec>>,
 }
+
+/// why a pool an apply restarts waits.
+pub const DEFERRED: &str =
+    "the edit restarts it once its earlier runners have stopped and their evidence is kept";
 
 /// what an apply does to one pool.
 enum Step {
@@ -107,6 +114,11 @@ enum Step {
     StartNew,
     /// replaces the settings it waits with.
     Rewait,
+}
+
+/// whether any slot of `pool` is still held.
+fn holds_slots(running: &Running<'_>, pool: &str) -> bool {
+    running.slots.borrow().keys().any(|(name, _)| name == pool)
 }
 
 /// whether `name` is a container of `pool`'s slot `slot`, as `<pool>-<slot>-<stamp>`.
@@ -151,14 +163,9 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
         let services = self.services();
         for slot in slots {
             let key = (slot.pool.clone(), slot.number);
-            // a slot whose stop did not end its worker in time keeps that worker, so a
-            // second one never runs on the same slot and host
-            if running
-                .slots
-                .borrow()
-                .get(&key)
-                .is_some_and(|run| !*run.ended.borrow())
-            {
+            // a slot still held, by a worker a stop did not end in time or for its
+            // evidence, keeps its place, so a second runner never takes its slot and host
+            if running.slots.borrow().contains_key(&key) {
                 self.log.warn(&format!(
                     "{} slot {} is not started: its previous runner has not ended yet.",
                     slot.pool, slot.number
@@ -236,6 +243,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
             wanted: RefCell::new(wanted),
             late: RefCell::new(Vec::new()),
             late_added: Notify::new(),
+            deferred: RefCell::new(Vec::new()),
         };
         for pool in &prepared {
             self.start_slots(pool.slot_specs(), &running, &stop);
@@ -402,13 +410,16 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
                 Step::StopAbove(keep) => *keep,
                 Step::Nothing | Step::StartNew | Step::Rewait => continue,
             };
+            // a slot already told to stop is held, and is not stopped again
             leaving.extend(
                 running
                     .slots
                     .borrow()
-                    .keys()
-                    .filter(|(name, number)| name == pool && *number > keep)
-                    .cloned(),
+                    .iter()
+                    .filter(|((name, number), run)| {
+                        name == pool && *number > keep && !*run.stop.borrow()
+                    })
+                    .map(|(key, _)| key.clone()),
             );
         }
         self.stop_slots(leaving, running).await;
@@ -421,6 +432,10 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
                         .waiting
                         .borrow_mut()
                         .retain(|held| held.name != pool);
+                    running
+                        .deferred
+                        .borrow_mut()
+                        .retain(|held| held.name != pool);
                     self.board.remove_pool(pool);
                 }
                 Step::Restart => {
@@ -428,7 +443,19 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
                         .waiting
                         .borrow_mut()
                         .retain(|held| held.name != pool);
-                    fresh.extend(spec(pool));
+                    running
+                        .deferred
+                        .borrow_mut()
+                        .retain(|held| held.name != pool);
+                    let Some(new) = spec(pool) else { continue };
+                    if holds_slots(running, pool) {
+                        // preparing it now would clear what the held slots still hold
+                        self.board
+                            .set_pool(pool, PoolState::Skipped(DEFERRED.to_string()));
+                        running.deferred.borrow_mut().push(new);
+                    } else {
+                        fresh.push(new);
+                    }
                 }
                 Step::Rewait => {
                     if let Some(new) = spec(pool) {
@@ -467,6 +494,18 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
     /// what the apply does to a pool, from its effect and whether it runs slots or
     /// waits for its token.
     fn step(&self, effect: &Effect, running: &Running<'a>) -> Step {
+        let deferred = running
+            .deferred
+            .borrow()
+            .iter()
+            .any(|pool| pool.name == effect.pool);
+        if deferred {
+            return match effect.change {
+                Change::Unchanged => Step::Nothing,
+                Change::Removed => Step::Remove,
+                _ => Step::Restart,
+            };
+        }
         let waits = running
             .waiting
             .borrow()
@@ -565,7 +604,13 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
             slot: *number,
         };
         let prepared = self.backend.prepared_hosts().contains(&host);
-        if prepared && self.backend.host_awaits_finalisation(&host) {
+        let retained = self
+            .backend
+            .retained()
+            .names()
+            .iter()
+            .any(|name| is_slot_container(name, pool, *number));
+        if retained || (prepared && self.backend.host_awaits_finalisation(&host)) {
             self.log.warn(&format!(
                 "{pool} slot {number} keeps its job host for its diagnostic evidence until \
                  the runners next stop."
@@ -605,6 +650,22 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
             }
             let _turn = running.turn.lock().await;
             if !self.finish_slot(&key, running).await {
+                continue;
+            }
+            let deferred = running
+                .deferred
+                .borrow()
+                .iter()
+                .position(|pool| pool.name == key.0);
+            if let Some(at) = deferred {
+                if !holds_slots(running, &key.0) {
+                    let pool = running.deferred.borrow_mut().remove(at);
+                    if self.admit(&pool) {
+                        self.prepare_and_start(vec![pool], running, stop).await;
+                    } else {
+                        running.waiting.borrow_mut().push(pool);
+                    }
+                }
                 continue;
             }
             let waits = running

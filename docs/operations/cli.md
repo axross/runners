@@ -2346,7 +2346,8 @@ methods, at its start and at `start_all`, and never watches it.
   malformed one `invalid_request`, whose message repeats no value.
 - **A check** (`check: true`) runs the edits, or reads the file for a reload, and
   checks the result with the rules the agent loads with, the checkout rule at the
-  diagnostic directory's own place included, and writes nothing. Without `check` the
+  diagnostic directory's own place included, and the exporter's sink checks on each
+  `diagnostic_directory` it sets or changes, and writes nothing. Without `check` the
   agent checks again and writes through [Changing the File](#changing-the-file). On
   a running agent a change of `image_name` first checks the new image, as `start_all`
   does, and is `image_unusable`, with nothing written, when the image is missing or
@@ -2382,7 +2383,11 @@ a stop does, and its job host is released only once nothing in it awaits that
 finalisation. A slot whose stop does not end its runner within the exit deadline stays
 listed as leaving until the runner ends, then starts again if the configuration in
 use still has it; one whose host still holds evidence stays taken until the runners
-next stop, so no new runner replaces that host first. A slot an apply stops shows `stopped` with the reason that the edit stops it until
+next stop, so no new runner replaces that host first. A pool an apply restarts or
+adds while slots of its own are still held in either way is not prepared over them:
+it is listed `skipped` with the reason that it restarts once its earlier runners have
+stopped, and it is admitted and prepared once the last of them is finished, or at the
+next `start_all` when one holds evidence. A slot an apply stops shows `stopped` with the reason that the edit stops it until
 its containers are stopped and its job host released, then leaves the list; a
 removed pool is listed, `stopped`, until its last slot has. A pool that restarts
 shows `preparing` with the reason that the edit restarts it. One apply runs at a
