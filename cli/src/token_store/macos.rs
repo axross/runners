@@ -66,8 +66,9 @@ impl KeychainTokenStore {
     /// a store whose items carry `service`; tests use their own service so they never
     /// touch Marshal's items.
     pub fn with_service(service: &str) -> Result<Self, StoreError> {
+        let off = "the Keychain's prompts cannot be turned off";
         let no_prompts = SecKeychain::disable_user_interaction()
-            .map_err(|error| failure("the Keychain's prompts cannot be turned off", error))?;
+            .map_err(|error| failure(off, || off.to_string(), error))?;
         Ok(Self {
             service: service.to_string(),
             _no_prompts: no_prompts,
@@ -79,9 +80,31 @@ impl KeychainTokenStore {
     }
 }
 
-/// the store error for a Keychain failure, with Apple's code.
-fn failure(words: &str, error: Error) -> StoreError {
-    StoreError::with(kind_of(error.code()), Some(i64::from(error.code())), words)
+/// what a code that needs the user may mean: the codes a locked keychain returns may
+/// also be the ones an item another build of Marshal added returns, which only the Mac
+/// run tells apart, so the words name both.
+const LOCKED_OR_OTHER_BUILD: &str =
+    "the login keychain is locked, or another build of Marshal stored this token";
+
+/// the words for a delete the Keychain refused: unlock it, or delete the item by hand,
+/// the one command the window gives.
+fn delete_by_hand(service: &str, key: &TokenKey) -> String {
+    format!(
+        "the stored token cannot be deleted: {LOCKED_OR_OTHER_BUILD}. Unlock the login keychain in Keychain Access, or delete the item with security delete-generic-password -s {service} -a {} or in Keychain Access, then enter the token again",
+        account(key)
+    )
+}
+
+/// the store error for a Keychain failure, with Apple's code; a code that needs the
+/// user gets `needs_user`'s words, its cause and its fix, instead of `words`.
+fn failure(words: &str, needs_user: impl FnOnce() -> String, error: Error) -> StoreError {
+    let kind = kind_of(error.code());
+    let code = Some(i64::from(error.code()));
+    if kind == StoreErrorKind::NeedsUser {
+        StoreError::with(kind, code, needs_user())
+    } else {
+        StoreError::with(kind, code, words)
+    }
 }
 
 fn kind_of(code: i32) -> StoreErrorKind {
@@ -99,7 +122,15 @@ impl TokenStore for KeychainTokenStore {
                 .map(|token| Some(Secret::new(token)))
                 .map_err(|_| StoreError::new("the stored token is not UTF-8")),
             Err(error) if error.code() == ITEM_NOT_FOUND => Ok(None),
-            Err(error) => Err(failure("the token cannot be read from the Keychain", error)),
+            Err(error) => Err(failure(
+                "the token cannot be read from the Keychain",
+                || {
+                    format!(
+                        "the token cannot be read: {LOCKED_OR_OTHER_BUILD}. Unlock the login keychain in Keychain Access, or enter the token again in Tokens"
+                    )
+                },
+                error,
+            )),
         }
     }
 
@@ -108,7 +139,15 @@ impl TokenStore for KeychainTokenStore {
         let mut options = self.options(key);
         options.set_label(&label(key));
         set_generic_password_options(token.expose().as_bytes(), options)
-            .map_err(|error| failure("the token cannot be added to the Keychain", error))
+            .map_err(|error| {
+                failure(
+                    "the token cannot be added to the Keychain",
+                    || {
+                        "the token cannot be added: the login keychain is locked. Unlock it in Keychain Access".to_string()
+                    },
+                    error,
+                )
+            })
     }
 
     fn remove(&self, key: &TokenKey) -> Result<(), StoreError> {
@@ -117,6 +156,7 @@ impl TokenStore for KeychainTokenStore {
             Err(error) if error.code() == ITEM_NOT_FOUND => Ok(()),
             Err(error) => Err(failure(
                 "the token cannot be deleted from the Keychain",
+                || delete_by_hand(&self.service, key),
                 error,
             )),
         }
@@ -148,5 +188,35 @@ mod tests {
         }
         assert_eq!(kind_of(-25299), StoreErrorKind::Other);
         assert_eq!(kind_of(ITEM_NOT_FOUND), StoreErrorKind::Other);
+    }
+
+    #[test]
+    fn a_refusal_that_needs_the_user_names_both_causes_and_the_fix() {
+        let key = TokenKey::of("Axross", "Runners");
+        let refused = failure(
+            "the token cannot be deleted from the Keychain",
+            || delete_by_hand(SERVICE, &key),
+            Error::from_code(-25308),
+        );
+        assert_eq!(refused.kind(), StoreErrorKind::NeedsUser);
+        let words = refused.describe();
+        assert!(words.contains("locked, or another build"), "{words}");
+        assert!(
+            words.contains(
+                "security delete-generic-password -s app.axross.marshal -a github.com/axross/runners"
+            ),
+            "{words}"
+        );
+        assert!(words.ends_with("(kind needs_user, code -25308)"), "{words}");
+
+        let other = failure(
+            "the token cannot be deleted from the Keychain",
+            || unreachable!("only a code that needs the user words its cause"),
+            Error::from_code(-25299),
+        );
+        assert_eq!(
+            other.describe(),
+            "the token cannot be deleted from the Keychain (kind other, code -25299)"
+        );
     }
 }
