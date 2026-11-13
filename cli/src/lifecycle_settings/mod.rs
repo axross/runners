@@ -5,6 +5,8 @@
 
 pub mod write;
 
+use std::cell::Cell;
+
 use crate::validate::{Key, Lifecycle};
 
 /// one setting of `[lifecycle]`.
@@ -120,6 +122,28 @@ impl InEffect {
     pub fn with(mut self, setting: Setting, value: Option<bool>) -> Self {
         setting.assign(&mut self.lifecycle, value);
         self
+    }
+}
+
+/// the settings in effect as the agent keeps them, which the Windows monitor reads;
+/// none while the agent has never held a valid configuration.
+#[derive(Debug, Default)]
+pub struct Current(Cell<Option<InEffect>>);
+
+impl Current {
+    #[must_use]
+    pub fn get(&self) -> Option<InEffect> {
+        self.0.get()
+    }
+
+    pub fn set(&self, settings: InEffect) {
+        self.0.set(Some(settings));
+    }
+
+    /// whether `setting` is on in effect; off while no setting is in effect.
+    #[must_use]
+    pub fn is_on(&self, setting: Setting) -> bool {
+        self.get().is_some_and(|settings| settings.is_on(setting))
     }
 }
 

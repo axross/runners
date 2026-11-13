@@ -1955,6 +1955,9 @@ snapshot, as the reason of the `stopped` state:
 | `no_pool_started`       | No pool could start, such as every pool without a token                      |
 | `restart_limit`         | The runtime core failed too often, under the same restart policy `start` has |
 | `image_build_failed`    | A `build` failed; the build's message is in the snapshot                     |
+| `slept`                 | The computer slept or woke; see [The Agent's Signals](#the-agents-signals)   |
+| `network_changed`       | The primary network changed on two checks in a row                           |
+| `resumed_too_often`     | A signal stop after too many automatic resumes within an hour                |
 
 The answer to a `start_all` follows the configuration read and the image check; it
 is not sent first. The check is one `docker image inspect` and, when that fails, one
@@ -2053,6 +2056,42 @@ A log that cannot write or continue its file stops, and the agent goes on withou
 it. It tries to open a new file again when a line arrives, at most every 30 s, and
 writes one line in the new file that says how many lines were not written.
 
+### The Agent's Signals
+
+The agent runs a `Monitor` (`instance::lifecycle`) beside its states, the seam the
+`start` instance uses on axmc. `Agent` takes it through `Seams`, with `NoMonitor` as
+the default, and the agent itself names no operating system:
+
+- Entering `running`, `resuming`, `building` or `stopping` takes the keep-awake hold,
+  and entering `stopped` or `quitting` ends it; `maintain` runs for the agent's whole
+  life, so a refused hold is retried in every state.
+- Each run calls `begin`, then waits on `watch` beside the runtime core. A sleep or a
+  network change stops every runner with the stop sequence and leaves the agent
+  stopped for `slept` or `network_changed`.
+- A signal stop during a drain ends the agent for the update, and `ending`'s `update`
+  names the signal's code in `runners`. A stop by you during the drain's last steps
+  still makes it `by_you`.
+
+`ending`'s `update.runners` is `running`, `by_you`, or a signal's code, and
+`stopped_by_you` repeats whether it is `by_you`. The app starts the runners after an
+update only from `running`, so an update never undoes a signal stop.
+
+On Windows, `agent::run` gives the agent `WindowsMonitor` (`windows_host::monitor`)
+on `WindowsSignals` (`windows_host::signals`); elsewhere it gives `NoMonitor`.
+`WindowsMonitor` reads the settings in effect, which the agent sets from each
+configuration it reads into `lifecycle_settings::Current`, at every tick, so a
+change takes effect within a second:
+
+| Signal          | What it reads                                                                                                                                                           | Gated by                                                                                       |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Sleep           | Every 1 s, `Instant` against `QueryUnbiasedInterruptTime`: the unbiased clock more than 3 s behind, or more than 30 s between samples, is a sleep                       | Nothing; a sleep always stops                                                                  |
+| Primary network | Every 5 s, `netdev`'s default interface, bounded to 2 s on a blocking thread with one reading outstanding at most; M1's `NetworkWatch` judges two differing checks      | `stop_on_network_change` stops; the network is read only while it or `resume_after_stop` is on |
+| Keep-awake      | The request the executable supplies through `AgentOptions::keep_awake`, held by one thread that lives as long as the agent; a refusal warns once and retries every 10 s | `keep_awake`; nothing is held while no setting is in effect                                    |
+
+A sleep is judged before the network, so a wake on another network stops with the
+sleep's reason, `Windows slept, so every runner was stopped`. An interface is named
+by its kind and index, such as `Wi-Fi 12`, never by its alias.
+
 ### The Update Drain
 
 W4 ([#78](https://github.com/axross/runners/issues/78)) adds `drain_for_update` to
@@ -2082,7 +2121,8 @@ drain can no longer be cancelled, because its runners are already stopping.
 | When                                                     | Result                                                                                                                                                 |
 | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `drain_for_update`, while `running`                      | Drains: the answer is `{state, update}`, and `agent.update` appears                                                                                    |
-| `drain_for_update`, while `stopped`                      | Ends for the update at once; `stopped_by_you` is true when stopped by you                                                                              |
+| `drain_for_update`, while `stopped`                      | Ends for the update at once; `runners` is the stop's code when stopped by you or by a signal, and `running` after an error stop                        |
+| A signal stop, while draining                            | Stops every runner, so running jobs fail, then ends for the update; `runners` is the signal's code                                                     |
 | `drain_for_update`, in any other state or while draining | `refused`, and nothing changes                                                                                                                         |
 | `start_all` or `build`, while draining                   | `refused`, and nothing changes                                                                                                                         |
 | `stop_all`, while draining                               | Answers `quitting`, also during the drain's last steps; stops every runner, so running jobs fail, then ends for the update, stopped by you             |
@@ -2172,16 +2212,16 @@ included. The first line a client sends MUST be `hello`; anything else, includin
 connection is closed, so today's commands exit 1 against an agent and change
 nothing. [Version Rules](#version-rules) says what a later agent of version 2 may add.
 
-| Message     | Fields                                                                                                   |
-| ----------- | -------------------------------------------------------------------------------------------------------- |
-| `hello`     | `versions` (the versions the client speaks), `client` (`name`, `version`), which the agent ignores       |
-| `welcome`   | `version` (2), `agent` (`version`), `methods`, `topics`                                                  |
-| `request`   | `id` (an integer of the client's own), `method`, `params`                                                |
-| `response`  | `id`, then `result` or `error`                                                                           |
-| `error`     | `error`, for what answers no request: a failed handshake, `busy`, or a message that is not a request     |
-| `event`     | `topic` (`state` or `github`), `seq`, `value` (the snapshot, or the GitHub status)                       |
-| `heartbeat` | `seq`, the last event's                                                                                  |
-| `ending`    | `reason`: `quit`, `executable_changed` or `update`; `update` (`version`, `stopped_by_you`) for an update |
+| Message     | Fields                                                                                                              |
+| ----------- | ------------------------------------------------------------------------------------------------------------------- |
+| `hello`     | `versions` (the versions the client speaks), `client` (`name`, `version`), which the agent ignores                  |
+| `welcome`   | `version` (2), `agent` (`version`), `methods`, `topics`                                                             |
+| `request`   | `id` (an integer of the client's own), `method`, `params`                                                           |
+| `response`  | `id`, then `result` or `error`                                                                                      |
+| `error`     | `error`, for what answers no request: a failed handshake, `busy`, or a message that is not a request                |
+| `event`     | `topic` (`state` or `github`), `seq`, `value` (the snapshot, or the GitHub status)                                  |
+| `heartbeat` | `seq`, the last event's                                                                                             |
+| `ending`    | `reason`: `quit`, `executable_changed` or `update`; `update` (`version`, `stopped_by_you`, `runners`) for an update |
 
 A reader ignores a message type, a field and a topic it does not know, and calls only
 the methods `welcome` lists. The library's `Client` does so, refuses a `welcome` that is not version 2, and

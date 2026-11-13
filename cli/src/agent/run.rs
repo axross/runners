@@ -14,9 +14,10 @@ use crate::command::{EXIT_FAILED, EXIT_OK, print_error};
 use crate::github_status::collector::Collector;
 use crate::github_status::http::GitHubReader;
 use crate::instance::channel::ChannelError;
-use crate::instance::lifecycle::StopTimes;
+use crate::instance::lifecycle::{Monitor, NoMonitor, StopTimes};
 use crate::instance::lock::{InstanceLock, LockError};
 use crate::instance::roots::Roots;
+use crate::lifecycle_settings::Current;
 use crate::profile::Profile;
 use crate::runtime::backend::Backend;
 use crate::runtime::clock::{Clock, SystemClock};
@@ -37,13 +38,17 @@ use super::tokens::StoreTokens;
 
 /// a resident agent on its seams: the tests give it fakes, and [`run`] gives it
 /// Docker and GitHub.
-pub struct Resident<'a, B, K, R, D> {
+pub struct Resident<'a, B, K, R, D, M = NoMonitor> {
     pub backend: &'a B,
     pub clock: &'a K,
     pub registrar: &'a R,
     /// reads GitHub status for the window, only while a client wants it.
     pub reader: &'a GitHubReader,
     pub builder: &'a D,
+    /// the signals that stop every runner, and the keep-awake hold.
+    pub monitor: &'a M,
+    /// the settings in effect, which the agent sets and the monitor reads.
+    pub in_effect: &'a Current,
     /// `None` on a host with no store; every pool is then skipped.
     pub store: Option<Arc<dyn TokenStore>>,
     pub log: &'a dyn Log,
@@ -58,14 +63,15 @@ pub struct Resident<'a, B, K, R, D> {
 
 /// runs the agent until it is asked to end, then tells every connection why and
 /// closes the channel; the caller releases the lock afterwards.
-pub async fn run_resident<B, K, R, D>(
-    resident: Resident<'_, B, K, R, D>,
+pub async fn run_resident<B, K, R, D, M>(
+    resident: Resident<'_, B, K, R, D, M>,
 ) -> Result<Ended, ChannelError>
 where
     B: Backend,
     K: Clock,
     R: Registrar,
     D: ImageBuilder,
+    M: Monitor,
 {
     let store = resident.store.clone();
     let tokens = StoreTokens::new(resident.store);
@@ -118,6 +124,8 @@ where
             builder: resident.builder,
             tokens: &tokens,
             log: resident.log,
+            monitor: resident.monitor,
+            in_effect: resident.in_effect,
             snapshots,
             executable,
         },
@@ -326,12 +334,19 @@ pub fn run(options: AgentOptions<'_>, err: &mut dyn Write) -> u8 {
         definition: options.definition.map(Path::to_path_buf),
     };
     let store = applied.store.or_else(|| platform_store(&*log));
+    let in_effect = Current::default();
+    #[cfg(windows)]
+    let monitor = windows_monitor(options.keep_awake, &in_effect, &*log);
+    #[cfg(not(windows))]
+    let monitor = NoMonitor;
     let resident = Resident {
         backend: &backend,
         clock: &SystemClock,
         registrar: &registrar,
         reader: &reader,
         builder: &builder,
+        monitor: &monitor,
+        in_effect: &in_effect,
         store,
         log: &*log,
         roots: &roots,
@@ -382,4 +397,35 @@ fn finish(log: &dyn Log, ended: &Ended) -> u8 {
 fn log_error(log: &dyn Log, error: &dyn std::fmt::Display) -> u8 {
     log.info(&format!("error: {error}"));
     EXIT_FAILED
+}
+
+/// the Windows signals, holding the keep-awake request the executable supplied on a
+/// thread of its own; a thread that cannot start leaves the request untaken.
+#[cfg(windows)]
+fn windows_monitor<'a>(
+    request: Option<crate::windows_host::keep_awake::Request>,
+    in_effect: &'a Current,
+    log: &'a dyn Log,
+) -> crate::windows_host::monitor::WindowsMonitor<
+    'a,
+    crate::windows_host::signals::WindowsSignals,
+    SystemClock,
+> {
+    use crate::windows_host::keep_awake::{Holder, KeepAwake, RETRY_INTERVAL};
+    let keep_awake = request.and_then(|request| match Holder::spawn(request) {
+        Ok(holder) => Some(KeepAwake::new(holder, RETRY_INTERVAL)),
+        Err(error) => {
+            log.warn(&format!(
+                "The keep-awake thread could not start ({error}), so Windows may sleep when idle."
+            ));
+            None
+        }
+    });
+    crate::windows_host::monitor::WindowsMonitor::new(
+        crate::windows_host::signals::WindowsSignals::real(keep_awake),
+        in_effect,
+        &SystemClock,
+        log,
+        crate::macos::monitor::Cadence::default(),
+    )
 }

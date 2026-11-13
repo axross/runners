@@ -5,6 +5,7 @@
 //! describes them.
 
 pub mod keep_awake;
+pub mod monitor;
 pub mod network;
 pub mod run_key;
 pub mod signals;

@@ -39,7 +39,9 @@ pub const METHODS: [&str; 10] = [
 pub const ENDING_UPDATE: &str = "update";
 
 /// what `ending` adds when the agent ends for an update: the version it ends for, and
-/// whether the runners were stopped by you, which the app keeps across the update.
+/// how the runners stood, which the app keeps across the update: `runners` is
+/// [`RUNNERS_RUNNING`] or the code of the stop, such as `by_you` or `slept`, and
+/// `stopped_by_you` repeats whether that code is `by_you`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct UpdateEnding {
@@ -47,14 +49,33 @@ pub struct UpdateEnding {
     pub version: String,
     #[serde(default)]
     pub stopped_by_you: bool,
+    #[serde(default)]
+    pub runners: String,
 }
 
+/// what `runners` says when the runners were running, or would have been without an
+/// error stop, so the new app starts them.
+pub const RUNNERS_RUNNING: &str = "running";
+
 impl UpdateEnding {
+    /// the ending of runners that were running, or stopped by you.
     #[must_use]
     pub fn new(version: &str, stopped_by_you: bool) -> Self {
+        let runners = if stopped_by_you {
+            super::state::Reason::BY_YOU
+        } else {
+            RUNNERS_RUNNING
+        };
+        Self::with_runners(version, runners)
+    }
+
+    /// the ending whose runners stood as `runners` says.
+    #[must_use]
+    pub fn with_runners(version: &str, runners: &str) -> Self {
         Self {
             version: version.to_string(),
-            stopped_by_you,
+            stopped_by_you: runners == super::state::Reason::BY_YOU,
+            runners: runners.to_string(),
         }
     }
 }
@@ -426,7 +447,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             String::from_utf8(line.clone()).unwrap(),
-            "{\"type\":\"ending\",\"reason\":\"update\",\"update\":{\"version\":\"1.4.0\",\"stopped_by_you\":true}}\n"
+            "{\"type\":\"ending\",\"reason\":\"update\",\"update\":{\"version\":\"1.4.0\",\"stopped_by_you\":true,\"runners\":\"by_you\"}}\n"
         );
         let read: AgentMessage = serde_json::from_slice(&line).unwrap();
         assert_eq!(

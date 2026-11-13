@@ -146,8 +146,11 @@ impl KeepAwake {
 
     /// ends the request and stops asking for it.
     pub fn release(&self) {
-        *self.state.borrow_mut() = State::Released;
-        self.holder.release();
+        let earlier = std::mem::replace(&mut *self.state.borrow_mut(), State::Released);
+        // a request never taken needs no trip to the holding thread
+        if !matches!(earlier, State::Released) {
+            self.holder.release();
+        }
     }
 
     /// the warning while the request is wanted and refused.

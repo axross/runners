@@ -25,6 +25,12 @@ impl Reason {
     pub const NO_POOL_STARTED: &'static str = "no_pool_started";
     pub const RESTART_LIMIT: &'static str = "restart_limit";
     pub const IMAGE_BUILD_FAILED: &'static str = "image_build_failed";
+    /// the computer slept, or woke, which stops every runner.
+    pub const SLEPT: &'static str = "slept";
+    /// the primary network changed, which stops every runner.
+    pub const NETWORK_CHANGED: &'static str = "network_changed";
+    /// a signal stop that came after too many resumes within an hour, so it arms none.
+    pub const RESUMED_TOO_OFTEN: &'static str = "resumed_too_often";
 
     #[must_use]
     pub fn new(code: &'static str, message: impl Into<String>) -> Self {
@@ -37,6 +43,13 @@ impl Reason {
     #[must_use]
     pub fn by_you() -> Self {
         Self::new(Self::BY_YOU, "stopped by you")
+    }
+
+    /// whether a signal stopped the runners rather than the user or an error, which an
+    /// update keeps and a restart of the agent does not undo.
+    #[must_use]
+    pub fn is_signal(&self) -> bool {
+        [Self::SLEPT, Self::NETWORK_CHANGED, Self::RESUMED_TOO_OFTEN].contains(&self.code)
     }
 
     pub(crate) fn wire(&self) -> WireReason {
