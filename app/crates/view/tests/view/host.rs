@@ -1,12 +1,52 @@
 //! the Mac's words: the same snapshots drawn with `MACOS` name Tart, the golden VM,
 //! VMs and the login keychain, and nothing of Windows or Docker the view adds itself.
 
-use crate::support::{load, load_json, now};
+use crate::support::{list, load, load_json, now, patched};
+use marshal_cli::agent::snapshot::Snapshot;
 use marshal_view::{Connection, Input, MACOS, View, build};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 fn mac_view(name: &str) -> View {
-    build(&Input::new(Connection::Connected, Some(&load(name)), now()).words(MACOS))
+    mac_view_of(&load(name))
+}
+
+fn mac_view_of(snapshot: &Snapshot) -> View {
+    build(&Input::new(Connection::Connected, Some(snapshot), now()).words(MACOS))
+}
+
+/// a running Mac with M3's items, in the codes M3 agreed with M2, as a fake until M3's
+/// agent sends them: a slot waiting for the macOS VM limit and one for a VM's deletion,
+/// the golden macOS VM after the Linux one with its warnings, and leftover VMs of a
+/// configured pool and of one no longer configured.
+fn with_m3_items() -> Snapshot {
+    patched("running", |value| {
+        let runners = &mut value["pools"][1]["runners"];
+        runners[0]["state"] = json!("waiting_for_vm_limit");
+        runners[0]["workload"] = Value::Null;
+        runners[0]["workload_kind"] = json!("vm");
+        runners[0]["reason"] = json!("two macOS VMs exist, the most macOS allows");
+        runners[1]["state"] = json!("waiting_for_vm_deletion");
+        runners[1]["workload"] = json!("marshal-mac-2-20261104030000000");
+        runners[1]["workload_kind"] = json!("vm");
+        value["images"].as_array_mut().unwrap().push(json!({
+            "name": "golden macOS VM",
+            "lines": [
+                {"name": "name", "value": "marshal-golden-macos-g1-r2.338.2-20261101000000"},
+                {"name": "golden-vm-version", "value": "1"},
+                {"name": "runner-version", "value": "2.338.2"},
+                {"name": "base-published", "value": "2026-09-20"}
+            ],
+            "warnings": [
+                {"code": "runner_old", "days": 21, "version": "2.338.2"},
+                {"code": "runner_age_unknown", "version": "2.338.2"},
+                {"code": "base_old", "days": 45}
+            ]
+        }));
+        value["leftovers"] = json!([
+            {"kind": "vm", "name": "app-1-20261104020000000"},
+            {"kind": "vm_unconfigured_pool", "name": "old-1-20261103020000000"}
+        ]);
+    })
 }
 
 fn strings(value: &Value, out: &mut Vec<String>) {
@@ -60,17 +100,18 @@ fn the_macs_view_adds_no_windows_or_docker_words() {
             {
                 continue;
             }
+            let lower = text.to_lowercase();
             for windows in [
-                "Windows",
-                "Docker",
+                "windows",
+                "docker",
                 "container",
-                "Credential Manager",
-                "Task Manager",
+                "credential manager",
+                "task manager",
                 ".exe",
                 "runner image",
             ] {
                 assert!(
-                    !text.contains(windows),
+                    !lower.contains(windows),
                     "{name}: {text:?} names {windows:?}"
                 );
             }
@@ -103,4 +144,74 @@ fn leftovers_are_vms() {
 fn tokens_are_kept_in_the_login_keychain() {
     let all = joined(&mac_view("token_rejected"));
     assert!(all.contains("login keychain"), "{all}");
+}
+
+#[test]
+fn m3s_slots_say_what_they_wait_for() {
+    let view = mac_view_of(&with_m3_items());
+    let rows = &list(&view).pools[1].runners;
+    assert_eq!(rows[0].state, "Waiting for the macOS VM limit");
+    assert_eq!(
+        rows[0].detail.as_deref(),
+        Some("two macOS VMs exist, the most macOS allows")
+    );
+    assert_eq!(
+        rows[1].state,
+        "Waiting for the deletion of VM marshal-mac-2-20261104030000000"
+    );
+    assert_eq!(list(&view).pools[0].runners[0].state, "VM running");
+}
+
+#[test]
+fn the_golden_macos_vm_follows_the_linux_one_with_its_own_warnings() {
+    let view = mac_view_of(&with_m3_items());
+    assert_eq!(
+        view.window.footer.image_lines[1],
+        "Golden macOS VM: marshal-golden-macos-g1-r2.338.2-20261101000000 · version 1 · runner 2.338.2 · base published 2026-09-20"
+    );
+    let warnings = view.window.footer.warnings.join("\n");
+    assert!(
+        warnings.contains("Warning: runner 2.338.2 was released 21 days ago, so each job's runner likely updates itself at start; update Marshal to get a newer runner, then build the golden macOS VM again."),
+        "{warnings}"
+    );
+    assert!(
+        warnings.contains("Warning: the golden macOS VM's runner 2.338.2 has no known release date, so its age is unknown."),
+        "{warnings}"
+    );
+    assert!(
+        warnings.contains("Warning: the golden macOS VM's macOS base was published 45 days ago; update Marshal to get a newer base, then build the golden macOS VM again."),
+        "{warnings}"
+    );
+    // the Linux golden VM's warning keeps naming the golden VM
+    assert!(warnings.contains("a newer runner may exist"), "{warnings}");
+}
+
+#[test]
+fn a_vm_of_a_pool_no_longer_configured_is_not_promised_to_the_next_start() {
+    let view = mac_view_of(&with_m3_items());
+    let all = joined(&view);
+    assert!(
+        all.contains("app-1-20261104020000000 remains; the next start removes it."),
+        "{all}"
+    );
+    assert!(
+        all.contains("old-1-20261103020000000 is from a pool no longer configured, so Marshal does not delete it; macOS Runner Host says how to delete it."),
+        "{all}"
+    );
+    assert!(
+        !all.contains("tart delete"),
+        "no command in the window: {all}"
+    );
+
+    let only_unconfigured = patched("running", |value| {
+        value["leftovers"] = json!([
+            {"kind": "vm_unconfigured_pool", "name": "old-1-20261103020000000"}
+        ]);
+    });
+    let all = joined(&mac_view_of(&only_unconfigured));
+    assert!(
+        all.contains("A VM of a pool no longer configured remains"),
+        "{all}"
+    );
+    assert!(!all.contains("the next start removes"), "{all}");
 }
