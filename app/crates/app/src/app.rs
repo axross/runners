@@ -28,10 +28,27 @@ pub const HIDDEN_EVENT: &str = "marshal:hidden";
 pub fn hide_main_window<R: Runtime>(window: &Window<R>) -> tauri::Result<()> {
     let told = window.emit_to(MAIN_WINDOW, HIDDEN_EVENT, ());
     window.hide()?;
+    in_dock(window.app_handle(), false);
     if let Some(state) = window.app_handle().try_state::<AppState>() {
         state.handle.window_shown(false);
     }
     told
+}
+
+/// on macOS, makes Marshal a regular app, with a Dock icon and its menus, while its main
+/// window is open, and a menu bar app with neither once it is hidden; `LSUIElement`
+/// starts it as the latter. Nothing elsewhere.
+#[allow(unused_variables)]
+fn in_dock<R: Runtime>(app: &AppHandle<R>, shown: bool) {
+    #[cfg(target_os = "macos")]
+    {
+        let policy = if shown {
+            tauri::ActivationPolicy::Regular
+        } else {
+            tauri::ActivationPolicy::Accessory
+        };
+        let _ = app.set_activation_policy(policy);
+    }
 }
 
 /// tells the session whether the main window can be seen, which is when it holds the
@@ -69,6 +86,7 @@ pub fn on_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
 /// brings the main window forward, showing it when it is hidden.
 pub fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+        in_dock(app, true);
         let _ = window.show();
         let _ = window.unminimize();
         let _ = window.set_focus();
@@ -171,6 +189,7 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     if is_sign_in(std::env::args_os()) {
         log.info("Marshal started at sign-in, with its icon only.");
         tell_session_shown(app);
+        in_dock(app, false);
     } else {
         show_main_window(app);
     }

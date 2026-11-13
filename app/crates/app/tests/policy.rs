@@ -1,5 +1,5 @@
 //! the app's policy files against what the plan's System design states: the content
-//! security policy, the two capabilities and the commands each may call, the permission
+//! security policy, the three capabilities and the commands each may call, the permission
 //! files Tauri generates, and the window's size.
 #![allow(
     clippy::unwrap_used,
@@ -97,13 +97,56 @@ fn the_confirmation_window_may_read_its_question_and_answer_it_and_nothing_else(
 }
 
 #[test]
+fn on_macos_only_the_main_window_may_be_dragged_and_zoomed_by_its_header() {
+    let capability = json("capabilities/macos-main-drag.json");
+    assert_eq!(
+        strings(&capability["platforms"]),
+        ["macOS".to_string()].into()
+    );
+    assert_eq!(strings(&capability["windows"]), ["main".to_string()].into());
+    assert_eq!(
+        strings(&capability["permissions"]),
+        [
+            "core:window:allow-internal-toggle-maximize".to_string(),
+            "core:window:allow-start-dragging".to_string(),
+        ]
+        .into()
+    );
+}
+
+#[test]
+fn on_macos_only_the_question_window_may_be_dragged_and_not_zoomed() {
+    let capability = json("capabilities/macos-confirmation-drag.json");
+    assert_eq!(
+        strings(&capability["platforms"]),
+        ["macOS".to_string()].into()
+    );
+    assert_eq!(
+        strings(&capability["windows"]),
+        ["confirmation".to_string()].into()
+    );
+    assert_eq!(
+        strings(&capability["permissions"]),
+        ["core:window:allow-start-dragging".to_string()].into()
+    );
+}
+
+#[test]
 fn no_other_capability_exists_and_none_is_inline_or_remote() {
     let mut found: Vec<String> = std::fs::read_dir(app_file("capabilities"))
         .unwrap()
         .map(|entry| entry.unwrap().file_name().into_string().unwrap())
         .collect();
     found.sort();
-    assert_eq!(found, ["confirmation-window.json", "main-window.json"]);
+    assert_eq!(
+        found,
+        [
+            "confirmation-window.json",
+            "macos-confirmation-drag.json",
+            "macos-main-drag.json",
+            "main-window.json"
+        ]
+    );
     let config = json("tauri.conf.json");
     assert!(config["app"]["security"].get("capabilities").is_none());
     for file in &found {
@@ -181,6 +224,22 @@ fn the_main_window_opens_at_880_by_680_with_a_minimum_width_of_480() {
 }
 
 #[test]
+fn on_macos_the_main_window_differs_only_by_option_bs_title_bar() {
+    let shared = json("tauri.conf.json");
+    let mac = json("tauri.macos.conf.json");
+    let mut expected = shared["app"]["windows"][0].clone();
+    expected["titleBarStyle"] = "Overlay".into();
+    expected["hiddenTitle"] = true.into();
+    assert_eq!(mac["app"]["windows"], Value::Array(vec![expected]));
+    assert_eq!(
+        mac["app"].as_object().unwrap().keys().collect::<Vec<_>>(),
+        ["windows"],
+        "nothing else of the app's settings, its security policy above all, changes on macOS"
+    );
+    assert_eq!(mac["bundle"]["macOS"]["minimumSystemVersion"], "26.0");
+}
+
+#[test]
 fn the_opener_plugins_page_script_is_off_and_no_capability_names_it() {
     assert!(
         marshal_app::opener::<MockRuntime>()
@@ -200,7 +259,12 @@ fn the_opener_plugins_page_script_is_off_and_no_capability_names_it() {
         source.contains(".plugin(opener())"),
         "and registered from it"
     );
-    for file in ["main-window.json", "confirmation-window.json"] {
+    for file in [
+        "main-window.json",
+        "confirmation-window.json",
+        "macos-main-drag.json",
+        "macos-confirmation-drag.json",
+    ] {
         let capability = json(&format!("capabilities/{file}"));
         assert!(
             strings(&capability["permissions"])

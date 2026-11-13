@@ -17,8 +17,14 @@ pub const APP: &str = env!("CARGO_BIN_EXE_marshal-app");
 pub const FAKE_DOCKER: &str = env!("CARGO_BIN_EXE_fake-docker");
 
 /// a configuration with one pool whose token is not in any file, so it waits for one.
+#[cfg(not(target_os = "macos"))]
 pub const ONE_POOL: &str = r#"{"imageName":"actions-runner:local","repositories":[
     {"owner":"o","repository":"r","name":"r","slots":1,"tokenPath":"C:\\no-such.token","volumes":[]}]}"#;
+
+/// one Linux VM pool of `o/r`, since the agent reads its configuration as axmc on macOS.
+#[cfg(target_os = "macos")]
+pub const ONE_POOL: &str = r#"{"budget":{"cpus":8,"memoryGb":16,"diskGb":120},"repositories":[
+    {"owner":"o","repository":"r","name":"r","os":"linux","slots":1,"tokenPath":"/no-such.token","diskGb":40}]}"#;
 
 /// a directory under the system's temporary directory, removed when dropped.
 pub struct Scratch {
@@ -68,6 +74,9 @@ impl Scratch {
             ),
             ("MARSHAL_TEST_DOCKER".into(), FAKE_DOCKER.into()),
             ("FAKE_DOCKER_DIR".into(), self.docker().into_os_string()),
+            // on macOS the agent runs Tart, never the host's own: every call fails, so a
+            // pool waits for its host and no VM is made
+            ("MARSHAL_TEST_TART".into(), "/usr/bin/false".into()),
         ]
     }
 }

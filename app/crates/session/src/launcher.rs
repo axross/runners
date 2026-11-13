@@ -28,6 +28,12 @@ const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
 #[cfg(any(windows, test))]
 const AGENT_CREATION_FLAGS: u32 = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP;
 
+/// the agent's `PATH` on macOS. An app opened from the Finder inherits launchd's short
+/// `PATH`, without Homebrew's directory, and the agent passes its own on to Tart, which
+/// finds `softnet` on it.
+#[cfg(target_os = "macos")]
+pub const AGENT_PATH: &str = "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin";
+
 /// the app's own executable, as it was when the app started.
 pub struct OwnExecutable {
     path: PathBuf,
@@ -81,10 +87,12 @@ impl OwnExecutable {
 }
 
 impl OwnExecutable {
-    /// the command that starts the agent: no input or output, the agent's variables, and
-    /// the flags that detach it.
+    /// the command that starts the agent: no input or output, on macOS the agent's
+    /// `PATH`, the agent's variables, and the flags that detach it.
     fn agent_command(&self, launch: Launch) -> Command {
         let mut command = Command::new(&self.path);
+        #[cfg(target_os = "macos")]
+        command.env("PATH", AGENT_PATH);
         command
             .args(marshal_modes::agent_arguments(launch))
             .envs(self.environment.iter().map(|(name, value)| (name, value)))
@@ -177,6 +185,21 @@ mod tests {
             applied::take(),
             Some(0x0000_0008 | 0x0000_0200),
             "DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP, and not CREATE_NO_WINDOW, which Windows ignores beside DETACHED_PROCESS"
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn on_macos_the_agent_finds_homebrew_on_its_path() {
+        let launcher = OwnExecutable::at(PathBuf::from("marshal-app"), Arc::new(NoLog));
+        let command = launcher.agent_command(Launch::Running);
+        let path = command
+            .get_envs()
+            .find(|(name, _)| *name == "PATH")
+            .and_then(|(_, value)| value);
+        assert_eq!(
+            path.and_then(|value| value.to_str()),
+            Some("/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin")
         );
     }
 }
