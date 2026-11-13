@@ -500,7 +500,7 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'_, B, K, R, D> 
             .any(|effect| effect.change != Change::Unchanged);
         let order = self.orders.borrow().clone();
         if let (true, Some(orders)) = (changes, order) {
-            let removed = previous
+            let removed: Vec<_> = previous
                 .map(|plan| plan.entries)
                 .unwrap_or_default()
                 .into_iter()
@@ -511,8 +511,17 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'_, B, K, R, D> 
                         .any(|effect| effect.pool == entry.name && effect.change == Change::Removed)
                 })
                 .collect();
+            // a pool removed earlier is kept while a slot of its own is on the board
+            let rows = self.board.slot_rows();
+            let has_rows = |name: &str| {
+                let prefix = format!("{name} slot ");
+                rows.iter().any(|row| row.name.starts_with(&prefix))
+            };
+            inner.leaving.retain(|entry| {
+                has_rows(&entry.name) && !removed.iter().any(|new| new.name == entry.name)
+            });
+            inner.leaving.extend(removed);
             inner.applying = Some(Applying {
-                removed,
                 effects: prepared.effects.clone(),
             });
             "applying".clone_into(&mut info.outcome);

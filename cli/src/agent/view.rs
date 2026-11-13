@@ -207,8 +207,12 @@ impl View<'_> {
                     .iter()
                     .map(|entry| self.pool(entry, &pools, &slots))
                     .collect();
-                // a pool an apply removes is listed until its slots have stopped
-                let removed = inner.applying.iter().flat_map(|applying| &applying.removed);
+                // a pool an apply removes is listed until its slots have stopped, the
+                // apply's end included; one the file names again is listed as that
+                let removed = inner
+                    .leaving
+                    .iter()
+                    .filter(|entry| !plan.entries.iter().any(|named| named.name == entry.name));
                 for entry in removed {
                     let mut pool = self.pool(entry, &pools, &slots);
                     pool.runners
@@ -268,14 +272,17 @@ impl View<'_> {
             Some(PoolState::Skipped(reason)) => ("skipped", Some(reason.clone())),
             None => ("stopped", self.inner.skips.get(&entry.name).cloned()),
         };
-        // a slot an apply stops is listed until its stop sequence ends
-        let leaving = (entry.slots + 1..)
-            .take_while(|number| {
-                slots.contains_key(format!("{} slot {number}", entry.name).as_str())
-            })
-            .count();
-        let last = entry.slots + u32::try_from(leaving).unwrap_or(0);
-        let runners: Vec<RunnerInfo> = (1..=last)
+        // a slot an apply stops is listed until its stop sequence ends, whichever of
+        // the slots above the pool's count are still on the board
+        let prefix = format!("{} slot ", entry.name);
+        let mut above: Vec<u32> = slots
+            .keys()
+            .filter_map(|label| label.strip_prefix(prefix.as_str())?.parse().ok())
+            .filter(|number| *number > entry.slots)
+            .collect();
+        above.sort_unstable();
+        let runners: Vec<RunnerInfo> = (1..=entry.slots)
+            .chain(above)
             .map(|number| {
                 let label = format!("{} slot {number}", entry.name);
                 match slots.get(label.as_str()) {

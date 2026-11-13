@@ -1159,3 +1159,165 @@ async fn a_late_slot_that_ends_is_finished_while_another_pools_late_slot_runs_on
     one_pool_of_two_late_ones_ends("r").await;
     one_pool_of_two_late_ones_ends("d").await;
 }
+
+/// the slot numbers `pool` lists, or `None` when the snapshot does not list it.
+fn listed(snapshot: &marshal_cli::agent::snapshot::Snapshot, pool: &str) -> Option<Vec<u32>> {
+    snapshot
+        .pools
+        .iter()
+        .find(|info| info.name == pool)
+        .map(|info| info.runners.iter().map(|runner| runner.slot).collect())
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn every_late_slot_is_listed_and_a_removed_pool_stays_listed_after_the_apply() {
+    use marshal_cli::runtime::backend::StopRequest;
+    let rig = rig();
+    rig.backend.state.borrow_mut().hold_runs_by_name = true;
+    rig.times.set(StopTimes {
+        exit_deadline: Duration::from_secs(1),
+        ..StopTimes::default()
+    });
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            conn.until("three runners", |snapshot| snapshot.runners_up == 3)
+                .await;
+            rig.mark_running();
+            set(&conn, "pool[0].runners", json!(3)).await.unwrap();
+            let before = conn
+                .until("four runners", |snapshot| snapshot.runners_up == 4)
+                .await;
+            rig.mark_running();
+            let held: std::collections::BTreeMap<_, _> = workloads(&before).into_iter().collect();
+            rig.backend.state.borrow_mut().stop_hangs = true;
+            conn.call(
+                "config_edit",
+                json!({
+                    "revision": read_revision(&conn).await,
+                    "edits": [
+                        {"op": "set", "path": "pool[0].runners", "value": 1},
+                        {"op": "remove_entry", "path": "pool[1]"},
+                    ],
+                }),
+            )
+            .await
+            .unwrap();
+            let late = until_applied(&conn).await;
+            assert_eq!(listed(&late, "r"), Some(vec![1, 2, 3]), "{late:#?}");
+            // the removed pool is listed after its apply ended, while its slot runs
+            assert_eq!(listed(&late, "d"), Some(vec![1]), "{late:#?}");
+
+            // slot 2 ends, so slot 3 is listed above the gap it leaves
+            rig.backend.state.borrow_mut().stop_hangs = false;
+            rig.backend
+                .stop_containers(&StopRequest {
+                    names: vec![held["r 2"].clone()],
+                    grace: Duration::ZERO,
+                    budget: Duration::from_secs(1),
+                })
+                .await
+                .unwrap();
+            let gap = conn
+                .until("slot 2 gone", |snapshot| {
+                    listed(snapshot, "r") != Some(vec![1, 2, 3])
+                })
+                .await;
+            assert_eq!(listed(&gap, "r"), Some(vec![1, 3]), "{gap:#?}");
+            assert_eq!(listed(&gap, "d"), Some(vec![1]), "{gap:#?}");
+
+            rig.end_jobs().await;
+            let gone = conn
+                .until("every late slot gone", |snapshot| {
+                    listed(snapshot, "d").is_none() && listed(snapshot, "r") == Some(vec![1])
+                })
+                .await;
+            assert_eq!(gone.pools.len(), 1);
+            rig.mark_running();
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_valid_reload_on_a_stopped_agent_makes_the_file_the_one_in_use() {
+    let rig = rig();
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Stopped, |conn| async move {
+            rig.write_toml(&TWO_POOLS_TOML.replace("runners = 1", "runners = 2"));
+            let reloaded = conn
+                .call(
+                    "config_reload",
+                    json!({"revision": read_revision(&conn).await}),
+                )
+                .await
+                .unwrap();
+            assert_eq!(reloaded["applies"], false);
+            assert_eq!(
+                changes(&reloaded),
+                ["r:unchanged:false", "d:runners_added:false"]
+            );
+            let snapshot = conn.status().await;
+            assert_eq!(snapshot.agent.state, "stopped");
+            assert_eq!(snapshot.configuration.status, "valid");
+            assert_eq!(snapshot.configuration.in_use.unwrap().source, "file");
+            assert_eq!(snapshot.pools[1].slots, 2);
+            assert!(
+                !rig.backend
+                    .calls()
+                    .iter()
+                    .any(|call| matches!(call, Call::RunContainer(_)))
+            );
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn an_edit_and_a_reload_are_busy_while_the_agent_stops() {
+    let rig = rig();
+    rig.backend.state.borrow_mut().stop_hangs = true;
+    rig.times.set(StopTimes {
+        exit_deadline: Duration::from_secs(2),
+        ..StopTimes::default()
+    });
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            conn.until("three runners", |snapshot| snapshot.runners_up == 3)
+                .await;
+            rig.mark_running();
+            // the stop hangs until the exit deadline, so the calls are made on another
+            // connection
+            let other = conn.another().await;
+            let stop = async { conn.ok("stop_all").await };
+            let meanwhile = async {
+                other.until_state("stopping").await;
+                let revision = read_revision(&other).await;
+                assert_eq!(
+                    refused(
+                        &other,
+                        "config_edit",
+                        json!({
+                            "revision": revision,
+                            "edits": [{"op": "set", "path": "pool[0].runners", "value": 3}],
+                        })
+                    )
+                    .await
+                    .0,
+                    "busy"
+                );
+                assert_eq!(
+                    refused(&other, "config_reload", json!({"revision": revision}))
+                        .await
+                        .0,
+                    "busy"
+                );
+            };
+            tokio::join!(stop, meanwhile);
+            assert_eq!(file(rig), TWO_POOLS_TOML);
+            conn.ok("quit").await;
+        })
+        .await;
+}

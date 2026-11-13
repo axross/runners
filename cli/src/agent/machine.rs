@@ -578,6 +578,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             })
             .collect();
         self.inner.borrow_mut().skips = skips;
+        self.inner.borrow_mut().leaving.clear();
         self.board.clear();
     }
 

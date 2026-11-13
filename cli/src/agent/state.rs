@@ -146,6 +146,10 @@ pub struct Inner {
     pub drain: Option<Drain>,
     /// the apply of an edit that runs now.
     pub applying: Option<Applying>,
+    /// the pools an apply removed, which the snapshot lists while a slot of theirs is
+    /// still leaving, as one whose stop ran late or that keeps its evidence does after
+    /// the apply has ended.
+    pub leaving: Vec<Entry>,
     /// how the latest apply of an edit ended, or that it runs.
     pub last_apply: Option<ApplyInfo>,
 }
@@ -158,11 +162,9 @@ pub struct Drain {
     pub deadline: SystemTime,
 }
 
-/// an apply that runs: the pools it removes, which the snapshot lists until their
-/// slots have stopped, and its effect on each pool.
+/// an apply that runs: its effect on each pool.
 #[derive(Debug)]
 pub struct Applying {
-    pub removed: Vec<Entry>,
     pub effects: Vec<Effect>,
 }
 
@@ -179,6 +181,7 @@ impl Inner {
             image: None,
             drain: None,
             applying: None,
+            leaving: Vec::new(),
             last_apply: None,
         }
     }
