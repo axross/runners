@@ -65,8 +65,8 @@ Not yet verified on axpc, each for the reason given:
 - the command line's MSI install, migration block and check block, and its
   bare-binary block's refusals, at the last command-line release's tag, which were
   not run on axpc
-  ([#56](https://github.com/axross/runners/issues/56)); CI runs them against
-  stand-ins;
+  ([#56](https://github.com/axross/runners/issues/56)); CI ran them against
+  stand-ins until W1's installer pull request;
 - rolling back to a previous release, which no host has done;
 - the command line's token-file access control step's result, whose `icacls`
   evidence was not collected;
@@ -480,7 +480,7 @@ is a warning, not a failed build. [CLI](./cli.md#build) gives every step, and
 [The Agent's Configuration](./cli.md#the-agents-configuration) what the agent's build
 logs.
 
-While it builds, the window says the image is building, and **Stop build** or
+While it builds, the window says the image is building, and **Stop the Build** or
 **Stop all runners** aborts it within 30 s; an abort before the retag leaves the
 configured name on its previous image. CI runs the library's build only against a
 small test definition on Linux; a full build of the image on Docker Desktop was

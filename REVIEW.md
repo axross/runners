@@ -242,8 +242,8 @@ Codex review uses its native priority label.
 - **The Softnet check and rules on every boot.** Every `tart run` follows a Softnet
   file check and a version check, and carries the two Softnet rules from
   [Security](docs/conventions/security.md#softnet-confines-a-job-vms-network) and no
-  other network option. A boot path that skips the check, a cached result, a
-  the runtime that sets Softnet's SUID bit, and a fallback to Tart's default network
+  other network option. A boot path that skips the check, a cached result, the
+  runtime setting Softnet's SUID bit, and a fallback to Tart's default network
   are findings.
 - **No shared directory, clipboard, audio, USB accessories or Rosetta.** Every
   `tart run` turns off graphics, the clipboard, audio and USB accessories, and

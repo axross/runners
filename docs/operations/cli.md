@@ -4375,10 +4375,11 @@ replaced one.
 [Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
 records that risk.
 
-The first release expected to carry the app is `0.2.0`, and the check block below
-names it. To check another release, change the block's `version` and `file`
-assignment lines. If the first release of the app gets another version, a later
-change corrects the lines. A host that runs the command line moves to the app as
+The first release expected to carry the app is `1.0.0`, since `main` holds breaking
+changes since `v0.1.0`, and the check block below names it. To check another
+release, change the block's `version` and `file` assignment lines. If the first
+release of the app gets another version, a later change corrects the lines. A host
+that runs the command line moves to the app as
 [The Last Command-Line Release](#the-last-command-line-release) says.
 
 CI runs these blocks against stand-ins and against the dry run's real MSI in the
@@ -4402,7 +4403,7 @@ adds the configuration and the image around this one.
 
 ### Installing
 
-`<version>` is the release's version without the `v`, such as `0.2.0`.
+`<version>` is the release's version without the `v`, such as `1.0.0`.
 
 1. Download `marshal-<version>-windows-x64.msi` from the
    [release page](https://github.com/axross/runners/releases). If the browser warns
@@ -4461,8 +4462,8 @@ In PowerShell 5.1 or 7:
 
 ```powershell
 & {
-  $version = '0.2.0'
-  $file = "$env:USERPROFILE\Downloads\marshal-0.2.0-windows-x64.msi"
+  $version = '1.0.0'
+  $file = "$env:USERPROFILE\Downloads\marshal-1.0.0-windows-x64.msi"
   $ErrorActionPreference = 'Stop'
   function Refuse([string]$Why) { throw "refused: $Why" }
   $name = "marshal-$version-windows-x64.msi"
