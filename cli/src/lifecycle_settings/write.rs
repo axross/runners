@@ -1,51 +1,11 @@
-//! the write of one `[lifecycle]` setting to `config.toml` through the configuration's
-//! write path, which keeps the rest of the file as it is.
+//! the edits that write one `[lifecycle]` setting to `config.toml` through the
+//! configuration's write path, which keeps the rest of the file as it is; the agent
+//! answers the write path's refusals with its error codes.
 
-use std::fmt;
-use std::path::Path;
-
-use crate::edit::{self, Edit, EditError};
-use crate::profile::Profile;
-use crate::validate::{Failure, Key, KeyPath};
+use crate::edit::{self, Edit};
+use crate::validate::{Key, KeyPath};
 
 use super::Setting;
-
-/// why a setting was not written. the file is unchanged in every case.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Refusal {
-    /// the file changed after the agent read it.
-    Changed,
-    /// the file has problems, listed as the configuration's rules list them.
-    Invalid(Failure),
-    /// the file could not be read, or the new one could not be written or put in its
-    /// place.
-    Io(String),
-    /// the file is written in a form the write path does not edit, such as
-    /// `lifecycle = { … }` over several lines; only a change in a text editor helps.
-    FileForm(String),
-    /// the write path found the edit inapplicable, which these edits never should be;
-    /// the text is its reason.
-    Inapplicable(String),
-}
-
-impl fmt::Display for Refusal {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Changed => f.write_str("config.toml changed since Marshal read it"),
-            Self::Invalid(failure) => {
-                write!(f, "{}", EditError::Invalid(failure.clone()))
-            }
-            Self::Io(text) => f.write_str(text),
-            Self::FileForm(reason) => write!(
-                f,
-                "Marshal cannot change config.toml as it is written ({reason}); change the setting in a text editor"
-            ),
-            Self::Inapplicable(reason) => {
-                write!(f, "Marshal could not apply the setting ({reason})")
-            }
-        }
-    }
-}
 
 /// the edits that give `setting` the value `value`, or leave it unset.
 #[must_use]
@@ -64,34 +24,12 @@ pub fn edits(setting: Setting, value: Option<bool>) -> Vec<Edit> {
     }
 }
 
-/// the refusal a write-path error means for a setting.
-#[must_use]
-pub fn refusal(error: EditError) -> Refusal {
-    match error {
-        EditError::Changed => Refusal::Changed,
-        EditError::Invalid(failure) => Refusal::Invalid(failure),
-        error @ EditError::Io { .. } => Refusal::Io(error.to_string()),
-        EditError::FileForm(reason) => Refusal::FileForm(reason),
-        EditError::Inapplicable(reason) => Refusal::Inapplicable(reason),
-    }
-}
-
-/// writes `value` to `setting` in the file at `path`, which is valid for `host`.
-pub fn write(
-    path: &Path,
-    host: Profile,
-    checkout: Option<&Path>,
-    setting: Setting,
-    value: Option<bool>,
-) -> Result<(), Refusal> {
-    edit::edit_config(path, host, checkout, &edits(setting, value)).map_err(refusal)
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::edit::rewrite;
+    use crate::edit::{EditError, rewrite};
+    use crate::profile::Profile;
 
     const POOL: &str = "\n[[pool]]\nname = \"alpha\"\nrepository = \"octo/hello\"\nrunners = 1\n";
 
@@ -101,10 +39,9 @@ mod tests {
         )
     }
 
-    fn apply(text: &str, setting: Setting, value: Option<bool>) -> Result<String, Refusal> {
+    fn apply(text: &str, setting: Setting, value: Option<bool>) -> Result<String, EditError> {
         rewrite(text.as_bytes(), Profile::Axpc, None, &edits(setting, value))
             .map(|bytes| String::from_utf8(bytes).unwrap())
-            .map_err(refusal)
     }
 
     #[test]
@@ -155,10 +92,8 @@ mod tests {
     fn a_lifecycle_inline_table_over_several_lines_is_refused_as_the_files_form() {
         let before = file("lifecycle = {\n  keep_awake = true,\n}\n");
         match apply(&before, Setting::KeepAwake, Some(false)) {
-            Err(Refusal::FileForm(reason)) => {
+            Err(EditError::FileForm(reason)) => {
                 assert!(reason.contains("several lines"), "{reason}");
-                let shown = Refusal::FileForm(reason).to_string();
-                assert!(shown.contains("text editor"), "{shown}");
             }
             other => panic!("expected a refusal of the file's form, got {other:?}"),
         }
@@ -169,7 +104,7 @@ mod tests {
         let before = file("\n[lifecycle]\nkeep_awake = \"yes\"\n");
         assert!(matches!(
             apply(&before, Setting::StartAtLogin, Some(true)),
-            Err(Refusal::Invalid(_))
+            Err(EditError::Invalid(_))
         ));
     }
 }

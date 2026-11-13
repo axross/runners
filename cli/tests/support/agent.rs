@@ -36,6 +36,7 @@ use marshal_cli::runtime::log::Log;
 use marshal_cli::runtime::registration::HttpLimits;
 use marshal_cli::token_store::{MemoryTokenStore, TokenKey, TokenStore};
 use marshal_cli::windows_host::monitor::WindowsMonitor;
+use marshal_cli::windows_host::run_key::MemorySignIn;
 use serde_json::{Value, json};
 use tokio::io::WriteHalf;
 use tokio::sync::{Notify, mpsc, watch};
@@ -168,6 +169,8 @@ pub struct Rig {
     pub signals: Rc<FakeSignals>,
     /// the settings in effect, which the agent sets and its monitor reads.
     pub in_effect: Current,
+    /// the sign-in item, in memory.
+    pub sign_in: MemorySignIn,
     lock: RefCell<Option<InstanceLock>>,
     ended_at: Cell<Option<Instant>>,
 }
@@ -207,6 +210,7 @@ impl Rig {
             other_store: RefCell::new(None),
             signals: Rc::new(FakeSignals::new()),
             in_effect: Current::default(),
+            sign_in: MemorySignIn::default(),
             lock: RefCell::new(Some(lock)),
             ended_at: Cell::new(None),
         }
@@ -307,6 +311,7 @@ impl Rig {
                 builder: &self.builder,
                 monitor: &monitor,
                 in_effect: &self.in_effect,
+                sign_in: Some(&self.sign_in),
                 store: (!self.no_store.get()).then(|| {
                     self.other_store
                         .borrow()

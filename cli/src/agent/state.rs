@@ -130,11 +130,11 @@ impl Phase {
         match (self, method) {
             (Self::Running | Self::Stopped(_), Method::DrainForUpdate { .. }) => Action::Begin,
             (_, Method::DrainForUpdate { .. }) => Action::Refuse(DRAIN_NOT_NOW),
-            (Self::Stopped(_), Method::StartAll | Method::Build) => Action::Begin,
+            (Self::Stopped(_), Method::StartAll | Method::Launch | Method::Build) => Action::Begin,
             (Self::Stopped(_) | Self::Stopping | Self::Quitting, Method::StopAll)
-            | (Self::Running, Method::StartAll) => Action::NoChange,
+            | (Self::Running, Method::StartAll | Method::Launch) => Action::NoChange,
             (Self::Running, Method::Build) => Action::Refuse(BUILD_WHILE_RUNNING),
-            (_, Method::StartAll | Method::Build) => Action::Busy,
+            (_, Method::StartAll | Method::Launch | Method::Build) => Action::Busy,
             (_, Method::StopAll) => Action::Stop,
             (_, Method::Quit) => Action::Quit,
             _ => Action::Refuse("the method is not available"),

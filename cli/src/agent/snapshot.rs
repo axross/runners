@@ -447,8 +447,45 @@ pub struct Snapshot {
     /// the images the agent tracks; today one, the runner image.
     #[serde(default)]
     pub images: Vec<ImageInfo>,
+    /// the `[lifecycle]` settings in effect and what they hold, on a host that has
+    /// them; absent while no setting is in effect.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lifecycle: Option<LifecycleInfo>,
     #[serde(default)]
     pub omitted: Omitted,
+}
+
+/// one setting in effect.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct SettingInfo {
+    #[serde(default)]
+    pub on: bool,
+    /// true when the file leaves the setting unset and it takes its default.
+    #[serde(default)]
+    pub defaulted: bool,
+}
+
+/// the `[lifecycle]` part of the snapshot.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct LifecycleInfo {
+    /// each setting by its key.
+    #[serde(default)]
+    pub settings: std::collections::BTreeMap<String, SettingInfo>,
+    /// `registered`, `not_registered`, `turned_off` (in Windows' Startup apps) or
+    /// `failed`; absent until the agent has kept it in step.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sign_in: Option<String>,
+    /// why the sign-in item failed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sign_in_error: Option<String>,
+    /// `held`, `released`, `warning` or `off`.
+    #[serde(default)]
+    pub keep_awake: String,
+    /// the warning while keep-awake is wanted and not held.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keep_awake_warning: Option<String>,
 }
 
 fn size(snapshot: &Snapshot) -> usize {

@@ -49,6 +49,8 @@ pub struct Resident<'a, B, K, R, D, M = NoMonitor> {
     pub monitor: &'a M,
     /// the settings in effect, which the agent sets and the monitor reads.
     pub in_effect: &'a Current,
+    /// the sign-in item kept in step with `start_at_login`; `None` without one.
+    pub sign_in: Option<&'a dyn crate::windows_host::run_key::SignInItem>,
     /// `None` on a host with no store; every pool is then skipped.
     pub store: Option<Arc<dyn TokenStore>>,
     pub log: &'a dyn Log,
@@ -126,6 +128,7 @@ where
             log: resident.log,
             monitor: resident.monitor,
             in_effect: resident.in_effect,
+            sign_in: resident.sign_in,
             snapshots,
             executable,
         },
@@ -339,6 +342,11 @@ pub fn run(options: AgentOptions<'_>, err: &mut dyn Write) -> u8 {
     let monitor = windows_monitor(options.keep_awake, &in_effect, &*log);
     #[cfg(not(windows))]
     let monitor = NoMonitor;
+    #[cfg(windows)]
+    let sign_in: Option<&dyn crate::windows_host::run_key::SignInItem> =
+        Some(&crate::windows_host::run_key::RunKey);
+    #[cfg(not(windows))]
+    let sign_in = None;
     let resident = Resident {
         backend: &backend,
         clock: &SystemClock,
@@ -347,6 +355,7 @@ pub fn run(options: AgentOptions<'_>, err: &mut dyn Write) -> u8 {
         builder: &builder,
         monitor: &monitor,
         in_effect: &in_effect,
+        sign_in,
         store,
         log: &*log,
         roots: &roots,

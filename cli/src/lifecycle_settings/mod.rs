@@ -40,6 +40,24 @@ impl Setting {
         }
     }
 
+    /// the key's name, as the file and the protocol write it.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::StartAtLogin => "start_at_login",
+            Self::StartRunnersOnLaunch => "start_runners_on_launch",
+            Self::KeepAwake => "keep_awake",
+            Self::StopOnNetworkChange => "stop_on_network_change",
+            Self::ResumeAfterStop => "resume_after_stop",
+        }
+    }
+
+    /// the setting a key names.
+    #[must_use]
+    pub fn named(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|setting| setting.name() == name)
+    }
+
     /// the value an unset setting takes on Windows.
     #[must_use]
     pub fn windows_default(self) -> bool {

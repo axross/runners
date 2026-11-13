@@ -1917,19 +1917,21 @@ The agent is `running`, `resuming`, `stopping`, `stopped`, `building`, or
 transition is answered at once, never queued behind it. It starts `running` or
 `stopped` as the caller asks.
 
-| Method             | Answer                                                                                                                                                                    |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `status`           | The snapshot, in any state                                                                                                                                                |
-| `start_all`        | Stopped: reads the configuration again and checks the image, then answers `resuming`, or `stopped` with the reason it could not. Running: the state it is in              |
-| `stop_all`         | Running: runs the stop sequence (the same grace, budget and exit deadline of 28 s as `stop`) and answers `stopped` when it is done. Stopped: `stopped`                    |
-| `build`            | Stopped: answers `building` with the start time once the build began, and the snapshot tells the rest. Running: `refused`. A configuration that cannot be used: `refused` |
-| `quit`             | Runs the stop sequence if runners run, cancels a build, answers `quitting`, and ends the agent; the lock is free within a second of the answer                            |
-| `token_set`        | Stores the repository's token in any state                                                                                                                                |
-| `token_remove`     | Removes it in any state                                                                                                                                                   |
-| `drain_for_update` | See [The Update Drain](#the-update-drain)                                                                                                                                 |
-| `config_read`      | The file's editable values in any state; see [Editing the Configuration](#editing-the-configuration)                                                                      |
-| `config_edit`      | Running: writes and applies. Stopped: writes, for the next `start_all`. A transition: `busy`. A drain: `refused`                                                          |
-| `config_reload`    | Running: applies the file. Stopped: makes it the configuration in use. A transition: `busy`. A drain: `refused`                                                           |
+| Method             | Answer                                                                                                                                                                                      |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `status`           | The snapshot, in any state                                                                                                                                                                  |
+| `start_all`        | Stopped: reads the configuration again and checks the image, then answers `resuming`, or `stopped` with the reason it could not. Running: the state it is in                                |
+| `stop_all`         | Running: runs the stop sequence (the same grace, budget and exit deadline of 28 s as `stop`) and answers `stopped` when it is done. Stopped: `stopped`                                      |
+| `build`            | Stopped: answers `building` with the start time once the build began, and the snapshot tells the rest. Running: `refused`. A configuration that cannot be used: `refused`                   |
+| `quit`             | Runs the stop sequence if runners run, cancels a build, answers `quitting`, and ends the agent; the lock is free within a second of the answer                                              |
+| `token_set`        | Stores the repository's token in any state                                                                                                                                                  |
+| `token_remove`     | Removes it in any state                                                                                                                                                                     |
+| `drain_for_update` | See [The Update Drain](#the-update-drain)                                                                                                                                                   |
+| `config_read`      | The file's editable values in any state; see [Editing the Configuration](#editing-the-configuration)                                                                                        |
+| `config_edit`      | Running: writes and applies. Stopped: writes, for the next `start_all`. A transition: `busy`. A drain: `refused`                                                                            |
+| `config_reload`    | Running: applies the file. Stopped: makes it the configuration in use. A transition: `busy`. A drain: `refused`                                                                             |
+| `launch`           | Stopped: as `start_all` when `start_runners_on_launch` is on in effect, or while none is; otherwise stays stopped by you with the text `not started at launch`. Running: the state it is in |
+| `lifecycle_set`    | Writes one `[lifecycle]` key through the write path and puts it in effect at once, in any state; see [The Agent's Signals](#the-agents-signals)                                             |
 
 A request that arrives while the agent is `resuming`, `stopping`, `building` or
 `quitting` and is not one of `status`, `config_read`, `token_set` and
@@ -2094,6 +2096,23 @@ change takes effect within a second:
 | Primary network | Every 5 s, `netdev`'s default interface, bounded to 2 s on a blocking thread with one reading outstanding at most; M1's `NetworkWatch` judges two differing checks      | `stop_on_network_change` stops; the network is read only while it or `resume_after_stop` is on |
 | Keep-awake      | The request the executable supplies through `AgentOptions::keep_awake`, held by one thread that lives as long as the agent; a refusal warns once and retries every 10 s | `keep_awake`; nothing is held while no setting is in effect                                    |
 
+`lifecycle_set` writes one key of `[lifecycle]` through K1's write path, so the rest
+of the file keeps its form and comments, and `null` removes only that key's line. It
+answers with the snapshot's `lifecycle` part and refuses as `config_edit` does: a file
+that changed, has problems or cannot be written, a file written in a form the write
+path does not edit (`config_file_form`, such as `lifecycle = { … }` over several
+lines), while no valid configuration was read (`config_unusable`), and while an edit
+applies (`config_applying`). On axmc it is `refused`; the settings there are M4's.
+
+The snapshot's `lifecycle` part, present while settings are in effect on axpc, holds
+each setting's `on` and `defaulted`, the sign-in item (`registered`,
+`not_registered`, `turned_off` in Windows' Startup apps, or `failed` with
+`sign_in_error`), and `keep_awake` (`held`, `released`, `warning` with its text, or
+`off`). The agent keeps the sign-in item, the current user's Run key value
+`Marshal` (`MarshalTest` in a debug build), in step with `start_at_login` at each
+configuration it reads and at each `lifecycle_set` of that key; it holds the quoted
+path of the program it runs from and `--sign-in`, at most 260 characters.
+
 A sleep is judged before the network, so a wake on another network stops with the
 sleep's reason, `Windows slept, so every runner was stopped`. An interface is named
 by its kind and index, such as `Wi-Fi 12`, never by its alias.
@@ -2244,21 +2263,23 @@ opens two connections; a `subscribe` to another topic on a connection that holds
 is answered with `invalid_request`, and one to the same topic again changes nothing
 but, for `github`, counts as a renewal.
 
-| Method             | Params                       | Result                                                             |
-| ------------------ | ---------------------------- | ------------------------------------------------------------------ |
-| `status`           | none                         | The snapshot                                                       |
-| `subscribe`        | `topic`: `state`, `github`   | `{topic}`; the first event follows at once                         |
-| `renew`            | `topic`: `github`            | `{topic}`; keeps the connection's `github` subscription            |
-| `start_all`        | none                         | `{state}`, `resuming` while the pools are admitted                 |
-| `stop_all`         | none                         | `{state}`                                                          |
-| `build`            | none                         | `{state, started}`, `started` in milliseconds since the Unix epoch |
-| `quit`             | none                         | `{state}`                                                          |
-| `token_set`        | `repository`, `token`        | `{repository}`, the key it was stored under                        |
-| `token_remove`     | `repository`                 | `{repository}`                                                     |
-| `drain_for_update` | `version`                    | `{state, update}`; see The Update Drain                            |
-| `config_read`      | none                         | `{revision, status, settings, pools, problems, too_large}`         |
-| `config_edit`      | `revision`, `edits`, `check` | `{revision, effects, repositories_released, applies}`              |
-| `config_reload`    | `revision`, `check`          | `{revision, effects, repositories_released, applies}`              |
+| Method             | Params                                              | Result                                                             |
+| ------------------ | --------------------------------------------------- | ------------------------------------------------------------------ |
+| `status`           | none                                                | The snapshot                                                       |
+| `subscribe`        | `topic`: `state`, `github`                          | `{topic}`; the first event follows at once                         |
+| `renew`            | `topic`: `github`                                   | `{topic}`; keeps the connection's `github` subscription            |
+| `start_all`        | none                                                | `{state}`, `resuming` while the pools are admitted                 |
+| `stop_all`         | none                                                | `{state}`                                                          |
+| `build`            | none                                                | `{state, started}`, `started` in milliseconds since the Unix epoch |
+| `quit`             | none                                                | `{state}`                                                          |
+| `token_set`        | `repository`, `token`                               | `{repository}`, the key it was stored under                        |
+| `token_remove`     | `repository`                                        | `{repository}`                                                     |
+| `drain_for_update` | `version`                                           | `{state, update}`; see The Update Drain                            |
+| `config_read`      | none                                                | `{revision, status, settings, pools, problems, too_large}`         |
+| `config_edit`      | `revision`, `edits`, `check`                        | `{revision, effects, repositories_released, applies}`              |
+| `config_reload`    | `revision`, `check`                                 | `{revision, effects, repositories_released, applies}`              |
+| `launch`           | none                                                | `{state}`, with `reason` when it stays stopped                     |
+| `lifecycle_set`    | `key`, `value` (`true`, `false` or `null` to unset) | `{lifecycle}`, the snapshot's part                                 |
 
 `token_set` is the one message that carries a secret: the token travels only in its
 `token` param, from the client to the agent, and the agent never sends, logs or

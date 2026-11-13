@@ -116,7 +116,7 @@ fn failure_error(failure: &Failure) -> ApiError {
     }
 }
 
-fn edit_error(failure: EditError) -> ApiError {
+pub(super) fn edit_error(failure: EditError) -> ApiError {
     match failure {
         EditError::Changed => error(
             ErrorCode::ConfigChanged,
@@ -404,7 +404,7 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<'_, 
     }
 
     /// refuses a change while the migration of `config.json` failed or is pending.
-    fn refuse_migration(&self) -> Result<(), ApiError> {
+    pub(super) fn refuse_migration(&self) -> Result<(), ApiError> {
         let inner = self.inner.borrow();
         match inner.loaded.as_ref().map(|loaded| &loaded.migration) {
             Some(Migration::Failed(failure)) => Err(error(
@@ -598,7 +598,7 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<'_, 
 
     /// the checkout above the configuration file, which a diagnostic directory must
     /// lie outside.
-    fn above(&self) -> Option<PathBuf> {
+    pub(super) fn above(&self) -> Option<PathBuf> {
         checkout::find(&self.config_path())
     }
 

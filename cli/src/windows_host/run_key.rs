@@ -146,6 +146,63 @@ mod system {
 #[cfg(windows)]
 pub use system::{read, register, unregister};
 
+/// the sign-in item the agent keeps in step with `start_at_login`.
+pub trait SignInItem {
+    /// writes the value for `executable`, or corrects one an older copy left.
+    fn register(&self, executable: &Path) -> SignIn;
+    /// removes the value.
+    fn unregister(&self) -> SignIn;
+}
+
+/// the current user's Run key value.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RunKey;
+
+#[cfg(windows)]
+impl SignInItem for RunKey {
+    fn register(&self, executable: &Path) -> SignIn {
+        register(executable)
+    }
+
+    fn unregister(&self) -> SignIn {
+        unregister()
+    }
+}
+
+/// a sign-in item held in memory, for the tests; a debug or test build only.
+#[cfg(any(debug_assertions, test))]
+#[derive(Debug, Default)]
+pub struct MemorySignIn {
+    /// the command the value would hold, while registered.
+    pub command: std::cell::RefCell<Option<String>>,
+    /// makes every write fail with this text while it is set.
+    pub failure: std::cell::RefCell<Option<String>>,
+}
+
+#[cfg(any(debug_assertions, test))]
+impl SignInItem for MemorySignIn {
+    fn register(&self, executable: &Path) -> SignIn {
+        if let Some(text) = self.failure.borrow().clone() {
+            return SignIn::Failed(text);
+        }
+        match command(executable) {
+            Ok(command) => {
+                *self.command.borrow_mut() = Some(command);
+                SignIn::Registered
+            }
+            Err(error) => SignIn::Failed(error.to_string()),
+        }
+    }
+
+    fn unregister(&self) -> SignIn {
+        if let Some(text) = self.failure.borrow().clone() {
+            return SignIn::Failed(text);
+        }
+        *self.command.borrow_mut() = None;
+        SignIn::NotRegistered
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {

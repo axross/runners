@@ -38,6 +38,7 @@ use crate::runtime::scrub::scrub_error_text;
 use crate::runtime::worker::sleep_or_stop;
 use crate::token_store::TokenKey;
 use crate::validate::{CheckoutRule, Plan};
+use crate::windows_host::run_key::{SignIn, SignInItem};
 
 use super::api::{ApiError, ApiResult, Call, Method};
 use super::builder::ImageBuilder;
@@ -49,8 +50,10 @@ use super::view::{View, migration_failure_text, millis};
 use super::wire::{ENDING_UPDATE, ErrorCode, RUNNERS_RUNNING, UpdateEnding};
 
 mod configure;
+mod lifecycle;
 
 use configure::{Mode, Request};
+pub use lifecycle::NOT_STARTED_AT_LAUNCH;
 
 /// the reason the agent ends when asked to by a client.
 pub const QUIT: &str = "quit";
@@ -164,6 +167,9 @@ pub struct Agent<'a, B, K, R, D, M = NoMonitor> {
     log: &'a dyn Log,
     monitor: &'a M,
     in_effect: &'a Current,
+    sign_in: Option<&'a dyn SignInItem>,
+    /// what the latest write, removal or read of the sign-in item found.
+    sign_in_state: RefCell<Option<SignIn>>,
     board: Board,
     inner: RefCell<Inner>,
     /// the containers a stop could not remove.
@@ -233,6 +239,9 @@ pub struct Seams<'a, B, K, R, D, M = NoMonitor> {
     pub monitor: &'a M,
     /// the settings in effect, which the agent sets from each configuration it reads.
     pub in_effect: &'a Current,
+    /// the sign-in item kept in step with `start_at_login`; `None` on a host that has
+    /// none.
+    pub sign_in: Option<&'a dyn SignInItem>,
     /// receives the snapshot after each change.
     pub snapshots: watch::Sender<Arc<Snapshot>>,
     /// turns true when the executable has changed.
@@ -274,6 +283,8 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
             log: seams.log,
             monitor: seams.monitor,
             in_effect: seams.in_effect,
+            sign_in: seams.sign_in,
+            sign_in_state: RefCell::new(None),
             board: Board::default(),
             inner: RefCell::new(Inner::new(phase)),
             left: RefCell::new(Vec::new()),
@@ -359,6 +370,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
 
     /// the snapshot as the agent is now, cut to the message limit.
     fn snapshot(&self) -> Snapshot {
+        let lifecycle = self.lifecycle_info();
         let mut inner = self.inner.borrow_mut();
         if let Some(image) = self.board.image_record() {
             inner.image = Some(image);
@@ -376,6 +388,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
             now: self.clock.now(),
         }
         .snapshot();
+        snapshot.lifecycle = lifecycle;
         snapshot.fit(MAX_SNAPSHOT_BYTES);
         snapshot
     }
@@ -437,6 +450,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
                 })
             }
             Method::ConfigRead => Ok(Ok(self.config_read())),
+            Method::LifecycleSet { setting, value } => Ok(self.lifecycle_set(setting, value)),
             Method::TokenRemove { key } => Ok(match self.tokens.remove(&key) {
                 Ok(()) => {
                     self.publish();
@@ -500,7 +514,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
             .as_ref()
             .and_then(|in_use| in_use.plan.settings.as_ref())
         {
-            self.in_effect.set(InEffect::windows(settings.lifecycle));
+            self.take_settings(InEffect::windows(settings.lifecycle));
         }
         let outcome = match &loaded.in_use {
             Some(in_use) => Ok(in_use.plan.clone()),
@@ -663,6 +677,19 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
                             return self.end_stopped_for_update(version, reply);
                         }
                         Routed::Begin(Method::Build, reply) => return Next::Build(reply),
+                        Routed::Begin(Method::Launch, reply) if !self.starts_at_launch() => {
+                            self.log.info(
+                                "The runners were not started at launch, as start_runners_on_launch is off.",
+                            );
+                            self.set_phase(Phase::Stopped(Reason::new(
+                                Reason::BY_YOU,
+                                NOT_STARTED_AT_LAUNCH,
+                            )));
+                            let reason = Reason::new(Reason::BY_YOU, NOT_STARTED_AT_LAUNCH);
+                            let _ = reply.send(Ok(
+                                json!({ "state": "stopped", "reason": reason.wire() }),
+                            ));
+                        }
                         Routed::Begin(_, reply) => return Next::Resume(Some(reply)),
                         Routed::Quit(reply) => {
                             self.set_phase(Phase::Quitting);

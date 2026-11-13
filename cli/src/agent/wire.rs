@@ -23,7 +23,7 @@ pub const MAX_CLIENT_MESSAGE_BYTES: usize = 16 * 1024;
 pub const MAX_AGENT_MESSAGE_BYTES: usize = 64 * 1024;
 
 /// the methods `welcome` lists; `renew` keeps a `github` subscription alive.
-pub const METHODS: [&str; 13] = [
+pub const METHODS: [&str; 15] = [
     "status",
     "subscribe",
     "start_all",
@@ -37,6 +37,8 @@ pub const METHODS: [&str; 13] = [
     "config_read",
     "config_edit",
     "config_reload",
+    "launch",
+    "lifecycle_set",
 ];
 
 /// the `ending` reason of an agent that ends for an update.
