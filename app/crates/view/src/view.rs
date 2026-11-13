@@ -130,6 +130,15 @@ fn full_window(context: &Context<'_>) -> FullWindow {
             Some(try_again()),
         ),
         Resident::LockHeld => ("Another Marshal is running", vec![LOCK_HELD.to_string()], None),
+        Resident::OutsideApplications => (
+            "Move Marshal to Applications",
+            vec![
+                "Marshal runs its runners only when it is opened from Applications.".to_string(),
+                "Quit this copy, move Marshal to the Applications folder, and open it from there."
+                    .to_string(),
+            ],
+            Some(control(context, Action::Quit, "Quit Marshal", Look::Solid, None)),
+        ),
         Resident::Quitting => (
             "Quitting Marshal",
             vec!["The window closes with the app.".to_string()],

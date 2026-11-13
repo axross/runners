@@ -702,7 +702,15 @@ pub fn start_linking(
     agent_version: &str,
     launch: Launch,
 ) -> Running {
-    start_session(world, updates, version, agent_version, launch, false)
+    start_session(
+        world,
+        updates,
+        version,
+        agent_version,
+        launch,
+        false,
+        |session| session,
+    )
 }
 
 /// starts a session of a fresh launch, which starts the agent stopped and sends it
@@ -715,6 +723,21 @@ pub fn start_fresh(world: World) -> Running {
         "0.0.0-dev",
         Launch::Stopped,
         true,
+        |session| session,
+    )
+}
+
+/// starts a session for a copy of Marshal outside Applications.
+pub fn start_outside_applications(world: World) -> Running {
+    let version = "0.0.0-dev";
+    start_session(
+        world,
+        Updates::default(),
+        version,
+        version,
+        Launch::Running,
+        false,
+        Session::outside_applications,
     )
 }
 
@@ -725,6 +748,7 @@ fn start_session(
     agent_version: &str,
     launch: Launch,
     fresh: bool,
+    shape: fn(Session<World>) -> Session<World>,
 ) -> Running {
     let screen = Arc::new(Screen::default());
     let log = Arc::new(MemoryLog::default());
@@ -750,7 +774,7 @@ fn start_session(
         log,
         handle,
         started_at,
-        task: tokio::spawn(session.run()),
+        task: tokio::spawn(shape(session).run()),
     }
 }
 

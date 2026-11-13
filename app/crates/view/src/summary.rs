@@ -98,6 +98,7 @@ fn phrase(context: &Context<'_>) -> String {
         Resident::NoAgent => "agent not reachable".to_string(),
         Resident::NotAnswering => "the agent is not answering".to_string(),
         Resident::LockHeld => "another Marshal is running".to_string(),
+        Resident::OutsideApplications => "not in Applications".to_string(),
         Resident::LostContact { .. } => "lost contact with the agent".to_string(),
         Resident::Unknown(_) => "the agent is in a state this version does not know".to_string(),
     }
@@ -163,7 +164,8 @@ fn since_line(context: &Context<'_>) -> String {
         Resident::StartingMarshal
         | Resident::NoAgent
         | Resident::NotAnswering
-        | Resident::LockHeld => String::new(),
+        | Resident::LockHeld
+        | Resident::OutsideApplications => String::new(),
     }
 }
 
