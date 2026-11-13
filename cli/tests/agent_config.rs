@@ -846,6 +846,37 @@ async fn a_bad_diagnostic_directory_and_a_file_that_cannot_be_replaced_are_refus
                 assert_eq!(refused.0, "config_unwritable");
             }
             assert_eq!(file(rig), TWO_POOLS_TOML);
+            // the same sink written by hand: a reload marks the file invalid, keeps the
+            // configuration in use, and names the key's line
+            rig.write_toml(&TWO_POOLS_TOML.replace(
+                "runners = 2\n",
+                "runners = 2\ndiagnostics = true\ndiagnostic_directory = 'C:\\no-such-sink'\n",
+            ));
+            let body = match conn
+                .call(
+                    "config_reload",
+                    json!({"revision": read_revision(&conn).await}),
+                )
+                .await
+            {
+                Err(CallError::Agent(body)) => body,
+                other => panic!("the reload was not refused: {other:?}"),
+            };
+            assert_eq!(body.code, "config_invalid");
+            assert_eq!(
+                body.problems[0].path.as_deref(),
+                Some("pool[0].diagnostic_directory")
+            );
+            assert_eq!(body.problems[0].line, Some(12));
+            let snapshot = conn.status().await;
+            assert_eq!(snapshot.configuration.status, "invalid");
+            assert!(
+                snapshot.configuration.problems[0]
+                    .starts_with("line 12: pool[0].diagnostic_directory: "),
+                "{:?}",
+                snapshot.configuration.problems
+            );
+            assert_eq!(snapshot.configuration.in_use.unwrap().source, "last_valid");
             conn.ok("quit").await;
         })
         .await;
@@ -942,6 +973,119 @@ async fn a_restart_waits_for_its_held_slots_before_it_prepares_the_pool() {
             assert_eq!(after.pools[0].state, "running");
             assert_eq!(listings(rig, "r"), prepared + 1);
             assert!(last_labels(rig, "r").contains(&"big".to_string()));
+            rig.mark_running();
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_slot_that_keeps_evidence_holds_its_restarted_pool_until_the_next_start() {
+    use marshal_cli::runtime::backend::DiagnosticRecord;
+    let rig = rig();
+    rig.times.set(StopTimes {
+        exit_deadline: Duration::from_secs(1),
+        ..StopTimes::default()
+    });
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            conn.until("three runners", |snapshot| snapshot.runners_up == 3)
+                .await;
+            rig.mark_running();
+            rig.backend.state.borrow_mut().stop_hangs = true;
+            let prepared = listings(rig, "r");
+            set(&conn, "pool[0].labels", json!(["big"])).await.unwrap();
+            until_applied(&conn).await;
+            // slot 1's host still holds a diagnostic container when its runner ends
+            rig.backend.retained.adopt(
+                "r-1-20261112091204118",
+                &DiagnosticRecord {
+                    pool: "r".to_string(),
+                    directory: rig.root.path().to_str().unwrap().to_string(),
+                    raw_records: false,
+                },
+            );
+            rig.backend.state.borrow_mut().stop_hangs = false;
+            rig.end_jobs().await;
+            let held = conn
+                .until("slot 1 kept for its evidence", |_| {
+                    rig.log
+                        .lines()
+                        .iter()
+                        .any(|line| line.contains("r slot 1 keeps its job host"))
+                })
+                .await;
+            assert_eq!(held.pools[0].state, "skipped", "{held:#?}");
+            assert!(
+                held.pools[0]
+                    .reason
+                    .as_deref()
+                    .is_some_and(|reason| reason.contains("until the next Start all")),
+                "{held:#?}"
+            );
+            assert_eq!(listings(rig, "r"), prepared);
+            assert!(!last_labels(rig, "r").contains(&"big".to_string()));
+            rig.mark_running();
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_deferred_pool_is_not_prepared_during_a_drain_and_is_once_it_is_cancelled() {
+    use marshal_cli::runtime::backend::StopRequest;
+    let rig = rig();
+    rig.backend.state.borrow_mut().hold_runs_by_name = true;
+    rig.times.set(StopTimes {
+        exit_deadline: Duration::from_secs(1),
+        ..StopTimes::default()
+    });
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            conn.until("three runners", |snapshot| snapshot.runners_up == 3)
+                .await;
+            rig.mark_running();
+            let names: Vec<String> = rig
+                .backend
+                .calls()
+                .into_iter()
+                .filter_map(|call| match call {
+                    Call::RunContainer(spec) => Some(spec.name),
+                    _ => None,
+                })
+                .collect();
+            let (pool_r, pool_d): (Vec<_>, Vec<_>) =
+                names.into_iter().partition(|name| name.starts_with("r-"));
+            // a busy runner keeps the drain open
+            rig.backend
+                .print(&pool_d[0], "2026-11-12 08:03:00Z: Running job: build");
+            rig.backend.state.borrow_mut().stop_hangs = true;
+            let prepared = listings(rig, "r");
+            set(&conn, "pool[0].labels", json!(["big"])).await.unwrap();
+            until_applied(&conn).await;
+            let requester = conn.another().await;
+            requester
+                .call("drain_for_update", json!({ "version": "1.4.0" }))
+                .await
+                .unwrap();
+            rig.backend.state.borrow_mut().stop_hangs = false;
+            rig.backend
+                .stop_containers(&StopRequest {
+                    names: pool_r,
+                    grace: Duration::ZERO,
+                    budget: Duration::from_secs(1),
+                })
+                .await
+                .unwrap();
+            tokio::time::sleep(Duration::from_millis(600)).await;
+            assert_eq!(listings(rig, "r"), prepared, "prepared during the drain");
+            drop(requester);
+            conn.until("the drain cancelled", |s| s.agent.update.is_none())
+                .await;
+            conn.eventually("pool r prepared", || listings(rig, "r") > prepared)
+                .await;
             rig.mark_running();
             conn.ok("quit").await;
         })

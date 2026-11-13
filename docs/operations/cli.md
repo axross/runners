@@ -2387,7 +2387,8 @@ next stop, so no new runner replaces that host first. A pool an apply restarts o
 adds while slots of its own are still held in either way is not prepared over them:
 it is listed `skipped` with the reason that it restarts once its earlier runners have
 stopped, and it is admitted and prepared once the last of them is finished, or at the
-next `start_all` when one holds evidence. A slot an apply stops shows `stopped` with the reason that the edit stops it until
+next `start_all` when one holds evidence; while a drain for an update lasts, it is
+prepared only once the drain is cancelled. A slot an apply stops shows `stopped` with the reason that the edit stops it until
 its containers are stopped and its job host released, then leaves the list; a
 removed pool is listed, `stopped`, until its last slot has. A pool that restarts
 shows `preparing` with the reason that the edit restarts it. One apply runs at a

@@ -98,8 +98,8 @@ struct Running<'a> {
 }
 
 /// why a pool an apply restarts waits.
-pub const DEFERRED: &str =
-    "the edit restarts it once its earlier runners have stopped and their evidence is kept";
+pub const DEFERRED: &str = "the edit restarts it once its earlier runners have stopped; one \
+     that keeps diagnostic evidence holds it until the next Start all";
 
 /// what an apply does to one pool.
 enum Step {
@@ -633,15 +633,25 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
     }
 
     /// finishes each slot whose stop ran late once its worker ends, and starts it
-    /// again when the configuration in use still has it, until the stop.
+    /// again when the configuration in use still has it, until the stop; a pool
+    /// deferred over such slots is prepared once none is held and no drain lasts.
     async fn finish_late(&self, running: &Running<'a>, stop: &watch::Receiver<bool>) {
         let mut stopping = stop.clone();
+        let mut drain = self.drain.subscribe();
         loop {
             let next = running.late.borrow_mut().pop();
             let Some((key, mut ended)) = next else {
                 tokio::select! {
                     () = wait_for_stop(&mut stopping) => return,
                     () = running.late_added.notified() => continue,
+                    changed = drain.changed() => {
+                        if changed.is_err() {
+                            return;
+                        }
+                        let _turn = running.turn.lock().await;
+                        self.start_deferred(running, stop).await;
+                        continue;
+                    }
                 }
             };
             tokio::select! {
@@ -652,20 +662,13 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
             if !self.finish_slot(&key, running).await {
                 continue;
             }
-            let deferred = running
+            if running
                 .deferred
                 .borrow()
                 .iter()
-                .position(|pool| pool.name == key.0);
-            if let Some(at) = deferred {
-                if !holds_slots(running, &key.0) {
-                    let pool = running.deferred.borrow_mut().remove(at);
-                    if self.admit(&pool) {
-                        self.prepare_and_start(vec![pool], running, stop).await;
-                    } else {
-                        running.waiting.borrow_mut().push(pool);
-                    }
-                }
+                .any(|pool| pool.name == key.0)
+            {
+                self.start_deferred(running, stop).await;
                 continue;
             }
             let waits = running
@@ -688,6 +691,25 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
             {
                 self.start_slots(vec![slot], running, stop);
             }
+        }
+    }
+
+    /// prepares each deferred pool that no longer holds a slot, or leaves it waiting
+    /// for its token; nothing while a drain lasts, as no pool begins its preparation.
+    async fn start_deferred(&self, running: &Running<'a>, stop: &watch::Receiver<bool>) {
+        if *self.drain.borrow() {
+            return;
+        }
+        let (free, held): (Vec<_>, Vec<_>) = running
+            .deferred
+            .take()
+            .into_iter()
+            .partition(|pool| !holds_slots(running, &pool.name));
+        running.deferred.borrow_mut().extend(held);
+        let (ready, waits): (Vec<_>, Vec<_>) = free.into_iter().partition(|pool| self.admit(pool));
+        running.waiting.borrow_mut().extend(waits);
+        if !ready.is_empty() {
+            self.prepare_and_start(ready, running, stop).await;
         }
     }
 }

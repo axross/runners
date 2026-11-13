@@ -18,7 +18,7 @@ use crate::runtime::backend::Backend;
 use crate::runtime::clock::Clock;
 use crate::runtime::registration::Registrar;
 use crate::token_store::TokenKey;
-use crate::validate::{CheckoutRule, Failure, Plan};
+use crate::validate::{CheckoutRule, Failure, Plan, parse_toml_path, toml_key_line};
 
 use super::super::api::{ApiError, ApiResult, Method};
 use super::super::builder::ImageBuilder;
@@ -325,7 +325,16 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'_, B, K, R, D> 
                 return Err(failure_error(&failure));
             }
         };
-        self.check_sinks(&plan, above.as_deref())?;
+        if let Err(problems) = self.check_sinks(&plan, &output, above.as_deref()) {
+            if edits.is_none() {
+                self.keep_in_use(&Failure::Invalid(problems.clone()));
+            }
+            return Err(with_problems(
+                ErrorCode::ConfigInvalid,
+                "a diagnostic directory fails the sink checks",
+                &problems,
+            ));
+        }
         let inner = self.inner.borrow();
         let in_use = inner.plan();
         let named = |plan: &Plan| -> BTreeSet<TokenKey> {
@@ -352,8 +361,14 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'_, B, K, R, D> 
 
     /// runs the sink checks on each diagnostic directory the change sets or changes,
     /// as the exporter would before it writes there; one the configuration in use
-    /// already names is left to the exporter, so an unrelated edit is not refused.
-    fn check_sinks(&self, plan: &Plan, above: Option<&Path>) -> Result<(), ApiError> {
+    /// already names is left to the exporter, so an unrelated edit is not refused. each
+    /// problem is worded as the validator words one, with the key's line in `output`.
+    fn check_sinks(
+        &self,
+        plan: &Plan,
+        output: &[u8],
+        above: Option<&Path>,
+    ) -> Result<(), Vec<String>> {
         let inner = self.inner.borrow();
         let held = |name: &str| {
             inner
@@ -361,7 +376,7 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'_, B, K, R, D> 
                 .and_then(|plan| plan.entries.iter().find(|entry| entry.name == name))
                 .and_then(|entry| entry.diagnostic_directory.clone())
         };
-        let problems: Vec<Problem> = plan
+        let problems: Vec<String> = plan
             .entries
             .iter()
             .filter_map(|entry| {
@@ -370,23 +385,21 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'_, B, K, R, D> 
                     return None;
                 }
                 let error = checked_sink(directory, above).err()?;
-                Some(Problem {
-                    path: Some(format!("pool[{}].diagnostic_directory", entry.index)),
-                    line: None,
-                    message: format!("the diagnostic directory {}", sink_failure(&error)),
-                })
+                let path = format!("pool[{}].diagnostic_directory", entry.index);
+                let line = parse_toml_path(&path, self.settings.profile)
+                    .and_then(|key| toml_key_line(output, &key))
+                    .unwrap_or(1);
+                Some(format!(
+                    "line {line}: {path}: the diagnostic directory {}",
+                    sink_failure(&error)
+                ))
             })
             .collect();
         if problems.is_empty() {
-            return Ok(());
+            Ok(())
+        } else {
+            Err(problems)
         }
-        Err(ApiError {
-            problems: problems.into(),
-            ..error(
-                ErrorCode::ConfigInvalid,
-                "a diagnostic directory fails the sink checks",
-            )
-        })
     }
 
     /// refuses a change while the migration of `config.json` failed or is pending.
