@@ -78,41 +78,44 @@ starts a runner container, waits for it to exit, and repeats. On axpc it is the
 the binary embeds; `start` runs a host's pools in the foreground as the
 **Supervisor**, and `stop`, `restart`, `status`, and `diagnostics` talk to it.
 
-**CLI Release** - a `v<version>` tag on main and the GitHub release that carries the
-**CLI**'s two binaries, the unsigned Windows MSI and the signed and notarized macOS
-pkg that carry them, and `SHA256SUMS`. The macOS binary is signed too. The maintainer
-starts one by dispatching `release.yaml`, and semantic-release picks the version from
-the commit subjects since the last `v*` tag. See
+**Marshal Release** - a `v<version>` tag on main and the GitHub release that
+carries its files. Since W1's installer pull request they are the Windows app's
+executable, the unsigned per-user MSI that holds it, and `SHA256SUMS`; the releases
+before it carry
+the **CLI**'s two binaries, its MSI and its macOS pkg, and the newest of them is the
+last command-line release. The maintainer starts one by dispatching `release.yaml`,
+and semantic-release picks the version from the commit subjects since the last `v*`
+tag. See
 [operations/development-workflow.md](./operations/development-workflow.md#cutting-a-release).
 
-**CLI Installer** - the Windows MSI, which is not code-signed, or the macOS pkg,
-which is signed with Developer ID and notarized, of a **CLI Release**. It holds the
-**CLI**'s binary unchanged and an operator opens it to install it. An
-optional **Check Block** checks the download first, and the installer's version is
-the release's `X.Y.Z`, or `0.0.0` for the dry run's. See
+**Marshal Installer** - the per-user Windows MSI of a **Marshal Release**, which is
+not code-signed. It holds the app's `marshal-app.exe` unchanged, with its licence
+notices and a Start menu entry, and an operator opens it to install it. An optional **Check Block**
+checks the download first, and the installer's version is the release's `X.Y.Z`, or
+`0.0.0` for the dry run's. See
 [operations/cli.md](./operations/cli.md#installing-updating-and-rolling-back).
 
 **Release Environment** - the GitHub Environment named `release`, which holds the
 macOS signing secrets and the `MACOS_TEAM_ID` variable. It admits `main` only and
-needs the maintainer's approval for each run, and only `sign-macos` declares it. The
-maintainer creates and changes it; agents never do. See
+needs the maintainer's approval for each run. No job declares it from W1's installer
+pull request until M2's or W4's signing job returns; it and its secrets are kept for
+that job. The maintainer creates and changes it; agents never do. See
 [operations/cli.md](./operations/cli.md#the-signing-contracts).
 
 **Signing Identifier** - `app.axross.marshal`, the identifier one code object is signed
-under: the **CLI**'s macOS binary until the Windows app's installer replaces the
-command line in the release, and the Mac app once it ships. The macOS pkg is built
-with it too. It and the team are fixed, so the designated requirement stays the
-same from release to release, which is what the Keychain trust of later work
-matches. See
+under: the **CLI**'s macOS binary in the command-line releases, and the Mac app once
+it ships. The command line's macOS pkg was built with it too. It and the team are
+fixed, so the designated requirement stays the same from release to release, which
+is what the Keychain trust of later work matches. See
 [operations/cli.md](./operations/cli.md#the-signing-contracts).
 
 **Check Block** - the optional block in the **CLI** document that checks a
-downloaded **CLI Installer** against `SHA256SUMS`, the tag's commit on main, the
-attestation, and the version of the binary inside it, and installs nothing. It
-ends with `refused:` and its cause when a check fails.
+downloaded **Marshal Installer** against `SHA256SUMS`, the tag's commit on main, the
+attestation, and the app inside it against its `SHA256SUMS` line, and installs
+nothing. It ends with `refused:` and its cause when a check fails.
 
-**Placeholder Version** - `0.0.0-dev`, the version the **CLI**'s `Cargo.toml` and
-`Cargo.lock` hold on main. A release build writes the release version over it in
+**Placeholder Version** - `0.0.0-dev`, the version the **CLI**'s and the app's
+`Cargo.toml` and `Cargo.lock` hold on main. A release build writes the release version over it in
 the runner only, so the version is never committed. See
 [operations/cli.md](./operations/cli.md#releases).
 

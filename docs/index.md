@@ -75,9 +75,9 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   diagnostic containers and VMs and their export), the axmc host's prerequisites,
   its VM shim, golden VM provisioning, and the golden VM build, the toolchain and Rust
   gates, the app's workspace and what the library gives it, the release build and
-  its dry run, signing the macOS files, installing from the MSI or the pkg, the
-  optional check of a download, migrating, updating, uninstalling, and rolling back
-  (including to the bare-binary `v0.1.0`), the tests of those blocks, the allowed
+  its dry run, the last command-line release, the signing contracts held for M2 and
+  W4, installing Marshal from its MSI, the optional check of a download, updating,
+  uninstalling, and rolling back, the tests of those blocks, the allowed
   dependencies, and why the CLI's name is fixed.
 - [operations/app.md](./operations/app.md) - the Windows notification-area app and
   the agent it starts: the one executable and its modes, the debug-only test

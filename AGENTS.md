@@ -15,8 +15,8 @@ example host configuration, and the CLI under `cli/`, a Rust command line tool
 that validates a host configuration, builds its runner image with `build`, and
 runs a host's pools with `start`, `stop`, `restart`, `status`, and `diagnostics`,
 and the Windows app under `app/`, a Tauri notification-area app that is also the
-executable that runs the CLI library's resident agent, built in CI and not yet
-installed or released. The axpc host runs its pools with the CLI. The axmc host,
+executable that runs the CLI library's resident agent, released with a per-user
+MSI. The axpc host runs its pools with the CLI. The axmc host,
 an Apple silicon Mac, runs its Linux pools with the CLI in Tart VMs, and `build`
 makes their golden VM; the agent-host configuration is still planned.
 [README.md](./README.md) owns project commands; [docs/index.md](./docs/index.md)

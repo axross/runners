@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# runs assemble-release.sh against temporary directories: the four SHA256SUMS
+# runs assemble-release.sh against temporary directories: the two SHA256SUMS
 # lines in their fixed order that sha256sum accepts, and a refusal for each way
 # the directory or a hash can be wrong. each case checks the exit status and the
 # cause the script names, and a refusal also checks that no SHA256SUMS was left.
@@ -12,8 +12,6 @@ trap 'rm -rf -- "$work"' EXIT
 version=1.2.3
 windows="marshal-${version}-windows-x64.exe"
 windows_msi="marshal-${version}-windows-x64.msi"
-macos="marshal-${version}-macos-arm64"
-macos_pkg="marshal-${version}-macos-arm64.pkg"
 
 hash_of() {
   local line
@@ -21,13 +19,11 @@ hash_of() {
   echo "${line%% *}"
 }
 
-# make_set <directory>: the four files, each with its own content.
+# make_set <directory>: the two files, each with its own content.
 make_set() {
   mkdir -p "$1"
   printf 'windows binary\n' >"$1/$windows"
   printf 'windows installer\n' >"$1/$windows_msi"
-  printf 'macos binary\n' >"$1/$macos"
-  printf 'macos installer\n' >"$1/$macos_pkg"
 }
 
 failures=0
@@ -55,16 +51,14 @@ expect() {
 
 # the hashes in the order the script takes them.
 hashes() {
-  echo "$(hash_of "$1/$windows")" "$(hash_of "$1/$windows_msi")" "$(hash_of "$1/$macos")" "$(hash_of "$1/$macos_pkg")"
+  echo "$(hash_of "$1/$windows")" "$(hash_of "$1/$windows_msi")"
 }
 
 make_set "${work}/exact"
-# shellcheck disable=SC2046 # the four hashes are separate arguments.
-expect "the exact files" 0 "$macos_pkg" "${work}/exact" $(hashes "${work}/exact")
+# shellcheck disable=SC2046 # the two hashes are separate arguments.
+expect "the exact files" 0 "$windows_msi" "${work}/exact" $(hashes "${work}/exact")
 want="$(
   printf '%s  %s\n' \
-    "$(hash_of "${work}/exact/$macos")" "$macos" \
-    "$(hash_of "${work}/exact/$macos_pkg")" "$macos_pkg" \
     "$(hash_of "${work}/exact/$windows")" "$windows" \
     "$(hash_of "${work}/exact/$windows_msi")" "$windows_msi"
 )"
@@ -75,60 +69,46 @@ elif ! (cd "${work}/exact" && sha256sum --check --strict SHA256SUMS >/dev/null);
   echo "FAIL sha256sum --check --strict rejects the SHA256SUMS" >&2
   failures=$((failures + 1))
 else
-  echo "ok   the four lines are in the fixed order and sha256sum accepts them"
+  echo "ok   the two lines are in the fixed order and sha256sum accepts them"
 fi
 
 # a dry run's version carries a prerelease.
 make_set "${work}/dry"
-mv "${work}/dry/$macos" "${work}/dry/marshal-0.0.0-dryrun.7-macos-arm64"
-mv "${work}/dry/$macos_pkg" "${work}/dry/marshal-0.0.0-dryrun.7-macos-arm64.pkg"
 mv "${work}/dry/$windows" "${work}/dry/marshal-0.0.0-dryrun.7-windows-x64.exe"
 mv "${work}/dry/$windows_msi" "${work}/dry/marshal-0.0.0-dryrun.7-windows-x64.msi"
-dry_hashes="$(cd "${work}/dry" && sha256sum marshal-0.0.0-dryrun.7-windows-x64.exe marshal-0.0.0-dryrun.7-windows-x64.msi marshal-0.0.0-dryrun.7-macos-arm64 marshal-0.0.0-dryrun.7-macos-arm64.pkg | awk '{ printf "%s ", $1 }')"
+dry_hashes="$(cd "${work}/dry" && sha256sum marshal-0.0.0-dryrun.7-windows-x64.exe marshal-0.0.0-dryrun.7-windows-x64.msi | awk '{ printf "%s ", $1 }')"
 dry_status=0
-# shellcheck disable=SC2086 # the four hashes are separate arguments.
+# shellcheck disable=SC2086 # the two hashes are separate arguments.
 dry_output="$(bash "$script" 0.0.0-dryrun.7 "${work}/dry" $dry_hashes 2>&1)" || dry_status=$?
-if [[ $dry_status -ne 0 || "$(wc -l <"${work}/dry/SHA256SUMS")" -ne 4 ]]; then
+if [[ $dry_status -ne 0 || "$(wc -l <"${work}/dry/SHA256SUMS")" -ne 2 ]]; then
   echo "FAIL a dry run's prerelease version: exit ${dry_status}: ${dry_output}" >&2
   failures=$((failures + 1))
 else
   echo "ok   a dry run's prerelease version"
 fi
 
-make_set "${work}/changed"
-# shellcheck disable=SC2046 # the four hashes are separate arguments.
-set -- $(hashes "${work}/changed")
-printf 'changed\n' >>"${work}/changed/$macos_pkg"
-expect "a changed package" 1 "${macos_pkg} has SHA-256" "${work}/changed" "$@"
-
 make_set "${work}/changed-windows"
-# shellcheck disable=SC2046 # the four hashes are separate arguments.
+# shellcheck disable=SC2046 # the two hashes are separate arguments.
 set -- $(hashes "${work}/changed-windows")
 printf 'changed\n' >>"${work}/changed-windows/$windows"
-expect "a changed Windows binary" 1 "${windows} has SHA-256" "${work}/changed-windows" "$@"
+expect "a changed app executable" 1 "${windows} has SHA-256" "${work}/changed-windows" "$@"
 
 make_set "${work}/changed-msi"
-# shellcheck disable=SC2046 # the four hashes are separate arguments.
+# shellcheck disable=SC2046 # the two hashes are separate arguments.
 set -- $(hashes "${work}/changed-msi")
 printf 'changed\n' >>"${work}/changed-msi/$windows_msi"
 expect "a changed Windows installer" 1 "${windows_msi} has SHA-256" "${work}/changed-msi" "$@"
 
-make_set "${work}/changed-macos"
-# shellcheck disable=SC2046 # the four hashes are separate arguments.
-set -- $(hashes "${work}/changed-macos")
-printf 'changed\n' >>"${work}/changed-macos/$macos"
-expect "a changed macOS binary" 1 "${macos} has SHA-256" "${work}/changed-macos" "$@"
-
 make_set "${work}/swapped"
-# shellcheck disable=SC2046 # the four hashes are separate arguments.
+# shellcheck disable=SC2046 # the two hashes are separate arguments.
 set -- $(hashes "${work}/swapped")
-expect "two hashes handed over in the wrong order" 1 "has SHA-256" "${work}/swapped" "$2" "$1" "$3" "$4"
+expect "two hashes handed over in the wrong order" 1 "has SHA-256" "${work}/swapped" "$2" "$1"
 
 make_set "${work}/bad-hash"
-# shellcheck disable=SC2046 # the four hashes are separate arguments.
+# shellcheck disable=SC2046 # the two hashes are separate arguments.
 set -- $(hashes "${work}/bad-hash")
-expect "a hash that is not a SHA-256" 1 "is not a SHA-256" "${work}/bad-hash" "$1" "$2" "$3" "not-a-hash"
-expect "an empty hash" 1 "is not a SHA-256" "${work}/bad-hash" "$1" "$2" "" "$4"
+expect "a hash that is not a SHA-256" 1 "is not a SHA-256" "${work}/bad-hash" "$1" "not-a-hash"
+expect "an empty hash" 1 "is not a SHA-256" "${work}/bad-hash" "" "$2"
 
 # a sha256sum that rejects the file the script just wrote.
 mkdir -p "${work}/rejecting"
@@ -143,32 +123,32 @@ exec "${real_sha256sum}" "\$@"
 REJECTING
 chmod +x "${work}/rejecting/sha256sum"
 make_set "${work}/unchecked"
-# shellcheck disable=SC2046 # the four hashes are separate arguments.
+# shellcheck disable=SC2046 # the two hashes are separate arguments.
 set -- $(hashes "${work}/unchecked")
 PATH="${work}/rejecting:${PATH}" expect "a SHA256SUMS that sha256sum --check rejects" 1 "does not match the files it was just written from" "${work}/unchecked" "$@"
 
 make_set "${work}/missing"
-# shellcheck disable=SC2046 # the four hashes are separate arguments.
+# shellcheck disable=SC2046 # the two hashes are separate arguments.
 set -- $(hashes "${work}/missing")
-rm "${work}/missing/$macos"
-expect "a missing binary" 1 "are not exactly ${macos}, ${macos_pkg}, ${windows} and ${windows_msi}" "${work}/missing" "$@"
+rm "${work}/missing/$windows"
+expect "a missing executable" 1 "are not exactly ${windows} and ${windows_msi}" "${work}/missing" "$@"
 
 make_set "${work}/extra"
-# shellcheck disable=SC2046 # the four hashes are separate arguments.
+# shellcheck disable=SC2046 # the two hashes are separate arguments.
 set -- $(hashes "${work}/extra")
 printf 'helper\n' >"${work}/extra/fake-docker"
 expect "an extra file" 1 "are not exactly" "${work}/extra" "$@"
 
 make_set "${work}/other-version"
-# shellcheck disable=SC2046 # the four hashes are separate arguments.
+# shellcheck disable=SC2046 # the two hashes are separate arguments.
 set -- $(hashes "${work}/other-version")
 mv "${work}/other-version/$windows_msi" "${work}/other-version/marshal-1.2.4-windows-x64.msi"
 expect "an installer named for another version" 1 "are not exactly" "${work}/other-version" "$@"
 
 make_set "${work}/old-sums"
-# shellcheck disable=SC2046 # the four hashes are separate arguments.
+# shellcheck disable=SC2046 # the two hashes are separate arguments.
 set -- $(hashes "${work}/old-sums")
-(cd "${work}/old-sums" && sha256sum "$macos" >SHA256SUMS)
+(cd "${work}/old-sums" && sha256sum "$windows" >SHA256SUMS)
 status=0
 output="$(bash "$script" "$version" "${work}/old-sums" "$@" 2>&1)" || status=$?
 if [[ $status -ne 1 || "$output" != *"are not exactly"* ]]; then
@@ -179,20 +159,20 @@ else
 fi
 
 make_set "${work}/directory"
-# shellcheck disable=SC2046 # the four hashes are separate arguments.
+# shellcheck disable=SC2046 # the two hashes are separate arguments.
 set -- $(hashes "${work}/directory")
-rm "${work}/directory/$macos_pkg"
-mkdir "${work}/directory/$macos_pkg"
-expect "a package that is a directory" 1 "${macos_pkg} is not a regular file" "${work}/directory" "$@"
+rm "${work}/directory/$windows_msi"
+mkdir "${work}/directory/$windows_msi"
+expect "an installer that is a directory" 1 "${windows_msi} is not a regular file" "${work}/directory" "$@"
 
 make_set "${work}/symlink"
-# shellcheck disable=SC2046 # the four hashes are separate arguments.
+# shellcheck disable=SC2046 # the two hashes are separate arguments.
 set -- $(hashes "${work}/symlink")
-mv "${work}/symlink/$macos" "${work}/elsewhere"
-ln -s "${work}/elsewhere" "${work}/symlink/$macos"
-expect "a binary that is a symlink" 1 "${macos} is not a regular file" "${work}/symlink" "$@"
+mv "${work}/symlink/$windows" "${work}/elsewhere"
+ln -s "${work}/elsewhere" "${work}/symlink/$windows"
+expect "an executable that is a symlink" 1 "${windows} is not a regular file" "${work}/symlink" "$@"
 
-# shellcheck disable=SC2046 # the four hashes are separate arguments.
+# shellcheck disable=SC2046 # the two hashes are separate arguments.
 expect "a directory that does not exist" 1 "is not a directory" "${work}/absent" $(hashes "${work}/exact")
 
 status=0
@@ -205,7 +185,7 @@ else
 fi
 
 make_set "${work}/bad-version"
-# shellcheck disable=SC2046 # the four hashes are separate arguments.
+# shellcheck disable=SC2046 # the two hashes are separate arguments.
 set -- $(hashes "${work}/bad-version")
 status=0
 output="$(bash "$script" "1.2" "${work}/bad-version" "$@" 2>&1)" || status=$?

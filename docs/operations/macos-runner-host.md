@@ -355,8 +355,9 @@ marshal build --config /path/to/runner-host.json
 marshal start --config /path/to/runner-host.json
 ```
 
-`--profile axmc` is the default on macOS. `marshal` itself comes from a release, as
-[CLI](./cli.md#installing-updating-and-rolling-back) describes. `start` validates the
+`--profile axmc` is the default on macOS. `marshal` itself comes from the
+[last command-line release](./cli.md#the-last-command-line-release), installed with
+the macOS procedure at that release's tag; later releases carry no macOS file. `start` validates the
 configuration, opens its log under `~/Library/Logs/marshal/`, checks Tart and
 Softnet, checks the golden VM, prepares every Linux pool, and runs every slot until it
 is stopped. It also holds off idle sleep and watches for a sleep or a network change;
@@ -541,13 +542,15 @@ the run goes in this order:
    as [Setting Up Softnet](#setting-up-softnet) lists it.
 2. Install `marshal` from the arm64 pull request's own build, not from a release: the
    macOS arm64 binary in the `marshal-release` artifact of that pull request's Merge
-   Checks run, named `marshal-0.0.0-dryrun.<run number>-macos-arm64`. The dry run
-   signs nothing. Check the binary against its line in `SHA256SUMS`, and record the
+   Checks run, which the release build made until W1's installer pull request removed
+   its macOS leg, as the
+   [last command-line release](./cli.md#the-last-command-line-release)'s tag
+   describes. The dry run signs nothing. Check the binary against its line in `SHA256SUMS`, and record the
    checksum and the commit the run built. A browser download carries a quarantine
    attribute that blocks an unsigned binary; `gh run download` leaves none. An Actions
    artifact keeps no file modes, so run `chmod 0755` on the binary, then put it at
-   `~/.local/bin/marshal`, where
-   [CLI](./cli.md#installing-updating-and-rolling-back) installs a release.
+   `~/.local/bin/marshal`, where the last command-line release's macOS procedure
+   installs it.
 3. Run `marshal build --config /path/to/runner-host.json`, then
    `marshal start --config /path/to/runner-host.json`, with the sizing of
    [the example configuration](../../hosts/macos/runner-host.example.json). Record the

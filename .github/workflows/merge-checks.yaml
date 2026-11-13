@@ -3,7 +3,7 @@ name: Merge Checks
 # the repository's own CI: the gates behind mise run check, the CLI tests on
 # Linux, Windows, and macOS, the app's build on Windows and its mode dispatch on
 # macOS, the image build and smoke test on amd64 and arm64, the release dry run,
-# and the documented install blocks against the dry run's installers. GitHub-hosted
+# and the documented install blocks against the dry run's MSI. GitHub-hosted
 # runners only, because this repository is public; see docs/conventions/security.md.
 
 on:
@@ -216,21 +216,17 @@ jobs:
     with:
       version: 0.0.0-dryrun.${{ github.run_number }}
 
-  # the install, check, migration, and uninstall blocks of docs/operations/cli.md,
-  # extracted from the document: first against stand-ins, then against the dry
-  # run's real installers with only gh stubbed. it downloads the dry run's artifact
-  # and holds contents: read; nothing is attested or published.
+  # the install, check, and uninstall blocks of docs/operations/cli.md, extracted
+  # from the document: first against stand-ins, then against the dry run's real
+  # MSI with only gh stubbed. it downloads the dry run's artifact and holds
+  # contents: read; nothing is attested or published.
   install-blocks:
-    name: Install Blocks On ${{ matrix.os }}
+    name: Install Blocks On windows-latest
     needs: release-build
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-latest
     timeout-minutes: 20
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, macos-latest]
     env:
       RELEASE_VERSION: 0.0.0-dryrun.${{ github.run_number }}
     steps:
@@ -243,47 +239,26 @@ jobs:
         with:
           name: ${{ needs.release-build.outputs.artifact }}
           path: ${{ runner.temp }}/release
-      - name: Run The macOS Blocks Against Stand-Ins Under zsh
-        if: runner.os == 'macOS'
-        timeout-minutes: 5
-        run: bash .github/scripts/tests/test-install-blocks.sh zsh
-      - name: Run The macOS Blocks Against Stand-Ins Under The System bash
-        if: runner.os == 'macOS'
-        timeout-minutes: 5
-        run: bash .github/scripts/tests/test-install-blocks.sh /bin/bash
-      # the real installer and passwordless sudo, with only gh stubbed.
-      - name: Run The macOS Blocks Against The Dry Run Package Under zsh
-        if: runner.os == 'macOS'
-        timeout-minutes: 8
-        run: bash .github/scripts/tests/test-install-blocks-real.sh zsh "${RUNNER_TEMP}/release" "$RELEASE_VERSION"
-      - name: Run The macOS Blocks Against The Dry Run Package Under The System bash
-        if: runner.os == 'macOS'
-        timeout-minutes: 8
-        run: bash .github/scripts/tests/test-install-blocks-real.sh /bin/bash "${RUNNER_TEMP}/release" "$RELEASE_VERSION"
       - name: Run The Windows Blocks Against Stand-Ins Under Windows PowerShell 5.1
-        if: runner.os == 'Windows'
         timeout-minutes: 8
         shell: powershell
         run: .\.github\scripts\tests\test-install-blocks.ps1
       - name: Run The Windows Blocks Against Stand-Ins Under PowerShell 7
-        if: runner.os == 'Windows'
         timeout-minutes: 8
         shell: pwsh
         run: ./.github/scripts/tests/test-install-blocks.ps1
       - name: Run The Windows Blocks Against The Dry Run MSI
-        if: runner.os == 'Windows'
         timeout-minutes: 10
         shell: powershell
         run: .\.github\scripts\tests\test-install-blocks-real.ps1 -ReleaseDirectory (Join-Path $env:RUNNER_TEMP 'release') -Version $env:RELEASE_VERSION -LogDirectory (Join-Path $env:RUNNER_TEMP 'install-block-logs')
       # the hosted runner is elevated, so a standard local user runs the check
       # block's extraction and the install, and the outcome is a MEASURED line.
       - name: Run The Check Block And The Install As A Standard User
-        if: runner.os == 'Windows'
         timeout-minutes: 12
         shell: powershell
         run: .\.github\scripts\tests\test-msi-standard-user.ps1 -ReleaseDirectory (Join-Path $env:RUNNER_TEMP 'release') -Version $env:RELEASE_VERSION
       - name: Upload The Install Block Logs
-        if: always() && runner.os == 'Windows'
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: install-block-logs-windows

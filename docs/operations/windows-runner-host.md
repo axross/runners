@@ -14,6 +14,16 @@ and the example host configuration, with the reference for every field, is under
 [CLI](./cli.md) owns what each `marshal` command does, and the trust rules the host
 is reviewed against are in [Security](../conventions/security.md).
 
+**The command line and the app.** Since W1's installer pull request a release
+carries the Windows app, Marshal, and its per-user MSI, not the command line, and
+[Installing Marshal](#installing-marshal) installs it. The procedures below that run
+`marshal` are the command line's: they apply to the
+[last command-line release](./cli.md#the-last-command-line-release), whose tag holds
+them as released, with that release's install, update, uninstall and rollback
+procedures, until the rest of W1's installer pull request replaces them with the
+app's. A host moves from the command line to the app with that release's uninstall
+procedure, then [Installing Marshal](#installing-marshal).
+
 **Verification status.** CI builds the image and runs a smoke test on it for every
 pull request, on linux/amd64 and on linux/arm64, and runs the CLI's tests on GitHub-hosted Linux, Windows, and macOS
 runners; [CLI](./cli.md) says what each covers. The CLI's tests check the
@@ -43,17 +53,18 @@ and each place below that depends on one says which. Verified on axpc:
 
 Not yet verified on axpc, each for the reason given:
 
-- the MSI install, the migration block, the optional check block with its
-  extraction, the uninstall block, and the prompts an unsigned MSI from a browser
-  download raises, which have not run on axpc. CI runs the blocks against the release
-  dry run's MSI in its `Install Blocks` job; the maintainer's first install of a
-  release with installers records the rest, and until then this document describes
-  the prompts as expected;
-- the bare-binary block's refusals, which were not run on axpc
+- Marshal's MSI install, the optional check block with its extraction, the
+  uninstall block, and the prompts an unsigned MSI from a browser download raises,
+  which have not run on axpc. CI runs the blocks against the release dry run's MSI in
+  its `Install Blocks` job; the verification on
+  [#73](https://github.com/axross/runners/issues/73) records the rest, and until
+  then this document describes the prompts as expected;
+- the command line's MSI install, migration block and check block, and its
+  bare-binary block's refusals, at the last command-line release's tag, which were
+  not run on axpc
   ([#56](https://github.com/axross/runners/issues/56)); CI runs them against
   stand-ins;
-- rolling back to a previous `marshal` release, which no host has done because only
-  one release exists;
+- rolling back to a previous release, which no host has done;
 - the token-file access control step's result, whose `icacls` evidence was not
   collected;
 - Ctrl+Break in the `start` window, which could not be tested;
@@ -79,8 +90,7 @@ Not yet verified on axpc, each for the reason given:
 - **Docker Desktop** with the WSL 2 backend. This procedure does not use the
   Hyper-V backend or a Docker Engine inside a WSL distribution.
 - **GitHub CLI (`gh`) 2.102 or later, signed in** (`gh auth status`), which the
-  optional check of the installer uses, and so do the bare-binary blocks that roll
-  back to `v0.1.0`.
+  optional check of the installer uses.
 - **Windows PowerShell 5.1** (shipped with Windows) or PowerShell 7, for the inline
   access control steps and the install procedure.
 
@@ -123,47 +133,40 @@ are in the Per-Repository Isolation on a Runner Host section of
 in its `runs-on` is one the registration carries, so `runs-on: axpc` selects it,
 and so does `runs-on: self-hosted`.
 
-## Installing marshal
+## Installing Marshal
 
-Install `marshal` from a release by opening its MSI, with the Windows procedure in
+Install Marshal from a release by opening its MSI, with the Windows procedure in
 [CLI](./cli.md#installing-updating-and-rolling-back), never by building it on the
 host. Download `marshal-<version>-windows-x64.msi` from the release page and, if you
 choose, run the optional check block on it first; that block refuses a file whose
-checksum, commit on main, attestation from `release.yaml` on main, or binary version
-does not verify, and installs nothing. If the host runs a manual install from
-`v0.1.0`, run the migration block in that procedure first: it stops the instance and
-removes the copied `marshal.exe` and its `Path` entry. Otherwise stop a running
-instance. Then open the MSI. It installs `marshal.exe` at
-`%LOCALAPPDATA%\Programs\marshal\marshal.exe` for your user, which is expected to
-need no UAC prompt but is not yet measured, adds that directory to your user `Path`,
-and lists `marshal` under **Settings, Apps**. Close every terminal window, open a
-new one, and confirm that `marshal --version` prints `marshal <version>`; a new tab
-in a window that was already open can keep the old environment.
+checksum, commit on main, or attestation from `release.yaml` on main does not
+verify, or whose `marshal-app.exe` does not match the release's `SHA256SUMS` line
+for the app, and installs nothing. On a host that runs the command line, first
+uninstall it with the last command-line release's procedure, as
+[The Last Command-Line Release](./cli.md#the-last-command-line-release) describes;
+otherwise quit a running Marshal. Then open the MSI. It installs
+`%LOCALAPPDATA%\Programs\marshal\marshal-app.exe` and its licence notices for your
+user with no administrator rights, adds a Start menu entry named Marshal, adds
+nothing to `Path`, and lists `Marshal` with the publisher `axross` under
+**Settings, Apps**. Start Marshal from that entry.
 
-Uninstall from **Settings, Apps** or with the uninstall block, which leaves the logs
-under `%LOCALAPPDATA%\marshal\logs\`.
+Uninstall from **Settings, Apps** or with the uninstall block, which keeps the
+configuration, the stored tokens, any old token files, the logs under
+`%LOCALAPPDATA%\marshal\logs\` and the web view's data folder. Remove the tokens in
+the window and quit Marshal first, as that procedure says. The MSI, the check block
+and the uninstall block have not run on axpc; CI runs them against the release dry
+run's MSI in its `Install Blocks` job.
 
-The first release expected to carry the MSI is `0.2.0`. Until a release with an
-MSI exists, `v0.1.0` is installed with the bare-binary block in that procedure,
-which stays for rolling back to it; the roll back bullet of that procedure gives the
-steps to put it on `Path`. The install itself is verified on axpc: the block for
-`0.1.0` ran to completion (maintainer's report,
-[#56](https://github.com/axross/runners/issues/56#issuecomment-6511344317)), and
-`marshal --version` printed `marshal 0.1.0`
-([#56](https://github.com/axross/runners/issues/56#issuecomment-6511048211)). The
-MSI, the migration block, the check block, and the uninstall block have not run on
-axpc; CI runs them against the release dry run's MSI in its `Install Blocks` job.
-
-The same procedure updates `marshal` with a newer MSI and rolls it back by
-uninstalling and installing the older one, as [Rolling Back marshal](#rolling-back-marshal)
-describes; stop a running instance first. After an update, rebuild the image and
-start again, as [Updating the Runner](#updating-the-runner) describes. Nothing on
-the host needs a checkout of this repository: `build` uses the image definition
-embedded in the binary. The MSI is not code-signed, so SmartScreen may show
-"Windows protected your PC" for a browser download, which you pass with "More
-info", then "Run anyway", and Smart App Control, when On, may block it; both are
-expected, not yet observed. On axpc, a binary fetched with `gh release download`
-had no `Zone.Identifier`, so no Mark of the Web
+The same procedure updates Marshal with a newer MSI and rolls it back by
+uninstalling and installing the older one, as [Rolling Back](#rolling-back)
+describes; quit Marshal first. After an update, rebuild the image and start again,
+as [Updating the Runner](#updating-the-runner) describes. Nothing on the host needs
+a checkout of this repository: the build uses the image definition embedded in the
+app. The MSI is not code-signed, so SmartScreen may show "Windows protected your
+PC" for a browser download, which you pass with "More info", then "Run anyway", and
+Smart App Control, when On, may block it; both are expected, not yet observed. On
+axpc, a command-line binary fetched with `gh release download` had no
+`Zone.Identifier`, so no Mark of the Web
 ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511048211)), and
 SmartScreen did not prompt at the install or at its first run from the terminal,
 with "Check apps and files" On and Smart App Control Off
@@ -945,8 +948,8 @@ calls for a runner bump, below.
 
 ## Updating the Runner
 
-A newer runner reaches the host only through a new `marshal` release, because the
-binary embeds the image definition:
+A newer runner reaches the host only through a new release, because the app embeds
+the image definition:
 
 1. Merge the Dependabot pull request that bumps the `FROM` line in
    `images/actions-runner/Dockerfile`, with the edits it needs by hand; see
@@ -955,12 +958,13 @@ binary embeds the image definition:
    [Version Rules](./development-workflow.md#version-rules) describes.
 2. The maintainer dispatches `release.yaml` on main, as
    [Each Release](./development-workflow.md#each-release) describes.
-3. Stop the instance with `marshal stop`, then update `marshal` to that release with
-   the procedure in [CLI](./cli.md#installing-updating-and-rolling-back).
-4. Run `marshal build`, then `marshal start`, as in
-   [Building the Runner Image](#building-the-runner-image). Containers already
-   running when the update stopped the instance have ended; the next ones start on
-   the new image.
+3. Quit Marshal from its menu, which stops its runners, then install that release
+   with the procedure in [CLI](./cli.md#installing-updating-and-rolling-back). A
+   host that still runs the command line moves to the app first, as
+   [Installing Marshal](#installing-marshal) describes.
+4. Start Marshal, build the image from its menu, then start the runners. Containers
+   already running when Marshal stopped them have ended; the next ones start on the
+   new image.
 
 Merge runner bumps promptly. GitHub's runner updates itself at start when a newer
 release exists, which an ephemeral container repeats for every job when the image
@@ -1053,36 +1057,34 @@ Hub. No inbound port is needed.
   without GitHub status, or, for now, has no room for another subscription and the
   window asks again every 60 s. Runner states on this computer are unaffected.
 
-## Rolling Back marshal
+## Rolling Back
 
-Roll back when a `marshal` release misbehaves on the host. Rolling back means
-uninstalling the installed release and installing the previous one: it needs an
-earlier release to go back to, so a host on the first release has none, and a fault
-in it is fixed forward in a new release. Pick a quiet time, because the uninstall
-stops the instance and a job in flight fails.
+Roll back when a release misbehaves on the host. Rolling back means uninstalling the
+installed release and installing the previous one: it needs an earlier release to go
+back to, so a host on the first release has none, and a fault in it is fixed forward
+in a new release. Pick a quiet time, because quitting Marshal stops its runners and
+a job in flight fails.
 
-1. If the release you go back to may not finalise a diagnostic container as the
-   installed one does, recover the marked containers before replacing the binary:
-   run steps 1 to 3 of
-   [Recover before disabling diagnostics](#recover-before-disabling-diagnostics),
-   then `marshal stop`.
-2. Roll back with the Windows procedure in
-   [CLI](./cli.md#updating-repairing-uninstalling-and-rolling-back): uninstall, then
-   install the previous release's MSI, because the MSI refuses a lower version while
-   a newer one is installed. The uninstall block stops a running instance and
-   refuses to go on if the instance does not stop; see [Recovery](#recovery).
-3. Run `marshal validate --config C:\path\to\runner-host.json`. The previous
-   release must accept the configuration file, and a field only the newer release
-   knows is rejected, naming the field. Edit the file back before going on.
-4. Rebuild the image and start the pools, as
-   [Building the Runner Image](#building-the-runner-image) describes. The build uses
-   the image definition embedded in the installed release, so it gives back the
-   image that release expects; an image of another contract keeps `start` from
-   running jobs, as [Recovery](#recovery) says.
-5. Confirm `marshal --version` names the release you installed, and that the
+1. Roll back with the Windows procedure in
+   [CLI](./cli.md#updating-repairing-uninstalling-and-rolling-back): remove the tokens
+   in the window only if you will not install Marshal again, quit Marshal, uninstall,
+   then install the previous release's MSI, because the MSI refuses a lower version
+   while a newer one is installed.
+2. When the previous release is the last command-line release, install it with that
+   release's procedure instead, at its tag, as
+   [The Last Command-Line Release](./cli.md#the-last-command-line-release) describes,
+   and follow that tag's copy of this section from there. Keep the token files until
+   the command line's runners work; the command line reads them, and the app's
+   tokens stay in Credential Manager.
+3. Start the release you installed, rebuild the image and start the runners. The
+   build uses the image definition embedded in the installed release, so it gives
+   back the image that release expects; an image of another contract keeps the
+   runners from running jobs, as [Recovery](#recovery) says.
+4. Confirm that **Settings, Apps** lists the version you installed, and that the
    [Health Checks](#health-checks) hold for GitHub and the machine.
 
-A diagnostic container that the stopped instance retained survives the install. The
-`start` of the installed release finalises it while its entry's diagnostics are on,
-and refuses the entry while they are off; step 1 recovers it first when that
-release may not.
+A diagnostic container that the stopped runners retained survives the install. If
+the release you go back to may not finalise it as the installed one does, recover the
+marked containers first, as
+[Recover before disabling diagnostics](#recover-before-disabling-diagnostics)
+describes.

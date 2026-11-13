@@ -13,20 +13,15 @@ trap 'rm -rf -- "$work"' EXIT
 version=1.2.3
 windows="marshal-${version}-windows-x64.exe"
 windows_msi="marshal-${version}-windows-x64.msi"
-macos="marshal-${version}-macos-arm64"
-macos_pkg="marshal-${version}-macos-arm64.pkg"
-all_files="${macos}, ${macos_pkg}, ${windows}, ${windows_msi} and SHA256SUMS"
+all_files="${windows}, ${windows_msi} and SHA256SUMS"
 
-# release_files <directory> [<windows name> [<macos name> [<msi name> [<pkg name>]]]]
+# release_files <directory> [<executable name> [<msi name>]]
 release_files() {
-  local directory="$1" windows_name="${2:-$windows}" macos_name="${3:-$macos}"
-  local msi_name="${4:-$windows_msi}" pkg_name="${5:-$macos_pkg}"
+  local directory="$1" windows_name="${2:-$windows}" msi_name="${3:-$windows_msi}"
   mkdir -p "$directory"
-  printf 'windows binary\n' >"${directory}/${windows_name}"
+  printf 'windows app\n' >"${directory}/${windows_name}"
   printf 'windows installer\n' >"${directory}/${msi_name}"
-  printf 'macos binary\n' >"${directory}/${macos_name}"
-  printf 'macos installer\n' >"${directory}/${pkg_name}"
-  (cd "$directory" && sha256sum "$macos_name" "$pkg_name" "$windows_name" "$msi_name" >SHA256SUMS)
+  (cd "$directory" && sha256sum "$windows_name" "$msi_name" >SHA256SUMS)
 }
 
 failures=0
@@ -72,8 +67,7 @@ expect "the release phase with the exact files" 0 "are complete and match SHA256
   release "$version" "${work}/exact"
 
 # the asset globs @semantic-release/github uploads, relative to release/, must
-# each match one file and together the two binaries, the two installers, and
-# SHA256SUMS.
+# each match one file and together the app executable, the MSI and SHA256SUMS.
 expect_assets() {
   local directory="$1" pattern hits names=() problem=""
   local -a assets
@@ -82,8 +76,8 @@ expect_assets() {
     const github = config.plugins.find((plugin) => [].concat(plugin)[0] === "@semantic-release/github");
     for (const asset of github[1].assets) console.log(typeof asset === "string" ? asset : asset.path);
   ' "$config")
-  if [[ ${#assets[@]} -ne 5 ]]; then
-    problem="${config} lists ${#assets[@]} asset globs, not 5"
+  if [[ ${#assets[@]} -ne 3 ]]; then
+    problem="${config} lists ${#assets[@]} asset globs, not 3"
   fi
   for pattern in "${assets[@]}"; do
     [[ -z "$problem" ]] || break
@@ -98,7 +92,7 @@ expect_assets() {
     fi
     names+=("$hits")
   done
-  if [[ -z "$problem" && "$(printf '%s\n' "${names[@]}" | sort)" != "$(printf '%s\n' SHA256SUMS "$macos" "$macos_pkg" "$windows" "$windows_msi" | sort)" ]]; then
+  if [[ -z "$problem" && "$(printf '%s\n' "${names[@]}" | sort)" != "$(printf '%s\n' SHA256SUMS "$windows" "$windows_msi" | sort)" ]]; then
     problem="the asset globs match ${names[*]}, not ${all_files}"
   fi
   if [[ -n "$problem" ]]; then
@@ -111,19 +105,14 @@ expect_assets() {
 expect_assets "${work}/exact"
 
 release_files "${work}/missing"
-rm "${work}/missing/${macos}"
-expect "a missing binary" 1 "are not exactly ${all_files}" \
+rm "${work}/missing/${windows}"
+expect "a missing executable" 1 "are not exactly ${all_files}" \
   release "$version" "${work}/missing"
 
 release_files "${work}/missing-msi"
 rm "${work}/missing-msi/${windows_msi}"
 expect "a missing MSI" 1 "are not exactly ${all_files}" \
   release "$version" "${work}/missing-msi"
-
-release_files "${work}/missing-pkg"
-rm "${work}/missing-pkg/${macos_pkg}"
-expect "a missing pkg" 1 "are not exactly ${all_files}" \
-  release "$version" "${work}/missing-pkg"
 
 release_files "${work}/extra"
 printf 'helper\n' >"${work}/extra/fake-docker"
@@ -136,37 +125,33 @@ expect "an extra installer" 1 "are not exactly ${all_files}" \
   release "$version" "${work}/extra-installer"
 
 release_files "${work}/other-version" "marshal-1.2.4-windows-x64.exe"
-expect "a binary named for another version" 1 "are not exactly ${all_files}" \
+expect "an executable named for another version" 1 "are not exactly ${all_files}" \
   release "$version" "${work}/other-version"
 
-release_files "${work}/other-version-msi" "$windows" "$macos" "marshal-1.2.4-windows-x64.msi"
+release_files "${work}/other-version-msi" "$windows" "marshal-1.2.4-windows-x64.msi"
 expect "an MSI named for another version" 1 "are not exactly ${all_files}" \
   release "$version" "${work}/other-version-msi"
 
-release_files "${work}/wrong-pkg-name" "$windows" "$macos" "$windows_msi" "marshal-${version}-macos-x64.pkg"
-expect "a pkg with a wrong name" 1 "are not exactly ${all_files}" \
-  release "$version" "${work}/wrong-pkg-name"
-
-release_files "${work}/directory-pkg"
-rm "${work}/directory-pkg/${macos_pkg}"
-mkdir "${work}/directory-pkg/${macos_pkg}"
-expect "a pkg that is a directory" 1 "${macos_pkg} is not a regular file" \
-  release "$version" "${work}/directory-pkg"
+release_files "${work}/directory-msi"
+rm "${work}/directory-msi/${windows_msi}"
+mkdir "${work}/directory-msi/${windows_msi}"
+expect "an MSI that is a directory" 1 "${windows_msi} is not a regular file" \
+  release "$version" "${work}/directory-msi"
 
 release_files "${work}/directory"
-rm "${work}/directory/${macos}"
-mkdir "${work}/directory/${macos}"
-expect "a binary that is a directory" 1 "${macos} is not a regular file" \
+rm "${work}/directory/${windows}"
+mkdir "${work}/directory/${windows}"
+expect "an executable that is a directory" 1 "${windows} is not a regular file" \
   release "$version" "${work}/directory"
 
 release_files "${work}/one-listed"
-(cd "${work}/one-listed" && sha256sum "$macos" >SHA256SUMS)
-expect "a SHA256SUMS that lists one binary" 1 "SHA256SUMS does not list exactly ${macos}, ${macos_pkg}, ${windows} and ${windows_msi}" \
+(cd "${work}/one-listed" && sha256sum "$windows" >SHA256SUMS)
+expect "a SHA256SUMS that lists only the executable" 1 "SHA256SUMS does not list exactly ${windows} and ${windows_msi}" \
   release "$version" "${work}/one-listed"
 
 release_files "${work}/no-installers-listed"
-(cd "${work}/no-installers-listed" && sha256sum "$macos" "$windows" >SHA256SUMS)
-expect "a SHA256SUMS that lists no installer" 1 "SHA256SUMS does not list exactly ${macos}, ${macos_pkg}, ${windows} and ${windows_msi}" \
+(cd "${work}/no-installers-listed" && sha256sum "$windows_msi" >SHA256SUMS)
+expect "a SHA256SUMS that lists only the MSI" 1 "SHA256SUMS does not list exactly ${windows} and ${windows_msi}" \
   release "$version" "${work}/no-installers-listed"
 
 release_files "${work}/mismatch"
