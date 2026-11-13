@@ -459,6 +459,14 @@ impl<D: Dial> Session<D> {
         self.begin_exit_wait();
     }
 
+    /// an agent this app started is not the one whose drain was lost, so the old one's
+    /// end installs nothing.
+    pub(super) fn started_during_drain(&mut self) {
+        if self.drain.as_ref().is_some_and(|drain| drain.lost) {
+            self.drain = None;
+        }
+    }
+
     /// no agent answered while the app reached it again after a drop during its drain:
     /// if the agent's process has exited, it ended unexpectedly; if it still runs, the
     /// app waits for it to exit as after `ending`.

@@ -367,6 +367,22 @@ async fn quit_while_reconnecting_after_a_drop_during_the_drain_installs_nothing(
 }
 
 #[tokio::test(start_paused = true)]
+async fn try_again_after_a_dropped_drain_starts_an_agent_and_installs_nothing() {
+    let (agent, session) = offered().await;
+    // after the drop the agent does not answer, so the app parks with the drain lost
+    session.world.then(Answer::NotAnswering);
+    agent.close();
+    session.settle().await;
+    session.updates.exit(PID);
+    // Try Again starts an agent whose channel does not open in time
+    session.handle.try_again().await.unwrap();
+    session.wait(secs(15)).await;
+    assert_eq!(session.world.started(), [Launch::Running]);
+    assert!(session.updates.installed().is_empty());
+    assert!(!session.is_over());
+}
+
+#[tokio::test(start_paused = true)]
 async fn an_older_agent_that_drains_is_replaced_keeping_stopped_by_you() {
     let (agent, connected) = Agent::reporting(AgentInfo {
         version: "1.2.0".into(),

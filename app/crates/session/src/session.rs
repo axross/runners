@@ -520,6 +520,7 @@ impl<D: Dial> Session<D> {
         }
         if attempted.started {
             self.starts_left = self.starts_left.saturating_sub(1);
+            self.started_during_drain();
         }
         match attempted.found {
             Found::Connected(connected) => {

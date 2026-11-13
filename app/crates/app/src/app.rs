@@ -78,18 +78,12 @@ impl Log for Discard {
 /// where the app updates itself, Windows, the feed and the agent's process handles;
 /// elsewhere neither.
 #[cfg(windows)]
-fn update_seams(app: &AppHandle, version: &str) -> (Option<Arc<dyn Updater>>, Arc<dyn Processes>) {
-    (
-        crate::updates::feed(app, version),
-        Arc::new(crate::updates::Handles),
-    )
+fn update_seams(app: &AppHandle) -> (Option<Arc<dyn Updater>>, Arc<dyn Processes>) {
+    (crate::updates::feed(app), Arc::new(crate::updates::Handles))
 }
 
 #[cfg(not(windows))]
-fn update_seams(
-    _app: &AppHandle,
-    _version: &str,
-) -> (Option<Arc<dyn Updater>>, Arc<dyn Processes>) {
+fn update_seams(_app: &AppHandle) -> (Option<Arc<dyn Updater>>, Arc<dyn Processes>) {
     (None, Arc::new(marshal_session::NoUpdates))
 }
 
@@ -124,7 +118,7 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     } else {
         Launch::Running
     };
-    let (updater, processes) = update_seams(app, version);
+    let (updater, processes) = update_seams(app);
     let watch = Arc::new(Mutex::new(Watch::new()));
     let latest = Arc::new(Latest::default());
     let screen = Screen::new(

@@ -5,7 +5,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use marshal_feed::{DEVELOPMENT_VERSION, download_allowed};
+use marshal_feed::download_allowed;
 use marshal_session::{Later, Process, Processes, Updater, Verified};
 use tauri::{AppHandle, Runtime};
 use tauri_plugin_updater::{Update, UpdaterExt};
@@ -26,12 +26,12 @@ pub fn plugin<R: Runtime>() -> tauri::plugin::TauriPlugin<R, tauri_plugin_update
     tauri_plugin_updater::Builder::new().build()
 }
 
-/// the feed, or `None` when this build does not update itself: a development build, or
-/// one with no committed update-feed key.
+/// the feed, or `None` when this build has no committed update-feed key. A development
+/// build gets the feed too; the session never checks at `0.0.0-dev`.
 #[must_use]
-pub fn feed<R: Runtime>(app: &AppHandle<R>, version: &str) -> Option<Arc<dyn Updater>> {
+pub fn feed<R: Runtime>(app: &AppHandle<R>) -> Option<Arc<dyn Updater>> {
     let key = marshal_feed::committed_public_key().ok()?;
-    if version == DEVELOPMENT_VERSION || key.trim().is_empty() {
+    if key.trim().is_empty() {
         return None;
     }
     Some(Arc::new(Feed { app: app.clone() }))

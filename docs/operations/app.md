@@ -32,7 +32,7 @@ build, not one a host has installed.
 | The token store                                      | The Windows Credential Manager, entered in the main window                                |
 | The installer, the release, the install layout below | Planned for W1's installer pull request (pull request 3)                                  |
 | Updates                                              | The app's side, with the committed public key; the feed comes with W4's last pull request |
-| The command line's removal                           | Planned for the same pull request                                                         |
+| The command line's removal                           | Planned for W1's installer pull request                                                   |
 | Verification on axpc                                 | Not done; see [Verification Status](#verification-status)                                 |
 
 ## The Executable and Its Modes
