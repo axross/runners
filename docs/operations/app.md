@@ -638,8 +638,11 @@ and checks again an hour later. An end for an update another client asked for is
 handled as any other end.
 
 **A lost connection during the drain.** If the agent's process still runs, the app
-reaches it again without starting another and asks again; if no agent answers while
-the process still runs, the app waits for it to exit as after `ending`. If it has
+reaches it again without starting another. If the agent's first snapshot still shows
+this app's drain, for the same version and process, the drain was past its last steps
+and goes on, and its `ending` installs as above; otherwise the app asks again. If no
+agent answers while the process still runs, the app waits for it to exit as after
+`ending`. If it has
 exited, the agent ended unexpectedly: the app installs as above, and writes the record
 if the last state it heard was stopped by you. When nothing installs, the agent is
 started again stopped or running as `ending`, or that last state, said.

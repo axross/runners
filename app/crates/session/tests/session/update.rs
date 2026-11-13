@@ -320,6 +320,51 @@ async fn a_lost_connection_with_no_agent_answering_waits_for_its_process_then_in
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_drain_past_its_last_steps_when_the_connection_drops_still_installs() {
+    let (agent, session) = offered().await;
+    let (again, connected) = Agent::new();
+    session.world.then(Answer::Agent(connected));
+    agent.close();
+    session.settle().await;
+    // the agent reached again still drains for this app, so a closed requester did not
+    // cancel it
+    again.push(patched("running", |value| {
+        value["agent"]["update"] =
+            serde_json::json!({ "version": "1.4.0", "waiting": 0, "deadline": 0, "pid": PID });
+    }));
+    session.settle().await;
+    assert!(
+        drains(&again).is_empty(),
+        "the drain is not asked for again"
+    );
+    again.end_for_update("1.4.0", false);
+    again.close();
+    session.updates.exit(PID);
+    session.settle().await;
+    assert!(session.world.started().is_empty(), "no agent is started");
+    assert_eq!(session.updates.installed(), ["1.4.0"]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_drain_another_process_shows_after_the_drop_is_not_this_apps() {
+    let (agent, session) = offered().await;
+    let (again, connected) = Agent::new();
+    session.world.then(Answer::Agent(connected));
+    agent.close();
+    session.settle().await;
+    again.push(patched("running", |value| {
+        value["agent"]["update"] =
+            serde_json::json!({ "version": "1.4.0", "waiting": 0, "deadline": 0, "pid": PID + 1 });
+    }));
+    session.settle().await;
+    again.end_for_update("1.4.0", false);
+    again.close();
+    session.updates.exit(PID);
+    session.wait(secs(1)).await;
+    assert!(session.updates.installed().is_empty());
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_lost_connection_with_the_agent_exited_installs_keeping_stopped_by_you() {
     let (agent, session) = offered().await;
     agent.push(patched("stopped_by_you", |_| {}));

@@ -120,10 +120,6 @@ impl<D: Dial> Session<D> {
     }
 
     pub(super) fn connected_to(&mut self, agent: AgentInfo) {
-        // the agent ended an earlier drain with the connection that asked for it
-        if self.drain.as_ref().is_some_and(|drain| drain.lost) {
-            self.drain = None;
-        }
         self.agent = agent;
         self.told_no_drain = false;
         if self.older_agent() {
@@ -266,6 +262,22 @@ impl<D: Dial> Session<D> {
             .as_ref()
             .and_then(|snapshot| snapshot.agent.update.as_ref())
             .map(|update| (update.version.clone(), update.pid));
+        // after a reconnect, the first snapshot tells whether the agent still drains for
+        // this app: past its last steps a closed requester no longer cancels the drain,
+        // so the drain carries on and its `ending` is this app's. Otherwise the agent
+        // ended the drain with the connection that asked for it.
+        if let Some(drain) = self.drain.as_mut()
+            && drain.lost
+        {
+            let same = shown.as_ref().is_some_and(|(version, pid)| {
+                *version == drain.version && drain.pid.is_none_or(|known| known == *pid)
+            });
+            if same {
+                drain.lost = false;
+            } else {
+                self.drain = None;
+            }
+        }
         if let (Some(drain), Some((version, pid))) = (self.drain.as_mut(), shown)
             && drain.version == version
             && drain.pid.is_none()
