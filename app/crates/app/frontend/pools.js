@@ -101,7 +101,57 @@ export function banners(list, ctx) {
   );
 }
 
-function runnerRow(card, row) {
+/**
+ * a runner's GitHub column: GitHub's state in words, and for a busy runner whose job is
+ * known, the job's name and its Open run link. The link carries no address: the app
+ * builds the job's page from the pool's repository and opens it.
+ */
+function githubCell(card, row, ctx) {
+  if (!row.github) {
+    return null;
+  }
+  const open = row.open_run;
+  return h(
+    "div",
+    { class: "g" },
+    h(
+      "span",
+      { class: "caption github-state" },
+      row.github,
+      row.github_checked
+        ? h("span", { class: "low", text: ` · ${row.github_checked}` })
+        : null,
+    ),
+    row.job
+      ? h(
+          "span",
+          { class: "caption job wrap" },
+          h("span", { class: "job-name", text: row.job }),
+          open
+            ? h("span", {
+                class: "run-link",
+                role: "link",
+                tabindex: "0",
+                "aria-label": open.name,
+                "data-key": `run:${card.name}:${open.runner}`,
+                text: open.label,
+                on: {
+                  click: () => ctx.openRun(card.name, open.runner),
+                  keydown: (event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      ctx.openRun(card.name, open.runner);
+                    }
+                  },
+                },
+              })
+            : null,
+        )
+      : null,
+  );
+}
+
+function runnerRow(card, row, ctx) {
   return h(
     "li",
     { class: "row" },
@@ -120,6 +170,7 @@ function runnerRow(card, row) {
     row.container
       ? h("span", { class: "c caption low wrap", text: row.container })
       : null,
+    githubCell(card, row, ctx),
     row.since ? h("span", { class: "t caption low", text: row.since }) : null,
     row.detail
       ? h("span", { class: "d caption low wrap", text: row.detail })
@@ -191,7 +242,14 @@ function card(poolCard, ctx) {
     h(
       "div",
       { class: "card-head" },
-      h("h2", { id: headingId, class: "row-label wrap", text: poolCard.name }),
+      h("h2", {
+        id: headingId,
+        class: "row-label wrap",
+        // focus lands here only when a focused Open run goes away with its runner
+        tabindex: "-1",
+        "data-key": `pool:${poolCard.name}`,
+        text: poolCard.name,
+      }),
       h("span", { class: "caption low wrap", text: poolCard.repository }),
       h("span", { class: "grow" }),
       h(
@@ -202,11 +260,21 @@ function card(poolCard, ctx) {
       ),
     ),
     note,
+    poolCard.github_notes.map((githubNote) =>
+      h(
+        "div",
+        { class: "card-note github-note" },
+        h("p", { class: "description wrap", text: githubNote.text }),
+        githubNote.line
+          ? h("p", { class: "caption low wrap", text: githubNote.line })
+          : null,
+      ),
+    ),
     poolCard.runners.length > 0
       ? h(
           "ul",
           { class: "runners" },
-          poolCard.runners.map((row) => runnerRow(poolCard, row)),
+          poolCard.runners.map((row) => runnerRow(poolCard, row, ctx)),
         )
       : null,
     poolCard.diagnostics ? diagnostics(poolCard.diagnostics) : null,
@@ -237,11 +305,17 @@ export function poolsPanel(list, ctx) {
   ];
 }
 
-/** the footer: the image lines and warnings, the configuration path, and the note. */
+/**
+ * the footer: GitHub's request budget, the image lines and warnings, the configuration
+ * path, and the note.
+ */
 export function footer(model) {
   return h(
     "footer",
     { class: "footer" },
+    model.github.map((line) =>
+      h("p", { class: "caption low wrap github-line", text: line }),
+    ),
     model.image_lines.map((line) =>
       h("p", { class: "caption low", text: line }),
     ),

@@ -12,6 +12,9 @@ const NOTE: &str = "Closing this window keeps Marshal running in the notificatio
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Footer {
+    /// the GitHub request budget, or why there is no GitHub status, first; then the
+    /// runners whose GitHub state an oversize value left out.
+    pub github: Vec<String>,
     /// one line for each image the agent tracks.
     pub image_lines: Vec<String>,
     pub warnings: Vec<String>,
@@ -147,6 +150,7 @@ pub fn footer(context: &Context<'_>) -> Footer {
         ));
     }
     Footer {
+        github: crate::github::footer_lines(context),
         image_lines,
         warnings,
         configuration: format!("Configuration: {}", context.configuration_path),

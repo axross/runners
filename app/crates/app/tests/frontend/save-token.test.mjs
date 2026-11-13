@@ -54,6 +54,7 @@ function shown() {
           tokens: { intro: "Tokens.", rows: [ROW] },
         },
         footer: {
+          github: [],
           image_lines: [],
           warnings: [],
           configuration: "config.json",

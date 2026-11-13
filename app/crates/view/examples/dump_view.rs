@@ -10,17 +10,27 @@
 //! - `--editing <owner/name>` and `--removing <owner/name>`: the token forms that are open.
 //! - `--result <owner/name>=<saved|removed|not-removed:<why>|not-answered:<save|removal>|too-long|store|store:<detail>|refused:<words>|lost>`
 //! - `--settled <count>`: the settled count of runners up.
+//! - `--github <github.json>`: the `github` topic's value the window holds, its
+//!   subscription taken at 03:50; `--github none` holds it with no value yet.
+//! - `--github-feed <unavailable|for-now>`: an agent without the topic, or one with no
+//!   room for the subscription.
+//! - `--ended <pool>`: the pool whose Open run found its job ended.
 
 use std::collections::BTreeMap;
 use std::error::Error;
 
 use marshal_cli::agent::snapshot::Snapshot;
+use marshal_cli::github_status::GithubStatus;
 use marshal_view::{
-    Cause, Clock, Connection, Input, NotSaved, Pending, PendingKind, TokenResult, TokenUi, build,
+    Cause, Clock, Connection, GithubFeed, Input, NotSaved, Pending, PendingKind, TokenResult,
+    TokenUi, build,
 };
 
 /// 2026-11-04 03:52 UTC, the moment the fixtures' times are written against.
 const NOW_MS: u64 = 1_793_750_400_000 + (3 * 60 + 52) * 60_000;
+
+/// 03:50 that day, when the window took the `github` subscription.
+const OPENED_MS: u64 = NOW_MS - 2 * 60_000;
 
 type Failure = Box<dyn Error>;
 
@@ -94,6 +104,9 @@ fn main() -> Result<(), Failure> {
     let mut settled = None;
     let mut keep_snapshot = false;
     let mut results = BTreeMap::new();
+    let mut github: Option<Option<GithubStatus>> = None;
+    let mut feed_word: Option<String> = None;
+    let mut ended = BTreeMap::new();
     while let Some(flag) = arguments.next() {
         if flag == "--keep-snapshot" {
             keep_snapshot = true;
@@ -110,6 +123,16 @@ fn main() -> Result<(), Failure> {
                 results.insert(repository, outcome);
             }
             "--settled" => settled = Some(value.parse::<u32>()?),
+            "--github" if value == "none" => github = Some(None),
+            "--github" => {
+                github = Some(Some(serde_json::from_str(&std::fs::read_to_string(
+                    &value,
+                )?)?));
+            }
+            "--github-feed" => feed_word = Some(value),
+            "--ended" => {
+                ended.insert(value, NOW_MS);
+            }
             other => return Err(format!("unknown option {other}").into()),
         }
     }
@@ -122,7 +145,18 @@ fn main() -> Result<(), Failure> {
     let shown = (holds_list || keep_snapshot).then_some(&snapshot);
     let mut input = Input::new(connected, shown, Clock::new(NOW_MS, 0))
         .pending(pending_action)
-        .tokens(&tokens);
+        .tokens(&tokens)
+        .ended_jobs(&ended);
+    input = match (feed_word.as_deref(), &github) {
+        (Some("unavailable"), _) => input.github(GithubFeed::Unavailable),
+        (Some("for-now"), _) => input.github(GithubFeed::UnavailableForNow),
+        (Some(other), _) => return Err(format!("unknown github feed {other}").into()),
+        (None, Some(status)) => input.github(GithubFeed::Live {
+            opened_ms: OPENED_MS,
+            status: status.as_ref(),
+        }),
+        (None, None) => input,
+    };
     if let Some(count) = settled {
         input = input.settled(count);
     }

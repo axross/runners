@@ -6,7 +6,7 @@ use tauri_build::{AppManifest, Attributes};
 
 /// the commands the web view may call; each gets a permission, so a window can call
 /// it only when its capability grants it.
-const COMMANDS: [&str; 11] = [
+const COMMANDS: [&str; 12] = [
     "read_view",
     "start_all",
     "stop_all",
@@ -18,6 +18,7 @@ const COMMANDS: [&str; 11] = [
     "hide_window",
     "read_confirmation",
     "answer_confirmation",
+    "open_job",
 ];
 
 /// the dependency on the version 6 common controls that `common-controls-v6` needs and
