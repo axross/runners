@@ -17,7 +17,9 @@ Windows equivalent is [Windows Runner Host](./windows-runner-host.md).
 command line is built and no release carries a macOS file, so axmc has no supported
 way to run its runners until M2's Mac app; the maintainer accepted that gap. A Mac
 that runs the [last command-line release](./cli.md#the-last-command-line-release)
-keeps it, and that release's tag holds this document's procedures with their
+keeps it. That release is cut from `main` after M1, so its `start` and `build` run
+axmc's pools in Tart VMs; `v0.1.0` predates M1 and refuses `--profile axmc`. That
+release's tag holds this document's procedures with their
 commands: installing `marshal`, `build`, `start` and its clients `status`, `restart`,
 `stop` and `diagnostics`. Below, `start` and `build` name the library's entry points
 of those names, which that release ran as commands and which M2's Mac app is to run.

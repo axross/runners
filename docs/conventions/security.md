@@ -666,9 +666,10 @@ Residual risks, accepted:
   Release](../operations/development-workflow.md#before-the-first-release) creates the
   Environment first. Until the maintainer reports its settings, nothing in the
   repository shows that its branch rule and reviewer are in place.
-- **The first signed release is the first run of signing (held for M2 and W4).**
-  Nothing before merge can exercise the Environment, the certificates or
-  notarization, and the returning verification first runs for real there. The stand-in suites and the shape check cover the flow,
+- **The first signed release after signing returns is its first run (held for M2
+  and W4).** The last command-line release ran F0's signing; M2's or W4's
+  signing job first runs for real at the first release after its pull request, and
+  nothing before merge can exercise it. The stand-in suites and the shape check cover the flow,
   not Apple's answers. A failure stops that release before its tag.
 - **Unprotected tags change the next version.** Any account with write access can
   push, move, or delete a `v*` tag that has no published release, `v0.0.0`

@@ -4122,12 +4122,17 @@ an update.
 ### The Last Command-Line Release
 
 The last command-line release is the newest `v*` release made before W1's installer
-pull request merged: the newest release whose files hold no `marshal-app.exe`. Its
-tag's `docs/operations/cli.md` and `docs/operations/windows-runner-host.md` hold
-every command-line procedure, with their blocks: installing and checking the command
-line on Windows and macOS, migrating from a manual install, updating it, uninstalling
-it, rolling back to `v0.1.0`, and reading the macOS package's signature. Open that
-tag's documents on GitHub, at
+pull request merged: the newest release whose files hold no `marshal-app.exe`. It is
+not `v0.1.0`, which has only the bare binaries. The maintainer cuts it from `main`
+before W1's installer pull request merges, since that pull request waits for F0's
+issue to close and F0's issue closes only after that release's host checks. It
+carries F0's MSI, the signed macOS package and the axmc runtime, and is expected to
+be `1.0.0`, since `main` holds breaking changes since `v0.1.0`. Its tag's
+`docs/operations/cli.md`, `docs/operations/windows-runner-host.md` and
+`docs/operations/macos-runner-host.md` hold every command-line procedure, with their
+blocks: installing and checking the command line on Windows and macOS, migrating
+from a manual install, updating it, uninstalling it, rolling back, and reading the
+macOS package's signature. Open that tag's documents on GitHub, at
 `https://github.com/axross/runners/blob/v<version>/docs/operations/cli.md`, and use
 the procedures there. The commit before W1's installer pull request on main, its
 first parent, holds the command line and everything that pull request removed.
@@ -4375,11 +4380,12 @@ replaced one.
 [Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
 records that risk.
 
-The first release expected to carry the app is `1.0.0`, since `main` holds breaking
-changes since `v0.1.0`, and the check block below names it. To check another
-release, change the block's `version` and `file` assignment lines. If the first
-release of the app gets another version, a later change corrects the lines. A host
-that runs the command line moves to the app as
+The first release expected to carry the app is `2.0.0`: the last command-line
+release is expected to be `1.0.0`, and W1's installer pull request is a breaking
+change after it. The check block below names `2.0.0`. To check another release,
+change the block's `version` and `file` assignment lines. If the first release of the
+app gets another version, a later change corrects the lines. A host that runs the
+command line moves to the app as
 [The Last Command-Line Release](#the-last-command-line-release) says.
 
 CI runs these blocks against stand-ins and against the dry run's real MSI in the
@@ -4403,7 +4409,7 @@ adds the configuration and the image around this one.
 
 ### Installing
 
-`<version>` is the release's version without the `v`, such as `1.0.0`.
+`<version>` is the release's version without the `v`, such as `2.0.0`.
 
 1. Download `marshal-<version>-windows-x64.msi` from the
    [release page](https://github.com/axross/runners/releases). If the browser warns
@@ -4462,8 +4468,8 @@ In PowerShell 5.1 or 7:
 
 ```powershell
 & {
-  $version = '1.0.0'
-  $file = "$env:USERPROFILE\Downloads\marshal-1.0.0-windows-x64.msi"
+  $version = '2.0.0'
+  $file = "$env:USERPROFILE\Downloads\marshal-2.0.0-windows-x64.msi"
   $ErrorActionPreference = 'Stop'
   function Refuse([string]$Why) { throw "refused: $Why" }
   $name = "marshal-$version-windows-x64.msi"
