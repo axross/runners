@@ -1931,8 +1931,9 @@ transition is answered at once, never queued behind it. It starts `running` or
 | `config_reload`    | Running: applies the file. Stopped: makes it the configuration in use. A transition: `busy`. A drain: `refused`                                                           |
 
 A request that arrives while the agent is `resuming`, `stopping`, `building` or
-`quitting` and is not one of `status`, `token_set` and `token_remove`, a stop or a
-quit, is answered `busy`, except `drain_for_update`, which is `refused` there. The
+`quitting` and is not one of `status`, `config_read`, `token_set` and
+`token_remove`, a stop or a quit, is answered `busy`, except `drain_for_update`,
+which is `refused` there. The
 agent is `resuming` from the moment it begins to read
 the configuration until the runners' pools are admitted, so a `start_all` or a
 `build` in that time is `busy`, not answered as if the runners ran. One table in the
@@ -2332,8 +2333,8 @@ methods, at its start and at `start_all`, and never watches it.
   from and is refused with `config_changed` when the file no longer has it.
 - **`config_read`** reads the file now and changes nothing the agent holds. `status`
   is `valid`, `invalid`, `missing` or `unreadable`, the last for a file that is not
-  TOML. `settings` holds `routing_label`, and `image_name` on axpc or `budget` on
-  axmc; `pools` holds each pool's keys in the file's order. Both hold only keys the
+  TOML. `settings` holds `routing_label` and `image_name`, and `budget` on axmc;
+  `pools` holds each pool's keys in the file's order. Both hold only keys the
   schema defines that the file sets with a value of the right type, so an undefined
   key or a wrong-typed value appears only in `problems`, each a `path`, a `line` and a
   `message`, at most 100. `schema_version` and `lifecycle` are not sent. A result
@@ -2394,7 +2395,8 @@ removed pool is listed, `stopped`, until its last slot has. A pool that restarts
 shows `preparing` with the reason that the edit restarts it. One apply runs at a
 time: an edit or a reload meanwhile is `config_applying`, and one while the runtime
 core waits to restart is `runtime_restarting`. During a drain for an update both
-are `refused`, as every method but a stop and a quit is. `stop_all` and `quit` abandon the
+are `refused`, as every method is but a stop, a quit, `status`, `config_read`,
+`token_set` and `token_remove`. `stop_all` and `quit` abandon the
 apply, and a failure of the core fails it; the file stays written either way.
 
 ### The Snapshot
