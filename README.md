@@ -1,8 +1,8 @@
 # runners
 
-Generic GitHub Actions self-hosted runner images and the CLI that runs them, and
-later the host configuration for Claude Code Remote Control and Amp runner agent
-hosts on WSL 2.
+Generic GitHub Actions self-hosted runner images and Marshal, the Windows app that
+runs them, and later the host configuration for Claude Code Remote Control and Amp
+runner agent hosts on WSL 2.
 
 ## Status
 

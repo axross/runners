@@ -530,9 +530,12 @@ record a change to either workflow, to the build call in
   `x-access-token:` URL from `GITHUB_TOKEN` for its own git commands.
 - **No cache.** No job uses a cache action, and `actions/setup-node` is given no
   `cache` input and `package-manager-cache: false`, because a release run could
-  restore a cache that another ref saved. Each build compiles from `Cargo.lock` with
-  `--locked`, the build leg installs `tauri-cli` into a fresh directory under
-  `$RUNNER_TEMP`, and `npm ci` installs from `release/package-lock.json`.
+  restore a cache that another ref saved. Each `cargo` build and test step compiles
+  from `Cargo.lock` with `--locked`, except `cargo tauri build`, which runs Cargo
+  without it: the build leg copies the stamped `app/Cargo.lock` just before that
+  build and fails the step if the build changed it, so a build that resolved
+  anything anew fails. The build leg installs `tauri-cli` into a fresh directory
+  under `$RUNNER_TEMP`, and `npm ci` installs from `release/package-lock.json`.
 - **Context values reach a script through `env:`**, never expanded into `run:`.
 - **Pins.** `actions/checkout`, `actions/setup-node`, `actions/upload-artifact`,
   `actions/download-artifact`, and `actions/attest` stay on major tags, under

@@ -1,8 +1,8 @@
 # Windows with Docker Desktop
 
 The host configuration for running ephemeral GitHub Actions runners for several
-repositories from one Windows machine with Docker Desktop. The CLI, `marshal`, reads
-a machine-local host configuration, and for each target repository keeps its slots
+repositories from one Windows machine with Docker Desktop. Marshal's agent reads a
+machine-local host configuration, and for each target repository keeps its slots
 filled with single-job containers built from
 [`images/actions-runner/`](../../images/actions-runner/README.md).
 
@@ -21,23 +21,24 @@ The JSON form, `config.json`, which Marshal migrates to `config.toml` at its fir
 start, and which the last command-line release read from the path its `--config`
 named. Each field below has a TOML key in `config.toml`, as the next section says.
 
-| Field                                 | Meaning                                                                                                                                                   |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `imageName`                           | The local image tag every entry uses; Marshal's Build image builds it from the image definition embedded in the app                                       |
-| `repositories[].owner`, `repository`  | The target repository. Multiple entries can form separate execution pools                                                                                 |
-| `repositories[].slots`                | How many jobs run at once in this entry's pool, 1 to 16; set 1 for a dedicated serialized pool                                                            |
-| `repositories[].tokenPath`            | An absolute Windows path (drive letter or UNC) to the file holding this repository's token, re-read on every registration                                 |
-| `repositories[].labels`               | Non-platform registration labels; absent or empty defaults to `axpc`, a non-empty list replaces it                                                        |
-| `repositories[].volumes`              | The cache volumes as `suffix` and `mountPath` pairs, possibly none                                                                                        |
-| `repositories[].name`                 | Starts the entry's container, runner, and volume names. Lowercase letters, digits, and hyphens, at most 64 characters, not colliding with another entry's |
-| `repositories[].cpus`                 | Optional CPU-time quota of each job container, a number above 0 and at most 64; 2 when absent. Automatic affinity selects ceiling(`cpus`) available CPUs  |
-| `repositories[].memoryGb`             | Optional memory limit of each job container in whole gigabytes, 1 to 256; 8 when absent                                                                   |
-| `repositories[].diagnostics`          | Optional boolean, false by default; enables the diagnostic runner lifecycle for this entry only                                                           |
-| `repositories[].diagnosticDirectory`  | Required with diagnostics, invalid without them; absolute local Windows directory, outside the checkout, pre-created and private to the operator          |
-| `repositories[].diagnosticRawRecords` | Optional boolean, false by default; separate opt-in for private daemon/crash records, invalid when true without diagnostics                               |
+| Field                                 | Meaning                                                                                                                                                                                                        |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `imageName`                           | The local image tag every entry uses; Marshal's Build image builds it from the image definition embedded in the app                                                                                            |
+| `repositories[].owner`, `repository`  | The target repository. Multiple entries can form separate execution pools                                                                                                                                      |
+| `repositories[].slots`                | How many jobs run at once in this entry's pool, 1 to 16; set 1 for a dedicated serialized pool                                                                                                                 |
+| `repositories[].tokenPath`            | An absolute Windows path (drive letter or UNC) to a token file. Read only by the last command-line release; Marshal ignores it, reads the token from the Credential Manager, and the TOML form has no such key |
+| `repositories[].labels`               | Non-platform registration labels; absent or empty defaults to `axpc`, a non-empty list replaces it                                                                                                             |
+| `repositories[].volumes`              | The cache volumes as `suffix` and `mountPath` pairs, possibly none                                                                                                                                             |
+| `repositories[].name`                 | Starts the entry's container, runner, and volume names. Lowercase letters, digits, and hyphens, at most 64 characters, not colliding with another entry's                                                      |
+| `repositories[].cpus`                 | Optional CPU-time quota of each job container, a number above 0 and at most 64; 2 when absent. Automatic affinity selects ceiling(`cpus`) available CPUs                                                       |
+| `repositories[].memoryGb`             | Optional memory limit of each job container in whole gigabytes, 1 to 256; 8 when absent                                                                                                                        |
+| `repositories[].diagnostics`          | Optional boolean, false by default; enables the diagnostic runner lifecycle for this entry only                                                                                                                |
+| `repositories[].diagnosticDirectory`  | Required with diagnostics, invalid without them; absolute local Windows directory, outside the checkout, pre-created and private to the operator                                                               |
+| `repositories[].diagnosticRawRecords` | Optional boolean, false by default; separate opt-in for private daemon/crash records, invalid when true without diagnostics                                                                                    |
 
-An invalid configuration stops `marshal` before it touches Docker, with one line
-per problem naming the field. A field not listed above is rejected as unknown, not
+Marshal does not use an invalid configuration: its agent stops, or keeps the last
+valid configuration, before it touches Docker, and the window lists one line per
+problem naming the field. A field not listed above is rejected as unknown, not
 ignored, so a misspelled `label` cannot silently drop `labels`. The isolation rules the validation enforces, such
 as what a registration carries and which names collide, are in the Per-Repository Isolation on a Runner Host
 section of [Security](../../docs/conventions/security.md).

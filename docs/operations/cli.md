@@ -4583,7 +4583,7 @@ In PowerShell 5.1 or 7:
     $null = $removal.Handle
     if ($removal.ExitCode -ne 0) { Refuse "msiexec could not remove $product (exit code $($removal.ExitCode))" }
   }
-  Write-Host 'Uninstalled Marshal. The configuration, the tokens and the logs in %LOCALAPPDATA%\marshal stay.'
+  Write-Host 'Uninstalled Marshal. The configuration and the logs in %LOCALAPPDATA%\marshal and the tokens in Credential Manager stay.'
 }
 ```
 

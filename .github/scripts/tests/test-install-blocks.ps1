@@ -450,6 +450,7 @@ Assert-Passed
 Assert-Called 'Get-Process marshal-app'
 Assert-Called 'Start-Process msiexec.exe /x {11111111-2222-3333-4444-555555555555} /qn /norestart'
 Assert-NotCalled 'msiexec.exe /i'
+Assert-True ($script:Result.Output -like '*tokens in Credential Manager stay*') "the block did not say the tokens stay in Credential Manager: $($script:Result.Output)"
 Assert-True ($script:Scenario.Installer.LastUpgradeCode -eq $UpgradeCode) 'the products were not looked up by the fixed upgrade code'
 Complete-Case
 
