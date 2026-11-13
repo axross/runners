@@ -248,7 +248,7 @@ async fn a_real_copy_stream_is_exported_into_a_bundle_and_the_container_removed(
     let sink = std::fs::canonicalize(sink).unwrap();
     let backend = DockerBackend::new(
         DockerConfig {
-            exporter: Some(env!("CARGO_BIN_EXE_marshal").into()),
+            exporter: Some(env!("CARGO_BIN_EXE_commands-helper").into()),
             ..DockerConfig::default()
         },
         SystemClock,

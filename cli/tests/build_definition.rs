@@ -68,7 +68,7 @@ fn a_release_build_on_linux_does_not_build_even_with_a_test_root() {
     .unwrap();
     // a docker that cannot exist, so a release build that ignored its override and
     // reached Docker anyway would still not build anything on this host
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_marshal"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_commands-helper"))
         .args(["build", "--profile", "axpc", "--config"])
         .arg(&config)
         .env("MARSHAL_TEST_ROOT", &root)

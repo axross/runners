@@ -149,17 +149,14 @@ mod tests {
         let now = UNIX_EPOCH + Duration::from_secs(built + 8 * 86_400);
         let warnings = crate::image::check::freshness_warnings(&check, now);
         assert!(
-            warnings.contains(
-                &"the golden VM is 8 days old and should be rebuilt with `marshal build`"
-                    .to_string()
-            ),
+            warnings.contains(&"the golden VM is 8 days old and should be rebuilt".to_string()),
             "{warnings:?}"
         );
         let now = UNIX_EPOCH + Duration::from_secs(built + 22 * 86_400);
         let warnings = crate::image::check::freshness_warnings(&check, now);
         assert!(
             warnings.contains(
-                &"the golden VM's operating-system packages are 22 days old; rebuild it with `marshal build`"
+                &"the golden VM's operating-system packages are 22 days old; build it again"
                     .to_string()
             ),
             "{warnings:?}"

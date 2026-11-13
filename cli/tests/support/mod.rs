@@ -29,23 +29,12 @@ use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
-pub const BINARY: &str = env!("CARGO_BIN_EXE_marshal");
+/// the test-only stand-in for the command line, which runs the library's foreground
+/// `start`, `build` and clients as a process and relaunches as its hidden modes.
+pub const COMMANDS_HELPER: &str = env!("CARGO_BIN_EXE_commands-helper");
 
 pub fn repository_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
-}
-
-pub fn run(args: &[&str]) -> Output {
-    Command::new(BINARY).args(args).output().unwrap()
-}
-
-pub fn run_path(config: &Path, profile: Option<&str>) -> Output {
-    let mut command = Command::new(BINARY);
-    command.arg("validate").arg("--config").arg(config);
-    if let Some(profile) = profile {
-        command.arg("--profile").arg(profile);
-    }
-    command.output().unwrap()
 }
 
 pub fn stdout(output: &Output) -> String {

@@ -1,4 +1,4 @@
-//! a scratch axmc host for running `marshal start` and its clients as real processes
+//! a scratch axmc host for running the commands helper's `start` and its clients as real processes
 //! against the fake `tart`, the fake `softnet` and, in the VMs, the fake `docker`.
 #![allow(
     dead_code,
@@ -20,7 +20,7 @@ use super::host::{Finished, Started, TOKEN, registered, texts};
 use super::softnet::Host as SoftnetHost;
 use super::stub::{Reply, Stub};
 use super::tart::FAKE_TART;
-use super::{BINARY, TempDir};
+use super::{COMMANDS_HELPER, TempDir};
 
 /// the owner and mode the fake `softnet` file is judged to have unless a test says
 /// otherwise.
@@ -268,7 +268,7 @@ impl MacHost {
 
     /// the command for `marshal <args>` on this host.
     pub fn command(&self, args: &[&str]) -> Command {
-        let mut command = Command::new(BINARY);
+        let mut command = Command::new(COMMANDS_HELPER);
         command
             .args(args)
             .current_dir(self.root.path())
@@ -287,7 +287,8 @@ impl MacHost {
         self.command(args).output().unwrap()
     }
 
-    /// starts `marshal start` for the configuration, against a GitHub at `github`.
+    /// starts the commands helper's `start` for the configuration, against a GitHub at
+    /// `github`.
     pub fn start(&self, github: &str) -> Started {
         let mut command = self.command(&["start", "--profile", "axmc"]);
         command
@@ -306,7 +307,8 @@ impl MacHost {
         started.finish(Duration::from_secs(40))
     }
 
-    /// runs `marshal start` as a client of a stopped instance, to its end.
+    /// runs the commands helper's `start` as a client of a stopped instance, to its
+    /// end.
     pub fn start_again(&self, github: &str) -> Output {
         let mut command = self.command(&["start", "--profile", "axmc"]);
         command

@@ -6,20 +6,12 @@ members = ["."]
 name = "marshal-cli"
 version = "0.0.0-dev"
 edition = "2024"
-description = "Management CLI for the self-hosted runner hosts in this repository"
+description = "The library behind Marshal, the app that runs the self-hosted runner hosts in this repository"
 publish = false
-default-run = "marshal"
 
 [lib]
 name = "marshal_cli"
 path = "src/lib.rs"
-
-# the binary name is fixed: the instance lock, control channel, and log names
-# derive from it, so renaming it breaks every installed host; see
-# docs/operations/cli.md.
-[[bin]]
-name = "marshal"
-path = "src/main.rs"
 
 # a stand-in for the `docker` client, so the tests can run the container backend as
 # a real process. Windows finds only `.exe` programs, so it cannot be a script.
@@ -48,6 +40,15 @@ doc = false
 [[bin]]
 name = "fake-macos"
 path = "helpers/fake_macos.rs"
+test = false
+doc = false
+
+# a stand-in for the command line the library no longer ships, so the tests can run
+# the foreground `start`, `build` and the clients as real processes, and relaunch it
+# in the hidden modes. a release must not ship it.
+[[bin]]
+name = "commands-helper"
+path = "helpers/commands_helper.rs"
 test = false
 doc = false
 

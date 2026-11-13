@@ -111,9 +111,9 @@ jobs:
         env:
           MARSHAL_REAL_DOCKER_IMAGE: runners-docker-test:ci
         run: cargo test --locked --test real_docker -- --ignored
-      # `marshal build` against the same daemon, with the debug-only test definition
-      # in tests/build-definition. a missing daemon fails the test, and the image it
-      # builds is removed and never pushed.
+      # the library's `build`, run by the commands helper, against the same daemon,
+      # with the debug-only test definition in tests/build-definition. a missing
+      # daemon fails the test, and the image it builds is removed and never pushed.
       - name: Run Real Docker Build Test
         if: runner.os == 'Linux'
         run: cargo test --locked --test real_docker_build -- --ignored

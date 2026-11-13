@@ -20,7 +20,6 @@ $ErrorActionPreference = 'Stop'
 Assert-JqAvailable
 
 $script:Document = $Document
-$env:STANDIN_RECORD_CALLS = '1'
 $OnWindows = Test-RunningOnWindows
 $Version = '1.2.3'
 $CommitSha = '0123456789abcdef0123456789abcdef01234567'

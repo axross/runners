@@ -14,7 +14,7 @@ use std::rc::Rc;
 use marshal_cli::runtime::docker::{DockerBackend, DockerConfig, DockerLimits};
 use marshal_cli::runtime::fake::{FakeClock, MemoryLog};
 
-use super::{BINARY, TempDir};
+use super::{COMMANDS_HELPER, TempDir};
 
 pub const FAKE_DOCKER: &str = env!("CARGO_BIN_EXE_fake-docker");
 
@@ -41,7 +41,7 @@ impl Fake {
 
     /// a backend whose exporter child is this CLI.
     pub fn exporting() -> Self {
-        Self::exporting_with(BINARY)
+        Self::exporting_with(COMMANDS_HELPER)
     }
 
     fn with(limits: DockerLimits, exporter: Option<PathBuf>) -> Self {
