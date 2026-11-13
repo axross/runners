@@ -2231,6 +2231,7 @@ dependencies = [
 name = "marshal-tray"
 version = "0.0.0-dev"
 dependencies = [
+ "core-foundation",
  "marshal-view",
  "windows-registry",
 ]

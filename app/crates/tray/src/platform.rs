@@ -1,6 +1,7 @@
 //! what the operating system says of the taskbar and the clock, read without unsafe
-//! code. Only Windows has these values: elsewhere the taskbar's mode is absent and
-//! local time is taken as UTC.
+//! code. Windows reads both from the registry; the Mac has no taskbar mode and reads
+//! its offset from Core Foundation; elsewhere the mode is absent and local time is
+//! taken as UTC.
 
 use crate::watch::TaskbarReading;
 
@@ -45,7 +46,11 @@ pub fn taskbar_reading() -> TaskbarReading {
     {
         windows::taskbar_reading()
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        TaskbarReading::NoMode
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         TaskbarReading::Absent
     }
@@ -59,8 +64,25 @@ pub fn utc_offset_minutes() -> i32 {
     {
         windows::utc_offset_minutes().unwrap_or(0)
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        macos::utc_offset_minutes()
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         0
+    }
+}
+
+#[cfg(target_os = "macos")]
+mod macos {
+    use core_foundation::date::CFDate;
+    use core_foundation::timezone::CFTimeZone;
+
+    /// the system time zone's offset from UTC now, which Core Foundation gives in whole
+    /// seconds; it keeps the zone the app started in until the app restarts.
+    pub fn utc_offset_minutes() -> i32 {
+        let seconds = CFTimeZone::system().seconds_from_gmt(CFDate::now());
+        (seconds / 60.0).round() as i32
     }
 }
