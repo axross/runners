@@ -1,7 +1,8 @@
 //! writes the app icon's files and the icon sheet from the embedded images.
 //!
 //! `cargo run --example icons -- app-icon <folder>` writes `icon.ico` and `icon.png` into
-//! `<folder>`, and `cargo run --example icons -- sheet <file.png>` writes the sheet the
+//! `<folder>`, `cargo run --example icons -- mac-icon <folder>` writes the Mac's `icon.icns`,
+//! and `cargo run --example icons -- sheet <file.png>` writes the sheet the
 //! maintainer approves the icons from: every notification-area state at each size in
 //! both colours on a light and a dark taskbar, and the app icon at its sizes, as the
 //! pixels the app embeds, doubled in size without smoothing.
@@ -9,7 +10,10 @@
 use std::path::Path;
 use std::process::ExitCode;
 
-use marshal_tray::{APP_ICON_SIZES, Bitmap, SIZES, app_icon, bitmap, ico, png, png_rgba};
+use marshal_tray::{
+    APP_ICON_SIZES, Bitmap, MAC_ICON_SIZES, SIZES, app_icon, bitmap, icns, ico, mac_app_icon, png,
+    png_rgba,
+};
 use marshal_view::{GlyphColour, IconState};
 
 /// the taskbar backgrounds the design record draws the glyphs on.
@@ -269,6 +273,13 @@ fn run(arguments: &[String]) -> Result<(), String> {
             let largest = images.last().ok_or("the app icon has no sizes")?;
             write(&folder.join("icon.png"), &png(largest))
         }
+        [command, folder] if command == "mac-icon" => {
+            let images: Vec<Bitmap> = MAC_ICON_SIZES
+                .iter()
+                .map(|size| mac_app_icon(*size))
+                .collect();
+            write(&Path::new(folder).join("icon.icns"), &icns(&images))
+        }
         [command, file] if command == "sheet" => {
             let canvas = sheet().scaled();
             write(
@@ -276,7 +287,10 @@ fn run(arguments: &[String]) -> Result<(), String> {
                 &png_rgba(canvas.width, canvas.height, &canvas.rgba),
             )
         }
-        _ => Err("usage: icons app-icon <folder> | icons sheet <file.png>".to_string()),
+        _ => Err(
+            "usage: icons app-icon <folder> | icons mac-icon <folder> | icons sheet <file.png>"
+                .to_string(),
+        ),
     }
 }
 

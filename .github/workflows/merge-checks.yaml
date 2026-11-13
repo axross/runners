@@ -181,8 +181,9 @@ jobs:
           echo "${RUNNER_TEMP}/tauri-cli/bin" >> "$GITHUB_PATH"
       - name: Lint With Clippy
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      # the process tests need the fake docker client, which only this feature builds
       - name: Run Tests
-        run: cargo test --locked --workspace --no-fail-fast
+        run: cargo test --locked --workspace --features marshal-app/fake-engine --no-fail-fast
       - name: Build The App
         working-directory: app/crates/app
         run: cargo tauri build --no-bundle

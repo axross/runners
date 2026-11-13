@@ -15,6 +15,12 @@
     ]
   },
   "bundle": {
+    "active": true,
+    "targets": ["app"],
+    "icon": ["icons/icon.png", "icons/icon.icns"],
+    "resources": {
+      "../../notices/THIRD-PARTY-NOTICES-macos.txt": "THIRD-PARTY-NOTICES.txt"
+    },
     "macOS": {
       "minimumSystemVersion": "26.0"
     }
