@@ -7,6 +7,7 @@ use marshal_cli::agent::snapshot::Snapshot;
 use marshal_cli::github_status::GithubStatus;
 
 use crate::clock::Clock;
+use crate::host::{HostWords, WINDOWS};
 
 /// why the app lost contact with a running agent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -136,6 +137,9 @@ pub struct Input<'a> {
     /// the pools whose Open run found the job ended, with when, in milliseconds since
     /// the Unix epoch.
     pub ended_jobs: Option<&'a BTreeMap<String, u64>>,
+    /// the words that name the operating system; W1's Windows words unless
+    /// [`Input::words`] gives the host's.
+    pub words: HostWords,
 }
 
 impl<'a> Input<'a> {
@@ -150,7 +154,15 @@ impl<'a> Input<'a> {
             tokens: None,
             github: GithubFeed::Off,
             ended_jobs: None,
+            words: WINDOWS,
         }
+    }
+
+    /// names the operating system with `words`, such as [`crate::HOST`].
+    #[must_use]
+    pub fn words(mut self, words: HostWords) -> Self {
+        self.words = words;
+        self
     }
 
     #[must_use]

@@ -576,6 +576,7 @@ impl<D: Dial> Session<D> {
             },
         };
         let input = Input::new(self.connection, self.snapshot.as_ref(), clock)
+            .words(marshal_view::HOST)
             .pending(self.pending)
             .tokens(&self.tokens)
             .github(feed)
@@ -985,7 +986,8 @@ impl<D: Dial> Session<D> {
     // ---- tokens
 
     fn record(&mut self, repository: &str, result: TokenResult) {
-        self.announce.push(result.announcement(repository));
+        self.announce
+            .push(result.announcement(repository, &marshal_view::HOST));
         self.tokens.results.insert(repository.to_string(), result);
     }
 

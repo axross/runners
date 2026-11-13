@@ -13,6 +13,7 @@ mod control;
 mod diagnostics;
 mod footer;
 mod github;
+mod host;
 mod icon;
 mod input;
 mod menu;
@@ -32,6 +33,7 @@ pub use control::{Action, Confirmation, Control, Look};
 pub use diagnostics::{DiagnosticItem, Diagnostics};
 pub use footer::Footer;
 pub use github::{GithubNote, HIDDEN_NAMES, OpenRun, job_page};
+pub use host::{HOST, HostWords, MACOS, WINDOWS};
 pub use icon::{GlyphColour, IconState, Rgb, TaskbarMode};
 pub use input::{
     Cause, Connection, GithubFeed, Input, NotSaved, Pending, PendingKind, TokenResult, TokenUi,

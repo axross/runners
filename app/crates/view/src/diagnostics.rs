@@ -6,6 +6,7 @@ use marshal_cli::agent::snapshot::{
 };
 use serde::Serialize;
 
+use crate::host::HostWords;
 use crate::text::plain;
 
 const RETRIED: &str =
@@ -57,7 +58,7 @@ fn export_text(code: &str, limit: u32) -> String {
     }
 }
 
-fn finding_text(finding: &DiagnosticFinding, limit: u32) -> (String, bool) {
+fn finding_text(finding: &DiagnosticFinding, limit: u32, words: &HostWords) -> (String, bool) {
     let base = export_text(&finding.export, limit);
     let bad_export = !matches!(finding.export.as_str(), "complete" | "already_exported");
     if finding.removed {
@@ -65,7 +66,8 @@ fn finding_text(finding: &DiagnosticFinding, limit: u32) -> (String, bool) {
     } else if finding.kept {
         (
             format!(
-                "{base}. A forced stop ended it, so the container is kept; the next start with this pool's diagnostics on exports and removes it."
+                "{base}. A forced stop ended it, so the {} is kept; the next start with this pool's diagnostics on exports and removes it.",
+                words.workload
             ),
             true,
         )
@@ -74,10 +76,10 @@ fn finding_text(finding: &DiagnosticFinding, limit: u32) -> (String, bool) {
     }
 }
 
-fn container_text(container: &DiagnosticContainer) -> (String, bool) {
+fn container_text(container: &DiagnosticContainer, words: &HostWords) -> (String, bool) {
     if container.state == "finalising" {
         return (
-            "Saving a bundle, then removing the container.".to_string(),
+            format!("Saving a bundle, then removing the {}.", words.workload),
             false,
         );
     }
@@ -89,7 +91,7 @@ fn container_text(container: &DiagnosticContainer) -> (String, bool) {
     (format!("{saved}. {RETRIED}"), true)
 }
 
-fn items(pool: &PoolInfo, info: &DiagnosticsInfo) -> Vec<DiagnosticItem> {
+fn items(pool: &PoolInfo, info: &DiagnosticsInfo, words: &HostWords) -> Vec<DiagnosticItem> {
     let mut items = Vec::new();
     for container in info
         .containers
@@ -101,8 +103,8 @@ fn items(pool: &PoolInfo, info: &DiagnosticsInfo) -> Vec<DiagnosticItem> {
             .iter()
             .find(|finding| finding.container == container.name);
         let (text, problem) = match finding {
-            Some(finding) => finding_text(finding, info.limit),
-            None => container_text(container),
+            Some(finding) => finding_text(finding, info.limit, words),
+            None => container_text(container, words),
         };
         items.push(item(pool, &container.name, text, problem));
     }
@@ -112,15 +114,17 @@ fn items(pool: &PoolInfo, info: &DiagnosticsInfo) -> Vec<DiagnosticItem> {
             .iter()
             .any(|each| each.name == finding.container)
     }) {
-        let (text, problem) = finding_text(finding, info.limit);
+        let (text, problem) = finding_text(finding, info.limit, words);
         items.push(item(pool, &finding.container, text, problem));
     }
     for name in &info.manual_recovery {
         items.push(item(
             pool,
             name,
-            "Left for the manual recovery in Windows Runner Host: Marshal has no diagnostics settings to save it with."
-                .to_string(),
+            format!(
+                "Left for the manual recovery in {}: Marshal has no diagnostics settings to save it with.",
+                words.host_document
+            ),
             true,
         ));
     }
@@ -137,13 +141,13 @@ fn item(pool: &PoolInfo, container: &str, text: String, problem: bool) -> Diagno
 }
 
 /// the section of a pool with diagnostics.
-pub fn section(pool: &PoolInfo) -> Option<Diagnostics> {
+pub fn section(pool: &PoolInfo, words: &HostWords) -> Option<Diagnostics> {
     let info = pool.diagnostics.as_ref()?;
     let only_manual = !info.manual_recovery.is_empty()
         && info.containers.is_empty()
         && info.written == 0
         && info.in_sink.is_none();
-    let items = items(pool, info);
+    let items = items(pool, info, words);
     if only_manual {
         return Some(Diagnostics {
             heading: "Diagnostics".to_string(),
@@ -166,14 +170,17 @@ pub fn section(pool: &PoolInfo) -> Option<Diagnostics> {
         summary.push_str(&format!("; {saving} being saved"));
     }
     let mut notes = vec![format!(
-        "When it holds {}, later containers are removed without a bundle.",
-        info.limit
+        "When it holds {}, later {} are removed without a bundle.",
+        info.limit, words.workloads
     )];
     if info.in_sink.is_none() {
         notes.push("? means the count is not known yet, or it failed.".to_string());
     }
     if info.findings.iter().any(|finding| finding.removed) {
-        notes.push("Removed containers stay listed until the next start.".to_string());
+        notes.push(format!(
+            "Removed {} stay listed until the next start.",
+            words.workloads
+        ));
     }
     Some(Diagnostics {
         heading: "Diagnostics".to_string(),

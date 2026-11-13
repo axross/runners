@@ -7,6 +7,7 @@ use serde::Serialize;
 use crate::control::Control;
 use crate::diagnostics::{Diagnostics, section};
 use crate::github::{self, GithubNote, OpenRun};
+use crate::host::HostWords;
 use crate::state::{Context, Resident};
 use crate::text::{humanised, plain};
 use crate::tokens::{Repository, pool_note, repositories};
@@ -80,14 +81,14 @@ pub struct PoolCard {
     pub diagnostics: Option<Diagnostics>,
 }
 
-fn pool_state(pool: &PoolInfo) -> (String, Option<Mark>) {
+fn pool_state(pool: &PoolInfo, words: &HostWords) -> (String, Option<Mark>) {
     let every_runner_backs_off = !pool.runners.is_empty()
         && pool
             .runners
             .iter()
             .all(|runner| runner.kind() == RunnerState::BackingOff);
     match pool.state.as_str() {
-        "waiting_for_docker" => ("Waiting for Docker".to_string(), None),
+        "waiting_for_docker" => (words.waiting.to_string(), None),
         "preparing" => ("Starting".to_string(), None),
         "running" if every_runner_backs_off => ("Backing off".to_string(), Some(Mark::History)),
         "running" => ("Running".to_string(), None),
@@ -150,8 +151,8 @@ fn runner_row(context: &Context<'_>, pool: &PoolInfo, runner: &RunnerInfo) -> Ru
 }
 
 fn card(context: &Context<'_>, repositories: &[Repository], pool: &PoolInfo) -> PoolCard {
-    let (state, mark) = pool_state(pool);
-    let diagnostics = section(pool);
+    let (state, mark) = pool_state(pool, &context.input.words);
+    let diagnostics = section(pool, &context.input.words);
     let count = format!("{} of {} up", pool.runners_up, pool.slots);
     let mut tags = Vec::new();
     if diagnostics.as_ref().is_some_and(|section| section.on) {
