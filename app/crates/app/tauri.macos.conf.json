@@ -1,0 +1,22 @@
+{
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Marshal",
+        "url": "index.html",
+        "width": 880,
+        "height": 680,
+        "minWidth": 480,
+        "visible": false,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
+      }
+    ]
+  },
+  "bundle": {
+    "macOS": {
+      "minimumSystemVersion": "26.0"
+    }
+  }
+}

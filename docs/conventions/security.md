@@ -1196,14 +1196,19 @@ the app may do with that reach. [App](../operations/app.md) owns how it works.
   never as markup. A change to the policy, to the files it governs or to the element
   builder needs the maintainer's review.
 
-- **Two capabilities grant what a window may call.** The app declares its commands, so
+- **Four capabilities grant what a window may call, two of them on macOS only.** The app declares its commands, so
   each works only in a window whose capability grants it. The main window's
   capability grants `core:event:allow-listen` and `core:event:allow-unlisten` and the
   commands that read the view, start all, stop all, build, stop the build, try
   again, set a token, remove a token, hide the window and open a runner's job. The
   confirmation window's
-  grants the two commands that read its question and answer it. Neither grants
-  anything else, each is limited to its window, and a test shows that a call the
+  grants the two commands that read its question and answer it. On macOS, where the
+  unified title bar hides the windows' own (M2's option B), `macos-main-drag` grants
+  the main window `core:window:allow-start-dragging` and
+  `core:window:allow-internal-toggle-maximize`, to drag and zoom it by its header
+  band, and `macos-confirmation-drag` grants the question window, which cannot be
+  zoomed, only `core:window:allow-start-dragging`. None grants anything else, each is
+  limited to its window, and a test shows that a call the
   capability does not grant is refused. The permission files Tauri generates are
   checked in, so a change to them shows in a diff, and Tauri's `dynamic-acl` feature
   is off, so no capability can be added while the app runs. Quit has no command: it

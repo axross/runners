@@ -3,8 +3,15 @@
 
 import { h } from "./dom.js";
 import { icon } from "./icons.js";
+import { DRAG_REGION } from "./platform.js";
 
 const { invoke } = window.__TAURI__.core;
+
+if (DRAG_REGION) {
+  document
+    .getElementById("own")
+    .setAttribute("data-tauri-drag-region", DRAG_REGION);
+}
 
 function answer(accepted) {
   invoke("answer_confirmation", { accepted });
