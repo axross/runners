@@ -74,6 +74,20 @@ function focusHeading() {
   focusKey("heading");
 }
 
+/**
+ * where focus goes when the element that had it is gone: an Open run that went away
+ * with its runner hands focus to its pool's heading, anything else to the window's.
+ */
+function focusInstead(key) {
+  if (key.startsWith("run:")) {
+    const pool = key.slice("run:".length, key.lastIndexOf(":"));
+    if (focusKey(`pool:${pool}`)) {
+      return;
+    }
+  }
+  focusHeading();
+}
+
 // ---- drawing
 
 function draw(view, focusRequest = null) {
@@ -97,7 +111,7 @@ function draw(view, focusRequest = null) {
     next.scrollTop = scrolled;
   }
   if (before !== null && !focusKey(before)) {
-    focusHeading();
+    focusInstead(before);
   }
 }
 
@@ -274,6 +288,11 @@ function selectTab(name) {
   }
 }
 
+/** opens the job a pool's runner runs; the app builds the address and opens it. */
+function openRun(pool, runner) {
+  run("open_job", { pool, runner });
+}
+
 /** a card's pill selects the Tokens tab with focus on the repository's row. */
 function gotoToken(repository) {
   selectTab("tokens");
@@ -290,6 +309,7 @@ const context = {
   press,
   selectTab,
   gotoToken,
+  openRun,
   saveToken,
   cancelForm,
   cancelRemoval,

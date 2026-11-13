@@ -7,21 +7,23 @@
     clippy::indexing_slicing
 )]
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::{Duration, Instant};
 
 use marshal_app::state::{AppState, Asking, Latest};
-use marshal_app::{HIDDEN_EVENT, commands, on_window_event};
+use marshal_app::{HIDDEN_EVENT, commands, on_window_event, opener};
 use marshal_session::{
     Act, Connected, Dial, DialError, Failure, Launcher, Link, Log, Method, NoUpdates, Present,
-    Seams, Session, Shown, Then, WallClock,
+    Pushed, Seams, Session, Shown, Then, WallClock,
 };
 use marshal_view::Confirmation;
 use serde_json::json;
 use tauri::ipc::{CallbackFn, InvokeBody};
 use tauri::test::{INVOKE_KEY, MockRuntime, get_ipc_response, mock_builder};
 use tauri::webview::InvokeRequest;
-use tauri::{App, Listener, Manager, RunEvent, WebviewWindow, WebviewWindowBuilder};
+use tauri::{App, Listener, Manager, RunEvent, WebviewWindow, WebviewWindowBuilder, WindowEvent};
+use tokio::sync::mpsc;
 
 /// no agent ever answers, so the session sits in "no agent" and answers every read.
 struct NoOne;
@@ -37,6 +39,12 @@ impl Link for Nothing {
     }
     async fn drain_for_update(&self, _version: &str) -> Result<Option<u32>, Failure> {
         Ok(None)
+    }
+    async fn subscribe_github(&self) -> Result<(), Failure> {
+        Ok(())
+    }
+    async fn renew_github(&self) -> Result<(), Failure> {
+        Ok(())
     }
 }
 
@@ -128,6 +136,7 @@ fn app_asking(then: Then, log: Arc<dyn Log>) -> App<MockRuntime> {
     }));
     mock_builder()
         .manage(state)
+        .plugin(opener())
         .invoke_handler(commands::handler())
         .build(tauri::generate_context!())
         .expect("the app builds")
@@ -176,7 +185,7 @@ const APP_ORIGIN: &str = if cfg!(windows) {
     "tauri://localhost"
 };
 
-const MAIN_COMMANDS: [&str; 9] = [
+const MAIN_COMMANDS: [&str; 10] = [
     "read_view",
     "start_all",
     "stop_all",
@@ -186,6 +195,7 @@ const MAIN_COMMANDS: [&str; 9] = [
     "set_token",
     "remove_token",
     "hide_window",
+    "open_job",
 ];
 
 const CONFIRMATION_COMMANDS: [&str; 2] = ["read_confirmation", "answer_confirmation"];
@@ -196,12 +206,13 @@ fn arguments(command: &str) -> serde_json::Value {
         "remove_token" => json!({ "repository": "axross/runners" }),
         "read_view" => json!({ "forms": null }),
         "answer_confirmation" => json!({ "accepted": false }),
+        "open_job" => json!({ "pool": "app", "runner": "app-1-20261104031522114" }),
         _ => json!({}),
     }
 }
 
 #[test]
-fn the_main_window_calls_its_nine_commands() {
+fn the_main_window_calls_its_ten_commands() {
     let app = app();
     let main = window(&app, "main");
     for command in MAIN_COMMANDS {
@@ -384,4 +395,150 @@ fn closing_the_main_window_tells_the_page_and_hides_it_instead() {
         "the first close request left the window open"
     );
     assert_eq!(told.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn a_pool_the_agent_does_not_list_is_refused_by_the_session() {
+    let app = app();
+    let main = window(&app, "main");
+    let result = call(&main, "open_job", arguments("open_job"));
+    // the mock runtime hands back a command's error as JSON
+    assert_eq!(result, Err(json!("Marshal has no such pool.").to_string()));
+}
+
+#[test]
+fn the_main_window_is_refused_the_opener_plugins_commands() {
+    let app = app();
+    let main = window(&app, "main");
+    for command in [
+        "plugin:opener|open_url",
+        "plugin:opener|open_path",
+        "plugin:opener|reveal_item_in_dir",
+    ] {
+        let result = call(
+            &main,
+            command,
+            json!({ "url": "https://example.com/", "path": "C:\\", "paths": [] }),
+        );
+        assert!(refused(&result), "{command}: {result:?}");
+    }
+}
+
+/// what a fake agent has seen of the `github` subscription.
+#[derive(Default)]
+struct Probe {
+    /// connections made.
+    dials: AtomicUsize,
+    /// connections subscribed to `github` and still open.
+    github_open: AtomicUsize,
+    /// the push channels, kept so no connection reads as closed.
+    senders: Mutex<Vec<mpsc::UnboundedSender<Pushed>>>,
+}
+
+struct Watched {
+    probe: Arc<Probe>,
+    github: AtomicBool,
+}
+
+impl Link for Watched {
+    async fn subscribe(&self) -> Result<(), Failure> {
+        Ok(())
+    }
+    async fn call(&self, _method: Method) -> Result<(), Failure> {
+        Ok(())
+    }
+    async fn subscribe_github(&self) -> Result<(), Failure> {
+        if !self.github.swap(true, Ordering::SeqCst) {
+            self.probe.github_open.fetch_add(1, Ordering::SeqCst);
+        }
+        Ok(())
+    }
+    async fn renew_github(&self) -> Result<(), Failure> {
+        Ok(())
+    }
+}
+
+impl Drop for Watched {
+    fn drop(&mut self) {
+        if self.github.load(Ordering::SeqCst) {
+            self.probe.github_open.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+}
+
+struct Answers(Arc<Probe>);
+
+impl Dial for Answers {
+    type Link = Watched;
+
+    async fn dial(&self) -> Result<Connected<Watched>, DialError> {
+        self.0.dials.fetch_add(1, Ordering::SeqCst);
+        let (sender, pushes) = mpsc::unbounded_channel();
+        self.0
+            .senders
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(sender);
+        Ok(Connected {
+            link: Watched {
+                probe: Arc::clone(&self.0),
+                github: AtomicBool::new(false),
+            },
+            pushes,
+        })
+    }
+}
+
+/// waits up to 5 s for `held` to say whether a `github` subscription is open.
+fn eventually(probe: &Probe, held: bool) -> bool {
+    let until = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < until {
+        if (probe.github_open.load(Ordering::SeqCst) == 1) == held {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    false
+}
+
+#[test]
+fn showing_the_main_window_opens_the_github_subscription_and_hiding_it_ends_it() {
+    let probe = Arc::new(Probe::default());
+    let (session, handle) = Session::new(Seams {
+        dial: Answers(Arc::clone(&probe)),
+        launcher: Arc::new(Refuse),
+        present: Arc::new(Quiet),
+        time: Arc::new(WallClock::new(|| 0)),
+        log: Arc::new(Quiet),
+    });
+    tauri::async_runtime::spawn(async move {
+        session.run().await;
+    });
+    let app = mock_builder()
+        .manage(AppState::new(
+            handle,
+            Arc::new(Latest::default()),
+            Arc::new(Quiet),
+        ))
+        .invoke_handler(commands::handler())
+        .build(tauri::generate_context!())
+        .expect("the app builds");
+    let main = window(&app, "main");
+    // the session reaches the agent first, so a subscription it took regardless of the
+    // window would show by now
+    let until = Instant::now() + Duration::from_secs(5);
+    while probe.dials.load(Ordering::SeqCst) == 0 && Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(
+        probe.github_open.load(Ordering::SeqCst),
+        0,
+        "nothing is held before the window is shown"
+    );
+    // the mock runtime reports the window visible and not minimised
+    on_window_event(&main.as_ref().window(), &WindowEvent::Focused(true));
+    assert!(eventually(&probe, true), "showing the window subscribes");
+    call(&main, "hide_window", json!({})).unwrap();
+    assert!(eventually(&probe, false), "hiding the window ends it");
 }

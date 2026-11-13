@@ -76,6 +76,7 @@ pub fn failure(error: CallError) -> Failure {
     match error {
         CallError::Agent(body) => match body.code.as_str() {
             "busy" | "subscription_limit" => Failure::Busy(body.message),
+            "not_subscribed" => Failure::NotSubscribed,
             "store_failed" => Failure::Store {
                 detail: body.store.map(|store| match store.code {
                     Some(code) => format!("kind {}, code {code}", store.kind),
@@ -100,6 +101,7 @@ fn forward(mut pushes: mpsc::UnboundedReceiver<Push>) -> mpsc::UnboundedReceiver
         while let Some(push) = pushes.recv().await {
             let pushed = match push {
                 Push::Event { snapshot, .. } => Pushed::Snapshot(snapshot),
+                Push::Github { status, .. } => Pushed::Github(status),
                 Push::Heartbeat { .. } => Pushed::Heartbeat,
                 Push::Ending { reason, update, .. } => Pushed::Ending { reason, update },
                 Push::Closed => Pushed::Closed,
@@ -118,6 +120,14 @@ fn forward(mut pushes: mpsc::UnboundedReceiver<Push>) -> mpsc::UnboundedReceiver
 impl Link for Agent {
     async fn subscribe(&self) -> Result<(), Failure> {
         self.client.subscribe().await.map_err(failure)
+    }
+
+    async fn subscribe_github(&self) -> Result<(), Failure> {
+        self.client.subscribe_github().await.map_err(failure)
+    }
+
+    async fn renew_github(&self) -> Result<(), Failure> {
+        self.client.renew_github().await.map_err(failure)
     }
 
     async fn call(&self, method: Method) -> Result<(), Failure> {

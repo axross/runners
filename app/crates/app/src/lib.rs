@@ -11,4 +11,4 @@ mod tray;
 #[cfg(windows)]
 mod updates;
 
-pub use app::{HIDDEN_EVENT, MAIN_WINDOW, hide_main_window, on_window_event, run};
+pub use app::{HIDDEN_EVENT, MAIN_WINDOW, hide_main_window, on_window_event, opener, run};

@@ -197,6 +197,22 @@ the file and creating it again with the new token, then restrict it as below: a 
 file inherits its folder's permissions until the step resets and restricts them. Do
 not edit the file in place.
 
+### Adding Actions: read for Job Names
+
+Marshal's window names the job each busy runner runs, and links to it, only when the
+repository's token also has **Actions**, **Read-only**. Without it the window still
+shows the runner as running a job, and the pool says "Job names hidden". To add it, on
+GitHub open **Settings, Developer settings, Fine-grained personal access tokens**,
+choose the repository's token, **Edit**, and under **Repository permissions** set
+**Actions** to **Read-only**, then **Update**. Editing a token's permissions keeps its
+value, so nothing changes on this machine: the token stays where it is stored, and the
+next job's name shows within a minute of a runner becoming busy, without a restart.
+
+Actions: read also lets anyone holding the token read the repository's workflow runs,
+their logs and their artifacts; the token permission section of
+[Security](../conventions/security.md#a-token-carries-only-its-pool-kinds-permissions)
+names that cost. Leave it off to keep the token to Administration alone.
+
 ### Restricting a Token File
 
 The CLI does not check a token file's access control list on Windows, because no
@@ -237,7 +253,11 @@ every `marshal` command that reads it takes its path as `--config`. Start from
 [`runner-host.example.json`](../../hosts/windows-docker-desktop/runner-host.example.json),
 and see the Host configuration section of the
 [host README](../../hosts/windows-docker-desktop/README.md) for every field. The
-rules that matter operationally:
+resident agent reads the TOML form instead, `%LOCALAPPDATA%\marshal\config.toml`,
+which its first start migrates from a `config.json` in that folder; see
+[`config.example.toml`](../../hosts/windows-docker-desktop/config.example.toml) and
+[The Agent's Configuration](./cli.md#the-agents-configuration). The rules that matter
+operationally:
 
 - **One entry per execution pool**, each with its own `name`, `slots`,
   `labels`, and `volumes`. Every entry uses the global `imageName`.
@@ -1021,6 +1041,17 @@ Hub. No inbound port is needed.
   [Restricting a Token File](#restricting-a-token-file) describes. Other slots
   continue their own registration loops, but a shared-token problem can affect
   every pool for that repository.
+
+- **The window says job names are hidden** while the token has Actions: read: the
+  agent's log records GitHub's answer to the workflow-runs request, its status code,
+  its message and its `X-Accepted-GitHub-Permissions` header. A 403 there means the
+  token still lacks the permission for that repository; check the token's
+  **Repository access** and **Actions** setting as
+  [Adding Actions: read for Job Names](#adding-actions-read-for-job-names) describes.
+  Marshal asks again when a runner next becomes busy, at most once a minute.
+- **The window says GitHub status is unavailable:** the running agent is an older one
+  without GitHub status, or, for now, has no room for another subscription and the
+  window asks again every 60 s. Runner states on this computer are unaffected.
 
 ## Rolling Back marshal
 

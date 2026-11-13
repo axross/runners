@@ -9,11 +9,16 @@
 //! held lock every 5 s, and ends when the agent ends for `quit` or
 //! `executable_changed`. Its [`update`] module checks the update feed and installs an
 //! update once the agent has drained.
+//!
+//! While the main window is shown and not minimized it also holds the `github`
+//! subscription, on a second connection of its own that it renews every 30 s and closes
+//! when the window is hidden or minimized, so the agent asks GitHub only then.
 
 mod update;
 
 pub use update::{CHECK_EVERY, EXIT_WITHIN};
 
+use std::collections::BTreeMap;
 use std::future::pending;
 use std::sync::Arc;
 use std::time::Duration;
@@ -21,10 +26,11 @@ use std::time::Duration;
 use marshal_cli::agent::snapshot::Snapshot;
 use marshal_cli::agent::wire::ENDING_UPDATE;
 use marshal_cli::agent::{EXECUTABLE_CHANGED, Launch, QUIT, StopReason};
+use marshal_cli::github_status::GithubStatus;
 use marshal_cli::token_store::{TokenKey, TokenRefusal, accepted_token};
 use marshal_view::{
-    Cause, Connection, Input, NotSaved, Pending, PendingKind, TokenResult, TokenUi, Tracker,
-    Update, View, pools_started_by,
+    Cause, Connection, GithubFeed, Input, NotSaved, Pending, PendingKind, TokenResult, TokenUi,
+    Tracker, Update, View, job_page, pools_started_by,
 };
 use serde::Deserialize;
 use tokio::sync::{mpsc, oneshot};
@@ -33,8 +39,8 @@ use tokio::time::{Instant, sleep_until};
 
 use crate::connect::{Attempt, Found, RETRY_EVERY, attempt};
 use crate::seam::{
-    AgentInfo, Dial, Failure, Launcher, Link, Log, Method, Present, Processes, Pushed, Record,
-    Shown, TimeSource, Updater, Verified,
+    AgentInfo, Connected, Dial, DialError, Failure, Launcher, Link, Log, Method, Present,
+    Processes, Pushed, Record, Shown, TimeSource, Updater, Verified,
 };
 use update::Drain;
 
@@ -58,6 +64,19 @@ const QUIT_LINGER: Duration = Duration::from_secs(3);
 
 /// an answered action whose snapshot never shows it stops being shown after this.
 const PENDING_FOR: Duration = Duration::from_secs(5);
+
+/// how often the `github` subscription is renewed; the agent ends one not renewed for
+/// 90 s.
+pub const RENEW_EVERY: Duration = Duration::from_secs(30);
+
+/// how long a pool says its Open run found the job ended.
+const ENDED_FOR_MS: u64 = 60_000;
+
+/// how often a `github` subscription the agent had no room for is asked for again.
+pub const GITHUB_ASK_AGAIN: Duration = Duration::from_secs(60);
+
+/// the longest the `github` subscription or its renewal waits for its answer.
+const GITHUB_WITHIN: Duration = Duration::from_secs(5);
 
 /// why the session ended, and so the app.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -133,6 +152,12 @@ enum Command {
         repository: String,
         reply: Reply<()>,
     },
+    WindowShown(bool),
+    OpenJob {
+        pool: String,
+        runner: String,
+        reply: Reply<Option<String>>,
+    },
     Quit,
 }
 
@@ -186,6 +211,24 @@ impl Handle {
             .await
     }
 
+    /// says whether the main window is shown and not minimized, which is when the
+    /// session holds the `github` subscription.
+    pub fn window_shown(&self, shown: bool) {
+        let _ = self.commands.send(Command::WindowShown(shown));
+    }
+
+    /// the address of the job page of `pool`'s runner named `runner`, built by the
+    /// session; `None` when that job has ended, which the pool's card then says. A pool
+    /// the agent does not list is refused.
+    pub async fn open_job(&self, pool: String, runner: String) -> Result<Option<String>, String> {
+        self.ask(|reply| Command::OpenJob {
+            pool,
+            runner,
+            reply,
+        })
+        .await
+    }
+
     /// quits: the runners stop, then the agent and the app end; with no agent to reach
     /// only the app ends.
     pub fn quit(&self) {
@@ -217,6 +260,66 @@ enum Internal<L> {
     DrainAnswered(Result<Option<u32>, Failure>),
     /// whether the agent's process exited after it ended for the update.
     AgentGone(bool),
+    GithubAttempted {
+        generation: u64,
+        found: Result<Connected<L>, Failure>,
+    },
+    GithubRenewed {
+        generation: u64,
+        /// the agent had ended the subscription, and it was taken again.
+        resubscribed: bool,
+        outcome: Result<(), Failure>,
+    },
+}
+
+/// where the `github` subscription stands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Feed {
+    /// the window is hidden or minimized.
+    Off,
+    /// the agent does not list the topic; so until the app reaches another agent.
+    Unavailable,
+    /// the agent had no room; asked again every 60 s.
+    ForNow,
+    /// held, or being asked for, since `opened_ms`.
+    Live { opened_ms: u64 },
+}
+
+/// the second connection, which holds the `github` subscription.
+struct Github<L> {
+    feed: Feed,
+    live: Option<Live<L>>,
+    attempt: Option<JoinHandle<()>>,
+    /// tells the reports of an attempt or a renewal that was given up from current ones.
+    generation: u64,
+    retry_at: Option<Instant>,
+    renew_at: Option<Instant>,
+    status: Option<GithubStatus>,
+}
+
+impl<L> Github<L> {
+    fn new() -> Self {
+        Self {
+            feed: Feed::Off,
+            live: None,
+            attempt: None,
+            generation: 0,
+            retry_at: None,
+            renew_at: None,
+            status: None,
+        }
+    }
+
+    /// closes the connection, which ends the subscription, and gives up what is under way.
+    fn close(&mut self) {
+        if let Some(task) = self.attempt.take() {
+            task.abort();
+        }
+        self.live = None;
+        self.generation += 1;
+        self.retry_at = None;
+        self.renew_at = None;
+    }
 }
 
 enum Stage {
@@ -314,6 +417,11 @@ pub struct Session<D: Dial> {
     drain_again_at: Option<Instant>,
     /// an agent that does not drain was logged once.
     told_no_drain: bool,
+    /// whether the main window is shown and not minimized.
+    window_shown: bool,
+    github: Github<D::Link>,
+    /// the pools whose Open run found its job ended, with when.
+    ended_jobs: BTreeMap<String, u64>,
 }
 
 impl<D: Dial> Session<D> {
@@ -364,6 +472,9 @@ impl<D: Dial> Session<D> {
             drain: None,
             drain_again_at: None,
             told_no_drain: false,
+            window_shown: false,
+            github: Github::new(),
+            ended_jobs: BTreeMap::new(),
         };
         (
             session,
@@ -387,10 +498,12 @@ impl<D: Dial> Session<D> {
                 },
                 Some(internal) = self.internal.recv() => self.internal(internal),
                 pushed = next_push(&mut self.live) => self.pushed(pushed),
+                pushed = next_push(&mut self.github.live) => self.github_pushed(pushed),
                 () = sleep_until(wake) => self.woke(),
             }
             if let Some(ended) = self.ended.take() {
                 self.abort_attempt();
+                self.github.close();
                 self.log.info(&format!("The session ended: {ended:?}."));
                 return ended;
             }
@@ -405,6 +518,8 @@ impl<D: Dial> Session<D> {
             self.retry_at,
             self.check_due(),
             self.drain_again_at,
+            self.github.retry_at,
+            self.github.renew_at,
         ]
         .into_iter()
         .flatten()
@@ -429,9 +544,22 @@ impl<D: Dial> Session<D> {
     fn refresh(&mut self) {
         self.settle_pending();
         let clock = self.time.clock();
+        self.ended_jobs
+            .retain(|_, at| clock.now_ms.saturating_sub(*at) < ENDED_FOR_MS);
+        let feed = match self.github.feed {
+            Feed::Off => GithubFeed::Off,
+            Feed::Unavailable => GithubFeed::Unavailable,
+            Feed::ForNow => GithubFeed::UnavailableForNow,
+            Feed::Live { opened_ms } => GithubFeed::Live {
+                opened_ms,
+                status: self.github.status.as_ref(),
+            },
+        };
         let input = Input::new(self.connection, self.snapshot.as_ref(), clock)
             .pending(self.pending)
-            .tokens(&self.tokens);
+            .tokens(&self.tokens)
+            .github(feed)
+            .ended_jobs(&self.ended_jobs);
         let Update { view, announced } = self.tracker.update(input);
         self.recheck = announced
             .recheck_at_ms
@@ -534,6 +662,11 @@ impl<D: Dial> Session<D> {
                 self.connection = Connection::Connected;
                 self.last_heard_ms = Some(self.now_ms());
                 self.log.info("Connected to the agent.");
+                // another agent may list the topic
+                if self.github.feed == Feed::Unavailable {
+                    self.github.feed = Feed::Off;
+                }
+                self.github_begin();
             }
             Found::NoAgent => {
                 self.stage = Stage::Parked;
@@ -573,6 +706,13 @@ impl<D: Dial> Session<D> {
             self.begin_attempt();
         }
         self.update_due(now);
+        if self.github.retry_at.is_some_and(|at| now >= at) {
+            self.github.retry_at = None;
+            self.github_begin();
+        }
+        if self.github.renew_at.is_some_and(|at| now >= at) {
+            self.github_renew();
+        }
         if now >= self.next_tick {
             self.next_tick = now + TICK;
         }
@@ -590,6 +730,8 @@ impl<D: Dial> Session<D> {
                 self.refresh();
             }
             Pushed::Heartbeat => self.last_heard_ms = Some(self.now_ms()),
+            // this connection holds no `github` subscription
+            Pushed::Github(_) => {}
             Pushed::Ending { reason, .. } if reason == QUIT || reason == EXECUTABLE_CHANGED => {
                 self.log.info(&format!("The agent is ending: {reason}."));
                 self.ended = Some(Ended::AgentEnded(reason));
@@ -620,6 +762,9 @@ impl<D: Dial> Session<D> {
 
     fn closed(&mut self) {
         self.live = None;
+        // the agent is gone, so is the subscription; the last GitHub status stays with
+        // the last list until the agent is reached again
+        self.github.close();
         if matches!(self.stage, Stage::Quitting) {
             self.ended = Some(Ended::Quit);
             return;
@@ -684,6 +829,14 @@ impl<D: Dial> Session<D> {
                 reply,
             } => self.set_token(&repository, token, reply),
             Command::RemoveToken { repository, reply } => self.remove_token(&repository, reply),
+            Command::WindowShown(shown) => self.set_window_shown(shown),
+            Command::OpenJob {
+                pool,
+                runner,
+                reply,
+            } => {
+                let _ = reply.send(self.open_job(&pool, &runner));
+            }
             Command::Quit => self.quit(),
         }
     }
@@ -867,6 +1020,201 @@ impl<D: Dial> Session<D> {
         });
     }
 
+    // ---- GitHub status
+
+    fn set_window_shown(&mut self, shown: bool) {
+        if shown == self.window_shown {
+            return;
+        }
+        self.window_shown = shown;
+        if shown {
+            self.github_begin();
+        } else {
+            self.github.close();
+            // an agent without the topic stays without it until another is reached
+            if self.github.feed != Feed::Unavailable {
+                self.github.feed = Feed::Off;
+            }
+            self.github.status = None;
+            self.ended_jobs.clear();
+            self.log
+                .info("The window is hidden: the GitHub subscription ends.");
+        }
+        self.refresh();
+    }
+
+    /// opens the second connection and subscribes it to `github`, when the window is
+    /// shown, the agent is reached and nothing of the kind is under way.
+    fn github_begin(&mut self) {
+        let Some(_) = self.link() else {
+            return;
+        };
+        if !self.window_shown
+            || self.github.feed == Feed::Unavailable
+            || self.github.live.is_some()
+            || self.github.attempt.is_some()
+            || self.github.retry_at.is_some()
+        {
+            return;
+        }
+        let opened_ms = self.now_ms();
+        self.github.generation += 1;
+        let generation = self.github.generation;
+        let dial = Arc::clone(&self.dial);
+        let report = self.report.clone();
+        self.github.attempt = Some(tokio::spawn(async move {
+            let found = match dial.dial().await {
+                Ok(connected) => {
+                    match tokio::time::timeout(GITHUB_WITHIN, connected.link.subscribe_github())
+                        .await
+                    {
+                        Ok(Ok(())) => Ok(connected),
+                        Ok(Err(failure)) => Err(failure),
+                        Err(_) => Err(Failure::TimedOut),
+                    }
+                }
+                Err(DialError::Busy) => Err(Failure::Busy(String::new())),
+                Err(other) => Err(Failure::Other(format!("{other:?}"))),
+            };
+            let _ = report.send(Internal::GithubAttempted { generation, found });
+        }));
+        // the subscription's own time, so the first value, which holds what the agent
+        // learned before, reads as checking; a feed the agent had no room for says so
+        // until it is held
+        if matches!(self.github.feed, Feed::Off | Feed::Live { .. }) {
+            self.github.feed = Feed::Live { opened_ms };
+        }
+    }
+
+    fn github_found(&mut self, found: Result<Connected<D::Link>, Failure>) {
+        match found {
+            Ok(connected) => {
+                self.github.live = Some(Live {
+                    link: Arc::new(connected.link),
+                    pushes: connected.pushes,
+                });
+                if self.github.feed == Feed::ForNow {
+                    self.github.feed = Feed::Live {
+                        opened_ms: self.now_ms(),
+                    };
+                }
+                self.github.renew_at = Some(Instant::now() + RENEW_EVERY);
+                self.log.info("Subscribed to GitHub status.");
+            }
+            Err(Failure::NotServed(_)) => {
+                self.github.feed = Feed::Unavailable;
+                self.github.status = None;
+                self.log
+                    .info("The agent does not report GitHub status; none is shown.");
+            }
+            Err(Failure::Busy(_)) => {
+                self.github.feed = Feed::ForNow;
+                self.github.retry_at = Some(Instant::now() + GITHUB_ASK_AGAIN);
+                self.log.info(&format!(
+                    "The agent has no room for the GitHub subscription; asking again in {} s.",
+                    GITHUB_ASK_AGAIN.as_secs()
+                ));
+            }
+            Err(failure) => {
+                self.github.retry_at = Some(Instant::now() + RETRY_EVERY);
+                self.log.warn(&format!(
+                    "The GitHub subscription failed: {}",
+                    failure.words()
+                ));
+            }
+        }
+    }
+
+    fn github_renew(&mut self) {
+        self.github.renew_at = Some(Instant::now() + RENEW_EVERY);
+        let Some(link) = self.github.live.as_ref().map(|live| Arc::clone(&live.link)) else {
+            return;
+        };
+        let generation = self.github.generation;
+        let report = self.report.clone();
+        tokio::spawn(async move {
+            let (resubscribed, outcome) = match within(GITHUB_WITHIN, link.renew_github()).await {
+                // the agent ended it, so it is subscribed again on the same connection
+                Err(Failure::NotSubscribed) => {
+                    (true, within(GITHUB_WITHIN, link.subscribe_github()).await)
+                }
+                other => (false, other),
+            };
+            let _ = report.send(Internal::GithubRenewed {
+                generation,
+                resubscribed,
+                outcome,
+            });
+        });
+    }
+
+    fn github_renewed(&mut self, outcome: Result<(), Failure>) {
+        match outcome {
+            Ok(()) => {}
+            Err(Failure::Busy(_)) => {
+                self.github.close();
+                self.github.feed = Feed::ForNow;
+                self.github.retry_at = Some(Instant::now() + GITHUB_ASK_AGAIN);
+                self.refresh();
+            }
+            Err(failure) => {
+                self.log.warn(&format!(
+                    "The GitHub subscription was not renewed: {}",
+                    failure.words()
+                ));
+                self.github.close();
+                self.github.retry_at = Some(Instant::now() + RETRY_EVERY);
+            }
+        }
+    }
+
+    fn github_pushed(&mut self, pushed: Option<Pushed>) {
+        match pushed.unwrap_or(Pushed::Closed) {
+            Pushed::Github(status) => {
+                self.github.status = Some(*status);
+                self.refresh();
+            }
+            Pushed::Closed => {
+                self.github.close();
+                if self.window_shown {
+                    self.github.retry_at = Some(Instant::now() + RETRY_EVERY);
+                }
+            }
+            Pushed::Snapshot(_) | Pushed::Heartbeat | Pushed::Ending { .. } => {}
+        }
+    }
+
+    /// the job page of `pool`'s runner `runner`, or `None` with the pool saying the job
+    /// has ended.
+    fn open_job(&mut self, pool: &str, runner: &str) -> Result<Option<String>, String> {
+        let known = self
+            .snapshot
+            .as_ref()
+            .is_some_and(|snapshot| snapshot.pools.iter().any(|each| each.name == pool));
+        if !known {
+            return Err("Marshal has no such pool.".to_string());
+        }
+        if self.link().is_none() {
+            return Err(self.unavailable());
+        }
+        let page = match (&self.snapshot, &self.github.status) {
+            (Some(snapshot), Some(status)) => job_page(snapshot, status, pool, runner),
+            _ => None,
+        };
+        match page {
+            Some(page) => {
+                self.ended_jobs.remove(pool);
+                Ok(Some(page))
+            }
+            None => {
+                let now_ms = self.now_ms();
+                self.ended_jobs.entry(pool.to_string()).or_insert(now_ms);
+                self.refresh();
+                Ok(None)
+            }
+        }
+    }
+
     // ---- what its own tasks report
 
     fn internal(&mut self, internal: Internal<D::Link>) {
@@ -915,6 +1263,30 @@ impl<D: Dial> Session<D> {
             Internal::Checked(outcome) => self.checked(outcome),
             Internal::DrainAnswered(outcome) => self.drain_answered(outcome),
             Internal::AgentGone(gone) => self.agent_gone(gone),
+            Internal::GithubAttempted { generation, found } => {
+                if generation == self.github.generation {
+                    self.github.attempt = None;
+                    self.github_found(found);
+                    self.refresh();
+                }
+            }
+            Internal::GithubRenewed {
+                generation,
+                resubscribed,
+                outcome,
+            } => {
+                if generation == self.github.generation {
+                    // collection stopped meanwhile, so what the agent sends next is
+                    // from before and reads as checking until it checks again
+                    if resubscribed && outcome.is_ok() {
+                        self.github.feed = Feed::Live {
+                            opened_ms: self.now_ms(),
+                        };
+                        self.refresh();
+                    }
+                    self.github_renewed(outcome);
+                }
+            }
         }
     }
 

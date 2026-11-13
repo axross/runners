@@ -11,6 +11,7 @@ use std::time::Duration;
 use marshal_cli::agent::Launch;
 use marshal_cli::agent::snapshot::Snapshot;
 use marshal_cli::agent::wire::UpdateEnding;
+use marshal_cli::github_status::GithubStatus;
 use marshal_view::{Clock, View};
 use serde::Serialize;
 use tokio::sync::mpsc;
@@ -49,8 +50,10 @@ pub enum Failure {
     /// the call took longer than it may on a connection that is still open, so the
     /// agent may yet do it.
     TimedOut,
-    /// the agent does not serve the method.
+    /// the agent does not serve the method, or does not list the topic.
     NotServed(String),
+    /// the agent ended this connection's `github` subscription for want of renewal.
+    NotSubscribed,
     Other(String),
 }
 
@@ -69,6 +72,7 @@ impl Failure {
             Self::NotServed(method) => {
                 format!("This agent does not offer {}.", marshal_view::plain(method))
             }
+            Self::NotSubscribed => "The agent ended the GitHub subscription.".to_string(),
         }
     }
 }
@@ -92,6 +96,8 @@ pub enum DialError {
 #[derive(Debug)]
 pub enum Pushed {
     Snapshot(Box<Snapshot>),
+    /// the `github` topic's value, whole.
+    Github(Box<GithubStatus>),
     Heartbeat,
     /// the agent is about to end, for this reason (an open set), with what an end for an
     /// update adds.
@@ -106,6 +112,12 @@ pub enum Pushed {
 /// one live connection to the agent.
 pub trait Link: Send + Sync + 'static {
     fn subscribe(&self) -> impl Future<Output = Result<(), Failure>> + Send;
+    /// subscribes this connection to the `github` topic; an agent that does not list the
+    /// topic answers [`Failure::NotServed`], and one with no room [`Failure::Busy`].
+    fn subscribe_github(&self) -> impl Future<Output = Result<(), Failure>> + Send;
+    /// renews this connection's `github` subscription; [`Failure::NotSubscribed`] when
+    /// the agent has ended it.
+    fn renew_github(&self) -> impl Future<Output = Result<(), Failure>> + Send;
     fn call(&self, method: Method) -> impl Future<Output = Result<(), Failure>> + Send;
     /// asks the agent to drain for an update to `version`; the answer is the agent's
     /// process ID when it gave one.

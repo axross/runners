@@ -24,5 +24,8 @@ pub use seam::{
     AgentInfo, Connected, Dial, DialError, Failure, Later, Launcher, Link, Log, Method, NoUpdates,
     Present, Process, Processes, Pushed, Record, Shown, TimeSource, Updater, Verified,
 };
-pub use session::{Act, CHECK_EVERY, EXIT_WITHIN, Ended, Forms, Handle, Seams, Session};
+pub use session::{
+    Act, CHECK_EVERY, EXIT_WITHIN, Ended, Forms, GITHUB_ASK_AGAIN, Handle, RENEW_EVERY, Seams,
+    Session,
+};
 pub use wall::WallClock;

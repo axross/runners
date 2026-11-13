@@ -89,6 +89,11 @@ pub struct View {
     pub menu: Menu,
     pub window: Window,
     pub attention: Vec<Attention>,
+    /// GitHub status's one-time announcements, which the live region says once each,
+    /// in order, at least 5 s apart.
+    pub github_attention: Vec<Attention>,
+    /// the request budget's level, while the window shows GitHub status.
+    pub github_level: Option<String>,
 }
 
 const LOCK_HELD: &str = "Another Marshal process holds the runner lock, and Marshal cannot tell which: one that is starting or ending, an older version, or another Windows user's. Marshal checks again every 5 s. If it stays, look in Task Manager for marshal.exe or marshal-app.exe, or sign the other user out.";
@@ -248,6 +253,20 @@ fn attention(cards: &[PoolCard]) -> Vec<Attention> {
     found
 }
 
+fn github_attention(context: &Context<'_>, cards: &[PoolCard]) -> Vec<Attention> {
+    let mut found: Vec<Attention> = crate::github::feed_attention(context).into_iter().collect();
+    for item in cards
+        .iter()
+        .flat_map(|card| &card.github_notes)
+        .filter_map(|note| note.attention.clone())
+    {
+        if !found.iter().any(|each| each.key == item.key) {
+            found.push(item);
+        }
+    }
+    found
+}
+
 /// the view for `input`.
 #[must_use]
 pub fn build(input: &Input<'_>) -> View {
@@ -268,6 +287,8 @@ pub fn build(input: &Input<'_>) -> View {
             },
             summary,
             attention: Vec::new(),
+            github_attention: Vec::new(),
+            github_level: None,
         };
     }
     let banners = banners(&context);
@@ -279,6 +300,8 @@ pub fn build(input: &Input<'_>) -> View {
         tooltip,
         menu,
         attention: attention(&pools),
+        github_attention: github_attention(&context, &pools),
+        github_level: crate::github::level(&context),
         window: Window {
             body: Body::List(ListWindow {
                 header,

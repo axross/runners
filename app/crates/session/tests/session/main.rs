@@ -9,6 +9,7 @@
 
 mod actions;
 mod choose;
+mod github;
 mod launcher;
 mod lifecycle;
 mod log;

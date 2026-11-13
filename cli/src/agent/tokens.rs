@@ -100,7 +100,7 @@ fn no_store() -> StoreError {
 }
 
 impl TokenSource for StoreTokens {
-    fn token(&self, owner: &str, repository: &str, _file: &Path) -> Result<Secret, String> {
+    fn token(&self, owner: &str, repository: &str, _file: Option<&Path>) -> Result<Secret, String> {
         self.read(&TokenKey::of(owner, repository))
     }
 }
@@ -126,7 +126,7 @@ mod tests {
             .set(&key(), &Secret::new("fake-token".to_string()))
             .unwrap();
         let token = tokens
-            .token("OWNER", "repo", Path::new("/no/such/file"))
+            .token("OWNER", "repo", Some(Path::new("/no/such/file")))
             .unwrap();
         assert_eq!(token.expose(), "fake-token");
     }

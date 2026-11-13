@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-open-job"
+description = "Enables the open_job command without any pre-configured scope."
+commands.allow = ["open_job"]
+
+[[permission]]
+identifier = "deny-open-job"
+description = "Denies the open_job command without any pre-configured scope."
+commands.deny = ["open_job"]

@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::time::SystemTime;
 
+use crate::host_config::{Loaded, Migration, MigrationFailure};
 use crate::image::check::ImageCheck;
 use crate::validate::Plan;
 
@@ -132,9 +133,8 @@ impl Phase {
 pub struct Inner {
     pub phase: Phase,
     pub since: SystemTime,
-    /// the configuration last read, or `None` when the latest read failed.
-    pub plan: Option<Plan>,
-    pub problems: Vec<String>,
+    /// the latest load of the configuration, `None` until the first.
+    pub loaded: Option<Loaded>,
     /// why each pool was skipped when the runners last stopped.
     pub skips: BTreeMap<String, String>,
     pub build: Option<BuildInfo>,
@@ -159,13 +159,37 @@ impl Inner {
         Self {
             phase,
             since: SystemTime::now(),
-            plan: None,
-            problems: Vec::new(),
+            loaded: None,
             skips: BTreeMap::new(),
             build: None,
             restart_due: None,
             image: None,
             drain: None,
+        }
+    }
+}
+
+impl Inner {
+    /// the configuration in use, if the agent holds one.
+    #[must_use]
+    pub fn plan(&self) -> Option<&Plan> {
+        self.loaded
+            .as_ref()
+            .and_then(|loaded| loaded.in_use.as_ref())
+            .map(|in_use| &in_use.plan)
+    }
+
+    /// the problems the snapshot lists: those of `config.toml`, or of `config.json`
+    /// when its migration was refused for them.
+    #[must_use]
+    pub fn problems(&self) -> &[String] {
+        match &self.loaded {
+            Some(Loaded {
+                migration: Migration::Failed(MigrationFailure::JsonRejected(problems)),
+                ..
+            }) => problems,
+            Some(loaded) => &loaded.problems,
+            None => &[],
         }
     }
 }

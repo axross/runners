@@ -7,7 +7,12 @@ use marshal_cli::instance::restart::{DELAYS, STOPPING_FAILURE, WINDOW};
 pub const LOG_FOLDER: &str = "%LOCALAPPDATA%\\marshal\\logs\\";
 
 /// where the configuration is when the agent does not say.
-pub const DEFAULT_CONFIGURATION: &str = "%LOCALAPPDATA%\\marshal\\config.json";
+pub const DEFAULT_CONFIGURATION: &str = "%LOCALAPPDATA%\\marshal\\config.toml";
+
+/// what to do so a pending migration of `config.json` runs: it runs only when the
+/// agent starts.
+pub const MIGRATE_ON_NEXT_START: &str =
+    "Marshal migrates config.json when it next starts: quit Marshal and launch it again.";
 
 /// how many failures of the runtime core within the restart window stop the instance.
 pub const RESTART_FAILURES: usize = STOPPING_FAILURE;

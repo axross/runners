@@ -3,6 +3,7 @@
 
 use serde::Serialize;
 
+use crate::github;
 use crate::state::{Context, Resident, Stop};
 use crate::text::{capitalised, counted, plain};
 
@@ -12,9 +13,12 @@ pub struct Summary {
     pub heading: String,
     /// since when and why: "Running since today 03:15 · 3 pools, 1 skipped".
     pub line: String,
-    /// the menu's first line, and what the live region says of the summary: the
-    /// settled count, with the state's word in front of it while it changes.
+    /// the menu's first line: the settled count, with the state's word in front of it
+    /// while it changes.
     pub menu_line: String,
+    /// what the live region says of the summary: the menu's line, with the runners
+    /// GitHub reports running jobs.
+    pub spoken: String,
     /// the icon's tooltip, which is also its accessible name.
     pub tooltip: String,
 }
@@ -126,8 +130,19 @@ fn since_line(context: &Context<'_>) -> String {
         text
     };
     match &context.resident {
-        Resident::Running => format!("{}{}", since("Running"), pools()),
-        Resident::Resuming => format!("{}{}", since("Starting"), pools()),
+        Resident::Running | Resident::Resuming => {
+            let verb = if matches!(context.resident, Resident::Running) {
+                "Running"
+            } else {
+                "Starting"
+            };
+            format!(
+                "{}{}{}",
+                since(verb),
+                pools(),
+                github::running_jobs_phrase(context)
+            )
+        }
         Resident::Stopping => since("Stopping"),
         Resident::Quitting => since("Quitting"),
         Resident::Building { stopping: false } => since("Building the runner image"),
@@ -152,14 +167,21 @@ pub fn summary(context: &Context<'_>) -> Summary {
     let phrase = phrase(context);
     let no_target = context.wanted == 0
         && matches!(&context.resident, Resident::Stopped(stop) if stop.lacks_configuration());
+    let menu_line = if no_target {
+        "No runners up".to_string()
+    } else {
+        capitalised(&phrase)
+    };
+    let spoken = if context.agent_runs() {
+        format!("{menu_line}{}", github::running_jobs_phrase(context))
+    } else {
+        menu_line.clone()
+    };
     Summary {
         heading: capitalised(&count_phrase(context.up, context.wanted)),
         line: since_line(context),
-        menu_line: if no_target {
-            "No runners up".to_string()
-        } else {
-            capitalised(&phrase)
-        },
+        menu_line,
+        spoken,
         tooltip: format!("Marshal: {phrase}"),
     }
 }

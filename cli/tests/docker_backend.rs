@@ -59,7 +59,7 @@ fn example_pools(scratch: &TempDir) -> Vec<marshal_cli::runtime::pool::PoolSpec>
     let mut pools = pools_from_plan(&plan).unwrap();
     for pool in &mut pools {
         pool.token_path =
-            scratch.write_token(&format!("{}.token", pool.name), b"ghp_exampletoken\n");
+            Some(scratch.write_token(&format!("{}.token", pool.name), b"ghp_exampletoken\n"));
     }
     pools
 }

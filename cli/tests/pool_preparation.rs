@@ -50,10 +50,11 @@ fn pools(scratch: &TempDir, with_token: &[(&str, &str)]) -> Vec<PoolSpec> {
         .unwrap();
     let mut pools = pools_from_plan(&plan).unwrap();
     for pool in &mut pools {
-        pool.token_path = scratch.path().join(format!("{}.token", pool.name));
+        let token_path = scratch.path().join(format!("{}.token", pool.name));
         if let Some((_, content)) = with_token.iter().find(|(name, _)| *name == pool.name) {
-            write_token_file(&pool.token_path, content.as_bytes());
+            write_token_file(&token_path, content.as_bytes());
         }
+        pool.token_path = Some(token_path);
     }
     pools
 }
@@ -159,7 +160,11 @@ async fn on_macos_a_token_file_that_is_not_0600_skips_its_pool_and_the_rest_run(
         ],
     );
     let charlie = all.iter().find(|pool| pool.name == "charlie").unwrap();
-    std::fs::set_permissions(&charlie.token_path, std::fs::Permissions::from_mode(0o644)).unwrap();
+    std::fs::set_permissions(
+        charlie.token_path.as_ref().unwrap(),
+        std::fs::Permissions::from_mode(0o644),
+    )
+    .unwrap();
     let log = MemoryLog::default();
     let prepared = prepare_pools(
         &FakeBackend::default(),

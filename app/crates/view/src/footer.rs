@@ -1,17 +1,23 @@
 //! the footer: what the image check found, its freshness warnings, where the
-//! configuration is, and that closing the window keeps Marshal running.
+//! configuration is and whether it is the one in use, and that closing the window
+//! keeps Marshal running.
 
-use marshal_cli::agent::snapshot::{ImageInfo, ImageLine, ImageWarning, WarningKind};
+use marshal_cli::agent::snapshot::{
+    ConfigurationInfo, ImageInfo, ImageLine, ImageWarning, WarningKind,
+};
 use serde::Serialize;
 
 use crate::banner::built_just_before_the_stop;
 use crate::state::Context;
-use crate::text::plain;
+use crate::text::{MIGRATE_ON_NEXT_START, plain};
 
 const NOTE: &str = "Closing this window keeps Marshal running in the notification area.";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Footer {
+    /// the GitHub request budget, or why there is no GitHub status, first; then the
+    /// runners whose GitHub state an oversize value left out.
+    pub github: Vec<String>,
     /// one line for each image the agent tracks.
     pub image_lines: Vec<String>,
     pub warnings: Vec<String>,
@@ -118,6 +124,84 @@ fn warning(kind: &WarningKind, warning: &ImageWarning) -> Option<String> {
     })
 }
 
+fn migration_state(configuration: &ConfigurationInfo) -> Option<&str> {
+    configuration
+        .migration
+        .as_ref()
+        .map(|migration| migration.state.as_str())
+}
+
+/// where the configuration is, and when it was migrated from `config.json` by this
+/// agent.
+fn configuration_line(context: &Context<'_>) -> String {
+    let mut line = format!("Configuration: {}", context.configuration_path);
+    let migrated = context
+        .snapshot
+        .and_then(|snapshot| snapshot.configuration.migration.as_ref())
+        .filter(|migration| migration.state == "migrated");
+    if let Some(migration) = migrated {
+        let when = migration.at.map_or_else(String::new, |at| {
+            format!(" {}", context.input.clock.when_with_day(at))
+        });
+        line.push_str(&format!(
+            ", migrated from config.json{when}; config.json is no longer read"
+        ));
+    }
+    line
+}
+
+/// the warnings about the configuration while the agent holds one that is not the
+/// file's: the file's problems, a migration that failed, and one that waits for the
+/// next start.
+fn configuration_warnings(context: &Context<'_>) -> Vec<String> {
+    let Some(configuration) = context.snapshot.map(|snapshot| &snapshot.configuration) else {
+        return Vec::new();
+    };
+    let Some(in_use) = &configuration.in_use else {
+        return Vec::new();
+    };
+    let read = context.input.clock.when_with_day(in_use.read_at);
+    let mut warnings = Vec::new();
+    let file_state = || {
+        let problems: Vec<String> = configuration.problems.iter().map(|p| plain(p)).collect();
+        match configuration.status.as_str() {
+            "missing" => "is missing".to_string(),
+            "unreadable" => format!("cannot be read ({})", problems.join("; ")),
+            _ if problems.is_empty() => "cannot be used".to_string(),
+            _ => format!("is not valid ({})", problems.join("; ")),
+        }
+    };
+    match in_use.source.as_str() {
+        "last_valid" => warnings.push(format!(
+            "Warning: config.toml {}, so Marshal runs the configuration it read {read}. \
+             Fix the file, then choose Stop All and Start All.",
+            file_state()
+        )),
+        // config.toml appeared after a migration that could not write it
+        "json" if configuration.status != "missing" => warnings.push(format!(
+            "Warning: config.toml {}, so Marshal runs the configuration of config.json it \
+             read {read}. Fix the file, then choose Stop All and Start All.",
+            file_state()
+        )),
+        "json" => {
+            let why = configuration
+                .migration
+                .as_ref()
+                .and_then(|migration| migration.reason.as_deref())
+                .map_or_else(|| "config.toml was not written".to_string(), plain);
+            warnings.push(format!(
+                "Warning: {why}. Marshal runs the configuration of config.json until it \
+                 next starts, and tries again then."
+            ));
+        }
+        _ => {}
+    }
+    if migration_state(configuration) == Some("pending") {
+        warnings.push(MIGRATE_ON_NEXT_START.to_string());
+    }
+    warnings
+}
+
 pub fn footer(context: &Context<'_>) -> Footer {
     let images = context
         .snapshot
@@ -137,6 +221,7 @@ pub fn footer(context: &Context<'_>) -> Footer {
         .flat_map(|image| image.warnings.iter())
         .filter_map(|each| warning(&each.kind(), each))
         .collect();
+    warnings.extend(configuration_warnings(context));
     if built_just_before_the_stop(context, "cancelled") {
         warnings.push(format!(
             "The build was stopped. Check {}: a stopped build may already have replaced it.",
@@ -147,9 +232,10 @@ pub fn footer(context: &Context<'_>) -> Footer {
         ));
     }
     Footer {
+        github: crate::github::footer_lines(context),
         image_lines,
         warnings,
-        configuration: format!("Configuration: {}", context.configuration_path),
+        configuration: configuration_line(context),
         note: NOTE.to_string(),
     }
 }
