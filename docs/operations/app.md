@@ -245,7 +245,8 @@ its words, with a dash, or the state's word when there is no reason, as the vers
 rules in [CLI](./cli.md#version-rules) require.
 
 The agent gives a skipped pool's reason after its place in the configuration, as
-`repositories[0]: no token.`, and the view reads the cause after that place. A pool
+`pool[0]: no token.` (`repositories[0]` from an agent that read `config.json`), and the view
+reads the cause after that place. A pool
 skipped for want of a token says "No token for owner/app. Start All skipped this
 pool." with Set Token. A pool skipped because the token store failed, or because there
 is none, keeps the agent's reason on its card, and its repository's row shows the
@@ -500,13 +501,12 @@ minutes.
 
 ## Configuration and Tokens
 
-The agent reads the JSON configuration from `%LOCALAPPDATA%\marshal\config.json` on
-Windows and `~/Library/Application Support/marshal/config.json` on macOS, which is
-also the macOS control socket's folder, so the agent keeps it private (0700). K1's
-first pull request, #98, added the TOML format to the library only, as
-[The TOML Configuration](./cli.md#the-toml-configuration) says; the agent moves to
-TOML at the same place in the second pull request of
-[#77](https://github.com/axross/runners/issues/77). The agent reads each pool's token
+The agent reads the TOML configuration from `%LOCALAPPDATA%\marshal\config.toml` on
+Windows and `~/Library/Application Support/marshal/config.toml` on macOS, which is
+also the macOS control socket's folder, so the agent keeps it private (0700).
+[The Configuration File](#the-configuration-file) says what the window shows of it,
+and [The Agent's Configuration](./cli.md#the-agents-configuration) how the agent
+loads it. The agent reads each pool's token
 from the token store when it admits the pool and at each registration, never from a
 file: it ignores the configuration's `tokenPath`, which the shared validation still
 requires of a JSON configuration and the TOML format does not have. On Windows a token is a Credential Manager entry
@@ -516,6 +516,39 @@ skips every pool there with "no token store".
 
 Today's token files are not imported. A host that moves from the command line to the
 app enters each repository's token in the window, once.
+
+## The Configuration File
+
+K1 ([#77](https://github.com/axross/runners/issues/77)) owns this section. The agent
+runs `config.toml`, migrates a `config.json` it finds alone at its start, and keeps the
+last valid configuration in use when a Start All finds the file broken or gone. The
+window takes all of it from the snapshot's `configuration`: `path`, `problems`,
+`status`, `in_use` and `migration`, as [The Snapshot](./cli.md#the-snapshot) lists
+them. It adds no state, control or banner kind; the wording lives in the
+`marshal-view` crate.
+
+- **The footer** names `config.toml` and, after a migration, says when this agent
+  migrated `config.json` and that `config.json` is no longer read.
+- **A footer warning** stands beside the image warnings while the agent holds a
+  configuration that is not the file's: the last valid one, naming the file's problems
+  (or that it is missing) and when the configuration in use was read; or `config.json`'s,
+  after a migration that could not write `config.toml`, with why. A migration that
+  waits for the next start says to quit Marshal and launch it again.
+- **The stopped banners** keep their roles. With no configuration the banner names
+  `config.toml`, and says to launch Marshal again when `config.json` waits to be
+  migrated. When `config.json` broke the rules at its migration, the invalid
+  configuration banner names `config.json`, its problems in the JSON wording, and that
+  a fix takes effect when Marshal starts again.
+
+Build needs a configuration in use: it uses that configuration's image name and reads
+no file. `app/crates/view/tests/view/configuration.rs` covers each wording, and the
+recorded snapshots name `config.toml`.
+
+**Rolling back.** A release without K1 reads `config.json` as it was when it was
+migrated; changes made in `config.toml` since then are not carried back. After rolling
+forward again, `config.toml` is read as it was, and edits made to `config.json` in the
+meantime are ignored while `config.toml` exists. Delete `config.toml` to migrate
+`config.json` again at the next start.
 
 ## Install Layout
 
@@ -527,7 +560,7 @@ no host has it installed.
 | Marshal (app, agent and hidden modes) | `%LOCALAPPDATA%\Programs\marshal\marshal-app.exe`                                 |
 | Licence notices                       | `%LOCALAPPDATA%\Programs\marshal\THIRD-PARTY-NOTICES.txt`, the Windows file above |
 | Start menu entry                      | Marshal, starting the app                                                         |
-| Configuration (default)               | `%LOCALAPPDATA%\marshal\config.json`                                              |
+| Configuration (default)               | `%LOCALAPPDATA%\marshal\config.toml`                                              |
 | Logs                                  | `%LOCALAPPDATA%\marshal\logs\`, the app's files under their own name              |
 | Tokens                                | Credential Manager, one generic credential per repository                         |
 | Web view data                         | `%LOCALAPPDATA%\app.axross.marshal\`, named by the bundle identifier              |

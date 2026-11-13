@@ -370,7 +370,7 @@ fn exported(rig: &Rig, name: &str) -> bool {
 #[tokio::test(flavor = "current_thread")]
 async fn a_diagnostic_job_that_finishes_in_a_drain_is_finalised_before_the_agent_ends() {
     let rig = rig(ONE_POOL);
-    rig.write_config(&with_diagnostics(ONE_POOL));
+    rig.write_json(&with_diagnostics(ONE_POOL));
     let rig = &rig;
     let (ended, name) = rig
         .drive(Launch::Running, |mut conn| async move {
@@ -391,7 +391,7 @@ async fn a_diagnostic_job_that_finishes_in_a_drain_is_finalised_before_the_agent
 #[tokio::test(flavor = "current_thread")]
 async fn a_diagnostic_job_still_running_at_the_bound_is_finalised_before_the_agent_ends() {
     let rig = rig(ONE_POOL);
-    rig.write_config(&with_diagnostics(ONE_POOL));
+    rig.write_json(&with_diagnostics(ONE_POOL));
     rig.drain_bound.set(Duration::from_millis(500));
     let rig = &rig;
     let (ended, name) = rig
@@ -418,7 +418,7 @@ async fn a_diagnostic_job_still_running_at_the_bound_is_finalised_before_the_age
 #[tokio::test(flavor = "current_thread")]
 async fn a_core_failure_during_a_drain_runs_the_container_steps_and_starts_nothing_again() {
     let rig = rig(TWO_POOLS);
-    rig.write_config(&with_diagnostics(TWO_POOLS));
+    rig.write_json(&with_diagnostics(TWO_POOLS));
     let rig = &rig;
     let (ended, busy) = rig
         .drive(Launch::Running, |mut conn| async move {
@@ -542,7 +542,7 @@ async fn a_drain_while_a_restarted_core_waits_for_docker_registers_nothing() {
 #[tokio::test(flavor = "current_thread")]
 async fn a_requester_that_closes_after_a_core_failure_in_a_drain_cancels_nothing() {
     let rig = rig(TWO_POOLS);
-    rig.write_config(&with_diagnostics(TWO_POOLS));
+    rig.write_json(&with_diagnostics(TWO_POOLS));
     let gate = std::rc::Rc::new(tokio::sync::Notify::new());
     let rig = &rig;
     let (ended, ()) = rig
@@ -593,7 +593,7 @@ async fn a_requester_that_closes_after_a_core_failure_in_a_drain_cancels_nothing
 #[tokio::test(flavor = "current_thread")]
 async fn stop_all_during_the_drains_last_steps_keeps_stopped_by_you() {
     let rig = rig(ONE_POOL);
-    rig.write_config(&with_diagnostics(ONE_POOL));
+    rig.write_json(&with_diagnostics(ONE_POOL));
     rig.drain_bound.set(Duration::from_millis(300));
     let gate = std::rc::Rc::new(tokio::sync::Notify::new());
     let rig = &rig;
@@ -620,7 +620,7 @@ async fn stop_all_during_the_drains_last_steps_keeps_stopped_by_you() {
 #[tokio::test(flavor = "current_thread")]
 async fn quit_during_the_drains_last_steps_drops_the_drain_from_the_snapshot() {
     let rig = rig(ONE_POOL);
-    rig.write_config(&with_diagnostics(ONE_POOL));
+    rig.write_json(&with_diagnostics(ONE_POOL));
     rig.drain_bound.set(Duration::from_millis(300));
     let gate = std::rc::Rc::new(tokio::sync::Notify::new());
     let rig = &rig;

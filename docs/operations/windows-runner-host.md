@@ -253,7 +253,11 @@ every `marshal` command that reads it takes its path as `--config`. Start from
 [`runner-host.example.json`](../../hosts/windows-docker-desktop/runner-host.example.json),
 and see the Host configuration section of the
 [host README](../../hosts/windows-docker-desktop/README.md) for every field. The
-rules that matter operationally:
+resident agent reads the TOML form instead, `%LOCALAPPDATA%\marshal\config.toml`,
+which its first start migrates from a `config.json` in that folder; see
+[`config.example.toml`](../../hosts/windows-docker-desktop/config.example.toml) and
+[The Agent's Configuration](./cli.md#the-agents-configuration). The rules that matter
+operationally:
 
 - **One entry per execution pool**, each with its own `name`, `slots`,
   `labels`, and `volumes`. Every entry uses the global `imageName`.

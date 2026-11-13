@@ -626,7 +626,7 @@ fn diagnostic_pool(scratch: &TempDir, sink: &Path) -> marshal_cli::runtime::pool
     let mut pool = marshal_cli::runtime::pool::pools_from_plan(&plan)
         .unwrap()
         .remove(0);
-    pool.token_path = scratch.write_token("d.token", b"ghp_diagnostictoken\n");
+    pool.token_path = Some(scratch.write_token("d.token", b"ghp_diagnostictoken\n"));
     pool.diagnostic = Some(record(sink, false));
     pool
 }

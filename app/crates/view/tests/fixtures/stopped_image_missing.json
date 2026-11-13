@@ -9,7 +9,7 @@
     }
   },
   "configuration": {
-    "path": "C:\\Users\\<user>\\AppData\\Local\\marshal\\config.json",
+    "path": "C:\\Users\\<user>\\AppData\\Local\\marshal\\config.toml",
     "problems": []
   },
   "runners_up": 0,

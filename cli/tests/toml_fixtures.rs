@@ -545,3 +545,28 @@ fn a_long_line_of_many_inline_values_has_every_one_reported() {
         found[0]
     );
 }
+
+/// each host's example `config.toml` is valid and is the configuration of the host's
+/// example JSON file, so the two examples cannot drift apart.
+#[test]
+fn each_hosts_example_toml_is_valid_and_matches_its_json_example() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    for (folder, profile) in [
+        ("hosts/windows-docker-desktop", Profile::Axpc),
+        ("hosts/macos", Profile::Axmc),
+    ] {
+        let toml = fs::read(root.join(folder).join("config.example.toml")).unwrap();
+        let json = fs::read(root.join(folder).join("runner-host.example.json")).unwrap();
+        let from_toml = validate_toml(&toml, profile, None)
+            .outcome
+            .unwrap_or_else(|failure| panic!("{folder}: {failure:?}"));
+        let from_json = marshal_cli::validate::validate(&json, profile, None)
+            .outcome
+            .unwrap();
+        assert_eq!(
+            marshal_cli::convert::first_difference(&from_json, &from_toml),
+            None,
+            "{folder}"
+        );
+    }
+}

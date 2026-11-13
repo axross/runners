@@ -15,7 +15,9 @@ use super::secret::Secret;
 pub trait TokenSource {
     /// the token of the pool's repository, or why there is none; the text never holds
     /// a token.
-    fn token(&self, owner: &str, repository: &str, file: &Path) -> Result<Secret, String>;
+    /// `file` is the pool's token file, which a configuration the agent reads has none
+    /// of.
+    fn token(&self, owner: &str, repository: &str, file: Option<&Path>) -> Result<Secret, String>;
 }
 
 /// the commands' source: the pool's token file.
@@ -23,7 +25,13 @@ pub trait TokenSource {
 pub struct TokenFiles;
 
 impl TokenSource for TokenFiles {
-    fn token(&self, _owner: &str, _repository: &str, file: &Path) -> Result<Secret, String> {
+    fn token(
+        &self,
+        _owner: &str,
+        _repository: &str,
+        file: Option<&Path>,
+    ) -> Result<Secret, String> {
+        let file = file.ok_or_else(|| "the pool names no token file".to_string())?;
         read_token(file).map_err(|error| error.to_string())
     }
 }

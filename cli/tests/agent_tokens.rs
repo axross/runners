@@ -226,14 +226,13 @@ async fn a_pool_skipped_for_want_of_a_token_says_why_in_the_snapshot_and_the_log
                 let snapshot = conn.until_state("stopped").await;
                 assert_eq!(
                     snapshot.pools[0].reason.as_deref(),
-                    Some(format!("repositories[0]: {why}.").as_str())
+                    Some(format!("pool[0]: {why}.").as_str())
                 );
                 conn.ok("quit").await;
             })
             .await;
-        let expected = format!(
-            "WARN: repositories[0] (o/r) is not started and gets no slots: repositories[0]: {why}."
-        );
+        let expected =
+            format!("WARN: pool[0] (o/r) is not started and gets no slots: pool[0]: {why}.");
         assert!(
             rig.log.lines().contains(&expected),
             "{expected}\n{:?}",

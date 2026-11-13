@@ -2,8 +2,10 @@
 //! key order, blank lines, the line ending, the byte-order mark and the comment on a
 //! changed value's line. the result is checked with the full TOML rules for the host
 //! before anything is written, and the file is replaced in one step, so a reader sees
-//! the old file or the new one; see `docs/operations/cli.md`.
+//! the old file or the new one; see `docs/operations/cli.md`. a file that does not exist
+//! yet is created in the same way, but only where no file of that name exists.
 
+mod create;
 mod document;
 mod frame;
 mod replace;
@@ -20,6 +22,7 @@ use crate::validate::{Failure, Key, KeyPath, validate_toml};
 use document::Refusal;
 use frame::Frame;
 
+pub use create::{CreateFailure, CreateOutcome, CreateStep, create_new};
 pub use replace::{CONFIG_FILE_NAME, Cleanup, remove_leftover_temporary_files};
 
 /// a value to put in the file.

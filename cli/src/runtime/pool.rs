@@ -33,7 +33,9 @@ pub struct PoolSpec {
     pub owner: String,
     pub repository: String,
     pub slots: u32,
-    pub token_path: PathBuf,
+    /// the token file the commands read; the agent reads the token store and gives
+    /// none.
+    pub token_path: Option<PathBuf>,
     pub labels: Vec<String>,
     /// the CPU quota as text.
     pub cpus: String,
@@ -59,7 +61,7 @@ pub struct SlotSpec {
     pub owner: String,
     pub repository: String,
     pub number: u32,
-    pub token_path: PathBuf,
+    pub token_path: Option<PathBuf>,
     pub labels: Vec<String>,
     pub cpus: String,
     pub cpu_count: u64,
@@ -161,27 +163,19 @@ pub fn diagnostic_records(plan: &Plan) -> Vec<DiagnosticRecord> {
     plan.entries.iter().filter_map(diagnostic_record).collect()
 }
 
-/// the token file an entry names, which every pool reads.
-fn entry_token_path(entry: &Entry) -> Result<&str, PlanError> {
-    entry.token_path.as_deref().ok_or(PlanError(
-        "a pool reads its token file, and an entry has none",
-    ))
-}
-
 fn pool_from_entry(
     plan: &Plan,
     index: usize,
     entry: &Entry,
     image: &str,
 ) -> Result<PoolSpec, PlanError> {
-    let token_path = entry_token_path(entry)?;
     Ok(PoolSpec {
         path: entry.path.clone(),
         name: entry.name.clone(),
         owner: entry.owner.clone(),
         repository: entry.repository.clone(),
         slots: entry.slots,
-        token_path: PathBuf::from(token_path),
+        token_path: entry.token_path.as_ref().map(PathBuf::from),
         labels: entry.labels.clone(),
         cpus: format_cpu_count(entry.cpus),
         cpu_count: affinity_count(entry),
@@ -207,7 +201,7 @@ fn vm_pool_from_entry(entry: &Entry, image: &str) -> Result<PoolSpec, PlanError>
         owner: entry.owner.clone(),
         repository: entry.repository.clone(),
         slots: entry.slots,
-        token_path: PathBuf::from(entry_token_path(entry)?),
+        token_path: entry.token_path.as_ref().map(PathBuf::from),
         labels: entry.labels.clone(),
         cpus: format_cpu_count(entry.cpus),
         cpu_count: affinity_count(entry),
@@ -312,7 +306,7 @@ pub fn admit_pool(
     log: &dyn Log,
     board: &Board,
 ) -> bool {
-    match tokens.token(&pool.owner, &pool.repository, &pool.token_path) {
+    match tokens.token(&pool.owner, &pool.repository, pool.token_path.as_deref()) {
         Err(error) => {
             skip(log, board, pool, &format!("{}: {error}.", pool.path));
             false
