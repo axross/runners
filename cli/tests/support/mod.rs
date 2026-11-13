@@ -163,7 +163,7 @@ pub fn slot_spec(token: PathBuf) -> marshal_cli::runtime::pool::SlotSpec {
         owner: "example-owner".to_string(),
         repository: "example-repo-one".to_string(),
         number: 2,
-        token_path: token,
+        token_path: Some(token),
         labels: vec![
             "self-hosted".to_string(),
             "linux".to_string(),

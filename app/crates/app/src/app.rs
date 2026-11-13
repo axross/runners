@@ -26,12 +26,29 @@ pub const HIDDEN_EVENT: &str = "marshal:hidden";
 pub fn hide_main_window<R: Runtime>(window: &Window<R>) -> tauri::Result<()> {
     let told = window.emit_to(MAIN_WINDOW, HIDDEN_EVENT, ());
     window.hide()?;
+    if let Some(state) = window.app_handle().try_state::<AppState>() {
+        state.handle.window_shown(false);
+    }
     told
+}
+
+/// tells the session whether the main window can be seen, which is when it holds the
+/// `github` subscription; the session ignores a value it already has.
+pub fn tell_session_shown<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(state) = app.try_state::<AppState>() {
+        state.handle.window_shown(main_window_shown(app));
+    }
 }
 
 /// what the app does with a window's events: closing the main window hides it and leaves
 /// the icon, and closing the confirmation window is a No.
 pub fn on_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
+    // a minimised window reports a resize, and one shown or restored gains focus or a size
+    if window.label() == MAIN_WINDOW
+        && matches!(event, WindowEvent::Resized(_) | WindowEvent::Focused(_))
+    {
+        tell_session_shown(window.app_handle());
+    }
     if let WindowEvent::CloseRequested { api, .. } = event {
         match window.label() {
             MAIN_WINDOW => {
@@ -54,15 +71,24 @@ pub fn show_main_window(app: &AppHandle) {
         let _ = window.unminimize();
         let _ = window.set_focus();
     }
+    tell_session_shown(app);
 }
 
 /// whether the main window can be seen: visible and not minimised, so a question put to
 /// it is seen. A minimised window counts as not shown, and a question goes to a window
 /// of its own.
-pub fn main_window_shown(app: &AppHandle) -> bool {
+pub fn main_window_shown<R: Runtime>(app: &AppHandle<R>) -> bool {
     app.get_webview_window(MAIN_WINDOW).is_some_and(|window| {
         window.is_visible().unwrap_or(false) && !window.is_minimized().unwrap_or(false)
     })
+}
+
+/// Tauri's opener plugin, which the page cannot reach: its link script is off, and no
+/// capability grants its commands. Only the app's own `open_job` opens a page with it.
+pub fn opener<R: Runtime>() -> impl tauri::plugin::Plugin<R> {
+    tauri_plugin_opener::Builder::new()
+        .open_js_links_on_click(false)
+        .build()
 }
 
 /// the log when the app's own file cannot be made: the app still runs.
@@ -101,6 +127,7 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         log: Arc::clone(&log),
     });
     app.manage(AppState::new(handle, latest, Arc::clone(&log)));
+    tell_session_shown(app);
     tray::create(
         app,
         Look {
@@ -129,6 +156,7 @@ pub fn run() -> ExitCode {
                 show_main_window(app);
             },
         ))
+        .plugin(opener())
         .setup(|app| start(app.handle()))
         .on_window_event(on_window_event)
         .invoke_handler(commands::handler())

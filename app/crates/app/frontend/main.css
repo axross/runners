@@ -588,18 +588,28 @@ svg {
   min-width: 0;
 }
 
+/* a GitHub notice: its time line sits under its words */
+.github-note {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+}
+
 .runners {
   padding-bottom: 8px;
 }
 
 .row {
   display: grid;
+  /* the container's name has priority over the GitHub column, which keeps its widest
+     state phrase (159 px) and narrows, to no less than 64 px, only once the name would
+     have less than 187 px */
   grid-template-columns:
-    20px 76px minmax(130px, max-content) minmax(0, 1fr)
-    84px;
+    20px 76px minmax(130px, max-content) minmax(187px, 1fr)
+    minmax(64px, 159px) 84px;
   grid-template-areas:
-    "m n s c t"
-    ". . d d d";
+    "m n s c g t"
+    ". . d d d d";
   column-gap: 12px;
   row-gap: 2px;
   align-items: center;
@@ -633,6 +643,31 @@ svg {
   grid-area: d;
 }
 
+.row > .g {
+  grid-area: g;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.row .job {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 8px;
+}
+
+.row .job-name {
+  min-width: 0;
+}
+
+/* Open run is a link: underlined, so it is not told by its colour alone */
+.run-link {
+  color: var(--text-accent-brand);
+  text-decoration: underline;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
 /* from 720 px down, the container's name moves to a second line */
 @media (max-width: 720px) {
   .row {
@@ -640,12 +675,14 @@ svg {
     grid-template-areas:
       "m n s t"
       ". . c c"
+      ". . g g"
       ". . d d";
   }
 }
 
 .stale .row .n,
-.stale .row .s {
+.stale .row .s,
+.stale .row .g {
   color: var(--text-neutral-low);
 }
 

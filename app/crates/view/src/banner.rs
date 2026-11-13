@@ -37,6 +37,7 @@ pub enum BannerKind {
     Truncated,
     Quitting,
     UnknownState,
+    GithubPaused,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -78,6 +79,23 @@ fn banner(
         action: None,
         announcement,
     }
+}
+
+/// whether the snapshot says the migration of `config.json` is in `state`.
+fn migration_is(context: &Context<'_>, state: &str) -> bool {
+    context
+        .snapshot
+        .and_then(|snapshot| snapshot.configuration.migration.as_ref())
+        .is_some_and(|migration| migration.state == state)
+}
+
+/// whether `config.json` was refused at its migration: the one failure that leaves no
+/// configuration in use, as the others run `config.json`'s.
+fn json_refused(context: &Context<'_>) -> bool {
+    migration_is(context, "failed")
+        && context
+            .snapshot
+            .is_some_and(|snapshot| snapshot.configuration.in_use.is_none())
 }
 
 /// the heading and the sentence that leads the body, as the live region reads them.
@@ -220,20 +238,27 @@ fn stopped(context: &Context<'_>, stop: &Stop) -> Banner {
         Stop::NoConfiguration => {
             let heading = "Stopped: there is no configuration";
             let lead = format!("{path} does not exist");
+            let next = if migration_is(context, "pending") {
+                crate::text::MIGRATE_ON_NEXT_START
+            } else {
+                "Create it as Marshal's operations document describes, then choose Start All."
+            };
             banner(
                 BannerKind::NoConfiguration,
                 Tone::Error,
                 heading,
-                vec![
-                    lead.clone(),
-                    "Create it as Marshal's operations document describes, then choose Start All."
-                        .to_string(),
-                ],
+                vec![lead.clone(), next.to_string()],
                 spoken(heading, &lead),
             )
         }
         Stop::InvalidConfiguration => {
-            let heading = "Stopped: the configuration is not valid";
+            // config.json was refused at its migration, so no config.toml was written
+            let json = json_refused(context);
+            let heading = if json {
+                "Stopped: config.json is not valid, so it was not migrated"
+            } else {
+                "Stopped: the configuration is not valid"
+            };
             let problems = context
                 .snapshot
                 .map(|snapshot| snapshot.configuration.problems.as_slice())
@@ -243,7 +268,17 @@ fn stopped(context: &Context<'_>, stop: &Stop) -> Banner {
                 lines.push(plain(message));
             }
             let lead = lines.first().cloned().unwrap_or_default();
-            lines.push(format!("Fix {path}, then choose Start All."));
+            lines.push(if json {
+                format!(
+                    "Fix {}, then quit Marshal and launch it again.",
+                    path.strip_suffix("config.toml").map_or_else(
+                        || "config.json".to_string(),
+                        |folder| { format!("{folder}config.json") }
+                    )
+                )
+            } else {
+                format!("Fix {path}, then choose Start All.")
+            });
             banner(
                 BannerKind::InvalidConfiguration,
                 Tone::Error,
@@ -689,5 +724,6 @@ pub fn banners(context: &Context<'_>) -> Vec<Banner> {
         .chain(leftover_banner(context))
         .chain(no_tokens(context))
         .chain(truncated(context))
+        .chain(crate::github::paused_banner(context))
         .collect()
 }

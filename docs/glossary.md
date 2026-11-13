@@ -142,7 +142,8 @@ the configuration, touches the **Token Store** or runs Docker. It is built in CI
 not yet installed or released. See [operations/app.md](./operations/app.md).
 
 **Token Store** - where the **Resident Agent** keeps each **Target Repository**'s
-token, by the repository's lower-case `owner/name`: the Windows Credential Manager
+token, by the repository's lower-case `owner/name`, and an organization's by its
+lower-case login: the Windows Credential Manager
 on Windows, with local persistence, and none yet elsewhere, where every pool is
 skipped. See [operations/cli.md](./operations/cli.md#the-token-store).
 

@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 
 use marshal_cli::agent::snapshot::Snapshot;
+use marshal_cli::github_status::GithubStatus;
 
 use crate::clock::Clock;
 
@@ -98,6 +99,25 @@ pub struct TokenUi {
     pub results: BTreeMap<String, TokenResult>,
 }
 
+/// what the window knows of GitHub's view of the runners.
+#[derive(Debug, Clone, Copy, Default)]
+pub enum GithubFeed<'a> {
+    /// the window is not shown, or the app holds no `github` subscription: the view
+    /// shows no GitHub status.
+    #[default]
+    Off,
+    /// the agent does not list the `github` topic.
+    Unavailable,
+    /// the agent has no room for another subscription; the app asks again every 60 s.
+    UnavailableForNow,
+    /// the app has held the subscription since `opened_ms`, and `status` is the agent's
+    /// latest value, `None` until the first arrives.
+    Live {
+        opened_ms: u64,
+        status: Option<&'a GithubStatus>,
+    },
+}
+
 /// everything one view is computed from.
 #[derive(Debug, Clone, Copy)]
 pub struct Input<'a> {
@@ -110,6 +130,10 @@ pub struct Input<'a> {
     /// snapshot's count is shown.
     pub settled_up: Option<u32>,
     pub tokens: Option<&'a TokenUi>,
+    pub github: GithubFeed<'a>,
+    /// the pools whose Open run found the job ended, with when, in milliseconds since
+    /// the Unix epoch.
+    pub ended_jobs: Option<&'a BTreeMap<String, u64>>,
 }
 
 impl<'a> Input<'a> {
@@ -122,6 +146,8 @@ impl<'a> Input<'a> {
             clock,
             settled_up: None,
             tokens: None,
+            github: GithubFeed::Off,
+            ended_jobs: None,
         }
     }
 
@@ -140,6 +166,18 @@ impl<'a> Input<'a> {
     #[must_use]
     pub fn tokens(mut self, tokens: &'a TokenUi) -> Self {
         self.tokens = Some(tokens);
+        self
+    }
+
+    #[must_use]
+    pub fn github(mut self, github: GithubFeed<'a>) -> Self {
+        self.github = github;
+        self
+    }
+
+    #[must_use]
+    pub fn ended_jobs(mut self, ended: &'a BTreeMap<String, u64>) -> Self {
+        self.ended_jobs = Some(ended);
         self
     }
 }

@@ -17,6 +17,7 @@ use crate::instance::channel::ChannelError;
 use crate::instance::lifecycle::StopTimes;
 use crate::instance::lock::{InstanceLock, LockError};
 use crate::instance::roots::Roots;
+use crate::profile::Profile;
 use crate::runtime::backend::Backend;
 use crate::runtime::clock::{Clock, SystemClock};
 use crate::runtime::docker::{DockerBackend, DockerConfig, resolve_program};
@@ -166,6 +167,9 @@ pub struct AgentOptions<'a> {
     pub limits: Option<Limits>,
     /// replaces the log file size limit; a debug build only.
     pub max_log_bytes: Option<u64>,
+    /// replaces the host's profile, which the configuration is checked under; a debug
+    /// build only.
+    pub profile: Option<Profile>,
 }
 
 impl AgentOptions<'_> {
@@ -183,6 +187,7 @@ impl AgentOptions<'_> {
             store: None,
             limits: None,
             max_log_bytes: None,
+            profile: None,
         }
     }
 }
@@ -196,6 +201,7 @@ pub struct Applied {
     pub store: Option<Arc<dyn TokenStore>>,
     pub limits: Limits,
     pub executable: Option<PathBuf>,
+    pub profile: Profile,
 }
 
 /// the settings `run` uses: the options' replacements in a debug build, and in a
@@ -210,9 +216,14 @@ pub fn applied_overrides(options: &AgentOptions<'_>) -> Applied {
         store: None,
         limits: Limits::default(),
         executable: std::env::current_exe().ok(),
+        // a host that is neither runs the agent only in the tests
+        profile: Profile::of_this_machine().unwrap_or(Profile::Axpc),
     };
     #[cfg(debug_assertions)]
     {
+        if let Some(profile) = options.profile {
+            applied.profile = profile;
+        }
         if let Some(max) = options.max_log_bytes {
             applied.max_log_bytes = max;
         }
@@ -327,7 +338,8 @@ pub fn run(options: AgentOptions<'_>, err: &mut dyn Write) -> u8 {
         lock: &lock,
         settings: Settings {
             version: env!("CARGO_PKG_VERSION").to_string(),
-            config_path: roots.config_file().to_path_buf(),
+            config_folder: roots.config_directory().to_path_buf(),
+            profile: applied.profile,
             times: StopTimes::default(),
             launch: options.launch,
             drain_bound: DRAIN_BOUND,

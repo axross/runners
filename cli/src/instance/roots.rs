@@ -42,7 +42,7 @@ pub struct Roots {
     #[cfg(windows)]
     pipe_suffix: String,
     log_directory: PathBuf,
-    config_file: PathBuf,
+    config_directory: PathBuf,
 }
 
 impl Roots {
@@ -56,7 +56,7 @@ impl Roots {
         let home = std::env::home_dir().ok_or(RootsError::NoHomeDirectory)?;
         Ok(Self {
             lock_file: PathBuf::from("/Users/Shared/.marshal-instance.lock"),
-            config_file: home.join("Library/Application Support/marshal/config.json"),
+            config_directory: home.join("Library/Application Support/marshal"),
             channel_directory: home.join("Library/Application Support/marshal"),
             log_directory: home.join("Library/Logs/marshal"),
         })
@@ -76,7 +76,7 @@ impl Roots {
         Ok(Self {
             pipe_suffix: String::new(),
             log_directory: directory.join("logs"),
-            config_file: directory.join("config.json"),
+            config_directory: directory,
         })
     }
 
@@ -89,7 +89,7 @@ impl Roots {
             lock_file: root.join(".marshal-instance.lock"),
             channel_directory: root.join("channel"),
             log_directory: root.join("logs"),
-            config_file: root.join("config.json"),
+            config_directory: root.to_path_buf(),
         }
     }
 
@@ -104,7 +104,7 @@ impl Roots {
         Self {
             pipe_suffix: format!("-test-{:016x}", hasher.finish()),
             log_directory: root.join("logs"),
-            config_file: root.join("config.json"),
+            config_directory: root.to_path_buf(),
         }
     }
 
@@ -126,12 +126,12 @@ impl Roots {
         &self.log_directory
     }
 
-    /// where the agent reads the host configuration: `config.json` in the
-    /// `marshal` folder of `%LOCALAPPDATA%` on Windows, and in the socket's folder on
-    /// macOS; a test root holds it directly.
+    /// the folder of the agent's host configuration, `config.toml`, and of the
+    /// `config.json` it migrates: the `marshal` folder of `%LOCALAPPDATA%` on Windows,
+    /// and the socket's folder on macOS; a test root is the folder.
     #[must_use]
-    pub fn config_file(&self) -> &std::path::Path {
-        &self.config_file
+    pub fn config_directory(&self) -> &std::path::Path {
+        &self.config_directory
     }
 }
 

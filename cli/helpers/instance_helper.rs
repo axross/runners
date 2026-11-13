@@ -237,7 +237,7 @@ fn run_agent(args: &[String]) -> ExitCode {
     use marshal_cli::agent::machine::Launch;
     use marshal_cli::agent::{AgentOptions, run};
     use marshal_cli::runtime::secret::Secret;
-    use marshal_cli::token_store::{MemoryTokenStore, RepositoryKey, TokenStore};
+    use marshal_cli::token_store::{MemoryTokenStore, TokenKey, TokenStore};
 
     let Some(root) = value_of(args, "--root") else {
         eprintln!("--root DIR is required");
@@ -251,7 +251,7 @@ fn run_agent(args: &[String]) -> ExitCode {
             eprintln!("--token wants OWNER/NAME=TOKEN");
             return ExitCode::from(exit::USAGE);
         };
-        let Ok(key) = RepositoryKey::parse(repository) else {
+        let Ok(key) = TokenKey::parse(repository) else {
             eprintln!("--token wants OWNER/NAME=TOKEN");
             return ExitCode::from(exit::USAGE);
         };
@@ -273,6 +273,8 @@ fn run_agent(args: &[String]) -> ExitCode {
             .push((OsString::from("FAKE_DOCKER_DIR"), OsString::from(directory)));
     }
     options.store = Some(store);
+    // the tests' configurations are axpc's on every host
+    options.profile = Some(marshal_cli::profile::Profile::Axpc);
     options.max_log_bytes = value_of(args, "--max-log-bytes").and_then(|bytes| bytes.parse().ok());
     ExitCode::from(run(options, &mut std::io::stderr()))
 }

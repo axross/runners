@@ -45,7 +45,7 @@ fn markup_in_snapshot_text_comes_through_as_the_same_text() {
     assert_eq!(pool.runners[0].label, "<b>app</b>, Runner 1, backing off");
     assert_eq!(
         view.window.footer.configuration,
-        r"Configuration: C:\Users\<i>user</i>\config.json"
+        r"Configuration: C:\Users\<i>user</i>\config.toml"
     );
     assert_eq!(list.tokens.rows[0].pools, "Used by pool <b>app</b>");
     assert!(
@@ -66,7 +66,7 @@ fn markup_in_a_configuration_problem_and_a_reason_is_text_too() {
     );
     assert_eq!(
         banner.lines[1],
-        r"Fix C:\Users\<i>user</i>\config.json, then choose Start All."
+        r"Fix C:\Users\<i>user</i>\config.toml, then choose Start All."
     );
 }
 

@@ -12,6 +12,7 @@ mod confirm;
 mod control;
 mod diagnostics;
 mod footer;
+mod github;
 mod icon;
 mod input;
 mod menu;
@@ -30,8 +31,11 @@ pub use clock::{Clock, elapsed};
 pub use control::{Action, Confirmation, Control, Look};
 pub use diagnostics::{DiagnosticItem, Diagnostics};
 pub use footer::Footer;
+pub use github::{GithubNote, HIDDEN_NAMES, OpenRun, job_page};
 pub use icon::{GlyphColour, IconState, Rgb, TaskbarMode};
-pub use input::{Cause, Connection, Input, NotSaved, Pending, PendingKind, TokenResult, TokenUi};
+pub use input::{
+    Cause, Connection, GithubFeed, Input, NotSaved, Pending, PendingKind, TokenResult, TokenUi,
+};
 pub use menu::{Menu, MenuItem};
 pub use pools::{Mark, PoolCard, RunnerRow};
 pub use settled::{FALL_DELAY_MS, Settled};

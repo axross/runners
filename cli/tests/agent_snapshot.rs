@@ -31,7 +31,7 @@ async fn the_snapshot_shows_the_runners_pools_repositories_and_the_image() {
             assert_eq!(snapshot.runners_up, 1);
             assert_eq!(snapshot.runners_wanted, 1);
             assert_eq!(snapshot.configuration.problems.len(), 0);
-            assert!(snapshot.configuration.path.ends_with("config.json"));
+            assert!(snapshot.configuration.path.ends_with("config.toml"));
             assert_eq!(snapshot.repositories[0].repository, "o/r");
             assert!(snapshot.repositories[0].has_token);
             let pool = &snapshot.pools[0];
@@ -297,7 +297,7 @@ async fn a_pool_with_diagnostics_lists_its_containers_and_what_the_exports_found
     let rig = Rig::new(ONE_POOL);
     // the fake engine never touches the sink, so a Windows path is as good here as any
     let sink = r"C:\\diag";
-    rig.write_config(&ONE_POOL.replace(
+    rig.write_json(&ONE_POOL.replace(
         r#""volumes":[]}"#,
         &format!(r#""volumes":[],"diagnostics":true,"diagnosticDirectory":"{sink}"}}"#),
     ));

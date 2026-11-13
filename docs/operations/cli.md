@@ -176,15 +176,20 @@ from the sink, which directories hold `.git` follows the volume: on a volume tha
 ignores case, such as macOS's default one, a case variant of the checkout's path finds
 the checkout and is refused, while on Linux it is another directory. It also applies
 the checkout above its configuration file where one exists. A sink at or under either
-is a configuration problem, `repositories[n].diagnosticDirectory: must be outside the
-checkout`, in the snapshot, and the agent stops for `invalid_configuration`. The agent
+is a configuration problem, `pool[n].diagnostic_directory: must be outside the
+checkout` in `config.toml` (or `repositories[n].diagnosticDirectory` in a `config.json`
+it migrates), in the snapshot. With no configuration held the agent stops for
+`invalid_configuration`; at a Start all it keeps the last valid one, as [The Agent's
+Configuration](#the-agents-configuration) describes. The agent
 looks from a sink only when the path is one of the host it runs on, so a Windows path
 read on another host is not compared. Because the sink's own place was examined, the
 agent writes no note that the rule was skipped. `start`, `validate` and `build` are
 unchanged: their checkout stays the one above the configuration file.
-`tests/checkout_rule_agent.rs` covers a sink inside a checkout, outside one, a sibling
-prefix, a case variant (accepted on Linux, refused on macOS), and the unchanged rule of
-`start`.
+`validate_toml_with` and `validate_with` take this rule as
+`CheckoutRule::AboveAndAtSink`, and `validate_toml` and `validate` keep `start`'s.
+`tests/checkout_rule_agent.rs` covers a sink inside a checkout, in JSON and in TOML,
+outside one, a sibling prefix, a case variant (accepted on Linux, refused on macOS), and
+the unchanged rule of `start`.
 
 Known limitation: the axmc comparison is case-sensitive, while macOS's default APFS
 volume is case-insensitive. For `start` and `validate`, whose checkout is the one above
@@ -313,13 +318,11 @@ test named under Running It.
 
 A host configuration can also be written as TOML, schema version 1. The library
 reads that format with the same rules as JSON, converts a JSON configuration to it,
-and changes an existing file while keeping its comments. No command reads, converts,
-or writes TOML yet: `validate`, `build`, `start`, and the rest take JSON through
-`--config`, as Running It describes, and only the tests call the functions below.
-The agent's use of the format, which includes the migration that calls the
-conversion, lands in the second pull request of issue
-[#77](https://github.com/axross/runners/issues/77) and is documented with it. The
-roadmap issue [#72](https://github.com/axross/runners/issues/72) names the later
+and changes an existing file while keeping its comments. The agent reads its
+configuration as `config.toml` and migrates a `config.json` to it, as
+[The Agent's Configuration](#the-agents-configuration) describes. The commands do
+not: `validate`, `build`, `start`, and the rest take JSON through `--config`, as
+Running It describes. The roadmap issue [#72](https://github.com/axross/runners/issues/72) names the later
 consumers of the schema: W3 and M4 for `[lifecycle]`, and K3, X1, X2, and M2 for the
 rest.
 
@@ -532,11 +535,10 @@ macOS applies axmc's.
 
 ### Converting a JSON Configuration
 
-`convert_to_toml(json, host, source, checkout, clock)` in `cli/src/convert.rs` turns
+`convert_to_toml(json, host, source, rule, clock)` in `cli/src/convert.rs` turns
 the bytes of a JSON configuration into the text of an equivalent TOML document, and
-checks that text before it returns it. It reads and writes no file: the caller
-writes the text. The agent's migration, which does, lands in the second pull request
-of issue #77.
+checks that text before it returns it, both under the checkout `rule`. It reads and
+writes no file: the caller writes the text, as the agent's migration does.
 
 1. It validates the JSON under the host's JSON rules, which still require `tokenPath`.
    A rejected file is `SourceRejected`.
@@ -545,7 +547,7 @@ of issue #77.
    joins `owner` and `repository`, and leaves out `tokenPath`. It writes each key the
    JSON file set and no other, so a pool without `labels` still gets the routing label
    by default. It writes no `[lifecycle]`.
-3. It validates the document with the full TOML rules under the same checkout. A
+3. It validates the document with the full TOML rules under the same checkout rule. A
    document that fails is `DocumentRejected`.
 4. It compares the document's plan with the JSON file's, and a difference is
    `NotEquivalent`, naming the key or the pool.
@@ -662,7 +664,7 @@ the new one, never part of one.
 removes only regular files named exactly `config.toml.<32 lower-case hexadecimal
 digits>.tmp`, so `config.toml.old.tmp`, a link, and a folder stay. It cannot tell a
 leftover from the temporary file of a write in progress, so a process calls it once,
-when it starts and before anything writes. Nothing calls it yet either.
+when it starts and before anything writes. The agent calls it at its start.
 
 ## The Runtime Layer
 
@@ -1947,8 +1949,8 @@ snapshot, as the reason of the `stopped` state:
 | Reason code             | When                                                                         |
 | ----------------------- | ---------------------------------------------------------------------------- |
 | `by_you`                | A `stop_all`, a `quit`, or an agent launched stopped                         |
-| `no_configuration`      | There is no file at the configuration path                                   |
-| `invalid_configuration` | The file is not valid for the axpc profile; the problems are in the snapshot |
+| `no_configuration`      | There is no `config.toml` and no configuration is in use                     |
+| `invalid_configuration` | The file, or a `config.json` it migrates, is not valid; problems in snapshot |
 | `image_unusable`        | The image is missing, or its contract version is not this CLI's              |
 | `no_pool_started`       | No pool could start, such as every pool without a token                      |
 | `restart_limit`         | The runtime core failed too often, under the same restart policy `start` has |
@@ -1969,8 +1971,8 @@ shows the build, `start_all` and `build` are `busy`, and a `stop_all` or a `quit
 taken during the build or during the check skips or abandons the check, which leaves
 the `images` entry as it was; a build that still commits after the stop stays `ready`.
 A `build` that succeeds and is not cancelled leaves the agent stopped by you
-(`by_you`), whatever it was stopped for before, since the build read the configuration again and the
-snapshot's problems and pools are those of that read. Its outcome, `ready`, is only in `agent.build`,
+(`by_you`), whatever it was stopped for before; the build reads no file, so the
+snapshot's problems and pools are those of the latest `start_all` or start. Its outcome, `ready`, is only in `agent.build`,
 and the refreshed image entry is in `images`: "stopped with the image ready", in
 the state table above, is that outcome and not a reason. A build that fails
 stops the agent for `image_build_failed`, and a cancelled one is stopped by you.
@@ -1998,13 +2000,40 @@ an installer is blocked). It looks once a second and ends within 5 s, after the 
 names `quit`. The agent does not handle a sign-out or a shutdown: it gets no event
 for them, as `start` gets none on Windows, and the next agent removes what they left.
 
-The configuration is `config.json` in the `marshal` folder of `%LOCALAPPDATA%` on
+#### The Agent's Configuration
+
+The configuration is `config.toml` in the `marshal` folder of `%LOCALAPPDATA%` on
 Windows and in `~/Library/Application Support/marshal/` on macOS, a folder that must
 be a directory owned by the user with mode `0700`, the folder the socket is in. A
-debug build can move it with a test root. The agent reads the file when it starts
-running and at each `start_all` and `build`, with the axpc profile; it does not
-read a token file, and the `tokenPath` of each entry, which the commands of `start`
-still read, is checked by `validate` and ignored by the agent.
+debug build can move it with a test root. The path is fixed. The agent checks it under
+the profile of the host it runs on, axpc on Windows and axmc on macOS; only a debug
+build can name another, which the tests use. It reads no token file: each pool's
+token comes from the token store, by its repository. `cli/src/host_config/` does the
+loading, and the agent keeps what the latest load found.
+
+- **At the start** the agent removes the temporary files an interrupted write left,
+  then reads `config.toml`. When it is missing and `config.json` exists, it migrates
+  it: `config.json` is checked under today's JSON rules, converted as
+  [Converting a JSON Configuration](#converting-a-json-configuration) describes, and
+  written as `config.toml` only where no file of that name exists, then read. The log
+  says so. `config.json` is left in place and is not read again while `config.toml`
+  exists; deleting `config.toml` makes the next start migrate it again.
+- **A `config.json` that breaks the rules** is not migrated. The agent stays stopped
+  for `invalid_configuration`, with the JSON problems in today's wording.
+- **A converted document that fails its check, or a `config.toml` that cannot be
+  written,** leaves the agent on `config.json`'s configuration for this run, and the
+  snapshot's migration says why. The next start tries again.
+- **At each `start_all`** from a stopped state the agent reads `config.toml` again. A
+  valid file is used. A file with problems, or none, leaves the configuration the agent
+  holds in use, as `last_valid`, and the snapshot lists the file's problems and when
+  the configuration in use was read. With none held, the agent stays stopped. A
+  `start_all` migrates nothing: a missing `config.toml` beside `config.json` is
+  `pending`, and the reason says to quit Marshal and launch it again.
+- **`build`** uses the image name of the configuration in use, on axmc
+  `actions-runner:local` when it names none, as `marshal build` does, and reads no
+  file; with none in use it is `refused`. Start All checks the same image.
+- The last valid configuration lives in memory only. A new agent process starts from
+  the file. The agent does not watch the file.
 
 The agent's log is a file in the same private directory as `start`'s. It is
 continued in a new file when it reaches 10 MiB, so no line is lost to the limit, and
@@ -2085,18 +2114,24 @@ bound.
 
 ### The Token Store
 
-`token_store` is the one place the agent keeps a repository's token. The interface
-names no operating system: `get`, `set` and `remove` by a repository key, which is
-`owner/name` in lower case, so `Axross/Runners` and `axross/runners` are one token.
+`token_store` is the one place the agent keeps a token. The interface names no
+operating system: `get`, `set` and `remove` by a key of one of two kinds, each in
+lower case. A repository key is `owner/name`, so `Axross/Runners` and
+`axross/runners` are one token. An organization key is the organization's login
+alone, matching the configuration's owner pattern. A repository key always holds one
+slash and an organization key none, so the two never collide. `token_set` and
+`token_remove` take a repository key only and refuse an organization's login.
 A token is trimmed, then refused when it is empty or longer than 1280 UTF-16 code
 units, which keeps it inside the Credential Manager's 2560 bytes.
 
 - **Windows.** The Credential Manager of the current user, through
-  `windows-native-keyring-store`, as one generic credential per repository named
-  `app.axross.marshal:github.com/<owner>/<name>`, with the token as UTF-16 and with
-  local persistence. The crate's default persistence is the enterprise one, which
+  `windows-native-keyring-store`, as one generic credential per key named
+  `app.axross.marshal:github.com/<owner>/<name>` for a repository, or
+  `app.axross.marshal:github.com/<org>` for an organization, with the token as
+  UTF-16 and with local persistence. The crate's default persistence is the enterprise one, which
   roams with the user's profile, so the store asks for the local one.
-  `tests/token_store_windows.rs` sets, reads and removes a real credential, reads
+  `tests/token_store_windows.rs` sets, reads and removes a real credential of each
+  kind, a repository's and an organization's, checks its name with `cmdkey`, reads
   its persistence back from the store's `persistence` attribute, round-trips a token of 1280 UTF-16 units and
   a non-ASCII, non-BMP one, and sends a `token_set` through an agent whose store is
   the Credential Manager to a registration; only the Windows CI job runs it.
@@ -2178,7 +2213,11 @@ but, for `github`, counts as a renewal.
 
 `token_set` is the one message that carries a secret: the token travels only in its
 `token` param, from the client to the agent, and the agent never sends, logs or
-repeats it. Its error text never quotes the params.
+repeats it. Its error text never quotes the params. A method a later slice adds
+under the version rules above that carries a secret is handled as `token_set` is.
+On Windows the client makes its same-user check (see [Control
+Channel](#control-channel)) at connection, before it sends any request, so every
+such method is covered without a check of its own.
 
 Errors have a stable `code`, an open set, and a `message` in plain text:
 
@@ -2276,7 +2315,10 @@ a reader ignores one it does not know.
 | `agent`                        | `version`, `state`, `reason` (`code`, `message`), `since`, `build`, `restart_due`, `update`           |
 | `agent.update`                 | While a drain for an update runs: `version`, `waiting`, `deadline`, `pid`                             |
 | `agent.build`                  | `started`, `outcome` (`building`, `ready`, `failed`, `cancelled`), `finished`, `message`              |
-| `configuration`                | `path` and `problems`, at most 100                                                                    |
+| `configuration`                | `path`, `problems` (at most 100), `status`, `in_use` and `migration`                                  |
+| `configuration.status`         | What the latest read of `config.toml` found: `valid`, `invalid`, `missing` or `unreadable`            |
+| `configuration.in_use`         | Absent when none is in use; else `source` (`file`, `last_valid` or `json`) and `read_at`              |
+| `configuration.migration`      | Absent when none applies; else `state` (`migrated`, `failed`, `pending`), `at` and `reason`           |
 | `runners_up`, `runners_wanted` | Totals over the listed pools, kept when rows are left out; 0 while `restart_due` is set               |
 | `repositories`                 | Each repository (`owner/name` in lower case), `has_token` and its pools                               |
 | `pools`                        | `name`, `repository`, `state`, `reason`, `has_token`, `runners_up`, `slots`, `runners`, `diagnostics` |
@@ -2321,8 +2363,9 @@ A snapshot is cut to at most 64 KiB less the message's envelope. When it is larg
 it first lists no more than 100 configuration problems, then leaves out runner rows
 from the end, as many as it must and no more, then pools from the end, then
 leftovers, repositories, images and configuration problems from their ends, and says
-how many in `omitted`. Last of all the long texts, the configuration path and the
-agent's version, reason and build message, are cut to 512 characters. `runners_up`
+how many in `omitted`. Last of all the long texts, the configuration path, the
+migration's reason and the agent's version, reason and build message, are cut to 512
+characters. `runners_up`
 and `runners_wanted` still count a row left out.
 
 ### GitHub Status
@@ -2457,7 +2500,10 @@ image check after it, which still answers and is skipped or abandoned by a stop 
 staying up for each reason, also through `start_all`, which answers `resuming`, that
 `token_set` and `token_remove` are answered while it resumes, builds and stops, and the
 core's restarts: the `restart_due` window with its empty pool list, and the stop for
-`restart_limit`. The restart waits are the fake clock's, with a real pause of 400 ms
+`restart_limit`. It also covers the configuration: the migration at the first start,
+a `config.json` that is not migrated, the last valid configuration at `start_all`
+with the file's problems, a pending migration, and a `build` that uses the
+configuration in use. The restart waits are the fake clock's, with a real pause of 400 ms
 each so the script can look at the window.
 `tests/agent_protocol.rs` covers the handshake, `welcome`, unknown methods, topics
 and fields, subscription (also by a client that arrives while the agent is idle),

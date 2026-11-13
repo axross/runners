@@ -259,7 +259,11 @@ app is built for, `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`.
   means no capability can be added while the app runs. A new feature, or one of
   those four, is a change to this list.
 - **Direct dependencies.** `tauri` 2.12, `tauri-build` 2.7 and
-  `tauri-plugin-single-instance` 2.5 for the app, and `embed-resource` 3.0 to build
+  `tauri-plugin-single-instance` 2.5 for the app, `tauri-plugin-opener` 2.7.2 to open a
+  running job's page in the default browser from the Rust side (on Windows through the
+  `open` crate's `ShellExecuteExW`, so the address never passes through another
+  program's command line; it adds `open`, its build helper `tauri-plugin`, and on Linux
+  `is-wsl` and `is-docker`, and needs no licence exception), and `embed-resource` 3.0 to build
   it, the resource compiler `tauri-build` already builds with, which `build.rs` calls
   to link the common controls manifest into the integration tests, so it adds no crate
   to the tree and runs only when the target is Windows with the MSVC environment;
@@ -1071,13 +1075,14 @@ built: its names, modes, and checks.
 
 ## The Agent Keeps Tokens in the Operating System's Store
 
-The resident agent reads each repository's token from the operating system's
+The resident agent reads each token from the operating system's
 credential store, not from a file, and it receives a token from a client over its
 control channel. [CLI](../operations/cli.md#the-token-store) owns how the store is
 named and used.
 
 - On Windows a token is a generic credential in the user's Credential Manager,
-  named `app.axross.marshal:github.com/<owner>/<name>`, with **local** persistence.
+  named `app.axross.marshal:github.com/<owner>/<name>` for a repository or
+  `app.axross.marshal:github.com/<org>` for an organization, with **local** persistence.
   The crate's default persistence is the enterprise one, which roams with the user's
   profile and so would carry a repository's token to other machines of a domain
   account; the store asks for the local one, and a test on Windows reads the
@@ -1095,7 +1100,10 @@ named and used.
   request is only as private as the channel: only the agent's user can send it, and
   on Windows the client sends it only after it has checked that the pipe's server
   runs as that user, so a squatter of another account receives nothing and a failure
-  to verify is a refusal. The residual risks are a squatter of the same user, which
+  to verify is a refusal. The check is made once at connection, before any request,
+  so it covers every request on the connection. A method added under protocol
+  version 2's version rules that carries a secret is handled as `token_set` is. The
+  residual risks are a squatter of the same user, which
   is accepted on a single-user host, and the tiny window in which a process ID is
   reused between the connection and the check.
 - A token longer than 1280 UTF-16 code units or empty is refused before it reaches the
@@ -1105,11 +1113,12 @@ named and used.
 
 Residual risks, accepted on a single-user host:
 
-- A same-user client can create store entries for any well-formed repository name,
-  one token of at most 1280 units each, and the agent never removes one it did not
-  hear of. The agent's in-memory record of which repositories have a token also gains
-  an entry for each new name a `token_set` or `token_remove` names, until the next
-  configuration read replaces it; each key is bounded by the form of `owner/name`.
+- A same-user client can create store entries for any well-formed key, one token of
+  at most 1280 units each, and the agent never removes one it did not hear of. The
+  agent's in-memory record of which keys have a token also gains an entry for each
+  new name a request names, until the next configuration read replaces it; each key
+  is bounded by its form, `owner/name` for a repository or a login for an
+  organization.
 - Another process of the same user that connects to the channel can set or remove
   a token, stop the runners or quit the agent, as it can for `start`'s
   commands.
@@ -1154,13 +1163,22 @@ the app may do with that reach. [App](../operations/app.md) owns how it works.
   each works only in a window whose capability grants it. The main window's
   capability grants `core:event:allow-listen` and `core:event:allow-unlisten` and the
   commands that read the view, start all, stop all, build, stop the build, try
-  again, set a token, remove a token and hide the window. The confirmation window's
+  again, set a token, remove a token, hide the window and open a runner's job. The
+  confirmation window's
   grants the two commands that read its question and answer it. Neither grants
   anything else, each is limited to its window, and a test shows that a call the
   capability does not grant is refused. The permission files Tauri generates are
   checked in, so a change to them shows in a diff, and Tauri's `dynamic-acl` feature
   is off, so no capability can be added while the app runs. Quit has no command: it
   runs from the menu, on the Rust side.
+- **The page cannot open an address.** Open run names a pool and a runner, never an
+  address. The app's `open_job` command looks the runner up in the agent's snapshot and
+  the `github` topic, refuses a pool the agent does not list, and builds
+  `https://github.com/<owner>/<repo>/actions/runs/<run_id>/job/<job_id>` itself from
+  the pool's configured repository and the two numbers GitHub gave, then opens it in
+  the default browser from the Rust side with Tauri's opener plugin. The plugin's
+  page script, which sends link clicks to its own command, is off, and no capability
+  grants any of the plugin's three commands, which a test shows are refused.
 - **A token passes only through `token_set`.** The window's token field is a password
   input without autocomplete or spell checking. The page clears it when the token is
   submitted, whatever the outcome, and keeps the token in no variable once it has
@@ -1172,7 +1190,8 @@ the app may do with that reach. [App](../operations/app.md) owns how it works.
   No view state, event, log line or error text of the app holds a token, and the app's
   log masks a word shaped like a GitHub token as defence in depth. The app never
   displays a stored token.
-- **No telemetry, no crash reports.** The app makes no network request. The agent's
+- **No telemetry, no crash reports.** The app makes no network request; opening a
+  job's page hands its address to the default browser. The agent's
   only requests go to GitHub's API. Neither sends usage data or a crash report, and
   no dependency may; see [The App's Dependencies](#the-apps-dependencies).
 - **The debug-only test variables are ignored in a release build.** A debug build's
