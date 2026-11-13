@@ -160,17 +160,10 @@ fn stopped_by_you(context: &Context<'_>) -> Banner {
     }
     lines.push("They stay stopped until you choose Start All.".to_string());
     let mut heading = "Runners stopped by you".to_string();
-    if let Some(snapshot) = context.snapshot {
-        let names: Vec<&str> = snapshot
-            .leftovers
-            .iter()
-            .map(|left| left.name.as_str())
-            .collect();
-        if !names.is_empty() {
-            heading.push_str("; ");
-            heading.push_str(&left_headline(names.len(), &context.input.words));
-            lines.insert(0, left_line(&names));
-        }
+    if let Some((headline, left)) = leftovers(context) {
+        heading.push_str("; ");
+        heading.push_str(&headline);
+        lines.splice(0..0, left);
     }
     banner(
         BannerKind::StoppedByYou,
@@ -218,22 +211,67 @@ fn left_line(names: &[&str]) -> String {
     )
 }
 
-fn leftover_banner(context: &Context<'_>) -> Option<Banner> {
+/// the leftovers' headline and lines: what the next start removes, then M3's VMs of
+/// pools no longer configured, which Marshal never deletes.
+fn leftovers(context: &Context<'_>) -> Option<(String, Vec<String>)> {
     let snapshot = context.snapshot?;
-    if snapshot.leftovers.is_empty() || matches!(context.resident, Resident::Stopped(Stop::ByYou)) {
+    let words = &context.input.words;
+    let names = |unconfigured: bool| -> Vec<&str> {
+        snapshot
+            .leftovers
+            .iter()
+            .filter(|left| (left.kind == "vm_unconfigured_pool") == unconfigured)
+            .map(|left| left.name.as_str())
+            .collect()
+    };
+    let (unconfigured, removable) = (names(true), names(false));
+    let mut lines = Vec::new();
+    if !removable.is_empty() {
+        lines.push(left_line(&removable));
+    }
+    if !unconfigured.is_empty() {
+        lines.push(unconfigured_line(&unconfigured, words));
+    }
+    let headline = if removable.is_empty() {
+        unconfigured_headline(unconfigured.len())
+    } else {
+        left_headline(removable.len(), words)
+    };
+    (!lines.is_empty()).then_some((headline, lines))
+}
+
+fn unconfigured_headline(count: usize) -> String {
+    if count == 1 {
+        "a VM of a pool no longer configured remains".to_string()
+    } else {
+        "some VMs of pools no longer configured remain".to_string()
+    }
+}
+
+fn unconfigured_line(names: &[&str], words: &HostWords) -> String {
+    let (verb, it) = if names.len() == 1 {
+        ("is", "it")
+    } else {
+        ("are", "them")
+    };
+    format!(
+        "{} {verb} from a pool no longer configured, so Marshal does not delete {it}; {} says how to delete {it}.",
+        crate::text::list_of(&names.iter().map(|name| plain(name)).collect::<Vec<_>>()),
+        words.host_document,
+    )
+}
+
+fn leftover_banner(context: &Context<'_>) -> Option<Banner> {
+    if matches!(context.resident, Resident::Stopped(Stop::ByYou)) {
         return None;
     }
-    let names: Vec<&str> = snapshot
-        .leftovers
-        .iter()
-        .map(|left| left.name.as_str())
-        .collect();
-    let heading = crate::text::capitalised(&left_headline(names.len(), &context.input.words));
+    let (headline, lines) = leftovers(context)?;
+    let heading = crate::text::capitalised(&headline);
     Some(banner(
         BannerKind::ContainerLeft,
         Tone::Warning,
         &heading,
-        vec![left_line(&names)],
+        lines,
         heading.clone(),
     ))
 }

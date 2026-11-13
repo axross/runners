@@ -204,6 +204,10 @@ pub enum RunnerState {
     BackingOff,
     Held,
     Stopped,
+    /// a macOS slot waiting for a place under the two-VM limit (M3).
+    WaitingForVmLimit,
+    /// a slot waiting until the VM named in `workload` is deleted (M3).
+    WaitingForVmDeletion,
     /// a state this reader does not know; the runner's reason says what it means.
     Unknown(String),
 }
@@ -217,6 +221,8 @@ impl RunnerState {
             "backing_off" => Self::BackingOff,
             "held" => Self::Held,
             "stopped" => Self::Stopped,
+            "waiting_for_vm_limit" => Self::WaitingForVmLimit,
+            "waiting_for_vm_deletion" => Self::WaitingForVmDeletion,
             other => Self::Unknown(other.to_string()),
         }
     }
@@ -330,8 +336,9 @@ pub struct ImageLine {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct ImageWarning {
-    /// `not_built_by_marshal`, `packages_old`, `image_old`, `runner_old` or
-    /// `runner_may_be_newer`.
+    /// `not_built_by_marshal`, `packages_old`, `image_old`, `runner_old`,
+    /// `runner_may_be_newer`, or for the golden macOS VM (M3) `runner_age_unknown` and
+    /// `base_old`.
     #[serde(default)]
     pub code: String,
     #[serde(default)]
@@ -350,6 +357,8 @@ pub enum WarningKind {
     ImageOld,
     RunnerOld,
     RunnerMayBeNewer,
+    RunnerAgeUnknown,
+    BaseOld,
     Unknown(String),
 }
 
@@ -362,6 +371,8 @@ impl ImageWarning {
             "image_old" => WarningKind::ImageOld,
             "runner_old" => WarningKind::RunnerOld,
             "runner_may_be_newer" => WarningKind::RunnerMayBeNewer,
+            "runner_age_unknown" => WarningKind::RunnerAgeUnknown,
+            "base_old" => WarningKind::BaseOld,
             other => WarningKind::Unknown(other.to_string()),
         }
     }
@@ -393,7 +404,9 @@ impl ImageInfo {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct Leftover {
-    /// what it is: today always `container`.
+    /// what it is: `container`, `vm`, which the next start deletes, or
+    /// `vm_unconfigured_pool`, a VM of a pool no longer configured, which Marshal never
+    /// deletes (M3).
     #[serde(default)]
     pub kind: String,
     #[serde(default)]

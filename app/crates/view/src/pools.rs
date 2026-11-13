@@ -110,11 +110,27 @@ fn runner_row(context: &Context<'_>, pool: &PoolInfo, runner: &RunnerInfo) -> Ru
     });
     let (state, mark) = match runner.kind() {
         RunnerState::Running if saving => ("Saving diagnostics".to_string(), Mark::Check),
-        RunnerState::Running => ("Container running".to_string(), Mark::Check),
+        RunnerState::Running => (
+            format!(
+                "{} running",
+                crate::text::capitalised(context.input.words.workload)
+            ),
+            Mark::Check,
+        ),
         RunnerState::Registering => ("Registering".to_string(), Mark::Ring),
         RunnerState::BackingOff => ("Backing off".to_string(), Mark::History),
         RunnerState::Held => ("Held".to_string(), Mark::History),
         RunnerState::Stopped => ("Stopped".to_string(), Mark::Stop),
+        RunnerState::WaitingForVmLimit => {
+            ("Waiting for the macOS VM limit".to_string(), Mark::Ring)
+        }
+        RunnerState::WaitingForVmDeletion => (
+            runner.workload.as_deref().map_or_else(
+                || "Waiting for a VM's deletion".to_string(),
+                |name| format!("Waiting for the deletion of VM {}", plain(name)),
+            ),
+            Mark::Ring,
+        ),
         RunnerState::Unknown(word) => (
             runner
                 .unknown_state_text()
