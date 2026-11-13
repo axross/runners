@@ -70,9 +70,9 @@ function Get-Sha256 {
 # runs msiexec with the arguments and a verbose log named for the step, and waits
 # for it. 1618 means another installation is running, so it waits and tries again.
 function Invoke-Msi {
-    param([Parameter(Mandatory = $true)][string[]]$Arguments, [Parameter(Mandatory = $true)][string]$LogName)
+    param([Parameter(Mandatory = $true)][string[]]$Arguments, [Parameter(Mandatory = $true)][string]$LogName, [string[]]$Ui = @('/qn', '/norestart'))
     $log = Join-Path $LogDirectory "$LogName.log"
-    $argumentList = @($Arguments) + @('/qn', '/norestart', '/l*v', "`"$log`"")
+    $argumentList = @($Arguments) + $Ui + @('/l*v', "`"$log`"")
     for ($attempt = 1; $attempt -le 6; $attempt++) {
         if (Test-Path -LiteralPath $log) { Remove-Item -LiteralPath $log -Force }
         $process = Start-Process -FilePath 'msiexec.exe' -ArgumentList $argumentList -Wait -PassThru -NoNewWindow
@@ -318,13 +318,22 @@ function Assert-ExitCode {
 }
 
 # the properties a launch is asked for with, in the form W4's update runs msiexec
-# with, and the file the recorder writes.
+# with, and the file the recorder writes. -AutoLaunch gives another AUTOLAUNCHAPP
+# value, which must start nothing.
 function Get-LaunchProperty {
-    param([Parameter(Mandatory = $true)][string]$Record, [switch]$WithoutAutoLaunch)
+    param([Parameter(Mandatory = $true)][string]$Record, [switch]$WithoutAutoLaunch, [string]$AutoLaunch = 'True')
     if ($Record.Contains(' ')) { throw "The record path $Record holds a space, which LAUNCHAPPARGS would split." }
     $arguments = "LAUNCHAPPARGS=`"--record $Record --after-update`""
     if ($WithoutAutoLaunch) { return @($arguments) }
-    return @('AUTOLAUNCHAPP=True', $arguments)
+    return @("AUTOLAUNCHAPP=$AutoLaunch", $arguments)
+}
+
+# installs the MSI with W4's update line, msiexec.exe /i <msi> /passive
+# /promptrestart AUTOLAUNCHAPP=True LAUNCHAPPARGS="...", with only the verbose log
+# added, which changes no UI.
+function Install-MsiAsUpdate {
+    param([Parameter(Mandatory = $true)][string]$Path, [Parameter(Mandatory = $true)][string]$LogName, [Parameter(Mandatory = $true)][string]$Record)
+    return Invoke-Msi -Arguments (@('/i', "`"$Path`"", '/passive', '/promptrestart') + (Get-LaunchProperty -Record $Record)) -LogName $LogName -Ui @()
 }
 
 # waits up to the timeout for the recorder's file and returns what it wrote, or $null.
@@ -444,12 +453,19 @@ try {
     $a2 = Build-FixtureMsi -Name 'a-2.0.0' -FixturePath $fixtureA -Version '2.0.0' -Wix $WixDirectory
     $b2 = Build-FixtureMsi -Name 'b-2.0.0' -FixturePath $fixtureB -Version '2.0.0' -Wix $WixDirectory
     $a1 = Build-FixtureMsi -Name 'a-1.0.0' -FixturePath $fixtureA -Version '1.0.0' -Wix $WixDirectory
+    $a3 = Build-FixtureMsi -Name 'a-3.0.0' -FixturePath $fixtureA -Version '3.0.0' -Wix $WixDirectory
 
     Write-Output '== starting the app after an install or upgrade =='
     $record = Join-Path $RecordDirectory 'launch.txt'
     Assert-ExitCode -Result (Install-Msi -Path $b1 -LogName 'fixture-b-1.0.0-install-arguments-only' -Property (Get-LaunchProperty -Record $record -WithoutAutoLaunch)) -Label 'version 1.0.0 installs with LAUNCHAPPARGS but no AUTOLAUNCHAPP'
     Assert-Installed -Hash $hashB -Version '1.0.0' -Label 'version 1.0.0'
     Assert-NotLaunched -Record $record -Label 'an install without AUTOLAUNCHAPP'
+    Assert-ExitCode -Result (Uninstall-Msi -Path $b1 -LogName 'fixture-b-1.0.0-uninstall-before-autolaunch-1') -Label 'version 1.0.0 uninstalls'
+    Assert-NothingInstalled -Label 'before the AUTOLAUNCHAPP=1 install'
+
+    Assert-ExitCode -Result (Install-Msi -Path $b1 -LogName 'fixture-b-1.0.0-install-autolaunch-1' -Property (Get-LaunchProperty -Record $record -AutoLaunch '1')) -Label 'version 1.0.0 installs with AUTOLAUNCHAPP=1'
+    Assert-Installed -Hash $hashB -Version '1.0.0' -Label 'version 1.0.0 with AUTOLAUNCHAPP=1'
+    Assert-NotLaunched -Record $record -Label 'an install with AUTOLAUNCHAPP=1, which is not True'
 
     Write-RunValue -Name 'Marshal' -Data "`"$InstalledApp`" --signed-in"
     Write-RunValue -Name $OtherRunValue -Data 'kept'
@@ -462,15 +478,22 @@ try {
     Assert-Installed -Hash $hashB -Version '2.0.0' -Label 'the same-version rebuild replaced the file and left one product'
     Assert-Launched -Record $record -Label 'a same-version rebuild with AUTOLAUNCHAPP=True'
 
+    $result = Install-MsiAsUpdate -Path $a3 -LogName 'fixture-a-3.0.0-upgrade-as-w4' -Record $record
+    Assert-ExitCode -Result $result -Label "a higher version installs with W4's line, /passive /promptrestart AUTOLAUNCHAPP=True LAUNCHAPPARGS"
+    Assert-Installed -Hash $hashA -Version '3.0.0' -Label "the upgrade with W4's line"
+    Assert-Launched -Record $record -Label "an upgrade with W4's line"
+    Assert-That ($null -ne (Get-RunValue -Name 'Marshal')) "an upgrade with W4's line keeps the HKCU Run value Marshal"
+    Write-Measured "W4's update line, msiexec /i <msi> /passive /promptrestart AUTOLAUNCHAPP=True LAUNCHAPPARGS=..., exited $($result.ExitCode) and started the app"
+
     $result = Install-Msi -Path $a1 -LogName 'fixture-a-1.0.0-downgrade' -Property (Get-LaunchProperty -Record $record)
     Assert-That ($result.ExitCode -ne 0) 'a lower version exits non-zero over a higher one'
     Assert-That ([bool](Select-String -LiteralPath $result.Log -SimpleMatch -Pattern $DowngradeMessage -Quiet)) "the log holds '$DowngradeMessage'"
-    Assert-Installed -Hash $hashB -Version '2.0.0' -Label 'after the refused downgrade the higher version stays'
+    Assert-Installed -Hash $hashA -Version '3.0.0' -Label 'after the refused downgrade the higher version stays'
     Assert-NotLaunched -Record $record -Label 'a refused downgrade'
     Write-Measured "a lower version over a higher one: msiexec exit code $($result.ExitCode), the log holds the newer-version message, the higher version stays installed"
 
     Write-Output '== an uninstall removes the Run value, and never starts the app =='
-    Assert-ExitCode -Result (Uninstall-Msi -Path $b2 -LogName 'fixture-b-2.0.0-uninstall-run-value' -Property (Get-LaunchProperty -Record $record)) -Label 'the installed version uninstalls with the Run value present'
+    Assert-ExitCode -Result (Uninstall-Msi -Path $a3 -LogName 'fixture-a-3.0.0-uninstall-run-value' -Property (Get-LaunchProperty -Record $record)) -Label 'the installed version uninstalls with the Run value present'
     Assert-NothingInstalled -Label 'after the fixture uninstall'
     Assert-That ($null -eq (Get-RunValue -Name 'Marshal')) 'the uninstall removed the HKCU Run value Marshal'
     Assert-That ((Get-RunValue -Name $OtherRunValue) -ceq 'kept') 'the uninstall left the other Run values alone'
@@ -514,7 +537,7 @@ try {
         else { Assert-That ($base -eq 19) "custom action $($action[0]) is an error-message type" }
     }
     Assert-That ($null -ne $launch -and ([int]$launch[1] -band 0x3F) -eq 18 -and $launch[2] -eq 'MarshalAppExe' -and $launch[3] -eq '[LAUNCHAPPARGS]') 'LaunchMarshal runs the installed marshal-app.exe with [LAUNCHAPPARGS] and nothing else'
-    Assert-That ($null -ne $removal -and ([int]$removal[1] -band 0x3F) -eq 34 -and $removal[3] -eq '"[System64Folder]reg.exe" delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v Marshal /f') 'RemoveRunValue runs only reg.exe delete of the HKCU Run value Marshal'
+    Assert-That ($null -ne $removal -and ([int]$removal[1] -band 0x3F) -eq 34 -and $removal[2] -eq 'System64Folder' -and $removal[3] -eq '"[System64Folder]reg.exe" delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v Marshal /f') 'RemoveRunValue runs only reg.exe delete of the HKCU Run value Marshal, from System64Folder'
     $conditions = Get-MsiRowSet -Database $releaseDatabase -Query 'SELECT `Action`, `Condition` FROM `InstallExecuteSequence`'
     foreach ($row in $conditions) {
         if ($row[0] -eq 'LaunchMarshal' -or $row[0] -eq 'RemoveRunValue') { Write-Measured "InstallExecuteSequence $($row[0]) runs when: $($row[1])" }

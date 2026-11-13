@@ -66,12 +66,13 @@
     -->
     <CustomAction Id="LaunchMarshal" FileRef="MarshalAppExe" ExeCommand="[LAUNCHAPPARGS]" Return="asyncNoWait" />
     <!--
-      runs before the files go, while INSTALLFOLDER still exists to start reg.exe
-      in. a failure to delete the value does not fail the uninstall.
+      runs last in the deferred script and starts reg.exe in System64Folder, so it
+      needs no install folder. a failure to delete the value does not fail the
+      uninstall.
     -->
     <CustomAction
       Id="RemoveRunValue"
-      Directory="INSTALLFOLDER"
+      Directory="System64Folder"
       ExeCommand="&quot;[System64Folder]reg.exe&quot; delete &quot;HKCU\Software\Microsoft\Windows\CurrentVersion\Run&quot; /v Marshal /f"
       Execute="deferred"
       Impersonate="yes"
@@ -81,7 +82,7 @@
       <Custom Action="LaunchMarshal" After="InstallFinalize" Condition="AUTOLAUNCHAPP = &quot;True&quot; AND NOT Installed" />
       <Custom
         Action="RemoveRunValue"
-        After="InstallInitialize"
+        Before="InstallFinalize"
         Condition="MARSHALRUNVALUE AND REMOVE ~= &quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE"
       />
     </InstallExecuteSequence>

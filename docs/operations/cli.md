@@ -4025,8 +4025,8 @@ administrator rights, and:
   nothing either.
 - on an uninstall that is not part of an upgrade, deletes the HKCU Run value
   `Marshal` (under `Software\Microsoft\Windows\CurrentVersion\Run`), which W3's
-  sign-in start writes. It runs `reg.exe delete` as the user only when the value
-  exists, so an absent value is not an error, and a failure to delete it does not
+  sign-in start writes. It runs `reg.exe delete` from the system folder as the user,
+  last in the uninstall's script and only when the value exists, so an absent value is not an error, and a failure to delete it does not
   fail the uninstall. An upgrade keeps it.
 - keeps the configuration, the tokens in Credential Manager, any old token files,
   the logs in `%LOCALAPPDATA%\marshal\` and the web view's data folder,
@@ -4046,10 +4046,12 @@ configuration folder and the web view's data folder. It then builds throwaway MS
 fixed test versions from a stand-in, compiled in the test, that records its path, its
 arguments and its user and exits, and checks:
 
-- an install with `LAUNCHAPPARGS` but without `AUTOLAUNCHAPP` starts nothing;
-- an upgrade and a same-version rebuild with `AUTOLAUNCHAPP=True` start the
-  installed app with `LAUNCHAPPARGS` as its arguments, as the installing user, and
-  keep the Run value;
+- an install with `LAUNCHAPPARGS` but without `AUTOLAUNCHAPP`, and one with
+  `AUTOLAUNCHAPP=1`, start nothing;
+- an upgrade and a same-version rebuild with `AUTOLAUNCHAPP=True`, and an upgrade
+  run with W4's line, `/passive /promptrestart AUTOLAUNCHAPP=True LAUNCHAPPARGS="..."`,
+  start the installed app with `LAUNCHAPPARGS` as its arguments, as the installing
+  user, and keep the Run value;
 - a lower version over a higher one fails with the message, keeps the higher one, and
   starts nothing;
 - an uninstall with `AUTOLAUNCHAPP=True` on its line starts nothing, removes the Run
@@ -4057,7 +4059,8 @@ arguments and its user and exits, and checks:
   passes;
 - the extraction the optional check relies on, which holds `marshal-app.exe` and the
   notices and nothing else;
-- that the MSI's custom actions are those three, that it writes no environment
+- that the MSI's custom actions are those three, with the deletion started from the
+  system folder, that it writes no environment
   variable, and that no table names a machine, account or workspace;
 - an upgrade while a copy of a stock waiting console program, packed as
   `marshal-app.exe`, runs from the install path.
