@@ -16,8 +16,12 @@ if [[ ! -f "$file" ]]; then
   exit 1
 fi
 # one line, so a second version or a comment cannot be read as the pin; a CR from a
-# checkout with converted line endings is not part of it.
-mapfile -t lines <"$file"
+# checkout with converted line endings is not part of it. read, not mapfile, since
+# macOS's /bin/bash is 3.2; a last line without a newline still counts.
+lines=()
+while IFS= read -r line || [[ -n "$line" ]]; do
+  lines+=("$line")
+done <"$file"
 version="${lines[0]-}"
 version="${version%$'\r'}"
 number='(0|[1-9][0-9]*)'
