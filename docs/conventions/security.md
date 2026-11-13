@@ -1102,8 +1102,32 @@ named and used.
   persistence back. Any process of the same user can read the credential, as any
   can read a token file the user owns: the Credential Manager is not a boundary
   against the user's other programs.
-- On macOS and Linux the agent has no store, so it skips every pool with "no token
-  store" rather than falling back to a file; it never reads `tokenPath`.
+- On macOS a token is a generic password in the user's login keychain, with the
+  service `app.axross.marshal` and the account `github.com/<owner>/<name>` for a
+  repository or `github.com/<org>` for an organization; its label, which Keychain
+  Access shows, is `Marshal: <owner>/<name>` or `Marshal: <org> (organisation)`. The
+  agent is its only writer and reader. It adds each item with no access object of its
+  own, so macOS trusts the adding program by its designated requirement and its
+  team's partition, `teamid:<team>`. The requirement names the identifier
+  `app.axross.marshal`, the Developer ID markers and the team, not a path or a
+  certificate, so a later release signed by the same team reads the item; changing
+  the identifier or the team breaks that trust. An ad-hoc build, such as a dry run's,
+  is matched by its own code hash and reads only the items it stored. Setting a token
+  deletes the old item and adds a new one, so the item trusts the build that stored
+  it last.
+  - Any program the same team signs under `app.axross.marshal`, including a signed
+    `marshal` command line still on the Mac, can read the items. Another program of
+    the same user can ask for one, and macOS then asks the user, naming its label:
+    the Keychain is a boundary only as far as the user answers that dialog.
+  - The agent turns the Keychain's user interaction off for its whole life, so it
+    never shows a dialog. A read or write that would need the user, such as on a
+    locked keychain, fails at once with the kind `needs_user`, and the pool is
+    skipped with that reason rather than waiting on a dialog that an unattended Mac
+    would leave unseen.
+  - macOS refuses Keychain access to code changed on disk after it started; the
+    agent's changed-executable rule already ends such an agent.
+- On Linux the agent has no store, so it skips every pool with "no token store"
+  rather than falling back to a file. On no OS does it read `tokenPath`.
 - The `token_set` request is the first message in which a secret travels, from the
   client to the agent. The token is held as a `Secret` once the request is parsed,
   is masked in the log from then on, and is never repeated: not in the
