@@ -34,6 +34,8 @@ pub enum Connection {
     NotAnswering,
     /// the lock is held and the user's channel does not answer protocol version 2.
     LockHeld,
+    /// this copy runs outside Applications, so it starts and controls no agent.
+    OutsideApplications,
     /// the app is ending.
     Quitting,
 }

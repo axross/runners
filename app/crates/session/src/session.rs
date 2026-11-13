@@ -432,6 +432,15 @@ pub struct Session<D: Dial> {
 }
 
 impl<D: Dial> Session<D> {
+    /// a session that never reaches or starts an agent, for a copy of Marshal running
+    /// outside Applications; its Quit ends only the app.
+    #[must_use]
+    pub fn outside_applications(mut self) -> Self {
+        self.stage = Stage::Parked;
+        self.connection = Connection::OutsideApplications;
+        self
+    }
+
     #[must_use]
     pub fn new(seams: Seams<D>) -> (Self, Handle) {
         let (commands_sender, commands) = mpsc::unbounded_channel();
@@ -496,7 +505,9 @@ impl<D: Dial> Session<D> {
     /// runs until the agent ends or the user quits; the caller then ends the app.
     pub async fn run(mut self) -> Ended {
         self.first_check();
-        self.begin_attempt();
+        if self.connection != Connection::OutsideApplications {
+            self.begin_attempt();
+        }
         self.refresh();
         loop {
             let wake = self.wake_at();

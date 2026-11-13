@@ -745,7 +745,8 @@ pub fn banners(context: &Context<'_>) -> Vec<Banner> {
         Resident::StartingMarshal
         | Resident::NoAgent
         | Resident::NotAnswering
-        | Resident::LockHeld => None,
+        | Resident::LockHeld
+        | Resident::OutsideApplications => None,
     };
     state
         .into_iter()

@@ -6,7 +6,7 @@ use marshal_cli::instance::roots::Roots;
 use marshal_modes::{Overrides, is_sign_in};
 use marshal_session::{
     AppLog, Library, Log, MAX_FILE_BYTES, OwnExecutable, Processes, RECORD_FILE, RecordFile, Seams,
-    Session, TimeSource, Updater, WallClock,
+    Session, TimeSource, Updater, WallClock, may_control_agent,
 };
 use marshal_tray::{Look, SIZES, Watch, utc_offset_minutes};
 use marshal_view::{GlyphColour, IconState};
@@ -142,7 +142,15 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             Arc::new(Discard)
         }
     };
-    let launcher = OwnExecutable::current(Arc::clone(&log))?;
+    let executable = std::env::current_exe()?;
+    let in_place = may_control_agent(&executable);
+    if !in_place {
+        log.warn(&format!(
+            "Marshal runs from {}, outside Applications, so it starts no agent.",
+            executable.display()
+        ));
+    }
+    let launcher = OwnExecutable::at(executable, Arc::clone(&log));
     let version = env!("CARGO_PKG_VERSION");
     let time = Arc::new(WallClock::new(utc_offset_minutes));
     // every launch removes the record kept across an update; a launch of the update's
@@ -184,6 +192,11 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         launch,
         fresh,
     });
+    let session = if in_place {
+        session
+    } else {
+        session.outside_applications()
+    };
     app.manage(AppState::new(handle, latest, Arc::clone(&log)));
     // the window starts hidden, and a start from the sign-in item leaves it so
     if is_sign_in(std::env::args_os()) {

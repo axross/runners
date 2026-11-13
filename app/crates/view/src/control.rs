@@ -89,6 +89,7 @@ fn not_in_control(resident: &Resident) -> Option<&'static str> {
         Resident::NoAgent => Some("Marshal cannot reach its agent."),
         Resident::NotAnswering => Some("the agent is not answering."),
         Resident::LockHeld => Some("another Marshal is running."),
+        Resident::OutsideApplications => Some("this copy of Marshal is not in Applications."),
         Resident::Unknown(_) => {
             Some("this version of Marshal does not know what the agent is doing.")
         }

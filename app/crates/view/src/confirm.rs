@@ -36,6 +36,8 @@ pub fn confirmation(context: &Context<'_>, action: &Action) -> Option<Confirmati
             "A build in progress is discarded. If it has already finished, the new image stays.",
             "Stop",
         )),
+        // a copy outside Applications controls no agent, so its Quit ends only itself
+        Action::Quit if context.resident == Resident::OutsideApplications => None,
         Action::Quit => Some(match &context.resident {
             Resident::Running | Resident::Resuming | Resident::Stopping if jobs_run => question(
                 "Quit Marshal?",
