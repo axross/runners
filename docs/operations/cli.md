@@ -1,7 +1,7 @@
 # CLI
 
-The Rust command line tool under [`cli/`](../../cli): what `validate` accepts and
-prints, the rules it applies, the shared fixtures its tests read, the TOML
+The `marshal-cli` library under [`cli/`](../../cli), which the app's executable is
+built on: how a configuration is read and the rules it applies, the shared fixtures its tests read, the TOML
 configuration format with its conversion from JSON and its comment-preserving write
 path, the runtime layer that runs a host's pools (the container backend and the Tart
 VM backend, JIT registration, CPU placement, and the slot loop, and on the Mac the
@@ -15,25 +15,42 @@ axmc), `start`, `stop`, `restart`, `status`, and
 `diagnostics`, the diagnostic containers and VMs a diagnostics-enabled pool runs and their
 export, the toolchain and the gates that cover it, the app's workspace that builds on
 the library and the gates it adds, how a release is built
-and installed, and why its name is fixed. The binary is `marshal`. axpc runs its pools
-with it, as [Windows Runner Host](./windows-runner-host.md) describes, including how
-to roll back to the previous release, and axmc runs its Linux pools with it in Tart
-VMs, as [macOS Runner Host](./macos-runner-host.md) describes.
+and installed, and why its name is fixed.
+
+There is no command line. Since W1's installer pull request no `marshal` executable is
+built on any operating system, and the app,
+[App](./app.md) and its executable `marshal-app.exe`, is the only way to run a host:
+its resident agent runs the pools, builds the image and serves protocol version 2.
+The sections below that name `validate`, `build`, `start` and the clients `stop`,
+`restart`, `status` and `diagnostics` describe the library's entry points of those
+names, which the agent shares, and the foreground instance and its protocol version 1,
+which no shipped executable runs: the tests run them through a test-only helper, as
+[Running It](#running-it) says. The command-line procedures, with their commands,
+are at the [last command-line release](#the-last-command-line-release)'s tag.
+[Windows Runner Host](./windows-runner-host.md) describes axpc with the app. axmc has
+no supported way to run its Linux pools from W1's installer pull request until M2's
+Mac app, as [macOS Runner Host](./macos-runner-host.md) says.
 
 ## Running It
 
-```bash
-marshal validate --config <path> [--profile axpc|axmc]
-marshal build --config <path> [--profile axpc|axmc]
-marshal start --config <path> [--profile axpc|axmc]
-marshal stop
-marshal restart
-marshal status
-marshal diagnostics
-marshal --version
-```
+The library has no `main`. The app's executable runs it, in the modes
+[App](./app.md#the-executable-and-its-modes) lists: the app, the resident agent, and
+the hidden modes the library relaunches it in, the diagnostics exporter and on Unix
+the container and VM shims, which `marshal_cli::command::run` dispatches. No
+user-facing command is dispatched there, so the executable never serves protocol
+version 1.
 
-`validate` reads the configuration file and the marker files above it, and writes
+The tests run the library's `validate`, `build`, `start` and the four clients as real
+processes through [`commands-helper`](../../cli/helpers/commands_helper.rs), a
+test-only program of the `marshal-cli` package like `fake-docker` and
+`instance-helper`, which a release never ships. It takes the arguments the commands
+took, `--config <path>` and `--profile axpc|axmc`, with the profile following the
+operating system when it is left out, and relaunches as the hidden modes, so the
+tests hand it to the exporter and the shims. The sections below give its exit codes
+as the library's.
+
+`validate`, the library's `command::load_plan` that the agent, `start` and `build`
+share, reads the configuration file and the marker files above it, and writes
 nothing. It does not check that a token file exists or who can read it; `start`
 does. Running a Host describes `build`, `start` and the four clients, and their
 exit codes. This section is about `validate`.
@@ -44,9 +61,9 @@ exit codes. This section is about `validate`.
 | 1    | The file is missing or unreadable, is not valid JSON, or breaks a rule. Every error is on standard error, in the format below and the order under Validation Rules, and nothing is printed to standard output. |
 | 2    | A usage error, including no `--profile` on an operating system that has no default.                                                                                                                            |
 
-Without `--profile`, Windows is `axpc` and macOS is `axmc`. On any other operating
-system `validate` stops with exit 2 and asks for `--profile`. `--profile` lets the
-maintainer, the tests, and CI check either host's configuration anywhere.
+Without `--profile`, the helper takes `axpc` on Windows and `axmc` on macOS. On any
+other operating system it stops with exit 2 and asks for `--profile`. The agent
+takes `axmc` on macOS and `axpc` everywhere else.
 
 A rejected configuration prints `Invalid host configuration (<path>):` and then
 one line per error, a hyphen then `<path>: <problem>`, where the path uses the notation
@@ -1668,8 +1685,8 @@ running instance refuses a resume too.
   while it is stopping, and releases the hold on entering stopped.
 - An image that cannot run jobs, which on axmc includes a missing or mismatched
   golden VM, leaves the instance stopped on a resume or a `restart`, with a reason
-  that names the image and says to run `marshal stop`, then
-  `marshal build --config <path>`, then `marshal start --config <path>`, because
+  that names the image and says to run the command-line release's `stop`, then
+  `build --config <path>`, then `start --config <path>`, because
   `build` is refused while the instance exists. When the engine does not answer the
   check, Docker or Tart, the instance answers as before and runs the core, which
   checks again once it answers and moves the instance to stopped with that reason.
@@ -2035,7 +2052,7 @@ loading, and the agent keeps what the latest load found.
   `start_all` migrates nothing: a missing `config.toml` beside `config.json` is
   `pending`, and the reason says to quit Marshal and launch it again.
 - **`build`** uses the image name of the configuration in use, on axmc
-  `actions-runner:local` when it names none, as `marshal build` does, and reads no
+  `actions-runner:local` when it names none, as the library's `build` does, and reads no
   file; with none in use it is `refused`. Start All checks the same image.
 - The last valid configuration lives in memory only. A new agent process starts from
   the file. The agent does not watch the file.
@@ -2051,8 +2068,8 @@ marked `docker build:`; a longer line is cut at 8 KiB, or before a masked value 
 marked with `...`, and the rest of it dropped, so it is logged once and no part of a
 masked value is kept, and the last five
 lines, masked and each cut at 70 characters, end the message of a failed build, so the 500-character cut
-of the message never takes the newest line. `marshal build` itself still passes the build's
-output on to its terminal.
+of the message never takes the newest line. The library's `build` passes the build's
+output on to its standard error instead.
 
 A log that cannot write or continue its file stops, and the agent goes on without
 it. It tries to open a new file again when a line arrives, at most every 30 s, and
@@ -2692,7 +2709,7 @@ Docker client at the version the golden VM's Docker Engine is at, installed from
 Docker's apt repository after its signing key matches a recorded fingerprint, and a
 `docker` group with the id `DOCKER_GROUP_ID`, so the runner can use the VM-local socket
 the VM runtime mounts. The Docker runtime's arguments are unchanged and it still mounts no
-socket, but an image of contract 1 is mismatched, so axpc needs one `marshal build`
+socket, but an image of contract 1 is mismatched, so axpc needs one image build
 after the release that carries contract 2. The golden VM's name records the contract,
 so a golden VM built for contract 1 is mismatched the same way.
 
@@ -2772,14 +2789,14 @@ The check also reads the build-time and runner-release labels. An age is
 00:00 UTC. An age under 7 days gives no warning, 7 to 20 days the first, and 21 or
 more the second:
 
-| Age        | Build age                                                                                     | Runner release age                                                                                                                                        |
-| ---------- | --------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 7 to 20    | `` the image is <d> days old and should be rebuilt with `marshal build` ``                    | `runner <v> was released <d> days ago, and a newer runner may exist`                                                                                      |
-| 21 or more | `` the image's operating-system packages are <d> days old; rebuild it with `marshal build` `` | `runner <v> was released <d> days ago, so each job's runner likely updates itself at start; update the CLI to get a newer runner, then rebuild the image` |
+| Age        | Build age                                                                | Runner release age                                                                                                                                            |
+| ---------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 7 to 20    | `the image is <d> days old and should be rebuilt`                        | `runner <v> was released <d> days ago, and a newer runner may exist`                                                                                          |
+| 21 or more | `the image's operating-system packages are <d> days old; build it again` | `runner <v> was released <d> days ago, so each job's runner likely updates itself at start; update Marshal to get a newer runner, then build the image again` |
 
 An image without a build-time label, such as one CI or a build by hand made, has an
 unknown build age, and its warning says it was not built by
-`marshal build`. `start` logs the current warnings at each run of the core, at
+Marshal. `start` logs the current warnings at each run of the core, at
 start, a resume, a `restart`, and a core restart, and not at a job launch. Neither
 the warnings nor an unknown age block a start.
 
@@ -2801,13 +2818,17 @@ when the image is missing or its labels are missing or malformed.
 
 ## Running a Host
 
+This section describes the library's foreground instance, its `build` and its version
+1 clients. Since W1's installer pull request no shipped executable runs them: the
+app's agent runs a host instead, as [The Agent](#the-agent) describes, with the
+runtime layer, the image check, the log and containment that this section shares
+with it. The tests run them through `commands-helper`, and the last command-line
+release's tag documents them as commands.
+
 `start` runs the host's pools in the foreground through the instance layer and the
 runtime layer, and `stop`, `restart`, `status`, and `diagnostics` talk to it from another terminal
 over the control channel. `build` builds the runner image, and the same clients
-talk to it. axpc runs its pools with `start` and builds its image with `build`, as
-[Windows Runner Host](./windows-runner-host.md) describes; axmc does the same with Tart
-VMs, and `build` there makes the golden VM, as [macOS Runner Host](./macos-runner-host.md)
-describes.
+talk to it. On axmc `build` makes the golden VM, which M2's Mac app is to build.
 
 | Module                   | Holds                                                                                                                |
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------- |
@@ -2837,8 +2858,8 @@ A fresh `start` does these in order:
    [The Image Contract](#the-image-contract) describes, prepares the pools
    as [Names and the Slot Loop](#names-and-the-slot-loop) describes, and then runs
    every slot's loop until a stop. When the image cannot run jobs, the instance
-   ends, and `start` exits 1, saying to run `marshal build --config <path>`, then
-   `marshal start --config <path>`. When no pool can start, `start` exits 1. On axmc
+   ends, and `start` exits 1, saying to run the command-line release's
+   `build --config <path>`, then `start --config <path>`. When no pool can start, `start` exits 1. On axmc
    the instance also holds off idle sleep and watches the Mac's sleep and primary
    network, as [Signal Source](#signal-source) describes, and a slot clones no VM
    until a primary network is recorded.
@@ -3539,7 +3560,8 @@ report gave no timing.
 
 ### What the Command Tests Cover
 
-`start_command.rs` runs `start` and its clients as real processes on a test root,
+`start_command.rs` runs `start` and its clients as real processes, through
+`commands-helper`, on a test root,
 with the `fake-docker` helper named by `MARSHAL_TEST_DOCKER` and the loopback
 GitHub stub: the exit codes, resume, `status`'s fields, a restart that judges the file
 at the path `start` was given as `validate` does, a `stop` that gets its answer
@@ -3752,10 +3774,10 @@ Linux Docker daemon, and each test fails rather than skips when one is missing.
 One more step runs on Linux and macOS, `tests/ci/other-user-lock.sh`, and one on
 Windows, `tests/ci/control-pipe-security.ps1` under PowerShell 7; What the Instance
 Tests Cover says what each shows. The `fake-docker`, `fake-tart`, `fake-softnet`,
-`fake-macos` and `instance-helper` helpers are
-further binaries in the package (`cli/helpers/`, `test = false`) that only the tests
-and those steps run, and `default-run = "marshal"` keeps `cargo run` on the CLI.
-`instance-helper` does nothing in a release build. A release MUST NOT ship any
+`fake-macos`, `instance-helper` and `commands-helper` helpers are the package's only
+binaries (`cli/helpers/`, `test = false`), which only the tests and those steps run;
+the package builds no `marshal` binary. `instance-helper` does nothing in a release
+build, and `commands-helper` runs in both profiles, for the release-profile tests. A release MUST NOT ship any
 helper; [Releases](#releases) says how the release build keeps them out. Tests find fixtures relative to the
 crate's manifest directory, and the checkout-rule tests build a temporary directory
 with the marker files at test time. The advisory check, `cargo deny --locked check advisories`,
@@ -3775,7 +3797,8 @@ the gates that cover it, so a change to the library knows what the app relies on
 - The workspace depends on the `marshal-cli` library by path, through the crate's
   public items only, so the app's lockfile, `cargo deny` run, licence notices and
   advisory check cover everything its executable links, the library's crates
-  included. It never runs the `marshal` binary.
+  included. No `marshal` binary is built: the app's executable runs the library's
+  hidden modes itself.
 - No file under `cli/src` moves for the app. The library's additions for it are
   small exports: the stop reason codes as `agent::StopReason`, the handshake
   timeout `agent::HANDSHAKE_TIMEOUT`, the registration error's marker of a token
@@ -3951,7 +3974,7 @@ the MSVC tools the build links with. It fails unless `dumpbin` listed the app's
 dependencies, `KERNEL32.dll` among them, so a run that read nothing cannot pass.
 
 A release never ships a helper: `fake-docker`, `fake-tart`, `fake-softnet`,
-`fake-macos` or `instance-helper`. The release-profile tests build them into
+`fake-macos`, `instance-helper` or `commands-helper`. The release-profile tests build them into
 `cli/target/release`, and the leg copies only `app/target/release/marshal-app.exe`
 out, the leg's artifact holds that file and its MSI, and the assemble job, the attest
 job and the release gate refuse a set of files that holds anything else.
@@ -4734,9 +4757,9 @@ procedural-macro crate needs the maintainer's review; see
 
 ## Renaming the CLI
 
-The CLI's name is `marshal`, and it is fixed. It was provisionally `runners`, the
-repository's name, until it was renamed before any release. The per-host names
-derive from it:
+The name `marshal` is fixed. It was provisionally `runners`, the repository's name,
+until it was renamed before any release. The command-line binary that carried it is
+no longer built, but the per-host names derive from it, and the agent keeps them:
 
 - the instance lock, `\\.\pipe\marshal-instance` on Windows and
   `/Users/Shared/.marshal-instance.lock` on macOS;
@@ -4745,10 +4768,13 @@ derive from it:
 - the log directory and file names, `%LOCALAPPDATA%\marshal\logs\` and
   `~/Library/Logs/marshal/`, with the `marshal-` prefix.
 
-A later rename would be a breaking change for every installed host. The renamed
-binary would not see a running instance's lock, so a second instance could start
-beside it; its clients could not reach that instance's control channel; and its
-logs would land in a new directory, away from the earlier ones.
+A rename would be a breaking change for every host that runs the last command-line
+release or the app. An agent under the new names would not see a running instance's
+lock, so a second one could start beside it; the app could not reach that instance's
+channel; and the logs would land in a new directory, away from the earlier ones.
+
+The app's executable is `marshal-app.exe`, a name of its own, so Task Manager tells it
+from a leftover `marshal.exe`; the names above do not derive from it.
 
 The `runners` names still in the repository are the repository's name, not the
 binary's: the image labels `com.github.axross.runners.*`, the container labels

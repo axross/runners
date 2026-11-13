@@ -8,21 +8,20 @@ hosts on WSL 2.
 
 The repository holds the entry files for agent sessions, the agent configuration
 for Claude Code and Amp, the project documentation, the pinned lint toolchain, and
-the first runner material: one runner image and a Rust command line tool, the CLI,
-`marshal`, that runs it for several repositories from a Windows machine with Docker
-Desktop, and a Windows notification-area app that runs the same agent, which each
-release ships with a per-user MSI.
+the first runner material: one runner image, the Rust library `marshal-cli` that runs
+it for several repositories, and Marshal, a Windows notification-area app whose
+resident agent runs that library from a Windows machine with Docker Desktop, which
+each release ships with a per-user MSI. There is no command line: the `marshal`
+command line ended with the
+[last command-line release](./docs/operations/cli.md#the-last-command-line-release).
 [Windows Runner Host](./docs/operations/windows-runner-host.md) owns the operator
-procedure and states what has and has not been verified on a real host. The CLI
-checks a host configuration, its `build` command builds the runner image, its
-`start`, `stop`, `restart`, and `status` commands run a host's pools, and its
-`diagnostics` command exports what a diagnostics-enabled pool left. The axpc host
-runs its pools with the
-[last command-line release](./docs/operations/cli.md#the-last-command-line-release)'s `marshal`. On the axmc host, an Apple silicon Mac,
-`marshal` runs each Linux pool's jobs in a fresh Tart Ubuntu VM that is cloned from
-a golden VM, on Softnet, with no Docker Desktop, and `marshal build --profile axmc`
-makes the golden VM.
-[macOS Runner Host](./docs/operations/macos-runner-host.md) owns that procedure and
+procedure and states what has and has not been verified on a real host. The
+library checks a host configuration, builds the runner image, runs a host's pools,
+and exports what a diagnostics-enabled pool left. On the axmc host, an Apple silicon
+Mac, the library runs each Linux pool's jobs in a fresh Tart Ubuntu VM that is cloned
+from a golden VM, on Softnet, with no Docker Desktop, and builds the golden VM; axmc
+has no supported way to run it until M2's Mac app.
+[macOS Runner Host](./docs/operations/macos-runner-host.md) owns that runtime and
 states what has and has not been run on the Mac. The agent-host configuration is not
 here yet. Layout:
 
@@ -30,7 +29,7 @@ here yet. Layout:
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | `images/actions-runner/`        | The runner image: GitHub's runner image plus build dependencies, pinned by digest                                                                               | Present |
 | `hosts/windows-docker-desktop/` | An example configuration for the axpc host profile, and the reference for its fields                                                                            | Present |
-| `cli/`                          | The CLI: `validate` checks a host configuration, `build` builds the runner image, and `start`, `stop`, `restart`, `status`, and `diagnostics` run a host        | Present |
+| `cli/`                          | The `marshal-cli` library: reading a host configuration, building the runner image, running a host's pools, and the resident agent                              | Present |
 | `app/`                          | The Windows app: a notification-area icon and main window for the resident agent, which its executable also runs; [App](./docs/operations/app.md) owns it       | Present |
 | `release/`                      | The pinned semantic-release tooling that `release.yaml` runs to tag and publish the app's releases                                                              | Present |
 | `hosts/macos/`                  | An example configuration for the macOS host profile, `axmc`, whose Linux pools run in Tart VMs; see [macOS Runner Host](./docs/operations/macos-runner-host.md) | Present |

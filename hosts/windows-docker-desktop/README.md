@@ -7,9 +7,9 @@ filled with single-job containers built from
 [`images/actions-runner/`](../../images/actions-runner/README.md).
 
 [Windows Runner Host](../../docs/operations/windows-runner-host.md) owns the
-operator procedure for the axpc host: prerequisites, installing `marshal`, tokens,
+operator procedure for the axpc host: prerequisites, installing Marshal, tokens,
 health checks, recovery, and rolling back. [CLI](../../docs/operations/cli.md) owns
-what each `marshal` command does and what `marshal validate` accepts. This
+how a configuration is read and the rules it must meet. This
 directory holds `runner-host.example.json`, an example host configuration with two
 repositories using obviously fake names; `config.example.toml`, the same
 configuration as the agent reads it; and this reference for every field of the
@@ -17,12 +17,13 @@ configuration.
 
 ## Host configuration
 
-A JSON file kept outside the repository; every `marshal` command that reads it takes
-its path as `--config`. Copy `runner-host.example.json` and replace every value.
+The JSON form, `config.json`, which Marshal migrates to `config.toml` at its first
+start, and which the last command-line release read from the path its `--config`
+named. Each field below has a TOML key in `config.toml`, as the next section says.
 
 | Field                                 | Meaning                                                                                                                                                   |
 | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `imageName`                           | The local image tag every entry uses; `marshal build` builds it from the image definition embedded in the binary                                          |
+| `imageName`                           | The local image tag every entry uses; Marshal's Build image builds it from the image definition embedded in the app                                       |
 | `repositories[].owner`, `repository`  | The target repository. Multiple entries can form separate execution pools                                                                                 |
 | `repositories[].slots`                | How many jobs run at once in this entry's pool, 1 to 16; set 1 for a dedicated serialized pool                                                            |
 | `repositories[].tokenPath`            | An absolute Windows path (drive letter or UNC) to the file holding this repository's token, re-read on every registration                                 |
@@ -60,13 +61,12 @@ and the migration are in [CLI](../../docs/operations/cli.md#the-toml-configurati
 
 ## Checking a configuration
 
-```powershell
-marshal validate --config C:\path\to\runner-host.json --profile axpc
-```
-
-The command prints each repository's registration labels, name, container name
-pattern, CPU and memory limits, and volume names, plus the global image, without
-calling Docker or GitHub, and exits 1 on an invalid configuration.
+Marshal checks `config.toml` at its start and at every Start all runners, without
+calling Docker or GitHub, and its window names every problem, as
+[The Host Configuration](../../docs/operations/windows-runner-host.md#the-host-configuration)
+describes. The library's plan of an accepted file holds each repository's
+registration labels, name, container name pattern, CPU and memory limits, and volume
+names, plus the global image.
 Quota and planned affinity cardinality are separate; actual CPU IDs require
 runtime discovery. There is no CPU-ID, workload-role, or affinity opt-in field.
 Every ordinary and diagnostic job has affinity, distributed across measured
@@ -75,7 +75,7 @@ not change. Affinity reserves nothing and guarantees neither compiler worker
 counts nor an OOM remedy. Allocation, enforcement, and separately authorized
 Desktop/WSL verification are in
 [Windows Runner Host](../../docs/operations/windows-runner-host.md#automatic-cpu-affinity).
-It also prints the two diagnostic opt-ins, not the private evidence path.
+It also holds the two diagnostic opt-ins, not the private evidence path.
 Validation checks types and normalized Windows checkout exclusion without opening
 the sink. Runtime privacy, access or quota failures warn and do not prevent a
 runner starting. A diagnostic-marked stale container after disabling is different:

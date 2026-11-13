@@ -896,19 +896,17 @@ later host:
   GitHub Actions secret. A token that covers
   several repositories, or a classic token, would let one leak register runners
   for all of them, and a secret that can register runners for the automation that
-  reads it is not a boundary. The token is read from a file on the host on every
-  registration, and the file is restricted to the host user. On macOS the CLI
-  refuses a token file that is not a regular file owned by the current user with
-  mode `0600`, and skips its pool with a warning. On Windows the CLI does not check
-  the token file's access control list, because no safe call reads it, so the
-  restriction rests on the operator: the explicit step under Restricting a Token
-  File in [Windows Runner Host](../operations/windows-runner-host.md#restricting-a-token-file)
-  restricts each file at install and at every rotation. That step's effect is not
-  yet verified on axpc ([#56](https://github.com/axross/runners/issues/56)): its
-  `icacls` evidence was not collected there.
-- Multiple execution pools for one repository MUST use the same token file;
-  entries for different repositories MUST NOT share it. Extra pools do not expand
-  the token's repository authority.
+  reads it is not a boundary. The agent reads the token from the operating system's
+  store on every registration, one entry per repository, as
+  [The Agent Keeps Tokens in the Operating System's Store](#the-agent-keeps-tokens-in-the-operating-systems-store)
+  records. Until W1's installer pull request the command line read it from a file
+  restricted to the host user; those token-file rules, and the command line that
+  applied them, are at the
+  [last command-line release](../operations/cli.md#the-last-command-line-release)'s
+  tag, and no code path of the app reads a token file.
+- Multiple execution pools for one repository MUST use the same token, the
+  repository's one store entry; pools of different repositories never share one.
+  Extra pools do not expand the token's repository authority.
 - A registration is made with the entry's own token and carries `self-hosted`, the
   host's platform labels, and the entry's `labels`, so a job's runner is
   identifiable. An axpc pool carries `self-hosted`, `linux`, and `x64`, and its
@@ -1051,7 +1049,10 @@ built: its names, modes, and checks.
   roots, for the tests; a release build always uses the host's fixed locations,
   and a CI step checks in the release profile that it ignores the request. The
   `instance-helper` binary that the tests and CI run does nothing in a release
-  build, including its mode that runs the agent.
+  build, including its mode that runs the agent. The `commands-helper` binary,
+  which runs the library's foreground `start`, `build` and clients for the tests,
+  runs in both profiles so the release-profile tests can show the library ignoring
+  those moves; it moves nothing itself, and a release never ships it.
 
 ## The Agent Keeps Tokens in the Operating System's Store
 

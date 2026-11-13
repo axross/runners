@@ -24,8 +24,8 @@ in place of the command line. W1, [#73](https://github.com/axross/runners/issues
 is the child that owns the app. No host has installed it yet: axpc still runs its
 pools with the [last command-line release](./cli.md#the-last-command-line-release),
 so this document describes an app that CI builds and tests and the release ships,
-not one a host has run. The removal of the command line's binary from `cli/` is the
-rest of that pull request.
+not one a host has run. The same pull request removed the command line: no `marshal`
+binary is built on any operating system, and the app is the only way to run a host.
 
 | Part                                                 | State                                                                                       |
 | ---------------------------------------------------- | ------------------------------------------------------------------------------------------- |
@@ -34,7 +34,7 @@ rest of that pull request.
 | The token store                                      | The Windows Credential Manager, entered in the main window                                  |
 | The installer, the release, the install layout below | Built and tested by the release build on every pull request; see [CLI](./cli.md#installers) |
 | Updates                                              | The app's side, with the committed public key; the feed comes with W4's last pull request   |
-| The command line's removal                           | Planned for W1's installer pull request                                                     |
+| The command line's removal                           | Done in W1's installer pull request; the last command-line release keeps it                 |
 | Verification on axpc                                 | Not done; see [Verification Status](#verification-status)                                   |
 
 ## The Executable and Its Modes
@@ -63,8 +63,8 @@ which children inherit the CLI's standard streams, and what only the axpc run sh
 including whether a window still appears. Only the app mode takes Tauri's
 single-instance lock, so a second launch brings the first one's window forward and
 starts nothing. The agent mode is kept to one by the machine-wide lock the library's
-agent takes, as `start` is, so the app and the command line never run the pools
-together.
+agent takes, as the library's `start` is, so the app and the last command-line
+release never run the pools together.
 
 A `fake-docker` binary is built beside `marshal-app` from the CLI's
 [`cli/helpers/fake_docker.rs`](../../cli/helpers/fake_docker.rs), so the tests that
@@ -620,9 +620,7 @@ does not take a build for a host that has run it:
   build only in debug, for the test variables above.
 - **Not shown by any check:** that no console window appears from the agent, the
   exporter or their `docker` clients (the flags are asserted at the command builders,
-  and the window is not observable without `unsafe`), that a terminal `marshal build`
-  on Windows still streams `docker build`'s output with `CREATE_NO_WINDOW`, which is
-  checked on axpc, WebView2 itself, a Windows contrast
+  and the window is not observable without `unsafe`), WebView2 itself, a Windows contrast
   theme, the icon on a real taskbar and its weight at 16 px, the menu opening from the
   keyboard and where its focus goes, the icon following a mode or a scaling change
   within 2 s, a token round trip through the Credential Manager to a registration,

@@ -70,13 +70,15 @@ previous one exits.
 
 **Supervisor** - the host-side process that keeps each slot of every **Execution
 Pool** filled: it requests a **JIT Config** with the target repository's token,
-starts a runner container, waits for it to exit, and repeats. On axpc it is the
-**CLI**'s `start`.
+starts a runner container, waits for it to exit, and repeats. It is the
+**Resident Agent**, and in the command-line releases it was the **CLI**'s `start`.
 
-**CLI** - this project's Rust command line tool, under `cli/`. `validate` checks a
-**Host Configuration**; `build` builds its **Runner Image** from the definition
-the binary embeds; `start` runs a host's pools in the foreground as the
-**Supervisor**, and `stop`, `restart`, `status`, and `diagnostics` talk to it.
+**CLI** - the `marshal-cli` library under `cli/`, named for the `marshal` command
+line it was built as until W1's installer pull request; no command line is built
+now. Its `validate` reads a **Host Configuration**, its `build` builds the
+**Runner Image** from the definition the library embeds, its `start` runs a host's
+pools in the foreground as the **Supervisor**, and its **Resident Agent** does both
+for the **Marshal App**.
 
 **Marshal Release** - a `v<version>` tag on main and the GitHub release that
 carries its files. Since W1's installer pull request they are the Windows app's

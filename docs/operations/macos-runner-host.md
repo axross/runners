@@ -1,29 +1,37 @@
 # macOS Runner Host
 
-How to run ephemeral Linux GitHub Actions runners on the maintainer's Apple silicon
-Mac, the `axmc` host, with the CLI, `marshal`: each job runs in a fresh Tart Ubuntu
-VM that is cloned from a golden VM, on Softnet, with no Docker Desktop. It covers
-installing Tart and Softnet, setting up Softnet's privilege, the signed-in session
-the host needs, the golden VM and how `build` makes it, running and stopping the
-pools, what a sleep, a wake or a network change does, and the verification status. It
-is the operator's side of [#74](https://github.com/axross/runners/issues/74). Its
-titles for installing Tart and Softnet, setting up Softnet and the signed-in session
-are fixed, because `marshal`'s messages name them; a title changes only with the code
-that names it. [CLI](./cli.md) owns what each `marshal`
-command does and how the runtime works, and the trust rules the host is reviewed
-against are in [Security](../conventions/security.md). The Windows equivalent is
-[Windows Runner Host](./windows-runner-host.md).
+How ephemeral Linux GitHub Actions runners run on the maintainer's Apple silicon Mac,
+the `axmc` host, with the `marshal-cli` library's VM runtime: each job runs in a fresh
+Tart Ubuntu VM that is cloned from a golden VM, on Softnet, with no Docker Desktop. It
+covers installing Tart and Softnet, setting up Softnet's privilege, the signed-in
+session the host needs, the golden VM and how `build` makes it, running and stopping
+the pools, what a sleep, a wake or a network change does, and the verification
+status. It is the operator's side of [#74](https://github.com/axross/runners/issues/74).
+Its titles for installing Tart and Softnet, setting up Softnet and the signed-in
+session are fixed, because the library's messages name them; a title changes only
+with the code that names it. [CLI](./cli.md) owns how the runtime works, and the trust
+rules the host is reviewed against are in [Security](../conventions/security.md). The
+Windows equivalent is [Windows Runner Host](./windows-runner-host.md).
 
-`marshal start --profile axmc` runs the `os: "linux"` pools of the configuration.
-It skips each `os: "macos"` pool with a warning, because macOS VM pools are not
-supported yet, and exits 1 when every pool is skipped. No procedure below has been
-run on a Mac yet; see [Verification Status](#verification-status).
+**No supported way to run axmc yet.** Since W1's installer pull request no `marshal`
+command line is built and no release carries a macOS file, so axmc has no supported
+way to run its runners until M2's Mac app; the maintainer accepted that gap. A Mac
+that runs the [last command-line release](./cli.md#the-last-command-line-release)
+keeps it, and that release's tag holds this document's procedures with their
+commands: installing `marshal`, `build`, `start` and its clients `status`, `restart`,
+`stop` and `diagnostics`. Below, `start` and `build` name the library's entry points
+of those names, which that release ran as commands and which M2's Mac app is to run.
+
+`start` on the axmc profile runs the `os: "linux"` pools of the configuration. It
+skips each `os: "macos"` pool with a warning, because macOS VM pools are not supported
+yet, and refuses when every pool is skipped. No procedure below has been run on a Mac
+yet; see [Verification Status](#verification-status).
 
 ## Installing Tart and Softnet
 
-`marshal` installs, bundles and repairs neither program. It calls `tart` as an
+The runtime installs, bundles and repairs neither program. It calls `tart` as an
 external program, and Tart runs the `softnet` that comes first on the `PATH` it
-gets, which is the `PATH` of the terminal where `marshal` runs. Both programs need
+gets, which is the `PATH` of the process that runs the runtime. Both programs need
 an Apple silicon Mac, and Softnet 0.25.0 needs macOS 26.
 
 The tested versions are recorded in the CLI (`macos::version`):
@@ -45,7 +53,7 @@ tart --version
 softnet --version
 ```
 
-`marshal` reads both versions with `--version`, each within 5 s, at `start` and
+The runtime reads both versions with `--version`, each within 5 s, at `start` and
 `build` and before each VM boot, and each within 2 s, together, at `restart` and when
 `start` resumes a stopped instance, where a client waits for the answer:
 
@@ -59,18 +67,18 @@ softnet --version
 
 Homebrew installs the current release of each program. This document does not yet
 record a way to hold a version back, so when Homebrew's current version is another
-minor version than the tested one, `marshal` refuses it until the tested versions
+minor version than the tested one, the runtime refuses it until the tested versions
 are updated in the CLI.
 
 ## Setting Up Softnet
 
 Softnet filters a VM's network, and it needs root privilege to do so. Its privilege
-is a SUID bit on its binary, with no `sudoers` rule, and `marshal` never sets it: it
+is a SUID bit on its binary, with no `sudoers` rule, and the runtime never sets it: it
 only checks it, before every VM boot. Homebrew never sets the bit, and a
 `brew upgrade` installs a new binary without it, so repeat this setup after each
 upgrade of Softnet or Tart.
 
-`marshal` finds `softnet` as Tart does, as the first match on `PATH`, and follows
+The runtime finds `softnet` as Tart does, as the first match on `PATH`, and follows
 its links. Homebrew's file in `/opt/homebrew/bin` is a link to a versioned file, and
 the setup applies to that file, not to the link. The file must be a regular file,
 owned by root, with the SUID bit set and no write permission for its group or others:
@@ -82,7 +90,7 @@ sudo chmod u+s,go-w "$softnet_file"
 ls -l "$softnet_file"
 ```
 
-The listing starts with `-rwsr-xr-x` and names `root` as the owner. `marshal`
+The listing starts with `-rwsr-xr-x` and names `root` as the owner. The runtime
 refuses with a message that names the failing requirement when the file is a
 directory or another kind of file, is owned by another user, lacks the SUID bit, or
 can be written by its group or others. It also refuses a `softnet` that does not
@@ -112,19 +120,19 @@ reasoning, and the accepted surface that remains.
 
 ## The Signed-In Session
 
-`marshal start` and `marshal build` on the Mac are supported from a terminal in the
-signed-in graphical session of the user who owns the runners. Locking the screen
+`start` and `build` on the Mac need the signed-in graphical session of the user who
+owns the runners; the last command-line release ran them from a terminal in it. Locking the screen
 afterwards does not stop the runners. SSH and headless use are out of scope.
 
 Since macOS 15, Apple's Virtualization framework starts a VM only while the user's
 login keychain is unlocked. Without it, Tart's documentation lists errors such as
 `SecKeyCreateRandomKey_ios failed`, `Failed to generate keypair` and
-`Interaction is not allowed with the Security Server`. A boot failure that `marshal`
+`Interaction is not allowed with the Security Server`. A boot failure that the runtime
 logs, whether `tart run` ended or the guest agent did not answer in 120 s, names this
 section, since a locked login keychain is the documented cause. The slot then
 deletes the failed VM and tries again on its backoff, so unlocking the keychain is
 enough. FileVault rules out automatic login, so after a restart, sign in at the
-screen and then run `marshal start` again.
+screen and then start the runners again.
 
 ## The Golden VM Contract
 
@@ -141,23 +149,23 @@ defines it, in `runtime::tart`, `golden` and `build::golden`.
   - Only `build` creates golden and build VMs and deletes golden VMs, and only `build`
     and a build VM's own shim delete a build VM. Cleanup at `start` matches only the
     job VMs of configured pools by this exact form, so it never matches a golden VM,
-    a build VM, a VM of a pool that is no longer configured, or a VM `marshal` does
+    a build VM, a VM of a pool that is no longer configured, or a VM the runtime does
     not own.
 - **The golden VM version** is a number in the CLI (`runtime::tart::names`),
   starting at 1. It goes up whenever the base digest, the provisioning steps, the
   launcher or the Docker Engine versions change. It is 2 with the `docker` group's
   fixed id, and the golden VM's image contract version is 2 with the runner image's
   Docker client, so a golden VM built before is refused as mismatched until
-  `marshal build` runs again.
+  the golden VM is built again.
 - **Reading it.** The golden VM's name records its golden VM version, its image
   contract version, its runner version and its build time, so `start`, `restart`,
   each job launch and `status` read them from `tart list` without booting it. The
   newest golden VM by build time is the one used. It must carry the CLI's golden VM
-  version and image contract version, or `marshal` refuses it as a mismatched image
+  version and image contract version, or the runtime refuses it as a mismatched image
   is refused, naming the golden VM; a runner version that differs is not a mismatch.
   A missing golden VM is refused the same way, and the build time drives the
   freshness warnings: a golden VM 7 to 20 days old, or 21 days or more, asks for a
-  rebuild with `marshal build`.
+  rebuild.
 - **The base image** is `ghcr.io/cirruslabs/ubuntu:24.04`, pinned by the digest of its
   manifest (`golden::pins::BASE_REFERENCE`): arm64 Ubuntu 24.04 with a 20 GB disk and
   the guest agent, and no Docker. The golden VM keeps that disk size, so a pool's
@@ -228,21 +236,22 @@ defines it, in `runtime::tart`, `golden` and `build::golden`.
 
 ## Building the Golden VM
 
-`marshal build --profile axmc --config <path>` builds the golden VM and replaces the
-previous one only when the new one is complete. Run it after installing Tart and
-Softnet, after any change of the CLI that raises the golden VM version or the image
-contract version, when `marshal` reports a missing or mismatched golden VM, and when
-the freshness warnings ask for it.
+`build` on the axmc profile builds the golden VM and replaces the previous one only
+when the new one is complete. It is needed after installing Tart and Softnet, after
+any change of the library that raises the golden VM version or the image contract
+version, when the runtime reports a missing or mismatched golden VM, and when the
+freshness warnings ask for it. The last command-line release ran it as
+`marshal build --profile axmc`, at its tag.
 
 **Before you start**
 
-- `marshal` must not be running, and no other `build`: the build takes the same
-  instance lock as `start`, and exits 1 saying so otherwise.
+- No instance and no other `build` may run: the build takes the same instance lock
+  as `start`, and refuses saying so otherwise.
 - Tart and Softnet must be installed and set up as
   [Installing Tart and Softnet](#installing-tart-and-softnet) and
   [Setting Up Softnet](#setting-up-softnet) say. The build checks both before it
   creates any VM, and exits 1 naming the section when one is missing or wrong.
-- Sign in at the Mac's screen and run `marshal` from a terminal in that session, as
+- Sign in at the Mac's screen and run the build in that session, as
   [The Signed-In Session](#the-signed-in-session) says: the build boots a VM too.
 - **Keep the Mac awake for the whole build.** `build` holds no keep-awake and
   ignores the sleep and network signals that stop a running instance. A Mac that goes
@@ -268,7 +277,7 @@ the freshness warnings ask for it.
    installs Docker Engine at the pinned versions, installs the launcher, and disables the
    SSH login. A key whose fingerprint is not the recorded one fails the build before
    anything is installed from Docker.
-6. Builds the runner image inside the VM, from the definition embedded in `marshal`,
+6. Builds the runner image inside the VM, from the definition embedded in the library,
    with the arguments `build` gives it on axpc, under the configured `imageName`, and
    checks its image contract label. The image build runs `sudo -n docker`, because
    the `docker` group reaches guest-agent commands only after the agent restarts.
@@ -283,21 +292,20 @@ the freshness warnings ask for it.
    failure here is only a warning; the next build tries again, and the newest golden
    VM is the one that is used.
 
-`build` prints its steps to the terminal, and the image build's own output line by
-line, masked as a job's output is.
+`build` writes its steps to its standard error, and the image build's own output
+line by line, masked as a job's output is.
 
-**If it fails or is interrupted.** Ctrl+C, `marshal stop` from another terminal, and
-a failure at any step before the rename delete the build VM within the 30 s stop
+**If it fails or is interrupted.** A stop, by a signal or a client's `stop`, and a
+failure at any step before the rename delete the build VM within the 30 s stop
 sequence and leave the previous golden VM as it was, so `start` is not affected.
-After the rename the new golden VM stays, and a stop only skips the clean-up in step 8. If `marshal` is killed or crashes mid-build, a helper process stops and deletes the
-build VM within 15 s; if that fails too, the next `marshal build` deletes it by its
+After the rename the new golden VM stays, and a stop only skips the clean-up in step 8. If the build's process is killed or crashes mid-build, a helper process stops and deletes the
+build VM within 15 s; if that fails too, the next `build` deletes it by its
 name. `tart list` shows whatever is left: `marshal-build-linux-<time>` is a build VM
 that is safe to delete with `tart delete`, and `marshal-golden-linux-...` is a golden
 VM.
 
-**Which command line.** `marshal build --profile axmc` is only for macOS; on Windows
-it exits 1 saying that the axmc profile runs only on macOS. `--profile` defaults to
-`axmc` on macOS.
+**Which host.** `build` on the axmc profile is only for macOS; on Windows it refuses,
+saying that the axmc profile runs only on macOS.
 
 ## Running the Host
 
@@ -305,7 +313,8 @@ it exits 1 saying that the axmc profile runs only on macOS. `--profile` defaults
 
 [`hosts/macos/runner-host.example.json`](../../hosts/macos/runner-host.example.json)
 is the configuration to copy. It holds placeholders only: replace the owners,
-repositories, names and token paths, and keep the files outside any checkout.
+repositories, names and token paths, and keep the files outside any checkout. It is
+the JSON form the last command-line release reads.
 [`hosts/macos/config.example.toml`](../../hosts/macos/config.example.toml) is the
 same configuration in the TOML form the resident agent reads from
 `~/Library/Application Support/marshal/config.toml`, as
@@ -320,7 +329,8 @@ entry is a pool of `slots` runners for one repository:
   with `runs-on: [axmc, linux]`.
 - `imageName`, when present, names the runner image inside the golden VM; without it
   the image is `actions-runner:local`.
-- `tokenPath` names a file that holds one repository's token. Create the token as
+- `tokenPath` names a file that holds one repository's token, for the command line;
+  the TOML form has none, and the agent has no token store on macOS yet. Create the token as
   [Windows Runner Host](./windows-runner-host.md#the-fine-grained-token) describes,
   one fine-grained token per repository with the Administration permission. On macOS
   the file must be a regular file owned by you with mode `0600`: `chmod 600 <file>`.
@@ -331,7 +341,8 @@ entry is a pool of `slots` runners for one repository:
   [CLI](./cli.md#profiles) has every rule, its message, and the migration from the
   earlier rules.
 
-`marshal validate --config <path> --profile axmc` checks a file on any machine.
+The last command-line release's `validate --profile axmc` checks a JSON file on any
+machine.
 
 The VMs run beside the macOS system, and Apple's licence allows two macOS guests at
 once. `validate` limits macOS pools to two VMs and does not count Linux VMs. Whether
@@ -347,45 +358,32 @@ place of `axmc` when `labels` replaces it. A job that names neither, such as one
 names only `self-hosted`, can land on axmc. Search each repository's workflows for
 `runs-on` and check every hit.
 
-Build the golden VM once, then start the pools in a terminal of the signed-in session,
-and leave it open:
-
-```bash
-marshal build --config /path/to/runner-host.json
-marshal start --config /path/to/runner-host.json
-```
-
-`--profile axmc` is the default on macOS. `marshal` itself comes from the
-[last command-line release](./cli.md#the-last-command-line-release), installed with
-the macOS procedure at that release's tag; later releases carry no macOS file. `start` validates the
-configuration, opens its log under `~/Library/Logs/marshal/`, checks Tart and
-Softnet, checks the golden VM, prepares every Linux pool, and runs every slot until it
-is stopped. It also holds off idle sleep and watches for a sleep or a network change;
-see [Sleep, Wake, and Network Changes](#sleep-wake-and-network-changes). It exits 1
-when the configuration is invalid, when a prerequisite refuses, when the golden VM is
+With the last command-line release, the golden VM is built once and the pools are
+started from a terminal of the signed-in session, as that release's tag gives with
+the commands. `start` validates the configuration, opens its log under
+`~/Library/Logs/marshal/`, checks Tart and Softnet, checks the golden VM, prepares
+every Linux pool, and runs every slot until it is stopped. It also holds off idle
+sleep and watches for a sleep or a network change; see
+[Sleep, Wake, and Network Changes](#sleep-wake-and-network-changes). It refuses when
+the configuration is invalid, when a prerequisite refuses, when the golden VM is
 missing or mismatched, or when no pool can start. Nothing starts it at sign-in.
 
-From another terminal, as the same user:
-
-| Command               | What it does                                                                                                                          |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `marshal status`      | Prints the state, each pool and slot, the golden VM and its age, any warning, and a stop reason                                       |
-| `marshal restart`     | Stops every job and deletes its VM, reads the configuration again, checks Tart, Softnet and the golden VM, and runs the pools         |
-| `marshal stop`        | Stops the instance within 30 s, ends every VM, and exits 0 once the instance has ended                                                |
-| `marshal diagnostics` | Finalises the diagnostic VMs the instance still retains; a diagnostics-enabled pool exports a job's evidence before its VM is deleted |
-
-[CLI](./cli.md#running-a-host) gives each command's fields, waits and exit codes. In
-`marshal status`, a slot is `registering` while its VM is cloned, booted and probed,
+Its clients `status`, `restart`, `stop` and `diagnostics` report the state, each pool
+and slot, the golden VM and its age, any warning and a stop reason; stop every job,
+delete its VM and read the configuration again; stop the instance within 30 s and end
+every VM; and finalise the diagnostic VMs still retained.
+[CLI](./cli.md#running-a-host) gives each one's fields and waits. In the status, a
+slot is `registering` while its VM is cloned, booted and probed,
 `running container <name>` while it holds a job, `backing off` after a failure, and
 `held: <reason>` when a prerequisite refuses its next boot. A slot that is held boots
 nothing and tries again on its backoff, while jobs on other slots finish; fix the
 cause, such as Softnet's SUID bit after a `brew upgrade`, and the slot boots again. A
 pool of `os: "macos"` shows `skipped: macOS VM pools are not supported yet`.
 
-Stop the host with `marshal stop`, or with Ctrl+C in the `start` terminal, or by
-closing it; each runs the same stop sequence, which stops the job containers and
+A client's `stop`, a signal, or closing the terminal of `start` runs the same stop
+sequence, which stops the job containers and
 deletes every VM within 30 s. A second Ctrl+C skips the grace period: a diagnostic VM
-is then deleted without its export, and `start` exits 1. When `start` is killed hard,
+is then deleted without its export. When `start` is killed hard,
 each VM's shim deletes its VM within 15 s, and the next `start` takes the instance
 lock at once and deletes whatever is left. One instance runs per machine: a `start`
 while one runs is refused, and a `start` with the same configuration resumes a stopped
@@ -396,38 +394,36 @@ instance.
 - **GitHub:** each repository's **Settings, Actions, Runners** lists the sum of its
   pools' `slots` runners, **Idle** while no job is queued, with the labels
   `self-hosted`, `linux`, `ARM64` and the routing label.
-- **The instance:** `marshal status` shows `state: running`, a `pool:` line for every
+- **The instance:** the status shows `state: running`, a `pool:` line for every
   entry, `image-contract:` as the CLI's number rather than `mismatch` or `missing`, and
   `golden-vm:` with the golden VM's name. A `warning:` line is a freshness warning, a
   newer patch of Tart or Softnet, or a keep-awake hold that is lost.
 - **The machine:** `tart list --source local` shows the golden VM and, for each slot,
   one running `marshal-job-<pool>-<slot>-<time>` VM, which is an idle runner or one
-  with a job. A VM left after `marshal stop` is a leftover.
+  with a job. A VM left after a stop is a leftover.
 - **The log:** `~/Library/Logs/marshal/marshal-<time>-<pid>.log` keeps the newest ten
   runs. `Using Tart <v> and Softnet <v>.` records the versions in use.
 
 ## Sleep, Wake, and Network Changes
 
-While runners run, `marshal` holds off the Mac's idle sleep. A sleep and its wake, or
+While runners run, the runtime holds off the Mac's idle sleep. A sleep and its wake, or
 a change of the primary network, stops every runner, deletes every VM and moves the
-instance to stopped, with the reason in `marshal status` and in the terminal where
-`marshal start` runs. The runners are never left to carry on across a sleep or onto
+instance to stopped, with the reason in its status and its log. The runners are never left to carry on across a sleep or onto
 another network, because a VM that lived through either has a clock and a network
-that no longer match its job. Only `marshal start` or `marshal restart` runs them
-again. This section applies to `marshal start --profile axmc`; the Windows host is
-not affected.
+that no longer match its job. Only a new start or a `restart` runs them again. This
+section applies to the axmc profile; the Windows host is not affected.
 
 ### Keeping the Mac Awake
 
 - While the instance is running or resuming, and while it is stopping until the last
-  VM is deleted, `marshal` runs `caffeinate -i -w <its own process ID>`. That stops
-  idle sleep, and ends with `marshal` itself, even if `marshal` is killed hard.
+  VM is deleted, the runtime runs `caffeinate -i -w <its own process ID>`. That stops
+  idle sleep, and ends with that process, even if it is killed hard.
 - Stopped, the instance holds nothing: the Mac may sleep when it is idle.
-  `marshal build` never holds it either; keep the Mac awake for a build as
+  `build` never holds it either; keep the Mac awake for a build as
   [Building the Golden VM](#building-the-golden-vm) says.
-- If `caffeinate` cannot start, or ends early, `marshal` logs
+- If `caffeinate` cannot start, or ends early, the runtime logs
   `keep-awake is not held (<cause>), so the Mac may sleep when idle; trying again`
-  once, shows it as a `warning:` line in `marshal status`, and tries again every 10
+  once, shows it as a `warning:` line in the status, and tries again every 10
   seconds until it holds. A Mac that sleeps in the meantime stops every runner at its
   wake, as below, so a lost hold costs the running jobs and nothing else.
 - The hold stops idle sleep only. Closing a laptop's lid, choosing Sleep from the
@@ -435,7 +431,7 @@ not affected.
 
 ### What Stops Every Runner
 
-`marshal` learns of a sleep only when the Mac wakes, so a sleep and its wake are one
+The runtime learns of a sleep only when the Mac wakes, so a sleep and its wake are one
 stop. It compares how far the wall clock and the monotonic clock moved between two
 samples one second apart, which macOS advances differently across a sleep, and
 judges a gap of more than 3 seconds a sleep. A manual change of the clock by more
@@ -445,7 +441,7 @@ shorter than that goes unseen, and leaves the VMs and the network as they were.
 The primary network is the interface that holds the IPv4 default route, that route's
 router, and the router's hardware address. It is read with `route -n get default` and
 `arp -n <router>` every 5 seconds, each within 2 seconds, and only for IPv4, because
-Softnet carries only IPv4. `marshal` records it when the instance starts running and
+Softnet carries only IPv4. The runtime records it when the instance starts running and
 when it resumes, and it counts as changed when it differs from that record on two
 checks in a row, so a stop begins within 15 seconds of a change.
 
@@ -463,16 +459,16 @@ A VPN that leaves the default route alone is not noticed, because Softnet's bloc
 private address ranges already covers the ranges such VPNs usually carry. A check
 that cannot read the routing table counts as no default route.
 
-When `marshal start` begins, or an instance resumes, with no IPv4 default route, as on
-an IPv6-only network, `marshal` clones no VM until a primary network has held for two
-checks in a row, and then records it. `marshal status` shows
+When `start` begins, or an instance resumes, with no IPv4 default route, as on
+an IPv6-only network, the runtime clones no VM until a primary network has held for two
+checks in a row, and then records it. The status shows
 `network: waiting for a network (no IPv4 default route)` meanwhile, and a stop still
 ends the wait.
 
 ### The Stop Reasons
 
-`marshal status` shows the stop as `state: stopped` and a `reason:` line, and the
-terminal of `marshal start` prints it as `The instance is stopped: <reason>.`:
+The status shows the stop as `state: stopped` and a `reason:` line, and the log of
+`start` records it as `The instance is stopped: <reason>.`:
 
 - `the Mac slept, so every runner was stopped`
 - `the primary network changed (<old interface> to <new interface>), so every runner was stopped`,
@@ -487,13 +483,13 @@ address differed; `route -n get default` shows the router that holds the route n
 
 A reason names interfaces and never a network's name or an address. Before it says
 stopped, the instance fails every running job, deletes every job VM within the same
-30-second stop sequence `marshal stop` uses, and leaves the golden VM alone.
+30-second stop sequence a `stop` uses, and leaves the golden VM alone.
 
 ### Resuming
 
 Nothing resumes on its own: a Mac that wakes, or a network that comes back, leaves
-the instance stopped. Run `marshal start --profile axmc --config <path>` again from
-any terminal of the same user, or `marshal restart`, which the stopped instance
+the instance stopped. A new `start` with the same configuration, by the same user,
+or a `restart`, which the stopped instance
 answers by reading the configuration again, checking Tart, Softnet and the golden VM,
 and starting every pool. The resume records the primary network and arms the sleep
 check afresh, so the time spent stopped counts as neither a sleep nor a change. Do
@@ -502,7 +498,7 @@ never judge a network.
 
 ## Removing the VMs of a Pool No Longer Configured
 
-`marshal` deletes leftover job VMs only for pools that are configured, so a VM of a
+The runtime deletes leftover job VMs only for pools that are configured, so a VM of a
 pool that was removed from the configuration stays. Cleanup at `start` matches a job
 VM by the exact name form `marshal-job-<pool>-<slot>-<yyyyMMddHHmmssfff>` and a
 configured pool's name, and it never touches a golden VM, a build VM or any other VM.
@@ -516,12 +512,12 @@ tart delete marshal-job-<pool>-<slot>-<time>
 Delete only VMs whose names begin `marshal-job-` followed by the removed pool's name
 and a slot number, and none that is running; a running one is a VM of an instance
 that still uses that name, so stop the instance first. Never delete the golden VM by
-hand while `marshal` runs; `build` replaces it.
+hand while the runtime runs; `build` replaces it.
 
 ## Verification Status
 
 **Nothing in this document has been run on a Mac.** No real Tart VM, guest agent,
-Softnet, `caffeinate`, `route` or `arp` has run under `marshal`, and no claim above
+Softnet, `caffeinate`, `route` or `arp` has run under the runtime, and no claim above
 about their behaviour rests on a run. By the maintainer's decision
 [recorded on #74](https://github.com/axross/runners/issues/74#issuecomment-6784246305),
 this document's procedures were added with no host run. The one host run planned
@@ -540,32 +536,26 @@ the run goes in this order:
 1. Confirm that no Docker Desktop is installed, and record the macOS version, the
    literal output of `tart --version` and `softnet --version`, and Softnet's SUID bit
    as [Setting Up Softnet](#setting-up-softnet) lists it.
-2. Install `marshal` from the arm64 pull request's own build, not from a release: the
-   macOS arm64 binary in the `marshal-release` artifact of that pull request's Merge
-   Checks run, which the release build made until W1's installer pull request removed
-   its macOS leg, as the
-   [last command-line release](./cli.md#the-last-command-line-release)'s tag
-   describes. The dry run signs nothing. Check the binary against its line in `SHA256SUMS`, and record the
-   checksum and the commit the run built. A browser download carries a quarantine
-   attribute that blocks an unsigned binary; `gh run download` leaves none. An Actions
-   artifact keeps no file modes, so run `chmod 0755` on the binary, then put it at
-   `~/.local/bin/marshal`, where the last command-line release's macOS procedure
-   installs it.
-3. Run `marshal build --config /path/to/runner-host.json`, then
-   `marshal start --config /path/to/runner-host.json`, with the sizing of
-   [the example configuration](../../hosts/macos/runner-host.example.json). Record the
-   golden VM's and Tart's cache's disk use.
+2. Install the last command-line release's macOS binary with the macOS procedure at
+   its tag, since no later build carries one, and record its version and the commit
+   it was built from.
+3. Build the golden VM, then start the pools, with that release's `build` and
+   `start`, as its tag's copy of
+   [Starting, watching and stopping](#starting-watching-and-stopping) gives, with the
+   sizing of [the example configuration](../../hosts/macos/runner-host.example.json).
+   Record the golden VM's and Tart's cache's disk use.
 4. Run a job with `runs-on: [axmc, linux]` and a step that uses `docker run`, and
    confirm with `tart list` that the job's VM runs while it does. Record the
    runner's labels and the slot's turnaround. This step also covers the mount of the
    VM's Docker socket and the match of the two `docker` groups.
 5. With no external display attached, close the lid for about 15 s during a job, and
    switch networks during another job. Confirm that each stops the runners, with the
-   reason in `marshal status`, and that `tart list` then shows no job VM. The Mac
+   reason in the status, and that `tart list` then shows no job VM. The Mac
    takes several seconds to enter sleep after the lid closes, so a close of about 5 s
    can sleep for less than the 3 s a sleep needs to be seen; on the first host run it
    slept about 3 s and nothing stopped.
-6. Run `marshal stop`, then confirm with `tart list` that no job or build VM is left
+6. Stop the instance with its `stop`, then confirm with `tart list` that no job or
+   build VM is left
    and that the golden VM stays.
 
 **What is checked without a Mac.** The CLI's tests run against fake `tart`, `docker`,
@@ -576,7 +566,7 @@ the run goes in this order:
 - the VM runtime's slot cycle, probes, run arguments, release and VM shim, and the
   diagnostics export from a VM;
 - the golden VM build, with a failure scripted at each step and at a stop;
-- `marshal start` on the axmc profile as a process: the skipped macOS pools, each
+- `start` on the axmc profile as a process, through the test helper: the skipped macOS pools, each
   refusal before any VM boots, a held slot, and a refused resume;
 - the signals: a wake and a primary-network change that stop the instance with their
   reasons, a resume that records the network afresh, no VM cloned without a default

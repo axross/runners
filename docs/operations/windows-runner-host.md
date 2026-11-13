@@ -1,39 +1,42 @@
 # Windows Runner Host
 
 How to run ephemeral GitHub Actions runners for several repositories from one
-Windows machine with Docker Desktop, with the CLI, `marshal`, from an unconfigured
-machine to a healthy host: prerequisites, installing `marshal`, the
-per-repository token and its file's access control, the host configuration,
-building the image, running and stopping the pools, health checks, rebuilding and
-updating, network access, recovery, and rolling back to the previous `marshal`
-release. It covers the machine and the container that run a job; what a job
-installs and builds is each consumer repository's own concern. The image is
-defined under [`images/actions-runner/`](../../images/actions-runner/README.md),
-and the example host configuration, with the reference for every field, is under
+Windows machine with Docker Desktop, with the Windows app, Marshal, from an
+unconfigured machine to a healthy host: prerequisites, installing Marshal, the
+per-repository token, the host configuration, building the image, running and
+stopping the pools, health checks, rebuilding and updating, network access, recovery,
+and rolling back to the previous release. It covers the machine and the container
+that run a job; what a job installs and builds is each consumer repository's own
+concern. The image is defined under
+[`images/actions-runner/`](../../images/actions-runner/README.md), and the example
+host configuration, with the reference for every field, is under
 [`hosts/windows-docker-desktop/`](../../hosts/windows-docker-desktop/README.md).
-[CLI](./cli.md) owns what each `marshal` command does, and the trust rules the host
-is reviewed against are in [Security](../conventions/security.md).
+[App](./app.md) owns what the app does, [CLI](./cli.md) the library its agent runs,
+and the trust rules the host is reviewed against are in
+[Security](../conventions/security.md).
 
-**The command line and the app.** Since W1's installer pull request a release
-carries the Windows app, Marshal, and its per-user MSI, not the command line, and
-[Installing Marshal](#installing-marshal) installs it. The procedures below that run
-`marshal` are the command line's: they apply to the
-[last command-line release](./cli.md#the-last-command-line-release), whose tag holds
-them as released, with that release's install, update, uninstall and rollback
-procedures, until the rest of W1's installer pull request replaces them with the
-app's. A host moves from the command line to the app with that release's uninstall
-procedure, then [Installing Marshal](#installing-marshal).
+**The command line.** Since W1's installer pull request there is no command line: a
+release carries Marshal and its per-user MSI, and the app's menu and window are how a
+host is run. The axpc host ran its pools with the command line, `marshal`, until then.
+Its procedures, with their commands, token files and `--config` path, are at the
+[last command-line release](./cli.md#the-last-command-line-release)'s tag, and a host
+moves from it to the app with that release's uninstall procedure, then
+[Installing Marshal](#installing-marshal). The verification below that names a command
+was made with the command line; the app shares its runtime, image check and
+diagnostics, and its own run on axpc is recorded on
+[#73](https://github.com/axross/runners/issues/73).
 
 **Verification status.** CI builds the image and runs a smoke test on it for every
 pull request, on linux/amd64 and on linux/arm64, and runs the CLI's tests on GitHub-hosted Linux, Windows, and macOS
 runners; [CLI](./cli.md) says what each covers. The CLI's tests check the
 configuration rules against the fixtures in
 [`tests/host-configuration/`](../../tests/host-configuration). The steps below that
-use Docker Desktop, `icacls`, and a released `marshal` on a real machine are
+used Docker Desktop, `icacls`, and a released `marshal` on a real machine were
 described from the CLI's specification and the tools' documentation, and most were
 then checked on axpc ([#56](https://github.com/axross/runners/issues/56)). Most of
 those checks rest on the maintainer's report on #56 rather than on posted output,
-and each place below that depends on one says which. Verified on axpc:
+and each place below that depends on one says which. Verified on axpc, with the
+command line:
 
 - installing `v0.1.0` from its bare binary with the manual procedure (maintainer's
   report,
@@ -65,16 +68,17 @@ Not yet verified on axpc, each for the reason given:
   ([#56](https://github.com/axross/runners/issues/56)); CI runs them against
   stand-ins;
 - rolling back to a previous release, which no host has done;
-- the token-file access control step's result, whose `icacls` evidence was not
-  collected;
-- Ctrl+Break in the `start` window, which could not be tested;
-- that a second Ctrl+C keeps the diagnostic container, and the timing of the
+- the command line's token-file access control step's result, whose `icacls`
+  evidence was not collected;
+- with the command line, Ctrl+Break in the `start` window, which could not be tested,
+  and that a second Ctrl+C keeps the diagnostic container and the timing of the
   diagnostic containers' kill when the window closes, which the report did not give;
-- the Job Object against Docker Desktop, after a hard kill of `start`, which was not
-  run, by the maintainer's decision;
-- the instance lock refusing a `start` by another Windows user, and the control pipe
-  rejecting a client on another machine, which were not run, by the maintainer's
-  decision.
+- the Job Object against Docker Desktop, after a hard kill of the command line's
+  `start` or of Marshal's agent, which was not run, by the maintainer's decision;
+- the instance lock refusing a second Windows user, and the control pipe rejecting a
+  client on another machine, which were not run, by the maintainer's decision;
+- every procedure below with the app, which the verification on
+  [#73](https://github.com/axross/runners/issues/73) records.
 
 ## Prerequisites
 
@@ -83,24 +87,24 @@ Not yet verified on axpc, each for the reason given:
   [Docker's system requirements](https://docs.docker.com/desktop/setup/install/windows-install/)),
   with hardware virtualization enabled and the WSL 2 feature on.
 - **The machine stays powered on, signed in, and online.** Locked is fine; signed
-  out is not. `marshal start` runs in the foreground in a terminal of the signed-in
-  user, and nothing starts it at sign-in, so after a reboot or a sign-out the pools
-  stay down until you run `marshal start` again. A job whose labels match no runner
+  out is not. Marshal runs as the signed-in user, from its notification-area icon,
+  and nothing starts it at sign-in yet, so after a reboot or a sign-out the pools
+  stay down until you start Marshal from the Start menu again. A job whose labels match no runner
   waits in the queue until GitHub cancels it.
 - **Docker Desktop** with the WSL 2 backend. This procedure does not use the
   Hyper-V backend or a Docker Engine inside a WSL distribution.
 - **GitHub CLI (`gh`) 2.102 or later, signed in** (`gh auth status`), which the
   optional check of the installer uses.
-- **Windows PowerShell 5.1** (shipped with Windows) or PowerShell 7, for the inline
-  access control steps and the install procedure.
+- **Windows PowerShell 5.1** (shipped with Windows) or PowerShell 7, for the
+  diagnostics sink's access control step and the install procedure.
 
 ## Installing Docker Desktop
 
 1. Install Docker Desktop and accept the WSL 2 backend.
 2. Under **Settings, General**, enable **Start Docker Desktop when you sign in to
-   your computer**, which is off by default. `marshal start` waits for the Docker
+   your computer**, which is off by default. Marshal's runners wait for the Docker
    daemon, trying every 5 s, so it does not matter which of the two starts first.
-   `marshal build` does not wait: Docker must answer within 30 s.
+   Build image does not wait: Docker must answer within 30 s.
 3. Confirm `docker info` exits 0 in a terminal.
 
 With the WSL 2 backend, containers share the WSL 2 virtual machine's CPU and
@@ -176,7 +180,7 @@ Smart App Control On, could be blocked.
 
 ## The Fine-Grained Token
 
-`marshal start` asks GitHub for a single-use runner registration through
+Marshal asks GitHub for a single-use runner registration through
 [`POST /repos/{owner}/{repo}/actions/runners/generate-jitconfig`](https://docs.github.com/en/rest/actions/self-hosted-runners),
 which needs the **Administration** repository permission set to **Read and
 write**. Create one **fine-grained personal access token per target repository**,
@@ -188,17 +192,17 @@ under **Settings, Developer settings, Fine-grained personal access tokens**:
   section of [Security](../conventions/security.md#a-token-carries-only-its-pool-kinds-permissions)
   names. Nothing else.
 
-Save each token in a file on this machine, holding the raw token text, at the
-`tokenPath` of the repository's pool entries, and keep these files outside any
-checkout of this repository.
-The token rules are in the Per-Repository Isolation on a Runner Host section of
+Enter each token in Marshal's window: **Open Marshal**, the **Tokens** tab, then
+**Set Token** on the repository's row, paste the token and **Save**. Marshal keeps it
+in the Windows Credential Manager, one entry per repository, and never shows it
+again; the pools of that repository share it. The token rules are in
+[The Agent Keeps Tokens in the Operating System's Store](../conventions/security.md#the-agent-keeps-tokens-in-the-operating-systems-store)
+and the Per-Repository Isolation on a Runner Host section of
 [Security](../conventions/security.md).
 
-`marshal start` reads the file again at every registration, so a rotated token
-applies to the next job in every slot with no restart. Rotate a token by deleting
-the file and creating it again with the new token, then restrict it as below: a new
-file inherits its folder's permissions until the step resets and restricts them. Do
-not edit the file in place.
+The agent reads the token from the store at every registration, so a rotated token
+applies to the next job in every slot with no restart. Rotate a token with
+**Replace Token** on its row, and remove one with **Remove Token**.
 
 ### Adding Actions: read for Job Names
 
@@ -216,57 +220,32 @@ their logs and their artifacts; the token permission section of
 [Security](../conventions/security.md#a-token-carries-only-its-pool-kinds-permissions)
 names that cost. Leave it off to keep the token to Administration alone.
 
-### Restricting a Token File
+### Token Files of the Command Line
 
-The CLI does not check a token file's access control list on Windows, because no
-safe call reads it, so this step is the only thing that restricts the file. Run it
-for every configured token file at install, and for the new file at every token
-rotation. It resets the file's permissions to its folder's defaults, removes
-inherited permissions, then grants the host user read access, so an entry granted by
-hand to another account does not survive. Run it as the user who runs
-`marshal start`, with every token path listed:
-
-```powershell
-& {
-  $ErrorActionPreference = 'Stop'
-  $user = "$env:USERDOMAIN\$env:USERNAME"
-  foreach ($token in @('C:\path\to\example-repo.token')) {
-    if (-not (Test-Path -LiteralPath $token -PathType Leaf)) { throw "no token file at $token" }
-    icacls $token /reset
-    if ($LASTEXITCODE -ne 0) { throw "icacls could not reset the permissions of $token" }
-    icacls $token /inheritance:r
-    if ($LASTEXITCODE -ne 0) { throw "icacls could not remove inherited permissions from $token" }
-    icacls $token /grant:r "${user}:(R)"
-    if ($LASTEXITCODE -ne 0) { throw "icacls could not restrict $token to $user" }
-    icacls $token
-  }
-}
-```
-
-The last `icacls` of each file lists its access rules; it MUST list only your user,
-with `(R)`, and no inherited entry. A rule for anyone else means the step did not
-run on that file. This step's effect is not yet verified on axpc
-([#56](https://github.com/axross/runners/issues/56)): its `icacls` evidence was not
-collected there.
+The command line read each token from a file at the pool's `tokenPath`, which its
+own access control step restricted. Marshal reads no token file and imports none:
+enter each repository's token in the window once, as above. Keep the old token files
+until the app's runners work, because rolling back to the command line reads them,
+then delete them. Their procedure is at the last command-line release's tag.
 
 ## The Host Configuration
 
-The configuration is a JSON file kept outside any checkout of this repository;
-every `marshal` command that reads it takes its path as `--config`. Start from
-[`runner-host.example.json`](../../hosts/windows-docker-desktop/runner-host.example.json),
-and see the Host configuration section of the
-[host README](../../hosts/windows-docker-desktop/README.md) for every field. The
-resident agent reads the TOML form instead, `%LOCALAPPDATA%\marshal\config.toml`,
-which its first start migrates from a `config.json` in that folder; see
-[`config.example.toml`](../../hosts/windows-docker-desktop/config.example.toml) and
-[The Agent's Configuration](./cli.md#the-agents-configuration). The rules that matter
+Marshal reads its configuration from `%LOCALAPPDATA%\marshal\config.toml`, which its
+first start migrates from a `config.json` in that folder, the command line's JSON
+form. Start from
+[`config.example.toml`](../../hosts/windows-docker-desktop/config.example.toml), and
+see the Host configuration section of the
+[host README](../../hosts/windows-docker-desktop/README.md) for every field, which
+names each by its JSON key, and [Schema Version 1](./cli.md#schema-version-1) for
+the TOML key each JSON key becomes, such as `runners` for `slots` and `memory_gb` for
+`memoryGb`; [The Agent's Configuration](./cli.md#the-agents-configuration) says how
+the agent loads it. The rules below name the JSON keys. The rules that matter
 operationally:
 
 - **One entry per execution pool**, each with its own `name`, `slots`,
-  `labels`, and `volumes`. Every entry uses the global `imageName`.
-  `tokenPath` is an absolute Windows path, a drive
-  letter and backslash or a UNC path; a relative path is rejected, because the
-  file a relative path names would depend on the directory a command runs from.
+  `labels`, and `volumes`. Every entry uses the global `imageName`. The TOML form
+  has no token key: the pool's token is the repository's entry in the Credential
+  Manager.
 - **Unknown fields are rejected, not ignored.** A misspelled field such as `label`
   for `labels` fails validation naming the field, so a typo cannot silently drop
   a setting.
@@ -287,8 +266,8 @@ operationally:
   Per-Repository Isolation on a Runner Host section of
   [Security](../conventions/security.md).
 - **One configuration per machine is the supported setup**, because the instance
-  lock is machine-wide: one `marshal start` runs on the machine, whichever
-  configuration and whichever user it runs with.
+  lock is machine-wide: one Marshal agent runs the pools on the machine, whichever
+  user runs it.
 - **Every job container has CPU and memory limits.** `cpus` is a number above 0
   and at most 64, 2 when absent. `memoryGb` is an integer from 1 to 256, 8 when
   absent. Each job container of the entry starts with `--cpus` and `--memory`
@@ -299,16 +278,15 @@ operationally:
   The limit applies to each container, not to an entry's slots together or to the
   host. The short container that resets volume ownership at startup has none.
 
-Check a configuration before using it, and after every edit. The command calls
-neither Docker nor GitHub, prints the global image and each entry's labels, name,
-container name pattern, CPU and memory limits, planned affinity
-cardinality/position, and volume names, and exits 1 naming the field of every
-problem. It selects no CPU IDs and does not check that a token file exists or who
-can read it:
-
-```powershell
-marshal validate --config C:\path\to\runner-host.json --profile axpc
-```
+Marshal checks the file when it starts and at every **Start all runners**, and calls
+neither Docker nor GitHub to do it. A file that breaks a rule is not used: the window
+names every problem, by its key and line, in its stopped banner when Marshal has no
+configuration in use, and in a footer warning beside the last valid configuration
+when it has one, which it keeps running on, as
+[The Configuration File](./app.md#the-configuration-file) describes. Marshal does not
+watch the file, so an edit applies at the next **Start all runners**: after every
+edit, **Stop all runners**, then **Start all runners**, and read the window. It does
+not check that a pool has a token; the Tokens tab shows which have none.
 
 ### Split a repository into general and Android pools
 
@@ -316,23 +294,20 @@ Keep the general entry's existing name, slots, resource limits, labels, mounts,
 and diagnostic settings. If its `labels` list is non-empty, explicitly include
 `axpc` alongside its existing aliases to preserve the effective registration.
 Leave the global image unchanged. Add an entry for the same repository with a
-distinct non-nested name, the same token path, a dedicated label in `labels`,
-and `slots: 1`. For example, the added entry can be:
+distinct non-nested name, a dedicated label in `labels`,
+and `runners = 1`. The two pools share the repository's token. For example, the
+added pool can be:
 
-```json
-{
-  "owner": "example-owner",
-  "repository": "example-repo",
-  "name": "example-android",
-  "tokenPath": "C:\\path\\to\\example-repo.token",
-  "labels": ["example-android-route"],
-  "slots": 1,
-  "volumes": []
-}
+```toml
+[[pool]]
+name = "example-android"
+repository = "example-owner/example-repo"
+labels = ["example-android-route"]
+runners = 1
 ```
 
 Use operator-local values, not these example names. Neither the image name nor
-the entry name identifies a workload to `marshal`. Set resource limits
+the entry name identifies a workload to Marshal. Set resource limits
 only from approved host evidence; a dedicated slot does not reserve host memory.
 No shared SDK, workspace, or new persistent cache is needed. Existing storage
 choices follow the [shared-storage rules in Security](../conventions/security.md#shared-runner-storage-is-a-cache-poisoning-surface).
@@ -341,14 +316,15 @@ retention keyed by its name even if two entries use the same private sink.
 
 Deployment and workflow execution require separate scoped authorization:
 
-1. Record the existing configuration, `marshal status`, actual slots, image IDs
+1. Record the existing configuration, the window's pools, actual slots, image IDs
    and tagged rollback images. Do not rebuild the image during this change.
 2. Establish a quiet maintenance window: finish affected jobs, including old
    workflow revisions still using the general label. Do not restart a busy
-   instance; `marshal restart` stops every entry's containers, not just Android's.
+   instance; **Stop all runners** stops every entry's containers, not just Android's.
    Do not restart Docker or WSL for this change.
-3. Validate the split configuration with `marshal validate`, and apply it with
-   `marshal restart` only under the approved host-operation scope. Verify the
+3. Apply the split configuration with **Stop all runners**, then
+   **Start all runners**, only under the approved host-operation scope, and confirm
+   that the window names no configuration problem. Verify the
    actual registrations: one Android slot, no `axpc` on Android, no dedicated
    label on general runners, and no extra dedicated-label registrations on
    this or another host. If runner-inventory access is unavailable, obtain
@@ -376,13 +352,14 @@ Deployment and workflow execution require separate scoped authorization:
    [Rebuilding the Image](#rebuilding-the-image-for-operating-system-updates).
 
 For rollback, first finish affected jobs and obtain the required operation
-scope. In a quiet window, stop the instance with `marshal stop`. If it does not
-stop, keep rollback pending rather than force an unsafe stop. Restore the saved
+scope. In a quiet window, choose **Stop all runners**. If the runners do not stop,
+keep rollback pending rather than force an unsafe stop. Restore the saved
 host configuration/images, keeping the explicit `axpc` migration in restored
-general custom-label lists, because `marshal` reads a non-empty list as a
-replacement for `axpc`. Validate with `marshal validate`.
-Restore consumer routing under its separate authorization while the instance
-remains stopped, then run `marshal start` and read back actual
+general custom-label lists, because Marshal reads a non-empty list as a
+replacement for `axpc`.
+Restore consumer routing under its separate authorization while the runners
+remain stopped, then choose **Start all runners**, confirm that the window names no
+configuration problem, and read back actual
 registrations, labels, slot counts and image IDs. Check that no old dedicated
 job or extra dedicated-label registration bypasses the restored routing.
 Preserve general capacity and private evidence; remove
@@ -443,7 +420,7 @@ topology-change behavior on the intended context. Publish only sanitized source
 and image identities, settings/readbacks, gaps, and observed throughput/pressure
 there. Do not publish tokens, full inspect output, or raw private diagnostics.
 
-There is no JSON switch to disable affinity, and every `marshal` release applies
+There is no configuration switch to disable affinity, and every release applies
 it, so there is no supported way back to placement without affinity. The
 PowerShell scripts that once offered one remain only in this repository's history,
 unsupported, and a fault in affinity is fixed forward in a new release. The feature
@@ -452,17 +429,17 @@ readback blocks rollout, not independent pool work.
 
 ## Moving to the New Configuration Format
 
-A host whose configuration still has `hostPrefix` or a per-entry `prefix` is
-rejected, naming the field. To move it:
+A configuration that still has `hostPrefix` or a per-entry `prefix` is rejected,
+naming the field, including the `config.json` Marshal migrates at its first start.
+To move it:
 
 1. Note the `hostPrefix`, and each entry's prefix, `<hostPrefix>-<owner>-<repository>`
-   in lowercase unless the entry set `prefix`. Stop the host with `marshal stop`.
+   in lowercase unless the entry set `prefix`. Quit Marshal if it runs.
 2. Rewrite the file: give every entry a `name`, and delete `hostPrefix` and every
    `prefix`. An entry whose `name` equals its previous prefix, which is possible
    only when the prefix is a valid `name`, keeps its volumes; any other `name`
    starts from empty volumes.
-3. Run `marshal validate` on the file until it passes.
-4. Remove what the earlier names left, skipping an entry whose `name` equals its
+3. Remove what the earlier names left, skipping an entry whose `name` equals its
    previous prefix. Remove a volume only once no container uses it:
 
    ```powershell
@@ -471,8 +448,9 @@ rejected, naming the field. To move it:
    docker volume rm <previous prefix>-<suffix>
    ```
 
-5. Continue from [Installing marshal](#installing-marshal) on a host without it, or
-   run `marshal start` on one that has it.
+4. Continue from [Installing Marshal](#installing-marshal) on a host without it, or
+   start Marshal on one that has it, and confirm that the window names no
+   configuration problem.
 
 Job containers had no CPU or memory limit before. Without `cpus` and `memoryGb`,
 each is now capped at 2 CPUs and 8 GB, so set both on an entry whose jobs need
@@ -480,19 +458,14 @@ more.
 
 ## Building the Runner Image
 
-Build the image once at install, after every update of `marshal`, and at each
-routine rebuild. `build` is refused while an instance exists, so stop the instance
-first:
+Build the image once at install, after every update of Marshal, and at each routine
+rebuild. Building is refused while runners run, so from Marshal's menu choose
+**Stop all runners**, then **Build image**, and when the build has finished,
+**Start all runners**. A build needs a configuration in use; it uses that
+configuration's image name and reads no file.
 
-```powershell
-marshal stop
-marshal build --config C:\path\to\runner-host.json
-marshal start --config C:\path\to\runner-host.json
-```
-
-`marshal stop` prints that no instance is running, and exits 1, when there is none;
-that is fine here. `build` builds the image definition embedded in the installed
-`marshal`, under the configured global `imageName`, with
+The build builds the image definition embedded in the installed
+Marshal, under the configured global `imageName`, with
 `docker build --pull --no-cache`, and reads nothing from a checkout or the working
 directory. The runner version and base image digest come from that definition, so
 a newer runner needs a newer release; see [Updating the Runner](#updating-the-runner).
@@ -503,14 +476,15 @@ place. After a successful build `build` removes the earlier images it built that
 build left untagged: the prune is limited to images carrying the label `com.github.axross.runners.image=actions-runner`,
 so it does not touch other dangling images or images built by hand. It does not
 reclaim installation stages, build caches, or tagged rollback images. A failed prune
-is a warning, not a failed build. [CLI](./cli.md#build) gives every step and its
-exit codes.
+is a warning, not a failed build. [CLI](./cli.md#build) gives every step, and
+[The Agent's Configuration](./cli.md#the-agents-configuration) what the agent's build
+logs.
 
-While it builds, `marshal status` in another terminal answers `state: building`, and
-`marshal stop` or Ctrl+C aborts it within 30 s; an abort before the retag leaves the
-configured name on its previous image. CI runs `marshal build` only against a small
-test definition on Linux; a full build of the image on Docker Desktop is verified on
-axpc (maintainer's report,
+While it builds, the window says the image is building, and **Stop build** or
+**Stop all runners** aborts it within 30 s; an abort before the retag leaves the
+configured name on its previous image. CI runs the library's build only against a
+small test definition on Linux; a full build of the image on Docker Desktop was
+verified on axpc with the command line's `build` (maintainer's report,
 [#56](https://github.com/axross/runners/issues/56#issuecomment-6511344317)).
 
 The image carries a Docker client at a pinned version, which `build` installs from
@@ -518,7 +492,7 @@ Docker's apt repository after checking its signing key. The Docker runtime mount
 Docker socket into a job container, so the client reaches no engine here; the image
 has it for the axmc host, whose job VMs mount their own. The image contract version
 is 2 with it, so an image built before the release that carries contract 2 is refused
-until `marshal build` runs once; [CLI](./cli.md#the-image-contract) has the check.
+until the image is built once; [CLI](./cli.md#the-image-contract) has the check.
 
 The Android NDK contract, Java/SDK/Gradle inputs, and Build sections of the
 [image README](../../images/actions-runner/README.md) own version/checksum
@@ -531,13 +505,13 @@ For an authorized image update, rollback, or fixed-image comparison:
    `docker image inspect <configured-image-name> --format '{{.Id}}'`. Before an
    update, retain it with `docker tag <saved-image-id> actions-runner:rollback`;
    this tag keeps it out of the dangling-image prune.
-3. Build the approved new image with the `marshal` release that embeds it, or roll
+3. Build the approved new image with the release that embeds it, or roll
    back by tagging the saved image ID as the configured image name again. Record
    the image ID actually used. Existing containers finish on their original image;
    subsequent containers use the retagged or rebuilt one. The image check before
    each job accepts the retagged image only when its contract label matches the
-   installed `marshal`; see [CLI](./cli.md#the-image-check).
-4. A retag alone lasts only until the next `marshal build`, which builds the
+   installed Marshal; see [CLI](./cli.md#the-image-check).
+4. A retag alone lasts only until the next image build, which builds the
    definition the installed release embeds. Install the release intended for
    subsequent builds before resuming the routine rebuild.
 5. Remove the rollback tag with `docker image rm actions-runner:rollback` only
@@ -558,71 +532,52 @@ request.
 
 ## Running the Host
 
-Start the pools in a terminal you keep open, and leave it running:
+Start Marshal from the Start menu entry Marshal. A launch starts its agent, which runs
+the pools, and the notification-area icon shows their state; the agent keeps running
+when the window or the app closes. The agent checks the configuration as
+[The Host Configuration](#the-host-configuration) says, writes its log under
+`%LOCALAPPDATA%\marshal\logs\`, waits for Docker, checks the image, prepares every
+pool, and then runs every slot until it is stopped. With a configuration that cannot
+be used, an image that cannot run jobs, or no pool able to start, it stays running
+and stopped, and the window names the problem. Nothing starts Marshal at sign-in yet:
+after a reboot or a sign-out the pools stay down until you start it again.
 
-```powershell
-marshal start --config C:\path\to\runner-host.json
-```
+From the notification-area icon's menu:
 
-`start` validates the configuration as `validate` does, writes a log file under
-`%LOCALAPPDATA%\marshal\logs\` as well as to the terminal, waits for Docker, checks
-the image, prepares every pool, and then runs every slot until it is stopped. It
-exits 1 when the configuration is invalid, when the image cannot run jobs, or when
-no pool can start. Nothing starts it at sign-in: after a reboot or a sign-out the
-pools stay down until you run `marshal start` again.
+| Item                  | What it does                                                                                                                      |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **Open Marshal**      | Opens the window: the agent's state, each pool's state, runners and diagnostics, the image and its freshness warnings, and tokens |
+| **Start all runners** | Reads the configuration file again, checks the image, and runs the pools; use it after editing the configuration                  |
+| **Stop all runners**  | Stops every runner with the stop sequence, within 30 s, and leaves the agent running and stopped                                  |
+| **Build image**       | Builds the runner image while the runners are stopped; see [Building the Runner Image](#building-the-runner-image)                |
+| **Quit Marshal**      | Stops every runner as Stop all runners does, cancelling a build first, then ends the agent and the app                            |
 
-From another terminal, as the same user:
+[App](./app.md) says what each item and the window do, and when an item is greyed.
+The agent's states, waits and reasons are in [Agent State](./cli.md#agent-state).
 
-| Command               | What it does                                                                                                                                                           |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `marshal status`      | Prints the instance's state, each pool's and each slot's state, and the image lines, with any freshness warning                                                        |
-| `marshal restart`     | Stops every job container, reads the configuration file again, checks the image, and runs the pools; use it after editing the configuration                            |
-| `marshal stop`        | Stops the instance with the stop sequence, within 30 s, and exits 0 once the instance has ended                                                                        |
-| `marshal diagnostics` | Finalises the diagnostic containers the instance still retains, and reports each pool's bundles; see [Collecting private diagnostics](#collecting-private-diagnostics) |
+Stop the host with **Stop all runners**, or with **Quit Marshal**. A stop gives the
+ordinary containers their grace period, and finalises each diagnostic container, as
+[Collecting private diagnostics](#collecting-private-diagnostics) describes. Closing
+the window, or ending the app, leaves the agent and its runners running, and the next
+launch reconnects to them. A sign-out or shutdown gives the agent no event it can act
+on, so its containers wait for the next start, which removes them. If Marshal does
+not answer, end `marshal-app.exe` in Task Manager; the next start removes the
+containers it left.
 
-[CLI](./cli.md#running-a-host) gives each command's fields, waits, and exit codes.
-A `restart` that finds an invalid file or an image that cannot run jobs leaves the
-instance stopped with the reason, which `status` shows; fix it, then run
-`marshal start` with the same `--config`, which resumes the stopped instance.
-
-Stop the host with `marshal stop`, or with Ctrl+C in the `start` window, which runs
-the same stop sequence. A second Ctrl+C skips the grace period: the ordinary
-containers are removed at once, each diagnostic container is ended with
-`docker kill` and kept without its export, and `start` exits 1, naming each kept
-container. Ctrl+Break does the same as Ctrl+C. On axpc one Ctrl+C stopped the
-instance with exit 0, and a second Ctrl+C force-stopped it with exit 1 (maintainer's
-report, [#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)).
-That the second Ctrl+C kept the diagnostic container is not yet verified on axpc
+However the agent ends, even from Task Manager, the Job Object it runs in ends every
+`docker` client it started. Docker Desktop keeps a container running after its client
+is killed, so a job can run on until the next start removes its container. The Job
+Object against Docker Desktop is not yet verified on axpc
 ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)): the
-report did not say. Ctrl+Break is not yet verified on axpc
-([#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)): it
-could not be tested.
+hard-kill check was not run, by the maintainer's decision.
 
-Do not close the `start` window to stop it. Closing it stops the instance with
-forced removal within about 4.5 s: ordinary containers are removed, and diagnostic
-containers are ended and kept for the next `start` to finalise. A sign-out or
-shutdown does not reach `start` at all, so its containers wait for the next `start`.
-Closing the window is verified on axpc, as working as described (maintainer's
-report, [#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)).
-Its timing, and the diagnostic containers' kill within it, are not yet verified on
-axpc ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)):
-the report gave no timing.
-
-When `start` ends however it ends, even by `taskkill /F`, the Job Object it puts
-itself in ends every `docker` client it started. Docker Desktop keeps a container
-running after its client is killed, so a job can run on until the next `start`
-removes its container. The Job Object against Docker Desktop is not yet verified on
-axpc ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)):
-the hard-kill check was not run, by the maintainer's decision.
-
-One instance runs per machine. A `start` by another Windows user while an instance
-runs is refused, with a message that the lock is held by another OS user or by an
-instance still starting or ending; that refusal is not yet verified on axpc
+One agent runs per machine. While it runs, another Windows user's Marshal is refused,
+and its window says that another Marshal process holds the runner lock; that refusal
+is not yet verified on axpc
 ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)): the
-second-user check was not run, by the maintainer's decision. The other terminals
-reach the instance through a control pipe that only its own user can open and that
-rejects remote clients; the rejection of a client on another machine is not yet
-verified on axpc
+second-user check was not run, by the maintainer's decision. The app reaches the agent
+through a control pipe that only its own user can open and that rejects remote
+clients; the rejection of a client on another machine is not yet verified on axpc
 ([#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)): the
 remote check was not run, by the maintainer's decision.
 [Security](../conventions/security.md#one-instance-per-machine-reached-only-by-its-user)
@@ -630,7 +585,7 @@ records what this protects.
 
 ## How a Container Picks Up a Job
 
-For each execution pool, `start` runs that entry's `slots` as separate loops. A
+For each execution pool, the agent runs that entry's `slots` as separate loops. A
 sibling pool for the same repository has its own slots. Each slot follows this
 cycle:
 
@@ -646,7 +601,7 @@ cycle:
    the affinity guard followed by `/home/runner/run.sh`. The registration reaches the runner through the
    `ACTIONS_RUNNER_INPUT_JITCONFIG` environment variable, which the runner reads
    at start in the pinned version (`CommandSettings.cs` in `actions/runner`).
-   [Security](../conventions/security.md) owns how `start` hands it to
+   [Security](../conventions/security.md) owns how the agent hands it to
    Docker. Anyone with access to the local Docker daemon can still read it from
    `docker inspect` until the container is removed, and the registration is
    single-use.
@@ -659,9 +614,9 @@ cycle:
 A failed image check, CPU discovery, registration request or container that exits
 non-zero delays the next attempt, doubling from 5 seconds to a 300-second ceiling;
 a container that ran a job to completion is replaced at once. When the part of
-`start` that runs the pools fails as a whole, it is started again after 10 s, 30 s,
-and 60 s; a fourth failure within 10 minutes stops the instance, with the restart
-limit as its reason in `marshal status`. [CLI](./cli.md#names-and-the-slot-loop)
+the agent that runs the pools fails as a whole, it is started again after 10 s, 30 s,
+and 60 s; a fourth failure within 10 minutes stops the runners, with the restart
+limit as the reason the window shows. [CLI](./cli.md#names-and-the-slot-loop)
 gives the slot loop and its backoff, and [CLI](./cli.md#instance-state) the
 restarts.
 
@@ -678,7 +633,7 @@ Collect private evidence as follows:
 1. Pre-create a directory on a local Windows filesystem, outside any checkout of
    this repository.
    Restrict its owner and all allowed access rules to the account that runs
-   `marshal start`. `marshal` MUST NOT create the sink, relax permissions, or
+   Marshal. Marshal MUST NOT create the sink, relax permissions, or
    repair its access controls, and on Windows it does not check them, so this step
    is the only protection the evidence has. For a new, empty example directory,
    review the path before running these commands as that account:
@@ -695,14 +650,15 @@ Collect private evidence as follows:
    Set-Acl -LiteralPath $sink -AclObject $acl
    ```
 
-2. Set `diagnostics` to `true` and `diagnosticDirectory` to that directory in
-   the target entry. Leave `diagnosticRawRecords` absent or `false` unless
+2. Set `diagnostics` to `true` and `diagnostic_directory` to that directory in
+   the target pool. Leave `diagnostic_raw_records` absent or `false` unless
    private daemon/crash retention is separately wanted. Set it to `true` only
-   with diagnostics enabled. Run `marshal validate`, then apply the change with
-   `marshal restart` in an authorized quiet window. Validation rejects a sink
+   with diagnostics enabled. Apply the change with **Stop all runners**, then
+   **Start all runners**, in an authorized quiet window, and confirm that the
+   window names no configuration problem. Validation rejects a sink
    inside a checkout of this repository without Docker, GitHub or token reads, but does
    not check that the sink exists, is private, or is writable.
-3. After a container stops, `marshal start` exports its evidence into a new
+3. After a container stops, the agent exports its evidence into a new
    `<name>-bundle-<32 hexadecimal digits>` directory in the sink, then removes the
    container, also when the export fails. Inspect the bundle privately.
    `identity.txt` holds only the actual immutable image ID, CPU/memory/swap/affinity
@@ -720,7 +676,7 @@ Collect private evidence as follows:
    does not exclude a killed child. Correlate time samples and process PIDs with
    separately authorized host kernel/WSL evidence; the container cannot read
    enclosing-host kill records.
-5. Keep all raw records private. `marshal` never prints or logs them.
+5. Keep all raw records private. Marshal never shows or logs them.
    Retained contents are untrusted operator evidence, MUST NOT become build
    inputs, and MUST NOT be published without human sanitization. Public
    summaries MUST omit credentials, registrations, private paths and
@@ -733,42 +689,42 @@ reservation for the bundle's own files. A bundle inherits the sink's access rule
 The export reads only the collector's regular files, by name and within fixed
 sizes, and refuses links, special files, unsafe paths, and duplicates; it never
 copies a container's whole filesystem or its logs. At a job end the export ends by
-18 s and the removal by 24 s after the container ended, and a stop of the instance
+18 s and the removal by 24 s after the container ended, and **Stop all runners**
 finalises the diagnostic containers within its 30 s. A full, inaccessible or unsafe
 sink, a failed or partial copy, a missing collector, or an unavailable final sample
 is a diagnostic gap, logged as
 `Diagnostic gap in pool <pool>, container <name>: <text>`, never the runner's
 failure. A removal that fails leaves the container retained for the next
-finalisation, which `marshal diagnostics` runs on demand; `diagnostics` prints
-`pool <name>: <k> bundles written, <r> of 10 remaining` per pool and exits 1 while a
-container it acted on stays. [CLI](./cli.md#diagnostics) owns the timeline, the
+finalisation, at the next stop or start of the runners. The window's Diagnostics
+section of each pool shows its bundles written, the room left of 10, and each
+container it still keeps. [CLI](./cli.md#diagnostics) owns the timeline, the
 exporter, and the startup finalisation.
 
 Each diagnostic container carries only the immutable
 `runners.diagnostic-lifecycle=1` label, not a registration or private path. When
-`start` prepares a pool, it finds the labelled containers that an earlier run of
-the pool left, such as those a second Ctrl+C or a closed window kept. With the
+the agent prepares a pool, it finds the labelled containers that an earlier run of
+the pool left, such as those an ended agent or the command line kept. With the
 pool's diagnostics on, it exports and removes each one with the pool's current
 settings before any of the pool's slots registers. Ordinary unlabelled containers
 keep their ordinary removal even when the entry now enables diagnostics. Prior
 evidence is never automatically deleted. Operators MUST review and privately
 archive or remove prior bundles before collecting beyond the quota. Retention
 outside this feature is their decision. A diagnostic job and its export on Docker
-Desktop are verified on axpc: the bundle was written with its `complete.txt`, and
-`marshal diagnostics` reported the counts and exited 0 (maintainer's report,
-[#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)).
+Desktop were verified on axpc with the command line: the bundle was written with its
+`complete.txt`, and its `diagnostics` reported the counts and exited 0 (maintainer's
+report, [#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)).
 
 ### Recover before disabling diagnostics
 
 Recover an entry's diagnostic containers before turning its diagnostics off, and do
 not start another runner against the retained evidence. When an entry's
-diagnostics are already off and labelled containers of it remain, `start` gives them
-one bounded `docker stop`, warns for each, and refuses that entry, naming this
-section; the other entries run. `marshal diagnostics` then names each such container
-on a line of its own and exits 1. `start` never removes or exports them while the
-entry's diagnostics are off, and does not silently turn collection on.
+diagnostics are already off and labelled containers of it remain, the agent gives
+them one bounded `docker stop`, warns for each, and refuses that entry, naming this
+section; the other entries run, and the window names the entry's reason. The agent
+never removes or exports them while the entry's diagnostics are off, and does not
+silently turn collection on.
 
-Recover them with the CLI alone, after separate host authorization:
+Recover them with Marshal alone, after separate host authorization:
 
 1. **Check the sink first.** Confirm that the entry's sink exists and that its
    access control step under
@@ -790,34 +746,33 @@ Recover them with the CLI alone, after separate host authorization:
    Never dump configuration or registration values.
 
 2. **Recover.** Keep `diagnostics` on for that entry, or turn it on again with
-   `diagnosticDirectory` set to the sink from step 1, and run `marshal validate`.
-   Then run `marshal start`, or, when an instance is already running,
-   `marshal restart` in an authorized quiet window, because `restart` stops every
-   entry's job containers. The entry's preparation adopts each leftover container, exports it, and
+   `diagnostic_directory` set to the sink from step 1. Then choose
+   **Start all runners**, or, when the runners are already running,
+   **Stop all runners** first, in an authorized quiet window, because a stop stops
+   every entry's job containers. The entry's preparation adopts each leftover container, exports it, and
    removes it before any slot registers, and logs one line for each:
    `Diagnostic container <name> that an earlier run left: exported, removed.`, with
    `export gap` or `not removed` in place of either word. It removes the container
    even when the export fails, reporting an `export gap`; that is why step 1 comes
    first.
-3. **Confirm.** First wait until the `start` log has step 2's line for every
-   container step 1 recorded: `diagnostics` acts only on containers no other path
-   holds, so while the preparation is still adopting them it can exit 0 too early.
+3. **Confirm.** First wait until the agent's log has step 2's line for every
+   container step 1 recorded.
    Treat a line with `export gap` or `not removed` as not recovered: an
    `export gap` container is already removed, and its evidence is lost. Run step 1's
    `docker ps -a` listing again and confirm that none of the names step 1 recorded
    is still listed. Other names can appear: step 2 started the entry's slots with
    diagnostics on, so each live slot's job container has the same name pattern and
-   label. Those are expected, and must not be removed. Then run
-   `marshal diagnostics` from another terminal, which exits 0 when no container
-   stays retained. An exit of 1 means a container is still retained, such as one
-   whose removal failed: run `marshal diagnostics` again, or abandon it as in
-   step 5.
-4. **Then disable.** Run `marshal stop`, set `diagnostics` to `false`, remove
-   `diagnosticDirectory` and `diagnosticRawRecords`, run `marshal validate`, and
-   then run `marshal start`.
+   label. Those are expected, and must not be removed. Then confirm that the
+   entry's Diagnostics section in the window keeps no container. A container still
+   kept, such as one whose removal failed, is finalised again at the next
+   **Stop all runners**; or abandon it as in step 5.
+4. **Then disable.** Choose **Stop all runners**, set `diagnostics` to `false`,
+   remove `diagnostic_directory` and `diagnostic_raw_records`, then choose
+   **Start all runners** and confirm that the window names no configuration
+   problem.
 5. **Abandon, only by choice.** If you choose to abandon a container's evidence,
-   stop the instance with `marshal stop`, then remove only that identified,
-   labelled container with `docker rm -f <name>`, never with a prune, and start
+   choose **Stop all runners**, then remove only that identified, labelled
+   container with `docker rm -f <name>`, never with a prune, and start the runners
    again.
 
 This procedure is source guidance, not authorization to operate a host.
@@ -846,7 +801,7 @@ containers, so a job finds the toolchains and downloads an earlier job left. Tha
 makes each a shared writable surface, and [Security](../conventions/security.md)
 owns the rules that govern it. Each is declared here with the reason it exists.
 The suffixes are those of
-[`runner-host.example.json`](../../hosts/windows-docker-desktop/runner-host.example.json);
+[`config.example.toml`](../../hosts/windows-docker-desktop/config.example.toml);
 the volume's name is the entry's `name` plus the suffix.
 
 | Suffix      | Mount path             | Why it exists                                                                          |
@@ -857,7 +812,7 @@ the volume's name is the entry's `name` plus the suffix.
 | `npm`       | `/home/runner/.npm`    | npm's content-addressed package cache                                                  |
 
 Any job routed to the entry's labels can write to every one of them, and no
-other entry mounts them. When `start` prepares a pool, it creates the entry's
+other entry mounts them. When the agent prepares a pool, it creates the entry's
 volumes and resets their ownership with a short root container that mounts only
 those volumes.
 
@@ -872,7 +827,7 @@ metadata for a later job to trust.
 
 Before listing volumes for a repository, check which of its workflows hold a
 deployment secret, and whether the repository accepts pull requests from forks.
-If either applies, the entry lists `"volumes": []`, so each job starts from the
+If either applies, the pool lists no `[[pool.volumes]]`, so each job starts from the
 image alone, or those workflows, including the fork pull request workflows, run on
 a GitHub-hosted runner. That includes `npm` and every other volume in the table,
 not only the toolchain volumes. The host cannot check this; the operator does. The
@@ -881,8 +836,8 @@ section of [Security](../conventions/security.md).
 
 ## Removing an Entry
 
-Remove the entry from the configuration, then run `marshal validate` and
-`marshal restart`. A volume outlives its entry: the entry's volumes and any stopped
+Remove the pool from the configuration, then choose **Stop all runners** and
+**Start all runners**, and confirm that the window names no configuration problem. A volume outlives its entry: the entry's volumes and any stopped
 containers stay until removed by hand with `docker volume rm` and `docker rm`. The
 isolation rules the host enforces between repositories are in
 [Security](../conventions/security.md).
@@ -894,13 +849,13 @@ isolation rules the host enforces between repositories are in
   one is running, because each slot registers a runner before it starts a
   container. Each registration carries exactly `self-hosted`, `linux`, `x64`, and
   the entry's labels, `axpc` by default. Fewer runners than that sum, and none in
-  particular, mean `start` is not running or one or more pools are failing. Compare
+  particular, mean Marshal's runners are not running or one or more pools are
+  failing. Compare
   runner-name prefixes with each entry's `name` and `slots` to identify the affected
   pool; see Recovery.
-- **The instance:** `marshal status` reports `state: running`, a
-  `pool: <name>: running` line for every entry, and `image-contract: <n>` rather
-  than a mismatch or `missing`. A `pool: <name>: skipped: <reason>` line names a
-  pool that did not start. A `warning:` line is a freshness warning; see
+- **Marshal:** the window shows the runners running, every pool running, and no
+  image problem. A pool that did not start shows its reason. A footer warning about
+  the image is a freshness warning; see
   [Rebuilding the Image](#rebuilding-the-image-for-operating-system-updates).
 - **Machine:** `docker ps` shows `slots` running containers per entry, named
   `<name>-<index>-<timestamp>`, whether idle or busy, since an idle container is
@@ -909,41 +864,31 @@ isolation rules the host enforces between repositories are in
   is the CPU-time quota in billionths of a CPU, `CpusetCpus` is the requested
   CPU set, and `Memory` and `MemorySwap` are both `memoryGb` gigabytes in bytes.
   Requested settings are not effective readback. Each job container's output in the
-  `start` log has the guard's bounded `CPU affinity verified` line, which reports
+  agent's log has the guard's bounded `CPU affinity verified` line, which reports
   the kernel-granted set; the authorized real-host check also resolves the actual
   cgroup cpuset/quota layout.
-- **Token files:** `icacls <token file>` lists only the host user, with `(R)`; see
-  [Restricting a Token File](#restricting-a-token-file). The step's effect is not
-  yet verified on axpc ([#56](https://github.com/axross/runners/issues/56)): its
-  `icacls` evidence was not collected there.
+- **Tokens:** the Tokens tab shows a token set for every repository a pool names.
 - **End to end:** for each pool, a workflow run whose `runs-on` matches that
   entry's routing label starts executing rather than sitting queued.
 
 ## Rebuilding the Image for Operating-System Updates
 
 No task rebuilds the image, so the operating-system packages in it are only as
-fresh as its last `marshal build`. Rebuild it weekly, and also whenever the `start`
-log (at start, a resume, or a restart) or `marshal status` shows a build-age
-warning: from 7 days
-`` the image is <d> days old and should be rebuilt with `marshal build` ``, and from
-21 days a warning that its operating-system packages are that old. An image that
-`marshal build` did not build, such as one built by CI or by hand, has an unknown
-build age and a warning that says so. At a quiet time:
+fresh as its last build. Rebuild it weekly, and also whenever the window or the
+agent's log shows a build-age warning: from 7 days that the image should be rebuilt,
+and from 21 days that its operating-system packages are that old. An image that
+Marshal did not build, such as one built by CI or by hand, has an unknown build age
+and a warning that says so. At a quiet time, choose **Stop all runners**, then
+**Build image**, then **Start all runners**.
 
-```powershell
-marshal stop
-marshal build --config C:\path\to\runner-host.json
-marshal start --config C:\path\to\runner-host.json
-```
-
-`build` is refused while an instance exists, so a rebuild stops the pools for the
-length of the build: a job in flight fails, and queued jobs wait. A failed build
-leaves the previous image, and `start` runs on it.
+Building is refused while runners run, so a rebuild stops the pools for the length
+of the build: a job in flight fails, and queued jobs wait. A failed build leaves the
+previous image, and the runners run on it.
 
 The runner-release-age warning,
 `runner <v> was released <d> days ago, ...`, is different: a rebuild does not clear
 it. The runner version comes from the image definition embedded in the installed
-`marshal`, so a rebuild with the same release builds the same runner. That warning
+Marshal, so a rebuild with the same release builds the same runner. That warning
 calls for a runner bump, below.
 
 ## Updating the Runner
@@ -982,7 +927,7 @@ behind that.
 The machine needs outbound HTTPS to `github.com` and `api.github.com`,
 `*.actions.githubusercontent.com`, `ghcr.io` and its blob storage (the base image
 pull), and whatever each repository's jobs reach on a GitHub-hosted runner. The
-image build, whenever `marshal build` runs, also reaches the Ubuntu package archives
+image build, whenever Marshal builds the image, also reaches the Ubuntu package archives
 that the base image's apt sources name, over port 80 or 443 (by default
 `archive.ubuntu.com` and `security.ubuntu.com`; check the base image's sources
 before filtering). It also needs HTTPS to `download.docker.com` for the Docker
@@ -997,7 +942,7 @@ Hub. No inbound port is needed.
 ## Recovery
 
 - **A container left by an unclean stop** (a closed window, a hard kill, a crash,
-  a reboot mid-job) is handled when the next `start` prepares its pool, using each
+  a reboot mid-job) is handled when the agent next prepares its pool, using each
   entry's own name pattern and the immutable diagnostic label. Ordinary containers
   are removed before the slots start. Labelled containers are exported and removed
   while the entry's diagnostics are on; with them off they refuse the entry until
@@ -1005,35 +950,35 @@ Hub. No inbound port is needed.
   done. By hand, `docker ps -a --filter "name=<name>-"` lists candidates and
   `docker rm -f <name>` removes an ordinary one.
 - **Docker Desktop restarts mid-job:** the container is gone, the job fails on
-  GitHub's side, and re-running the workflow is the recovery. `start` keeps
+  GitHub's side, and re-running the workflow is the recovery. The agent keeps
   running: each slot's next attempt fails into its backoff while Docker does not
   answer, remeasures affinity, and resumes by itself when Docker is back.
-- **The pools are down after a reboot or a sign-out:** nothing starts `start` at
-  sign-in. Run `marshal start` again once Docker Desktop is up, or straight away,
-  since `start` waits for Docker.
-- **`marshal stop` exits 1:** the instance still held its lock 35 s after the
-  request. `marshal status` shows whether it is still ending; Ctrl+C twice in the
-  `start` window removes its containers at once.
-- **One pool's entry will not start:** a missing or blank token file, a
+- **The pools are down after a reboot or a sign-out:** nothing starts Marshal at
+  sign-in yet. Start it from the Start menu once Docker Desktop is up, or straight
+  away, since the runners wait for Docker.
+- **Marshal does not answer, or a stop does not end:** the window says the agent is
+  not answering, or keeps saying it is stopping. End `marshal-app.exe` in Task
+  Manager; the next start removes the containers it left.
+- **One pool's entry will not start:** a missing token, a
   volume that cannot be created, or stale containers that cannot be listed or that
-  carry the diagnostic label with diagnostics off skip that entry only. `start` logs
-  a warning naming the entry and the reason (never a token), `marshal status` shows
-  `pool: <name>: skipped: <reason>`, and the other startable pools run, including a
-  sibling for the same repository. Shared dependencies, such as that repository's
-  token or the Docker daemon, can affect several pools. `start` exits 1 only when
-  no entry can start. Fix the cause and run `marshal restart` in an authorized quiet
-  window; an entry skipped at start is not retried until the pools are prepared
-  again.
-- **A rejected configuration:** `start` and `validate` print every offending field,
-  and `start` exits before starting anything. A `restart` with a rejected file
-  leaves the instance stopped with the errors as its reason. Fix the file, run
-  `marshal validate`, then `marshal start` with the same `--config`.
-- **An image that cannot run jobs** (missing, or with another contract):
-  `start` exits 1, and a running instance stops with that reason. Run `marshal stop`,
-  `marshal build`, then `marshal start`.
+  carry the diagnostic label with diagnostics off skip that entry only. The agent
+  logs a warning naming the entry and the reason (never a token), the window shows
+  the pool's reason, and the other startable pools run, including a sibling for the
+  same repository. A pool waiting for its token starts once the token is set in the
+  Tokens tab. Shared dependencies, such as that repository's token or the Docker
+  daemon, can affect several pools. When no entry can start, the runners stay
+  stopped with that reason. Fix the cause, then choose **Stop all runners** and
+  **Start all runners** in an authorized quiet window; an entry skipped at start is
+  not retried until the pools are prepared again.
+- **A rejected configuration:** the window names every offending key and keeps the
+  last valid configuration in use, or stays stopped when there is none. Fix the
+  file, then choose **Start all runners**.
+- **An image that cannot run jobs** (missing, or with another contract): the
+  runners stay stopped, or stop, with that reason. Choose **Build image**, then
+  **Start all runners**.
 - **The restart limit:** a fourth failure of the pools' runtime within 10 minutes
-  stops the instance, with the limit as its reason. Read the `start` log, fix the
-  cause, then run `marshal start` with the same `--config`.
+  stops the runners, with the limit as the reason. Read the agent's log, fix the
+  cause, then choose **Start all runners**.
 - **A slot logging CPU discovery/cleanup failures:** registration is withheld.
   Check the intended Docker context/local image and available CPUs in a separately
   authorized maintenance window. Resolve the exact marked slot probe if deletion
@@ -1041,8 +986,8 @@ Hub. No inbound port is needed.
   A topology or readback mismatch must not be bypassed with unrestricted startup.
 - **A slot logging registration failures:** the message carries GitHub's status. A
   401 or 404 usually means the token expired or lacks Administration access to that
-  repository; replace the file and restrict it as
-  [Restricting a Token File](#restricting-a-token-file) describes. Other slots
+  repository; replace it with **Replace Token** in the Tokens tab, as
+  [The Fine-Grained Token](#the-fine-grained-token) describes. Other slots
   continue their own registration loops, but a shared-token problem can affect
   every pool for that repository.
 

@@ -243,12 +243,12 @@ Codex review uses its native priority label.
   file check and a version check, and carries the two Softnet rules from
   [Security](docs/conventions/security.md#softnet-confines-a-job-vms-network) and no
   other network option. A boot path that skips the check, a cached result, a
-  `marshal` that sets Softnet's SUID bit, and a fallback to Tart's default network
+  the runtime that sets Softnet's SUID bit, and a fallback to Tart's default network
   are findings.
 - **No shared directory, clipboard, audio, USB accessories or Rosetta.** Every
   `tart run` turns off graphics, the clipboard, audio and USB accessories, and
   carries no `--dir` and no `--rosetta`. Every Tart call sets `TART_NO_AUTO_PRUNE`,
-  gets `marshal`'s `PATH`, and has a standard output that is not a terminal.
+  gets the runtime's `PATH`, and has a standard output that is not a terminal.
 - **The VM-local socket is the only socket.** The VM runtime's job container mounts
   the job VM's own `/var/run/docker.sock` and nothing else of a host, and is never
   privileged. The Docker runtime's run arguments (`job_run_arguments`) carry no
@@ -260,7 +260,7 @@ Codex review uses its native priority label.
 - **Names and cleanup stay exact.** Cleanup at `start` matches only the job VMs of
   configured pools by their name form, so it never deletes a golden VM or a build
   VM. Only `build` deletes golden VMs, and only `build` and a build VM's own shim
-  delete a build VM. A looser match could delete a VM `marshal` does not own.
+  delete a build VM. A looser match could delete a VM the runtime does not own.
 - **Pins hold.** The base image is pinned by digest, the current pin is never on
   the retired list, Docker Engine, and the runner image's Docker client, come from
   Docker's apt repository at pinned versions after the signing key's fingerprint is
