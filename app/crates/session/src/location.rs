@@ -48,6 +48,32 @@ mod tests {
 
     use super::in_applications;
 
+    #[test]
+    fn the_profile_is_the_one_ci_asked_for() {
+        let debug_profile = cfg!(debug_assertions);
+        match std::env::var("MARSHAL_EXPECT_RELEASE").as_deref() {
+            Ok("1") => assert!(!debug_profile, "this test was built in the debug profile"),
+            Ok("0") => assert!(debug_profile, "this test was built in the release profile"),
+            _ => {}
+        }
+    }
+
+    #[cfg(all(target_os = "macos", not(debug_assertions)))]
+    #[test]
+    fn a_release_build_ignores_the_variable() {
+        use super::{ANY_LOCATION_VARIABLE, may_control_agent};
+
+        // CI's release step sets it, so the test fails if a release build reads it
+        if std::env::var("MARSHAL_EXPECT_RELEASE").as_deref() == Ok("1") {
+            assert!(
+                std::env::var_os(ANY_LOCATION_VARIABLE).is_some(),
+                "the release step sets {ANY_LOCATION_VARIABLE}"
+            );
+        }
+        let downloads = Path::new("/Users/someone/Downloads/Marshal.app/Contents/MacOS/m");
+        assert!(!may_control_agent(downloads));
+    }
+
     const HOME: &str = "/Users/someone";
 
     fn allowed(path: &str) -> bool {
