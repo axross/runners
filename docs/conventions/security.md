@@ -1685,8 +1685,8 @@ public in every signed file, so recording it discloses nothing; it is not an acc
 credential. Another is the maintainer's update-feed public key, committed in
 `app/crates/app/tauri.conf.json` and pinned by the feed crate's configuration test:
 the app verifies every update against it, so it must be in the build, and a public key
-lets no one sign or sign in. Its private key and password stay in the `release`
-Environment and the maintainer's offline backup, never in the repository.
+lets no one sign or sign in. Its private key and password are never committed; their
+custody is the feed's pull request's to record.
 
 The checked-in licence notices under `app/notices/` reproduce third-party licence
 texts and copyright notices verbatim, as those licences require, including the names

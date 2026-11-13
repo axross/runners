@@ -467,6 +467,12 @@ impl<D: Dial> Session<D> {
         if !lost {
             return;
         }
+        // a Quit during the reconnect ends the app once the attempt is in, and installs
+        // nothing
+        if self.quit_when_reached {
+            self.drain = None;
+            return;
+        }
         let watched = self
             .drain
             .as_ref()
