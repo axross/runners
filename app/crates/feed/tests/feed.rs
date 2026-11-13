@@ -79,11 +79,23 @@ fn a_changed_file_or_another_key_does_not_verify() {
         ),
         Err(Refusal::Signature(_))
     ));
-    // an empty key, as the configuration holds before the maintainer's key is committed
+    // an empty key, as a configuration with no committed key holds
     assert!(matches!(
         verify(&release_file(), &fixture("signed-1.4.0.sig"), "", "1.4.0"),
         Err(Refusal::Signature(_))
     ));
+    // the committed key reads as a minisign key, so a throwaway key's signature fails
+    // on the key, not on reading it
+    let committed = marshal_feed::committed_public_key().unwrap();
+    match verify(
+        &release_file(),
+        &fixture("signed-1.4.0.sig"),
+        &committed,
+        "1.4.0",
+    ) {
+        Err(Refusal::Signature(why)) => assert!(!why.starts_with("the public key"), "{why}"),
+        other => panic!("{other:?}"),
+    }
 }
 
 #[test]
@@ -313,6 +325,12 @@ fn the_updater_is_configured_as_the_plan_says_with_no_dangerous_option() {
     assert_eq!(
         marshal_feed::committed_public_key().ok().as_deref(),
         updater["pubkey"].as_str()
+    );
+    // the maintainer's update-feed key, minisign key ID 6F39E3131E21E1E4, as posted on
+    // the plan's issue; a replaced key strands every installed copy
+    assert_eq!(
+        updater["pubkey"],
+        "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZGMzlFMzEzMUUyMUUxRTQKUldUazRTRWVFK001Yjl3MllpMWlKbzhpUGsyRTd3YW1NY04xTEl4RStZVDlYN25nMEtPbUhhZ3UK"
     );
     let plugins: Vec<&String> = configuration["plugins"]
         .as_object()

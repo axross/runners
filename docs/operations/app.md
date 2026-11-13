@@ -599,10 +599,10 @@ the jobs already running to finish, and installs the new release.
 the rules the update path is reviewed against, and
 [CLI](./cli.md#the-update-drain) holds the agent's drain.
 
-Until the release run publishes the feed, which W4's last pull request adds, and the
-maintainer's update-feed public key is committed in `tauri.conf.json`, nothing checks:
-an app with no committed key, or a development build at `0.0.0-dev`, never reads the
-feed.
+The maintainer's update-feed public key, minisign key ID `6F39E3131E21E1E4`, is
+committed in `tauri.conf.json`. Until the release run publishes the feed, which W4's
+last pull request adds, a check finds no feed and changes nothing; an app with no
+committed key, or a development build at `0.0.0-dev`, never reads the feed.
 
 **Checking.** The app reads
 `https://github.com/axross/runners/releases/latest/download/latest.json` when it
