@@ -635,11 +635,13 @@ bytes in each case:
 - `Inapplicable`: the edit names a place the document lacks or of another kind, such as
   a table on the way that is missing, a `Set` on a key that holds a table, or an entry
   that does not exist, which is a mistake of the caller. It carries no file text, only
-  the edit and the reason. Two refusals come from the file instead, and only the user
-  can change it: a file that already holds the text the write path uses to mark a
-  removal, and an edit inside an inline table written over several lines, which TOML
-  1.1 allows, since its members' comments sit where the edit would move them. A caller
-  shows these as a file to rewrite, for example that table on one line or as a
+  the edit and the reason.
+- `FileForm`: the file is written in a form the write path does not edit, which only
+  the user can change: a file that already holds the text the write path uses to mark
+  a removal, or an edit inside an inline table written over several lines, which TOML
+  1.1 allows, since its members' comments sit where the edit would move them. Like
+  `Inapplicable` it carries only the edit, or the marker, and the reason. A caller
+  shows it as a file to rewrite, for example that table on one line or as a
   `[table]`, not as its own error. Removing such a table from its list, or adding one,
   is not refused.
 
@@ -1925,10 +1927,14 @@ transition is answered at once, never queued behind it. It starts `running` or
 | `token_set`        | Stores the repository's token in any state                                                                                                                                |
 | `token_remove`     | Removes it in any state                                                                                                                                                   |
 | `drain_for_update` | See [The Update Drain](#the-update-drain)                                                                                                                                 |
+| `config_read`      | The file's editable values in any state; see [Editing the Configuration](#editing-the-configuration)                                                                      |
+| `config_edit`      | Running: writes and applies. Stopped: writes, for the next `start_all`. A transition: `busy`. A drain: `refused`                                                          |
+| `config_reload`    | Running: applies the file. Stopped: makes it the configuration in use. A transition: `busy`. A drain: `refused`                                                           |
 
 A request that arrives while the agent is `resuming`, `stopping`, `building` or
-`quitting` and is not one of `status`, `token_set` and `token_remove`, a stop or a
-quit, is answered `busy`, except `drain_for_update`, which is `refused` there. The
+`quitting` and is not one of `status`, `config_read`, `token_set` and
+`token_remove`, a stop or a quit, is answered `busy`, except `drain_for_update`,
+which is `refused` there. The
 agent is `resuming` from the moment it begins to read
 the configuration until the runners' pools are admitted, so a `start_all` or a
 `build` in that time is `busy`, not answered as if the runners ran. One table in the
@@ -2238,18 +2244,21 @@ opens two connections; a `subscribe` to another topic on a connection that holds
 is answered with `invalid_request`, and one to the same topic again changes nothing
 but, for `github`, counts as a renewal.
 
-| Method             | Params                     | Result                                                             |
-| ------------------ | -------------------------- | ------------------------------------------------------------------ |
-| `status`           | none                       | The snapshot                                                       |
-| `subscribe`        | `topic`: `state`, `github` | `{topic}`; the first event follows at once                         |
-| `renew`            | `topic`: `github`          | `{topic}`; keeps the connection's `github` subscription            |
-| `start_all`        | none                       | `{state}`, `resuming` while the pools are admitted                 |
-| `stop_all`         | none                       | `{state}`                                                          |
-| `build`            | none                       | `{state, started}`, `started` in milliseconds since the Unix epoch |
-| `quit`             | none                       | `{state}`                                                          |
-| `token_set`        | `repository`, `token`      | `{repository}`, the key it was stored under                        |
-| `token_remove`     | `repository`               | `{repository}`                                                     |
-| `drain_for_update` | `version`                  | `{state, update}`; see The Update Drain                            |
+| Method             | Params                       | Result                                                             |
+| ------------------ | ---------------------------- | ------------------------------------------------------------------ |
+| `status`           | none                         | The snapshot                                                       |
+| `subscribe`        | `topic`: `state`, `github`   | `{topic}`; the first event follows at once                         |
+| `renew`            | `topic`: `github`            | `{topic}`; keeps the connection's `github` subscription            |
+| `start_all`        | none                         | `{state}`, `resuming` while the pools are admitted                 |
+| `stop_all`         | none                         | `{state}`                                                          |
+| `build`            | none                         | `{state, started}`, `started` in milliseconds since the Unix epoch |
+| `quit`             | none                         | `{state}`                                                          |
+| `token_set`        | `repository`, `token`        | `{repository}`, the key it was stored under                        |
+| `token_remove`     | `repository`                 | `{repository}`                                                     |
+| `drain_for_update` | `version`                    | `{state, update}`; see The Update Drain                            |
+| `config_read`      | none                         | `{revision, status, settings, pools, problems, too_large}`         |
+| `config_edit`      | `revision`, `edits`, `check` | `{revision, effects, repositories_released, applies}`              |
+| `config_reload`    | `revision`, `check`          | `{revision, effects, repositories_released, applies}`              |
 
 `token_set` is the one message that carries a secret: the token travels only in its
 `token` param, from the client to the agent, and the agent never sends, logs or
@@ -2272,6 +2281,15 @@ Errors have a stable `code`, an open set, and a `message` in plain text:
 | `token_invalid`        | The token is empty or too long                                                                                                           |
 | `store_failed`         | The token store could not do it; `store` holds `kind` and `code`                                                                         |
 | `refused`              | The agent's state does not allow the method                                                                                              |
+| `config_changed`       | `config.toml` no longer holds the bytes of the `revision` the request names                                                              |
+| `config_invalid`       | The result breaks the rules; `problems` lists each with its `path`, `line` and `message`                                                 |
+| `config_unusable`      | The file is missing, unreadable or not TOML, or the migration of `config.json` failed or is pending                                      |
+| `config_unwritable`    | `config.toml` could not be replaced, for example while another program holds it open on Windows                                          |
+| `config_refused`       | An edit touches `schema_version` or `lifecycle`                                                                                          |
+| `config_file_form`     | The file is written in a form the write path does not edit, such as an inline table over several lines; fix it in a text editor          |
+| `config_applying`      | An edit is being checked or applied while the runners run                                                                                |
+| `runtime_restarting`   | The runtime core waits to restart after a failure                                                                                        |
+| `image_unusable`       | The image a change names is missing or unusable on a running agent                                                                       |
 
 A subscription gets the snapshot at once as an event with `seq` 1, then an event
 with the whole snapshot after each change, at most one per 250 ms: changes within a
@@ -2343,6 +2361,85 @@ version 2, and a later client works against today's agent by calling only what
 change that removes or reinterprets anything above is a version 3, which is a new
 framing decision for the maintainer, not an addition.
 
+### Editing the Configuration
+
+`config_read`, `config_edit` and `config_reload` let a client edit `config.toml` and
+apply a change without `stop_all` and `start_all`. `cli/src/agent/machine/configure.rs`
+answers them, `cli/src/agent/config/` reads the edits and works out each pool's
+effect, and `cli/src/agent/core.rs` applies it. The agent reads the file for these
+methods, at its start and at `start_all`, and never watches it.
+
+- **`revision`** is a digest of the file's bytes and their length, from std's
+  default hasher, compared for equality only. It names no path. A `config_edit` or `config_reload` names the revision it was made
+  from and is refused with `config_changed` when the file no longer has it.
+- **`config_read`** reads the file now and changes nothing the agent holds. `status`
+  is `valid`, `invalid`, `missing` or `unreadable`, the last for a file that is not
+  TOML. `settings` holds `routing_label` and `image_name`, and `budget` on axmc;
+  `pools` holds each pool's keys in the file's order. Both hold only keys the
+  schema defines that the file sets with a value of the right type, so an undefined
+  key or a wrong-typed value appears only in `problems`, each a `path`, a `line` and a
+  `message`, at most 100. `schema_version` and `lifecycle` are not sent. A result
+  that would pass the message limit has `too_large` true and no values.
+- **`edits`** are the write path's operations as JSON, addressed by TOML key paths
+  counted from 0, such as `pool[1].runners`: `{"op":"set","path","value"}`,
+  `{"op":"remove","path"}`, `{"op":"add_entry","array","values"}` and
+  `{"op":"remove_entry","path"}`. A value is a boolean, a number, a string or an array
+  of strings. An edit of `schema_version` or `lifecycle` is `config_refused`, and a
+  malformed one `invalid_request`, whose message repeats no value.
+- **A check** (`check: true`) runs the edits, or reads the file for a reload, and
+  checks the result with the rules the agent loads with, the checkout rule at the
+  diagnostic directory's own place included, and the exporter's sink checks on each
+  `diagnostic_directory` it sets or changes, and writes nothing. Without `check` the
+  agent checks again and writes through [Changing the File](#changing-the-file). On
+  a running agent a change of `image_name` first checks the new image, as `start_all`
+  does, and is `image_unusable`, with nothing written, when the image is missing or
+  unusable.
+- **The answer** lists each pool's `effects`: `pool`, `change`, `runners_before`,
+  `runners_after` and `stops_runners`, true when the change stops runners the pool has, which fails
+  the jobs on them, on a running agent only. `repositories_released` lists the
+  repositories no pool names after the change, whose tokens the client may offer to
+  remove; the agent removes none. `applies` is true when the change applies now.
+- **A reload of a file with problems** answers `config_invalid` or
+  `config_unusable` and records the problems in the snapshot; the configuration in use
+  stays, as `last_valid` when it came from the file.
+
+The written file is the configuration in use from the moment the write succeeds, so
+an abandoned apply, a later `start_all` and a restart of the runtime core all use
+it. On a stopped agent nothing else happens. On a running agent the answer follows
+the write and the start of the apply, and the snapshot shows the rest. Pools are
+matched by name with the configuration in use:
+
+| Change                                                                                                     | `change`          | Effect                                                |
+| ---------------------------------------------------------------------------------------------------------- | ----------------- | ----------------------------------------------------- |
+| None                                                                                                       | `unchanged`       | Its runners and their jobs carry on                   |
+| A new pool                                                                                                 | `added`           | Admitted and prepared as at `start_all`, then started |
+| A removed or renamed pool                                                                                  | `removed`         | Its slots stop with the stop sequence                 |
+| Only `runners` raised                                                                                      | `runners_added`   | The new slots start; the others carry on              |
+| Only `runners` lowered                                                                                     | `runners_removed` | The highest-numbered slots stop; the others carry on  |
+| Any other key of the pool, a `routing_label` it takes because it lists no labels, `image_name` or `budget` | `restarted`       | Its slots stop, then it starts as a new pool          |
+
+A pool that waits for its token takes a new `runners` and goes on waiting, and one
+that runs no slot because it was skipped is admitted and prepared again. A slot an
+apply stops has its diagnostic containers finalised with its other containers, as
+a stop does, and its job host is released only once nothing in it awaits that
+finalisation. A slot whose stop does not end its runner within the exit deadline stays
+listed as leaving until the runner ends, then starts again if the configuration in
+use still has it; one whose host still holds evidence stays taken until the runners
+next stop, so no new runner replaces that host first. A pool an apply restarts or
+adds while slots of its own are still held in either way is not prepared over them:
+it is listed `skipped` with the reason that it restarts once its earlier runners have
+stopped, and it is admitted and prepared once the last of them is finished, or at the
+next `start_all` when one holds evidence; while a drain for an update lasts, it is
+prepared only once the drain is cancelled. A slot an apply stops shows `stopped` with the reason that the edit stops it until
+its containers are stopped and its job host released, then leaves the list; a
+removed pool is listed, `stopped`, until its last slot has. A pool that restarts
+shows `preparing` with the reason that the edit restarts it. One apply runs at a
+time: an edit or a reload meanwhile is `config_applying`, and one while the runtime
+core waits to restart is `runtime_restarting`. During a drain for an update both
+are `refused`, as every method is but a stop, a quit, `status`, `config_read`,
+`token_set` and `token_remove`. `stop_all` and `quit` abandon the
+apply, and a failure of the core fails it; the file stays written either way.
+
 ### The Snapshot
 
 The snapshot is what `status` returns and what the `state` topic carries. It comes
@@ -2350,23 +2447,24 @@ from local state the agent already keeps; it reads nothing from Docker or GitHub
 never holds a token or a JIT configuration. Every field is optional for a reader, and
 a reader ignores one it does not know.
 
-| Field                          | Holds                                                                                                 |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------- |
-| `agent`                        | `version`, `state`, `reason` (`code`, `message`), `since`, `build`, `restart_due`, `update`           |
-| `agent.update`                 | While a drain for an update runs: `version`, `waiting`, `deadline`, `pid`                             |
-| `agent.build`                  | `started`, `outcome` (`building`, `ready`, `failed`, `cancelled`), `finished`, `message`              |
-| `configuration`                | `path`, `problems` (at most 100), `status`, `in_use` and `migration`                                  |
-| `configuration.status`         | What the latest read of `config.toml` found: `valid`, `invalid`, `missing` or `unreadable`            |
-| `configuration.in_use`         | Absent when none is in use; else `source` (`file`, `last_valid` or `json`) and `read_at`              |
-| `configuration.migration`      | Absent when none applies; else `state` (`migrated`, `failed`, `pending`), `at` and `reason`           |
-| `runners_up`, `runners_wanted` | Totals over the listed pools, kept when rows are left out; 0 while `restart_due` is set               |
-| `repositories`                 | Each repository (`owner/name` in lower case), `has_token` and its pools                               |
-| `pools`                        | `name`, `repository`, `state`, `reason`, `has_token`, `runners_up`, `slots`, `runners`, `diagnostics` |
-| `pools[].runners`              | `slot`, `state`, `workload`, `reason`, `since`                                                        |
-| `pools[].diagnostics`          | `limit`, `written`, `in_sink`, `containers`, `findings`, `manual_recovery`                            |
-| `leftovers`                    | What a stop could not remove, `kind` (today `container`) and `name`                                   |
-| `images`                       | Each image the agent tracks (today the runner image): `name`, `lines`, `warnings`                     |
-| `omitted`                      | How many `runners`, `problems`, `pools`, `repositories`, `leftovers` and `images` it left out         |
+| Field                          | Holds                                                                                                                      |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `agent`                        | `version`, `state`, `reason` (`code`, `message`), `since`, `build`, `restart_due`, `update`                                |
+| `agent.update`                 | While a drain for an update runs: `version`, `waiting`, `deadline`, `pid`                                                  |
+| `agent.build`                  | `started`, `outcome` (`building`, `ready`, `failed`, `cancelled`), `finished`, `message`                                   |
+| `configuration`                | `path`, `problems` (at most 100), `status`, `in_use`, `migration` and `last_apply`                                         |
+| `configuration.last_apply`     | Absent until an edit applies; else `revision`, `at`, `outcome` (`applying`, `applied`, `abandoned`, `failed`) and `reason` |
+| `configuration.status`         | What the latest read of `config.toml` found: `valid`, `invalid`, `missing` or `unreadable`                                 |
+| `configuration.in_use`         | Absent when none is in use; else `source` (`file`, `last_valid` or `json`) and `read_at`                                   |
+| `configuration.migration`      | Absent when none applies; else `state` (`migrated`, `failed`, `pending`), `at` and `reason`                                |
+| `runners_up`, `runners_wanted` | Totals over the listed pools, kept when rows are left out; 0 while `restart_due` is set                                    |
+| `repositories`                 | Each repository (`owner/name` in lower case), `has_token` and its pools                                                    |
+| `pools`                        | `name`, `repository`, `state`, `reason`, `has_token`, `runners_up`, `slots`, `runners`, `diagnostics`                      |
+| `pools[].runners`              | `slot`, `state`, `workload`, `reason`, `since`                                                                             |
+| `pools[].diagnostics`          | `limit`, `written`, `in_sink`, `containers`, `findings`, `manual_recovery`                                                 |
+| `leftovers`                    | What a stop could not remove, `kind` (today `container`) and `name`                                                        |
+| `images`                       | Each image the agent tracks (today the runner image): `name`, `lines`, `warnings`                                          |
+| `omitted`                      | How many `runners`, `problems`, `pools`, `repositories`, `leftovers` and `images` it left out                              |
 
 When the runtime core fails, the agent starts it again after 10, 30 and 60 s for the
 first, second and third failure within 10 minutes, and stops for `restart_limit` at the
@@ -2545,6 +2643,15 @@ a `config.json` that is not migrated, the last valid configuration at `start_all
 with the file's problems, a pending migration, and a `build` that uses the
 configuration in use. The restart waits are the fake clock's, with a real pause of 400 ms
 each so the script can look at the window.
+`tests/agent_config.rs` covers the configuration methods: `config_read` with a
+wrong-typed value and an undefined key, raising `runners` (the new slot starts, the
+comments stay, nothing stops), lowering it and removing a pool (only their slots'
+containers are stopped), the refusals that write nothing (`config_invalid`,
+`config_refused`, `image_unusable`, `config_changed`), an edit on a stopped agent, a
+reload of a bad file and then of a good one, a restarted pool, edits of a pool that
+waits for its token, and a removed pool with diagnostics on, whose evidence is
+exported first, and a stop that runs past its deadline. `tests/agent_drain.rs` shows the two editing methods refused during a
+drain.
 `tests/agent_protocol.rs` covers the handshake, `welcome`, unknown methods, topics
 and fields, subscription (also by a client that arrives while the agent is idle),
 coalescing, heartbeats, `ending`, the limits as timers,
@@ -3752,8 +3859,8 @@ libraries, so the Check job on Linux needs none; the Windows job covers the rest
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `fetch:app`                      | `cargo fetch --locked` in `app/`, which `cargo deny` and `cargo about` read                                                                                                                          |
 | `format:app`, `format:check:app` | `cargo fmt --all`, and `cargo fmt --all --check`, in `app/`                                                                                                                                          |
-| `lint:app`                       | `cargo clippy --locked --all-targets -- -D warnings` over the `marshal-modes`, `marshal-view`, `marshal-session` and `marshal-tray` packages                                                         |
-| `test:app`                       | `cargo test --locked` over the same four packages                                                                                                                                                    |
+| `lint:app`                       | `cargo clippy --locked --all-targets -- -D warnings` over the `marshal-modes`, `marshal-view`, `marshal-session`, `marshal-tray` and `marshal-feed` packages                                         |
+| `test:app`                       | `cargo test --locked` over the same five packages                                                                                                                                                    |
 | `test:app-frontend`              | `node --test` over the main window page's own tests, in `app/crates/app/tests/frontend/`                                                                                                             |
 | `deny:app`                       | `cargo deny --locked check bans licenses sources` in `app/`, for `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`                                                                                 |
 | `check:notices`, `notices:app`   | Compare, or write again, the checked-in licence notices against `app/Cargo.lock`; see [App](./app.md#licence-notices)                                                                                |

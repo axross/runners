@@ -23,6 +23,9 @@ pub enum Refusal {
     /// the file is written in a form the write path does not edit, such as
     /// `lifecycle = { … }` over several lines; only a change in a text editor helps.
     FileForm(String),
+    /// the write path found the edit inapplicable, which these edits never should be;
+    /// the text is its reason.
+    Inapplicable(String),
 }
 
 impl fmt::Display for Refusal {
@@ -37,6 +40,9 @@ impl fmt::Display for Refusal {
                 f,
                 "Marshal cannot change config.toml as it is written ({reason}); change the setting in a text editor"
             ),
+            Self::Inapplicable(reason) => {
+                write!(f, "Marshal could not apply the setting ({reason})")
+            }
         }
     }
 }
@@ -58,16 +64,15 @@ pub fn edits(setting: Setting, value: Option<bool>) -> Vec<Edit> {
     }
 }
 
-/// the refusal a write-path error means for a setting. the edits name only places
-/// every valid file has, so a write path that finds them inapplicable refuses the
-/// file's form, not the edit.
+/// the refusal a write-path error means for a setting.
 #[must_use]
 pub fn refusal(error: EditError) -> Refusal {
     match error {
         EditError::Changed => Refusal::Changed,
         EditError::Invalid(failure) => Refusal::Invalid(failure),
         error @ EditError::Io { .. } => Refusal::Io(error.to_string()),
-        EditError::Inapplicable(reason) => Refusal::FileForm(reason),
+        EditError::FileForm(reason) => Refusal::FileForm(reason),
+        EditError::Inapplicable(reason) => Refusal::Inapplicable(reason),
     }
 }
 

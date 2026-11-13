@@ -275,12 +275,25 @@ app is built for, `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`.
   the agent. Its `derive_builder` macros bring a second version of the `darling`
   crates beside the one the tree already has. Its development-only dependencies are
   Tauri's `test` feature, and on Windows `interprocess`, which a test uses to squat on
-  the agent's channel. The token store's crates come through the library, and
+  the agent's channel. For updates (see [Updates Come Only From the Signed
+  Feed](#updates-come-only-from-the-signed-feed)): `tauri-plugin-updater`, pinned to
+  `=2.14.1`, on Windows only, with its defaults off and only `rustls-tls` on, so it
+  links no zip reader and reads no system proxy; `winsafe` 0.0.29's `kernel` feature on
+  Windows, the crate the library already uses, to wait on the agent's process without
+  `unsafe` code; `tokio`'s `time` feature on Windows for that wait; and `serde_json`,
+  at the version the session builds, which the code `generate_context!` writes for the
+  updater's configuration needs. The
+  `marshal-feed` crate takes `minisign-verify`, `base64`, `semver`, `url` and `sha2`,
+  each at the version the updater plugin or the library already links on Windows, so
+  that its feed check verifies exactly as the plugin does, and `serde` and
+  `serde_json`, at the versions the session builds, to read the feed and the app's
+  configuration; on macOS they add
+  `minisign-verify` to the tree. The token store's crates come through the library, and
   [CLI](../operations/cli.md#dependencies) lists them. A new direct dependency of an
   app crate MUST be added here with its reason, and needs the maintainer's review.
-- **No crate sends telemetry or a crash report.** Marshal sends none, and the app
-  makes no network request of its own; a dependency or a feature that does is a
-  finding.
+- **No crate sends telemetry or a crash report.** Marshal sends none. The app's only
+  network requests are the update check and the update's download, both over HTTPS
+  to `github.com`; a dependency or a feature that makes any other is a finding.
 - **Refreshes.** Dependabot's `cargo` entry for `/app` proposes the crate refreshes,
   and a red pull request is fixed there, as for the CLI. A refresh of a crate
   `marshal-cli` uses fails `check:app-lock` until `cli/Cargo.lock` takes the same
@@ -1190,10 +1203,13 @@ the app may do with that reach. [App](../operations/app.md) owns how it works.
   No view state, event, log line or error text of the app holds a token, and the app's
   log masks a word shaped like a GitHub token as defence in depth. The app never
   displays a stored token.
-- **No telemetry, no crash reports.** The app makes no network request; opening a
-  job's page hands its address to the default browser. The agent's
-  only requests go to GitHub's API. Neither sends usage data or a crash report, and
+- **No telemetry, no crash reports.** The app's only requests read the update feed
+  and download an update, as the next bullet says; opening a job's page hands its
+  address to the default browser. The agent's only requests go to GitHub's API.
+  Neither sends usage data or a crash report, and
   no dependency may; see [The App's Dependencies](#the-apps-dependencies).
+- **Updates come only from the signed feed.** See
+  [Updates Come Only From the Signed Feed](#updates-come-only-from-the-signed-feed).
 - **The debug-only test variables are ignored in a release build.** A debug build's
   agent and app read `MARSHAL_TEST_ROOT`, `MARSHAL_TEST_DOCKER` and
   `MARSHAL_TEST_GITHUB_API`, so a test can run the executable against a scratch host.
@@ -1233,6 +1249,45 @@ Residual risks, accepted on a single-user host:
 - The app checks its executable and then starts it by path, in two steps, so a file
   put at that path between the two is started. Whoever can do that can already
   replace the executable before the app starts.
+
+## Updates Come Only From the Signed Feed
+
+The Windows app installs a new release by itself, so whoever can put a file in front of
+it could run code as the user. [App](../operations/app.md#updates) owns how an update
+runs; these are the rules it is reviewed against.
+
+- **Only the app mode updates.** Only the app mode registers Tauri's updater plugin, on
+  Windows; the agent, exporter and shim modes never do. The flow runs in Rust, and no
+  capability grants the web view an updater command, which a test of the capability
+  files shows.
+- **One feed, one key.** The feed is
+  `https://github.com/axross/runners/releases/latest/download/latest.json`, the only
+  endpoint `tauri.conf.json` names. The app verifies every downloaded MSI against the
+  one public key committed there, with `requireSignedVersion`, so the signature's
+  trusted comment must name the feed's version. A build with no committed key, or a
+  development build at `0.0.0-dev`, never checks.
+- **Only newer, only from this repository.** The app takes a release only when its
+  version is newer than its own, and only when the download address is `https`, on
+  `github.com` with no port or credentials, under
+  `/axross/runners/releases/download/`; redirects from it are followed, since the
+  signature is what makes the bytes trusted. No `dangerous` option is set and
+  downgrades are off, which a test of the configuration shows.
+- **Bounded requests.** A check gives up after 30 s and a download after 10 minutes.
+  Neither uses the GitHub REST API or a token.
+- **The installer is started by the app.** The app starts `msiexec` only after the
+  agent it asked to drain has ended and its process has exited, so the agent's Job
+  Object cannot end the installer, and nothing installs from another client's drain.
+- **The record across an update holds no secret.** It is a version and a time in
+  Marshal's local data folder, applies for 30 minutes to that version only, and every
+  launch removes it.
+
+Residual risks, accepted:
+
+- Anyone who can publish a release here and holds the update-feed key can ship code
+  every installed app runs. The key, its custody and its rotation are the feed's
+  pull request's to record.
+- Tauri's updater keeps each downloaded MSI in the temporary folder
+  (tauri-apps/plugins-workspace#2389); Windows' storage cleanup removes it.
 
 ## Tokens Stay Out of the Log, and Job Clients End With `start`
 
@@ -1313,6 +1368,54 @@ Residual risks, accepted on a single-user host:
   close it.
 - The write path does not flush the folder after the rename. A crash right after a
   write can leave the old file, and cannot leave a partial one.
+
+## Editing the Configuration Through the Agent Moves No Trust Boundary
+
+The agent's `config_read`, `config_edit` and `config_reload` methods change the
+configuration, which decides the repositories runners register to, their labels and
+the folder diagnostics are exported to. [CLI](../operations/cli.md#editing-the-configuration)
+owns the methods; these are the properties they keep.
+
+- Only the agent's own user reaches the channel, under
+  [One Instance per Machine, Reached Only by Its User](#one-instance-per-machine-reached-only-by-its-user),
+  and that user can already edit the file. No request names a file for the agent to
+  read or write: the agent edits only `config.toml` at its fixed path.
+- No request or response carries a token as such. `config_read` sends only the keys
+  the schema defines that the file sets with a value of the right type, also while
+  the file breaks other rules; an undefined key or a wrong-typed value appears only as
+  a problem, which quotes no value. A token pasted on a line of its own, under a key
+  of its own, or into a number or a boolean therefore does not reach the window. A
+  problem names a key path, as the first residual risk of
+  [The TOML Configuration Holds No Token and Quotes No Line](#the-toml-configuration-holds-no-token-and-quotes-no-line)
+  describes.
+- An edit goes through the write path and then through the checks the agent loads
+  with, the checkout rule at the diagnostic directory's own place included, so a file
+  the app writes is one the agent would load. An edit or a reload that sets or
+  changes a pool's `diagnostic_directory` also runs the exporter's sink checks on it
+  (it exists, is a directory, is no link, lies outside the checkout, and is private
+  on Unix) and is refused when it fails them; the problem names the key and the
+  check, not the path. A directory the configuration in use already names is left
+  to the exporter's own checks, as before.
+- An edit of `schema_version` or of `[lifecycle]` is refused before the file is
+  read.
+- A `config_edit` whose `revision` no longer matches the file is refused, and the
+  write path compares the file again just before it replaces it.
+
+Residual risks, accepted on a single-user host:
+
+- A same-user client can point a pool's diagnostics at any folder that passes the
+  sink checks, as it could by editing the file.
+- A token pasted into the value of a defined text key, such as a pool's name or a
+  label, is a value of the right type, so `config_read` sends it to the window, which
+  shows it in that field. The window is the same user's, who wrote the file.
+- The revision is std's default hasher over the file's bytes, with their length:
+  SipHash with fixed keys today, which std does not promise to keep. It detects an
+  edit made elsewhere; it is not meant to resist a file crafted to collide, and a
+  same-user writer needs no collision to change the file. An agent built with
+  another Rust may compute another revision for the same bytes, which a client sees
+  as `config_changed` and reads the file again.
+- A repository no pool names any more keeps its stored token until the client
+  removes it with `token_remove`; the agent does not remove it on its own.
 
 ## Diagnostic Evidence Stays Private
 
@@ -1645,7 +1748,11 @@ a parameter. A further exception is the macOS signing team ID and the exact
 designated requirement, which a documentation change records in the CLI document
 after the first signed release as the contract text for later work. The team ID is
 public in every signed file, so recording it discloses nothing; it is not an account
-credential.
+credential. Another is the maintainer's update-feed public key, committed in
+`app/crates/app/tauri.conf.json` and pinned by the feed crate's configuration test:
+the app verifies every update against it, so it must be in the build, and a public key
+lets no one sign or sign in. Its private key and password are never committed; their
+custody is the feed's pull request's to record.
 
 The checked-in licence notices under `app/notices/` reproduce third-party licence
 texts and copyright notices verbatim, as those licences require, including the names

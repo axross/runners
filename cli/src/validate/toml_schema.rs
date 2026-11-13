@@ -2,7 +2,7 @@
 
 use crate::profile::Profile;
 
-use super::problem::Key;
+use super::problem::{Key, KeyPath};
 
 /// a table of the file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,6 +118,37 @@ impl Table {
     }
 }
 
+/// reads a TOML key path such as `pool[1].labels` against the file's tables for
+/// `profile`: each key must be one its table defines there, and a position may follow
+/// only a key that holds an array of tables. `None` for anything else.
+pub(crate) fn parse_path(text: &str, profile: Profile) -> Option<KeyPath> {
+    let mut path = KeyPath::root();
+    let mut table = Some(Table::Root);
+    let mut array;
+    for part in text.split('.') {
+        let (name, positions) = part
+            .split_once('[')
+            .map_or((part, ""), |(name, rest)| (name, rest));
+        let member = table?.defined(name, profile)?;
+        path = path.key(member.key);
+        (table, array) = match member.child {
+            Child::Leaf => (None, None),
+            Child::Table(inner) => (Some(inner), None),
+            Child::Tables(inner) => (None, Some(inner)),
+        };
+        if positions.is_empty() {
+            continue;
+        }
+        let index = positions.strip_suffix(']')?;
+        if index.is_empty() || !index.bytes().all(|byte| byte.is_ascii_digit()) {
+            return None;
+        }
+        path = path.index(index.parse().ok()?);
+        table = Some(array.take()?);
+    }
+    (!text.is_empty()).then_some(path)
+}
+
 /// the key as the TOML file spells it; an owner is part of `repository`.
 pub(crate) fn key_name(key: Key) -> &'static str {
     match key {
@@ -152,6 +183,7 @@ pub(crate) fn key_name(key: Key) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use super::super::problem::Segment;
     use super::*;
 
     #[test]
@@ -195,5 +227,48 @@ mod tests {
         assert!(Table::Pool.defined("disk_gb", Profile::Axpc).is_none());
         assert!(Table::Pool.defined("token_path", Profile::Axmc).is_none());
         assert!(Table::Pool.defined("Runners", Profile::Axmc).is_none());
+    }
+
+    #[test]
+    fn a_path_reads_back_as_the_text_it_was_written_from() {
+        for (text, profile) in [
+            ("routing_label", Profile::Axpc),
+            ("pool", Profile::Axpc),
+            ("pool[12].labels", Profile::Axpc),
+            ("pool[0].volumes[3].mount_path", Profile::Axpc),
+            ("budget.disk_gb", Profile::Axmc),
+            ("lifecycle.keep_awake", Profile::Axmc),
+        ] {
+            let path = parse_path(text, profile).unwrap();
+            assert_eq!(path.text(key_name), text);
+        }
+        let pool = parse_path("pool[1].repository", Profile::Axpc).unwrap();
+        assert_eq!(
+            pool.segments(),
+            [
+                Segment::Key(Key::Repositories),
+                Segment::Index(1),
+                Segment::Key(Key::Repository)
+            ]
+        );
+    }
+
+    #[test]
+    fn a_path_outside_the_hosts_tables_is_not_read() {
+        for (text, profile) in [
+            ("", Profile::Axpc),
+            ("budget.cpus", Profile::Axpc),
+            ("pool[0].disk_gb", Profile::Axpc),
+            ("pool.name", Profile::Axpc),
+            ("pool[]", Profile::Axpc),
+            ("pool[-1]", Profile::Axpc),
+            ("pool[1", Profile::Axpc),
+            ("pool[0][1]", Profile::Axpc),
+            ("routing_label[0]", Profile::Axpc),
+            ("pool[0].tokn", Profile::Axpc),
+            ("pool[0]..name", Profile::Axpc),
+        ] {
+            assert_eq!(parse_path(text, profile), None, "{text}");
+        }
     }
 }

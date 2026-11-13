@@ -14,6 +14,8 @@ use crate::runtime::retained::Retained;
 use crate::token_store::TokenKey;
 use crate::validate::Entry;
 
+use super::config::Change;
+use super::core::LEAVING;
 use super::snapshot::{
     AgentInfo, ConfigurationInfo, DiagnosticContainer, DiagnosticFinding, DiagnosticsInfo,
     ImageInfo, ImageLine, ImageWarning, InUseInfo, Leftover, MigrationInfo, PoolInfo,
@@ -21,6 +23,9 @@ use super::snapshot::{
 };
 use super::state::{Inner, Phase};
 use super::tokens::StoreTokens;
+
+/// why a pool an apply restarts is preparing.
+pub const RESTARTING: &str = "the edit of the configuration restarts it";
 
 type RowsByName<'a, T> = BTreeMap<&'a str, &'a Row<T>>;
 
@@ -114,6 +119,7 @@ fn configuration(path: &str, inner: &Inner) -> ConfigurationInfo {
         read_at: millis(in_use.read_at),
     });
     info.migration = migration(loaded);
+    info.last_apply.clone_from(&inner.last_apply);
     info
 }
 
@@ -201,6 +207,23 @@ impl View<'_> {
                     .iter()
                     .map(|entry| self.pool(entry, &pools, &slots))
                     .collect();
+                // a pool an apply removes is listed until its slots have stopped, the
+                // apply's end included; one the file names again is listed as that
+                let removed = inner
+                    .leaving
+                    .iter()
+                    .filter(|entry| !plan.entries.iter().any(|named| named.name == entry.name));
+                for entry in removed {
+                    let mut pool = self.pool(entry, &pools, &slots);
+                    pool.runners
+                        .retain(|runner| runner.reason.as_deref() == Some(LEAVING));
+                    if !pool.runners.is_empty() {
+                        pool.state = "stopped".to_string();
+                        pool.reason = Some(LEAVING.to_string());
+                        pool.slots = 0;
+                        snapshot.pools.push(pool);
+                    }
+                }
             }
         }
         snapshot.runners_up = snapshot.pools.iter().map(|pool| pool.runners_up).sum();
@@ -233,14 +256,33 @@ impl View<'_> {
         slots: &RowsByName<'_, SlotState>,
     ) -> PoolInfo {
         let key = TokenKey::of(&entry.owner, &entry.repository);
+        let restarting = self.inner.applying.as_ref().is_some_and(|applying| {
+            applying
+                .effects
+                .iter()
+                .any(|effect| effect.pool == entry.name && effect.change == Change::Restarted)
+        });
         let (state, reason) = match pools.get(entry.name.as_str()).map(|row| &row.state) {
             Some(PoolState::WaitingForEngine(_)) => ("waiting_for_docker", None),
+            Some(PoolState::Preparing | PoolState::Running) if restarting => {
+                ("preparing", Some(RESTARTING.to_string()))
+            }
             Some(PoolState::Preparing) => ("preparing", None),
             Some(PoolState::Running) => ("running", None),
             Some(PoolState::Skipped(reason)) => ("skipped", Some(reason.clone())),
             None => ("stopped", self.inner.skips.get(&entry.name).cloned()),
         };
+        // a slot an apply stops is listed until its stop sequence ends, whichever of
+        // the slots above the pool's count are still on the board
+        let prefix = format!("{} slot ", entry.name);
+        let mut above: Vec<u32> = slots
+            .keys()
+            .filter_map(|label| label.strip_prefix(prefix.as_str())?.parse().ok())
+            .filter(|number| *number > entry.slots)
+            .collect();
+        above.sort_unstable();
         let runners: Vec<RunnerInfo> = (1..=entry.slots)
+            .chain(above)
             .map(|number| {
                 let label = format!("{} slot {number}", entry.name);
                 match slots.get(label.as_str()) {
@@ -253,6 +295,7 @@ impl View<'_> {
                             SlotState::Drained => {
                                 ("stopped", None, Some("stopped for an update".to_string()))
                             }
+                            SlotState::Leaving(why) => ("stopped", None, Some(why.clone())),
                         };
                         RunnerInfo {
                             slot: number,
