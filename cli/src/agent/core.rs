@@ -634,16 +634,45 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
 
     /// finishes each slot whose stop ran late once its worker ends, and starts it
     /// again when the configuration in use still has it, until the stop; a pool
-    /// deferred over such slots is prepared once none is held and no drain lasts.
+    /// deferred over such slots is prepared once none is held and no drain lasts. It
+    /// finishes whichever late slot ends first, so a slow one delays no other.
     async fn finish_late(&self, running: &Running<'a>, stop: &watch::Receiver<bool>) {
         let mut stopping = stop.clone();
         let mut drain = self.drain.subscribe();
         loop {
-            let next = running.late.borrow_mut().pop();
-            let Some((key, mut ended)) = next else {
+            // a worker gone without saying so has ended too
+            let has_ended =
+                |ended: &watch::Receiver<bool>| *ended.borrow() || ended.has_changed().is_err();
+            let next = running
+                .late
+                .borrow()
+                .iter()
+                .position(|(_, ended)| has_ended(ended));
+            let Some(at) = next else {
+                let mut late: Vec<_> = running
+                    .late
+                    .borrow()
+                    .iter()
+                    .map(|(_, ended)| ended.clone())
+                    .collect();
+                let mut waits: Vec<_> = late
+                    .iter_mut()
+                    .map(|ended| Box::pin(ended.wait_for(|ended| *ended)))
+                    .collect();
+                let one_ended = poll_fn(|context| {
+                    if waits
+                        .iter_mut()
+                        .any(|wait| wait.as_mut().poll(context).is_ready())
+                    {
+                        Poll::Ready(())
+                    } else {
+                        Poll::Pending
+                    }
+                });
                 tokio::select! {
                     () = wait_for_stop(&mut stopping) => return,
                     () = running.late_added.notified() => continue,
+                    () = one_ended => continue,
                     changed = drain.changed() => {
                         if changed.is_err() {
                             return;
@@ -654,10 +683,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
                     }
                 }
             };
-            tokio::select! {
-                () = wait_for_stop(&mut stopping) => return,
-                _ = ended.wait_for(|ended| *ended) => {}
-            }
+            let (key, _) = running.late.borrow_mut().remove(at);
             let _turn = running.turn.lock().await;
             if !self.finish_slot(&key, running).await {
                 continue;

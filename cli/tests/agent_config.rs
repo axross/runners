@@ -1091,3 +1091,71 @@ async fn a_deferred_pool_is_not_prepared_during_a_drain_and_is_once_it_is_cancel
         })
         .await;
 }
+
+/// restarts both pools over late stops, then ends only `ending`'s runners: that pool
+/// is prepared again while the other's late slots still run.
+async fn one_pool_of_two_late_ones_ends(ending: &str) {
+    use marshal_cli::runtime::backend::StopRequest;
+    let held = if ending == "r" { "d" } else { "r" };
+    let rig = rig();
+    rig.backend.state.borrow_mut().hold_runs_by_name = true;
+    rig.times.set(StopTimes {
+        exit_deadline: Duration::from_secs(1),
+        ..StopTimes::default()
+    });
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            conn.until("three runners", |snapshot| snapshot.runners_up == 3)
+                .await;
+            rig.mark_running();
+            let prefix = format!("{ending}-");
+            let names: Vec<String> = rig
+                .backend
+                .calls()
+                .into_iter()
+                .filter_map(|call| match call {
+                    Call::RunContainer(spec) if spec.name.starts_with(&prefix) => Some(spec.name),
+                    _ => None,
+                })
+                .collect();
+            rig.backend.state.borrow_mut().stop_hangs = true;
+            let (ending_before, held_before) = (listings(rig, ending), listings(rig, held));
+            conn.call(
+                "config_edit",
+                json!({
+                    "revision": read_revision(&conn).await,
+                    "edits": [
+                        {"op": "set", "path": "pool[0].labels", "value": ["big"]},
+                        {"op": "set", "path": "pool[1].labels", "value": ["big"]},
+                    ],
+                }),
+            )
+            .await
+            .unwrap();
+            until_applied(&conn).await;
+            rig.backend.state.borrow_mut().stop_hangs = false;
+            rig.backend
+                .stop_containers(&StopRequest {
+                    names,
+                    grace: Duration::ZERO,
+                    budget: Duration::from_secs(1),
+                })
+                .await
+                .unwrap();
+            conn.eventually("the pool whose runners ended prepared again", || {
+                listings(rig, ending) > ending_before
+            })
+            .await;
+            assert_eq!(listings(rig, held), held_before);
+            rig.mark_running();
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_late_slot_that_ends_is_finished_while_another_pools_late_slot_runs_on() {
+    one_pool_of_two_late_ones_ends("r").await;
+    one_pool_of_two_late_ones_ends("d").await;
+}
