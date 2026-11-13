@@ -3952,9 +3952,9 @@ cross-compilation and no cache action, and:
 9. hands the SHA-256 of the app and of the MSI to the next job as job outputs, and
    uploads those two files by name.
 
-The leg's timeout is 30 minutes, the bound it had before the app joined it. It
-becomes twice the leg's wall-clock time in its first successful dry run, rounded up
-to whole 5 minutes, and the pull request that adds the leg records that time.
+The leg's timeout is 50 minutes: twice the leg's wall-clock time in its first
+successful dry run, 22 min 56 s in pull request #117, rounded up to whole 5
+minutes.
 
 An assemble job then downloads the leg's files and runs
 [`assemble-release.sh`](../../.github/scripts/assemble-release.sh) with the version,

@@ -28,7 +28,9 @@ jobs:
   build:
     name: Build windows-x64
     runs-on: windows-latest
-    timeout-minutes: 30
+    # twice the leg's 22 min 56 s in its first successful dry run (#117), rounded
+    # up to whole 5 minutes; see docs/operations/cli.md.
+    timeout-minutes: 50
     outputs:
       windows_x64_sha256: ${{ steps.hash.outputs.windows_x64_sha256 }}
       windows_x64_msi_sha256: ${{ steps.hash.outputs.windows_x64_msi_sha256 }}
