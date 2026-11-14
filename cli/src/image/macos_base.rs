@@ -44,6 +44,45 @@ pub const MACOS_BASE: MacosBase = MacosBase {
     retired: &[],
 };
 
+/// the refusal when the host's macOS, as `sw_vers -productVersion` prints it, is
+/// older than the base's, because a macOS guest cannot be newer than its host; none
+/// when the host is the same or newer. Versions compare number by number, a missing
+/// number counting as 0, and a host version that is not dot-separated numbers is
+/// refused too.
+#[must_use]
+pub fn host_refusal(base: &MacosBase, host: &str) -> Option<String> {
+    let older = match (numbers(host.trim()), numbers(base.macos_version)) {
+        (Some(host), Some(base)) => {
+            let width = host.len().max(base.len());
+            let padded = |v: &[u32]| {
+                (0..width)
+                    .map(|i| v.get(i).copied().unwrap_or(0))
+                    .collect::<Vec<_>>()
+            };
+            padded(&host) < padded(&base)
+        }
+        _ => true,
+    };
+    older.then(|| {
+        format!(
+            "the pinned macOS base is macOS {}, newer than this Mac's macOS {}; update the Mac first",
+            base.macos_version,
+            host.trim()
+        )
+    })
+}
+
+fn numbers(version: &str) -> Option<Vec<u32>> {
+    version
+        .split('.')
+        .map(|part| {
+            (!part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
+                .then(|| part.parse().ok())
+                .flatten()
+        })
+        .collect()
+}
+
 /// the warnings about the base's age as of `now`: one from 30 days after its
 /// publication, and a stronger one from 60 days, both inclusive.
 #[must_use]
@@ -102,6 +141,23 @@ mod tests {
         assert_eq!(MACOS_BASE.published, "2026-10-15");
         assert_eq!(MACOS_BASE.macos_version, "26.6.2");
         assert!(MACOS_BASE.retired.is_empty());
+    }
+
+    #[test]
+    fn a_host_older_than_the_base_is_refused_and_the_same_or_newer_is_not() {
+        for host in ["26.6.2", "26.6.3", "26.7", "27.0", "27", "100.0\n"] {
+            assert_eq!(host_refusal(&MACOS_BASE, host), None, "{host}");
+        }
+        for host in ["26.6.1", "26.6", "26", "25.9.9", "", "27.x", "27..0"] {
+            assert!(host_refusal(&MACOS_BASE, host).is_some(), "{host:?}");
+        }
+        assert_eq!(
+            host_refusal(&MACOS_BASE, "26.5").as_deref(),
+            Some(
+                "the pinned macOS base is macOS 26.6.2, newer than this Mac's macOS 26.5; update \
+                 the Mac first"
+            )
+        );
     }
 
     #[test]
