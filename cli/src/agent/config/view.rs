@@ -191,6 +191,73 @@ tokn = \"ghp_000000000000000000000000000000000000\"
     }
 
     #[test]
+    fn the_editor_reads_exactly_the_value_keys_the_schema_defines_for_each_host() {
+        use std::collections::BTreeSet;
+
+        use crate::validate::{Key, parse_toml_path, toml_key_name};
+
+        fn lines(keys: &[(&str, Type)]) -> String {
+            keys.iter()
+                .map(|(key, kind)| {
+                    let value = match kind {
+                        Type::Text => "\"x\"",
+                        Type::Integer => "1",
+                        Type::Number => "1.5",
+                        Type::Flag => "true",
+                        Type::Texts => "[\"x\"]",
+                    };
+                    format!("{key} = {value}\n")
+                })
+                .collect()
+        }
+        // the keys that hold tables, and `schema_version`, which the editor leaves out
+        // with `[lifecycle]`.
+        let not_values = ["schema_version", "lifecycle", "budget", "pool", "volumes"];
+        let nested = ["budget", "volumes"];
+        let keys = |object: &Json| -> BTreeSet<String> {
+            object
+                .as_object()
+                .unwrap()
+                .keys()
+                .filter(|key| !nested.contains(&key.as_str()))
+                .cloned()
+                .collect()
+        };
+        let text = format!(
+            "{}[budget]\n{}[[pool]]\n{}[[pool.volumes]]\n{}",
+            lines(&SETTINGS),
+            lines(&BUDGET),
+            lines(&POOL),
+            lines(&VOLUME)
+        );
+        for profile in [Profile::Axpc, Profile::Axmc] {
+            let defined = |prefix: &str| -> BTreeSet<String> {
+                Key::ALL
+                    .into_iter()
+                    .map(toml_key_name)
+                    .filter(|name| !not_values.contains(name))
+                    .filter(|name| parse_toml_path(&format!("{prefix}{name}"), profile).is_some())
+                    .filter(|name| {
+                        parse_toml_path(&format!("{prefix}{name}[0]"), profile).is_none()
+                    })
+                    .map(str::to_string)
+                    .collect()
+            };
+            let (settings, pools) = editable(&text, profile).unwrap();
+            let settings = Json::Object(settings);
+            let budget = settings.get("budget").map(keys).unwrap_or_default();
+            assert_eq!(keys(&settings), defined(""), "{profile:?}");
+            assert_eq!(budget, defined("budget."), "{profile:?}");
+            assert_eq!(keys(&pools[0]), defined("pool[0]."), "{profile:?}");
+            assert_eq!(
+                keys(&pools[0]["volumes"][0]),
+                defined("pool[0].volumes[0]."),
+                "{profile:?}"
+            );
+        }
+    }
+
+    #[test]
     fn text_that_is_not_toml_has_no_values() {
         assert!(editable("name = ", Profile::Axpc).is_none());
     }
