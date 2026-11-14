@@ -280,17 +280,24 @@ fn a_saved_change_shows_no_note_and_is_announced_with_its_label() {
 }
 
 #[test]
-fn while_a_setting_is_saved_no_other_can_be_changed() {
+fn while_a_setting_is_saved_no_other_can_be_changed_and_it_shows_the_value_chosen() {
     let snapshot = with_lifecycle(|_| {});
     let ui = SettingsUi {
-        writing: Some("keep_awake".to_string()),
+        writing: Some(("keep_awake".to_string(), false)),
         results: Default::default(),
     };
     let view = view_with(&snapshot, &ui);
+    let tab = settings(&view);
     assert_eq!(
-        settings(&view).unavailable.as_deref(),
-        Some("Settings cannot be changed while another setting is being saved.")
+        tab.unavailable.as_deref(),
+        Some("Settings cannot be changed while a setting is being saved.")
     );
+    let rows: Vec<_> = tab.groups.iter().flat_map(|group| &group.rows).collect();
+    let saving = rows.iter().find(|row| row.key == "keep_awake").unwrap();
+    assert_eq!(saving.checked, Some(false));
+    assert_eq!(saving.state, "Being saved as off.");
+    let other = rows.iter().find(|row| row.key == "start_at_login").unwrap();
+    assert_ne!(other.state, "Being saved as off.");
 }
 
 #[test]

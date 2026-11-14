@@ -3,12 +3,13 @@
 // a note under it when the view gives one.
 //
 // A checkbox that cannot be changed stays focusable and is never dimmed: it reports
-// itself disabled, the reason is part of its description, and a click does not toggle
-// it. The agent writes a change, and the next view shows what it came to.
+// itself disabled, the reason is part of its description and its balloon, and a click
+// does not toggle it. The agent writes a change, and the next view shows what it came to.
 
 import { nextId } from "./controls.js";
 import { h } from "./dom.js";
 import { icon } from "./icons.js";
+import { attachTip } from "./tooltip.js";
 
 const NOTE_ICON = { info: "info", warning: "warning", error: "error" };
 
@@ -24,7 +25,8 @@ function note(row, noteId) {
   );
 }
 
-function settingRow(row, offId, ctx) {
+function settingRow(row, off, ctx) {
+  const offId = off?.id;
   const checkId = nextId("setting");
   const descriptionId = nextId("setting-description");
   const noteId = row.note ? nextId("setting-note") : null;
@@ -48,10 +50,14 @@ function settingRow(row, offId, ctx) {
   });
   // a value the view does not know shows neither on nor off
   box.indeterminate = row.checked === null;
+  const control = off ? h("span", { class: "tipwrap" }, box) : box;
+  if (off) {
+    attachTip(control, () => off.reason);
+  }
   return h(
     "div",
     { class: "set-row" },
-    box,
+    control,
     h(
       "div",
       { class: "set-text" },
@@ -94,7 +100,13 @@ export function settingsPanel(tab, ctx) {
         h(
           "div",
           { class: "set-list" },
-          group.rows.map((row) => settingRow(row, offId, ctx)),
+          group.rows.map((row) =>
+            settingRow(
+              row,
+              offId && { id: offId, reason: tab.unavailable },
+              ctx,
+            ),
+          ),
         ),
       );
     }),

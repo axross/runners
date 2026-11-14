@@ -55,8 +55,7 @@ test("a change sends the setting's key and its new value", () => {
 });
 
 test("an unavailable checkbox does not toggle and gives its reason in its description", () => {
-  const why =
-    "Settings cannot be changed while another setting is being saved.";
+  const why = "Settings cannot be changed while a setting is being saved.";
   const panel = settingsPanel(tab({ unavailable: why }), {});
   const box = checkbox(panel);
   assert.equal(box.getAttribute("aria-disabled"), "true");

@@ -703,6 +703,7 @@ impl<D: Dial> Session<D> {
                 self.stage = Stage::Live;
                 self.connection = Connection::Connected;
                 self.last_heard_ms = Some(self.now_ms());
+                self.settings.results.clear();
                 self.log.info("Connected to the agent.");
                 if send_launch {
                     self.send_launch_call();
@@ -792,6 +793,10 @@ impl<D: Dial> Session<D> {
         match pushed.unwrap_or(Pushed::Closed) {
             Pushed::Snapshot(snapshot) => {
                 self.last_heard_ms = Some(self.now_ms());
+                // a result under a setting stands until the settings it was about change
+                if self.snapshot.as_ref().map(|old| &old.lifecycle) != Some(&snapshot.lifecycle) {
+                    self.settings.results.clear();
+                }
                 self.snapshot = Some(*snapshot);
                 self.snapshot_for_drain();
                 self.refresh();
@@ -932,6 +937,10 @@ impl<D: Dial> Session<D> {
             since_ms,
         });
         self.answered = None;
+        if act == Act::StartAll {
+            // Start all reads config.toml again, so a refusal no longer stands
+            self.settings.results.clear();
+        }
         // the transition shows at once, before the agent has answered
         self.refresh();
         let report = self.report.clone();
@@ -1108,7 +1117,7 @@ impl<D: Dial> Session<D> {
             let _ = reply.send(Ok(()));
             return;
         };
-        self.settings.writing = Some(key.clone());
+        self.settings.writing = Some((key.clone(), on));
         self.refresh();
         let report = self.report.clone();
         tokio::spawn(async move {

@@ -810,19 +810,21 @@ the others, and the window never opens on it.
   read or a problem names that key, shows the checkbox neither on nor off.
 - **A change** calls `set_setting`, which sends `lifecycle_set` with the key and the
   new value; the app never writes the file. While it is out every checkbox is
-  unavailable, and its answer is said through the live region without moving focus:
+  unavailable, the changed one keeps the value chosen and reads "Being saved as
+  off.", and its answer is said through the live region without moving focus:
   "Saved: "Keep the computer awake while runners run" is off.", or the refusal, which
-  also stays under the setting. `config_changed` says the file changed since Marshal
+  also stays under the setting until Start All, a new connection or a change in the
+  snapshot's settings. `config_changed` says the file changed since Marshal
   read it, that the edits in the file were kept, and to choose Start All before
   changing the setting again; `busy` says to change it again; any other refusal gives
   the agent's words after "Not saved:". A change the agent does not answer in 10 s
   says it may still be saved, and the checkbox follows the snapshot.
 - **Unavailable.** While Marshal has lost contact, is quitting, does not know the
-  agent's state, `config.toml` is missing, unreadable or has problems, another
-  setting is being saved, or the agent reports no `lifecycle` part, every checkbox
+  agent's state, `config.toml` is missing, unreadable or has problems, a setting is
+  being saved, or the agent reports no `lifecycle` part, every checkbox
   reports itself disabled, stays focusable, does not toggle and takes the neutral
   colour (`GrayText` in a Windows contrast theme), and the reason is part of each
-  checkbox's description.
+  checkbox's description and shows in its balloon on hover and focus.
 - **Notes** under a setting, part of its description: Windows' Startup apps keeping
   Marshal from starting at sign-in, naming "Windows Settings > Apps > Startup"; a
   failed Run key write, with Windows' words; the keep-awake warning; a resume waiting

@@ -112,3 +112,57 @@ async fn a_key_that_is_not_a_setting_is_refused_before_anything_is_sent() {
     );
     assert!(agent.calls().is_empty());
 }
+
+#[tokio::test(start_paused = true)]
+async fn a_refusal_stands_until_the_settings_change_or_start_all_reads_the_file_again() {
+    let (agent, session) = connected().await;
+    let refuse = || {
+        Err(Failure::Config {
+            code: "config_changed".to_string(),
+            message: "config.toml changed after the agent read it".to_string(),
+        })
+    };
+    agent.answer("lifecycle_set", refuse());
+    session
+        .handle
+        .set_setting("keep_awake".to_string(), false)
+        .await
+        .unwrap();
+    session.settle().await;
+    // a snapshot about something else leaves it
+    agent.push(patched("running", |value| {
+        value["configuration"]["status"] = json!("valid");
+        value["lifecycle"] = json!({
+            "settings": { "keep_awake": { "on": true, "defaulted": true } },
+            "keep_awake": "held"
+        });
+    }));
+    session.settle().await;
+    assert!(note(&session, "keep_awake").is_some());
+    // the settings changing clears it
+    agent.push(patched("running", |value| {
+        value["configuration"]["status"] = json!("valid");
+        value["lifecycle"] = json!({
+            "settings": { "keep_awake": { "on": false, "defaulted": false } },
+            "keep_awake": "off"
+        });
+    }));
+    session.settle().await;
+    assert_eq!(note(&session, "keep_awake"), None);
+    // and so does Start all
+    agent.answer("lifecycle_set", refuse());
+    session
+        .handle
+        .set_setting("keep_awake".to_string(), true)
+        .await
+        .unwrap();
+    session.settle().await;
+    assert!(note(&session, "keep_awake").is_some());
+    session
+        .handle
+        .act(marshal_session::Act::StartAll)
+        .await
+        .ok();
+    session.settle().await;
+    assert_eq!(note(&session, "keep_awake"), None);
+}

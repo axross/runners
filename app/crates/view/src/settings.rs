@@ -16,6 +16,7 @@ const INTRO: &str = "Saved in config.toml as soon as you change it. An edit made
 takes effect at the next Start All.";
 
 const INVALID: &str = "Settings cannot be changed while config.toml has problems. Fix the file, then choose Start All.";
+const MISSING: &str = "Settings cannot be changed until config.toml exists.";
 
 /// the chip the Settings tab carries while something there needs the user.
 pub const NEEDS_ATTENTION: &str = "Needs attention";
@@ -119,9 +120,7 @@ fn lifecycle<'a>(context: &Context<'a>) -> Option<&'a LifecycleInfo> {
 /// whether the configuration file cannot be edited: missing, unreadable or with problems.
 fn file_unusable(context: &Context<'_>) -> Option<&'static str> {
     match &context.resident {
-        Resident::Stopped(Stop::NoConfiguration) => {
-            return Some("Settings cannot be changed until config.toml exists.");
-        }
+        Resident::Stopped(Stop::NoConfiguration) => return Some(MISSING),
         Resident::Stopped(Stop::InvalidConfiguration) => return Some(INVALID),
         _ => {}
     }
@@ -129,7 +128,7 @@ fn file_unusable(context: &Context<'_>) -> Option<&'static str> {
         .snapshot
         .map_or("", |snapshot| snapshot.configuration.status.as_str());
     match status {
-        "missing" => Some("Settings cannot be changed until config.toml exists."),
+        "missing" => Some(MISSING),
         "invalid" | "unreadable" => Some(INVALID),
         _ => None,
     }
@@ -152,7 +151,7 @@ fn unavailable(context: &Context<'_>) -> Option<String> {
             .input
             .settings
             .and_then(|ui| ui.writing.as_ref())
-            .map(|_| "Settings cannot be changed while another setting is being saved.")
+            .map(|_| "Settings cannot be changed while a setting is being saved.")
     })
     .or_else(|| {
         lifecycle(context)
@@ -300,7 +299,20 @@ fn row(
     let value = lifecycle
         .filter(|_| !unreadable(context, setting))
         .and_then(|lifecycle| lifecycle.settings.get(key));
+    let saving = context
+        .input
+        .settings
+        .and_then(|ui| ui.writing.as_ref())
+        .filter(|(writing, _)| writing == key)
+        .map(|(_, on)| *on);
     let state = match value {
+        // the checkbox keeps the value chosen until the agent answers
+        _ if saving.is_some() => {
+            format!(
+                "Being saved as {}.",
+                on_off(saving == Some(true)).to_lowercase()
+            )
+        }
         Some(value) if value.on == setting.windows_default() => {
             format!("{} (default).", on_off(value.on))
         }
@@ -327,7 +339,7 @@ fn row(
         label: label.to_string(),
         description: description.to_string(),
         state,
-        checked: value.map(|value| value.on),
+        checked: saving.or(value.map(|value| value.on)),
         note: result.or_else(|| state_note(context, lifecycle, setting)),
     };
     (row, refused || startup_off)
@@ -336,7 +348,8 @@ fn row(
 pub fn tab(context: &Context<'_>) -> SettingsTab {
     let lifecycle = lifecycle(context);
     let unavailable = unavailable(context);
-    let mut attention = file_unusable(context) == Some(INVALID);
+    let invalid = file_unusable(context) == Some(INVALID);
+    let mut attention = invalid;
     let mut groups: Vec<SettingGroup> = Vec::new();
     for (group, setting, label, description) in SETTINGS {
         let (row, needs) = row(context, lifecycle, (setting, label, description));
@@ -350,7 +363,7 @@ pub fn tab(context: &Context<'_>) -> SettingsTab {
         }
     }
     SettingsTab {
-        intro: if file_unusable(context) == Some(INVALID) {
+        intro: if invalid {
             INVALID.to_string()
         } else {
             INTRO.to_string()

@@ -112,11 +112,11 @@ pub enum SettingResult {
     NotAnswered,
 }
 
-/// the settings as the app has them: the setting being written, and the latest result
-/// for each setting by its key.
+/// the settings as the app has them: the setting being written with the value it is
+/// written as, and the latest result for each setting by its key.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SettingsUi {
-    pub writing: Option<String>,
+    pub writing: Option<(String, bool)>,
     pub results: BTreeMap<String, SettingResult>,
 }
 
