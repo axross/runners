@@ -94,7 +94,7 @@ fn a_linux_and_macos_configuration_runs_each_pool_in_a_vm_of_its_os() {
     };
     assert_eq!(source_of("macone"), MACOS_GOLDEN);
     assert_eq!(source_of("linuxone"), linux_golden);
-    let runs = std::fs::read_to_string(host.tart_dir().join("macos_runs")).unwrap();
+    let runs = host.wait_for_macos_run("marshal-job-macone-1-", RUNNING_WITHIN);
     assert!(runs.starts_with("marshal-job-macone-1-"), "{runs}");
     let macos_set = host
         .tart_calls()
@@ -328,7 +328,7 @@ fn a_restart_after_a_macos_pool_is_added_runs_it_in_a_macos_vm() {
         .find(|call| call[0] == "clone" && call[2].starts_with("marshal-job-macone-"))
         .unwrap();
     assert_eq!(macos_clone[1], MACOS_GOLDEN);
-    assert!(host.tart_dir().join("macos_runs").exists());
+    host.wait_for_macos_run("marshal-job-macone-", RUNNING_WITHIN);
     assert!(host.status().contains("golden-macos-vm-version: 1"));
 
     std::fs::write(
