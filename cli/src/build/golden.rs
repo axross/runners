@@ -125,7 +125,7 @@ impl GoldenBuild<'_> {
             return Ok(());
         };
         self.vm().remove_build_vm(&session).await;
-        Err(abort.message())
+        Err(abort.message("the golden VM"))
     }
 
     async fn make(&self, session: &mut Session) -> Result<(), Abort> {

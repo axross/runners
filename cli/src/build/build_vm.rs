@@ -37,15 +37,15 @@ impl From<String> for Abort {
 }
 
 impl Abort {
-    pub(super) fn message(self) -> String {
+    /// the build's refusal or failure, naming the VM it builds as `vm`, such as "the
+    /// golden VM".
+    pub(super) fn message(self, vm: &str) -> String {
         match self {
             Self::Refused(reason) | Self::CommitUnknown(reason) => reason,
-            Self::Stopped => "the build was stopped before the golden VM was complete, so the \
-                              golden VM is unchanged"
-                .to_string(),
-            Self::Failed(reason) => {
-                format!("the golden VM build failed ({reason}), so the golden VM is unchanged")
+            Self::Stopped => {
+                format!("the build was stopped before {vm} was complete, so {vm} is unchanged")
             }
+            Self::Failed(reason) => format!("{vm} build failed ({reason}), so {vm} is unchanged"),
         }
     }
 }

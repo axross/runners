@@ -74,9 +74,7 @@ impl GoldenMacosBuild<'_> {
             return Ok(());
         };
         self.vm().remove_build_vm(&session).await;
-        Err(abort
-            .message()
-            .replace("the golden VM", "the golden macOS VM"))
+        Err(abort.message("the golden macOS VM"))
     }
 
     async fn make(&self, session: &mut Session) -> Result<(), Abort> {
