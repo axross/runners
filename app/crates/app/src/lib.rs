@@ -7,6 +7,8 @@ mod app_menu;
 pub mod commands;
 pub mod confirmation;
 mod icon;
+#[cfg(target_os = "macos")]
+mod login_item;
 mod screen;
 pub mod state;
 mod tray;
