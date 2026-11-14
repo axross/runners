@@ -221,11 +221,13 @@ pub enum Kind {
         total: u64,
         budget: u32,
     },
-    /// `reserve` is the disk any Linux pool adds for the golden VM and Tart's image
-    /// cache, which `total` includes; 0 when no pool is a Linux one.
+    /// `linux_reserve` is the disk any Linux pool adds for the golden VM and Tart's
+    /// image cache, and `macos_reserve` the disk any macOS pool adds for the golden
+    /// macOS VM and its cached base; `total` includes both, each 0 without such a pool.
     DiskBudgetExceeded {
         total: u64,
-        reserve: u64,
+        linux_reserve: u64,
+        macos_reserve: u64,
         budget: u32,
     },
     /// a Linux pool's disk below the given minimum, the golden VM's disk size.
@@ -354,12 +356,13 @@ pub fn rule_text<'k>(kind: &'k Kind, wording: &Wording) -> RuleText<'k> {
         ),
         Kind::DiskBudgetExceeded {
             total,
-            reserve,
+            linux_reserve,
+            macos_reserve,
             budget,
         } => format!(
             "pools total {total} GB of disk (the sum of {per_pool} times {}{}), above the budget of {budget} GB",
             key_name(Key::DiskGb),
-            disk_reserve(*reserve)
+            disk_reserve(*linux_reserve, *macos_reserve)
         ),
         Kind::LinuxDiskTooSmall(min) => linux_disk_too_small(*min),
         Kind::MacosBelowMinimum { min, reason } => {

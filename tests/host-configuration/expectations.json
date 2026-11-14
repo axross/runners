@@ -6,7 +6,7 @@
       "macOS VMs:         2 of 2",
       "cpus:              8 of 8\n",
       "memory:            32 of 32 GB",
-      "disk:              190 of 190 GB, including a 40 GB reserve"
+      "disk:              290 of 290 GB, including a 140 GB reserve"
     ],
     "lacks": []
   },
@@ -46,7 +46,7 @@
       "macOS VMs:         1 of 2",
       "cpus:              4 of 8\n",
       "memory:            8 of 32 GB",
-      "disk:              50 of 200 GB"
+      "disk:              150 of 200 GB, including a 100 GB reserve"
     ],
     "lacks": []
   },
@@ -73,7 +73,7 @@
       "macOS VMs:         2 of 2",
       "cpus:              8 of 8\n",
       "memory:            16 of 32 GB",
-      "disk:              100 of 200 GB"
+      "disk:              200 of 200 GB, including a 100 GB reserve"
     ],
     "lacks": []
   },
@@ -88,7 +88,7 @@
       "macOS VMs:         2 of 2",
       "cpus:              6 of 8\n",
       "memory:            32 of 32 GB",
-      "disk:              160 of 200 GB"
+      "disk:              260 of 300 GB, including a 100 GB reserve"
     ],
     "lacks": ["disk:              50 GB"]
   },
@@ -242,7 +242,7 @@
     "profile": "axmc",
     "outcome": "reject",
     "contains": [
-      "repositories[1].name: name 'example' collides with 'example' at repositories[0]; set a distinct name on one entry\n  - repositories[1].tokenPath: pools for the same repository must use the same token file as repositories[0]\n  - repositories[1].labels: ambiguous same-repository routing; labels 'axmc' also appear at repositories[0]\n  - budget: macOS pools total 3 VMs (the sum of their slots), above the limit of 2\n  - budget: pools total 1100 GB of disk (the sum of slots times diskGb), above the budget of 200 GB"
+      "repositories[1].name: name 'example' collides with 'example' at repositories[0]; set a distinct name on one entry\n  - repositories[1].tokenPath: pools for the same repository must use the same token file as repositories[0]\n  - repositories[1].labels: ambiguous same-repository routing; labels 'axmc' also appear at repositories[0]\n  - budget: macOS pools total 3 VMs (the sum of their slots), above the limit of 2\n  - budget: pools total 1200 GB of disk (the sum of slots times diskGb, plus 100 GB for the golden macOS VM and its cached base), above the budget of 200 GB"
     ],
     "lacks": []
   },

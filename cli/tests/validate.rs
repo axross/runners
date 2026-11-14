@@ -165,7 +165,7 @@ fn a_linux_pool_and_a_macos_pool_each_need_their_own_golden_vms_disk() {
     let found = errors(
         Profile::Axmc,
         r#"{
-            "budget": { "cpus": 8, "memoryGb": 16, "diskGb": 100 },
+            "budget": { "cpus": 8, "memoryGb": 16, "diskGb": 200 },
             "repositories": [
                 { "owner": "o", "repository": "r", "name": "a", "os": "linux", "slots": 1,
                   "tokenPath": "/t", "diskGb": 19 },
@@ -184,21 +184,33 @@ fn a_linux_pool_and_a_macos_pool_each_need_their_own_golden_vms_disk() {
 }
 
 #[test]
-fn a_disk_budget_without_a_linux_pool_has_no_reserve() {
-    let found = errors(
-        Profile::Axmc,
-        r#"{
-            "budget": { "cpus": 8, "memoryGb": 16, "diskGb": 50 },
-            "repositories": [
-                { "owner": "o", "repository": "r", "name": "a", "os": "macos", "slots": 1,
-                  "tokenPath": "/t", "diskGb": 60 }
+fn each_os_adds_its_own_disk_reserve_once_and_names_it_in_the_message() {
+    let config = |linux: &str| {
+        format!(
+            r#"{{
+            "budget": {{ "cpus": 16, "memoryGb": 32, "diskGb": 50 }},
+            "repositories": [{linux}
+                {{ "owner": "o", "repository": "r", "name": "a", "os": "macos", "slots": 1,
+                  "tokenPath": "/t", "diskGb": 60 }},
+                {{ "owner": "o", "repository": "r", "name": "b", "os": "macos", "slots": 1,
+                  "tokenPath": "/t", "diskGb": 60, "labels": ["other"] }}
             ]
-        }"#,
-    );
+        }}"#
+        )
+    };
     assert_eq!(
-        found,
+        errors(Profile::Axmc, &config("")),
         [
-            "budget: pools total 60 GB of disk (the sum of slots times diskGb), above the budget of 50 GB"
+            "budget: pools total 220 GB of disk (the sum of slots times diskGb, plus 100 GB for the golden macOS VM and its cached base), above the budget of 50 GB"
+        ]
+    );
+    let linux = r#"
+                { "owner": "o", "repository": "r", "name": "l", "os": "linux", "slots": 1,
+                  "tokenPath": "/t", "diskGb": 20, "labels": ["linux-only"] },"#;
+    assert_eq!(
+        errors(Profile::Axmc, &config(linux)),
+        [
+            "budget: pools total 280 GB of disk (the sum of slots times diskGb, plus 40 GB for the golden VM and Tart's image cache, plus 100 GB for the golden macOS VM and its cached base), above the budget of 50 GB"
         ]
     );
 }

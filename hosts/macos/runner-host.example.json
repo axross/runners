@@ -1,5 +1,5 @@
 {
-  "budget": { "cpus": 8, "memoryGb": 16, "diskGb": 120 },
+  "budget": { "cpus": 12, "memoryGb": 24, "diskGb": 270 },
   "repositories": [
     {
       "owner": "example-owner",
@@ -23,6 +23,13 @@
       "cpus": 4,
       "memoryGb": 8,
       "diskGb": 40
+    },
+    {
+      "owner": "example-owner",
+      "repository": "example-repo-three",
+      "name": "example-macos",
+      "os": "macos",
+      "tokenPath": "/path/to/example-repo-three.token"
     }
   ]
 }
