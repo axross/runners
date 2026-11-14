@@ -16,6 +16,8 @@ const INTRO: &str = "Saved in config.toml as soon as you change it. An edit made
 takes effect at the next Start All.";
 
 const INVALID: &str = "Settings cannot be changed while config.toml has problems. Fix the file, then choose Start All.";
+/// the same, while the runners run on the configuration read before the file changed.
+const INVALID_RUNNING: &str = "Settings cannot be changed while config.toml has problems. Fix the file, then choose Stop All and Start All.";
 const MISSING: &str = "Settings cannot be changed until config.toml exists.";
 
 /// the chip the Settings tab carries while something there needs the user.
@@ -129,7 +131,10 @@ fn file_unusable(context: &Context<'_>) -> Option<&'static str> {
         .map_or("", |snapshot| snapshot.configuration.status.as_str());
     match status {
         "missing" => Some(MISSING),
-        "invalid" | "unreadable" => Some(INVALID),
+        "invalid" | "unreadable" => Some(match context.resident {
+            Resident::Running | Resident::Resuming => INVALID_RUNNING,
+            _ => INVALID,
+        }),
         _ => None,
     }
 }
@@ -171,7 +176,8 @@ fn result_note(result: &SettingResult) -> Option<SettingNote> {
         SettingResult::Saved { .. } => return None,
         SettingResult::Refused { code, .. } if code == "config_changed" => (
             "Not saved: config.toml changed since Marshal read it. Your edits in the file were \
-             kept. Choose Start All to read them, then change the setting again."
+             kept. Start All reads them, after Stop All while the runners run; then change the \
+             setting again."
                 .to_string(),
             NoteTone::Error,
         ),
@@ -324,11 +330,13 @@ fn row(
         None if lifecycle.is_some() => "Not readable in config.toml.".to_string(),
         None => "Not known while config.toml cannot be read.".to_string(),
     };
-    let result = context
-        .input
-        .settings
-        .and_then(|ui| ui.results.get(key))
-        .and_then(result_note);
+    let latest = context.input.settings.and_then(|ui| ui.results.get(key));
+    // a saved value holds the checkbox until the snapshot that shows it arrives
+    let saved = match latest {
+        Some(SettingResult::Saved { on }) => Some(*on),
+        _ => None,
+    };
+    let result = latest.and_then(result_note);
     let refused = result
         .as_ref()
         .is_some_and(|note| note.tone == NoteTone::Error);
@@ -339,7 +347,7 @@ fn row(
         label: label.to_string(),
         description: description.to_string(),
         state,
-        checked: saving.or(value.map(|value| value.on)),
+        checked: saving.or(saved).or(value.map(|value| value.on)),
         note: result.or_else(|| state_note(context, lifecycle, setting)),
     };
     (row, refused || startup_off)
@@ -348,8 +356,8 @@ fn row(
 pub fn tab(context: &Context<'_>) -> SettingsTab {
     let lifecycle = lifecycle(context);
     let unavailable = unavailable(context);
-    let invalid = file_unusable(context) == Some(INVALID);
-    let mut attention = invalid;
+    let invalid = file_unusable(context).filter(|why| [INVALID, INVALID_RUNNING].contains(why));
+    let mut attention = invalid.is_some();
     let mut groups: Vec<SettingGroup> = Vec::new();
     for (group, setting, label, description) in SETTINGS {
         let (row, needs) = row(context, lifecycle, (setting, label, description));
@@ -363,8 +371,8 @@ pub fn tab(context: &Context<'_>) -> SettingsTab {
         }
     }
     SettingsTab {
-        intro: if invalid {
-            INVALID.to_string()
+        intro: if let Some(why) = invalid {
+            why.to_string()
         } else {
             INTRO.to_string()
         },

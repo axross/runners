@@ -814,9 +814,11 @@ the others, and the window never opens on it.
   off.", and its answer is said through the live region without moving focus:
   "Saved: "Keep the computer awake while runners run" is off.", or the refusal, which
   also stays under the setting until Start All, a new connection or a change in the
-  snapshot's settings. `config_changed` says the file changed since Marshal
-  read it, that the edits in the file were kept, and to choose Start All before
-  changing the setting again; `busy` says to change it again; any other refusal gives
+  snapshot's `lifecycle` part (its settings, the sign-in item, keep-awake or a
+  resume); a saved value holds the checkbox until the snapshot shows it.
+  `config_changed` says the file changed since Marshal read it, that the edits in the
+  file were kept and Start All reads them, after Stop All while the runners run,
+  before changing the setting again; `busy` says to change it again; any other refusal gives
   the agent's words after "Not saved:". A change the agent does not answer in 10 s
   says it may still be saved, and the checkbox follows the snapshot.
 - **Unavailable.** While Marshal has lost contact, is quitting, does not know the

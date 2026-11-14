@@ -264,18 +264,20 @@ fn another_refusal_gives_the_agents_reason() {
 }
 
 #[test]
-fn a_saved_change_shows_no_note_and_is_announced_with_its_label() {
+fn a_saved_change_shows_no_note_holds_its_value_and_is_announced_with_its_label() {
     let snapshot = with_lifecycle(|_| {});
     let saved = SettingResult::Saved { on: false };
     let ui = SettingsUi {
         writing: None,
-        results: [("stop_on_network_change".to_string(), saved.clone())].into(),
+        results: [("keep_awake".to_string(), saved.clone())].into(),
     };
     let view = view_with(&snapshot, &ui);
-    assert_eq!(row(settings(&view), "stop_on_network_change").note, None);
+    assert_eq!(row(settings(&view), "keep_awake").note, None);
+    // the snapshot still says on: the saved value holds until it shows the change
+    assert_eq!(row(settings(&view), "keep_awake").checked, Some(false));
     assert_eq!(
-        saved.announcement("Stop the runners when the network changes"),
-        "Saved: \"Stop the runners when the network changes\" is off."
+        saved.announcement("Keep the computer awake while runners run"),
+        "Saved: \"Keep the computer awake while runners run\" is off."
     );
 }
 
@@ -330,7 +332,14 @@ fn a_problem_naming_one_setting_leaves_only_that_one_unknown() {
     assert_eq!(row(tab, "keep_awake").checked, None);
     assert_eq!(row(tab, "keep_awake").state, "Not readable in config.toml.");
     assert_eq!(row(tab, "stop_on_network_change").checked, Some(false));
-    assert!(tab.unavailable.is_some());
+    // the runners still run on the file read before, so Start All alone is not offered
+    assert_eq!(
+        tab.unavailable.as_deref(),
+        Some(
+            "Settings cannot be changed while config.toml has problems. Fix the file, then \
+             choose Stop All and Start All."
+        )
+    );
 }
 
 #[test]

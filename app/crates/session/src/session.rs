@@ -793,7 +793,8 @@ impl<D: Dial> Session<D> {
         match pushed.unwrap_or(Pushed::Closed) {
             Pushed::Snapshot(snapshot) => {
                 self.last_heard_ms = Some(self.now_ms());
-                // a result under a setting stands until the settings it was about change
+                // a result under a setting stands until the snapshot's lifecycle part changes:
+                // its settings, the sign-in item, keep-awake or a resume
                 if self.snapshot.as_ref().map(|old| &old.lifecycle) != Some(&snapshot.lifecycle) {
                     self.settings.results.clear();
                 }

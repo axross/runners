@@ -114,7 +114,7 @@ async fn a_key_that_is_not_a_setting_is_refused_before_anything_is_sent() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_refusal_stands_until_the_settings_change_or_start_all_reads_the_file_again() {
+async fn a_refusal_stands_until_the_lifecycle_part_changes_or_start_all_reads_the_file_again() {
     let (agent, session) = connected().await;
     let refuse = || {
         Err(Failure::Config {
@@ -129,9 +129,10 @@ async fn a_refusal_stands_until_the_settings_change_or_start_all_reads_the_file_
         .await
         .unwrap();
     session.settle().await;
-    // a snapshot about something else leaves it
+    // a snapshot that changes something else leaves it
     agent.push(patched("running", |value| {
         value["configuration"]["status"] = json!("valid");
+        value["runners_up"] = json!(0);
         value["lifecycle"] = json!({
             "settings": { "keep_awake": { "on": true, "defaulted": true } },
             "keep_awake": "held"
@@ -139,7 +140,7 @@ async fn a_refusal_stands_until_the_settings_change_or_start_all_reads_the_file_
     }));
     session.settle().await;
     assert!(note(&session, "keep_awake").is_some());
-    // the settings changing clears it
+    // the lifecycle part changing clears it
     agent.push(patched("running", |value| {
         value["configuration"]["status"] = json!("valid");
         value["lifecycle"] = json!({
