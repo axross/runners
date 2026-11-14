@@ -14,7 +14,7 @@ It is the document other children of the roadmap
 state, the token store, protocol version 2 and the snapshot. [Security](../conventions/security.md)
 owns the rules the app is reviewed against, including its web view, its capabilities
 and its dependencies. [Windows Runner Host](./windows-runner-host.md) owns running
-axpc's pools with the command line, which is how axpc runs them today.
+axpc's pools with the app.
 
 ## What Exists
 
@@ -72,7 +72,7 @@ A `fake-docker` binary is built beside `marshal-app` from the CLI's
 start this executable's exporter child can run it against a fake engine. The package
 sets `default-run = "marshal-app"`, so `cargo run` still starts the app. The helper
 is built by every build of the package and only the app's own executable is uploaded
-or, later, released.
+and released.
 
 ### The Debug-Only Test Variables
 
@@ -119,11 +119,9 @@ web view.
   that is no longer the file the app started from.
 - **Sign-in.** While `start_at_login` is on in `config.toml`'s `[lifecycle]`, the
   agent keeps the current user's Run value `Marshal`, which starts the app with
-  `--sign-in` (see [CLI](./cli.md#the-agents-signals)). The app is not yet installed
-  or released, so this is unverified on axpc until W3's out-of-tree check. The
-  app's installer does not remove the value yet: before uninstalling, turn the
-  setting off, or delete `Marshal` under
-  `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` afterwards.
+  `--sign-in` (see [CLI](./cli.md#the-agents-signals)). Signing in with
+  it on is unverified on axpc until W3's out-of-tree check. The installer's uninstall
+  removes the value, and an absent value is not an error.
 - **A dropped connection** that is not a quit keeps the last list, marked with its
   time, under a lost-contact banner. The app starts the agent again once and then
   offers Try Again.
@@ -681,8 +679,7 @@ runners were running, and starts `msiexec.exe /i <msi> /passive /promptrestart
 AUTOLAUNCHAPP=True LAUNCHAPPARGS="<its own arguments>"`; the plugin then ends the app.
 The installer shows Windows Installer's progress window. Starting the new app, which
 starts its agent, depends on the MSI honouring `AUTOLAUNCHAPP` and `LAUNCHAPPARGS`;
-that is a criterion of W1's installer pull request, and until it merges there is no
-app MSI on main. If the process has not exited in 60 s, or the installer does not
+W1's installer pull request tests it in `test-msi-installer.ps1`. If the process has not exited in 60 s, or the installer does not
 start, the app drops the update and the record, handles the agent's end as any other,
 and checks again an hour later. An end for an update another client asked for is
 handled as any other end.

@@ -143,8 +143,8 @@ mode. Not to be confused with an **Agent Host**. See
 shows the icon, its menu and the main window and, started again with `agent` as its
 first argument, runs the **Resident Agent** in a separate hidden process that outlives
 it. The app is a client of **Protocol Version 2** only; it never holds the lock, reads
-the configuration, touches the **Token Store** or runs Docker. It is built in CI and
-not yet installed or released. See [operations/app.md](./operations/app.md).
+the configuration, touches the **Token Store** or runs Docker. A release ships it with
+its per-user MSI. See [operations/app.md](./operations/app.md).
 
 **Token Store** - where the **Resident Agent** keeps each **Target Repository**'s
 token, by the repository's lower-case `owner/name`, and an organization's by its

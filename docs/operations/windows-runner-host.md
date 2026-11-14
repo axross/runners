@@ -87,9 +87,10 @@ Not yet verified on axpc, each for the reason given:
   [Docker's system requirements](https://docs.docker.com/desktop/setup/install/windows-install/)),
   with hardware virtualization enabled and the WSL 2 feature on.
 - **The machine stays powered on, signed in, and online.** Locked is fine; signed
-  out is not. Marshal runs as the signed-in user, from its notification-area icon,
-  and nothing starts it at sign-in yet, so after a reboot or a sign-out the pools
-  stay down until you start Marshal from the Start menu again. A job whose labels match no runner
+  out is not. Marshal runs as the signed-in user, from its notification-area icon.
+  It starts at sign-in only while `start_at_login` is on in `config.toml`'s
+  `[lifecycle]`; otherwise, after a reboot or a sign-out the pools stay down until you
+  start Marshal from the Start menu again. A job whose labels match no runner
   waits in the queue until GitHub cancels it.
 - **Docker Desktop** with the WSL 2 backend. This procedure does not use the
   Hyper-V backend or a Docker Engine inside a WSL distribution.
@@ -544,8 +545,9 @@ when the window or the app closes. The agent checks the configuration as
 `%LOCALAPPDATA%\marshal\logs\`, waits for Docker, checks the image, prepares every
 pool, and then runs every slot until it is stopped. With a configuration that cannot
 be used, an image that cannot run jobs, or no pool able to start, it stays running
-and stopped, and the window names the problem. Nothing starts Marshal at sign-in yet:
-after a reboot or a sign-out the pools stay down until you start it again.
+and stopped, and the window names the problem. Unless
+`start_at_login` is on, nothing starts Marshal at sign-in: after a reboot or a sign-out
+the pools stay down until you start it again.
 
 From the notification-area icon's menu:
 
@@ -958,8 +960,8 @@ Hub. No inbound port is needed.
   GitHub's side, and re-running the workflow is the recovery. The agent keeps
   running: each slot's next attempt fails into its backoff while Docker does not
   answer, remeasures affinity, and resumes by itself when Docker is back.
-- **The pools are down after a reboot or a sign-out:** nothing starts Marshal at
-  sign-in yet. Start it from the Start menu once Docker Desktop is up, or straight
+- **The pools are down after a reboot or a sign-out:** unless `start_at_login`
+  is on in `[lifecycle]`, nothing starts Marshal at sign-in. Start it from the Start menu once Docker Desktop is up, or straight
   away, since the runners wait for Docker.
 - **Marshal does not answer, or a stop does not end:** the window says the agent is
   not answering, or keeps saying it is stopping. End `marshal-app.exe` in Task
