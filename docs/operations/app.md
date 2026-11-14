@@ -838,6 +838,14 @@ owns the Keychain store.
 | Not in the bundle    | a command line, a helper, a login item, a framework, a plug-in, an installer package                                                                                                                                                                                                                                                             |
 | Signature            | Planned for M2's pull request 2: Developer ID Application, hardened runtime, secure timestamp, no entitlements, signed inside-out without `--deep`; the app has no stapled ticket of its own, since notarizing the disk image notarizes it                                                                                                       |
 
+While its main window is open, Marshal shows its own menus in place of Tauri's
+default: Marshal (About Marshal, with the name and version only; Hide Marshal, Hide
+Others, Show All; Quit Marshal with Command-Q, which asks W1's question and quits as
+the icon menu's Quit does), Edit (Copy, Select All), Runners (Start All Runners, Stop
+All Runners, Build Image, under the icon menu's rules) and Window (Minimize, Close with
+Command-W, which hides the window). The icon menu's items are in title case on the Mac.
+Opening Marshal again from the Finder or Spotlight while it runs shows its window.
+
 `tauri.macos.conf.json` holds the Mac's settings, which Tauri merges over
 `tauri.conf.json` on macOS: the bundle with `app` as its only target, the icon and
 the notices, and the main window again, since a merge replaces the whole window list,
