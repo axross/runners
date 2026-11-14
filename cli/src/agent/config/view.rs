@@ -210,9 +210,9 @@ tokn = \"ghp_000000000000000000000000000000000000\"
                 })
                 .collect()
         }
-        // the keys that hold tables, and `schema_version`, which the editor leaves out
-        // with `[lifecycle]`.
-        let not_values = ["schema_version", "lifecycle", "budget", "pool", "volumes"];
+        // `schema_version` and `lifecycle` the editor leaves out, and `budget` holds a
+        // table; the keys that hold arrays of tables fail the `[0]` check below.
+        let not_values = ["schema_version", "lifecycle", "budget"];
         let nested = ["budget", "volumes"];
         let keys = |object: &Json| -> BTreeSet<String> {
             object
