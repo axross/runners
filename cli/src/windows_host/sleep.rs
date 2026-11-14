@@ -84,6 +84,21 @@ mod tests {
         }
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn windows_answers_both_clocks_and_the_unbiased_one_moves_forward() {
+        let first = ClockSample::now();
+        std::thread::sleep(Duration::from_millis(50));
+        let second = ClockSample::now();
+        assert!(
+            first
+                .zip(second)
+                .is_some_and(|(first, second)| second.unbiased > first.unbiased
+                    && !slept_between(&first, &second)),
+            "Windows refused the unbiased clock, or it did not move forward"
+        );
+    }
+
     #[test]
     fn the_unbiased_clock_falling_behind_by_more_than_three_seconds_is_a_sleep() {
         let base = base();

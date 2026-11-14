@@ -35,7 +35,7 @@ fn network(kind: Kind, index: u32, router: u8) -> NetworkReading {
     NetworkReading::Primary(primary(
         kind,
         index,
-        Some(Ipv4Addr::new(192, 168, router, 1)),
+        Some(Ipv4Addr::new(192, 0, 2, router)),
         Some([2, 0, 0, 0, 0, router]),
     ))
 }
@@ -308,7 +308,7 @@ async fn a_network_without_a_gateway_hardware_address_arms_no_resume() {
     rig.signals.set_network(NetworkReading::Primary(primary(
         Kind::Vpn,
         7,
-        Some(Ipv4Addr::new(10, 0, 0, 1)),
+        Some(Ipv4Addr::new(198, 51, 100, 1)),
         None,
     )));
     let rig = &rig;

@@ -1456,18 +1456,10 @@ fn launch_for(stopped: bool) -> Launch {
 /// you, stopped by a sleep, a network change or too many resumes, or with a resume
 /// waiting, so a restart never starts them on another network.
 fn keeps_stopped(snapshot: &Snapshot) -> bool {
-    const KEPT: [&str; 4] = [
-        StopReason::BY_YOU,
-        "slept",
-        "network_changed",
-        "resumed_too_often",
-    ];
     snapshot.agent.state == "stopped"
-        && snapshot
-            .agent
-            .reason
-            .as_ref()
-            .is_some_and(|reason| KEPT.contains(&reason.code.as_str()))
+        && snapshot.agent.reason.as_ref().is_some_and(|reason| {
+            reason.code == StopReason::BY_YOU || StopReason::is_signal_code(&reason.code)
+        })
 }
 
 /// why a removal failed, with the token store's kind and code when the agent gave them.

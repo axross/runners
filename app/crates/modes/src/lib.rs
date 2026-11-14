@@ -164,3 +164,47 @@ fn keep_awake_request() -> Option<marshal_cli::windows_host::keep_awake::Request
 fn keep_awake_request() -> Option<marshal_cli::windows_host::keep_awake::Request> {
     None
 }
+
+#[cfg(all(test, windows))]
+mod tests {
+    use std::process::Command;
+
+    /// what `powercfg /requests` lists, or none when it needs an administrator, as it
+    /// does off CI's runner.
+    fn power_requests() -> Option<String> {
+        let output = Command::new("powercfg").arg("/requests").output().ok()?;
+        output
+            .status
+            .success()
+            .then(|| String::from_utf8_lossy(&output.stdout).into_owned())
+    }
+
+    #[test]
+    fn the_keep_awake_request_is_taken_listed_by_windows_and_ended() {
+        let held = super::keep_awake_request().map(|take| take());
+        assert!(matches!(held, Some(Ok(_))), "the request was not taken");
+        let name = std::env::current_exe()
+            .ok()
+            .and_then(|path| {
+                path.file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+            })
+            .unwrap_or_default();
+        let during = power_requests();
+        drop(held);
+        let after = power_requests();
+        match (during, after) {
+            (Some(during), Some(after)) => {
+                assert!(
+                    !name.is_empty() && during.contains(&name),
+                    "not listed while held"
+                );
+                assert!(!after.contains(&name), "still listed once dropped");
+            }
+            _ => assert!(
+                std::env::var_os("CI").is_none(),
+                "powercfg /requests did not answer on CI's administrator account"
+            ),
+        }
+    }
+}

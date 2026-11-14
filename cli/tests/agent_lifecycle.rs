@@ -127,6 +127,36 @@ async fn lifecycle_set_writes_one_key_keeps_the_rest_and_takes_effect_while_runn
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn a_start_all_that_keeps_the_last_valid_configuration_keeps_a_setting_written_since() {
+    let rig = rig("");
+    let rig = &rig;
+    rig.drive(Launch::Running, |conn| async move {
+        conn.until_runner_runs().await;
+        rig.mark_running();
+        conn.call(
+            "lifecycle_set",
+            json!({ "key": "keep_awake", "value": false }),
+        )
+        .await
+        .unwrap();
+        conn.eventually("the hold ended", || !rig.signals.is_held())
+            .await;
+        conn.ok("stop_all").await;
+        rig.write_toml(&file(rig).replace("runners = 1", "runners = 0"));
+        conn.ok("start_all").await;
+        let snapshot = conn.until_runner_runs().await;
+        assert_eq!(snapshot.configuration.in_use.unwrap().source, "last_valid");
+        let lifecycle = snapshot.lifecycle.unwrap();
+        assert!(!lifecycle.settings["keep_awake"].on);
+        assert_eq!(lifecycle.keep_awake, "off");
+        assert!(!rig.signals.is_held());
+        rig.mark_running();
+        conn.ok("quit").await;
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn a_lifecycle_written_over_several_lines_is_refused_as_the_files_form_and_left_alone() {
     let rig = rig("lifecycle = {\n  keep_awake = true,\n}\n");
     let rig = &rig;

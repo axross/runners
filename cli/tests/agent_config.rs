@@ -599,6 +599,16 @@ async fn a_slot_whose_stop_runs_late_is_finished_when_its_runner_ends() {
                     .0,
                 "config_applying"
             );
+            assert_eq!(
+                refused(
+                    &conn,
+                    "lifecycle_set",
+                    json!({ "key": "keep_awake", "value": false })
+                )
+                .await
+                .0,
+                "busy"
+            );
             // the stop hangs past the deadline, so slot 2 stays listed as leaving
             let late = conn
                 .until("the apply done", |snapshot| {

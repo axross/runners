@@ -11,6 +11,9 @@ use super::keep_awake::{HoldEvent, KeepAwake};
 use super::network::Bounded;
 use super::sleep::{ClockSample, SleepDetector};
 
+/// the warning while no keep-awake request can be taken at all.
+const NO_REQUEST: &str = "keep-awake is not held (this program has no keep-awake request), so Windows may sleep when idle";
+
 pub struct WindowsSignals {
     detector: RefCell<SleepDetector>,
     sample: fn() -> Option<ClockSample>,
@@ -82,6 +85,9 @@ impl SignalSource for WindowsSignals {
     }
 
     fn keep_awake_warning(&self) -> Option<String> {
-        self.keep_awake.as_ref().and_then(KeepAwake::warning)
+        match &self.keep_awake {
+            Some(keep_awake) => keep_awake.warning(),
+            None => Some(NO_REQUEST.to_string()),
+        }
     }
 }

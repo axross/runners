@@ -144,11 +144,11 @@ mod tests {
         let wifi = primary(
             Kind::WiFi,
             12,
-            Some(Ipv4Addr::new(192, 168, 1, 1)),
+            Some(Ipv4Addr::new(192, 0, 2, 1)),
             Some([2, 0, 0, 0, 0, 1]),
         );
         assert_eq!(wifi.interface, "Wi-Fi 12");
-        assert_eq!(wifi.router, Some(Ipv4Addr::new(192, 168, 1, 1)));
+        assert_eq!(wifi.router, Some(Ipv4Addr::new(192, 0, 2, 1)));
         assert_eq!(
             wifi.hardware,
             Some(HardwareAddress::new([2, 0, 0, 0, 0, 1]))
@@ -161,7 +161,7 @@ mod tests {
         let network = primary(
             Kind::Ethernet,
             3,
-            Some(Ipv4Addr::new(10, 0, 0, 1)),
+            Some(Ipv4Addr::new(198, 51, 100, 1)),
             Some([0; 6]),
         );
         assert_eq!(network.hardware, None);
@@ -169,10 +169,22 @@ mod tests {
 
     #[test]
     fn the_same_kind_on_another_index_is_another_network() {
-        let router = Some(Ipv4Addr::new(192, 168, 1, 1));
+        let router = Some(Ipv4Addr::new(192, 0, 2, 1));
         let a = primary(Kind::WiFi, 12, router, Some([2, 0, 0, 0, 0, 1]));
         let b = primary(Kind::WiFi, 13, router, Some([2, 0, 0, 0, 0, 1]));
         assert!(!a.is_same_network_as(&b));
+    }
+
+    /// the machines that run this test have a default route, so Windows' own answer is
+    /// a primary network on a real interface.
+    #[cfg(windows)]
+    #[test]
+    fn windows_reads_the_primary_network() {
+        let reading = read();
+        assert!(
+            matches!(&reading, NetworkReading::Primary(network) if !network.interface.is_empty()),
+            "no primary network was read"
+        );
     }
 
     fn wifi() -> NetworkReading {

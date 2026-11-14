@@ -93,7 +93,7 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<'_, 
         }
         if self.inner.borrow().applying.is_some() {
             return Err(ApiError::new(
-                ErrorCode::ConfigApplying,
+                ErrorCode::Busy,
                 "an edit of the configuration is being applied",
             ));
         }
@@ -228,10 +228,11 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<'_, 
             Some(SignIn::TurnedOffInStartupApps) => (Some("turned_off"), None),
             Some(SignIn::Failed(text)) => (Some("failed"), Some(text.clone())),
         };
-        let warning = self
-            .monitor
-            .report()
+        let warning = settings
+            .is_on(Setting::KeepAwake)
+            .then(|| self.monitor.report())
             .into_iter()
+            .flatten()
             .find_map(|(field, text)| (field == "warning").then_some(text));
         let held = matches!(
             self.inner.borrow().phase,

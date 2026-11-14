@@ -50,7 +50,13 @@ impl Reason {
     /// update keeps and a restart of the agent does not undo.
     #[must_use]
     pub fn is_signal(&self) -> bool {
-        [Self::SLEPT, Self::NETWORK_CHANGED, Self::RESUMED_TOO_OFTEN].contains(&self.code)
+        Self::is_signal_code(self.code)
+    }
+
+    /// whether `code` is a signal stop's, as a client reads it off the wire.
+    #[must_use]
+    pub fn is_signal_code(code: &str) -> bool {
+        [Self::SLEPT, Self::NETWORK_CHANGED, Self::RESUMED_TOO_OFTEN].contains(&code)
     }
 
     pub(crate) fn wire(&self) -> WireReason {

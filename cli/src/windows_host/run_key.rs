@@ -212,11 +212,10 @@ mod tests {
 
     #[test]
     fn the_command_quotes_the_path_and_ends_with_the_sign_in_argument() {
-        let path =
-            PathBuf::from(r"C:\Users\Ada Lovelace\AppData\Local\Programs\marshal\marshal-app.exe");
+        let path = PathBuf::from(r"C:\Program Files\example\marshal-app.exe");
         assert_eq!(
             command(&path).unwrap(),
-            r#""C:\Users\Ada Lovelace\AppData\Local\Programs\marshal\marshal-app.exe" --sign-in"#
+            r#""C:\Program Files\example\marshal-app.exe" --sign-in"#
         );
     }
 

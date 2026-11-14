@@ -522,9 +522,12 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
             Some(previous) => load_at_start_all(folder, profile, self.clock, &checks, previous),
         };
         self.log_load(&loaded);
+        // a kept last-valid configuration predates any `lifecycle_set` since, so only a
+        // configuration read now sets what is in effect
         if let Some(settings) = loaded
             .in_use
             .as_ref()
+            .filter(|in_use| in_use.origin != Origin::LastValid)
             .and_then(|in_use| in_use.plan.settings.as_ref())
         {
             self.take_settings(InEffect::windows(settings.lifecycle));

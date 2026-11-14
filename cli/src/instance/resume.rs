@@ -115,7 +115,7 @@ mod tests {
     fn network(interface: &str, hardware: Option<u8>) -> PrimaryNetwork {
         PrimaryNetwork {
             interface: interface.to_string(),
-            router: Some(Ipv4Addr::new(192, 168, 1, 1)),
+            router: Some(Ipv4Addr::new(192, 0, 2, 1)),
             hardware: hardware.map(|last| HardwareAddress::new([2, 0, 0, 0, 0, last])),
         }
     }

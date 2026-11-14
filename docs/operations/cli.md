@@ -376,8 +376,8 @@ changes:
   `start_runners_on_launch`, `keep_awake`, `stop_on_network_change`, and
   `resume_after_stop`. Any other key in
   it is a problem, and an absent key means "not set". The rule set checks and keeps
-  the values, and nothing acts on them yet: W3 on Windows and M4 on macOS decide
-  what "not set" means and act on the rest.
+  the values. On axpc the agent applies them with their Windows defaults (see
+  [The Agent's Signals](#the-agents-signals)); on macOS nothing acts on them until M4.
 - **Encoding and size.** A leading byte-order mark is ignored and moves no position.
   A file larger than 1 MiB (1048576 bytes) is refused before it is parsed, and a file
   that is not UTF-8 is refused before TOML sees it. The file may be exactly 1 MiB.
@@ -1934,8 +1934,8 @@ transition is answered at once, never queued behind it. It starts `running` or
 | `lifecycle_set`    | Writes one `[lifecycle]` key through the write path and puts it in effect at once, in any state; see [The Agent's Signals](#the-agents-signals)                                             |
 
 A request that arrives while the agent is `resuming`, `stopping`, `building` or
-`quitting` and is not one of `status`, `config_read`, `token_set` and
-`token_remove`, a stop or a quit, is answered `busy`, except `drain_for_update`,
+`quitting` and is not one of `status`, `config_read`, `token_set`, `token_remove`,
+`lifecycle_set`, a stop or a quit, is answered `busy`, except `drain_for_update`,
 which is `refused` there. The
 agent is `resuming` from the moment it begins to read
 the configuration until the runners' pools are admitted, so a `start_all` or a
@@ -2101,17 +2101,18 @@ of the file keeps its form and comments, and `null` removes only that key's line
 answers with the snapshot's `lifecycle` part and refuses as `config_edit` does: a file
 that changed, has problems or cannot be written, a file written in a form the write
 path does not edit (`config_file_form`, such as `lifecycle = { … }` over several
-lines), while no valid configuration was read (`config_unusable`), and while an edit
-applies (`config_applying`). On axmc it is `refused`; the settings there are M4's.
+lines), and while no valid configuration was read (`config_unusable`); while an edit
+applies it is `busy`. On axmc it is `refused`; the settings there are M4's.
 
 The snapshot's `lifecycle` part, present while settings are in effect on axpc, holds
 each setting's `on` and `defaulted`, the sign-in item (`registered`,
 `not_registered`, `turned_off` in Windows' Startup apps, or `failed` with
-`sign_in_error`), `keep_awake` (`held`, `released`, `warning` with its text, or
-`off`), and after a signal stop with `resume_after_stop` on, `resume` (`waiting`, or
-`no_gateway`) with `resume_cause`, the stop's code. The agent keeps the sign-in
-item, the current user's Run key value `Marshal` (`MarshalTest` in a debug build),
-in step with `start_at_login` at each configuration it reads and at each
+`sign_in_error`), `keep_awake` (`held`, `released`, `warning` with its text, also
+while the program supplied no request, or `off`), and after a signal stop with
+`resume_after_stop` on, `resume` (`waiting`, or `no_gateway`) with `resume_cause`,
+the stop's code. The agent keeps the sign-in item, the current user's Run key value
+`Marshal` (`MarshalTest` in a debug build), in step with `start_at_login` at each
+configuration it reads and at each
 `lifecycle_set` of that key; it holds the quoted path of the program it runs from
 and `--sign-in`, at most 260 characters.
 
