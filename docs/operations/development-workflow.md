@@ -303,8 +303,8 @@ Windows app on a hosted `windows-latest` runner with `tauri-cli` at its pin, run
 release-profile tests, checks that the app's product version is the stamped version
 and that it imports no `vcruntime` DLL, builds and tests Marshal's per-user MSI with
 the real `msiexec`, and uploads the app executable, the MSI and `SHA256SUMS` as one
-artifact of the run. The dry run signs nothing and references no Environment, and no
-job of any workflow declares one until the next signing job returns. It holds
+artifact of the run. The dry run signs nothing and references no Environment; only
+`release.yaml`'s `sign-update` declares one. It holds
 `contents: read`, and nothing is attested or published; [CLI](./cli.md#releases)
 describes the build. Its `Install Blocks` job runs on Windows, needs that dry run,
 and holds `contents: read`. It downloads the dry run's artifact and runs the check and
@@ -486,11 +486,10 @@ agent relays it.
 
 ### Before the First Release
 
-The `release` Environment's part of this section, step 2, is held for M2 and W4: from
-W1's installer pull request until M2's or W4's signing job returns, no job declares
-the Environment, and the Environment, its secrets and its variable are kept for that
-job, which then needs them as this step sets them. The other steps were the first
-dispatch's prerequisites.
+The `release` Environment, step 2, is what W4's `sign-update` runs under, with the
+update-feed secrets. Its Developer ID secrets and its variable are held for M2: no job
+reads them until M2's `sign-macos` returns, which then needs them as this step sets
+them. The other steps were the first dispatch's prerequisites.
 
 Do these once, before the first dispatch:
 
@@ -507,6 +506,8 @@ Do these once, before the first dispatch:
      because the maintainer is the only reviewer and approves runs they started.
    - **Allow administrators to bypass:** off.
    - **Secrets**, Environment secrets and not repository secrets:
+     `UPDATE_FEED_SIGNING_KEY` and `UPDATE_FEED_SIGNING_KEY_PASSWORD`, which
+     [The Update-Feed Key](./app.md#the-update-feed-key) describes, and, for M2,
      `MACOS_APPLICATION_P12_BASE64`, `MACOS_INSTALLER_P12_BASE64`,
      `MACOS_P12_PASSWORD`, `MACOS_NOTARY_KEY_P8`, `MACOS_NOTARY_KEY_ID` and
      `MACOS_NOTARY_ISSUER_ID`.
@@ -514,6 +515,8 @@ Do these once, before the first dispatch:
      10 characters of A-Z and 0-9.
 
    What the secrets hold:
+   - The update-feed key and its password, as
+     [The Update-Feed Key](./app.md#the-update-feed-key) records.
    - The two Developer ID certificates, Application and Installer, both from the
      Developer ID G2 intermediate. Only the Account Holder of the Apple Developer
      Program creates them. Export each identity as its own `.p12` with the same
@@ -554,7 +557,7 @@ Do these once, before the first dispatch:
 
    Also report the Environment's settings from the Settings page: the branch rule, the
    reviewer, the self-review setting and the administrator-bypass setting. Agents
-   cannot read them. Report the six secret names, never their values, both
+   cannot read them. Report the eight secret names, never their values, both
    certificates' expiry dates and the membership's renewal date.
 
 ### Each Release
@@ -584,15 +587,15 @@ Do these once, before the first dispatch:
    queued, and only the latest of them runs.
 3. When there is nothing to release, the plan job hands out no version, and the
    other jobs are skipped. The run is green and releases nothing.
-4. When there is something to release, the run builds, assembles, attests and
-   releases without waiting for an approval: from W1's installer pull request until
-   M2's or W4's signing job returns, no job declares the `release` Environment, so
-   step 1's check at the dispatch is the only one. The signing job that returns
-   brings back an approval here, with its own checks. A failure in `build`,
-   `assemble-signed` or `attest` stops the run before any tag is pushed; fix it in a
-   pull request and dispatch again.
+4. When there is something to release, the run builds the app and the update tools,
+   then waits at `sign-update` for the maintainer's approval of the `release`
+   Environment's deployment. Approve it only after step 1's check, for the run you
+   dispatched; the approval lets the job sign the update feed. A failure in `build`,
+   `update-tool`, `sign-update`, `assemble-signed` or `attest`, or a rejected
+   approval, stops the run before any tag is pushed; fix a failure in a pull request
+   and dispatch again.
 5. After a green run, check that the release exists and carries exactly the app
-   executable, the MSI and `SHA256SUMS`:
+   executable, the MSI, `latest.json` and `SHA256SUMS`:
 
    ```bash
    gh release view v<version> --repo axross/runners --json isDraft,assets --jq '{isDraft, assets: [.assets[].name]}'
@@ -621,8 +624,10 @@ Do these once, before the first dispatch:
 
 ### Renewing the Certificates
 
-This section is held for M2 and W4: no job signs from W1's installer pull request
-until M2's `sign-macos` returns, and this yearly work applies to it from then.
+This section is held for M2: no job signs with a Developer ID certificate until M2's
+`sign-macos` returns, and this yearly work applies to it from then. The update-feed
+key `sign-update` uses does not expire;
+[The Update-Feed Key](./app.md#the-update-feed-key) records its rotation.
 
 The Developer ID certificates are expected to last one year, which the maintainer
 confirms from the certificates' dates, and renewing them is yearly work for the

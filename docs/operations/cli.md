@@ -4007,18 +4007,20 @@ it keeps the CRLF line endings of a Windows checkout. `--locked` then fails if a
 manifest and its lockfile disagree, and the app executable's product version is the
 version from the same field. `mise run test:set-release-version` tests the script.
 
-Each release carries three files, and nothing else:
+Each release carries four files, and nothing else:
 
 | File                                | Built on         | Compiler host target     |
 | ----------------------------------- | ---------------- | ------------------------ |
 | `marshal-<version>-windows-x64.exe` | `windows-latest` | `x86_64-pc-windows-msvc` |
 | `marshal-<version>-windows-x64.msi` | `windows-latest` | -                        |
+| `latest.json`                       | `ubuntu-latest`  | -                        |
 | `SHA256SUMS`                        | `ubuntu-latest`  | -                        |
 
 The `.exe` is the bytes of the built `marshal-app.exe`, a bare file, not an archive,
-and the `.msi` is the installer that holds it unchanged. `SHA256SUMS` is in the
-`sha256sum` format, one line for each of the other two files. Neither file is
-code-signed: Windows signing is deferred until a need arises, such as Smart App
+and the `.msi` is the installer that holds it unchanged. `latest.json` is the update
+feed, which [The Update Feed in the Release](#the-update-feed-in-the-release)
+describes. `SHA256SUMS` is in the `sha256sum` format, one line for each of the other
+three files. Neither the `.exe` nor the `.msi` is code-signed: Windows signing is deferred until a need arises, such as Smart App
 Control being On, so the MSI raises the prompts that [Installing](#installing)
 describes. A file name keeps the pattern `marshal-<version>-<target><suffix>`, and the
 version tells an app file from a command-line one.

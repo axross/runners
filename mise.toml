@@ -404,7 +404,7 @@ description = "Check that the WiX fetch refuses a package whose SHA-256 differs 
 run = "bash .github/scripts/tests/test-fetch-wix.sh"
 
 [tasks."test:assemble-release"]
-description = "Check the script that writes SHA256SUMS for the release's app executable and MSI and refuses another file set or a changed file"
+description = "Check the script that writes SHA256SUMS for the release's app executable, MSI and, when signed, latest.json, and refuses another file set or a changed file"
 run = "bash .github/scripts/tests/test-assemble-release.sh"
 
 [tasks."test:sign-update"]
