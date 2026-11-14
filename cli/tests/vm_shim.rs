@@ -21,7 +21,7 @@ use marshal_cli::instance::lock::InstanceLock;
 use marshal_cli::instance::roots::Roots;
 use marshal_cli::runtime::tart::{HeldVm, VmLauncher};
 use marshal_cli::vm_shim::{DIAGNOSTIC_POOL_OPTION, VM_SHIM_COMMAND, cleanup_budget};
-use support::BINARY;
+use support::COMMANDS_HELPER;
 #[cfg(debug_assertions)]
 use support::TempDir;
 use support::tart::{FAKE_TART, Fake};
@@ -30,7 +30,7 @@ const JOB_VM: &str = "marshal-job-example-repo-one-2-20240305060708009";
 const BUILD_VM: &str = "marshal-build-linux-20240305060708009";
 
 fn start_shim(fake: &Fake, vm: &str) -> Child {
-    Command::new(BINARY)
+    Command::new(COMMANDS_HELPER)
         .arg(VM_SHIM_COMMAND)
         .arg("--name")
         .arg(vm)
@@ -200,7 +200,12 @@ async fn no_shim_holds_the_instance_lock() {
     let roots = Roots::for_tests(root.path());
     let lock = InstanceLock::acquire(&roots).unwrap();
 
-    let held = HeldVm::start(&fake.client, &VmLauncher::Shim(BINARY.into()), JOB_VM).unwrap();
+    let held = HeldVm::start(
+        &fake.client,
+        &VmLauncher::Shim(COMMANDS_HELPER.into()),
+        JOB_VM,
+    )
+    .unwrap();
     let started = Instant::now();
     while !running(&fake, JOB_VM) {
         assert!(started.elapsed() < Duration::from_secs(10), "it never ran");
@@ -237,7 +242,7 @@ async fn no_shim_holds_the_instance_lock() {
 }
 
 fn start_diagnostic_shim(fake: &Fake, vm: &str, pool: &str) -> Child {
-    Command::new(BINARY)
+    Command::new(COMMANDS_HELPER)
         .arg(VM_SHIM_COMMAND)
         .arg("--name")
         .arg(vm)

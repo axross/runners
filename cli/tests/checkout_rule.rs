@@ -9,7 +9,42 @@
 
 mod support;
 
-use support::{TempDir, run_path, stderr, stdout};
+use std::path::Path;
+
+use marshal_cli::command::{checkout_rule_note, load_plan};
+use marshal_cli::profile::Profile;
+use support::TempDir;
+
+/// what reading a file gives: whether it was accepted, the plan's summary, and the
+/// note and the refusal.
+struct Checked {
+    accepted: bool,
+    summary: String,
+    messages: String,
+}
+
+fn check(config: &Path, profile: Profile) -> Checked {
+    let loaded = load_plan(config, profile);
+    let mut messages = String::new();
+    if loaded.checkout_rule_skipped {
+        messages.push_str(&checkout_rule_note(config));
+    }
+    match loaded.outcome {
+        Ok(plan) => Checked {
+            accepted: true,
+            summary: marshal_cli::summary::plan_summary(&plan).join("\n"),
+            messages,
+        },
+        Err(error) => {
+            messages.push_str(&error.message(config));
+            Checked {
+                accepted: false,
+                summary: String::new(),
+                messages,
+            }
+        }
+    }
+}
 
 const NOTE: &str = "no checkout of this project was found";
 
@@ -58,20 +93,16 @@ fn axmc_rejects_a_directory_inside_the_checkout() {
             "checkout/config/host.json",
             axmc_configuration(&directory).as_bytes(),
         );
-        let output = run_path(&config, Some("axmc"));
-        assert_eq!(
-            output.status.code(),
-            Some(1),
-            "{directory}: {}",
-            stdout(&output)
-        );
+        let output = check(&config, Profile::Axmc);
+        assert!(!output.accepted, "{directory}: {}", output.summary);
         assert!(
-            stderr(&output)
+            output
+                .messages
                 .contains("repositories[0].diagnosticDirectory: must be outside the checkout"),
             "{directory}: {}",
-            stderr(&output)
+            output.messages
         );
-        assert!(!stderr(&output).contains(NOTE));
+        assert!(!output.messages.contains(NOTE));
     }
 }
 
@@ -90,14 +121,9 @@ fn axmc_accepts_a_directory_outside_the_checkout_and_does_not_confuse_a_sibling_
             "checkout/config/host.json",
             axmc_configuration(&directory).as_bytes(),
         );
-        let output = run_path(&config, Some("axmc"));
-        assert_eq!(
-            output.status.code(),
-            Some(0),
-            "{directory}: {}",
-            stderr(&output)
-        );
-        assert!(!stderr(&output).contains(NOTE));
+        let output = check(&config, Profile::Axmc);
+        assert!(output.accepted, "{directory}: {}", output.messages);
+        assert!(!output.messages.contains(NOTE));
     }
 }
 
@@ -110,7 +136,7 @@ fn axmc_compares_case_sensitively() {
         "checkout/config/host.json",
         axmc_configuration(directory.to_str().unwrap()).as_bytes(),
     );
-    assert_eq!(run_path(&config, Some("axmc")).status.code(), Some(0));
+    assert!(check(&config, Profile::Axmc).accepted);
 }
 
 #[cfg(unix)]
@@ -123,11 +149,11 @@ fn a_directory_holding_only_dot_git_is_not_a_checkout_and_the_rule_reports_it() 
         "repository/config/host.json",
         axmc_configuration(directory.to_str().unwrap()).as_bytes(),
     );
-    let output = run_path(&config, Some("axmc"));
-    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
-    assert!(stderr(&output).contains(NOTE), "{}", stderr(&output));
+    let output = check(&config, Profile::Axmc);
+    assert!(output.accepted, "{}", output.messages);
+    assert!(output.messages.contains(NOTE), "{}", output.messages);
     assert!(
-        !stdout(&output).contains(NOTE),
+        !output.summary.contains(NOTE),
         "the summary on standard output is unchanged"
     );
 }
@@ -142,9 +168,9 @@ fn another_repository_between_the_file_and_the_checkout_does_not_count() {
         "checkout/dotfiles/config/host.json",
         axmc_configuration(directory.to_str().unwrap()).as_bytes(),
     );
-    let output = run_path(&config, Some("axmc"));
-    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
-    assert!(stderr(&output).contains("must be outside the checkout"));
+    let output = check(&config, Profile::Axmc);
+    assert!(!output.accepted, "{}", output.messages);
+    assert!(output.messages.contains("must be outside the checkout"));
 }
 
 #[cfg(unix)]
@@ -158,7 +184,7 @@ fn a_git_file_marks_a_worktree_checkout() {
         "worktree/config/host.json",
         axmc_configuration(directory.to_str().unwrap()).as_bytes(),
     );
-    assert_eq!(run_path(&config, Some("axmc")).status.code(), Some(1));
+    assert!(!check(&config, Profile::Axmc).accepted);
 }
 
 #[cfg(unix)]
@@ -175,9 +201,9 @@ fn no_note_is_printed_when_no_entry_enables_diagnostics() {
             )
             .as_bytes(),
     );
-    let output = run_path(&config, Some("axmc"));
-    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
-    assert_eq!(stderr(&output), "");
+    let output = check(&config, Profile::Axmc);
+    assert!(output.accepted, "{}", output.messages);
+    assert_eq!(output.messages, "");
 }
 
 #[cfg(unix)]
@@ -202,8 +228,8 @@ fn axpc_on_a_unix_machine_cannot_bite_because_its_paths_are_windows_paths() {
   ]
 }"#,
     );
-    let output = run_path(&config, Some("axpc"));
-    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    let output = check(&config, Profile::Axpc);
+    assert!(output.accepted, "{}", output.messages);
 }
 
 #[cfg(windows)]
@@ -245,18 +271,14 @@ fn axpc_rejects_a_directory_inside_the_checkout_whatever_its_case() {
             "checkout/config/host.json",
             axpc_configuration(&directory).as_bytes(),
         );
-        let output = run_path(&config, Some("axpc"));
-        assert_eq!(
-            output.status.code(),
-            Some(1),
-            "{directory}: {}",
-            stdout(&output)
-        );
+        let output = check(&config, Profile::Axpc);
+        assert!(!output.accepted, "{directory}: {}", output.summary);
         assert!(
-            stderr(&output)
+            output
+                .messages
                 .contains("repositories[0].diagnosticDirectory: must be outside the checkout"),
             "{directory}: {}",
-            stderr(&output)
+            output.messages
         );
     }
 }
@@ -272,13 +294,12 @@ fn axpc_accepts_a_directory_outside_the_checkout() {
             "checkout/config/host.json",
             axpc_configuration(directory.to_str().unwrap()).as_bytes(),
         );
-        let output = run_path(&config, Some("axpc"));
-        assert_eq!(
-            output.status.code(),
-            Some(0),
+        let output = check(&config, Profile::Axpc);
+        assert!(
+            output.accepted,
             "{}: {}",
             directory.display(),
-            stderr(&output)
+            output.messages
         );
     }
 }
@@ -293,7 +314,7 @@ fn axpc_ignores_a_directory_holding_only_dot_git() {
         "repository/config/host.json",
         axpc_configuration(directory.to_str().unwrap()).as_bytes(),
     );
-    let output = run_path(&config, Some("axpc"));
-    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
-    assert!(stderr(&output).contains(NOTE));
+    let output = check(&config, Profile::Axpc);
+    assert!(output.accepted, "{}", output.messages);
+    assert!(output.messages.contains(NOTE));
 }

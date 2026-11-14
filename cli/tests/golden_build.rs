@@ -1,6 +1,6 @@
 //! `build --profile axmc`, which makes the golden VM: the library build against the fake
 //! `tart`, `softnet` and `docker` for the sequence and the failure and stop matrix,
-//! and `marshal build` as a real process for the refusals, the VM shim and the
+//! and the commands helper's `build` as a real process for the refusals, the VM shim and the
 //! signals.
 #![cfg(unix)]
 #![allow(

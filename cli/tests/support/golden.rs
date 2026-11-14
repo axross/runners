@@ -28,7 +28,7 @@ use marshal_cli::runtime::tart::names::{GOLDEN_VM_VERSION, GoldenVmName};
 use super::docker::FAKE_DOCKER;
 use super::softnet::Host as SoftnetHost;
 use super::tart::{FAKE_TART, Fake, invocations};
-use super::{BINARY, TempDir, repository_root};
+use super::{COMMANDS_HELPER, TempDir, repository_root};
 
 pub const IMAGE: &str = "actions-runner:local";
 pub const KEY_LISTING: &str = include_str!("../../src/golden/fixtures/docker-key-listing.txt");
@@ -254,7 +254,7 @@ impl Rig {
 
     /// the command for `marshal <args>` with the fakes, on this rig's state.
     pub fn command(&self, args: &[&str]) -> Command {
-        let mut command = Command::new(BINARY);
+        let mut command = Command::new(COMMANDS_HELPER);
         command
             .args(args)
             .current_dir(self.root.path())
@@ -281,7 +281,8 @@ impl Rig {
         self.root.write("host.json", &fs::read(fixture).unwrap())
     }
 
-    /// starts `marshal build --profile axmc` with its standard error in a file.
+    /// starts the commands helper's `build --profile axmc` with its standard error in a
+    /// file.
     pub fn spawn_build(&self, config: &std::path::Path) -> Spawned {
         let errors = self.root.path().join("build.stderr");
         let mut command = self.command(&["build", "--profile", "axmc", "--config"]);
@@ -296,7 +297,7 @@ impl Rig {
     }
 }
 
-/// a running `marshal build`.
+/// a running `build` of the commands helper.
 pub struct Spawned {
     pub child: Child,
     errors: PathBuf,

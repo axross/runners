@@ -293,10 +293,10 @@ pub fn age_days(now: SystemTime, then: u64) -> u64 {
     now.saturating_sub(then) / SECONDS_PER_DAY
 }
 
-/// one reason to rebuild the image or update the CLI, with the figures it rests on.
+/// one reason to build the image again or update Marshal, with the figures it rests on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Freshness {
-    /// the image has no build time, so it was not built by `marshal build`.
+    /// the image has no build time, so Marshal did not build it.
     NotBuiltByMarshal,
     /// the image's packages are at least [`SECOND_WARNING_DAYS`] old.
     PackagesOld {
@@ -322,17 +322,17 @@ impl Freshness {
         let subject = subject.the();
         match self {
             Self::NotBuiltByMarshal => {
-                format!("{subject} was not built by `marshal build`, so its build age is unknown")
+                format!("{subject} was not built by Marshal, so its build age is unknown")
             }
-            Self::PackagesOld { days } => format!(
-                "{subject}'s operating-system packages are {days} days old; rebuild it with `marshal build`"
-            ),
+            Self::PackagesOld { days } => {
+                format!("{subject}'s operating-system packages are {days} days old; build it again")
+            }
             Self::ImageOld { days } => {
-                format!("{subject} is {days} days old and should be rebuilt with `marshal build`")
+                format!("{subject} is {days} days old and should be rebuilt")
             }
             Self::RunnerOld { version, days } => format!(
                 "runner {version} was released {days} days ago, so each job's runner likely updates \
-                 itself at start; update the CLI to get a newer runner, then rebuild {subject}"
+                 itself at start; update Marshal to get a newer runner, then build {subject} again"
             ),
             Self::RunnerMayBeNewer { version, days } => format!(
                 "runner {version} was released {days} days ago, and a newer runner may exist"
@@ -617,7 +617,7 @@ mod tests {
         assert_eq!(
             warnings,
             [
-                "the image is 8 days old and should be rebuilt with `marshal build`",
+                "the image is 8 days old and should be rebuilt",
                 "runner 2.337.0 was released 8 days ago, and a newer runner may exist",
             ]
         );
@@ -639,8 +639,7 @@ mod tests {
                 ("runner", "2.337.0, released 1 days ago".to_string()),
                 (
                     "warning",
-                    "the image was not built by `marshal build`, so its build age is unknown"
-                        .to_string()
+                    "the image was not built by Marshal, so its build age is unknown".to_string()
                 ),
             ]
         );
@@ -710,7 +709,7 @@ mod tests {
         assert_eq!(
             warnings.last().unwrap(),
             "runner 2.337.0 was released 61 days ago, so each job's runner likely updates itself \
-             at start; update the CLI to get a newer runner, then rebuild the golden VM"
+             at start; update Marshal to get a newer runner, then build the golden VM again"
         );
         let newer_golden_version = GOLDEN_VM_VERSION + 1;
         let mismatched = ImageCheck::Golden(GoldenCheck::Mismatched {

@@ -25,7 +25,7 @@ use marshal_cli::runtime::backend::Backend;
 use marshal_cli::runtime::clock::SystemClock;
 use marshal_cli::runtime::docker::{DockerBackend, DockerConfig};
 use marshal_cli::runtime::log::{Log, StderrLog};
-use support::{BINARY, TempDir};
+use support::{COMMANDS_HELPER, TempDir};
 
 const REPOSITORY: &str = "marshal-build-test";
 
@@ -129,7 +129,7 @@ fn build_tags_the_name_with_all_five_labels_leaves_no_temporary_tag_and_the_chec
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs();
-    let output = Command::new(BINARY)
+    let output = Command::new(COMMANDS_HELPER)
         .args(["build", "--profile", "axpc", "--config"])
         .arg(&config)
         .current_dir(root.path())

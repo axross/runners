@@ -37,7 +37,7 @@ use marshal_cli::validate::validate;
 use support::rig::{
     LAUNCHER, POOL, Rig, SLOT, TestClock, golden_name, host, job_vm, quick_timings, request,
 };
-use support::{BINARY, TempDir, write_token_file};
+use support::{COMMANDS_HELPER, TempDir, write_token_file};
 
 const IMAGE: &str = "actions-runner:local";
 const JIT: &str = "jit-0123456789";
@@ -177,9 +177,8 @@ async fn an_old_golden_vm_gives_the_freshness_warning_and_a_listing_that_hangs_i
     let check = rig.backend.check_image(IMAGE).await;
     let eight_days = TestClock.now() + Duration::from_secs(8 * 86_400);
     assert!(
-        freshness_warnings(&check, eight_days).contains(
-            &"the golden VM is 8 days old and should be rebuilt with `marshal build`".to_string()
-        ),
+        freshness_warnings(&check, eight_days)
+            .contains(&"the golden VM is 8 days old and should be rebuilt".to_string()),
         "{:?}",
         freshness_warnings(&check, eight_days)
     );
@@ -1496,7 +1495,10 @@ async fn volumes_are_refused_for_a_vm() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn under_the_vm_shim_the_tart_run_is_the_shims_and_dropping_the_backend_deletes_the_vm() {
-    let rig = Rig::with(VmLauncher::Shim(PathBuf::from(BINARY)), quick_timings());
+    let rig = Rig::with(
+        VmLauncher::Shim(PathBuf::from(COMMANDS_HELPER)),
+        quick_timings(),
+    );
     prepared(&rig).await;
     let vm = job_vm();
     assert!(rig.fake.vm_names().contains(&vm));
@@ -1527,7 +1529,10 @@ async fn under_the_vm_shim_the_tart_run_is_the_shims_and_dropping_the_backend_de
 
 #[tokio::test(flavor = "current_thread")]
 async fn a_tart_run_that_fails_under_the_shim_is_a_boot_failure_with_tarts_own_text() {
-    let rig = Rig::with(VmLauncher::Shim(PathBuf::from(BINARY)), quick_timings());
+    let rig = Rig::with(
+        VmLauncher::Shim(PathBuf::from(COMMANDS_HELPER)),
+        quick_timings(),
+    );
     rig.fake.script("run_mode", "exit");
     rig.fake
         .script("run_error", "Error: the login keychain is locked");
@@ -1542,7 +1547,10 @@ async fn a_tart_run_that_fails_under_the_shim_is_a_boot_failure_with_tarts_own_t
 
 #[tokio::test(flavor = "current_thread")]
 async fn a_release_under_the_shim_stops_and_deletes_and_the_shim_ends() {
-    let rig = Rig::with(VmLauncher::Shim(PathBuf::from(BINARY)), quick_timings());
+    let rig = Rig::with(
+        VmLauncher::Shim(PathBuf::from(COMMANDS_HELPER)),
+        quick_timings(),
+    );
     prepared(&rig).await;
     rig.backend
         .release_job_host(&host(), Duration::from_secs(10))

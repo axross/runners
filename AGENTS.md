@@ -4,21 +4,22 @@ This file defines the working agreement for agents contributing to runners.
 
 ## Project overview
 
-**runners** holds generic GitHub Actions self-hosted runner images and the CLI
-that runs them, and later the WSL 2 host configuration for Claude Code
+**runners** holds generic GitHub Actions self-hosted runner images and Marshal,
+the Windows app that runs them, and later the WSL 2 host configuration for Claude Code
 Remote Control and Amp runner agent hosts. It is being extracted from the
 runner setup of a private application repository, in steps. It holds its agent
 foundation (the entry files, agent configuration, documentation, and lint
 toolchain), the `images/actions-runner/` runner image, the
 `hosts/windows-docker-desktop/` example host configuration, the `hosts/macos/`
-example host configuration, and the CLI under `cli/`, a Rust command line tool
-that validates a host configuration, builds its runner image with `build`, and
-runs a host's pools with `start`, `stop`, `restart`, `status`, and `diagnostics`,
-and the Windows app under `app/`, a Tauri notification-area app that is also the
-executable that runs the CLI library's resident agent, built in CI and not yet
-installed or released. The axpc host runs its pools with the CLI. The axmc host,
-an Apple silicon Mac, runs its Linux pools with the CLI in Tart VMs, and `build`
-makes their golden VM; the agent-host configuration is still planned.
+example host configuration, the `marshal-cli` library under `cli/`, which validates a
+host configuration, builds its runner image, runs a host's pools, and holds the
+resident agent, and the Windows app under `app/`, Marshal, a Tauri
+notification-area app that is also the executable that runs that agent, released
+with a per-user MSI. No `marshal` command line is built any more; the last
+command-line release keeps it. The axpc host runs its pools with the command line
+until it moves to the app. The axmc host, an Apple silicon Mac, ran its Linux pools
+with the command line in Tart VMs and has no supported way to run them until M2's
+Mac app; the agent-host configuration is still planned.
 [README.md](./README.md) owns project commands; [docs/index.md](./docs/index.md)
 indexes conventions, operations, and the glossary. mise pins the toolchain, and
 Prettier, markdownlint, shellcheck, hadolint, actionlint, PSScriptAnalyzer,
@@ -242,7 +243,7 @@ adds the document that owns its procedure and the row that routes to it.
 | Where a document goes and how it is indexed                                                                                                                                                          | [docs/index.md](./docs/index.md) and [Living Project Documentation](./.claude/skills/living-project-documentation/SKILL.md)                                                                                                                     |
 | Which document a change to a runner surface invalidates, and the documentation checks                                                                                                                | [Documentation](./docs/conventions/documentation.md)                                                                                                                                                                                            |
 | Runner image (`images/actions-runner/`), the Windows host configuration (`hosts/windows-docker-desktop/`), tokens, updating, rolling back, and recovery                                              | [Windows Runner Host](./docs/operations/windows-runner-host.md), with the per-repository isolation rules in [Security](./docs/conventions/security.md)                                                                                          |
-| The CLI (`cli/`), its commands, its profiles (`axpc`, `axmc`), the shared fixtures (`tests/host-configuration/`), and its Rust toolchain and gates                                                   | [CLI](./docs/operations/cli.md), with [Security](./docs/conventions/security.md) for labels, paths, and the dependency surface                                                                                                                  |
+| The `marshal-cli` library (`cli/`), its test helpers, its profiles (`axpc`, `axmc`), the shared fixtures (`tests/host-configuration/`), and its Rust toolchain and gates                             | [CLI](./docs/operations/cli.md), with [Security](./docs/conventions/security.md) for labels, paths, and the dependency surface                                                                                                                  |
 | The macOS host (`hosts/macos/`): Tart, Softnet, the golden VM, the axmc host configuration, and the runtime that runs its Linux pools (`cli/src/runtime/tart/`, `cli/src/macos/`, `cli/src/golden/`) | [macOS Runner Host](./docs/operations/macos-runner-host.md), with [Security](./docs/conventions/security.md) for the per-job VM, Softnet, and the pins, and [CLI](./docs/operations/cli.md) for the runtime seam                                |
 | The Windows app (`app/`), its agent mode, web view, capabilities, icons, licence notices, and the `tauri-cli` pin                                                                                    | [App](./docs/operations/app.md), with [Security](./docs/conventions/security.md) for the web view's policy, the process rules, and the app's dependency policy, and [CLI](./docs/operations/cli.md) for what the library gives it and its gates |
 | Planned agent-host configuration (`agent-hosts/{claude-code,amp}/`)                                                                                                                                  | The operations document that change adds; until then [Security](./docs/conventions/security.md) and [REVIEW.md](./REVIEW.md)                                                                                                                    |

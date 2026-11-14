@@ -1,4 +1,4 @@
-# links the C runtime statically; docs/operations/cli.md says why it is set here
-# and not in a workflow.
+# links the C runtime statically for the library's own tests and helpers, built in
+# cli/; docs/operations/cli.md says what it covers, and that no release ships them.
 [target.x86_64-pc-windows-msvc]
 rustflags = ["-C", "target-feature=+crt-static"]

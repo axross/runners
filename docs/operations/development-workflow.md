@@ -271,7 +271,8 @@ debug-only overrides, the test definition `build` reads among them; a build of t
 runner image's base stage on that runner (never pushed); tests that run a container
 through the hosted runner's Docker daemon against that image, and export a diagnostic
 container's evidence through the CLI's exporter child from a real `docker cp` stream
-into a private temporary sink; and a test that runs `marshal build` through the same
+into a private temporary sink; and a test that runs the library's `build`, through the
+test-only `commands-helper`, against the same
 daemon against the debug-only test definition in `cli/tests/build-definition/`, checks
 the image's five labels, that no temporary tag remains, and that the CLI's image check
 finds the image matching and an absent tag missing, and removes the image. On Linux
@@ -298,22 +299,20 @@ own that builds the image, runs the same smoke test, which expects no Android to
 on arm64, and never pushes ([#74](https://github.com/axross/runners/issues/74)). Its release-build job is the
 release build's dry run: it calls
 [`release-build.yaml`](../../.github/workflows/release-build.yaml), which builds the
-Windows x64 and macOS arm64 release binaries on their hosted runners, runs the
-release-profile tests on each, checks each binary's `--version` and, on Windows, that
-it imports no `vcruntime` DLL, builds and tests an MSI on the Windows leg and a pkg on
-the macOS leg with the real installers, checks on the macOS leg that the tools the
-signing jobs call are where they call them, and uploads the two binaries, the two
-installers, and `SHA256SUMS` as one artifact of the run. The dry run signs nothing,
-references no Environment, and so cannot reach the signing secrets, and its installers
-are the build's own, not the signed ones. It holds `contents: read`, and nothing is
-attested or published; [CLI](./cli.md#releases) describes the build. Its
-`Install Blocks` job has a Windows and a macOS leg, needs that dry run, and holds
-`contents: read`. It downloads the dry run's artifact and runs the install, check, migration, and
+Windows app on a hosted `windows-latest` runner with `tauri-cli` at its pin, runs the
+release-profile tests, checks that the app's product version is the stamped version
+and that it imports no `vcruntime` DLL, builds and tests Marshal's per-user MSI with
+the real `msiexec`, and uploads the app executable, the MSI and `SHA256SUMS` as one
+artifact of the run. The dry run signs nothing and references no Environment, and no
+job of any workflow declares one until the next signing job returns. It holds
+`contents: read`, and nothing is attested or published; [CLI](./cli.md#releases)
+describes the build. Its `Install Blocks` job runs on Windows, needs that dry run,
+and holds `contents: read`. It downloads the dry run's artifact and runs the check and
 uninstall blocks that [CLI](./cli.md#installing-updating-and-rolling-back) documents:
-against stand-ins, under Windows PowerShell 5.1 and PowerShell 7 on Windows and under
-zsh and the system bash on macOS, and then against the dry run's real installers with
-only `gh` stubbed. On Windows a standard local user without administrator rights also
-runs the check block and installs the MSI. A pull request from a fork runs without
+against stand-ins, under Windows PowerShell 5.1 and PowerShell 7, and then against
+the dry run's real MSI with only `gh` stubbed. A standard local user without
+administrator rights also runs the check block, installs the MSI and runs the
+uninstall block. A pull request from a fork runs without
 repository secrets.
 [`rust-advisories.yaml`](../../.github/workflows/rust-advisories.yaml) checks the
 CLI's locked crates and, in a second step, the app's, against the RustSec advisory
@@ -472,10 +471,10 @@ dispatches a release, and each such host updates to it with the procedure in
 
 ## Cutting a Release
 
-The maintainer releases the CLI by dispatching
+The maintainer releases the app by dispatching
 [`release.yaml`](../../.github/workflows/release.yaml) on main. semantic-release
 works out the version from the commits, as Version Rules, below, describes.
-[CLI](./cli.md#releases) describes what the workflow builds and signs, and
+[CLI](./cli.md#releases) describes what the workflow builds, and
 [Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
 records why each control is there. The maintainer takes every step in this
 section. The delivery grant lets an explicit human instruction cover release,
@@ -487,13 +486,19 @@ agent relays it.
 
 ### Before the First Release
 
+The `release` Environment's part of this section, step 2, is held for M2 and W4: from
+W1's installer pull request until M2's or W4's signing job returns, no job declares
+the Environment, and the Environment, its secrets and its variable are kept for that
+job, which then needs them as this step sets them. The other steps were the first
+dispatch's prerequisites.
+
 Do these once, before the first dispatch:
 
 1. Turn on immutable releases, under Settings, General, Releases.
 2. Create the `release` Environment, under Settings, Environments, with its secrets
    and variable. Do this before the first dispatch: a dispatch that finds no `release`
    Environment makes GitHub create one with no protection rules and no secrets, and
-   `sign-macos` then refuses on the empty secrets. Set it as
+   a signing job then refuses on the empty secrets. Set it as
    [CLI](./cli.md#the-signing-contracts) and
    [Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
    record it:
@@ -576,28 +581,18 @@ Do these once, before the first dispatch:
    `gh workflow run release.yaml --repo axross/runners --ref main`. A dispatch made
    while another release runs is queued behind it. The `release` concurrency group
    holds one queued run, so a later dispatch cancels an earlier one that is still
-   queued, and only the latest of them runs. A run that waits at the `release`
-   Environment's approval (step 4) is expected to hold the group like a running one,
-   so a later dispatch is queued behind it. GitHub's documentation on concurrency
-   groups and on reviewing deployments does not say so, and it has not been observed
-   here. Approve or reject a run that waits at the approval before dispatching
-   again.
+   queued, and only the latest of them runs.
 3. When there is nothing to release, the plan job hands out no version, and the
    other jobs are skipped. The run is green and releases nothing.
-4. When there is something to release, the run builds, then waits at `sign-macos`
-   for your approval. Before approving it, under the run's "Review deployments",
-   repeat step 1's check with the run's commit SHA in place of `origin/main`, because
-   step 1 checked the tip of `origin/main` when you dispatched and a run can wait up
-   to 30 days. Approve only if every commit since the last `v*` tag, up to that SHA,
-   came from a merged pull request; otherwise reject the run. A rejected deployment
-   fails the run, and the jobs after it are skipped. Once it runs, read
-   `sign-macos`'s log for the expiry warnings: it prints each certificate's subject,
-   team and expiry date, and warns when one expires within 90 days. A warning means
-   renewing the certificates, as below, before the next release. A failure in
-   `sign-macos`, `verify-macos` or `assemble-signed` stops the run before any tag is
-   pushed; fix it in a pull request and dispatch again.
-5. After a green run, check that the release exists and carries exactly the two
-   binaries, the MSI and the pkg, and `SHA256SUMS`:
+4. When there is something to release, the run builds, assembles, attests and
+   releases without waiting for an approval: from W1's installer pull request until
+   M2's or W4's signing job returns, no job declares the `release` Environment, so
+   step 1's check at the dispatch is the only one. The signing job that returns
+   brings back an approval here, with its own checks. A failure in `build`,
+   `assemble-signed` or `attest` stops the run before any tag is pushed; fix it in a
+   pull request and dispatch again.
+5. After a green run, check that the release exists and carries exactly the app
+   executable, the MSI and `SHA256SUMS`:
 
    ```bash
    gh release view v<version> --repo axross/runners --json isDraft,assets --jq '{isDraft, assets: [.assets[].name]}'
@@ -614,37 +609,20 @@ Do these once, before the first dispatch:
 6. Check the release with the optional check block in
    [CLI](./cli.md#installing-updating-and-rolling-back) before opening its
    installer on a host. This is the maintainer's release verification, not a step
-   an operator must take. The first release with installers is also the first run of
-   `gh attestation verify` against the installers, so for that release run the
-   check block on both the MSI and the pkg before opening either on a host. A
-   failure there is a release defect, and it leaves the check unusable for that
-   release. The WiX pin is recorded under
-   [Pinning Convention](../conventions/security.md#pinning-convention). The MSI is
-   not signed and the pkg is signed and notarized, as
+   an operator must take. The first release of the app is also the first run of
+   `gh attestation verify` against its MSI and of the check block's comparison of the
+   extracted `marshal-app.exe` with its `SHA256SUMS` line, so for that release run
+   the check block before opening the MSI on a host. A failure there is a release
+   defect, and it leaves the check unusable for that release. The WiX pin is
+   recorded under [Pinning Convention](../conventions/security.md#pinning-convention).
+   The MSI and the app are not signed, as
    [Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
    records.
-7. For the first signed release, also run these on the downloaded package, before
-   opening it, and record the output on the tracking issue:
-
-   ```bash
-   spctl --assess --type install -vv marshal-<version>-macos-arm64.pkg
-   pkgutil --check-signature marshal-<version>-macos-arm64.pkg
-   ```
-
-   `spctl` is expected to print `accepted` with `source=Notarized Developer ID`, and
-   `pkgutil` a Developer ID Installer certificate chained to Apple's root; neither has
-   been observed. That release is also the first run of `sign-macos` and
-   `verify-macos`, so record their outcomes, the team ID, which form of the
-   designated requirement `verify-macos` matched (its `MEASURED:` line names form A or
-   form B), and the bare binary's requirement from `codesign -d -r-`. A later
-   documentation change copies the form and the requirement into
-   [CLI](./cli.md#the-signing-contracts). The real output
-   formats of `verify-macos`, `spctl` and `pkgutil` have not been observed, so a
-   refusal by `verify-macos`, or an `spctl` or `pkgutil` result that differs from the
-   expected one, is input for a follow-up fix pull request, not necessarily a defect
-   in the release.
 
 ### Renewing the Certificates
+
+This section is held for M2 and W4: no job signs from W1's installer pull request
+until M2's `sign-macos` returns, and this yearly work applies to it from then.
 
 The Developer ID certificates are expected to last one year, which the maintainer
 confirms from the certificates' dates, and renewing them is yearly work for the

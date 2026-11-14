@@ -204,10 +204,11 @@ Important; Codex review uses its native priority label.
 - **Secrets stay out of logs and images.** A secret is never echoed, passed on
   a command line that a process listing exposes, written into an image layer
   (`ENV`, `ARG`, `COPY`), or left in a build cache. Two exceptions for a
-  credential are recorded, both in `sign-macos`: `security`'s password arguments, and
-  `notarytool`'s `--key-id` and `--issuer` arguments for the notary key's ID and issuer
-  ID. The `.p8` key reaches `notarytool` only as a file path. Any other change to how
-  the key's ID, issuer ID or `.p8` reaches `notarytool` is a finding to raise (see
+  credential are recorded, both in `sign-macos` and held with it for M2:
+  `security`'s password arguments, and `notarytool`'s `--key-id` and `--issuer`
+  arguments for the notary key's ID and issuer ID. The `.p8` key reaches
+  `notarytool` only as a file path. Any other change to how the key's ID, issuer ID
+  or `.p8` reaches `notarytool` is a finding to raise (see
   [Security](docs/conventions/security.md#nothing-identifying-or-secret-is-committed)).
 
 ## VM runtime lenses
@@ -241,13 +242,13 @@ Codex review uses its native priority label.
 - **The Softnet check and rules on every boot.** Every `tart run` follows a Softnet
   file check and a version check, and carries the two Softnet rules from
   [Security](docs/conventions/security.md#softnet-confines-a-job-vms-network) and no
-  other network option. A boot path that skips the check, a cached result, a
-  `marshal` that sets Softnet's SUID bit, and a fallback to Tart's default network
+  other network option. A boot path that skips the check, a cached result, the
+  runtime setting Softnet's SUID bit, and a fallback to Tart's default network
   are findings.
 - **No shared directory, clipboard, audio, USB accessories or Rosetta.** Every
   `tart run` turns off graphics, the clipboard, audio and USB accessories, and
   carries no `--dir` and no `--rosetta`. Every Tart call sets `TART_NO_AUTO_PRUNE`,
-  gets `marshal`'s `PATH`, and has a standard output that is not a terminal.
+  gets the runtime's `PATH`, and has a standard output that is not a terminal.
 - **The VM-local socket is the only socket.** The VM runtime's job container mounts
   the job VM's own `/var/run/docker.sock` and nothing else of a host, and is never
   privileged. The Docker runtime's run arguments (`job_run_arguments`) carry no
@@ -259,7 +260,7 @@ Codex review uses its native priority label.
 - **Names and cleanup stay exact.** Cleanup at `start` matches only the job VMs of
   configured pools by their name form, so it never deletes a golden VM or a build
   VM. Only `build` deletes golden VMs, and only `build` and a build VM's own shim
-  delete a build VM. A looser match could delete a VM `marshal` does not own.
+  delete a build VM. A looser match could delete a VM the runtime does not own.
 - **Pins hold.** The base image is pinned by digest, the current pin is never on
   the retired list, Docker Engine, and the runner image's Docker client, come from
   Docker's apt repository at pinned versions after the signing key's fingerprint is
@@ -301,36 +302,33 @@ Apply the lens for each kind of file in the diff.
   checked against each bullet of the release record in
   [Security](docs/conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main).
   A publish or attest step outside `release.yaml`, a job that both runs the npm tree
-  and holds `id-token: write`, an asset other than the two named binaries, the two
-  installers named for them, and `SHA256SUMS`, such as a helper binary, an installer
-  that carries a script or a custom action that runs code, a download that is none of
-  the pinned WiX package, the recorded Rust toolchain exception, or the Node that
-  `actions/setup-node` installs (recorded under Security's Pinning Convention), or a
-  departure from the record that the change does not also make to the record, is a
-  finding. Install-time verification is optional for the installers, so a document or
-  comment that presents the check block as required of an operator is a finding, and
-  so is a change that weakens a pin or drops one of the check block's four checks, or
-  any check of the bare-binary blocks that roll back to `v0.1.0`. The signing job's
-  rules are also findings when broken: an `environment:` in any job but `sign-macos`,
-  or in a workflow a pull request triggers or a job such a workflow calls; a signing
-  secret read by any job but `sign-macos`; `sign-macos` holding more than
-  `contents: read`, running a checkout, an action besides `actions/download-artifact` and
-  `actions/upload-artifact`, a package manager, a fetch, a file from the repository,
-  or a `${{ }}` inside `run:`, or calling a signing tool by anything but its system path; a
-  signing step that a later job can pass without, such as `continue-on-error`, a
+  and holds `id-token: write`, an asset other than the app executable
+  `marshal-<v>-windows-x64.exe`, the MSI `marshal-<v>-windows-x64.msi` and
+  `SHA256SUMS`, such as a helper binary or a command-line file, an MSI custom action
+  that runs code other than the start of the installed app under
+  `AUTOLAUNCHAPP=True` and the uninstall's deletion of the HKCU Run value `Marshal`,
+  an MSI that asks for elevation, writes `PATH`, or shares the command line's upgrade
+  code or a component code, a download that is none of the pinned WiX package, the
+  recorded Rust toolchain exception, the recorded `tauri-cli` exception installed at
+  the pin `tauri-cli-version.sh` reads, or the Node that `actions/setup-node` installs
+  (recorded under Security's Pinning Convention), or a departure from the record that
+  the change does not also make to the record, is a finding. Install-time
+  verification is optional for the installer, so a document or comment that presents
+  the check block as required of an operator is a finding, and so is a change that
+  weakens a pin, drops one of the check block's four checks, or drops the build
+  leg's product-version check or its failing run. From W1's installer pull request
+  until the next signing job, M2's or W4's, joins the chain, an `environment:` in any
+  job or a signing secret read by any job is a finding; the signing job that returns
+  brings its rules back to this list, to `check-release-shape.mjs` and to its test in
+  the same change, and keeps
+  [Security's held record](docs/conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main).
+  A job or step that a later job can pass without, such as `continue-on-error`, a
   job-level `always()`, `!cancelled()` or `failure()`, a step condition in
-  `sign-macos` beyond the `if: always()` of the clean-up and the notary-log upload, a
-  step condition in `verify-macos` or `assemble-signed`, or one in `attest` or
-  `release` that skips a step, which the shape check does not see; an attest or release job that reads
-  the unsigned set or does not follow every signing step; a secret printed, or passed
-  on a command line apart from `security`'s password arguments and `notarytool`'s
-  `--key-id` and `--issuer` arguments in `sign-macos`, the two exceptions for a
-  credential that Security records; a change to how the notary
-  key's ID, issuer ID or `.p8` key reaches `notarytool`; a change to the identifier
-  `app.axross.marshal`, the team pin, or the G2 intermediate's pin without its source and the record's update;
-  and a signing job or step added without being added to `check-release-shape.mjs` and
-  its test. A change that relaxes the record, or touches the signing job, needs the
-  maintainer's review.
+  `assemble-signed`, or one in `attest` or `release` that skips a step, which the
+  shape check does not see, and an attest or release job that reads the unsigned set
+  are findings. A change to the identifier `app.axross.marshal`, the team pin, or the
+  G2 intermediate's pin without its source and the record's update is a finding. A
+  change that relaxes the record needs the maintainer's review.
 - **Rust.** The CLI under `cli/` and the app's crates under `app/` have no
   `unsafe` and no panic on an input path (`unwrap`, `expect`, `panic!`,
   indexing). The CLI collects every error in the order

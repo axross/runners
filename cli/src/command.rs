@@ -1,5 +1,7 @@
-//! the command line: argument parsing, reading the file, printing, and the exit code.
-//! `start` and the clients live in their own modules; this one routes to them.
+//! the hidden modes the app's executable relaunches itself in (the diagnostics
+//! exporter, and on Unix the container and VM shims), and reading a host
+//! configuration file for the agent, `start` and `build`. There are no user-facing
+//! commands; see `docs/operations/cli.md`.
 
 use std::ffi::OsString;
 use std::io::{self, Read, Write};
@@ -8,22 +10,18 @@ use std::process::ExitCode;
 
 use clap::{Arg, ArgAction, ArgMatches, Command, value_parser};
 
-use crate::build::{BuildRequest, build};
 use crate::checkout;
-use crate::control::{Client, run_client};
 use crate::diagnostics::{EXPORT_COMMAND, ExportRequest};
 use crate::profile::Profile;
-use crate::start::{StartRequest, start};
-use crate::summary::plan_summary;
 use crate::validate::{CheckoutRule, Failure, Plan, validate_with};
 
 /// the largest configuration `validate` reads; it only stops a mistaken or hostile
 /// path from being read whole.
 pub const MAX_CONFIG_BYTES: u64 = 1024 * 1024;
 
-pub(crate) const EXIT_OK: u8 = 0;
-pub(crate) const EXIT_FAILED: u8 = 1;
-pub(crate) const EXIT_USAGE: u8 = 2;
+pub const EXIT_OK: u8 = 0;
+pub const EXIT_FAILED: u8 = 1;
+pub const EXIT_USAGE: u8 = 2;
 
 // the four test-override variables below: only a debug build honours them, see docs/operations/cli.md
 pub const TEST_ROOT_VARIABLE: &str = "MARSHAL_TEST_ROOT";
@@ -32,66 +30,11 @@ pub const TEST_GITHUB_API_VARIABLE: &str = "MARSHAL_TEST_GITHUB_API";
 
 pub const TEST_DOCKER_VARIABLE: &str = "MARSHAL_TEST_DOCKER";
 
-const TEST_BUILD_DEFINITION_VARIABLE: &str = "MARSHAL_TEST_BUILD_DEFINITION";
-
-fn config_arg(help: &'static str) -> Arg {
-    Arg::new("config")
-        .long("config")
-        .value_name("PATH")
-        .required(true)
-        .value_parser(value_parser!(PathBuf))
-        .help(help)
-}
-
-fn profile_arg(help: &'static str) -> Arg {
-    Arg::new("profile")
-        .long("profile")
-        .value_name("PROFILE")
-        .value_parser(["axpc", "axmc"])
-        .help(help)
-}
+pub const TEST_BUILD_DEFINITION_VARIABLE: &str = "MARSHAL_TEST_BUILD_DEFINITION";
 
 fn command() -> Command {
     let command = Command::new("marshal")
-        .version(env!("CARGO_PKG_VERSION"))
-        .about("Manages the self-hosted runner hosts in this repository")
         .subcommand_required(true)
-        .arg_required_else_help(true)
-        .subcommand(
-            Command::new("validate")
-                .about("Check a host configuration and print its plan")
-                .arg(config_arg("The host configuration file"))
-                .arg(profile_arg(
-                    "The host to check it for; defaults to axpc on Windows and axmc on macOS",
-                )),
-        )
-        .subcommand(
-            Command::new("build")
-                .about("Build the runner image the host configuration names, from the definition in this binary")
-                .arg(config_arg("The host configuration file"))
-                .arg(profile_arg(
-                    "The host to build it for; defaults to axpc on Windows and axmc on macOS",
-                )),
-        )
-        .subcommand(
-            Command::new("start")
-                .about("Run the host's pools in the foreground, or resume a stopped instance")
-                .arg(config_arg("The host configuration file"))
-                .arg(profile_arg(
-                    "The host to run it as; defaults to axpc on Windows and axmc on macOS",
-                )),
-        )
-        .subcommand(Command::new("stop").about("Stop the running instance and wait for it to end"))
-        .subcommand(
-            Command::new("restart")
-                .about("Stop the instance's containers, read its configuration again, and resume"),
-        )
-        .subcommand(
-            Command::new("status").about("Print what the instance and its pools are doing"),
-        )
-        .subcommand(Command::new("diagnostics").about(
-            "Export, then remove, the diagnostic containers the instance still holds",
-        ))
         .subcommand(
             Command::new(EXPORT_COMMAND)
                 .hide(true)
@@ -158,7 +101,7 @@ fn command() -> Command {
     command
 }
 
-/// runs the CLI with the given arguments, the first being the program name.
+/// runs the hidden mode the arguments name, the first being the program name.
 pub fn run(
     args: impl IntoIterator<Item = OsString>,
     out: &mut dyn Write,
@@ -177,18 +120,7 @@ pub fn run(
             return finish(written, u8::try_from(code).unwrap_or(EXIT_USAGE));
         }
     };
-    let test_root = std::env::var_os(TEST_ROOT_VARIABLE).map(PathBuf::from);
-    let test_root = test_root.as_deref();
     match matches.subcommand() {
-        Some(("validate", validate_matches)) => run_validate(validate_matches, out, err),
-        Some(("build", build_matches)) => run_build(build_matches, test_root, err),
-        Some(("start", start_matches)) => run_start(start_matches, test_root, err),
-        Some(("stop", _)) => ExitCode::from(run_client(Client::Stop, test_root, out, err)),
-        Some(("restart", _)) => ExitCode::from(run_client(Client::Restart, test_root, out, err)),
-        Some(("status", _)) => ExitCode::from(run_client(Client::Status, test_root, out, err)),
-        Some(("diagnostics", _)) => {
-            ExitCode::from(run_client(Client::Diagnostics, test_root, out, err))
-        }
         Some((EXPORT_COMMAND, export_matches)) => run_export(export_matches),
         #[cfg(unix)]
         Some((crate::shim::SHIM_COMMAND, shim_matches)) => run_shim(shim_matches),
@@ -247,65 +179,6 @@ fn run_export(matches: &ArgMatches) -> ExitCode {
     crate::diagnostics::exporter::run(&request, docker)
 }
 
-/// the profile named on the command line, or the one this OS implies; prints the
-/// usage error and returns its exit code when the OS implies none.
-fn profile_of(matches: &ArgMatches, err: &mut dyn Write) -> Result<Profile, ExitCode> {
-    matches
-        .get_one::<String>("profile")
-        .and_then(|name| Profile::from_name(name))
-        .or_else(Profile::of_this_machine)
-        .ok_or_else(|| {
-            finish(
-                writeln!(
-                    err,
-                    "error: --profile axpc or --profile axmc is required on this operating system, \
-                     because the profile follows the OS only on Windows (axpc) and macOS (axmc)"
-                ),
-                EXIT_USAGE,
-            )
-        })
-}
-
-fn run_start(matches: &ArgMatches, test_root: Option<&Path>, err: &mut dyn Write) -> ExitCode {
-    let Some(config) = matches.get_one::<PathBuf>("config") else {
-        return ExitCode::from(EXIT_USAGE);
-    };
-    let profile = match profile_of(matches, err) {
-        Ok(profile) => profile,
-        Err(code) => return code,
-    };
-    let github_api = std::env::var(TEST_GITHUB_API_VARIABLE).ok();
-    let docker = std::env::var_os(TEST_DOCKER_VARIABLE);
-    let request = StartRequest {
-        config,
-        profile,
-        test_root,
-        github_api: github_api.as_deref(),
-        docker: docker.as_deref(),
-    };
-    ExitCode::from(start(&request, err))
-}
-
-fn run_build(matches: &ArgMatches, test_root: Option<&Path>, err: &mut dyn Write) -> ExitCode {
-    let Some(config) = matches.get_one::<PathBuf>("config") else {
-        return ExitCode::from(EXIT_USAGE);
-    };
-    let profile = match profile_of(matches, err) {
-        Ok(profile) => profile,
-        Err(code) => return code,
-    };
-    let docker = std::env::var_os(TEST_DOCKER_VARIABLE);
-    let definition = std::env::var_os(TEST_BUILD_DEFINITION_VARIABLE).map(PathBuf::from);
-    let request = BuildRequest {
-        config,
-        profile,
-        test_root,
-        docker: docker.as_deref(),
-        definition: definition.as_deref(),
-    };
-    ExitCode::from(build(&request, err))
-}
-
 pub(crate) fn print_error(err: &mut dyn Write, error: &dyn std::fmt::Display) -> u8 {
     let _ = writeln!(err, "error: {error}");
     EXIT_FAILED
@@ -316,20 +189,6 @@ fn finish(written: io::Result<()>, code: u8) -> ExitCode {
         return ExitCode::from(EXIT_FAILED);
     }
     ExitCode::from(code)
-}
-
-fn run_validate(matches: &ArgMatches, out: &mut dyn Write, err: &mut dyn Write) -> ExitCode {
-    let Some(config) = matches.get_one::<PathBuf>("config") else {
-        return ExitCode::from(EXIT_USAGE);
-    };
-    let profile = match profile_of(matches, err) {
-        Ok(profile) => profile,
-        Err(code) => return code,
-    };
-    match validate_file(config, profile, out, err) {
-        Ok(code) => ExitCode::from(code),
-        Err(_) => ExitCode::from(EXIT_FAILED),
-    }
 }
 
 /// reads the file, refusing one over [`MAX_CONFIG_BYTES`] without reading past the
@@ -349,7 +208,7 @@ fn read_limited(path: &Path) -> io::Result<Vec<u8>> {
 
 /// why a host configuration file gave no plan.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum LoadError {
+pub enum LoadError {
     /// the file is missing, cannot be read, or is not JSON; the message says which.
     Unreadable(String),
     /// the document breaks rules, listed in the order they were found.
@@ -358,7 +217,7 @@ pub(crate) enum LoadError {
 
 impl LoadError {
     /// the message `validate` and `start` print for the file at `config`.
-    pub(crate) fn message(&self, config: &Path) -> String {
+    pub fn message(&self, config: &Path) -> String {
         match self {
             Self::Unreadable(message) => message.clone(),
             Self::Invalid(errors) => invalid_message(config, errors),
@@ -376,15 +235,15 @@ impl LoadError {
 
 /// a host configuration file, read and validated against the checkout above it.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct Loaded {
-    pub(crate) outcome: Result<Plan, LoadError>,
+pub struct Loaded {
+    pub outcome: Result<Plan, LoadError>,
     /// true when no checkout was found above the file, so `diagnosticDirectory` was
     /// not compared with one.
-    pub(crate) checkout_rule_skipped: bool,
+    pub checkout_rule_skipped: bool,
 }
 
 /// reads the file and validates it for `profile`.
-pub(crate) fn load_plan(config: &Path, profile: Profile) -> Loaded {
+pub fn load_plan(config: &Path, profile: Profile) -> Loaded {
     let bytes = match read_limited(config) {
         Ok(bytes) => bytes,
         Err(error) => {
@@ -416,35 +275,9 @@ pub(crate) fn load_plan(config: &Path, profile: Profile) -> Loaded {
     }
 }
 
-/// validates the file and prints the outcome, returning the exit code or the error
-/// that stopped output.
-fn validate_file(
-    config: &Path,
-    profile: Profile,
-    out: &mut dyn Write,
-    err: &mut dyn Write,
-) -> io::Result<u8> {
-    let loaded = load_plan(config, profile);
-    if loaded.checkout_rule_skipped {
-        writeln!(err, "{}", checkout_rule_note(config))?;
-    }
-    match loaded.outcome {
-        Ok(plan) => {
-            for line in plan_summary(&plan) {
-                writeln!(out, "{line}")?;
-            }
-            Ok(EXIT_OK)
-        }
-        Err(error) => {
-            writeln!(err, "{}", error.message(config))?;
-            Ok(EXIT_FAILED)
-        }
-    }
-}
-
 /// the note that no checkout was found above `config`, so the checkout rule was
 /// skipped.
-pub(crate) fn checkout_rule_note(config: &Path) -> String {
+pub fn checkout_rule_note(config: &Path) -> String {
     format!(
         "note: no checkout of this project was found above {}, so diagnosticDirectory was not compared with it",
         config.display()

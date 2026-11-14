@@ -104,7 +104,7 @@ fn a_release_build_on_linux_does_not_start_even_with_a_test_root() {
         "name":"r","slots":1,"tokenPath":"C:\\r.token","volumes":[]}]}"#,
     )
     .unwrap();
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_marshal"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_commands-helper"))
         .args(["start", "--profile", "axpc", "--config"])
         .arg(&config)
         .env("MARSHAL_TEST_ROOT", &root)

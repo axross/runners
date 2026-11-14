@@ -188,8 +188,8 @@ async fn the_freshness_warnings_are_logged_at_each_run_of_the_core_and_not_at_jo
     assert_eq!(
         warnings[..2],
         [
-            "WARN: Image freshness: the image is 10 days old and should be rebuilt with `marshal build`.",
-            "WARN: Image freshness: runner 2.337.0 was released 33 days ago, so each job's runner likely updates itself at start; update the CLI to get a newer runner, then rebuild the image.",
+            "WARN: Image freshness: the image is 10 days old and should be rebuilt.",
+            "WARN: Image freshness: runner 2.337.0 was released 33 days ago, so each job's runner likely updates itself at start; update Marshal to get a newer runner, then build the image again.",
         ]
     );
 }
@@ -689,7 +689,7 @@ mod process {
         );
         assert_eq!(
             lines[at + 4],
-            "warning: the image was not built by `marshal build`, so its build age is unknown"
+            "warning: the image was not built by Marshal, so its build age is unknown"
         );
         assert!(
             lines[at + 5].starts_with("warning: runner 2.337.0 was released "),
@@ -715,7 +715,7 @@ mod process {
         assert!(
             finished
                 .stderr
-                .contains("WARNING: Image freshness: the image was not built by `marshal build`"),
+                .contains("WARNING: Image freshness: the image was not built by Marshal"),
             "{}",
             finished.stderr
         );

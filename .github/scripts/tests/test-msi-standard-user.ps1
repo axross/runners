@@ -338,21 +338,23 @@ try {
     }
 
     $installDirectory = Join-Path $env:LOCALAPPDATA 'Programs\marshal'
-    $installed = Join-Path $installDirectory 'marshal.exe'
+    $installed = Join-Path $installDirectory 'marshal-app.exe'
     $logFile = Join-Path $here 'install.log'
     $process = Start-Process -FilePath msiexec.exe -ArgumentList @('/i', "`"$msi`"", '/qn', '/norestart', '/l*v', "`"$logFile`"") -Wait -PassThru -NoNewWindow
     $null = $process.Handle
     Write-Step "msiexec /i exit code: $($process.ExitCode)"
     if ($process.ExitCode -ne 0) { throw "msiexec /i exited $($process.ExitCode)" }
     if (-not (Test-Path -LiteralPath $installed)) { throw "$installed does not exist after the install" }
-    $printed = (& $installed --version | Out-String).Trim()
-    Write-Step "installed binary: $printed"
-    if ($printed -ne "marshal $version") { throw "the installed binary printed '$printed'" }
+    $appName = "marshal-$version-windows-x64.exe"
+    $listed = @(Get-Content -LiteralPath (Join-Path $here 'SHA256SUMS') | Where-Object { ($_ -split '\s+')[1] -eq $appName })
+    $installedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $installed).Hash.ToLowerInvariant()
+    Write-Step "installed app: $installedHash"
+    if ($listed.Count -ne 1 -or ($listed[0] -split '\s+')[0] -ne $installedHash) { throw "the installed app does not match the $appName line of SHA256SUMS" }
 
     $block = Get-InstallBlock -Document $script:Document -Id 'windows-uninstall'
     $output = @(& ([scriptblock]::Create($block)) *>&1 | ForEach-Object { "$_" })
     Write-Step "uninstall block: $($output -join ' | ')"
-    if (Test-Path -LiteralPath $installed) { throw 'the uninstall block left marshal.exe' }
+    if (Test-Path -LiteralPath $installed) { throw 'the uninstall block left marshal-app.exe' }
     Write-Step 'RESULT: ok'
 } catch {
     Write-Step "RESULT: failed: $($_.Exception.Message)"
@@ -426,7 +428,7 @@ try {
     Write-Output "process exit code: $exitCode"
     Write-LogonTypeDiagnostic -Account $UserName -Since $testStart
     $ok = ($null -eq $failure) -and $logText.Contains('RESULT: ok')
-    Write-Measured "a standard local user without administrator rights ($UserName, secondary logon with the interactive logon type, not elevated, with DisableMSI set to 0) $(if ($ok) { 'ran the check block, installed the MSI with msiexec /i, ran the installed binary, and ran the uninstall block' } else { 'did not complete the check block, the install, and the uninstall' }); process exit code $exitCode"
+    Write-Measured "a standard local user without administrator rights ($UserName, secondary logon with the interactive logon type, not elevated, with DisableMSI set to 0) $(if ($ok) { 'ran the check block, installed the MSI with msiexec /i, found the installed app matching its SHA256SUMS line, and ran the uninstall block' } else { 'did not complete the check block, the install, and the uninstall' }); process exit code $exitCode"
     if ($null -eq $failure -and -not $ok) { $failure = 'the standard user run failed; the check block or the install needs more than a standard user, or the run could not be set up' }
     if ($null -ne $failure) {
         Write-FailureDiagnostic -Account $UserName -Since $testStart
@@ -454,5 +456,4 @@ try {
     }
 }
 
-# the CI shell wrapper exits with the last native exit code, which a stop that reported "no instance" leaves at 1.
 exit 0

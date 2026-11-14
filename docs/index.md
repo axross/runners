@@ -48,19 +48,21 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   telemetry.
 - [operations/windows-runner-host.md](./operations/windows-runner-host.md) -
   running ephemeral runners for several repositories on a Windows machine with
-  Docker Desktop with the CLI: prerequisites, installing `marshal`, the
-  per-repository token and its file's access control, the host configuration,
+  Docker Desktop with Marshal: prerequisites, installing Marshal, the
+  per-repository token, the host configuration,
   building the image, running and stopping the pools, diagnostics and their
   recovery, health checks, rebuilding and updating, recovery, and rolling back to
-  the previous `marshal` release.
+  the previous release.
 - [operations/macos-runner-host.md](./operations/macos-runner-host.md) -
-  running Linux runners in Tart VMs on the Mac, the axmc host, with the CLI: installing
+  running Linux runners in Tart VMs on the Mac, the axmc host, with the library's VM
+  runtime, which has no supported way to run until M2's Mac app: installing
   Tart and Softnet at the tested versions, setting up Softnet's SUID bit, the
   signed-in session, the golden VM contract, building the golden VM, running the
   host, sleep, wake and network changes, removing the VMs of a pool no longer
   configured, and the verification status.
-- [operations/cli.md](./operations/cli.md) - the CLI under `cli/`: what `validate`
-  accepts and prints for the axpc and axmc host profiles, the validation rules and
+- [operations/cli.md](./operations/cli.md) - the `marshal-cli` library under `cli/`,
+  with no command line and its test-only commands helper: what `validate` accepts for
+  the axpc and axmc host profiles, the validation rules and
   the shared fixtures, the TOML configuration format (schema version 1, its
   extension rule, its problems, the rule set shared with JSON, the conversion from
   JSON, and the write path that keeps comments) and its fixtures, the runtime layer
@@ -75,9 +77,9 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   diagnostic containers and VMs and their export), the axmc host's prerequisites,
   its VM shim, golden VM provisioning, and the golden VM build, the toolchain and Rust
   gates, the app's workspace and what the library gives it, the release build and
-  its dry run, signing the macOS files, installing from the MSI or the pkg, the
-  optional check of a download, migrating, updating, uninstalling, and rolling back
-  (including to the bare-binary `v0.1.0`), the tests of those blocks, the allowed
+  its dry run, the last command-line release, the signing contracts held for M2 and
+  W4, installing Marshal from its MSI, the optional check of a download, updating,
+  uninstalling, and rolling back, the tests of those blocks, the allowed
   dependencies, and why the CLI's name is fixed.
 - [operations/app.md](./operations/app.md) - the Windows notification-area app and
   the agent it starts: the one executable and its modes, the debug-only test

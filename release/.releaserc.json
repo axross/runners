@@ -58,8 +58,6 @@
         "assets": [
           "../release-files/marshal-*-windows-x64.exe",
           "../release-files/marshal-*-windows-x64.msi",
-          "../release-files/marshal-*-macos-arm64",
-          "../release-files/marshal-*-macos-arm64.pkg",
           "../release-files/SHA256SUMS"
         ],
         "successCommentCondition": false,

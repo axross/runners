@@ -23,7 +23,7 @@ use marshal_cli::runtime::fake::MemoryLog;
 use marshal_cli::runtime::tart::names::{GoldenVmName, job_vm_name};
 use marshal_cli::runtime::tart::{TartBackend, TartTimings, VmLauncher};
 
-use super::BINARY;
+use super::COMMANDS_HELPER;
 use super::docker::{FAKE_DOCKER, Invocation as DockerInvocation, invocations as docker_calls};
 use super::softnet::Host as SoftnetHost;
 use super::tart::{Fake, Invocation};
@@ -163,7 +163,7 @@ impl Rig {
     /// a host whose backend runs this CLI as its exporter child, as `start` does.
     pub fn exporting() -> Self {
         Self::build(&Setup {
-            exporter: Some(BINARY.into()),
+            exporter: Some(COMMANDS_HELPER.into()),
             ..Setup::default()
         })
     }

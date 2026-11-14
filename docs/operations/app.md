@@ -6,7 +6,7 @@ what it does when the agent is gone, the logs, the commands and events between t
 Rust side and the web view, the notification-area icon and the app icon, the bundled
 font and colour values, the licence notices, how the app is built and which pin its
 build tool has, the app's tests and which of them run only on Windows CI, the
-install layout the installer will create, and how to go back to the command line.
+install layout the installer creates, and how to go back to the command line.
 It is the document other children of the roadmap
 ([#72](https://github.com/axross/runners/issues/72)) add their own sections to.
 
@@ -14,26 +14,28 @@ It is the document other children of the roadmap
 state, the token store, protocol version 2 and the snapshot. [Security](../conventions/security.md)
 owns the rules the app is reviewed against, including its web view, its capabilities
 and its dependencies. [Windows Runner Host](./windows-runner-host.md) owns running
-axpc's pools with the command line, which is how axpc runs them today.
+axpc's pools with the app.
 
 ## What Exists
 
-The app builds and its tests run, but nothing installs it and nothing releases it.
-The installer, the release and the removal of the command line's commands are W1's
-installer pull request (pull request 3); W1, [#73](https://github.com/axross/runners/issues/73), is the child that owns the app.
-Until it merges, `marshal` is still built and released, axpc still runs its pools
-with it, and this document describes an app that is built in CI and run from a
-build, not one a host has installed.
+The app builds, its tests run, and since W1's installer pull request (pull request 3)
+each release carries it and its per-user MSI, as [CLI](./cli.md#releases) describes,
+in place of the command line. W1, [#73](https://github.com/axross/runners/issues/73),
+is the child that owns the app. No host has installed it yet: axpc still runs its
+pools with the [last command-line release](./cli.md#the-last-command-line-release),
+so this document describes an app that CI builds and tests and the release ships,
+not one a host has run. The same pull request removed the command line: no `marshal`
+binary is built on any operating system, and the app is the only way to run a host.
 
-| Part                                                 | State                                                                                     |
-| ---------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| The app, its menu and its main window                | Built by the Windows job of `merge-checks.yaml`; its build is kept as a run artifact      |
-| The agent's resident mode and protocol version 2     | In the `marshal-cli` library, served by the app's executable in its agent mode            |
-| The token store                                      | The Windows Credential Manager, entered in the main window                                |
-| The installer, the release, the install layout below | Planned for W1's installer pull request (pull request 3)                                  |
-| Updates                                              | The app's side, with the committed public key; the feed comes with W4's last pull request |
-| The command line's removal                           | Planned for W1's installer pull request                                                   |
-| Verification on axpc                                 | Not done; see [Verification Status](#verification-status)                                 |
+| Part                                                 | State                                                                                       |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| The app, its menu and its main window                | Built by the Windows job of `merge-checks.yaml`; its build is kept as a run artifact        |
+| The agent's resident mode and protocol version 2     | In the `marshal-cli` library, served by the app's executable in its agent mode              |
+| The token store                                      | The Windows Credential Manager, entered in the main window                                  |
+| The installer, the release, the install layout below | Built and tested by the release build on every pull request; see [CLI](./cli.md#installers) |
+| Updates                                              | The app's side, with the committed public key; the feed comes with W4's last pull request   |
+| The command line's removal                           | Done in W1's installer pull request; the last command-line release keeps it                 |
+| Verification on axpc                                 | Not done; see [Verification Status](#verification-status)                                   |
 
 ## The Executable and Its Modes
 
@@ -62,15 +64,15 @@ which children inherit the CLI's standard streams, and what only the axpc run sh
 including whether a window still appears. Only the app mode takes Tauri's
 single-instance lock, so a second launch brings the first one's window forward and
 starts nothing. The agent mode is kept to one by the machine-wide lock the library's
-agent takes, as `start` is, so the app and the command line never run the pools
-together.
+agent takes, as the library's `start` is, so the app and the last command-line
+release never run the pools together.
 
 A `fake-docker` binary is built beside `marshal-app` from the CLI's
 [`cli/helpers/fake_docker.rs`](../../cli/helpers/fake_docker.rs), so the tests that
 start this executable's exporter child can run it against a fake engine. The package
 sets `default-run = "marshal-app"`, so `cargo run` still starts the app. The helper
 is built by every build of the package and only the app's own executable is uploaded
-or, later, released.
+and released.
 
 ### The Debug-Only Test Variables
 
@@ -117,11 +119,9 @@ web view.
   that is no longer the file the app started from.
 - **Sign-in.** While `start_at_login` is on in `config.toml`'s `[lifecycle]`, the
   agent keeps the current user's Run value `Marshal`, which starts the app with
-  `--sign-in` (see [CLI](./cli.md#the-agents-signals)). The app is not yet installed
-  or released, so this is unverified on axpc until W3's out-of-tree check. The
-  app's installer does not remove the value yet: before uninstalling, turn the
-  setting off, or delete `Marshal` under
-  `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` afterwards.
+  `--sign-in` (see [CLI](./cli.md#the-agents-signals)). Signing in with
+  it on is unverified on axpc until W3's out-of-tree check. The installer's uninstall
+  removes the value, and an absent value is not an error.
 - **A dropped connection** that is not a quit keeps the last list, marked with its
   time, under a lost-contact banner. The app starts the agent again once and then
   offers Try Again.
@@ -566,8 +566,8 @@ meantime are ignored while `config.toml` exists. Delete `config.toml` to migrate
 
 ## Install Layout
 
-This is planned, and holds until W1's installer pull request (pull request 3) merges the installer;
-no host has it installed.
+W1's MSI creates this layout, as [CLI](./cli.md#installers) describes, and the build
+leg's installer test measures it on every run; no host has it installed yet.
 
 | What                                  | Where                                                                             |
 | ------------------------------------- | --------------------------------------------------------------------------------- |
@@ -586,10 +586,12 @@ one code object. The name `marshal-app.exe` never collides with a leftover
 
 ## Rolling Back
 
-axpc runs its pools with the released `marshal` today, so a rollback has nothing to
-undo yet. Once the installer exists, a rollback installs the previous release. The
-PowerShell host scripts are gone, so a rollback never restores them; before the
-installer, the previous release is the last command-line release. Going back from the
+A rollback uninstalls Marshal and installs the previous release, as
+[CLI](./cli.md#updating-repairing-uninstalling-and-rolling-back) describes; before the
+first app release, the previous release is the
+[last command-line release](./cli.md#the-last-command-line-release), whose procedures
+are at its tag. The PowerShell host scripts are gone, so a rollback never restores
+them. Going back from the
 app to the command line takes three things the app does not do for you:
 
 - **Quit Marshal first**, so no agent holds the lock and the command line's `start`
@@ -628,9 +630,7 @@ does not take a build for a host that has run it:
   build only in debug, for the test variables above.
 - **Not shown by any check:** that no console window appears from the agent, the
   exporter or their `docker` clients (the flags are asserted at the command builders,
-  and the window is not observable without `unsafe`), that a terminal `marshal build`
-  on Windows still streams `docker build`'s output with `CREATE_NO_WINDOW`, which is
-  checked on axpc, WebView2 itself, a Windows contrast
+  and the window is not observable without `unsafe`), WebView2 itself, a Windows contrast
   theme, the icon on a real taskbar and its weight at 16 px, the menu opening from the
   keyboard and where its focus goes, the icon following a mode or a scaling change
   within 2 s, a token round trip through the Credential Manager to a registration,
@@ -679,8 +679,7 @@ runners were running, and starts `msiexec.exe /i <msi> /passive /promptrestart
 AUTOLAUNCHAPP=True LAUNCHAPPARGS="<its own arguments>"`; the plugin then ends the app.
 The installer shows Windows Installer's progress window. Starting the new app, which
 starts its agent, depends on the MSI honouring `AUTOLAUNCHAPP` and `LAUNCHAPPARGS`;
-that is a criterion of W1's installer pull request, and until it merges there is no
-app MSI on main. If the process has not exited in 60 s, or the installer does not
+W1's installer pull request tests it in `test-msi-installer.ps1`. If the process has not exited in 60 s, or the installer does not
 start, the app drops the update and the record, handles the agent's end as any other,
 and checks again an hour later. An end for an update another client asked for is
 handled as any other end.
