@@ -867,7 +867,9 @@ the mounted disk image, Downloads or anywhere else starts no agent, says "Move M
 to Applications", and offers only Open Marshal and Quit Marshal; quitting it ends
 only that copy. A Marshal that is moved, renamed or replaced while it runs is a
 changed executable, so its agent stops every runner and ends, and the next copy
-opened from Applications says why it ended.
+opened from Applications says why it ended: "The last agent ended because Marshal was
+moved". The ending copy leaves an empty marker, `agent-ended-moved`, in
+`~/Library/Application Support/marshal`, and that next copy removes it.
 
 To upgrade, quit Marshal, which stops the runners, replace it in Applications with
 the new version, and open it. The configuration, the logs, the golden VM and the

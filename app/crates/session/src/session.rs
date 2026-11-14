@@ -429,6 +429,8 @@ pub struct Session<D: Dial> {
     github: Github<D::Link>,
     /// the pools whose Open run found its job ended, with when.
     ended_jobs: BTreeMap<String, u64>,
+    /// whether this launch follows an agent that ended because Marshal was moved.
+    after_moved: bool,
 }
 
 impl<D: Dial> Session<D> {
@@ -438,6 +440,14 @@ impl<D: Dial> Session<D> {
     pub fn outside_applications(mut self) -> Self {
         self.stage = Stage::Parked;
         self.connection = Connection::OutsideApplications;
+        self
+    }
+
+    /// a session that follows an agent that ended because Marshal was moved, renamed or
+    /// replaced while it ran; the window says so for this launch.
+    #[must_use]
+    pub fn after_moved(mut self) -> Self {
+        self.after_moved = true;
         self
     }
 
@@ -493,6 +503,7 @@ impl<D: Dial> Session<D> {
             window_shown: false,
             github: Github::new(),
             ended_jobs: BTreeMap::new(),
+            after_moved: false,
         };
         (
             session,
@@ -580,7 +591,8 @@ impl<D: Dial> Session<D> {
             .pending(self.pending)
             .tokens(&self.tokens)
             .github(feed)
-            .ended_jobs(&self.ended_jobs);
+            .ended_jobs(&self.ended_jobs)
+            .after_moved(self.after_moved);
         let Update { view, announced } = self.tracker.update(input);
         self.recheck = announced
             .recheck_at_ms

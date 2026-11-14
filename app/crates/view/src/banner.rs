@@ -40,6 +40,7 @@ pub enum BannerKind {
     Quitting,
     UnknownState,
     GithubPaused,
+    AfterMoved,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -259,6 +260,31 @@ fn unconfigured_line(names: &[&str], words: &HostWords) -> String {
         crate::text::list_of(&names.iter().map(|name| plain(name)).collect::<Vec<_>>()),
         words.host_document,
     )
+}
+
+/// why the agent before this launch ended, when Marshal was moved, renamed or replaced
+/// while it ran; shown for this launch, while Marshal is in control.
+fn after_moved(context: &Context<'_>) -> Option<Banner> {
+    let in_control = !matches!(
+        context.resident,
+        Resident::StartingMarshal
+            | Resident::NoAgent
+            | Resident::NotAnswering
+            | Resident::LockHeld
+            | Resident::OutsideApplications
+    );
+    (context.input.after_moved && in_control).then(|| {
+        let heading = "The last agent ended because Marshal was moved";
+        banner(
+            BannerKind::AfterMoved,
+            Tone::Neutral,
+            heading,
+            vec![
+                "Marshal was moved, renamed or replaced while it ran, so its agent stopped every runner and ended. This copy started a new agent.".to_string(),
+            ],
+            heading.to_string(),
+        )
+    })
 }
 
 fn leftover_banner(context: &Context<'_>) -> Option<Banner> {
@@ -801,6 +827,7 @@ pub fn banners(context: &Context<'_>) -> Vec<Banner> {
     };
     state
         .into_iter()
+        .chain(after_moved(context))
         .chain(leftover_banner(context))
         .chain(no_tokens(context))
         .chain(truncated(context))
