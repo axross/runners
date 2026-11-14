@@ -129,13 +129,7 @@ impl GoldenBuild<'_> {
     }
 
     async fn make(&self, session: &mut Session) -> Result<(), Abort> {
-        self.vm()
-            .guard(self.check_prerequisites())
-            .await
-            .map_err(|abort| match abort {
-                Abort::Failed(reason) => Abort::Refused(reason),
-                other => other,
-            })?;
+        self.vm().check(self.check_prerequisites()).await?;
         self.vm().guard(self.delete_leftovers()).await?;
         self.log.info(&format!("Pulling {BASE_REFERENCE}."));
         self.vm()

@@ -90,6 +90,20 @@ impl BuildVm<'_> {
         }
     }
 
+    /// runs a check under the stop signal; nothing has changed yet, so its failure is
+    /// a refusal. It selects itself rather than wrapping `guard`, whose future it
+    /// would otherwise hold beside its own copy of `work`.
+    pub(super) async fn check(
+        &self,
+        work: impl Future<Output = Result<(), String>>,
+    ) -> Result<(), Abort> {
+        tokio::select! {
+            biased;
+            _ = self.stopped() => Err(Abort::Stopped),
+            done = work => done.map_err(Abort::Refused),
+        }
+    }
+
     /// starts the build VM under the launcher and waits for its guest agent.
     pub(super) async fn boot(&self, session: &mut Session, vm: &str) -> Result<(), Abort> {
         self.log.info(&format!("Booting the build VM {vm}."));

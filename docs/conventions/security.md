@@ -1731,6 +1731,9 @@ the procedure. The differences are these:
   services. The runtime counts the macOS VMs before every clone, as
   [CLI](../operations/cli.md#the-two-vm-count) states, over-counting when it cannot
   read a VM's OS.
+  The allowance assumes the Mac's macOS is licensed under §2B, as macOS installed or
+  updated by download is; a copy licensed only under §2A carries no right to virtual
+  copies.
 - **CPU placement** is the VM's vCPUs, with no container inside.
 - **Untested.** Softnet's filtering and the isolation settings are not tested for
   macOS job VMs, as for Linux ones. M1's condition carries over: macOS pools take

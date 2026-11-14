@@ -3140,11 +3140,11 @@ these steps in place of the Linux ones:
    VM version, fails only that slot's attempt, which backs off.
 2. **Boot and probe.** It sets the pool's vCPUs, memory and disk, boots the VM
    under its shim, and waits at most 180 s for the guest agent; Linux keeps 120 s.
-   It then probes the guest every 3 s for at most 90 s, until the disk has grown:
-   the launcher must be present, the runner must report the version the golden
-   VM's name records, and `diskutil` must report a disk within 1 GB of the pool's
-   `diskGb`, with less than 1 GB outside any partition. A failed probe ends the
-   attempt before registration.
+   It then probes the guest every 3 s for at most 90 s, each probe within 30 s,
+   until the disk has grown: the launcher must be present, the runner must report
+   the version the golden VM's name records, and `diskutil` must report a disk
+   within 1 GB of the pool's `diskGb`, with less than 1 GB outside any partition. A
+   failed probe ends the attempt before registration.
 3. **The runner.** The JIT configuration goes to the launcher on the guest agent's
    standard input, never on a command line. The launcher runs the runner's own
    `run.sh` as `admin` with the configuration in `ACTIONS_RUNNER_INPUT_JITCONFIG`.

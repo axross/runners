@@ -88,7 +88,7 @@ pub struct TartTimings {
     pub engine_poll: Duration,
     /// the bound on one question to the Docker Engine.
     pub engine_call: Duration,
-    /// the bound on the CPU probe's `docker run`.
+    /// the bound on the CPU probe's `docker run`, and on one probe of a macOS job VM.
     pub probe: Duration,
     /// the wait between checks while Tart does not answer.
     pub tart_poll: Duration,
@@ -665,7 +665,7 @@ impl<C: Clock> TartBackend<C> {
     /// the launcher, with another runner version or with a disk of another size.
     async fn probe_macos(&self, vm: &str, disk_gb: u32, runner: &str) -> Result<(), BackendError> {
         let deadline = Instant::now() + self.timings.disk_wait;
-        let call = probe_call(self.timings.agent_call);
+        let call = probe_call(self.timings.probe);
         loop {
             let answer = self
                 .client
