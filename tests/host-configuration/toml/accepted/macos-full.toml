@@ -9,6 +9,7 @@ disk_gb = 180
 
 [lifecycle]
 keep_awake = true
+stop_on_network_change = false
 
 [[pool]]
 name = "alpha"

@@ -54,7 +54,7 @@ fn stop_phrase(stop: &Stop) -> String {
             crate::text::RESTART_FAILURES
         ),
         Stop::ImageBuildFailed => "stopped, the image build failed".into(),
-        Stop::Other(_) => "runners stopped".into(),
+        Stop::Signal(_) | Stop::Other(_) => "runners stopped".into(),
     }
 }
 

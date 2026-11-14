@@ -14,7 +14,8 @@
         "url": "index.html",
         "width": 880,
         "height": 680,
-        "minWidth": 480
+        "minWidth": 480,
+        "visible": false
       }
     ],
     "security": {

@@ -616,6 +616,76 @@ fn the_restart_limit_stop_names_the_log_and_start_all() {
 }
 
 #[test]
+fn a_signal_stop_says_whether_the_runners_start_again_on_their_own() {
+    let signal_stop = |resume: Option<&str>| {
+        let snapshot = patched("newer_agent_stopped", |value| {
+            value["agent"]["reason"] = serde_json::json!({
+                "code": "slept",
+                "message": "Windows slept, so every runner was stopped",
+            });
+            if let Some(resume) = resume {
+                value["lifecycle"] = serde_json::json!({
+                    "resume": resume,
+                    "resume_cause": "slept",
+                });
+            }
+        });
+        first_banner(&view_of(&snapshot)).lines.clone()
+    };
+    assert_eq!(
+        signal_stop(Some("waiting")),
+        [
+            "Windows slept, so every runner was stopped",
+            "They start again on their own once the network they stopped on has settled; \
+             on another network they stay stopped until you choose Start All."
+        ]
+    );
+    assert_eq!(
+        signal_stop(Some("no_gateway"))[1],
+        "They will not start again on their own on this network. Choose Start All to run \
+         them again."
+    );
+    assert_eq!(signal_stop(None)[1], "Choose Start All to run them again.");
+}
+
+#[test]
+fn a_signal_stop_shows_the_stopped_by_an_error_icon_and_an_unknown_stop_does_not() {
+    let stopped_by = |code: &str| {
+        let snapshot = patched("newer_agent_stopped", |value| {
+            value["agent"]["reason"] = serde_json::json!({ "code": code, "message": "" });
+        });
+        let view = view_of(&snapshot);
+        (view.icon, first_banner(&view).tone)
+    };
+    for code in ["slept", "network_changed", "resumed_too_often"] {
+        assert_eq!(
+            stopped_by(code),
+            (IconState::StoppedByError, Tone::Error),
+            "{code}"
+        );
+    }
+    assert_eq!(
+        stopped_by("a_later_code"),
+        (IconState::Stopped, Tone::Neutral)
+    );
+}
+
+#[test]
+fn a_launch_that_started_nothing_says_the_setting_kept_the_runners_stopped() {
+    let snapshot = patched("stopped_by_you", |value| {
+        value["agent"]["reason"]["message"] = serde_json::json!("not started at launch");
+    });
+    assert_eq!(
+        first_banner(&view_of(&snapshot)).lines,
+        [
+            "They were not started at launch, because start_runners_on_launch is off in \
+             config.toml.",
+            "They stay stopped until you choose Start All."
+        ]
+    );
+}
+
+#[test]
 fn restarting_after_a_failure_says_when_and_that_no_pools_are_listed() {
     let snapshot = load("restarting");
     let view = view_of(&snapshot);

@@ -14,6 +14,7 @@ use crate::checkout;
 use crate::diagnostics::sink::{SinkError, checked_sink};
 use crate::edit::{ConfigFile, Edit, EditError, rewrite};
 use crate::host_config::{Checks, FileStatus, InUse, Loaded, Migration, Origin, StandardChecks};
+use crate::instance::lifecycle::Monitor;
 use crate::runtime::backend::Backend;
 use crate::runtime::clock::Clock;
 use crate::runtime::registration::Registrar;
@@ -115,7 +116,7 @@ fn failure_error(failure: &Failure) -> ApiError {
     }
 }
 
-fn edit_error(failure: EditError) -> ApiError {
+pub(super) fn edit_error(failure: EditError) -> ApiError {
     match failure {
         EditError::Changed => error(
             ErrorCode::ConfigChanged,
@@ -134,7 +135,7 @@ fn edit_error(failure: EditError) -> ApiError {
     }
 }
 
-impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'_, B, K, R, D> {
+impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<'_, B, K, R, D, M> {
     /// answers `config_read`: the file as it is now, which the record of the
     /// configuration in use does not follow.
     pub(super) fn config_read(&self) -> Json {
@@ -278,10 +279,10 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'_, B, K, R, D> 
         Ok(result)
     }
 
-    /// checks a change against the file and the rules the agent loads with.
-    fn prepare(&self, request: Request) -> Result<Prepared, ApiError> {
-        self.refuse_migration()?;
-        let file = ConfigFile::read(&self.config_path()).map_err(|failure| match failure {
+    /// reads `config.toml` for a change; a file that is gone or cannot be read is
+    /// `config_unusable`.
+    pub(super) fn read_for_change(&self) -> Result<ConfigFile, ApiError> {
+        ConfigFile::read(&self.config_path()).map_err(|failure| match failure {
             EditError::Io {
                 kind: io::ErrorKind::NotFound,
                 ..
@@ -296,7 +297,13 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'_, B, K, R, D> 
                 ErrorCode::ConfigUnusable,
                 format!("config.toml could not be read: {failure}"),
             ),
-        })?;
+        })
+    }
+
+    /// checks a change against the file and the rules the agent loads with.
+    fn prepare(&self, request: Request) -> Result<Prepared, ApiError> {
+        self.refuse_migration()?;
+        let file = self.read_for_change()?;
         let (expected, edits) = match request {
             Request::Edit { revision, edits } => (revision, Some(edits)),
             Request::Reload { revision } => (revision, None),
@@ -403,7 +410,7 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'_, B, K, R, D> 
     }
 
     /// refuses a change while the migration of `config.json` failed or is pending.
-    fn refuse_migration(&self) -> Result<(), ApiError> {
+    pub(super) fn refuse_migration(&self) -> Result<(), ApiError> {
         let inner = self.inner.borrow();
         match inner.loaded.as_ref().map(|loaded| &loaded.migration) {
             Some(Migration::Failed(failure)) => Err(error(
@@ -428,6 +435,7 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'_, B, K, R, D> 
                 .edit(self.settings.profile, above.as_deref(), edits)
                 .map_err(edit_error)?;
         }
+        *self.read_revision.borrow_mut() = Some(prepared.revision.clone());
         let result = self.change_result(&prepared, mode);
         let previous = self.use_file(prepared.plan.clone());
         self.refresh_tokens(&prepared.plan);
@@ -597,7 +605,7 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'_, B, K, R, D> 
 
     /// the checkout above the configuration file, which a diagnostic directory must
     /// lie outside.
-    fn above(&self) -> Option<PathBuf> {
+    pub(super) fn above(&self) -> Option<PathBuf> {
         checkout::find(&self.config_path())
     }
 

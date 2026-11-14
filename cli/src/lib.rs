@@ -18,6 +18,7 @@ pub mod host_config;
 pub mod image;
 pub mod instance;
 pub mod json;
+pub mod lifecycle_settings;
 pub mod macos;
 #[cfg(unix)]
 pub mod private;
@@ -31,3 +32,4 @@ pub mod token_store;
 pub mod validate;
 #[cfg(unix)]
 pub mod vm_shim;
+pub mod windows_host;

@@ -132,6 +132,7 @@ impl Link for Agent {
 
     async fn call(&self, method: Method) -> Result<(), Failure> {
         let called = match method {
+            Method::Launch => self.client.call("launch", serde_json::Value::Null).await,
             Method::StartAll => self.client.call("start_all", serde_json::Value::Null).await,
             Method::StopAll => self.client.call("stop_all", serde_json::Value::Null).await,
             Method::Build => self.client.call("build", serde_json::Value::Null).await,

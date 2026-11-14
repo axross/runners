@@ -3,9 +3,11 @@
 
 use marshal_cli::agent::HANDSHAKE_TIMEOUT;
 use marshal_cli::agent::Launch;
-use marshal_session::{Ended, RETRY_EVERY};
+use marshal_session::{Ended, Failure, RETRY_EVERY};
 
-use crate::support::{Agent, Answer, World, fixture, patched, secs, start, what};
+use crate::support::{
+    Agent, Answer, Called, World, fixture, patched, secs, start, start_fresh, what,
+};
 
 #[tokio::test(start_paused = true)]
 async fn the_agent_that_answers_at_launch_is_connected_to_and_not_started() {
@@ -145,6 +147,87 @@ async fn an_agent_stopped_by_you_is_started_stopped_after_a_drop() {
     first.close();
     session.wait(secs(1)).await;
     assert_eq!(session.world.started(), [Launch::Stopped]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_signal_stop_is_kept_after_a_drop_so_a_restart_starts_nothing() {
+    for code in ["slept", "network_changed", "resumed_too_often"] {
+        let (first, connected) = Agent::new();
+        let world = World::default();
+        world.then(Answer::Agent(connected));
+        let session = start(world);
+        first.push(patched("stopped_by_you", |value| {
+            value["agent"]["reason"]["code"] = code.into();
+        }));
+        session.settle().await;
+        first.close();
+        session.wait(secs(1)).await;
+        assert_eq!(session.world.started(), [Launch::Stopped], "{code}");
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_fresh_launch_starts_the_agent_stopped_and_sends_it_launch_once() {
+    let (agent, connected) = Agent::new();
+    let world = World::default();
+    world.up_after_start(Answer::Agent(connected));
+    let session = start_fresh(world);
+    session.wait(secs(1)).await;
+    assert_eq!(session.world.started(), [Launch::Stopped]);
+    agent.push(fixture("stopped_by_you"));
+    session.settle().await;
+    assert_eq!(agent.calls(), [Called::Launch]);
+
+    // the agent the app restarts after a drop is not sent `launch` again
+    let (second, reconnected) = Agent::new();
+    session.world.up_after_start(Answer::Agent(reconnected));
+    agent.close();
+    session.wait(secs(1)).await;
+    second.push(fixture("stopped_by_you"));
+    session.settle().await;
+    assert!(second.calls().is_empty(), "{:?}", second.calls());
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_fresh_launch_whose_agent_connects_only_at_a_retry_still_sends_it_launch() {
+    let (agent, connected) = Agent::new();
+    let world = World::default();
+    // the agent it starts answers busy at first, so the attempt ends without it
+    world.up_after_start(Answer::Busy);
+    let session = start_fresh(world);
+    session.wait(secs(1)).await;
+    assert_eq!(session.world.started(), [Launch::Stopped]);
+    session.world.then(Answer::Agent(connected));
+    session.wait(RETRY_EVERY + secs(1)).await;
+    agent.push(fixture("stopped_by_you"));
+    session.settle().await;
+    assert_eq!(session.world.started().len(), 1, "it is not started again");
+    assert_eq!(agent.calls(), [Called::Launch]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_fresh_launch_sends_start_all_to_an_agent_without_launch() {
+    let (agent, connected) = Agent::new();
+    agent.answer("launch", Err(Failure::NotServed("launch".to_string())));
+    let world = World::default();
+    world.up_after_start(Answer::Agent(connected));
+    let session = start_fresh(world);
+    session.wait(secs(1)).await;
+    agent.push(fixture("stopped_by_you"));
+    session.settle().await;
+    assert_eq!(agent.calls(), [Called::Launch, Called::StartAll]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_fresh_launch_that_reaches_a_running_agent_sends_it_nothing() {
+    let (agent, connected) = Agent::new();
+    let world = World::default();
+    world.then(Answer::Agent(connected));
+    let session = start_fresh(world);
+    agent.push(fixture("running"));
+    session.settle().await;
+    assert!(session.world.started().is_empty());
+    assert!(agent.calls().is_empty(), "{:?}", agent.calls());
 }
 
 #[tokio::test(start_paused = true)]

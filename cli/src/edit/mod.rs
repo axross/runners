@@ -165,18 +165,19 @@ impl ConfigFile {
     /// applies `edits` to the bytes that were read, in order, each against the document
     /// the ones before it left, and replaces the file with the result when it is valid
     /// for `host` under `checkout` and the file still holds the bytes that were read.
-    /// when the edits change nothing, nothing is written.
+    /// when the edits change nothing, nothing is written. Returns the bytes the file
+    /// holds afterwards.
     pub fn edit(
         &self,
         host: Profile,
         checkout: Option<&Path>,
         edits: &[Edit],
-    ) -> Result<(), EditError> {
+    ) -> Result<Vec<u8>, EditError> {
         let output = rewrite(&self.bytes, host, checkout, edits)?;
-        if output == self.bytes {
-            return Ok(());
+        if output != self.bytes {
+            replace::replace(&self.path, &self.bytes, &self.permissions, &output)?;
         }
-        replace::replace(&self.path, &self.bytes, &self.permissions, &output)
+        Ok(output)
     }
 }
 
@@ -188,7 +189,9 @@ pub fn edit_config(
     checkout: Option<&Path>,
     edits: &[Edit],
 ) -> Result<(), EditError> {
-    ConfigFile::read(path)?.edit(host, checkout, edits)
+    ConfigFile::read(path)?
+        .edit(host, checkout, edits)
+        .map(drop)
 }
 
 /// the bytes of the file after `edits`, checked for `host` under `checkout`.

@@ -1,6 +1,7 @@
 //! the banner that leads the list: what the agent is doing or why it is stopped, in
 //! the words of the boards, with the one action that resolves it.
 
+use marshal_cli::agent::machine::NOT_STARTED_AT_LAUNCH;
 use marshal_cli::agent::snapshot::WarningKind;
 use serde::Serialize;
 
@@ -145,6 +146,16 @@ fn stopped_by_you(context: &Context<'_>) -> Banner {
     let mut lines = Vec::new();
     if built_just_before_the_stop(context, "ready") {
         lines.push("The runner image is ready.".to_string());
+    }
+    let not_started_at_launch = context
+        .snapshot
+        .and_then(|snapshot| snapshot.agent.reason.as_ref())
+        .is_some_and(|reason| reason.message == NOT_STARTED_AT_LAUNCH);
+    if not_started_at_launch {
+        lines.push(
+            "They were not started at launch, because start_runners_on_launch is off in config.toml."
+                .to_string(),
+        );
     }
     lines.push("They stay stopped until you choose Start All.".to_string());
     let mut heading = "Runners stopped by you".to_string();
@@ -346,21 +357,38 @@ fn stopped(context: &Context<'_>, stop: &Stop) -> Banner {
                 spoken(&heading, &lead),
             )
         }
-        Stop::Other(_) => {
+        Stop::Signal(_) | Stop::Other(_) => {
             let heading = "Runners stopped";
             let lead = if message.is_empty() {
                 "The agent gave no reason.".to_string()
             } else {
                 plain(message)
             };
+            let resume = context
+                .snapshot
+                .and_then(|snapshot| snapshot.lifecycle.as_ref())
+                .and_then(|lifecycle| lifecycle.resume.as_deref());
+            let next = match resume {
+                Some("waiting") => {
+                    "They start again on their own once the network they stopped on has \
+                     settled; on another network they stay stopped until you choose Start All."
+                }
+                Some("no_gateway") => {
+                    "They will not start again on their own on this network. Choose Start All \
+                     to run them again."
+                }
+                _ => "Choose Start All to run them again.",
+            };
             banner(
                 BannerKind::StoppedForAnotherReason,
-                Tone::Neutral,
+                // a signal stop is W1's stop by an error, as the icon shows it
+                if stop.is_error() {
+                    Tone::Error
+                } else {
+                    Tone::Neutral
+                },
                 heading,
-                vec![
-                    lead.clone(),
-                    "Choose Start All to run them again.".to_string(),
-                ],
+                vec![lead.clone(), next.to_string()],
                 spoken(heading, &lead),
             )
         }

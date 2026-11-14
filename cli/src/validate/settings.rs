@@ -26,6 +26,8 @@ pub(super) struct LifecycleFields {
     #[serde(default)]
     keep_awake: Field,
     #[serde(default)]
+    stop_on_network_change: Field,
+    #[serde(default)]
     resume_after_stop: Field,
 }
 
@@ -119,6 +121,7 @@ pub fn read_lifecycle(
         start_at_login: read(&node.start_at_login, Key::StartAtLogin),
         start_runners_on_launch: read(&node.start_runners_on_launch, Key::StartRunnersOnLaunch),
         keep_awake: read(&node.keep_awake, Key::KeepAwake),
+        stop_on_network_change: read(&node.stop_on_network_change, Key::StopOnNetworkChange),
         resume_after_stop: read(&node.resume_after_stop, Key::ResumeAfterStop),
     };
     valid.then_some(lifecycle)

@@ -52,12 +52,10 @@ async fn a_verified_update_drains_the_agent_then_installs_once_its_process_exits
     session.updates.exit(PID);
     session.settle().await;
     assert_eq!(session.updates.installed(), ["1.4.0"]);
-    assert!(
-        !session
-            .updates
-            .record()
-            .contains(&RecordEvent::Written("1.4.0".into())),
-        "the runners were running, so no record"
+    assert_eq!(
+        session.updates.record(),
+        [RecordEvent::WrittenRunning("1.4.0".into())],
+        "the runners were running"
     );
     assert!(session.world.started().is_empty(), "no agent is started");
     assert_eq!(session.ended().await, Ended::Installing("1.4.0".into()));
@@ -503,17 +501,43 @@ fn the_record_applies_once_to_its_version_within_30_minutes() {
         ("1.4.0", written - 1, false),
     ];
     for (version, now, applies) in cases {
-        record.write("1.4.0", written).unwrap();
-        assert_eq!(record.take(version, now), applies, "{version} at {now}");
+        record.write("1.4.0", written, true).unwrap();
+        assert_eq!(
+            record.take(version, now),
+            applies.then_some(Launch::Stopped),
+            "{version} at {now}"
+        );
         assert!(
             !directory.join(RECORD_FILE).exists(),
             "every launch removes the record"
         );
-        assert!(!record.take("1.4.0", written), "it applies once");
+        assert_eq!(record.take("1.4.0", written), None, "it applies once");
     }
+    record.write("1.4.0", written, false).unwrap();
+    assert_eq!(record.take("1.4.0", written), Some(Launch::Running));
+    // a record written before `running` was added only ever recorded a stop by you
+    std::fs::write(
+        directory.join(RECORD_FILE),
+        format!(r#"{{"version":"1.4.0","written_ms":{written}}}"#),
+    )
+    .unwrap();
+    assert_eq!(record.take("1.4.0", written), Some(Launch::Stopped));
     std::fs::write(directory.join(RECORD_FILE), "not a record").unwrap();
-    assert!(!record.take("1.4.0", written));
+    assert_eq!(record.take("1.4.0", written), None);
     assert!(!directory.join(RECORD_FILE).exists());
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_signal_stop_is_recorded_as_stopped_for_the_update() {
+    let (agent, session) = offered().await;
+    agent.end_for_update_with("1.4.0", "slept");
+    agent.close();
+    session.updates.exit(PID);
+    session.settle().await;
+    assert_eq!(
+        session.updates.record(),
+        [RecordEvent::Written("1.4.0".into())]
+    );
 }
 
 #[tokio::test(start_paused = true)]

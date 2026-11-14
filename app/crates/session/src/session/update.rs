@@ -13,7 +13,7 @@ use marshal_feed::{DEVELOPMENT_VERSION, newer};
 use marshal_view::{Cause, Connection};
 use tokio::time::Instant;
 
-use super::{CALL_WITHIN, Ended, Internal, Session, Stage, launch_for, stopped_by_you};
+use super::{CALL_WITHIN, Ended, Internal, Session, Stage, keeps_stopped, launch_for};
 use crate::seam::{AgentInfo, Dial, Failure, Link, Process};
 
 /// how often the feed is read while the app runs.
@@ -299,20 +299,20 @@ impl<D: Dial> Session<D> {
     }
 
     /// the agent said it is ending for this app's drain.
-    pub(super) fn agent_ending(&mut self, stopped_by_you: bool) {
+    pub(super) fn agent_ending(&mut self, stopped: bool) {
         let Some(drain) = self.drain.as_mut() else {
             return;
         };
         self.log.info(&format!(
             "The agent is ending for the update to {}{}.",
             drain.version,
-            if stopped_by_you {
-                ", with the runners stopped by you"
+            if stopped {
+                ", with the runners stopped"
             } else {
                 ""
             }
         ));
-        drain.ending = Some(stopped_by_you);
+        drain.ending = Some(stopped);
         self.stage = Stage::Ending;
         self.begin_exit_wait();
     }
@@ -378,9 +378,12 @@ impl<D: Dial> Session<D> {
     }
 
     fn install(&mut self, version: &str, stopped: bool) {
-        if stopped && let Err(why) = self.update_record.write(version, self.time.now_ms()) {
+        if let Err(why) = self
+            .update_record
+            .write(version, self.time.now_ms(), stopped)
+        {
             self.log.warn(&format!(
-                "The record that the runners were stopped by you was not written: {why}"
+                "The record of how the runners stood for the update was not written: {why}"
             ));
         }
         let Some(verified) = self.verified.take() else {
@@ -462,7 +465,7 @@ impl<D: Dial> Session<D> {
     /// goes on as if the agent had said it is ending, with the runners stopped by you if
     /// that is the last state the app heard, and waits for its process to exit.
     fn ending_unannounced(&mut self) {
-        let stopped = self.snapshot.as_ref().is_some_and(stopped_by_you);
+        let stopped = self.snapshot.as_ref().is_some_and(keeps_stopped);
         if let Some(drain) = self.drain.as_mut() {
             drain.ending = Some(stopped);
             drain.answered = true;

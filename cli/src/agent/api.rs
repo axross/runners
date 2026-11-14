@@ -6,6 +6,7 @@ use std::fmt;
 use serde::Deserialize;
 use tokio::sync::oneshot;
 
+use crate::lifecycle_settings::Setting;
 use crate::runtime::secret::Secret;
 use crate::token_store::{StoreError, TokenKey, TokenRefusal, accepted_token};
 
@@ -90,6 +91,14 @@ pub enum Method {
     ConfigReload {
         revision: String,
         check: bool,
+    },
+    /// what the app sends after a fresh launch: the runners start when
+    /// `start_runners_on_launch` is on in effect.
+    Launch,
+    /// writes one `[lifecycle]` setting, or leaves it unset with `None`.
+    LifecycleSet {
+        setting: Setting,
+        value: Option<bool>,
     },
 }
 
@@ -205,6 +214,14 @@ struct ConfigReloadParams {
     check: bool,
 }
 
+#[derive(Deserialize)]
+struct LifecycleSetParams {
+    key: String,
+    /// `null`, or no value, leaves the setting unset.
+    #[serde(default)]
+    value: Option<bool>,
+}
+
 fn invalid(message: &str) -> ApiError {
     ApiError::new(ErrorCode::InvalidRequest, message)
 }
@@ -277,6 +294,13 @@ pub fn parse(method: &str, value: serde_json::Value) -> Result<Parsed, ApiError>
         "config_reload" => {
             let ConfigReloadParams { revision, check } = params(value)?;
             Method::ConfigReload { revision, check }
+        }
+        "launch" => Method::Launch,
+        "lifecycle_set" => {
+            let LifecycleSetParams { key, value } = params(value)?;
+            let setting = Setting::named(&key)
+                .ok_or_else(|| invalid("the key is not a setting of [lifecycle]"))?;
+            Method::LifecycleSet { setting, value }
         }
         _ => {
             return Err(ApiError::new(

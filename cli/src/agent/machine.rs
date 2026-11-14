@@ -20,9 +20,14 @@ use crate::host_config::{
     FileStatus, Loaded, Migration, MigrationFailure, Origin, StandardChecks, load_at_start,
     load_at_start_all,
 };
-use crate::instance::lifecycle::{CatchPanic, CoreFailure, Ending, StopTimes};
+use crate::instance::lifecycle::{
+    CatchPanic, CoreFailure, Ending, Monitor, NoMonitor, StopReason as SignalStop, StopTimes,
+};
 use crate::instance::restart::{RestartPolicy, Verdict};
+use crate::instance::resume::Resume;
 use crate::instance::steps::{self, Steps};
+use crate::lifecycle_settings::{Current, InEffect};
+use crate::macos::network::NetworkReading;
 use crate::profile::Profile;
 use crate::runtime::backend::Backend;
 use crate::runtime::board::{Board, PoolState, SlotState};
@@ -35,6 +40,7 @@ use crate::runtime::scrub::scrub_error_text;
 use crate::runtime::worker::sleep_or_stop;
 use crate::token_store::TokenKey;
 use crate::validate::{CheckoutRule, Plan};
+use crate::windows_host::run_key::{SignIn, SignInItem};
 
 use super::api::{ApiError, ApiResult, Call, Method};
 use super::builder::ImageBuilder;
@@ -43,11 +49,13 @@ use super::snapshot::{BuildInfo, MAX_SNAPSHOT_BYTES, Snapshot};
 use super::state::{Action, Drain, Inner, Phase, Reason};
 use super::tokens::StoreTokens;
 use super::view::{View, migration_failure_text, millis};
-use super::wire::{ENDING_UPDATE, ErrorCode, UpdateEnding};
+use super::wire::{ENDING_UPDATE, ErrorCode, RUNNERS_RUNNING, UpdateEnding};
 
 mod configure;
+mod lifecycle;
 
 use configure::{Mode, Request};
+pub use lifecycle::NOT_STARTED_AT_LAUNCH;
 
 /// the reason the agent ends when asked to by a client.
 pub const QUIT: &str = "quit";
@@ -151,7 +159,7 @@ fn refused(message: impl Into<String>) -> ApiResult {
     Err(ApiError::new(ErrorCode::Refused, message))
 }
 
-pub struct Agent<'a, B, K, R, D> {
+pub struct Agent<'a, B, K, R, D, M = NoMonitor> {
     settings: Settings,
     backend: &'a B,
     clock: &'a K,
@@ -159,6 +167,19 @@ pub struct Agent<'a, B, K, R, D> {
     builder: &'a D,
     tokens: &'a StoreTokens,
     log: &'a dyn Log,
+    monitor: &'a M,
+    in_effect: &'a Current,
+    sign_in: Option<&'a dyn SignInItem>,
+    /// what the latest write, removal or read of the sign-in item found.
+    sign_in_state: RefCell<Option<SignIn>>,
+    /// the resume after a signal stop, and the count of automatic resumes.
+    resume: RefCell<Resume>,
+    /// what the latest signal stop did to the resume, for the snapshot: the state and
+    /// the stop's code, until the resume fires or is cancelled.
+    resume_note: Cell<Option<(&'static str, &'static str)>>,
+    /// the revision of `config.toml` as the agent last read or wrote it, which
+    /// `lifecycle_set` refuses a file changed since.
+    read_revision: RefCell<Option<String>>,
     board: Board,
     inner: RefCell<Inner>,
     /// the containers a stop could not remove.
@@ -177,6 +198,9 @@ pub struct Agent<'a, B, K, R, D> {
     update: RefCell<Option<UpdateEnding>>,
     /// set when a stop all arrives during a drain's last steps, so the update keeps it.
     stopped_in_drain: Cell<bool>,
+    /// set when a stop all arrives while stopping, so a signal's stop becomes one by
+    /// you and arms no resume.
+    stop_asked: Cell<bool>,
     /// set once a drain's last steps have begun, after which a closed requester no
     /// longer cancels it.
     drain_ending: Cell<bool>,
@@ -216,22 +240,48 @@ async fn drain_deadline(deadline: Option<Instant>) {
 }
 
 /// what the agent works with besides its settings.
-pub struct Seams<'a, B, K, R, D> {
+pub struct Seams<'a, B, K, R, D, M = NoMonitor> {
     pub backend: &'a B,
     pub clock: &'a K,
     pub registrar: &'a R,
     pub builder: &'a D,
     pub tokens: &'a StoreTokens,
     pub log: &'a dyn Log,
+    /// the signals that stop every runner, and the keep-awake hold; it holds while
+    /// the agent runs, resumes, stops or builds, and releases in stopped.
+    pub monitor: &'a M,
+    /// the settings in effect, which the agent sets from each configuration it reads.
+    pub in_effect: &'a Current,
+    /// the sign-in item kept in step with `start_at_login`; `None` on a host that has
+    /// none.
+    pub sign_in: Option<&'a dyn SignInItem>,
     /// receives the snapshot after each change.
     pub snapshots: watch::Sender<Arc<Snapshot>>,
     /// turns true when the executable has changed.
     pub executable: watch::Receiver<bool>,
 }
 
-impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R, D> {
+/// the reason a signal leaves the agent stopped with.
+fn signal_reason(stop: SignalStop) -> Reason {
+    match stop {
+        SignalStop::Slept if cfg!(windows) => {
+            Reason::new(Reason::SLEPT, "Windows slept, so every runner was stopped")
+        }
+        SignalStop::Slept => Reason::new(Reason::SLEPT, stop.to_string()),
+        SignalStop::NetworkChanged(change) => Reason::new(Reason::NETWORK_CHANGED, change.reason()),
+        // a monitor stops only for a sleep or a network change; the others are the
+        // instance's own
+        SignalStop::RestartLimit => Reason::new(Reason::RESTART_LIMIT, stop.to_string()),
+        SignalStop::Image(_) => Reason::new(Reason::IMAGE_UNUSABLE, stop.to_string()),
+        SignalStop::InvalidConfiguration(_) | SignalStop::Prerequisite(_) => {
+            Reason::new(Reason::INVALID_CONFIGURATION, stop.to_string())
+        }
+    }
+}
+
+impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<'a, B, K, R, D, M> {
     #[must_use]
-    pub fn new(settings: Settings, seams: Seams<'a, B, K, R, D>) -> Self {
+    pub fn new(settings: Settings, seams: Seams<'a, B, K, R, D, M>) -> Self {
         let phase = match settings.launch {
             Launch::Running => Phase::Resuming,
             Launch::Stopped => Phase::Stopped(Reason::by_you()),
@@ -244,6 +294,13 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             builder: seams.builder,
             tokens: seams.tokens,
             log: seams.log,
+            monitor: seams.monitor,
+            in_effect: seams.in_effect,
+            sign_in: seams.sign_in,
+            sign_in_state: RefCell::new(None),
+            resume: RefCell::new(Resume::new()),
+            resume_note: Cell::new(None),
+            read_revision: RefCell::new(None),
             board: Board::default(),
             inner: RefCell::new(Inner::new(phase)),
             left: RefCell::new(Vec::new()),
@@ -259,6 +316,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             drain: watch::Sender::new(false),
             update: RefCell::new(None),
             stopped_in_drain: Cell::new(false),
+            stop_asked: Cell::new(false),
             drain_ending: Cell::new(false),
         };
         agent.publish();
@@ -266,8 +324,15 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
     }
 
     /// runs the agent until it is asked to end, answering every call that reaches
-    /// `requests`.
+    /// `requests`; the monitor keeps the keep-awake hold in order all the while.
     pub async fn run(&self, requests: &mut Requests) -> Ended {
+        tokio::select! {
+            ended = self.run_phases(requests) => ended,
+            never = self.monitor.maintain() => match never {},
+        }
+    }
+
+    async fn run_phases(&self, requests: &mut Requests) -> Ended {
         let mut next = match self.settings.launch {
             Launch::Running => Next::Resume(None),
             Launch::Stopped => {
@@ -302,6 +367,11 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
     }
 
     fn set_phase(&self, phase: Phase) {
+        if phase.holds_keep_awake() {
+            self.monitor.hold();
+        } else {
+            self.monitor.release();
+        }
         {
             let mut inner = self.inner.borrow_mut();
             inner.phase = phase;
@@ -316,6 +386,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
 
     /// the snapshot as the agent is now, cut to the message limit.
     fn snapshot(&self) -> Snapshot {
+        let lifecycle = self.lifecycle_info();
         let mut inner = self.inner.borrow_mut();
         if let Some(image) = self.board.image_record() {
             inner.image = Some(image);
@@ -333,6 +404,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             now: self.clock.now(),
         }
         .snapshot();
+        snapshot.lifecycle = lifecycle;
         snapshot.fit(MAX_SNAPSHOT_BYTES);
         snapshot
     }
@@ -394,6 +466,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                 })
             }
             Method::ConfigRead => Ok(Ok(self.config_read())),
+            Method::LifecycleSet { setting, value } => Ok(self.lifecycle_set(setting, value)),
             Method::TokenRemove { key } => Ok(match self.tokens.remove(&key) {
                 Ok(()) => {
                     self.publish();
@@ -446,12 +519,41 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             rule: CheckoutRule::AboveAndAtSink(above.as_deref()),
         };
         let profile = self.settings.profile;
+        // read before the load, so a file that changes meanwhile counts as changed;
+        // a file the load writes, migrating `config.json`, is read after it
+        let read_now = || {
+            std::fs::read(self.config_path())
+                .ok()
+                .map(|bytes| configure::revision(&bytes))
+        };
+        let read = read_now();
         let previous = self.inner.borrow_mut().loaded.take();
         let loaded = match &previous {
             None => load_at_start(folder, profile, self.clock, &checks),
             Some(previous) => load_at_start_all(folder, profile, self.clock, &checks, previous),
         };
         self.log_load(&loaded);
+        *self.read_revision.borrow_mut() = read.or_else(read_now);
+        // a kept last-valid configuration predates any `lifecycle_set` since, so only a
+        // configuration read now sets what is in effect
+        if let Some(in_use) = loaded
+            .in_use
+            .as_ref()
+            .filter(|in_use| in_use.origin != Origin::LastValid)
+        {
+            // `config.json`, used after a failed migration, has no table, so it takes
+            // the defaults
+            let lifecycle = in_use
+                .plan
+                .settings
+                .as_ref()
+                .map(|settings| settings.lifecycle)
+                .unwrap_or_default();
+            self.take_settings(InEffect::windows(lifecycle));
+        } else if loaded.in_use.is_some() {
+            // the settings in effect stay, and the sign-in item is still put in step
+            self.sync_sign_in();
+        }
         let outcome = match &loaded.in_use {
             Some(in_use) => Ok(in_use.plan.clone()),
             None => Err(self.none_in_use(&loaded)),
@@ -595,7 +697,15 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
     }
 
     async fn stopped(&self, requests: &mut Requests) -> Next {
+        // the network check a pending resume waits on, kept across calls so a call does
+        // not put the check off
+        let mut reading: Option<Pin<Box<dyn Future<Output = NetworkReading> + '_>>> = None;
         loop {
+            if !self.resume_pending() {
+                reading = None;
+            } else if reading.is_none() {
+                reading = Some(Box::pin(self.monitor.next_reading()));
+            }
             tokio::select! {
                 biased;
                 () = self.exit_asked() => {
@@ -613,6 +723,16 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                             return self.end_stopped_for_update(version, reply);
                         }
                         Routed::Begin(Method::Build, reply) => return Next::Build(reply),
+                        Routed::Begin(Method::Launch, reply) if !self.starts_at_launch() => {
+                            self.log.info(
+                                "The runners were not started at launch, as start_runners_on_launch is off.",
+                            );
+                            let reason = Reason::new(Reason::BY_YOU, NOT_STARTED_AT_LAUNCH);
+                            self.set_phase(Phase::Stopped(reason.clone()));
+                            let _ = reply.send(Ok(
+                                json!({ "state": "stopped", "reason": reason.wire() }),
+                            ));
+                        }
                         Routed::Begin(_, reply) => return Next::Resume(Some(reply)),
                         Routed::Quit(reply) => {
                             self.set_phase(Phase::Quitting);
@@ -623,6 +743,17 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                         Routed::Configure(_, _, reply) => {
                             let _ = reply.send(self.busy());
                         }
+                    }
+                }
+                read = async {
+                    match reading.as_mut() {
+                        Some(read) => read.await,
+                        None => pending().await,
+                    }
+                } => {
+                    reading = None;
+                    if self.observe_resume(&read) {
+                        return Next::Resume(None);
                     }
                 }
             }
@@ -678,6 +809,9 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             .retained()
             .retain_unmanaged(|pool| plan.entries.iter().any(|entry| entry.name == pool));
         let (stop, stop_receiver) = watch::channel(false);
+        // the sleep baseline and the primary network's record start afresh each run
+        self.monitor.begin();
+        let mut watching = pin!(self.monitor.watch());
         let mut cycle = Box::pin(self.core_cycle(plan, stop_receiver));
         let mut ticker = ticker();
         let mut draining: Option<Draining> = None;
@@ -707,9 +841,28 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                         self.capture_skips();
                         let containers = self.backend.running_containers();
                         self.serve(requests, false, self.container_steps(containers)).await;
-                        return self.end_for_update(&drain.version, false);
+                        return self.end_for_update(&drain.version, RUNNERS_RUNNING);
                     }
                     return self.cycle_ended(end);
+                }
+                signal = &mut watching => {
+                    let reason = signal_reason(signal);
+                    self.log.warn(&format!("The agent is stopping: {}.", reason.message));
+                    self.stop_asked.set(false);
+                    self.wind_down(&stop, cycle, requests).await;
+                    // a signal during a drain still ends the agent for the update, and
+                    // the update keeps the signal's stop
+                    if let Some(drain) = draining.take() {
+                        return self.end_for_update(&drain.version, reason.code);
+                    }
+                    // a stop all during the wind-down is the user's stop, which never
+                    // resumes
+                    let reason = if self.stop_asked.get() {
+                        Reason::by_you()
+                    } else {
+                        self.arm_resume(reason)
+                    };
+                    return self.after_stop(reason);
                 }
                 () = drain_deadline(deadline) => {
                     if let Some(drain) = draining.take() {
@@ -719,7 +872,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                             self.settings.drain_bound.as_secs()
                         ));
                         self.wind_down(&stop, cycle, requests).await;
-                        return self.end_for_update(&drain.version, false);
+                        return self.end_for_update(&drain.version, RUNNERS_RUNNING);
                     }
                 }
                 () = requester_closed(&mut draining) => {
@@ -765,7 +918,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                         ));
                         let version = drain.version.clone();
                         self.wind_down(&stop, cycle, requests).await;
-                        return self.end_for_update(&version, false);
+                        return self.end_for_update(&version, RUNNERS_RUNNING);
                     }
                     self.refresh();
                 }
@@ -781,7 +934,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                         Routed::Stop(reply) => {
                             self.wind_down(&stop, cycle, requests).await;
                             let next = match &draining {
-                                Some(drain) => self.end_for_update(&drain.version, true),
+                                Some(drain) => self.end_for_update(&drain.version, Reason::BY_YOU),
                                 None => self.after_stop(Reason::by_you()),
                             };
                             self.reply_state(reply);
@@ -842,17 +995,20 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
     }
 
     /// ends the agent at once for an update to `version` asked for while the runners
-    /// are stopped, stopped by you when the stop was yours, and answers `reply`.
+    /// are stopped, and answers `reply`; the update keeps a stop by you or by a signal,
+    /// and an error stop starts the runners again after it.
     fn end_stopped_for_update(&self, version: String, reply: Reply) -> Next {
-        let by_you = matches!(
-            &self.inner.borrow().phase,
-            Phase::Stopped(reason) if reason.code == Reason::BY_YOU
-        );
+        let runners = match &self.inner.borrow().phase {
+            Phase::Stopped(reason) if reason.code == Reason::BY_YOU || reason.is_signal() => {
+                reason.code
+            }
+            _ => RUNNERS_RUNNING,
+        };
         self.log.info(&format!(
             "A drain for the update to {version} was asked for while the runners are stopped, so the agent ends for it now."
         ));
         self.exit.set(Some(UPDATE));
-        *self.update.borrow_mut() = Some(UpdateEnding::new(&version, by_you));
+        *self.update.borrow_mut() = Some(UpdateEnding::with_runners(&version, runners));
         self.inner.borrow_mut().drain = Some(Drain {
             version,
             waiting: 0,
@@ -901,13 +1057,19 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             .all(|row| row.state == SlotState::Drained)
     }
 
-    /// ends the agent for an update to `version`, once its runners have stopped.
-    fn end_for_update(&self, version: &str, stopped_by_you: bool) -> Next {
+    /// ends the agent for an update to `version`, once its runners have stopped;
+    /// `runners` is how they stood, which a stop all during the drain's last steps
+    /// makes a stop by you.
+    fn end_for_update(&self, version: &str, runners: &str) -> Next {
         self.inner.borrow_mut().drain = None;
         if self.exit.get().is_none() {
-            let stopped_by_you = stopped_by_you || self.stopped_in_drain.get();
+            let runners = if self.stopped_in_drain.get() {
+                Reason::BY_YOU
+            } else {
+                runners
+            };
             self.exit.set(Some(UPDATE));
-            *self.update.borrow_mut() = Some(UpdateEnding::new(version, stopped_by_you));
+            *self.update.borrow_mut() = Some(UpdateEnding::with_runners(version, runners));
         }
         self.after_stop(Reason::by_you())
     }
@@ -1054,6 +1216,17 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             }
             Err(method) => method,
         };
+        if matches!(
+            method,
+            Method::StopAll | Method::Quit | Method::Build | Method::StartAll | Method::Launch
+        ) {
+            if matches!(method, Method::StopAll)
+                && matches!(self.inner.borrow().phase, Phase::Stopping)
+            {
+                self.stop_asked.set(true);
+            }
+            self.cancel_resume(&method);
+        }
         if matches!(
             method,
             Method::ConfigEdit { .. } | Method::ConfigReload { .. }

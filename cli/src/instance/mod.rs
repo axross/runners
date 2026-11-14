@@ -11,6 +11,7 @@ pub mod lock;
 pub mod log_file;
 pub mod protocol;
 pub mod restart;
+pub mod resume;
 pub mod roots;
 pub mod runtime_core;
 pub mod source;

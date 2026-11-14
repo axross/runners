@@ -54,6 +54,7 @@ pub fn patched(name: &str, change: impl FnOnce(&mut serde_json::Value)) -> Snaps
 /// what a call to the fake agent was.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Called {
+    Launch,
     StartAll,
     StopAll,
     Build,
@@ -93,6 +94,7 @@ pub struct FakeLink {
 
 fn name(method: &Method) -> &'static str {
     match method {
+        Method::Launch => "launch",
         Method::StartAll => "start_all",
         Method::StopAll => "stop_all",
         Method::Build => "build",
@@ -122,6 +124,7 @@ impl Link for FakeLink {
     async fn call(&self, method: Method) -> Result<(), Failure> {
         let key = name(&method);
         let called = match method {
+            Method::Launch => Called::Launch,
             Method::StartAll => Called::StartAll,
             Method::StopAll => Called::StopAll,
             Method::Build => Called::Build,
@@ -243,6 +246,15 @@ impl Agent {
         let _ = self.pushes.send(Pushed::Ending {
             reason: "update".to_string(),
             update: Some(UpdateEnding::new(version, stopped_by_you)),
+        });
+    }
+
+    /// says the agent is ending for the update to `version` with the runners as
+    /// `runners` says, such as `slept`.
+    pub fn end_for_update_with(&self, version: &str, runners: &str) {
+        let _ = self.pushes.send(Pushed::Ending {
+            reason: "update".to_string(),
+            update: Some(UpdateEnding::with_runners(version, runners)),
         });
     }
 
@@ -497,7 +509,10 @@ struct UpdatesState {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RecordEvent {
+    /// a record that the runners stay stopped.
     Written(String),
+    /// a record that the runners were running.
+    WrittenRunning(String),
     Removed,
 }
 
@@ -639,10 +654,13 @@ impl Processes for Updates {
 }
 
 impl Record for Updates {
-    fn write(&self, version: &str, _at_ms: u64) -> Result<(), String> {
-        locked(&self.0)
-            .record
-            .push(RecordEvent::Written(version.to_string()));
+    fn write(&self, version: &str, _at_ms: u64, stopped: bool) -> Result<(), String> {
+        let event = if stopped {
+            RecordEvent::Written(version.to_string())
+        } else {
+            RecordEvent::WrittenRunning(version.to_string())
+        };
+        locked(&self.0).record.push(event);
         Ok(())
     }
 
@@ -684,6 +702,30 @@ pub fn start_linking(
     agent_version: &str,
     launch: Launch,
 ) -> Running {
+    start_session(world, updates, version, agent_version, launch, false)
+}
+
+/// starts a session of a fresh launch, which starts the agent stopped and sends it
+/// `launch`. The app is a development build, which never checks the feed.
+pub fn start_fresh(world: World) -> Running {
+    start_session(
+        world,
+        Updates::default(),
+        "0.0.0-dev",
+        "0.0.0-dev",
+        Launch::Stopped,
+        true,
+    )
+}
+
+fn start_session(
+    world: World,
+    updates: Updates,
+    version: &str,
+    agent_version: &str,
+    launch: Launch,
+    fresh: bool,
+) -> Running {
     let screen = Arc::new(Screen::default());
     let log = Arc::new(MemoryLog::default());
     let started_at = Instant::now();
@@ -699,6 +741,7 @@ pub fn start_linking(
         processes: Arc::new(updates.clone()),
         record: Arc::new(updates.clone()),
         launch,
+        fresh,
     });
     Running {
         world,

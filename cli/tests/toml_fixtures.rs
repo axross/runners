@@ -99,10 +99,11 @@ fn describe(plan: &Plan) -> Vec<String> {
         format!("schema_version: {}", settings.schema_version),
         format!("routing_label: {}", settings.routing_label),
         format!(
-            "lifecycle: start_at_login={} start_runners_on_launch={} keep_awake={} resume_after_stop={}",
+            "lifecycle: start_at_login={} start_runners_on_launch={} keep_awake={} stop_on_network_change={} resume_after_stop={}",
             show(lifecycle.start_at_login),
             show(lifecycle.start_runners_on_launch),
             show(lifecycle.keep_awake),
+            show(lifecycle.stop_on_network_change),
             show(lifecycle.resume_after_stop)
         ),
     ];
