@@ -1572,6 +1572,15 @@ one.
   The hold is checked every sample while running (inside the watch) and while
   resuming or stopping (the monitor's `maintain`, which `serve` polls beside the
   work it waits for).
+- **The settings, for the resident agent.** `with_settings` gives the monitor the
+  `[lifecycle]` settings in effect (M4,
+  [#90](https://github.com/axross/runners/issues/90)). The hold then follows
+  `keep_awake` at each sample, so turning it off releases the hold within one sample
+  and turning it on takes it at the next, while the state still wants it. The stops on
+  a sleep or a network change stay fixed whatever the settings say. `start` gives no
+  settings, so its hold always follows the state. The monitor also keeps the primary
+  network it last recorded while running and reads the next one while stopped, which
+  the agent's resume after a signal stop compares; a new run clears that record.
 - **Each run begins afresh.** When the instance enters running, at the first run and
   at every resume or restart, it calls `begin`: the sleep baseline is set again,
   because nothing sampled the clocks while it was stopped and the time spent
@@ -2071,7 +2080,8 @@ On axpc the agent acts on the five `[lifecycle]` settings of
 [The Agent's Configuration](#the-agents-configuration). A key that is absent, or the
 whole table, takes its Windows default, and so does every key while the agent runs on
 a `config.json` its migration could not replace; the snapshot marks such a setting
-`defaulted`. On macOS nothing acts on them until M4.
+`defaulted`. On macOS nothing acts on them until M4, whose monitor follows
+`keep_awake` and feeds the resume once the agent gives it the settings in effect.
 
 | Setting                   | When on                                                                                                                    | Windows default |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------------- | --------------- |

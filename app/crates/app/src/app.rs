@@ -5,8 +5,8 @@ use marshal_cli::agent::Launch;
 use marshal_cli::instance::roots::Roots;
 use marshal_modes::{Overrides, is_sign_in};
 use marshal_session::{
-    AppLog, Library, Log, MAX_FILE_BYTES, OwnExecutable, Processes, RECORD_FILE, RecordFile, Seams,
-    Session, TimeSource, Updater, WallClock,
+    AppLog, Library, Log, LoginItem, MAX_FILE_BYTES, OwnExecutable, Processes, RECORD_FILE,
+    RecordFile, Seams, Session, TimeSource, Updater, WallClock,
 };
 use marshal_tray::{Look, SIZES, Watch, utc_offset_minutes};
 use marshal_view::{GlyphColour, IconState};
@@ -113,6 +113,32 @@ fn update_seams(_app: &AppHandle) -> (Option<Arc<dyn Updater>>, Arc<dyn Processe
     (None, Arc::new(marshal_session::NoUpdates))
 }
 
+/// on macOS, the login item the app keeps in step with `start_at_login`, with its record
+/// beside the update's; elsewhere the agent keeps the sign-in item.
+#[cfg(target_os = "macos")]
+fn login_item(roots: &Roots) -> Result<Option<LoginItem>, String> {
+    let executable = std::env::current_exe()
+        .map_err(|error| format!("the app's own executable cannot be found: {error}"))?;
+    // a bundle reached through a symbolic link counts where its files are
+    let executable = std::fs::canonicalize(&executable).unwrap_or(executable);
+    let record = marshal_session::LoginItemRecordFile::new(
+        roots
+            .config_directory()
+            .join(marshal_session::LOGIN_ITEM_RECORD_FILE),
+    );
+    Ok(Some(LoginItem::new(
+        Arc::new(crate::login_item::MainApp),
+        Arc::new(record),
+        &executable,
+        std::env::home_dir().as_deref(),
+    )))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn login_item(_roots: &Roots) -> Result<Option<LoginItem>, String> {
+    Ok(None)
+}
+
 /// connects the session to the agent and shows it on the icon and in the window; the
 /// app ends when the session does.
 fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
@@ -144,6 +170,7 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let fresh = taken.is_none();
     let launch = taken.unwrap_or(Launch::Stopped);
     let (updater, processes) = update_seams(app);
+    let login_item = login_item(&roots)?;
     let watch = Arc::new(Mutex::new(Watch::new()));
     let latest = Arc::new(Latest::default());
     let screen = Screen::new(
@@ -165,6 +192,7 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         record,
         launch,
         fresh,
+        login_item,
     });
     app.manage(AppState::new(handle, latest, Arc::clone(&log)));
     // the window starts hidden, and a start from the sign-in item leaves it so

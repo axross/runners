@@ -122,6 +122,19 @@ web view.
   app's installer does not remove the value yet: before uninstalling, turn the
   setting off, or delete `Marshal` under
   `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` afterwards.
+- **Login item on the Mac.** M4 ([#90](https://github.com/axross/runners/issues/90))
+  keeps the app's own bundle registered as its login item with `SMAppService` while
+  `start_at_login` is on in effect; the agent leaves the snapshot's sign-in item unset
+  on macOS. The app reconciles when a snapshot's settings in effect change: it
+  registers when the setting is on and macOS reports Marshal not registered, and
+  unregisters when it is off and Marshal is registered or waiting for approval. Only a
+  Marshal in `/Applications` or `~/Applications` does either. It never registers over
+  "requires approval", and it keeps the empty file `login-item-registered-by-marshal`
+  in the configuration folder after registering, so a later "not registered" counts as
+  the maintainer turning Marshal off in Login Items; turning the setting off clears
+  it. A failed call is logged with its code and tried again at the next change of the
+  settings. This is unverified on axmc until M4's Mac run. Before removing Marshal,
+  turn the setting off, or remove Marshal in Login Items.
 - **A dropped connection** that is not a quit keeps the last list, marked with its
   time, under a lost-contact banner. The app starts the agent again once and then
   offers Try Again.

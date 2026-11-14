@@ -64,6 +64,12 @@ winsafe = { version = "0.0.29", default-features = false, features = ["kernel"] 
 # the wait's timer; the version the session already builds, so this adds no crate.
 tokio = { version = "1.54.1", default-features = false, features = ["time"] }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# keeps the login item, SMAppService's main-app item, in step with `start_at_login`. It
+# wraps objc2-service-management's unsafe calls behind a safe interface, so the app's
+# own code keeps no unsafe; pinned exactly, as its source was read for this version.
+smappservice-rs = "=0.1.3"
+
 # the named pipe a test squats on, as the library does, to stand in for another process
 # that holds the agent's channel.
 [target.'cfg(windows)'.dev-dependencies]
