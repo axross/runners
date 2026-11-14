@@ -120,6 +120,28 @@ pub struct SettingsUi {
     pub results: BTreeMap<String, SettingResult>,
 }
 
+/// the system the window is drawn on, where its words or its settings differ.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Platform {
+    #[default]
+    Windows,
+    Macos,
+}
+
+/// the app's login item on macOS, as the app last learned it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoginItemState {
+    On,
+    WaitingForApproval,
+    /// not registered, though Marshal registered it: someone removed it in Login Items.
+    Removed,
+    /// macOS refused to register it, with `SMAppService`'s error code.
+    NotAdded {
+        code: u32,
+    },
+    Off,
+}
+
 /// what the window knows of GitHub's view of the runners.
 #[derive(Debug, Clone, Copy, Default)]
 pub enum GithubFeed<'a> {
@@ -156,6 +178,9 @@ pub struct Input<'a> {
     /// the pools whose Open run found the job ended, with when, in milliseconds since
     /// the Unix epoch.
     pub ended_jobs: Option<&'a BTreeMap<String, u64>>,
+    pub platform: Platform,
+    /// on macOS, the login item's state, `None` until the app has learned it.
+    pub login_item: Option<LoginItemState>,
 }
 
 impl<'a> Input<'a> {
@@ -171,7 +196,17 @@ impl<'a> Input<'a> {
             settings: None,
             github: GithubFeed::Off,
             ended_jobs: None,
+            platform: Platform::Windows,
+            login_item: None,
         }
+    }
+
+    /// the window on macOS, with its login item's state as last learned.
+    #[must_use]
+    pub fn macos(mut self, login_item: Option<LoginItemState>) -> Self {
+        self.platform = Platform::Macos;
+        self.login_item = login_item;
+        self
     }
 
     #[must_use]

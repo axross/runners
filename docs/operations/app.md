@@ -865,6 +865,30 @@ toggle and carries its reason and note in its description. Narrator, the contras
 theme on a real Windows desktop and the keyboard-only use of the tab are W3's
 out-of-tree check on axpc.
 
+## The Settings Tab on the Mac
+
+M4 ([#90](https://github.com/axross/runners/issues/90)) owns this section: W3's tab
+in the Mac wording approved on #90, chosen by `Input::macos`, which the session sets
+where it keeps a login item. Windows is unchanged.
+
+- **The network row is fixed.** It reports itself disabled, stays focusable, does
+  not toggle and is never dimmed; "macOS always stops the runners when the primary
+  network changes." shows in W3's balloon and stays on the page as hidden text in
+  the checkbox's description. The page never sends `lifecycle_set` for it.
+- **"Login Items: <state>"** sits under the first setting: On, Waiting for approval,
+  Removed from Open at Login, Could not be added (code N), or Off, as the latest
+  bringing in step left it. While the setting is on and the item is not, W3's note and
+  an Open Login Items Settings button follow; the button calls `open_login_items`,
+  which opens Login Items & Extensions. Approval and removal mark the tab "Needs
+  attention"; a failure is an error note without the chip. Each change after the
+  first is said as "Login Items: <state>.". A copy outside Applications shows no line.
+- **Increase Contrast** (`prefers-contrast: more`, under `data-platform="macos"`)
+  gives tabs and buttons a text-colour border, dividers and lists the text colour, and
+  the selected tab a 2 px accent-text border.
+
+The view, session and page tests cover each state; the approval and removal paths
+stay provisional until M4's Mac run.
+
 ## Sections Other Children Add
 
 Each child below adds its own section to this document, with the contract it owns,
@@ -877,6 +901,7 @@ and does not edit another's:
 | W4    | Automatic updates, the drain, its `ending` reason and its checksum of the `tauri-cli` crate archive           |
 | M2    | The Mac app: its disk image, its Keychain store behind the token store's interface and the Mac's stop reasons |
 | W3    | The Settings tab                                                                                              |
+| M4    | The Settings tab on the Mac                                                                                   |
 
 A new message under protocol version 2 follows the version rules in
 [CLI](./cli.md#protocol-version-2) and is added there, not here.

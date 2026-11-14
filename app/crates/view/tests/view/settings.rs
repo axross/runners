@@ -3,8 +3,8 @@
 //! setting can be changed.
 
 use marshal_view::{
-    Cause, Connection, Input, NEEDS_ATTENTION, NoteTone, SettingResult, SettingRow, SettingsTab,
-    SettingsUi, build,
+    Cause, Connection, Input, LoginItemState, NEEDS_ATTENTION, NoteTone, OPEN_LOGIN_ITEMS,
+    Platform, SettingResult, SettingRow, SettingsTab, SettingsUi, build, setting_label,
 };
 use serde_json::{Value, json};
 
@@ -363,4 +363,185 @@ fn under_lost_contact_the_last_values_stay_and_nothing_can_be_changed() {
         Some("Settings cannot be changed while Marshal's agent does not answer.")
     );
     assert_eq!(row(tab, "start_at_login").checked, Some(true));
+}
+
+// ---- the Mac
+
+fn mac_view(
+    snapshot: &marshal_cli::agent::snapshot::Snapshot,
+    login: Option<LoginItemState>,
+) -> marshal_view::View {
+    build(&Input::new(Connection::Connected, Some(snapshot), now()).macos(login))
+}
+
+#[test]
+fn the_mac_words_each_setting_for_the_mac_and_fixes_the_network_row() {
+    let view = mac_view(&with_lifecycle(|_| {}), Some(LoginItemState::On));
+    let tab = settings(&view);
+    let words: Vec<(&str, &str)> = tab
+        .groups
+        .iter()
+        .flat_map(|group| &group.rows)
+        .map(|row| (row.label.as_str(), row.description.as_str()))
+        .collect();
+    assert_eq!(
+        words,
+        vec![
+            (
+                "Open Marshal when I log in",
+                "Marshal opens with only its icon in the menu bar."
+            ),
+            (
+                "Start the runners when Marshal opens",
+                "Applies when you open Marshal or log in, not after an update."
+            ),
+            (
+                "Keep the Mac awake while runners run",
+                "Prevents idle sleep only. Closing the lid or choosing Sleep still sleeps."
+            ),
+            (
+                "Stop the runners when the network changes",
+                "A sleep, wake or network change always stops them on the Mac."
+            ),
+            (
+                "Start the runners again after a sleep or network stop",
+                "Only on the network they stopped on."
+            ),
+        ]
+    );
+    let fixed: Vec<(&str, Option<&str>)> = tab
+        .groups
+        .iter()
+        .flat_map(|group| &group.rows)
+        .map(|row| (row.key.as_str(), row.fixed.as_deref()))
+        .collect();
+    assert_eq!(
+        fixed,
+        vec![
+            ("start_at_login", None),
+            ("start_runners_on_launch", None),
+            ("keep_awake", None),
+            (
+                "stop_on_network_change",
+                Some("macOS always stops the runners when the primary network changes.")
+            ),
+            ("resume_after_stop", None),
+        ]
+    );
+    assert_eq!(
+        setting_label("keep_awake", Platform::Macos),
+        Some("Keep the Mac awake while runners run")
+    );
+}
+
+#[test]
+fn windows_shows_no_login_item_and_no_fixed_row() {
+    let view = view_of(&with_lifecycle(|_| {}));
+    let tab = settings(&view);
+    for row in tab.groups.iter().flat_map(|group| &group.rows) {
+        assert_eq!(
+            (&row.fixed, &row.login_item, &row.open_login_items),
+            (&None, &None, &None),
+            "{}",
+            row.key
+        );
+    }
+    assert_eq!(
+        setting_label("keep_awake", Platform::Windows),
+        Some("Keep the computer awake while runners run")
+    );
+}
+
+#[test]
+fn each_login_item_state_has_its_line_note_button_and_chip() {
+    let on = with_lifecycle(|_| {});
+    let off = with_lifecycle(|value| {
+        value["lifecycle"]["settings"]["start_at_login"] =
+            json!({ "on": false, "defaulted": true });
+    });
+    let approval = "macOS needs your approval before Marshal opens at login. Allow Marshal in System\u{a0}Settings >\u{a0}General >\u{a0}Login\u{a0}Items\u{a0}&\u{a0}Extensions.";
+    let removed = "Marshal was removed from Open at Login, so it does not open at login. To have it open at login again, add Marshal under Open at Login in System\u{a0}Settings >\u{a0}General >\u{a0}Login\u{a0}Items\u{a0}&\u{a0}Extensions.";
+    let failed = "Marshal could not add itself to Open at Login. It tries again at the next launch or Start All, or when you change a setting.";
+    let cases = [
+        (&on, LoginItemState::On, "On", None, false),
+        (
+            &on,
+            LoginItemState::WaitingForApproval,
+            "Waiting for approval",
+            Some((approval, NoteTone::Warning)),
+            true,
+        ),
+        (
+            &on,
+            LoginItemState::Removed,
+            "Removed from Open at Login",
+            Some((removed, NoteTone::Warning)),
+            true,
+        ),
+        (
+            &on,
+            LoginItemState::NotAdded { code: 4 },
+            "Could not be added (code 4)",
+            Some((failed, NoteTone::Error)),
+            false,
+        ),
+        (&off, LoginItemState::Off, "Off", None, false),
+    ];
+    for (snapshot, state, line, note, chip) in cases {
+        let view = mac_view(snapshot, Some(state));
+        let tab = settings(&view);
+        let first = row(tab, "start_at_login");
+        assert_eq!(first.login_item.as_deref(), Some(line), "{state:?}");
+        assert_eq!(
+            first
+                .note
+                .as_ref()
+                .map(|note| (note.text.as_str(), note.tone)),
+            note,
+            "{state:?}"
+        );
+        assert_eq!(
+            first.open_login_items.as_deref(),
+            note.map(|_| OPEN_LOGIN_ITEMS),
+            "{state:?}"
+        );
+        let expected = chip.then_some(NEEDS_ATTENTION);
+        assert_eq!(tab.chip.as_deref(), expected, "{state:?}");
+        assert_eq!(
+            list(&view).header.settings_chip.as_deref(),
+            expected,
+            "{state:?}"
+        );
+        assert_eq!(state.announcement(), format!("Login Items: {line}."));
+        // the line shows under the first setting only
+        assert!(
+            tab.groups
+                .iter()
+                .flat_map(|group| &group.rows)
+                .filter(|row| row.login_item.is_some())
+                .count()
+                == 1
+        );
+    }
+    assert_eq!(
+        row(
+            settings(&mac_view(&on, Some(LoginItemState::On))),
+            "start_at_login"
+        )
+        .state,
+        "On (default: off)."
+    );
+}
+
+#[test]
+fn on_the_mac_the_windows_startup_apps_note_is_not_shown() {
+    let view = mac_view(
+        &with_lifecycle(|value| {
+            value["lifecycle"]["sign_in"] = json!("turned_off");
+        }),
+        Some(LoginItemState::On),
+    );
+    let tab = settings(&view);
+    assert_eq!(row(tab, "start_at_login").note, None);
+    assert_eq!(tab.chip, None);
 }

@@ -35,14 +35,14 @@ pub use footer::Footer;
 pub use github::{GithubNote, HIDDEN_NAMES, OpenRun, job_page};
 pub use icon::{GlyphColour, IconState, Rgb, TaskbarMode};
 pub use input::{
-    Cause, Connection, GithubFeed, Input, NotSaved, Pending, PendingKind, SettingResult,
-    SettingsUi, TokenResult, TokenUi,
+    Cause, Connection, GithubFeed, Input, LoginItemState, NotSaved, Pending, PendingKind, Platform,
+    SettingResult, SettingsUi, TokenResult, TokenUi,
 };
 pub use menu::{Menu, MenuItem};
 pub use pools::{Mark, PoolCard, RunnerRow};
 pub use settings::{
-    NEEDS_ATTENTION, NoteTone, SettingGroup, SettingNote, SettingRow, SettingsTab,
-    label as setting_label,
+    NEEDS_ATTENTION, NoteTone, OPEN_LOGIN_ITEMS, SettingGroup, SettingNote, SettingRow,
+    SettingsTab, label as setting_label,
 };
 pub use settled::{FALL_DELAY_MS, Settled};
 pub use summary::Summary;

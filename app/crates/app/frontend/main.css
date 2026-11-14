@@ -962,6 +962,21 @@ svg {
   color: var(--text-destructive-low);
 }
 
+.set-login {
+  grid-column: 2;
+  color: var(--text-neutral-low);
+}
+
+.set-login b {
+  font-weight: 500;
+  color: var(--text-neutral-high);
+}
+
+.set-button {
+  grid-column: 2;
+  justify-self: start;
+}
+
 .check {
   width: 20px;
   height: 20px;
@@ -1099,6 +1114,28 @@ svg {
   width: 100%;
   max-width: none;
   border-radius: 0;
+}
+
+/* ---- macOS's Increase Contrast, which forced-colors does not cover in its web view */
+
+@media (prefers-contrast: more) {
+  :root[data-platform="macos"] {
+    --border-neutral-subtle: var(--text-neutral-high);
+  }
+
+  :root[data-platform="macos"] .set-list {
+    box-shadow: none;
+    outline: 1px solid var(--text-neutral-high);
+  }
+
+  :root[data-platform="macos"] .tab,
+  :root[data-platform="macos"] .button {
+    border-color: var(--text-neutral-high);
+  }
+
+  :root[data-platform="macos"] .tab[aria-selected="true"] {
+    border: 2px solid var(--text-accent-high);
+  }
 }
 
 /* ---- a Windows contrast theme: the fills drop out, and controls keep a border */

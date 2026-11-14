@@ -271,12 +271,25 @@ pub enum LoginStatus {
     NotFound,
 }
 
+/// why macOS refused a change to the login item.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoginItemError {
+    /// `SMAppService`'s error code.
+    pub code: u32,
+    pub message: String,
+}
+
+impl std::fmt::Display for LoginItemError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{} (code {})", self.message, self.code)
+    }
+}
+
 /// the app's login item on macOS: `SMAppService`'s main-app item.
 pub trait LoginItemService: Send + Sync + 'static {
     fn status(&self) -> LoginStatus;
-    /// the error, with its code, when macOS refused.
-    fn register(&self) -> Result<(), String>;
-    fn unregister(&self) -> Result<(), String>;
+    fn register(&self) -> Result<(), LoginItemError>;
+    fn unregister(&self) -> Result<(), LoginItemError>;
 }
 
 /// the record that Marshal registered its login item itself.

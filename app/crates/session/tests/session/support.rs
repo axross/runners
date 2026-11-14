@@ -13,8 +13,8 @@ use marshal_cli::agent::wire::UpdateEnding;
 use marshal_cli::github_status::GithubStatus;
 use marshal_session::{
     AgentInfo, Connected, Dial, DialError, Ended, Failure, Handle, Later, Launcher, Link, Log,
-    LoginItem, LoginItemRecord, LoginItemService, LoginStatus, Method, Present, Process, Processes,
-    Pushed, Record, Seams, Session, Shown, TimeSource, Updater, Verified,
+    LoginItem, LoginItemError, LoginItemRecord, LoginItemService, LoginStatus, Method, Present,
+    Process, Processes, Pushed, Record, Seams, Session, Shown, TimeSource, Updater, Verified,
 };
 use marshal_view::{Clock, View};
 use tokio::sync::mpsc;
@@ -685,7 +685,7 @@ struct LoginState {
     status: LoginStatus,
     recorded: bool,
     /// what a register or unregister fails with, until it is cleared.
-    failure: Option<String>,
+    failure: Option<LoginItemError>,
     calls: Vec<LoginCall>,
     statuses_read: usize,
 }
@@ -716,8 +716,16 @@ impl FakeLoginItem {
         )
     }
 
-    pub fn fail_with(&self, failure: Option<&str>) {
-        locked(&self.0).failure = failure.map(str::to_string);
+    /// makes a register or unregister fail with `SMAppService`'s `code` and `message`.
+    pub fn fail_with(&self, failure: Option<(u32, &str)>) {
+        locked(&self.0).failure = failure.map(|(code, message)| LoginItemError {
+            code,
+            message: message.to_string(),
+        });
+    }
+
+    pub fn set_status(&self, status: LoginStatus) {
+        locked(&self.0).status = status;
     }
 
     pub fn calls(&self) -> Vec<LoginCall> {
@@ -736,7 +744,7 @@ impl FakeLoginItem {
         locked(&self.0).statuses_read
     }
 
-    fn call(&self, call: LoginCall, then: LoginStatus) -> Result<(), String> {
+    fn call(&self, call: LoginCall, then: LoginStatus) -> Result<(), LoginItemError> {
         let mut state = locked(&self.0);
         state.calls.push(call);
         match state.failure.clone() {
@@ -756,11 +764,11 @@ impl LoginItemService for FakeLoginItem {
         state.status
     }
 
-    fn register(&self) -> Result<(), String> {
+    fn register(&self) -> Result<(), LoginItemError> {
         self.call(LoginCall::Register, LoginStatus::Enabled)
     }
 
-    fn unregister(&self) -> Result<(), String> {
+    fn unregister(&self) -> Result<(), LoginItemError> {
         self.call(LoginCall::Unregister, LoginStatus::NotRegistered)
     }
 }

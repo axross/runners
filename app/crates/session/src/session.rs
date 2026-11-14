@@ -29,7 +29,7 @@ use marshal_cli::agent::{EXECUTABLE_CHANGED, Launch, QUIT, StopReason};
 use marshal_cli::github_status::GithubStatus;
 use marshal_cli::token_store::{TokenKey, TokenRefusal, accepted_token};
 use marshal_view::{
-    Cause, Connection, GithubFeed, Input, NotSaved, Pending, PendingKind, SettingResult,
+    Cause, Connection, GithubFeed, Input, NotSaved, Pending, PendingKind, Platform, SettingResult,
     SettingsUi, TokenResult, TokenUi, Tracker, Update, View, job_page, pools_started_by,
     setting_label,
 };
@@ -594,7 +594,11 @@ impl<D: Dial> Session<D> {
                 status: self.github.status.as_ref(),
             },
         };
-        let input = Input::new(self.connection, self.snapshot.as_ref(), clock)
+        let mut input = Input::new(self.connection, self.snapshot.as_ref(), clock);
+        if let Some(login_item) = &self.login_item {
+            input = input.macos(login_item.state());
+        }
+        let input = input
             .pending(self.pending)
             .tokens(&self.tokens)
             .settings(&self.settings)
@@ -805,7 +809,15 @@ impl<D: Dial> Session<D> {
                     self.settings.results.clear();
                 }
                 if let Some(login_item) = &mut self.login_item {
+                    let before = login_item.state();
                     login_item.learn(snapshot.lifecycle.as_ref(), self.log.as_ref());
+                    let after = login_item.state();
+                    // the first state learned is no change
+                    if let (Some(_), Some(now)) = (before, after)
+                        && before != after
+                    {
+                        self.announce.push(now.announcement());
+                    }
                 }
                 self.snapshot = Some(*snapshot);
                 self.snapshot_for_drain();
@@ -1109,8 +1121,17 @@ impl<D: Dial> Session<D> {
 
     // ---- settings
 
+    /// macOS where the app keeps a login item, which only the Mac app does.
+    fn platform(&self) -> Platform {
+        if self.login_item.is_some() {
+            Platform::Macos
+        } else {
+            Platform::Windows
+        }
+    }
+
     fn set_setting(&mut self, key: String, on: bool, reply: Reply<()>) {
-        let Some(label) = setting_label(&key) else {
+        let Some(label) = setting_label(&key, self.platform()) else {
             let _ = reply.send(Err(format!(
                 "{} is not a setting.",
                 marshal_view::plain(&key)
@@ -1172,7 +1193,9 @@ impl<D: Dial> Session<D> {
                 words: other.words(),
             },
         };
-        let label = setting_label(key).unwrap_or(key).to_string();
+        let label = setting_label(key, self.platform())
+            .unwrap_or(key)
+            .to_string();
         if !matches!(result, SettingResult::Saved { .. }) {
             self.log.warn(&format!(
                 "{key} was not set {}: {}",

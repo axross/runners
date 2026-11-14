@@ -15,6 +15,7 @@
     "allow-set-token",
     "allow-remove-token",
     "allow-set-setting",
+    "allow-open-login-items",
     "allow-hide-window",
     "allow-open-job"
   ]
