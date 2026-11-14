@@ -220,6 +220,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
         orders: mpsc::UnboundedReceiver<ApplyOrder>,
     ) -> Result<(), CoreFailure> {
         self.board.clear();
+        self.backend.use_plan(plan);
         // taken before the pools are admitted, so a token set meanwhile is seen
         let changes = self.tokens.changes();
         let pools =
@@ -385,6 +386,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
         running: &Running<'a>,
         stop: &watch::Receiver<bool>,
     ) -> Result<(), String> {
+        self.backend.use_plan(plan);
         let pools = match pools_from_plan(plan) {
             Ok(pools) => pools,
             Err(error) => {

@@ -149,6 +149,7 @@ change may be rejected now; the last column says how to change it.
 | `diskGb` of a Linux pool      | Any integer from 1 to 16384                                                                  | At least 20: `repositories[i].diskGb: must be at least 20 on a Linux pool, the golden VM's disk size`                                                             | [`axmc-linux-disk-too-small.json`](../../tests/host-configuration/rust/rejected/axmc-linux-disk-too-small.json), accepted before and rejected now, with a macOS pool at the same `diskGb` left unflagged                                                                           | Raise a Linux pool's `diskGb` to 20 or more; a macOS pool is unchanged   |
 | `imageName` of axmc           | Optional and validated as on axpc, with its use undecided                                    | Optional and validated as before; an absent name is `actions-runner:local`, and the name is the image that `build` makes inside the golden VM and every pool runs | [`axmc-image-name.json`](../../tests/host-configuration/rust/accepted/axmc-image-name.json), accepted before and now; nothing is accepted or rejected differently                                                                                                                  | None; a configuration that validated still validates                     |
 | Disk budget with a Linux pool | `budget: pools total N GB of disk (the sum of slots times diskGb), above the budget of M GB` | `budget: pools total N GB of disk (the sum of slots times diskGb, plus 40 GB for the golden VM and Tart's image cache), above the budget of M GB`                 | [`axmc-disk-over-budget.json`](../../tests/host-configuration/rust/rejected/axmc-disk-over-budget.json), message and total; [`axmc-budget-at-limit.json`](../../tests/host-configuration/rust/accepted/axmc-budget-at-limit.json), whose budget rose from 150 to 190               | Raise `budget.diskGb` by 40 GB, or lower the pools' `diskGb` or `slots`  |
+| `slots` of a Linux pool       | Required: `repositories[i].slots: required field is missing`                                 | Optional, default 2; axpc still requires it                                                                                                                       | [`axmc-linux-default-slots.json`](../../tests/host-configuration/rust/accepted/axmc-linux-default-slots.json), rejected before and accepted now                                                                                                                                    | None; a configuration that validated still validates                     |
 | Disk budget with a macOS pool | The sum of slots times `diskGb`, with the Linux reserve when a Linux pool is configured      | The same, plus 100 GB: `…, plus 100 GB for the golden macOS VM and its cached base), above the budget of M GB`                                                    | [`axmc-budget-errors-come-last.json`](../../tests/host-configuration/rust/rejected/axmc-budget-errors-come-last.json), message and total; [`axmc-budget-at-limit.json`](../../tests/host-configuration/rust/accepted/axmc-budget-at-limit.json), whose budget rose from 190 to 290 | Raise `budget.diskGb` by 100 GB, or lower the pools' `diskGb` or `slots` |
 
 ### Labels
@@ -2739,8 +2740,9 @@ the contract, build-time, and runner labels. A name whose last path part has no 
 is checked as `<name>:latest`, as `docker run` resolves it. When inspect fails, a
 `docker image ls --quiet <name>` tells a missing image from Docker not answering.
 Both calls share a bound of 4 s. A resume's reload is the configuration read, then
-on axmc the [host prerequisites](#host-prerequisites), whose two version reads run
-together and get 2 s each, and then this check. It takes 4 s at the most on axpc and
+on axmc the [host prerequisites](#host-prerequisites), whose two version reads and,
+with a macOS pool, the golden macOS VM's listing run together and get 2 s each, and
+then this check, which lists the VMs once. It takes 4 s at the most on axpc and
 6 s on axmc, so it fits inside `start`'s 10 s wait. It follows the container steps of
 a `restart`, which take 28 s at the most, so it ends at 32 s on axpc and 34 s on axmc,
 inside the 35 s wait.
@@ -2830,7 +2832,7 @@ default.
 
 | Field         | macOS pool                        | Linux pool on axmc               |
 | ------------- | --------------------------------- | -------------------------------- |
-| `slots`       | Optional, default 1               | Required, as before              |
+| `slots`       | Optional, default 1               | Optional, default 2              |
 | `cpus`        | Default 4, at least 2             | Default 2, as before             |
 | `memoryGb`    | Default 8, at least 4             | Default 8, as before             |
 | `diskGb`      | Optional, default 50, at least 50 | Required, at least 20, as before |
@@ -2933,7 +2935,7 @@ These fixtures pin the new rules, and each default, minimum, and message has one
 | `rejected/axmc-macos-diagnostics.json`             | The `diagnostics` message, with no other error                                                   |
 | `rejected/axmc-macos-errors-in-field-order.json`   | The four messages together, in an entry's field order, at the index of a pool after a Linux pool |
 | `rejected/axmc-macos-slots-null.json`              | A `null` `slots` is a type error, not a default and not a missing field                          |
-| `rejected/axmc-linux-slots-missing.json`           | A Linux pool still requires `slots`, beside a macOS pool that needs none                         |
+| `accepted/axmc-linux-default-slots.json`           | A Linux pool without `slots` gets 2 on axmc, beside a macOS pool without it that gets 1          |
 
 ### The Runner Record
 

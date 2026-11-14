@@ -46,14 +46,14 @@ use crate::runtime::name::{slot_of_container_name, slot_of_probe_name};
 use crate::runtime::retained::Retained;
 use crate::runtime::scrub::scrub_error_text;
 use crate::runtime::secret::Secret;
-use crate::validate::PlannedVolume;
+use crate::validate::{Plan, PlannedVolume};
 
 use super::boot::{AgentWait, BootEnd, JOB_VM, boot_failure_text, wait_for_agent};
 use super::client::{Captured, TartClient, TartError};
 use super::golden_check::{check_golden, clone_source};
 use super::guest::Guest;
 use super::hold::{HeldVm, VmLauncher};
-use super::list::VmSource;
+use super::list::{VmEntry, VmSource};
 use super::macos::{
     MACOS_BOOT_DEADLINE, PLACE_POLL, Verdict, is_vm_limit_refusal, judge_probe, macos_clone_source,
     read_probe, vm_limit_message,
@@ -176,10 +176,13 @@ pub struct TartBackend<C> {
     network_gate: NetworkGate,
     /// the configured pools, which tell a macOS slot from a Linux one and tell the
     /// count which job VMs are macOS ones.
-    pools: Vec<ConfiguredPool>,
+    pools: RefCell<Vec<ConfiguredPool>>,
     /// held around a macOS slot's count and clone, so two slots never take the last
     /// place under the limit together.
     place: PlaceLock,
+    /// the newest golden macOS VM the latest image check's listing found, or `None`
+    /// before one, after one that failed, or with no macOS pool.
+    macos_golden: RefCell<Option<Option<String>>>,
     /// marked changed whenever a host's wait or the counted leftovers change.
     waits: watch::Sender<()>,
     /// the counted leftover job VMs of unconfigured pools the latest count found.
@@ -216,8 +219,9 @@ impl<C: Clock> TartBackend<C> {
             in_use: RefCell::new(InUse::default()),
             softnet_owner_mode: None,
             network_gate: NetworkGate::default(),
-            pools: Vec::new(),
+            pools: RefCell::new(Vec::new()),
             place: PlaceLock::new(),
+            macos_golden: RefCell::new(None),
             waits: watch::channel(()).0,
             leftovers: RefCell::new(Vec::new()),
         }
@@ -226,19 +230,25 @@ impl<C: Clock> TartBackend<C> {
     /// the configured pools: a pool listed as macOS runs its jobs in macOS VMs, and a
     /// backend without pools runs Linux VMs only.
     #[must_use]
-    pub fn with_pools(mut self, pools: Vec<ConfiguredPool>) -> Self {
-        self.pools = pools;
+    pub fn with_pools(self, pools: Vec<ConfiguredPool>) -> Self {
+        self.pools.replace(pools);
         self
     }
 
     fn is_macos(&self, pool: &str) -> bool {
         self.pools
+            .borrow()
             .iter()
             .any(|configured| configured.name == pool && configured.os == Os::Macos)
     }
 
+    fn has_macos_pool(&self) -> bool {
+        self.pools.borrow().iter().any(|pool| pool.os == Os::Macos)
+    }
+
     fn runs_only_macos(&self) -> bool {
-        !self.pools.is_empty() && self.pools.iter().all(|pool| pool.os == Os::Macos)
+        let pools = self.pools.borrow();
+        !pools.is_empty() && pools.iter().all(|pool| pool.os == Os::Macos)
     }
 
     /// runs the exporter child as `exporter`, this CLI, and keeps every sink outside
@@ -374,7 +384,7 @@ impl<C: Clock> TartBackend<C> {
     /// is configured; a Tart that does not list within `budget` is not refused, as the
     /// slots wait for it.
     async fn check_golden_macos(&self, budget: Duration) -> Result<(), String> {
-        if !self.pools.iter().any(|pool| pool.os == Os::Macos) {
+        if !self.has_macos_pool() {
             return Ok(());
         }
         match tokio::time::timeout(budget, self.client.list()).await {
@@ -402,6 +412,7 @@ impl<C: Clock> TartBackend<C> {
     /// the limit meanwhile, and the slot shows it waits for the deletion.
     async fn delete_until_gone(&self, request: &HostRequest) {
         let label = format!("{} slot {}", request.host.pool, request.host.slot);
+        let mut warned = false;
         loop {
             let Some(entry) = self.host(&request.host.pool, request.host.slot) else {
                 return;
@@ -413,7 +424,8 @@ impl<C: Clock> TartBackend<C> {
                 }
                 Err(error) => {
                     let vm = entry.vm().unwrap_or_default();
-                    if entry.wait.borrow().is_none() {
+                    if !warned {
+                        warned = true;
                         self.log.warn(&format!(
                             "{label}: job VM {vm} could not be deleted ({error}); trying again every {} s.",
                             self.timings.place_poll.as_secs()
@@ -597,7 +609,8 @@ impl<C: Clock> TartBackend<C> {
             ))
         })?;
         let (golden, _) = macos_clone_source(&entries).map_err(BackendError::new)?;
-        let count = count_macos_vms(&listed_vms(&entries), &self.pools, &self.client).await;
+        let pools = self.pools.borrow().clone();
+        let count = count_macos_vms(&listed_vms(&entries), &pools, &self.client).await;
         self.note_leftovers(count.leftover_jobs());
         if !count.has_free_place() {
             return Ok(Err(count
@@ -907,11 +920,19 @@ impl<C: Clock> Backend for TartBackend<C> {
     }
 
     async fn check_image(&self, _image: &str) -> ImageCheck {
+        let budget = self.timings.image_check;
+        let listed = tokio::time::timeout(budget, self.client.list()).await;
+        // the same listing tells `golden_macos` the newest golden macOS VM, so the
+        // image check stays one bounded listing
+        let macos_golden = match &listed {
+            Ok(Ok(entries)) if self.has_macos_pool() => Some(newest_macos_golden(entries)),
+            _ => None,
+        };
+        self.macos_golden.replace(macos_golden);
         if self.runs_only_macos() {
             return ImageCheck::NoLinuxPool;
         }
-        let budget = self.timings.image_check;
-        match tokio::time::timeout(budget, self.client.list()).await {
+        match listed {
             Ok(Ok(entries)) => check_golden(&entries),
             Ok(Err(error)) => ImageCheck::Unavailable(format!(
                 "Tart did not list the golden VMs ({})",
@@ -926,12 +947,14 @@ impl<C: Clock> Backend for TartBackend<C> {
 
     /// refuses a `tart` or `softnet` that is missing, a version that does not run and a
     /// Softnet that is not set up or does not answer; a `tart` that does not answer is
-    /// not refused, because the slots wait for it. The two version reads run together,
-    /// so the check takes `each_read` at the most.
+    /// not refused, because the slots wait for it, and a missing golden macOS VM, or
+    /// one of another version, when a macOS pool is configured. The two version reads
+    /// and the listing run together, so the check takes `each_read` at the most.
     async fn check_prerequisites(&self, each_read: Duration) -> Result<(), String> {
-        let (tart, softnet) = tokio::join!(
+        let (tart, softnet, golden_macos) = tokio::join!(
             check_tart_within(&self.client, each_read),
-            self.check_softnet_once(each_read)
+            self.check_softnet_once(each_read),
+            self.check_golden_macos(each_read)
         );
         let tart = match tart.into_result() {
             Ok(running) => Some(running),
@@ -942,7 +965,7 @@ impl<C: Clock> Backend for TartBackend<C> {
         if let Some((tart, warning)) = tart {
             self.note_in_use(&tart, &softnet.0, warning.into_iter().chain(softnet.1));
         }
-        self.check_golden_macos(each_read).await
+        golden_macos
     }
 
     fn prerequisite_warnings(&self) -> Vec<String> {
@@ -1045,19 +1068,22 @@ impl<C: Clock> Backend for TartBackend<C> {
         }
     }
 
-    async fn golden_macos(&self) -> Option<Option<String>> {
-        if !self.pools.iter().any(|pool| pool.os == Os::Macos) {
-            return None;
-        }
-        let entries = tokio::time::timeout(self.timings.image_check, self.client.list())
-            .await
-            .ok()?
-            .ok()?;
-        let names = entries
-            .iter()
-            .filter(|entry| entry.source == VmSource::Local)
-            .map(|entry| entry.name.as_str());
-        Some(newest_golden(names).map(|(name, _)| name.to_string()))
+    fn use_plan(&self, plan: &Plan) {
+        self.pools.replace(
+            plan.entries
+                .iter()
+                .filter_map(|entry| {
+                    Some(ConfiguredPool {
+                        name: entry.name.clone(),
+                        os: entry.os?,
+                    })
+                })
+                .collect(),
+        );
+    }
+
+    fn golden_macos(&self) -> Option<Option<String>> {
+        self.macos_golden.borrow().clone()
     }
 
     fn counted_leftovers(&self) -> Vec<String> {
@@ -1078,7 +1104,16 @@ impl<C: Clock> Backend for TartBackend<C> {
         let Some(entry) = self.hosts.borrow().get(&key).cloned() else {
             return Ok(());
         };
-        self.release_host(&key, &entry, budget).await
+        let released = self.release_host(&key, &entry, budget).await;
+        // a macOS VM left behind keeps counting, so the slot's next preparation
+        // deletes it again every few seconds rather than after the backoff
+        if released.is_err()
+            && self.is_macos(&host.pool)
+            && let Some(vm) = entry.vm()
+        {
+            self.mark_wait(&entry, Some(HostWait::VmDeletion(vm)));
+        }
+        released
     }
 
     fn host_awaits_finalisation(&self, host: &JobHost) -> bool {
@@ -1232,4 +1267,13 @@ impl<C: Clock> Backend for TartBackend<C> {
             .bundles
             .filter(|_| counted.outcome == ExportOutcome::Complete)
     }
+}
+
+/// the name of the newest local golden macOS VM in a listing, if any.
+fn newest_macos_golden(entries: &[VmEntry]) -> Option<String> {
+    let names = entries
+        .iter()
+        .filter(|entry| entry.source == VmSource::Local)
+        .map(|entry| entry.name.as_str());
+    newest_golden(names).map(|(name, _)| name.to_string())
 }

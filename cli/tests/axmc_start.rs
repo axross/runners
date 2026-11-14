@@ -126,6 +126,13 @@ fn a_linux_and_macos_configuration_runs_each_pool_in_a_vm_of_its_os() {
         assert!(!call.jit_present, "{:?}", call.arguments);
     }
     assert!(!host.log_text().contains(support::host::JIT));
+    assert!(
+        calls.iter().any(|call| call.arguments.len() == 8
+            && call.arguments[0] == "exec"
+            && call.arguments[1].starts_with("marshal-job-macone-")
+            && call.arguments[2..] == ["sudo", "-n", "pkill", "-INT", "-f", "Runner.Listener"]),
+        "the stop signals the macOS runner"
+    );
     assert!(!status.contains(support::host::JIT));
     let mut left = host.vm_names();
     left.sort();
@@ -200,6 +207,8 @@ fn a_macos_job_vm_that_fails_to_delete_is_deleted_again_while_its_slot_waits() {
     );
     host.tart_script("exec_stdout-marshal-probe", PROBE_50_GB);
     host.tart_script("fail-delete", "");
+    // a failed job makes the release run where the slot would otherwise back off
+    host.tart_script("macos_exit", "1");
     let stub = github();
     let started = host.start(&stub.address);
     let status = host.wait_for_status("the deletion wait", RUNNING_WITHIN, |status| {
@@ -210,19 +219,96 @@ fn a_macos_job_vm_that_fails_to_delete_is_deleted_again_while_its_slot_waits() {
     host.wait_for_status("another deletion", RUNNING_WITHIN, |_| {
         host.count_of("delete") > tries
     });
+    let log = host.log_text();
+    assert!(log.contains("could not be deleted"), "{log}");
+    assert!(
+        !log.contains("retrying in"),
+        "the slot deletes its VM again rather than backing off: {log}"
+    );
     assert_eq!(
         host.count_of("clone"),
         1,
         "no second VM while the first is left"
     );
 
+    host.remove_tart_script("macos_exit");
     host.remove_tart_script("fail-delete");
     host.wait_for_status("the next VM", RUNNING_WITHIN, |_| {
         host.count_of("clone") >= 2
     });
     let finished = host.stop_and_finish(started);
     assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
-    assert!(host.log_text().contains("could not be deleted"));
+}
+
+#[test]
+fn a_restart_after_a_macos_pool_is_added_runs_it_in_a_macos_vm() {
+    let host = holding_host(&[linux("linuxone", 1), macos("macone", 1)]);
+    let both = std::fs::read(&host.config).unwrap();
+    std::fs::write(
+        &host.config,
+        support::axmc::config_for(host.root.path(), &[linux("linuxone", 1)]),
+    )
+    .unwrap();
+    let linux_golden = host.vm_names()[0].clone();
+    host.tart_script(
+        "vms",
+        &format!("{linux_golden}\tstopped\tlocal\t\t\t\n{MACOS_GOLDEN}\tstopped\tlocal\t\t\t"),
+    );
+    host.tart_script("exec_stdout-marshal-probe", PROBE_50_GB);
+    host.tart_script("macos_hold", "");
+    let stub = github();
+    let started = host.start(&stub.address);
+    host.wait_for_status("the Linux job", RUNNING_WITHIN, running(1));
+
+    std::fs::write(&host.config, both).unwrap();
+    let restart = host.client(&["restart"]);
+    assert_eq!(restart.status.code(), Some(0), "{}", texts(&restart).1);
+    host.wait_for_status("both jobs", RUNNING_WITHIN, running(2));
+    let macos_clone = host
+        .tart_calls()
+        .into_iter()
+        .find(|call| call[0] == "clone" && call[2].starts_with("marshal-job-macone-"))
+        .unwrap();
+    assert_eq!(macos_clone[1], MACOS_GOLDEN);
+    assert!(host.tart_dir().join("macos_runs").exists());
+    let finished = host.stop_and_finish(started);
+    assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
+}
+
+#[test]
+fn a_boot_that_macos_refuses_for_the_vm_limit_deletes_the_clone_and_backs_off() {
+    let host = MacHost::new(&[macos("macone", 1)]);
+    let linux_golden = host.vm_names()[0].clone();
+    host.tart_script(
+        "vms",
+        &format!("{linux_golden}\tstopped\tlocal\t\t\t\n{MACOS_GOLDEN}\tstopped\tlocal\t\t\t"),
+    );
+    host.tart_script("run_mode", "exit");
+    host.tart_script(
+        "run_error",
+        "Error: The number of VMs exceeds the system limit (other running VMs: 2)",
+    );
+    let stub = github();
+    let started = host.start(&stub.address);
+    host.wait_for_status("the backoff", RUNNING_WITHIN, |status| {
+        status.contains("slot: macone slot 1: backing off")
+    });
+    let log = host.log_text();
+    assert!(
+        log.contains("macOS refused another macOS VM: ")
+            && log.contains("restart the Mac to release the place"),
+        "{log}"
+    );
+    assert!(
+        !host
+            .vm_names()
+            .iter()
+            .any(|name| name.starts_with("marshal-job-")),
+        "the clone was deleted"
+    );
+    assert!(stub.requests().is_empty(), "nothing was registered");
+    let finished = host.stop_and_finish(started);
+    assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
 }
 
 #[test]

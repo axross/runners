@@ -93,7 +93,8 @@ pub fn read_entry(
     let slots = if macos {
         macos_pool::read_slots(&node.slots, &path, &mut cx.errors)
     } else {
-        read_slots(&node.slots, &path, &mut cx.errors)
+        let default = (profile == Profile::Axmc).then_some(AXMC_LINUX_DEFAULT_SLOTS);
+        read_slots(&node.slots, &path, default, &mut cx.errors)
     };
     let name = read_name(&node.name, &path, &mut cx.errors);
     let cpus = if macos {
@@ -329,8 +330,21 @@ fn read_name(name: &Field, path: &KeyPath, errors: &mut Errors) -> Option<String
     Some(name.to_string())
 }
 
-fn read_slots(slots: &Field, path: &KeyPath, errors: &mut Errors) -> Option<u32> {
+/// the slots of an axmc Linux pool that sets none.
+pub const AXMC_LINUX_DEFAULT_SLOTS: u32 = 2;
+
+/// reads `slots`: absent is `default` where there is one, and otherwise a missing
+/// field; a `null` is a type error.
+fn read_slots(
+    slots: &Field,
+    path: &KeyPath,
+    default: Option<u32>,
+    errors: &mut Errors,
+) -> Option<u32> {
     let field = path.key(Key::Slots);
+    if let (Field::Absent, Some(default)) = (slots, default) {
+        return Some(default);
+    }
     let value = fields::required(slots, &field, errors)?;
     limits::read_bounded_integer(value, &field, MAX_SLOTS, errors)
 }

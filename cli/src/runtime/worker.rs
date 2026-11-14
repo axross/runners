@@ -8,7 +8,7 @@ use tokio::sync::watch;
 use crate::image::check::ImageCheck;
 
 use super::backend::{
-    Backend, ContainerSpec, CpuRequest, HostPreparation, RELEASE_WITHIN, StopRequest,
+    Backend, ContainerSpec, CpuRequest, HostPreparation, HostWait, RELEASE_WITHIN, StopRequest,
 };
 use super::board::{Board, SlotState};
 use super::clock::Clock;
@@ -265,6 +265,9 @@ enum Attempt {
     /// a stop or a drain ended the attempt before a container started, or a drain
     /// stopped its idle runner's container.
     Halted,
+    /// the host's VM could not be deleted, and the slot's next preparation deletes it
+    /// again at the backend's own pace, so the slot does not back off.
+    DeletionPending,
 }
 
 struct Context<'a, B, K, R> {
@@ -283,6 +286,9 @@ impl<B: Backend, K: Clock, R: Registrar> Context<'_, B, K, R> {
     async fn attempt(&self, slot: &SlotSpec, halt: &mut Halt) -> Attempt {
         let request = slot.host_request();
         let mut waits = self.backend.host_waits();
+        if let Some(wait) = self.backend.host_wait(&request.host) {
+            self.report.state(SlotState::Waiting(wait));
+        }
         let preparing = self.backend.prepare_job_host(&request);
         tokio::pin!(preparing);
         let prepared = loop {
@@ -320,6 +326,19 @@ impl<B: Backend, K: Clock, R: Registrar> Context<'_, B, K, R> {
                 "{}: releasing the job host failed ({error}).",
                 self.report.label
             ));
+            if !halt.stopped()
+                && matches!(
+                    self.backend.host_wait(&request.host),
+                    Some(HostWait::VmDeletion(_))
+                )
+            {
+                if let Attempt::Failed(reason) | Attempt::Held(reason) = &attempt {
+                    self.report
+                        .log
+                        .warn(&format!("{}: {reason}.", self.report.label));
+                }
+                return Attempt::DeletionPending;
+            }
         }
         attempt
     }
@@ -577,7 +596,7 @@ pub async fn run_slot_with<B: Backend, K: Clock, R: Registrar>(
         }
 
         let pause = match context.attempt(slot, &mut halt).await {
-            Attempt::Halted => continue,
+            Attempt::Halted | Attempt::DeletionPending => continue,
             Attempt::Ended if halt.draining() => continue,
             Attempt::Ended => {
                 log.info(&format!(

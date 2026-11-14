@@ -522,7 +522,8 @@ warnings ask for it.
   job and build VMs of macOS pools, a leftover job VM that `tart get` reports as
   macOS, any other running macOS VM, and any running VM whose OS cannot be read.
   `marshal status` shows the slot `waiting for the macOS VM limit`. The golden macOS
-  VM counts only while someone runs it by hand, and Linux VMs never count.
+  VM counts only while someone runs it by hand, and a job VM of a configured Linux
+  pool counts only when `tart get` reports it as macOS.
 - **The host's macOS.** The Mac must run at least the base's macOS, 26.6.2 for the
   current pin; `build` refuses an older Mac and names both versions. Update the Mac,
   then build again.

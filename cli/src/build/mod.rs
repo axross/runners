@@ -40,7 +40,7 @@ use crate::runtime::tart::{TartClient, TartConfig, VmLauncher};
 use crate::start::{ANSWERS_WITHIN, LOCK_HELD_ELSEWHERE, signals, single_threaded_runtime};
 
 use golden::{GoldenBuild, GoldenTimings};
-use golden_macos::{GoldenMacosBuild, MACOS_AGENT_DEADLINE};
+use golden_macos::{GoldenMacosBuild, MACOS_AGENT_DEADLINE, MACOS_PULL_BUDGET};
 use steps::{BuildLimits, BuildOutput, Steps};
 
 const HOLDER_ANSWER_WITHIN: Duration = Duration::from_secs(5);
@@ -229,8 +229,10 @@ fn macos_build<'a>(
     let host_macos = host_macos_version()?;
     let mut timings = GoldenTimings::default();
     timings.agent.deadline = MACOS_AGENT_DEADLINE;
+    let mut config = client.config().clone();
+    config.limits.pull_budget = MACOS_PULL_BUDGET;
     Ok(GoldenMacosBuild {
-        client,
+        client: TartClient::new(config),
         launcher,
         base: MACOS_BASE,
         runner,

@@ -93,7 +93,7 @@ pub(crate) async fn verify_image<B: Backend, K: Clock>(
             for warning in freshness_warnings(&check, clock.now()) {
                 log.warn(&format!("Image freshness: {warning}."));
             }
-            if let Some(golden) = backend.golden_macos().await {
+            if let Some(golden) = backend.golden_macos() {
                 let fields =
                     macos_golden::status_fields(golden.as_deref(), &MACOS_BASE, clock.now());
                 for (_, warning) in fields.iter().filter(|(field, _)| *field == "warning") {
@@ -146,6 +146,7 @@ async fn run_all<F: Future<Output = ()>>(mut workers: Vec<Pin<Box<F>>>) {
 
 impl<B: Backend, K: Clock, R: Registrar> Core for RuntimeCore<'_, B, K, R> {
     async fn run(&self, plan: &Plan, mut stop: watch::Receiver<bool>) -> Result<(), CoreFailure> {
+        self.backend.use_plan(plan);
         self.board.clear();
         self.running.set(true);
         let _cleared = Cleared(&self.board, &self.running);
@@ -188,6 +189,7 @@ impl<B: Backend, K: Clock, R: Registrar> Core for RuntimeCore<'_, B, K, R> {
     }
 
     async fn check_prerequisites(&self, plan: &Plan, each_read: Duration) -> Result<(), String> {
+        self.backend.use_plan(plan);
         let runs_vms = plan
             .entries
             .iter()

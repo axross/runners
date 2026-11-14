@@ -37,6 +37,9 @@ const PROVISIONING_STEPS: usize = 5;
 /// than a Linux VM's because macOS boots more slowly.
 pub const MACOS_AGENT_DEADLINE: Duration = Duration::from_secs(180);
 
+/// the bound on pulling the macOS base, a download of about 26 GB.
+pub const MACOS_PULL_BUDGET: Duration = Duration::from_secs(2 * 60 * 60);
+
 pub struct GoldenMacosBuild<'a> {
     pub client: TartClient,
     pub launcher: VmLauncher,

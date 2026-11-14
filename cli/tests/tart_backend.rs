@@ -1587,6 +1587,19 @@ async fn a_macos_slot_without_a_golden_macos_vm_fails_only_its_own_preparation()
             .all(|call| call.arguments[0] != "clone"),
         "nothing is cloned for the refused slot"
     );
+    let mut vms: Vec<String> = rig
+        .fake
+        .vms()
+        .iter()
+        .map(|fields| fields.join("\t"))
+        .collect();
+    vms.push("marshal-golden-macos-g2-r2.337.0-20240101000000\tstopped\tlocal\t\t\t".to_string());
+    rig.fake.script("vms", &vms.join("\n"));
+    let error = failed(rig.backend.prepare_job_host(&request()).await);
+    assert!(
+        error.contains("is version 2, and this CLI runs version 1"),
+        "{error}"
+    );
     let linux = HostRequest {
         host: JobHost {
             pool: "linuxpool".to_string(),

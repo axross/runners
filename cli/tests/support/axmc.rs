@@ -435,7 +435,7 @@ impl MacHost {
 
 /// a configuration of `pools`, each of one repository whose token file is
 /// `<name>.token` in `root`.
-fn config_for(root: &Path, pools: &[Pool]) -> String {
+pub fn config_for(root: &Path, pools: &[Pool]) -> String {
     let entries: Vec<String> = pools
         .iter()
         .map(|pool| {

@@ -9,7 +9,7 @@ directory=$3
 owner=$4
 archive=$(mktemp /tmp/marshal-runner.XXXXXX)
 trap 'rm -f "$archive"' EXIT
-curl --fail --silent --show-error --location --proto '=https' --max-time 300 \
+curl --fail --silent --show-error --location --proto '=https' --max-time 540 \
   --output "$archive" "$url"
 actual=$(shasum -a 256 "$archive" | awk '{ print $1 }')
 if [ "$actual" != "$expected" ]; then

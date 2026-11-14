@@ -32,8 +32,11 @@ const DISABLE_REMOTE_ACCESS: &str = include_str!("scripts/macos/disable-remote-a
 const DISABLE_UPDATES: &str = include_str!("scripts/macos/disable-updates.sh");
 const PROBE: &str = include_str!("scripts/macos/probe.sh");
 
-const DOWNLOAD_BUDGET: Duration = Duration::from_secs(6 * 60);
-const QUICK_STEP_BUDGET: Duration = Duration::from_secs(60);
+/// the runner download's bound; the script's `curl --max-time 540` ends first, so its
+/// own error is what a slow download reports.
+const DOWNLOAD_BUDGET: Duration = Duration::from_secs(10 * 60);
+/// the bound on each other guest step.
+const STEP_BUDGET: Duration = Duration::from_secs(5 * 60);
 const FLUSH_BUDGET: Duration = Duration::from_secs(2 * 60);
 
 /// the release asset of the runner for macOS on arm64.
@@ -53,7 +56,7 @@ pub fn remove_runner_call() -> GuestCall {
         REMOVE_RUNNER,
         &[RUNNER_DIRECTORY],
         None,
-        QUICK_STEP_BUDGET,
+        STEP_BUDGET,
     )
 }
 
@@ -81,7 +84,7 @@ pub fn install_launcher_call() -> GuestCall {
         INSTALL_LAUNCHER,
         &[LAUNCHER_PATH],
         Some(LAUNCHER.as_bytes().to_vec()),
-        QUICK_STEP_BUDGET,
+        STEP_BUDGET,
     )
 }
 
@@ -95,7 +98,7 @@ pub fn disable_remote_access_call() -> GuestCall {
         DISABLE_REMOTE_ACCESS,
         &[],
         None,
-        QUICK_STEP_BUDGET,
+        STEP_BUDGET,
     )
 }
 
@@ -109,7 +112,7 @@ pub fn disable_updates_call() -> GuestCall {
         DISABLE_UPDATES,
         &[],
         None,
-        QUICK_STEP_BUDGET,
+        STEP_BUDGET,
     )
 }
 

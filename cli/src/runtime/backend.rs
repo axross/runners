@@ -9,7 +9,7 @@ use tokio::sync::watch;
 use tokio::time::Instant;
 
 use crate::image::check::ImageCheck;
-use crate::validate::PlannedVolume;
+use crate::validate::{Plan, PlannedVolume};
 
 use super::job_marks::Activity;
 use super::name::is_own_container_name;
@@ -249,6 +249,10 @@ pub trait Backend {
     /// never a mismatch.
     fn check_image(&self, image: &str) -> impl Future<Output = ImageCheck>;
 
+    /// takes the pools of the plan a run is about to check or run, so a restart or a
+    /// resume that read an edited configuration uses its pools.
+    fn use_plan(&self, _plan: &Plan) {}
+
     /// checks the host prerequisites once before anything is started, and returns the
     /// refusal's message when one refuses. A prerequisite that does not answer is
     /// waited for later, never refused here. Only `start` and a resume call it, and each
@@ -317,10 +321,11 @@ pub trait Backend {
     /// the call, whatever it returns, until it is released.
     fn prepare_job_host(&self, request: &HostRequest) -> impl Future<Output = HostPreparation>;
 
-    /// the newest golden macOS VM's name, `Some(None)` when there is none, or `None`
-    /// for a backend without macOS pools or a check that could not list the VMs.
-    fn golden_macos(&self) -> impl Future<Output = Option<Option<String>>> {
-        std::future::ready(None)
+    /// the newest golden macOS VM's name as the latest image check found it,
+    /// `Some(None)` when it found none, or `None` for a backend without macOS pools
+    /// or a check that could not list the VMs.
+    fn golden_macos(&self) -> Option<Option<String>> {
+        None
     }
 
     /// what the preparation of `host` waits for now, if anything.

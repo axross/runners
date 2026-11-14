@@ -406,11 +406,15 @@
     ],
     "lacks": ["repositories[1]", "budget"]
   },
-  "rust/rejected/axmc-linux-slots-missing.json": {
+  "rust/accepted/axmc-linux-default-slots.json": {
     "profile": "axmc",
-    "outcome": "reject",
-    "contains": ["repositories[0].slots: required field is missing"],
-    "lacks": ["repositories[1]"]
+    "outcome": "accept",
+    "contains": [
+      "slots:             2\n",
+      "cpus:              8 of 8\n",
+      "disk:              270 of 300 GB, including a 140 GB reserve"
+    ],
+    "lacks": []
   },
   "rust/rejected/axmc-macos-cpus-below-minimum.json": {
     "profile": "axmc",
