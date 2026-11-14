@@ -1,12 +1,12 @@
 use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
 
-use marshal_cli::agent::Launch;
+use marshal_cli::agent::{EXECUTABLE_CHANGED, Launch};
 use marshal_cli::instance::roots::Roots;
 use marshal_modes::{Overrides, is_sign_in};
 use marshal_session::{
-    AppLog, Library, Log, MAX_FILE_BYTES, OwnExecutable, Processes, RECORD_FILE, RecordFile, Seams,
-    Session, TimeSource, Updater, WallClock, may_control_agent,
+    AppLog, Ended, Library, Log, MAX_FILE_BYTES, MOVED_FILE, MovedFile, OwnExecutable, Processes,
+    RECORD_FILE, RecordFile, Seams, Session, TimeSource, Updater, WallClock, may_control_agent,
 };
 use marshal_tray::{Look, SIZES, Watch, utc_offset_minutes};
 use marshal_view::{GlyphColour, IconState};
@@ -169,6 +169,10 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     }
     let fresh = taken.is_none();
     let launch = taken.unwrap_or(Launch::Stopped);
+    // the marker the last copy left if its agent ended because Marshal was moved; only a
+    // copy that may control an agent takes it, so one opened elsewhere leaves it for that copy
+    let moved = MovedFile::new(roots.config_directory().join(MOVED_FILE));
+    let after_moved = in_place && moved.take();
     let (updater, processes) = update_seams(app);
     let watch = Arc::new(Mutex::new(Watch::new()));
     let latest = Arc::new(Latest::default());
@@ -192,10 +196,13 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         launch,
         fresh,
     });
-    let session = if in_place {
-        session
-    } else {
+    let session = if !in_place {
         session.outside_applications()
+    } else if after_moved {
+        log.info("The last agent ended because Marshal was moved, renamed or replaced.");
+        session.after_moved()
+    } else {
+        session
     };
     app.manage(AppState::new(handle, latest, Arc::clone(&log)));
     // the window starts hidden, and a start from the sign-in item leaves it so
@@ -219,6 +226,13 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     tauri::async_runtime::spawn(async move {
         let ended = session.run().await;
         log.info(&format!("The app ends: {ended:?}."));
+        if ended == Ended::AgentEnded(EXECUTABLE_CHANGED.to_string())
+            && let Err(why) = moved.write()
+        {
+            log.warn(&format!(
+                "The next launch cannot be told why the agent ended: {why}"
+            ));
+        }
         app.exit(0);
     });
     Ok(())

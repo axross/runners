@@ -215,3 +215,19 @@ fn a_vm_of_a_pool_no_longer_configured_is_not_promised_to_the_next_start() {
     );
     assert!(!all.contains("the next start removes"), "{all}");
 }
+
+#[test]
+fn the_next_launch_says_the_last_agent_ended_because_marshal_moved() {
+    let snapshot = load("running");
+    let after = build(
+        &Input::new(Connection::Connected, Some(&snapshot), now())
+            .words(MACOS)
+            .after_moved(true),
+    );
+    assert!(
+        joined(&after).contains("The last agent ended because Marshal was moved"),
+        "{}",
+        joined(&after)
+    );
+    assert!(!joined(&mac_view("running")).contains("because Marshal was moved"));
+}

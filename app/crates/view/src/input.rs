@@ -140,6 +140,9 @@ pub struct Input<'a> {
     /// the words that name the operating system; W1's Windows words unless
     /// [`Input::words`] gives the host's.
     pub words: HostWords,
+    /// whether the agent before this launch ended because Marshal's executable was
+    /// moved, renamed or replaced while it ran.
+    pub after_moved: bool,
 }
 
 impl<'a> Input<'a> {
@@ -155,6 +158,7 @@ impl<'a> Input<'a> {
             github: GithubFeed::Off,
             ended_jobs: None,
             words: WINDOWS,
+            after_moved: false,
         }
     }
 
@@ -192,6 +196,14 @@ impl<'a> Input<'a> {
     #[must_use]
     pub fn ended_jobs(mut self, ended: &'a BTreeMap<String, u64>) -> Self {
         self.ended_jobs = Some(ended);
+        self
+    }
+
+    /// says this launch follows an agent that ended because Marshal was moved, renamed
+    /// or replaced while it ran.
+    #[must_use]
+    pub fn after_moved(mut self, after_moved: bool) -> Self {
+        self.after_moved = after_moved;
         self
     }
 }
