@@ -187,6 +187,7 @@ pub fn run_session(roots: Roots, launcher: Arc<dyn Launcher>) -> Running {
         processes: Arc::new(marshal_session::NoUpdates),
         record: Arc::new(marshal_session::NoUpdates),
         launch: marshal_cli::agent::Launch::Running,
+        fresh: false,
     });
     Running {
         handle,

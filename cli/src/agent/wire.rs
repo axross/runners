@@ -84,6 +84,17 @@ impl UpdateEnding {
             runners: runners.to_string(),
         }
     }
+
+    /// whether the runners stay stopped after the update: anything but running, or
+    /// stopped by you from an agent that does not say `runners`.
+    #[must_use]
+    pub fn keeps_stopped(&self) -> bool {
+        if self.runners.is_empty() {
+            self.stopped_by_you
+        } else {
+            self.runners != RUNNERS_RUNNING
+        }
+    }
 }
 
 /// why the agent is about to end, as every connection is told.

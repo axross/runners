@@ -49,12 +49,6 @@ impl<'a, S: SignalSource, K: Clock> WindowsMonitor<'a, S, K> {
         }
     }
 
-    /// the primary network last recorded while running.
-    #[must_use]
-    pub fn recorded(&self) -> Option<PrimaryNetwork> {
-        self.recorded.borrow().clone()
-    }
-
     fn note(&self, event: HoldEvent) {
         match event {
             HoldEvent::Unchanged => {}
@@ -184,5 +178,16 @@ impl<S: SignalSource, K: Clock> Monitor for WindowsMonitor<'_, S, K> {
             .map(|warning| ("warning", warning))
             .into_iter()
             .collect()
+    }
+
+    fn recorded(&self) -> Option<PrimaryNetwork> {
+        self.recorded.borrow().clone()
+    }
+
+    async fn next_reading(&self) -> NetworkReading {
+        for _ in 0..self.cadence.samples_per_check {
+            self.tick().await;
+        }
+        self.signals.read_network().await
     }
 }

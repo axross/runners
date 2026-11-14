@@ -616,6 +616,39 @@ fn the_restart_limit_stop_names_the_log_and_start_all() {
 }
 
 #[test]
+fn a_signal_stop_says_whether_the_runners_start_again_on_their_own() {
+    let signal_stop = |resume: Option<&str>| {
+        let snapshot = patched("newer_agent_stopped", |value| {
+            value["agent"]["reason"] = serde_json::json!({
+                "code": "slept",
+                "message": "Windows slept, so every runner was stopped",
+            });
+            if let Some(resume) = resume {
+                value["lifecycle"] = serde_json::json!({
+                    "resume": resume,
+                    "resume_cause": "slept",
+                });
+            }
+        });
+        first_banner(&view_of(&snapshot)).lines.clone()
+    };
+    assert_eq!(
+        signal_stop(Some("waiting")),
+        [
+            "Windows slept, so every runner was stopped",
+            "They start again on their own once the network they stopped on has settled; \
+             on another network they stay stopped until you choose Start All."
+        ]
+    );
+    assert_eq!(
+        signal_stop(Some("no_gateway"))[1],
+        "They will not start again on their own on this network. Choose Start All to run \
+         them again."
+    );
+    assert_eq!(signal_stop(None)[1], "Choose Start All to run them again.");
+}
+
+#[test]
 fn restarting_after_a_failure_says_when_and_that_no_pools_are_listed() {
     let snapshot = load("restarting");
     let view = view_of(&snapshot);

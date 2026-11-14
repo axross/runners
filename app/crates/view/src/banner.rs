@@ -353,14 +353,26 @@ fn stopped(context: &Context<'_>, stop: &Stop) -> Banner {
             } else {
                 plain(message)
             };
+            let resume = context
+                .snapshot
+                .and_then(|snapshot| snapshot.lifecycle.as_ref())
+                .and_then(|lifecycle| lifecycle.resume.as_deref());
+            let next = match resume {
+                Some("waiting") => {
+                    "They start again on their own once the network they stopped on has \
+                     settled; on another network they stay stopped until you choose Start All."
+                }
+                Some("no_gateway") => {
+                    "They will not start again on their own on this network. Choose Start All \
+                     to run them again."
+                }
+                _ => "Choose Start All to run them again.",
+            };
             banner(
                 BannerKind::StoppedForAnotherReason,
                 Tone::Neutral,
                 heading,
-                vec![
-                    lead.clone(),
-                    "Choose Start All to run them again.".to_string(),
-                ],
+                vec![lead.clone(), next.to_string()],
                 spoken(heading, &lead),
             )
         }

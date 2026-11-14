@@ -24,8 +24,10 @@ use crate::instance::lifecycle::{
     CatchPanic, CoreFailure, Ending, Monitor, NoMonitor, StopReason as SignalStop, StopTimes,
 };
 use crate::instance::restart::{RestartPolicy, Verdict};
+use crate::instance::resume::Resume;
 use crate::instance::steps::{self, Steps};
 use crate::lifecycle_settings::{Current, InEffect};
+use crate::macos::network::NetworkReading;
 use crate::profile::Profile;
 use crate::runtime::backend::Backend;
 use crate::runtime::board::{Board, PoolState, SlotState};
@@ -170,6 +172,11 @@ pub struct Agent<'a, B, K, R, D, M = NoMonitor> {
     sign_in: Option<&'a dyn SignInItem>,
     /// what the latest write, removal or read of the sign-in item found.
     sign_in_state: RefCell<Option<SignIn>>,
+    /// the resume after a signal stop, and the count of automatic resumes.
+    resume: RefCell<Resume>,
+    /// what the latest signal stop did to the resume, for the snapshot: the state and
+    /// the stop's code, until the resume fires or is cancelled.
+    resume_note: Cell<Option<(&'static str, &'static str)>>,
     board: Board,
     inner: RefCell<Inner>,
     /// the containers a stop could not remove.
@@ -188,6 +195,9 @@ pub struct Agent<'a, B, K, R, D, M = NoMonitor> {
     update: RefCell<Option<UpdateEnding>>,
     /// set when a stop all arrives during a drain's last steps, so the update keeps it.
     stopped_in_drain: Cell<bool>,
+    /// set when a stop all arrives while stopping, so a signal's stop becomes one by
+    /// you and arms no resume.
+    stop_asked: Cell<bool>,
     /// set once a drain's last steps have begun, after which a closed requester no
     /// longer cancels it.
     drain_ending: Cell<bool>,
@@ -285,6 +295,8 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
             in_effect: seams.in_effect,
             sign_in: seams.sign_in,
             sign_in_state: RefCell::new(None),
+            resume: RefCell::new(Resume::new()),
+            resume_note: Cell::new(None),
             board: Board::default(),
             inner: RefCell::new(Inner::new(phase)),
             left: RefCell::new(Vec::new()),
@@ -300,6 +312,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
             drain: watch::Sender::new(false),
             update: RefCell::new(None),
             stopped_in_drain: Cell::new(false),
+            stop_asked: Cell::new(false),
             drain_ending: Cell::new(false),
         };
         agent.publish();
@@ -659,7 +672,15 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
     }
 
     async fn stopped(&self, requests: &mut Requests) -> Next {
+        // the network check a pending resume waits on, kept across calls so a call does
+        // not put the check off
+        let mut reading: Option<Pin<Box<dyn Future<Output = NetworkReading> + '_>>> = None;
         loop {
+            if !self.resume_pending() {
+                reading = None;
+            } else if reading.is_none() {
+                reading = Some(Box::pin(self.monitor.next_reading()));
+            }
             tokio::select! {
                 biased;
                 () = self.exit_asked() => {
@@ -700,6 +721,17 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
                         Routed::Configure(_, _, reply) => {
                             let _ = reply.send(self.busy());
                         }
+                    }
+                }
+                read = async {
+                    match reading.as_mut() {
+                        Some(read) => read.await,
+                        None => pending().await,
+                    }
+                } => {
+                    reading = None;
+                    if self.observe_resume(&read) {
+                        return Next::Resume(None);
                     }
                 }
             }
@@ -794,12 +826,20 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
                 signal = &mut watching => {
                     let reason = signal_reason(signal);
                     self.log.warn(&format!("The agent is stopping: {}.", reason.message));
+                    self.stop_asked.set(false);
                     self.wind_down(&stop, cycle, requests).await;
                     // a signal during a drain still ends the agent for the update, and
                     // the update keeps the signal's stop
                     if let Some(drain) = draining.take() {
                         return self.end_for_update(&drain.version, reason.code);
                     }
+                    // a stop all during the wind-down is the user's stop, which never
+                    // resumes
+                    let reason = if self.stop_asked.get() {
+                        Reason::by_you()
+                    } else {
+                        self.arm_resume(reason)
+                    };
                     return self.after_stop(reason);
                 }
                 () = drain_deadline(deadline) => {
@@ -1154,6 +1194,17 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
             }
             Err(method) => method,
         };
+        if matches!(
+            method,
+            Method::StopAll | Method::Quit | Method::Build | Method::StartAll | Method::Launch
+        ) {
+            if matches!(method, Method::StopAll)
+                && matches!(self.inner.borrow().phase, Phase::Stopping)
+            {
+                self.stop_asked.set(true);
+            }
+            self.cancel_resume(&method);
+        }
         if matches!(
             method,
             Method::ConfigEdit { .. } | Method::ConfigReload { .. }

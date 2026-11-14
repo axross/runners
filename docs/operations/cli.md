@@ -1921,7 +1921,7 @@ transition is answered at once, never queued behind it. It starts `running` or
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `status`           | The snapshot, in any state                                                                                                                                                                  |
 | `start_all`        | Stopped: reads the configuration again and checks the image, then answers `resuming`, or `stopped` with the reason it could not. Running: the state it is in                                |
-| `stop_all`         | Running: runs the stop sequence (the same grace, budget and exit deadline of 28 s as `stop`) and answers `stopped` when it is done. Stopped: `stopped`                                      |
+| `stop_all`         | Running: runs the stop sequence (the same grace, budget and exit deadline of 28 s as `stop`) and answers `stopped` when it is done. Stopped: `stopped`, by you when it cancels a resume     |
 | `build`            | Stopped: answers `building` with the start time once the build began, and the snapshot tells the rest. Running: `refused`. A configuration that cannot be used: `refused`                   |
 | `quit`             | Runs the stop sequence if runners run, cancels a build, answers `quitting`, and ends the agent; the lock is free within a second of the answer                                              |
 | `token_set`        | Stores the repository's token in any state                                                                                                                                                  |
@@ -2107,15 +2107,35 @@ applies (`config_applying`). On axmc it is `refused`; the settings there are M4'
 The snapshot's `lifecycle` part, present while settings are in effect on axpc, holds
 each setting's `on` and `defaulted`, the sign-in item (`registered`,
 `not_registered`, `turned_off` in Windows' Startup apps, or `failed` with
-`sign_in_error`), and `keep_awake` (`held`, `released`, `warning` with its text, or
-`off`). The agent keeps the sign-in item, the current user's Run key value
-`Marshal` (`MarshalTest` in a debug build), in step with `start_at_login` at each
-configuration it reads and at each `lifecycle_set` of that key; it holds the quoted
-path of the program it runs from and `--sign-in`, at most 260 characters.
+`sign_in_error`), `keep_awake` (`held`, `released`, `warning` with its text, or
+`off`), and after a signal stop with `resume_after_stop` on, `resume` (`waiting`, or
+`no_gateway`) with `resume_cause`, the stop's code. The agent keeps the sign-in
+item, the current user's Run key value `Marshal` (`MarshalTest` in a debug build),
+in step with `start_at_login` at each configuration it reads and at each
+`lifecycle_set` of that key; it holds the quoted path of the program it runs from
+and `--sign-in`, at most 260 characters.
 
 A sleep is judged before the network, so a wake on another network stops with the
 sleep's reason, `Windows slept, so every runner was stopped`. An interface is named
 by its kind and index, such as `Wi-Fi 12`, never by its alias.
+
+The resume (`instance::resume`) follows a signal stop while `resume_after_stop` is on:
+
+- At the stop, the agent arms it with the monitor's `recorded` network, the primary
+  network last read while running. A record without a gateway hardware address arms
+  nothing, and `resume` is `no_gateway`.
+- While a resume waits, the stopped agent reads the network through the monitor's
+  `next_reading`, every 5 s. Once two readings in a row match the record, with the
+  gateway's hardware address read in both, it takes `start_all`'s path: the
+  configuration is read again and the image checked.
+- `stop_all`, `quit`, `build`, `start_all`, `launch` and turning the setting off
+  cancel it. A `stop_all` that cancels one leaves the agent stopped `by_you`, and so
+  does a `stop_all` while the signal's stop is still stopping, which arms nothing.
+- The agent counts its automatic resumes over a rolling hour, in memory. A signal stop
+  after 5 of them arms nothing and stops with `resumed_too_often`, whose text begins
+  with the signal's.
+- [App](./app.md) keeps a signal stop across its restart of a lost agent and an
+  update.
 
 ### The Update Drain
 

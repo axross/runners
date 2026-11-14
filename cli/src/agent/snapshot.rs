@@ -486,6 +486,14 @@ pub struct LifecycleInfo {
     /// the warning while keep-awake is wanted and not held.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub keep_awake_warning: Option<String>,
+    /// after a signal stop with `resume_after_stop` on: `waiting` while the runners wait
+    /// for the network they stopped on, or `no_gateway` when that network has no
+    /// gateway hardware address, so none waits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resume: Option<String>,
+    /// the code of the stop `resume` follows, `slept` or `network_changed`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resume_cause: Option<String>,
 }
 
 fn size(snapshot: &Snapshot) -> usize {

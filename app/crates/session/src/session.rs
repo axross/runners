@@ -356,9 +356,12 @@ pub struct Seams<D> {
     pub updater: Option<Arc<dyn Updater>>,
     pub processes: Arc<dyn Processes>,
     pub record: Arc<dyn Record>,
-    /// how a launch that starts the agent starts it: stopped when the record kept across
-    /// an update says the runners were stopped by you, else running.
+    /// how a launch that starts the agent starts it: as the record kept across an update
+    /// says, or stopped for a fresh launch.
     pub launch: Launch,
+    /// a fresh launch: an agent the first attempt starts is sent `launch`, which starts
+    /// the runners as `start_runners_on_launch` says.
+    pub fresh: bool,
 }
 
 pub struct Session<D: Dial> {
@@ -405,6 +408,10 @@ pub struct Session<D: Dial> {
     /// the mode the next start of the agent uses instead of the one the last state
     /// gives: the launch's own, or the replaced older agent's.
     next_launch: Option<Launch>,
+    /// whether an agent this launch starts is sent `launch` once connected.
+    send_launch: bool,
+    /// whether the agent this fresh launch started still waits for `launch`.
+    launch_owed: bool,
     /// what the connected agent said of itself.
     agent: AgentInfo,
     next_check: Option<Instant>,
@@ -465,6 +472,8 @@ impl<D: Dial> Session<D> {
             processes: seams.processes,
             update_record: seams.record,
             next_launch: Some(seams.launch),
+            send_launch: seams.fresh,
+            launch_owed: false,
             agent: AgentInfo::default(),
             next_check: None,
             checking: false,
@@ -598,7 +607,7 @@ impl<D: Dial> Session<D> {
     // ---- reaching the agent
 
     fn launch_mode(&self) -> Launch {
-        launch_for(self.snapshot.as_ref().is_some_and(stopped_by_you))
+        launch_for(self.snapshot.as_ref().is_some_and(keeps_stopped))
     }
 
     fn begin_attempt(&mut self) {
@@ -643,9 +652,17 @@ impl<D: Dial> Session<D> {
     fn found(&mut self, attempted: Attempt<D::Link>) {
         // the launch's own mode is spent once an attempt reached or started an agent; an
         // attempt that did neither keeps it for the next
-        if attempted.started || matches!(attempted.found, Found::Connected(_)) {
-            self.next_launch = None;
+        let connected = matches!(attempted.found, Found::Connected(_));
+        // the agent a fresh launch started is owed `launch` until something connects,
+        // even when a later attempt reaches it without starting another
+        if attempted.started && self.send_launch {
+            self.launch_owed = true;
         }
+        if attempted.started || connected {
+            self.next_launch = None;
+            self.send_launch = false;
+        }
+        let send_launch = connected && std::mem::take(&mut self.launch_owed);
         if attempted.started {
             self.starts_left = self.starts_left.saturating_sub(1);
             self.started_during_drain();
@@ -662,6 +679,9 @@ impl<D: Dial> Session<D> {
                 self.connection = Connection::Connected;
                 self.last_heard_ms = Some(self.now_ms());
                 self.log.info("Connected to the agent.");
+                if send_launch {
+                    self.send_launch_call();
+                }
                 // another agent may list the topic
                 if self.github.feed == Feed::Unavailable {
                     self.github.feed = Feed::Off;
@@ -689,6 +709,28 @@ impl<D: Dial> Session<D> {
                 self.connection = Connection::LockHeld;
             }
         }
+    }
+
+    /// sends `launch` to the agent a fresh launch started stopped, so it starts the
+    /// runners as `start_runners_on_launch` says, or `start_all` to an agent that does
+    /// not list `launch`.
+    fn send_launch_call(&self) {
+        let Some(link) = self.link() else {
+            return;
+        };
+        let log = Arc::clone(&self.log);
+        tokio::spawn(async move {
+            let mut sent = within(CALL_WITHIN, link.call(Method::Launch)).await;
+            if matches!(sent, Err(Failure::NotServed(_))) {
+                sent = within(CALL_WITHIN, link.call(Method::StartAll)).await;
+            }
+            if let Err(failure) = sent {
+                log.warn(&format!(
+                    "The agent was not told this is a fresh launch: {}",
+                    failure.words()
+                ));
+            }
+        });
     }
 
     fn waiting(&mut self) {
@@ -740,7 +782,7 @@ impl<D: Dial> Session<D> {
                 reason,
                 update: Some(update),
             } if reason == ENDING_UPDATE && self.drain_is_for(&update) => {
-                self.agent_ending(update.stopped_by_you);
+                self.agent_ending(update.keeps_stopped());
             }
             // an agent may add reasons within version 2; what is not known is ignored,
             // and the connection's end that follows is handled as a drop. So is an end for
@@ -753,7 +795,7 @@ impl<D: Dial> Session<D> {
                 // an end for an update still says how the runners were left, which the
                 // start after it keeps
                 if let Some(update) = update {
-                    self.next_launch = Some(launch_for(update.stopped_by_you));
+                    self.next_launch = Some(launch_for(update.keeps_stopped()));
                 }
             }
             Pushed::Closed => self.closed(),
@@ -1401,23 +1443,31 @@ fn shows(snapshot: &Snapshot, pending: Pending) -> bool {
 }
 
 /// how the agent starts so that it leaves the runners as they were: stopped when they
-/// were stopped by you, else running.
-fn launch_for(stopped_by_you: bool) -> Launch {
-    if stopped_by_you {
+/// stay stopped, else running.
+fn launch_for(stopped: bool) -> Launch {
+    if stopped {
         Launch::Stopped
     } else {
         Launch::Running
     }
 }
 
-/// whether the last state heard is "stopped by you", which a restart keeps.
-fn stopped_by_you(snapshot: &Snapshot) -> bool {
+/// whether the last state heard keeps the runners stopped across a restart: stopped by
+/// you, stopped by a sleep, a network change or too many resumes, or with a resume
+/// waiting, so a restart never starts them on another network.
+fn keeps_stopped(snapshot: &Snapshot) -> bool {
+    const KEPT: [&str; 4] = [
+        StopReason::BY_YOU,
+        "slept",
+        "network_changed",
+        "resumed_too_often",
+    ];
     snapshot.agent.state == "stopped"
         && snapshot
             .agent
             .reason
             .as_ref()
-            .is_some_and(|reason| reason.code == StopReason::BY_YOU)
+            .is_some_and(|reason| KEPT.contains(&reason.code.as_str()))
 }
 
 /// why a removal failed, with the token store's kind and code when the agent gave them.

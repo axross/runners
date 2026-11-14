@@ -67,6 +67,17 @@ impl Overrides {
     }
 }
 
+/// the argument the sign-in item starts the app with, which hides its window.
+pub use marshal_cli::windows_host::run_key::SIGN_IN_ARGUMENT;
+
+/// whether a process's arguments, the program name first, start the app from the
+/// sign-in item, with its icon and without its window.
+pub fn is_sign_in(args: impl IntoIterator<Item = OsString>) -> bool {
+    args.into_iter()
+        .skip(1)
+        .any(|argument| argument == SIGN_IN_ARGUMENT)
+}
+
 /// the arguments that start the agent from this executable.
 #[must_use]
 pub fn agent_arguments(launch: Launch) -> [&'static str; 2] {
