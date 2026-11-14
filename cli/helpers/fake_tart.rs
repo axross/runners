@@ -29,6 +29,12 @@
 //!   and it exits when this call ends. The launcher's standard input becomes the
 //!   program's `ACTIONS_RUNNER_INPUT_JITCONFIG`, as the real launcher does, and an
 //!   empty one fails with exit code 64;
+//! - an `exec -i` of the launcher with one absolute path, the runner's directory in
+//!   a macOS job VM, stands in for the macOS runner: it refuses an empty standard
+//!   input with exit code 64, appends the VM's name to `macos_runs`, holds while
+//!   `macos_hold` exists, the VM runs and no `pkill` of `Runner.Listener` has
+//!   reached the VM, and exits with `macos_exit` (default 0). Such a VM has no
+//!   Docker, so a `docker` command in it fails with exit code 127;
 //! - a provisioning call, which runs `bash -c <script> <name>` (after `sudo -n` when it
 //!   is privileged), takes its script from files that carry its `<name>`, such as
 //!   `marshal-list-key`: `exec_stdout-<name>` and `exec_exit-<name>` replace the
@@ -43,6 +49,8 @@
 //!   that long and then fails without stopping the VM, and only a stop with no
 //!   timeout stops it;
 //! - `delete` refuses a running VM and a VM that does not exist;
+//! - `get <name> --format json` prints an object whose `OS` is the file `os-<name>`,
+//!   else `darwin`, and fails for a VM that does not exist;
 //! - any subcommand called `<sub>` (`version` for `--version`) fails with `fail-<sub>` present, printing the
 //!   file's text, or a default one, to standard error; hangs with `hang-<sub>`
 //!   present; and prints 200 000 bytes to each of standard output and standard
@@ -102,6 +110,7 @@ fn run() -> Result<u8, String> {
         ["delete", names @ ..] => delete(&dir, names),
         ["pull", reference] => pull(&dir, reference),
         ["rename", name, target] => rename(&dir, name, target),
+        ["get", name, "--format", "json"] => get(&dir, name),
         _ => Err(format!("unexpected call: {arguments:?}")),
     }
 }
@@ -333,6 +342,21 @@ fn exec(dir: &Path, stem: &Path, rest: &[&str]) -> Result<u8, String> {
         let _ = writeln!(std::io::stderr(), "Error: the VM {name} is not running");
         return Ok(1);
     }
+    if let [LAUNCHER, directory] = command
+        && directory.starts_with('/')
+    {
+        return Ok(macos_runner(dir, name, &input));
+    }
+    if let ["sudo", "-n", "pkill", _, "-f", "Runner.Listener"] = command {
+        fs::write(dir.join(format!("runner_signalled-{name}")), "")
+            .map_err(|error| error.to_string())?;
+        return Ok(0);
+    }
+    let is_macos = text(dir, "macos_runs").is_some_and(|runs| runs.lines().any(|vm| vm == *name));
+    if is_macos && command.iter().take(3).any(|word| *word == "docker") {
+        let _ = writeln!(std::io::stderr(), "bash: docker: command not found");
+        return Ok(127);
+    }
     if let Some(code) = forward_to_docker(dir, command, &input)? {
         return Ok(code);
     }
@@ -350,6 +374,35 @@ fn exec(dir: &Path, stem: &Path, rest: &[&str]) -> Result<u8, String> {
     Ok(text(dir, &file("exec_exit"))
         .and_then(|code| code.parse().ok())
         .unwrap_or(0))
+}
+
+/// stands in for a macOS job VM's runner, which the launcher starts with the runner's
+/// directory: refuses an empty JIT configuration as the launcher does, appends the
+/// VM's name to `macos_runs`, holds while `macos_hold` exists, the VM runs and no
+/// `pkill` has signalled its runner, and exits with `macos_exit`, else 0.
+fn macos_runner(dir: &Path, vm_name: &str, input: &[u8]) -> u8 {
+    if input.is_empty() {
+        let _ = writeln!(
+            std::io::stderr(),
+            "marshal-launch: standard input held no jit configuration"
+        );
+        return 64;
+    }
+    let mut runs = text(dir, "macos_runs").unwrap_or_default();
+    runs.push_str(vm_name);
+    runs.push('\n');
+    let _ = fs::write(dir.join("macos_runs"), runs);
+    let _ = writeln!(std::io::stdout(), "Listening for Jobs");
+    sleep_while(|| {
+        exists(dir, "macos_hold")
+            && !exists(dir, &format!("runner_signalled-{vm_name}"))
+            && load(dir)
+                .iter()
+                .any(|vm| vm.name == vm_name && vm.running())
+    });
+    text(dir, "macos_exit")
+        .and_then(|code| code.parse().ok())
+        .unwrap_or(0)
 }
 
 /// the name of a provisioning call: the word after the script in `bash -c <script>
@@ -452,6 +505,20 @@ fn pull(dir: &Path, reference: &str) -> Result<u8, String> {
         }
         Ok(())
     })
+}
+
+/// prints the VM's `OS` field as Tart 2.41.1 does: the file `os-<name>`, else
+/// `darwin`; a VM that does not exist fails.
+fn get(dir: &Path, name: &str) -> Result<u8, String> {
+    if !load(dir).iter().any(|vm| vm.name == name) {
+        return Err(format!("the VM {name} does not exist"));
+    }
+    let os = text(dir, &format!("os-{name}")).unwrap_or_else(|| "darwin".to_string());
+    println!(
+        "{{\n  \"CPU\" : 4,\n  \"OS\" : {},\n  \"State\" : \"stopped\"\n}}",
+        json_string(os.trim())
+    );
+    Ok(0)
 }
 
 fn rename(dir: &Path, name: &str, target: &str) -> Result<u8, String> {

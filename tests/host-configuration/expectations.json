@@ -6,7 +6,7 @@
       "macOS VMs:         2 of 2",
       "cpus:              8 of 8\n",
       "memory:            32 of 32 GB",
-      "disk:              190 of 190 GB, including a 40 GB reserve"
+      "disk:              290 of 290 GB, including a 140 GB reserve"
     ],
     "lacks": []
   },
@@ -33,6 +33,64 @@
     "outcome": "accept",
     "contains": ["profile axmc, image example-image:tag"],
     "lacks": []
+  },
+  "rust/accepted/axmc-macos-defaults.json": {
+    "profile": "axmc",
+    "outcome": "accept",
+    "contains": [
+      "os:                macos\n",
+      "slots:             1\n",
+      "cpus:              4\n",
+      "memory:            8 GB\n",
+      "disk:              50 GB\n",
+      "macOS VMs:         1 of 2",
+      "cpus:              4 of 8\n",
+      "memory:            8 of 32 GB",
+      "disk:              150 of 200 GB, including a 100 GB reserve"
+    ],
+    "lacks": []
+  },
+  "rust/accepted/axmc-macos-diagnostics-false.json": {
+    "profile": "axmc",
+    "outcome": "accept",
+    "contains": ["diagnostics:       False"],
+    "lacks": []
+  },
+  "rust/accepted/axmc-macos-minimums.json": {
+    "profile": "axmc",
+    "outcome": "accept",
+    "contains": [
+      "cpus:              2\n",
+      "memory:            4 GB\n",
+      "disk:              50 GB\n"
+    ],
+    "lacks": []
+  },
+  "rust/accepted/axmc-macos-two-default-slots.json": {
+    "profile": "axmc",
+    "outcome": "accept",
+    "contains": [
+      "macOS VMs:         2 of 2",
+      "cpus:              8 of 8\n",
+      "memory:            16 of 32 GB",
+      "disk:              200 of 200 GB, including a 100 GB reserve"
+    ],
+    "lacks": []
+  },
+  "rust/accepted/axmc-macos-values-replace-defaults.json": {
+    "profile": "axmc",
+    "outcome": "accept",
+    "contains": [
+      "slots:             2\n",
+      "cpus:              3\n",
+      "memory:            16 GB\n",
+      "disk:              80 GB\n",
+      "macOS VMs:         2 of 2",
+      "cpus:              6 of 8\n",
+      "memory:            32 of 32 GB",
+      "disk:              260 of 300 GB, including a 100 GB reserve"
+    ],
+    "lacks": ["disk:              50 GB"]
   },
   "rust/accepted/axmc-os-labels.json": {
     "profile": "axmc",
@@ -184,7 +242,7 @@
     "profile": "axmc",
     "outcome": "reject",
     "contains": [
-      "repositories[1].name: name 'example' collides with 'example' at repositories[0]; set a distinct name on one entry\n  - repositories[1].tokenPath: pools for the same repository must use the same token file as repositories[0]\n  - repositories[1].labels: ambiguous same-repository routing; labels 'axmc' also appear at repositories[0]\n  - budget: macOS pools total 3 VMs (the sum of their slots), above the limit of 2\n  - budget: pools total 1080 GB of disk (the sum of slots times diskGb), above the budget of 200 GB"
+      "repositories[1].name: name 'example' collides with 'example' at repositories[0]; set a distinct name on one entry\n  - repositories[1].tokenPath: pools for the same repository must use the same token file as repositories[0]\n  - repositories[1].labels: ambiguous same-repository routing; labels 'axmc' also appear at repositories[0]\n  - budget: macOS pools total 3 VMs (the sum of their slots), above the limit of 2\n  - budget: pools total 1200 GB of disk (the sum of slots times diskGb, plus 100 GB for the golden macOS VM and its cached base), above the budget of 200 GB"
     ],
     "lacks": []
   },
@@ -347,6 +405,80 @@
       "repositories[0].diskGb: must be at least 20 on a Linux pool, the golden VM's disk size"
     ],
     "lacks": ["repositories[1]", "budget"]
+  },
+  "rust/accepted/axmc-linux-default-slots.json": {
+    "profile": "axmc",
+    "outcome": "accept",
+    "contains": [
+      "slots:             2\n",
+      "cpus:              8 of 8\n",
+      "disk:              270 of 300 GB, including a 140 GB reserve"
+    ],
+    "lacks": []
+  },
+  "rust/rejected/axmc-macos-cpus-below-minimum.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": ["repositories[0].cpus: must be at least 2 on a macOS pool"],
+    "lacks": ["memoryGb", "diskGb", "diagnostics"]
+  },
+  "rust/rejected/axmc-macos-diagnostics.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].diagnostics: not supported on a macOS pool, because macOS VM pools have no diagnostics"
+    ],
+    "lacks": [
+      "diagnosticDirectory",
+      "diagnosticRawRecords",
+      "cpus",
+      "memoryGb",
+      "diskGb"
+    ]
+  },
+  "rust/rejected/axmc-macos-disk-below-minimum.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].diskGb: must be at least 50 on a macOS pool, the golden macOS VM's disk size"
+    ],
+    "lacks": ["cpus", "memoryGb", "diagnostics"]
+  },
+  "rust/rejected/axmc-macos-errors-in-field-order.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[1].cpus: must be at least 2 on a macOS pool\n  - repositories[1].memoryGb: must be at least 4 on a macOS pool\n  - repositories[1].diskGb: must be at least 50 on a macOS pool, the golden macOS VM's disk size\n  - repositories[1].diagnostics: not supported on a macOS pool, because macOS VM pools have no diagnostics"
+    ],
+    "lacks": ["repositories[0]"]
+  },
+  "rust/rejected/axmc-macos-memory-below-minimum.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": [
+      "repositories[0].memoryGb: must be at least 4 on a macOS pool"
+    ],
+    "lacks": ["cpus", "diskGb", "diagnostics"]
+  },
+  "rust/rejected/axmc-linux-slots-null.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": ["repositories[0].slots: must be an integer from 1 to 16"],
+    "lacks": ["required field is missing"]
+  },
+  "rust/rejected/axmc-macos-slots-null.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": ["repositories[0].slots: must be an integer from 1 to 16"],
+    "lacks": ["required field is missing"]
+  },
+  "rust/rejected/axmc-macos-three-default-slots.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": [
+      "budget: macOS pools total 3 VMs (the sum of their slots), above the limit of 2"
+    ],
+    "lacks": ["budget: pools total"]
   },
   "rust/rejected/axmc-memory-over-budget.json": {
     "profile": "axmc",

@@ -21,7 +21,7 @@
       "routing_label: axmc",
       "lifecycle: start_at_login=unset start_runners_on_launch=unset keep_awake=true stop_on_network_change=false resume_after_stop=unset",
       "image_name: example-image:tag",
-      "budget: cpus=8 memory_gb=32 disk_gb=180",
+      "budget: cpus=8 memory_gb=32 disk_gb=280",
       "pool[0]: name=alpha repository=octo/hello runners=1 os=macos cpus=4 memory_gb=16 disk_gb=60 labels=[self-hosted, macOS, ARM64, axmc] volumes=[] diagnostics=false diagnostic_directory=none raw_records=false token_path=none",
       "pool[1]: name=beta repository=octo/hello runners=2 os=linux cpus=2 memory_gb=8 disk_gb=40 labels=[self-hosted, linux, ARM64, linux-vm] volumes=[] diagnostics=false diagnostic_directory=none raw_records=false token_path=none"
     ],
@@ -222,7 +222,7 @@
       "line 4: budget: macOS pools total 3 VMs (the sum of their runners), above the limit of 2",
       "line 4: budget: pools total 12 CPUs (the sum of runners times cpus), above the budget of 4",
       "line 4: budget: pools total 48 GB of memory (the sum of runners times memory_gb), above the budget of 16 GB",
-      "line 4: budget: pools total 180 GB of disk (the sum of runners times disk_gb), above the budget of 100 GB"
+      "line 4: budget: pools total 280 GB of disk (the sum of runners times disk_gb, plus 100 GB for the golden macOS VM and its cached base), above the budget of 100 GB"
     ],
     "contains": [],
     "lacks": []
@@ -234,7 +234,7 @@
       "line 18: pool[1].name: name 'alpha' collides with 'alpha' at pool[0]; set a distinct name on one pool",
       "line 18: pool[1].labels: ambiguous same-repository routing; labels 'axmc' also appear at pool[0]",
       "line 6: budget: macOS pools total 3 VMs (the sum of their runners), above the limit of 2",
-      "line 6: budget: pools total 1080 GB of disk (the sum of runners times disk_gb), above the budget of 200 GB"
+      "line 6: budget: pools total 1200 GB of disk (the sum of runners times disk_gb, plus 100 GB for the golden macOS VM and its cached base), above the budget of 200 GB"
     ],
     "contains": [],
     "lacks": []

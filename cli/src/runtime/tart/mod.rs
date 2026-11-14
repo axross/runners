@@ -12,6 +12,7 @@ pub mod golden_check;
 pub mod guest;
 pub mod hold;
 pub mod list;
+pub mod macos;
 pub mod names;
 pub mod teardown;
 

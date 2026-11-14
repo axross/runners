@@ -317,7 +317,8 @@ entry is a pool of `slots` runners for one repository:
   `diskGb` is at least 20, the golden VM's disk size.
 - `labels` replaces the routing label `axmc`. A Linux runner registers with
   `self-hosted`, `linux`, `ARM64` and the routing label, so a workflow routes a job
-  with `runs-on: [axmc, linux]`.
+  with `runs-on: [axmc, linux]`; a macOS runner registers with `self-hosted`,
+  `macOS`, `ARM64` and the routing label, for `runs-on: [axmc, macOS]`.
 - `imageName`, when present, names the runner image inside the golden VM; without it
   the image is `actions-runner:local`.
 - `tokenPath` names a file that holds one repository's token. Create the token as
@@ -326,17 +327,22 @@ entry is a pool of `slots` runners for one repository:
   the file must be a regular file owned by you with mode `0600`: `chmod 600 <file>`.
 - `budget` holds the Mac's `cpus`, `memoryGb` and `diskGb` for all pools together.
   The disk total counts every slot's `diskGb`, plus a fixed 40 GB for the golden VM
-  and Tart's image cache when any pool is Linux. The example's two slots of 4
-  vCPUs, 8 GB and 40 GB fit its budget of 8 CPUs, 16 GB and 120 GB exactly.
+  and Tart's image cache when any pool is Linux, and a fixed 100 GB for the golden
+  macOS VM and its cached base when any pool is macOS. The example's two Linux slots
+  of 4 vCPUs, 8 GB and 40 GB and its macOS pool with only the required fields, one
+  slot of 4 vCPUs, 8 GB and 50 GB, fit its budget of 12 CPUs, 24 GB and 270 GB
+  exactly.
   [CLI](./cli.md#profiles) has every rule, its message, and the migration from the
   earlier rules.
 
 `marshal validate --config <path> --profile axmc` checks a file on any machine.
 
 The VMs run beside the macOS system, and Apple's licence allows two macOS guests at
-once. `validate` limits macOS pools to two VMs and does not count Linux VMs. Whether
-Linux VMs count against Apple's limit is open, and no host run tests it; see
-[Verification Status](#verification-status).
+once. `validate` limits macOS pools to two VMs and does not count Linux VMs. The
+first Mac check on #80
+([its results](https://github.com/axross/runners/issues/80#issuecomment-6816684419))
+booted a Linux VM beside two macOS VMs, so Linux VMs do not count against macOS's
+limit.
 
 ### Starting, watching and stopping
 
@@ -375,11 +381,14 @@ From another terminal, as the same user:
 
 [CLI](./cli.md#running-a-host) gives each command's fields, waits and exit codes. In
 `marshal status`, a slot is `registering` while its VM is cloned, booted and probed,
-`running container <name>` while it holds a job, `backing off` after a failure, and
-`held: <reason>` when a prerequisite refuses its next boot. A slot that is held boots
+`running container <name>` while it holds a job (`running VM <name>` for a macOS
+slot, whose job runs in its VM with no container), `backing off` after a failure, and
+`held: <reason>` when a prerequisite refuses its next boot. A macOS slot shows
+`waiting for the macOS VM limit` while two macOS VMs count, and
+`waiting for VM <name> to be deleted` while Marshal deletes again, every 5 s, a job VM
+it failed to delete. A slot that is held boots
 nothing and tries again on its backoff, while jobs on other slots finish; fix the
-cause, such as Softnet's SUID bit after a `brew upgrade`, and the slot boots again. A
-pool of `os: "macos"` shows `skipped: macOS VM pools are not supported yet`.
+cause, such as Softnet's SUID bit after a `brew upgrade`, and the slot boots again.
 
 Stop the host with `marshal stop`, or with Ctrl+C in the `start` terminal, or by
 closing it; each runs the same stop sequence, which stops the job containers and
@@ -499,6 +508,46 @@ check afresh, so the time spent stopped counts as neither a sleep nor a change. 
 this only on a network you trust, because the signals only stop the runners; they
 never judge a network.
 
+## The Golden macOS VM and macOS Pools
+
+A pool with `os: "macos"` runs each job in a macOS VM cloned from the golden macOS
+VM, `marshal-golden-macos-g<golden VM version>-r<runner version>-<yyyyMMddHHmmss>`.
+`marshal build` makes it from the pinned Cirrus Labs base
+`ghcr.io/cirruslabs/macos-tahoe-base`, after the Linux golden VM, whenever a macOS
+pool is configured; [CLI](./cli.md#the-golden-macos-vm-build) gives its steps.
+Build it again when `marshal` reports it missing or mismatched, and when its
+warnings ask for it.
+
+- **At most two macOS VMs.** Apple's licence allows two macOS guests at once, so a
+  macOS slot counts the macOS VMs before it clones one, and waits while two count:
+  job and build VMs of macOS pools, a leftover job VM that `tart get` reports as
+  macOS or whose OS it cannot read, and any other running VM that it reports as
+  macOS or whose OS it cannot read, except the Linux golden and build VMs.
+  `marshal status` shows the slot `waiting for the macOS VM limit`. The golden macOS
+  VM counts only while someone runs it by hand, and a job VM of a configured Linux
+  pool counts only when `tart get` reports it as macOS.
+- **The host's macOS.** The Mac must run at least the base's macOS, 26.6.2 for the
+  current pin; `build` refuses an older Mac and names both versions. Update the Mac,
+  then build again.
+- **The disk.** A macOS pool's `diskGb` is at least 50, the base's size. The base's
+  layout is kept, recovery partition included, and the guest grows the disk to the
+  pool's size at boot. Pulling the base takes about 26 GB of download, and the
+  golden macOS VM and each job VM take up to their disk size.
+- **Bumping the base.** When `status` warns that the pinned base is 30 or more days
+  old, bump it: take the newest manifest digest of
+  `ghcr.io/cirruslabs/macos-tahoe-base:latest`, its
+  `org.cirruslabs.tart.upload-time` annotation's day and the macOS version it ships,
+  and record all three in `MACOS_BASE` in `cli/src/image/macos_base.rs`, with the old
+  digest added to `retired` so the next `build` removes it from Tart's cache. Raise
+  `GOLDEN_MACOS_VM_VERSION`, review what Cirrus changed in the base, then rebuild.
+  Rebuilding without a bump does not update macOS in the guest.
+- **When macOS refuses another VM.** If the log says
+  `macOS refused another macOS VM: …; if no other macOS VM is running, restart the Mac to release the place`,
+  and `tart list` shows no other running macOS VM, restart the Mac: macOS can keep a
+  VM's place taken after the VM has gone.
+- **A VM that cannot be deleted** keeps counting, and `marshal` deletes it again
+  every 5 s, with its slot `waiting for VM <name> to be deleted`.
+
 ## Removing the VMs of a Pool No Longer Configured
 
 `marshal` deletes leftover job VMs only for pools that are configured, so a VM of a
@@ -512,16 +561,18 @@ tart list --source local
 tart delete marshal-job-<pool>-<slot>-<time>
 ```
 
-Delete only VMs whose names begin `marshal-job-` followed by the removed pool's name
-and a slot number, and none that is running; a running one is a VM of an instance
+A job VM of a removed macOS pool also counts toward the two macOS VMs, so
+`marshal status` names it on a `leftover-vm` line, and the log names it once, with
+the `tart delete` command. Delete only VMs whose names begin `marshal-job-` followed
+by the removed pool's name and a slot number, and none that is running; a running one is a VM of an instance
 that still uses that name, so stop the instance first. Never delete the golden VM by
 hand while `marshal` runs; `build` replaces it.
 
 ## Verification Status
 
-**Nothing in this document has been run on a Mac.** No real Tart VM, guest agent,
-Softnet, `caffeinate`, `route` or `arp` has run under `marshal`, and no claim above
-about their behaviour rests on a run. By the maintainer's decision
+**Only the runs this section names have run on a Mac.** A claim above about the
+behaviour of Tart, the guest agent, Softnet, `caffeinate`, `route` or `arp` rests on
+a run only when this section links that run's evidence. By the maintainer's decision
 [recorded on #74](https://github.com/axross/runners/issues/74#issuecomment-6784246305),
 this document's procedures were added with no host run. The one host run planned
 comes with the arm64 runner image, and checks only that a Linux job that uses
@@ -565,6 +616,23 @@ the run goes in this order:
 6. Run `marshal stop`, then confirm with `tart list` that no job or build VM is left
    and that the golden VM stays.
 
+**The macOS checks.** The
+[first Mac check](https://github.com/axross/runners/issues/80#issuecomment-6816684419),
+on macOS 27.0 with Tart 2.41.1 and without using Softnet, booted clones of the pinned macOS base
+without `marshal`. It recorded `tart get`'s `"OS" : "darwin"` for a macOS VM, Tart's
+exact VM-limit error with two macOS VMs running, a Linux VM booting beside them, so Linux VMs do not count against the limit, a
+clone's disk growing to 80 GB at boot with the recovery partition kept, and the
+guest agent running commands as `admin`. Mac verification
+[steps 4.1 and 4.2](https://github.com/axross/runners/issues/80#issuecomment-6871092617)
+then ran `marshal build` at `bc5542c`, with a macOS pool and the base already in
+Tart's cache, so the pull found it cached, and read the golden macOS VM through the guest agent: its runner, the base's runner gone, Remote Login and Screen Sharing off,
+and the automatic download and installation of updates off. Steps 4.3 to 4.11 have
+not run: a macOS job VM's cycle under `marshal` and the runner updating itself, the
+limit wait and the refusal at boot, a pool's `diskGb` above 50 under `marshal`, a
+sleep and a network change during a macOS job, a hard kill, `stop`'s timing, and
+the boot time and a rebuild's peak disk use.
+Until they do, what this document says about those rests on the tests and sources.
+
 **What is checked without a Mac.** The CLI's tests run against fake `tart`, `docker`,
 `softnet`, `caffeinate`, `route` and `arp` programs and a scripted signal source:
 
@@ -573,8 +641,10 @@ the run goes in this order:
 - the VM runtime's slot cycle, probes, run arguments, release and VM shim, and the
   diagnostics export from a VM;
 - the golden VM build, with a failure scripted at each step and at a stop;
-- `marshal start` on the axmc profile as a process: the skipped macOS pools, each
+- `marshal start` on the axmc profile as a process: Linux and macOS pools in VMs of
+  their OS, a macOS slot waiting for the limit, a failed deletion retried, each
   refusal before any VM boots, a held slot, and a refused resume;
+- the golden macOS VM build, with a failure scripted at each step and at a stop;
 - the signals: a wake and a primary-network change that stop the instance with their
   reasons, a resume that records the network afresh, no VM cloned without a default
   route, and the keep-awake hold's state.
@@ -615,8 +685,6 @@ of an Apple tool as the source prints it, and not on a run:
   ([decision record](https://github.com/axross/runners/issues/74#issuecomment-6784246305)).
 - The VM has the pool's vCPUs, memory and disk, and no shared directory, Rosetta share,
   sound card or USB device, and the `admin` password login over SSH is refused.
-- Whether Linux VMs count against Apple's limit of two VMs. No host run tests it,
-  and `validate` counts only macOS VMs against the limit.
 - `stop` ends every VM within 30 s, a hard-killed `start` leaves no running job VM
   after the next `start`, and a slot's next VM is cloned, booted, probed and
   registered within 60 s of the previous VM's deletion; record the turnaround.

@@ -4,7 +4,7 @@ schema_version = 1
 routing_label = "axmc"
 
 [budget]
-cpus = 8
+cpus = 12
 memory_gb = 32
 disk_gb = 200
 
@@ -13,7 +13,7 @@ name = "alpha"
 repository = "octo/hello"
 runners = 2
 os = "macos"
-disk_gb = 40
+disk_gb = 50
 
 [[pool]]
 name = "alpha"

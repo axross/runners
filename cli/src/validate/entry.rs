@@ -14,6 +14,7 @@ use super::labels::registration_labels;
 use super::limits::{
     self, DEFAULT_CPUS, DEFAULT_MEMORY_GB, MAX_DISK_GB, MAX_MEMORY_GB, MAX_SLOTS, MIN_LINUX_DISK_GB,
 };
+use super::macos_pool;
 use super::paths;
 use super::patterns;
 use super::plan::{Entry, PlannedVolume};
@@ -88,18 +89,38 @@ pub fn read_entry(
         &mut cx.errors,
     );
     let volumes = read_volumes(&node, &path, cx);
-    let slots_path = path.key(Key::Slots);
-    let slots = fields::required(&node.slots, &slots_path, &mut cx.errors).and_then(|value| {
-        limits::read_bounded_integer(value, &slots_path, MAX_SLOTS, &mut cx.errors)
-    });
+    let macos = os == Some(Os::Macos);
+    let slots = if macos {
+        macos_pool::read_slots(&node.slots, &path, &mut cx.errors)
+    } else {
+        let default = (profile == Profile::Axmc).then_some(AXMC_LINUX_DEFAULT_SLOTS);
+        read_slots(&node.slots, &path, default, &mut cx.errors)
+    };
     let name = read_name(&node.name, &path, &mut cx.errors);
-    let cpus = read_cpus(&node.cpus, &path, profile, &mut cx.errors);
-    let memory_gb = read_memory(&node.memory_gb, &path, &mut cx.errors);
-    let disk_gb = match profile {
-        Profile::Axpc => Some(None),
-        Profile::Axmc => read_disk(&node.disk_gb, &path, os, &mut cx.errors).map(Some),
+    let cpus = if macos {
+        macos_pool::read_cpus(&node.cpus, &path, &mut cx.errors)
+    } else {
+        read_cpus(&node.cpus, &path, profile, &mut cx.errors)
+    };
+    let memory_gb = if macos {
+        macos_pool::read_memory(&node.memory_gb, &path, &mut cx.errors)
+    } else {
+        read_memory(&node.memory_gb, &path, &mut cx.errors)
+    };
+    let disk_gb = match (profile, macos) {
+        (Profile::Axpc, _) => Some(None),
+        (Profile::Axmc, true) => {
+            macos_pool::read_disk(&node.disk_gb, &path, &mut cx.errors).map(Some)
+        }
+        (Profile::Axmc, false) => read_disk(&node.disk_gb, &path, os, &mut cx.errors).map(Some),
     };
     let (diagnostics, raw_records) = read_diagnostic_flags(&node, &path, &mut cx.errors);
+    if macos && diagnostics {
+        cx.errors.add(
+            path.key(Key::Diagnostics),
+            Kind::MacosDiagnosticsUnsupported,
+        );
+    }
     let diagnostic_directory =
         read_diagnostic_directory(&node.diagnostic_directory, &path, diagnostics, cx);
     if raw_records && !diagnostics {
@@ -307,6 +328,28 @@ fn read_name(name: &Field, path: &KeyPath, errors: &mut Errors) -> Option<String
         return None;
     }
     Some(name.to_string())
+}
+
+/// the slots of an axmc Linux pool that sets none.
+pub const AXMC_LINUX_DEFAULT_SLOTS: u32 = 2;
+
+/// reads `slots`: absent is `default` where there is one, and a `null` then a type
+/// error; without a default, absent or `null` is a missing field.
+fn read_slots(
+    slots: &Field,
+    path: &KeyPath,
+    default: Option<u32>,
+    errors: &mut Errors,
+) -> Option<u32> {
+    let field = path.key(Key::Slots);
+    let value = match default {
+        Some(default) => match slots.get() {
+            None => return Some(default),
+            Some(value) => value,
+        },
+        None => fields::required(slots, &field, errors)?,
+    };
+    limits::read_bounded_integer(value, &field, MAX_SLOTS, errors)
 }
 
 fn read_cpus(cpus: &Field, path: &KeyPath, profile: Profile, errors: &mut Errors) -> Option<f64> {

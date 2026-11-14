@@ -5,7 +5,9 @@
 //! `build` makes that VM; see `docs/operations/cli.md`.
 
 mod arguments;
+mod build_vm;
 pub mod golden;
+pub mod golden_macos;
 pub(crate) mod steps;
 
 use std::ffi::OsStr;
@@ -22,11 +24,14 @@ use crate::command::{EXIT_FAILED, EXIT_OK, checkout_rule_note, load_plan, print_
 use crate::golden::pins::RETIRED_BASE_PINS;
 use crate::image::archive::context_archive;
 use crate::image::definition::resolve_definition;
+use crate::image::macos_base::MACOS_BASE;
+use crate::image::runner::{TEST_RUNNER_VARIABLE, declared_runner};
 use crate::instance::channel::{ChannelServer, exchange};
 use crate::instance::lock::{InstanceLock, LockError};
 use crate::instance::protocol::{Incoming, Request, Response};
 use crate::instance::roots::Roots;
-use crate::profile::{Profile, host_refusal};
+use crate::macos::count::ConfiguredPool;
+use crate::profile::{Os, Profile, host_refusal};
 use crate::runtime::docker::resolve_program;
 use crate::runtime::log::{Log, StderrLog};
 use crate::runtime::pool::DEFAULT_IMAGE_NAME;
@@ -35,6 +40,7 @@ use crate::runtime::tart::{TartClient, TartConfig, VmLauncher};
 use crate::start::{ANSWERS_WITHIN, LOCK_HELD_ELSEWHERE, signals, single_threaded_runtime};
 
 use golden::{GoldenBuild, GoldenTimings};
+use golden_macos::{GoldenMacosBuild, MACOS_AGENT_DEADLINE, MACOS_PULL_BUDGET};
 use steps::{BuildLimits, BuildOutput, Steps};
 
 const HOLDER_ANSWER_WITHIN: Duration = Duration::from_secs(5);
@@ -83,6 +89,7 @@ pub fn build(request: &BuildRequest<'_>, err: &mut dyn Write) -> u8 {
     };
     let Some(image) = plan
         .image_name
+        .clone()
         .or_else(|| (request.profile == Profile::Axmc).then(|| DEFAULT_IMAGE_NAME.to_string()))
     else {
         return print_error(err, &"the configuration names no image to build");
@@ -156,24 +163,42 @@ pub fn build(request: &BuildRequest<'_>, err: &mut dyn Write) -> u8 {
                 program: program_from_environment(),
                 ..TartConfig::default()
             });
+            let pools = ConfiguredPool::of_plan(&plan);
+            let builds_linux = pools.iter().any(|pool| pool.os == Os::Linux);
+            let builds_macos = pools.iter().any(|pool| pool.os == Os::Macos);
             let (image, log) = (&image, &log);
             // boxed: the whole golden build is a large future, which `block_on` would
             // otherwise hold on the main thread's stack
             runtime.block_on(build.run(|stop| {
                 Box::pin(async move {
-                    GoldenBuild {
-                        client,
-                        launcher,
-                        image,
-                        context,
-                        log,
-                        timings: GoldenTimings::default(),
-                        retired: RETIRED_BASE_PINS,
-                        softnet_owner_mode: None,
-                        stop,
+                    let mut failures = Vec::new();
+                    if builds_linux {
+                        let linux = GoldenBuild {
+                            client: client.clone(),
+                            launcher: launcher.clone(),
+                            image,
+                            context,
+                            log,
+                            timings: GoldenTimings::default(),
+                            retired: RETIRED_BASE_PINS,
+                            softnet_owner_mode: None,
+                            stop: stop.clone(),
+                        };
+                        if let Err(error) = linux.run().await {
+                            failures.push(error);
+                        }
                     }
-                    .run()
-                    .await
+                    if builds_macos && stop.borrow().is_none() {
+                        let macos = macos_build(client, launcher, pools, log, stop);
+                        if let Err(error) = async { macos?.run().await }.await {
+                            failures.push(error);
+                        }
+                    }
+                    if failures.is_empty() {
+                        Ok(())
+                    } else {
+                        Err(failures.join("; "))
+                    }
                 })
             }))
         }
@@ -182,6 +207,49 @@ pub fn build(request: &BuildRequest<'_>, err: &mut dyn Write) -> u8 {
         Ok(()) => EXIT_OK,
         Err(error) => print_error(err, &error),
     }
+}
+
+/// the golden macOS VM's build, with the declared runner and this Mac's macOS
+/// version; the error says which of them could not be read.
+fn macos_build<'a>(
+    client: TartClient,
+    launcher: VmLauncher,
+    pools: Vec<ConfiguredPool>,
+    log: &'a dyn Log,
+    stop: watch::Receiver<Option<Instant>>,
+) -> Result<GoldenMacosBuild<'a>, String> {
+    let requested = std::env::var(TEST_RUNNER_VARIABLE).ok();
+    let runner = declared_runner(requested.as_deref())?;
+    let host_macos = host_macos_version()?;
+    let mut timings = GoldenTimings::default();
+    timings.agent.deadline = MACOS_AGENT_DEADLINE;
+    let mut config = client.config().clone();
+    config.limits.pull_budget = MACOS_PULL_BUDGET;
+    Ok(GoldenMacosBuild {
+        client: TartClient::new(config),
+        launcher,
+        base: MACOS_BASE,
+        runner,
+        pools,
+        host_macos,
+        log,
+        timings,
+        softnet_owner_mode: None,
+        stop,
+    })
+}
+
+/// this Mac's macOS version, as `sw_vers -productVersion` prints it.
+fn host_macos_version() -> Result<String, String> {
+    let output = std::process::Command::new("sw_vers")
+        .arg("-productVersion")
+        .output()
+        .map_err(|error| format!("this Mac's macOS version could not be read: {error}"))?;
+    let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if !output.status.success() || version.is_empty() {
+        return Err("this Mac's macOS version could not be read: sw_vers printed none".into());
+    }
+    Ok(version)
 }
 
 /// holds the build VM under the VM shim, which is this program run again, so a CLI that

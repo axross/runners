@@ -391,6 +391,9 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
         if let Some(image) = self.board.image_record() {
             inner.image = Some(image);
         }
+        if let Some(golden) = self.board.macos_golden() {
+            inner.macos_golden = Some(golden);
+        }
         let left = self.left.borrow();
         let path = self.config_path().display().to_string();
         let mut snapshot = View {
@@ -1040,7 +1043,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
             .board
             .slot_rows()
             .into_iter()
-            .filter(|row| matches!(row.state, SlotState::Running(_)))
+            .filter(|row| matches!(row.state, SlotState::Running(_) | SlotState::RunningVm(_)))
             .count();
         u32::try_from(waited).unwrap_or(u32::MAX)
     }

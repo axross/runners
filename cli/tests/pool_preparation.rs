@@ -17,9 +17,7 @@ use marshal_cli::runtime::backend::{Backend, BackendError, DiagnosticRecord, Sto
 use marshal_cli::runtime::board::Board;
 use marshal_cli::runtime::fake::{Call, FakeBackend, FakeContainer, MemoryLog};
 use marshal_cli::runtime::log::Log;
-use marshal_cli::runtime::pool::{
-    NoPoolStartable, PoolSpec, pools_from_plan, skip_warning, skipped_pools,
-};
+use marshal_cli::runtime::pool::{NoPoolStartable, PoolSpec, pools_from_plan};
 use marshal_cli::validate::{Plan, validate};
 use support::{TempDir, prepare_pools, write_token_file};
 
@@ -402,7 +400,7 @@ fn axmc_plan(image: &str, second_os: &str) -> Plan {
         {{"owner":"o","repository":"a","name":"alpha","slots":2,"tokenPath":"/t",
           "os":"linux","cpus":4,"memoryGb":8,"diskGb":40}},
         {{"owner":"o","repository":"b","name":"bravo","slots":1,"tokenPath":"/u",
-          "os":"{second_os}","cpus":3,"memoryGb":6,"diskGb":30}}]}}"#
+          "os":"{second_os}","cpus":3,"memoryGb":6,"diskGb":50}}]}}"#
     );
     validate(config.as_bytes(), Profile::Axmc, None)
         .outcome
@@ -410,24 +408,14 @@ fn axmc_plan(image: &str, second_os: &str) -> Plan {
 }
 
 #[test]
-fn an_axmc_macos_pool_is_skipped_and_gets_no_vm_pool() {
+fn every_axmc_pool_gets_a_vm_pool_a_macos_one_included() {
     let plan = axmc_plan("", "macos");
-    assert_eq!(skipped_pools(&plan), ["bravo"]);
     let names: Vec<_> = pools_from_plan(&plan)
         .unwrap()
         .into_iter()
         .map(|pool| pool.name)
         .collect();
-    assert_eq!(names, ["alpha"]);
-    assert_eq!(
-        skip_warning("bravo"),
-        "Skipping pool bravo: macOS VM pools are not supported yet"
-    );
-}
-
-#[test]
-fn an_axmc_plan_of_linux_pools_skips_none() {
-    assert!(skipped_pools(&axmc_plan("", "linux")).is_empty());
+    assert_eq!(names, ["alpha", "bravo"]);
 }
 
 #[test]
@@ -454,7 +442,7 @@ fn an_axmc_linux_pool_gives_each_slot_all_of_its_vms_cpus_and_its_memory_and_dis
         [
             ("alpha", 1, "4", 4, 0, 8, Some(40)),
             ("alpha", 2, "4", 4, 0, 8, Some(40)),
-            ("bravo", 1, "3", 3, 0, 6, Some(30)),
+            ("bravo", 1, "3", 3, 0, 6, Some(50)),
         ]
     );
     for slot in &slots {

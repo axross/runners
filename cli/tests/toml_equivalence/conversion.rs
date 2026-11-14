@@ -139,7 +139,7 @@ const MACOS_FILE: &str = r#"{
   "budget": { "cpus": 8, "memoryGb": 32, "diskGb": 200 },
   "repositories": [{
     "owner": "octo", "repository": "hello", "name": "alpha", "slots": 1,
-    "os": "macos", "diskGb": 40, "tokenPath": "/path/to/alpha.token"
+    "os": "macos", "diskGb": 50, "tokenPath": "/path/to/alpha.token"
   }]
 }"#;
 
@@ -196,7 +196,7 @@ fn a_macos_document_ends_lines_with_lf_and_carries_the_budget() {
         "repository = \"octo/hello\"",
         "runners = 1",
         "os = \"macos\"",
-        "disk_gb = 40",
+        "disk_gb = 50",
         "",
     ]
     .join("\n");

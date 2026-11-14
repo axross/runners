@@ -22,7 +22,7 @@
       "os": "macos",
       "slots": 1,
       "tokenPath": "/path/to/example-repo-2.token",
-      "diskGb": 40,
+      "diskGb": 50,
       "labels": ["macos"]
     }
   ]

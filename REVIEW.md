@@ -212,9 +212,10 @@ Important; Codex review uses its native priority label.
 
 ## VM runtime lenses
 
-These lenses apply to a change of the axmc Linux VM runtime: `cli/src/runtime/tart/`,
-`cli/src/macos/`, `cli/src/golden/`, the golden VM's provisioning assets, and the
-macOS host document. Each is a hard project rule, owned by
+These lenses apply to a change of the axmc VM runtime: `cli/src/runtime/tart/`,
+`cli/src/macos/`, `cli/src/golden/`, `cli/src/build/golden_macos.rs`,
+`cli/src/image/macos_base.rs`, the golden VMs' provisioning assets, and the macOS
+host document. Each is a hard project rule, owned by
 [Security](docs/conventions/security.md#a-linux-job-on-axmc-runs-in-a-per-job-vm)
 and the sections after it. Claude and Amp review label a violation Important;
 Codex review uses its native priority label.
@@ -264,7 +265,20 @@ Codex review uses its native priority label.
   the retired list, Docker Engine, and the runner image's Docker client, come from
   Docker's apt repository at pinned versions after the signing key's fingerprint is
   checked, and the tested Tart and Softnet versions agree between the CLI and the
-  host document.
+  host document. The macOS base is pinned by digest in `MACOS_BASE`, and a bump
+  records its macOS version and publication day with it.
+- **The golden macOS VM stays closed.** A change to its provisioning
+  (`cli/src/golden/macos.rs`, `cli/src/golden/scripts/macos/`, `build::golden_macos`)
+  keeps Remote Login and Screen Sharing off, keeps the automatic download and
+  installation of macOS updates off, checks the runner archive's SHA-256 against the
+  runner record before it unpacks anything, keeps the JIT configuration on the
+  launcher's standard input and off every command line, and keeps
+  `MARSHAL_TEST_RUNNER` out of release builds. A change that weakens any of these is
+  a finding.
+- **The macOS VM limit holds.** A macOS slot counts under `PlaceLock` before every
+  clone, and `build` before it creates a macOS build VM, and a count that is
+  unreadable counts the VM. A clone outside the lock, a path that clones without a
+  count, and a change to the counting rule that under-counts are findings.
 
 The Dockerfile lens's rule against `apt-get upgrade` is about the runner image. The
 golden VM's provisioning upgrades the base's Ubuntu packages on purpose, so a
@@ -396,8 +410,10 @@ Apply the lens for each kind of file in the diff.
   to `APPROVED_CONTRACTS` in `cli/src/image/contract.rs`. A change that alters
   either without raising the version is a finding, even when `APPROVED_CONTRACTS`
   cannot see it. A runner bump sets the `FROM` line and the `runner-version` and
-  `runner-released` labels of both Dockerfiles, and adds the release's date from
-  the actions/runner release page to `RUNNER_RELEASES` in the same file. The
+  `runner-released` labels of both Dockerfiles, sets `DECLARED_RUNNER_VERSION`,
+  and adds the release's date and the SHA-256 of its osx-arm64 archive, both from
+  the actions/runner release page, to `RUNNER_RELEASES` in
+  `cli/src/image/runner.rs`. The
   tests that depend on the declared values read them from the Dockerfiles or the
   CLI's contract version, so neither change edits any other test; see
   [CLI](docs/operations/cli.md#the-image-contract).
