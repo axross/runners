@@ -101,6 +101,32 @@ fn a_linux_and_macos_configuration_runs_each_pool_in_a_vm_of_its_os() {
     let finished = host.stop_and_finish(started);
     assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
     assert!(!host.log_text().contains("Skipping pool"));
+    let calls = support::tart::invocations(&host.tart_dir());
+    let launch = calls
+        .iter()
+        .find(|call| {
+            call.arguments.len() == 5
+                && call.arguments[..2] == ["exec", "-i"]
+                && call.arguments[3..]
+                    == [
+                        "/usr/local/bin/marshal-launch",
+                        "/Users/admin/actions-runner",
+                    ]
+        })
+        .expect("the macOS launcher ran");
+    assert_eq!(launch.stdin.as_deref(), Some(support::host::JIT.as_bytes()));
+    for call in &calls {
+        assert!(
+            call.arguments
+                .iter()
+                .all(|arg| !arg.contains(support::host::JIT)),
+            "{:?}",
+            call.arguments
+        );
+        assert!(!call.jit_present, "{:?}", call.arguments);
+    }
+    assert!(!host.log_text().contains(support::host::JIT));
+    assert!(!status.contains(support::host::JIT));
     let mut left = host.vm_names();
     left.sort();
     let mut goldens = vec![linux_golden, MACOS_GOLDEN.to_string()];

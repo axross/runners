@@ -17,10 +17,12 @@ use std::time::{Duration, Instant};
 
 use marshal_cli::image::check::{GoldenCheck, ImageCheck, freshness_warnings};
 use marshal_cli::image::contract::CONTRACT_VERSION;
+use marshal_cli::macos::count::ConfiguredPool;
 use marshal_cli::macos::gate::NetworkGate;
-use marshal_cli::profile::Profile;
+use marshal_cli::profile::{Os, Profile};
 use marshal_cli::runtime::backend::{
-    Backend, ContainerSpec, CpuRequest, DiagnosticRecord, HostPreparation, StopRequest,
+    Backend, ContainerSpec, CpuRequest, DiagnosticRecord, HostPreparation, HostRequest, JobHost,
+    StopRequest,
 };
 use marshal_cli::runtime::board::Board;
 use marshal_cli::runtime::clock::Clock;
@@ -1558,5 +1560,44 @@ async fn a_release_under_the_shim_stops_and_deletes_and_the_shim_ends() {
     assert!(
         rig.fake.ended_within(run, Duration::from_secs(10)),
         "tart run ends with its VM"
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_macos_slot_without_a_golden_macos_vm_fails_only_its_own_preparation() {
+    let rig = Rig::with_pools(vec![
+        ConfiguredPool {
+            name: POOL.to_string(),
+            os: Os::Macos,
+        },
+        ConfiguredPool {
+            name: "linuxpool".to_string(),
+            os: Os::Linux,
+        },
+    ]);
+    let error = failed(rig.backend.prepare_job_host(&request()).await);
+    assert!(
+        error.contains("no golden macOS VM was found; `marshal build` makes it"),
+        "{error}"
+    );
+    assert!(
+        rig.fake
+            .invocations()
+            .iter()
+            .all(|call| call.arguments[0] != "clone"),
+        "nothing is cloned for the refused slot"
+    );
+    let linux = HostRequest {
+        host: JobHost {
+            pool: "linuxpool".to_string(),
+            slot: 1,
+        },
+        ..request()
+    };
+    assert_eq!(
+        rig.backend.prepare_job_host(&linux).await,
+        HostPreparation::Ready,
+        "{:?}",
+        rig.log.lines()
     );
 }

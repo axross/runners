@@ -70,6 +70,13 @@ impl Rig {
 
     async fn run(&self) -> Result<(), String> {
         let (_stop, stop) = tokio::sync::watch::channel(None);
+        self.run_until(stop).await
+    }
+
+    async fn run_until(
+        &self,
+        stop: tokio::sync::watch::Receiver<Option<tokio::time::Instant>>,
+    ) -> Result<(), String> {
         Box::pin(
             GoldenMacosBuild {
                 client: self.fake.client.clone(),
@@ -224,6 +231,97 @@ fn a_runner_archive_that_fails_its_check_deletes_the_build_vm_and_keeps_the_old_
         !rig.calls()
             .iter()
             .any(|c| c.starts_with("exec marshal-install-launcher"))
+    );
+}
+
+#[test]
+fn a_failure_at_each_step_deletes_the_build_vm_and_keeps_both_golden_vms() {
+    for (script, step) in [
+        ("fail-pull", "pull "),
+        ("fail-clone", "clone "),
+        (
+            "fail-exec-marshal-remove-runner",
+            "exec marshal-remove-runner",
+        ),
+        (
+            "fail-exec-marshal-install-launcher",
+            "exec marshal-install-launcher",
+        ),
+        (
+            "fail-exec-marshal-disable-remote-access",
+            "exec marshal-disable-remote-access",
+        ),
+        (
+            "fail-exec-marshal-disable-updates",
+            "exec marshal-disable-updates",
+        ),
+        ("fail-rename", "rename "),
+    ] {
+        let rig = Rig::new();
+        rig.fake.script(script, "it went wrong");
+        let outcome = build(&rig).unwrap_err();
+        assert!(
+            outcome.contains("the golden macOS VM"),
+            "{script}: {outcome}"
+        );
+        assert!(
+            rig.calls().iter().any(|call| call.starts_with(step)),
+            "{script}: {:?}",
+            rig.calls()
+        );
+        let local = rig.local_vms();
+        assert!(local.contains(&old_golden()), "{script}: {local:?}");
+        assert!(
+            local.iter().any(|name| name == LINUX_GOLDEN),
+            "{script}: {local:?}"
+        );
+        assert!(
+            !local
+                .iter()
+                .any(|name| name.starts_with("marshal-build-macos-")),
+            "{script}: {local:?}"
+        );
+    }
+}
+
+#[test]
+fn a_stop_during_provisioning_deletes_the_build_vm_and_keeps_the_old_golden_vm() {
+    let rig = Rig::new();
+    rig.fake.script("hang-exec-marshal-install-launcher", "");
+    let outcome = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let (stop, receiver) = tokio::sync::watch::channel(None);
+            let stopper = async {
+                let started = std::time::Instant::now();
+                while !rig
+                    .calls()
+                    .iter()
+                    .any(|call| call.starts_with("exec marshal-install-launcher"))
+                {
+                    assert!(
+                        started.elapsed() < Duration::from_secs(10),
+                        "{:?}",
+                        rig.calls()
+                    );
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+                stop.send_replace(Some(tokio::time::Instant::now()));
+            };
+            let (outcome, ()) = tokio::join!(rig.run_until(receiver), stopper);
+            outcome
+        });
+    let error = outcome.unwrap_err();
+    assert!(error.contains("the build was stopped"), "{error}");
+    let local = rig.local_vms();
+    assert!(local.contains(&old_golden()), "{local:?}");
+    assert!(
+        !local
+            .iter()
+            .any(|name| name.starts_with("marshal-build-macos-")),
+        "{local:?}"
     );
 }
 

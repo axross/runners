@@ -15,6 +15,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use marshal_cli::macos::count::ConfiguredPool;
 use marshal_cli::macos::gate::NetworkGate;
 use marshal_cli::macos::softnet::OwnerMode;
 use marshal_cli::runtime::backend::{HostRequest, JobHost};
@@ -109,6 +110,8 @@ pub struct Setup {
     pub exporter: Option<PathBuf>,
     /// the network gate the backend waits at, open when there is none.
     pub gate: Option<NetworkGate>,
+    /// the configured pools the backend tells macOS slots by.
+    pub pools: Vec<ConfiguredPool>,
 }
 
 impl Default for Setup {
@@ -124,6 +127,7 @@ impl Default for Setup {
             tart: None,
             exporter: None,
             gate: None,
+            pools: Vec::new(),
         }
     }
 }
@@ -180,6 +184,14 @@ impl Rig {
         })
     }
 
+    /// a host whose backend is configured with these pools.
+    pub fn with_pools(pools: Vec<ConfiguredPool>) -> Self {
+        Self::build(&Setup {
+            pools,
+            ..Setup::default()
+        })
+    }
+
     /// a host whose `tart` is this program.
     pub fn with_tart_program(program: &str) -> Self {
         Self::build(&Setup {
@@ -215,7 +227,8 @@ impl Rig {
             log.clone(),
         )
         .with_softnet_owner_mode(setup.owner_mode)
-        .with_exporter(setup.exporter.clone(), None);
+        .with_exporter(setup.exporter.clone(), None)
+        .with_pools(setup.pools.clone());
         if let Some(gate) = &setup.gate {
             backend = backend.with_network_gate(gate.clone());
         }

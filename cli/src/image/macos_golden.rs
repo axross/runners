@@ -226,6 +226,28 @@ mod tests {
     }
 
     #[test]
+    fn status_strengthens_each_warning_at_its_second_threshold_inclusive() {
+        let released = release("2.337.0").unwrap().released;
+        let golden = Some("marshal-golden-macos-g1-r2.337.0-20260101000000");
+        let base = MacosBase {
+            published: released,
+            ..BASE
+        };
+        let warnings = |days| -> Vec<String> {
+            status_fields(golden, &base, day(released, days))
+                .into_iter()
+                .filter(|(field, _)| *field == "warning")
+                .map(|(_, text)| text)
+                .collect()
+        };
+        assert!(warnings(20)[0].ends_with("and a newer runner may exist"));
+        assert!(warnings(21)[0].contains("likely updates itself at start"));
+        let base_warning = |days| warnings(days).last().unwrap().clone();
+        assert!(!base_warning(59).contains("far behind"));
+        assert!(base_warning(60).contains("far behind"));
+    }
+
+    #[test]
     fn a_golden_vm_of_another_version_shows_both_versions() {
         let golden = "marshal-golden-macos-g7-r2.337.0-20260101000000";
         let shown = &lines(Some(golden), &BASE, day(BASE.published, 0))[1].1;
