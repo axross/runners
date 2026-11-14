@@ -6,7 +6,7 @@
 use crate::json::Value;
 
 use super::fields::{Errors, Field};
-use super::limits::{self, MAX_DISK_GB, MAX_MEMORY_GB, MAX_SLOTS, MAX_VM_CPUS};
+use super::limits::{self, MAX_DISK_GB, MAX_MEMORY_GB, MAX_VM_CPUS};
 use super::problem::{Key, KeyPath, Kind};
 
 pub const DEFAULT_SLOTS: u32 = 1;
@@ -16,15 +16,6 @@ pub const DEFAULT_MEMORY_GB: u32 = 8;
 pub const MIN_MEMORY_GB: u32 = 4;
 pub const DEFAULT_DISK_GB: u32 = 50;
 pub const MIN_DISK_GB: u32 = 50;
-
-/// reads `slots`: absent is [`DEFAULT_SLOTS`], and a `null` is a type error, as it
-/// is for `cpus`.
-pub(super) fn read_slots(slots: &Field, path: &KeyPath, errors: &mut Errors) -> Option<u32> {
-    let Some(value) = slots.get() else {
-        return Some(DEFAULT_SLOTS);
-    };
-    limits::read_bounded_integer(value, &path.key(Key::Slots), MAX_SLOTS, errors)
-}
 
 /// reads `cpus`: absent is [`DEFAULT_CPUS`]; a VM has whole vCPUs, as on every
 /// axmc pool, and a count below [`MIN_CPUS`] is an error.
@@ -111,7 +102,6 @@ mod tests {
 
     #[test]
     fn an_absent_field_takes_its_default() {
-        assert_eq!(read(read_slots, &Field::Absent), (Some(1), vec![]));
         assert_eq!(read(read_cpus, &Field::Absent), (Some(4.0), vec![]));
         assert_eq!(read(read_memory, &Field::Absent), (Some(8), vec![]));
         assert_eq!(read(read_disk, &Field::Absent), (Some(50), vec![]));
@@ -119,7 +109,6 @@ mod tests {
 
     #[test]
     fn a_set_field_replaces_its_default_and_each_minimum_is_inclusive() {
-        assert_eq!(read(read_slots, &field("2")), (Some(2), vec![]));
         assert_eq!(read(read_cpus, &field("2")), (Some(2.0), vec![]));
         assert_eq!(read(read_memory, &field("4")), (Some(4), vec![]));
         assert_eq!(read(read_disk, &field("50")), (Some(50), vec![]));
@@ -162,11 +151,11 @@ mod tests {
 
     #[test]
     fn a_null_or_mistyped_field_is_a_type_error_not_a_default() {
-        let (slots, errors) = read(read_slots, &Field::Null);
-        assert_eq!(slots, None);
+        let (cpus, errors) = read(read_cpus, &Field::Null);
+        assert_eq!(cpus, None);
         assert_eq!(
             errors,
-            ["repositories[2].slots: must be an integer from 1 to 16"]
+            ["repositories[2].cpus: must be an integer from 1 to 64"]
         );
         assert_eq!(read(read_disk, &field("\"50\"")).0, None);
     }

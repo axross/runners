@@ -189,7 +189,7 @@ Docker Desktop container on axpc, a **Job VM** for a pool on axmc. See
 [operations/cli.md](./operations/cli.md#runtime-seam).
 
 **Golden VM** - the Tart Ubuntu VM that `build --profile axmc` makes on the macOS
-host and every **Job VM** is cloned from. It holds Docker Engine, the launcher and
+host and every Linux **Job VM** is cloned from. It holds Docker Engine, the launcher and
 the **Runner Image**, and its name records its golden VM version, the **Image
 Contract Version**, the runner version and the build time, so they are read without
 booting it. Only `build` deletes it. See
@@ -220,8 +220,10 @@ belongs to a VM that one job uses and that is deleted afterwards, never to a hos
 and the Docker runtime on axpc mounts no socket. See
 [conventions/security.md](./conventions/security.md#the-vm-local-docker-socket).
 
-**Build VM** - the temporary VM, named `marshal-build-linux-<time>`, in which
-`build --profile axmc` makes a new **Golden VM**. It is renamed to the golden name
+**Build VM** - the temporary VM, named `marshal-build-linux-<time>` or
+`marshal-build-macos-<time>`, in which `build --profile axmc` makes a new
+**Golden VM** or **Golden macOS VM**. A macOS one counts toward the **macOS VM
+Limit** while it exists. It is renamed to the golden name
 only when complete, and a failed or interrupted build deletes it, so the previous
 Golden VM stays in place.
 

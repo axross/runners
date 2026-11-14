@@ -2414,24 +2414,24 @@ from local state the agent already keeps; it reads nothing from Docker or GitHub
 never holds a token or a JIT configuration. Every field is optional for a reader, and
 a reader ignores one it does not know.
 
-| Field                          | Holds                                                                                                                      |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
-| `agent`                        | `version`, `state`, `reason` (`code`, `message`), `since`, `build`, `restart_due`, `update`                                |
-| `agent.update`                 | While a drain for an update runs: `version`, `waiting`, `deadline`, `pid`                                                  |
-| `agent.build`                  | `started`, `outcome` (`building`, `ready`, `failed`, `cancelled`), `finished`, `message`                                   |
-| `configuration`                | `path`, `problems` (at most 100), `status`, `in_use`, `migration` and `last_apply`                                         |
-| `configuration.last_apply`     | Absent until an edit applies; else `revision`, `at`, `outcome` (`applying`, `applied`, `abandoned`, `failed`) and `reason` |
-| `configuration.status`         | What the latest read of `config.toml` found: `valid`, `invalid`, `missing` or `unreadable`                                 |
-| `configuration.in_use`         | Absent when none is in use; else `source` (`file`, `last_valid` or `json`) and `read_at`                                   |
-| `configuration.migration`      | Absent when none applies; else `state` (`migrated`, `failed`, `pending`), `at` and `reason`                                |
-| `runners_up`, `runners_wanted` | Totals over the listed pools, kept when rows are left out; 0 while `restart_due` is set                                    |
-| `repositories`                 | Each repository (`owner/name` in lower case), `has_token` and its pools                                                    |
-| `pools`                        | `name`, `repository`, `state`, `reason`, `has_token`, `runners_up`, `slots`, `runners`, `diagnostics`                      |
-| `pools[].runners`              | `slot`, `state`, `workload`, `workload_kind`, `reason`, `since`                                                            |
-| `pools[].diagnostics`          | `limit`, `written`, `in_sink`, `containers`, `findings`, `manual_recovery`                                                 |
-| `leftovers`                    | What a stop could not remove, `kind` (today `container`) and `name`                                                        |
-| `images`                       | Each image the agent tracks (the runner image, and on axmc the golden macOS VM): `name`, `lines`, `warnings`               |
-| `omitted`                      | How many `runners`, `problems`, `pools`, `repositories`, `leftovers` and `images` it left out                              |
+| Field                          | Holds                                                                                                                                                       |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent`                        | `version`, `state`, `reason` (`code`, `message`), `since`, `build`, `restart_due`, `update`                                                                 |
+| `agent.update`                 | While a drain for an update runs: `version`, `waiting`, `deadline`, `pid`                                                                                   |
+| `agent.build`                  | `started`, `outcome` (`building`, `ready`, `failed`, `cancelled`), `finished`, `message`                                                                    |
+| `configuration`                | `path`, `problems` (at most 100), `status`, `in_use`, `migration` and `last_apply`                                                                          |
+| `configuration.last_apply`     | Absent until an edit applies; else `revision`, `at`, `outcome` (`applying`, `applied`, `abandoned`, `failed`) and `reason`                                  |
+| `configuration.status`         | What the latest read of `config.toml` found: `valid`, `invalid`, `missing` or `unreadable`                                                                  |
+| `configuration.in_use`         | Absent when none is in use; else `source` (`file`, `last_valid` or `json`) and `read_at`                                                                    |
+| `configuration.migration`      | Absent when none applies; else `state` (`migrated`, `failed`, `pending`), `at` and `reason`                                                                 |
+| `runners_up`, `runners_wanted` | Totals over the listed pools, kept when rows are left out; 0 while `restart_due` is set                                                                     |
+| `repositories`                 | Each repository (`owner/name` in lower case), `has_token` and its pools                                                                                     |
+| `pools`                        | `name`, `repository`, `state`, `reason`, `has_token`, `runners_up`, `slots`, `runners`, `diagnostics`                                                       |
+| `pools[].runners`              | `slot`, `state`, `workload`, `workload_kind`, `reason`, `since`                                                                                             |
+| `pools[].diagnostics`          | `limit`, `written`, `in_sink`, `containers`, `findings`, `manual_recovery`                                                                                  |
+| `leftovers`                    | What a stop could not remove (`kind` `container`), and on axmc each counted job VM of an unconfigured pool (`kind` `vm_unconfigured_pool`), with its `name` |
+| `images`                       | Each image the agent tracks (the runner image, and on axmc the golden macOS VM): `name`, `lines`, `warnings`                                                |
+| `omitted`                      | How many `runners`, `problems`, `pools`, `repositories`, `leftovers` and `images` it left out                                                               |
 
 When the runtime core fails, the agent starts it again after 10, 30 and 60 s for the
 first, second and third failure within 10 minutes, and stops for `restart_limit` at the
@@ -2461,7 +2461,9 @@ under [macOS Status](#macos-status). `leftovers` lists every container
 name of a failed removal call, which can name more containers than the one that
 failed. They stay listed until a start prepares the pools, which removes what is
 stale, so a `start_all` that stops for a missing image or an invalid configuration
-keeps them.
+keeps them. A `vm_unconfigured_pool` entry is not a failed removal: it follows the
+latest count of macOS VMs, which `start` never deletes, and stays listed until a
+count no longer finds it.
 
 An agent may add a runner state, an image and an image warning within version 2, so
 a reader MUST treat a state word it does not know as an unknown state and show the
@@ -3163,8 +3165,8 @@ before any VM boots, with the Linux golden VM's messages: `the golden macOS VM i
 or `the golden macOS VM <name> has golden VM version <g>, but this CLI needs golden VM version <G>`,
 as image refusals: `start` ends with the Linux golden VM's `build` and `start`
 advice, and a resume or `restart` stays stopped with its `stop`, `build` and
-`start` advice. A later macOS job launch that meets the same refusal holds only its
-slot.
+`start` advice. A later macOS job launch that meets the same refusal fails only that
+slot's attempt, which backs off.
 
 ### macOS Status
 
@@ -3300,9 +3302,11 @@ answer in time.
   `skipped: <reason>`; one `slot`
   line per slot, which is `registering` (the preparation of its job host and the CPU
   probe included), `backing off`, `held: <reason>`, `running container <name>`, or,
-  for a macOS slot, `running VM <name>`;
-  and the image lines under
-  [The Image Contract](#the-image-contract), then, on axmc, a
+  for a macOS slot, `running VM <name>`, `waiting for the macOS VM limit` or
+  `waiting for VM <name> to be deleted`; on axmc, one `leftover-vm` line per
+  counted job VM of an unconfigured pool; the image lines under
+  [The Image Contract](#the-image-contract), and with a macOS pool the golden macOS
+  VM's lines under [macOS Status](#macos-status); then, on axmc, a
   `network: waiting for a network (no IPv4 default route)` line while no primary
   network is recorded, a `warning: keep-awake is not held (...)` line while the hold
   is wanted and not held, and one `warning: <message>` line per

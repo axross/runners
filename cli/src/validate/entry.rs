@@ -90,12 +90,12 @@ pub fn read_entry(
     );
     let volumes = read_volumes(&node, &path, cx);
     let macos = os == Some(Os::Macos);
-    let slots = if macos {
-        macos_pool::read_slots(&node.slots, &path, &mut cx.errors)
+    let default_slots = if macos {
+        Some(macos_pool::DEFAULT_SLOTS)
     } else {
-        let default = (profile == Profile::Axmc).then_some(AXMC_LINUX_DEFAULT_SLOTS);
-        read_slots(&node.slots, &path, default, &mut cx.errors)
+        (profile == Profile::Axmc).then_some(AXMC_LINUX_DEFAULT_SLOTS)
     };
+    let slots = read_slots(&node.slots, &path, default_slots, &mut cx.errors);
     let name = read_name(&node.name, &path, &mut cx.errors);
     let cpus = if macos {
         macos_pool::read_cpus(&node.cpus, &path, &mut cx.errors)
