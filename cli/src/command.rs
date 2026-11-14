@@ -179,7 +179,7 @@ fn run_export(matches: &ArgMatches) -> ExitCode {
     crate::diagnostics::exporter::run(&request, docker)
 }
 
-pub fn print_error(err: &mut dyn Write, error: &dyn std::fmt::Display) -> u8 {
+pub(crate) fn print_error(err: &mut dyn Write, error: &dyn std::fmt::Display) -> u8 {
     let _ = writeln!(err, "error: {error}");
     EXIT_FAILED
 }

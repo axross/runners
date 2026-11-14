@@ -45,6 +45,7 @@ argument decides its mode before Tauri starts, in the `marshal-modes` crate:
 | Arguments                                  | Mode                                                                                         |
 | ------------------------------------------ | -------------------------------------------------------------------------------------------- |
 | none, or an argument that is not one below | The app: the notification-area icon, its menu and the main window                            |
+| `--sign-in`                                | The app with its icon only, as the sign-in item starts it; a second launch shows the window  |
 | `agent running`, `agent stopped`           | The agent: the library's resident agent, started running the pools or waiting to be told to  |
 | `export` and its arguments                 | The diagnostics exporter child, which the agent starts for a diagnostic container's evidence |
 | `shim` and its arguments                   | On Unix only, the shim a diagnostic container's `docker run` goes through                    |
@@ -107,11 +108,22 @@ web view.
   (the flags `DETACHED_PROCESS`, which leaves it no console, and
   `CREATE_NEW_PROCESS_GROUP`; `CREATE_NO_WINDOW` is left out because Windows ignores
   it beside `DETACHED_PROCESS`), not through Tauri's shell plugin, so the agent outlives the app. A
-  fresh launch starts the agent running its pools, because the launch is the user's
-  own action. The restart after a dropped connection starts it stopped when the last
-  state the app heard was "stopped by you", and running otherwise. It never starts
+  fresh launch starts the agent stopped and sends it `launch` once connected, so the
+  agent starts the runners as `start_runners_on_launch` says; an agent that does not
+  list `launch` is sent `start_all`. A fresh launch that reaches an agent already
+  running sends nothing. The window starts hidden and is shown unless the app was
+  started with `--sign-in`. The restart after a dropped connection starts the agent
+  stopped when the last state the app heard was stopped by you, by a sleep, by a
+  network change or by too many resumes, and running otherwise. It never starts
   an agent from a file that is missing, that it could not read when it started, or
   that is no longer the file the app started from.
+- **Sign-in.** While `start_at_login` is on in `config.toml`'s `[lifecycle]`, the
+  agent keeps the current user's Run value `Marshal`, which starts the app with
+  `--sign-in` (see [CLI](./cli.md#the-agents-signals)). The app is not yet installed
+  or released, so this is unverified on axpc until W3's out-of-tree check. The
+  app's installer does not remove the value yet: before uninstalling, turn the
+  setting off, or delete `Marshal` under
+  `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` afterwards.
 - **A dropped connection** that is not a quit keeps the last list, marked with its
   time, under a lost-contact banner. The app starts the agent again once and then
   offers Try Again.
@@ -673,8 +685,8 @@ update with the runners stopped by you; Quit installs nothing.
 
 **Installing.** After the agent's `ending` for this app's drain, the app waits up to
 60 s for the agent's process to exit, from the process ID the drain's answer or the
-snapshot gave. It then writes the record below if `ending` said the runners were
-stopped by you, and starts `msiexec.exe /i <msi> /passive /promptrestart
+snapshot gave. It then writes the record below, saying whether `ending` said the
+runners were running, and starts `msiexec.exe /i <msi> /passive /promptrestart
 AUTOLAUNCHAPP=True LAUNCHAPPARGS="<its own arguments>"`; the plugin then ends the app.
 The installer shows Windows Installer's progress window. Starting the new app, which
 starts its agent, depends on the MSI honouring `AUTOLAUNCHAPP` and `LAUNCHAPPARGS`;
@@ -690,19 +702,23 @@ this app's drain, for the same version and process, the drain was past its last 
 and goes on, and its `ending` installs as above; otherwise the app asks again. If no
 agent answers while the process still runs, the app waits for it to exit as after
 `ending`. If it has
-exited, the agent ended unexpectedly: the app installs as above, and writes the record
-if the last state it heard was stopped by you. When nothing installs, the agent is
-started again stopped or running as `ending`, or that last state, said.
+exited, the agent ended unexpectedly: the app installs as above, and the record says
+the runners stay stopped if the last state it heard keeps them stopped, as the
+restart after a drop reads it. When nothing installs, the agent is started again
+stopped or running as `ending`, or that last state, said.
 
 **The record.** `update-stopped-by-you.json` in `%LOCALAPPDATA%\marshal\` names the
-update's version and when it was written. A launch of that version within 30 minutes
-of it starts the agent stopped; every launch removes it, so it applies once. Otherwise
-a launch starts the runners, as a fresh launch does. If W3's update record merges
-first, it replaces this one.
+update's version, when it was written, and `running`, whether the runners were
+running; a record without `running` is one written before it was added, and keeps
+them stopped. A launch of that version within 30 minutes of it starts the agent
+running when `running` is true and stopped otherwise, without consulting
+`start_runners_on_launch`, so an update never undoes a stop by you or by a signal;
+every launch removes it, so it applies once. Without a record that applies, a launch
+is fresh.
 
 **An older agent.** An app that finds a running agent older than the agent it starts,
 for example after an installer was run by hand, asks it to drain for that version and
-then starts its own agent, stopped if `ending` said the runners were stopped by you.
+then starts its own agent, stopped unless `ending` said the runners were running.
 The comparison is with the version of the `marshal-cli` library the app links, which
 the agent gives in `welcome`, not with the app's own package version, so a release
 that stamps the two differently does not replace the app's own agent again and again.

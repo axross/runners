@@ -276,7 +276,11 @@ app is built for, `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`.
   to the tree and runs only when the target is Windows with the MSVC environment;
   `serde`, `serde_json` and `tokio` for the session and the view, at versions the
   library already builds, so they add no crate; `windows-registry` 0.6 on Windows, which reads the taskbar's mode and the
-  time zone's bias without `unsafe` code. Its development-only dependencies are
+  time zone's bias without `unsafe` code; and `keepawake` 0.6 on Windows, without its
+  default features, which asks Windows not to idle-sleep while the agent's runners run
+  and which the library's policy does not admit, so the executable gives the request to
+  the agent. Its `derive_builder` macros bring a second version of the `darling`
+  crates beside the one the tree already has. Its development-only dependencies are
   Tauri's `test` feature, and on Windows `interprocess`, which a test uses to squat on
   the agent's channel. For updates (see [Updates Come Only From the Signed
   Feed](#updates-come-only-from-the-signed-feed)): `tauri-plugin-updater`, pinned to
@@ -1514,6 +1518,24 @@ containers' subnet, or a custom network) has not been researched or implemented.
 The operator procedure tells operators to run the host only on a network they
 would trust the listed repositories' workflows with. Revisit the exception when a
 blocking mechanism is verified.
+
+Marshal's agent on Windows keeps that rule when the machine moves
+([#82](https://github.com/axross/runners/issues/82)):
+
+- A change of the primary network on two checks in a row stops every runner, unless
+  the operator turns `stop_on_network_change` off, and a sleep or a wake always
+  does, so runners never carry on onto a network the operator did not choose.
+- With `resume_after_stop` on, the runners start again on their own only once the
+  primary network recorded before the stop, with its gateway's hardware address,
+  holds on two checks in a row. A record without that address, as behind a
+  full-tunnel VPN, arms no resume. After 5 automatic resumes within an hour, the next
+  signal stop arms none.
+- The app's restart of a lost agent and the start after an update keep a signal stop,
+  so neither starts the runners on another network.
+- The agent writes one value, `Marshal` under the current user's Run key, holding the
+  quoted path of the program it runs from and `--sign-in`, only while
+  `start_at_login` is on, and removes it when the setting is off. It needs no
+  administrator rights, and the value names no token, network or address.
 
 ## A Linux Job on axmc Runs in a Per-Job VM
 

@@ -138,6 +138,7 @@ pub(crate) fn key_name(key: Key) -> &'static str {
         Key::StartAtLogin => "startAtLogin",
         Key::StartRunnersOnLaunch => "startRunnersOnLaunch",
         Key::KeepAwake => "keepAwake",
+        Key::StopOnNetworkChange => "stopOnNetworkChange",
         Key::ResumeAfterStop => "resumeAfterStop",
     }
 }

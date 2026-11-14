@@ -23,7 +23,7 @@ pub const MAX_CLIENT_MESSAGE_BYTES: usize = 16 * 1024;
 pub const MAX_AGENT_MESSAGE_BYTES: usize = 64 * 1024;
 
 /// the methods `welcome` lists; `renew` keeps a `github` subscription alive.
-pub const METHODS: [&str; 13] = [
+pub const METHODS: [&str; 15] = [
     "status",
     "subscribe",
     "start_all",
@@ -37,13 +37,17 @@ pub const METHODS: [&str; 13] = [
     "config_read",
     "config_edit",
     "config_reload",
+    "launch",
+    "lifecycle_set",
 ];
 
 /// the `ending` reason of an agent that ends for an update.
 pub const ENDING_UPDATE: &str = "update";
 
 /// what `ending` adds when the agent ends for an update: the version it ends for, and
-/// whether the runners were stopped by you, which the app keeps across the update.
+/// how the runners stood, which the app keeps across the update: `runners` is
+/// [`RUNNERS_RUNNING`] or the code of the stop, such as `by_you` or `slept`, and
+/// `stopped_by_you` repeats whether that code is `by_you`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct UpdateEnding {
@@ -51,14 +55,44 @@ pub struct UpdateEnding {
     pub version: String,
     #[serde(default)]
     pub stopped_by_you: bool,
+    #[serde(default)]
+    pub runners: String,
 }
 
+/// what `runners` says when the runners were running, or would have been without an
+/// error stop, so the new app starts them.
+pub const RUNNERS_RUNNING: &str = "running";
+
 impl UpdateEnding {
+    /// the ending of runners that were running, or stopped by you.
     #[must_use]
     pub fn new(version: &str, stopped_by_you: bool) -> Self {
+        let runners = if stopped_by_you {
+            super::state::Reason::BY_YOU
+        } else {
+            RUNNERS_RUNNING
+        };
+        Self::with_runners(version, runners)
+    }
+
+    /// the ending whose runners stood as `runners` says.
+    #[must_use]
+    pub fn with_runners(version: &str, runners: &str) -> Self {
         Self {
             version: version.to_string(),
-            stopped_by_you,
+            stopped_by_you: runners == super::state::Reason::BY_YOU,
+            runners: runners.to_string(),
+        }
+    }
+
+    /// whether the runners stay stopped after the update: anything but running, or
+    /// stopped by you from an agent that does not say `runners`.
+    #[must_use]
+    pub fn keeps_stopped(&self) -> bool {
+        if self.runners.is_empty() {
+            self.stopped_by_you
+        } else {
+            self.runners != RUNNERS_RUNNING
         }
     }
 }
@@ -464,7 +498,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             String::from_utf8(line.clone()).unwrap(),
-            "{\"type\":\"ending\",\"reason\":\"update\",\"update\":{\"version\":\"1.4.0\",\"stopped_by_you\":true}}\n"
+            "{\"type\":\"ending\",\"reason\":\"update\",\"update\":{\"version\":\"1.4.0\",\"stopped_by_you\":true,\"runners\":\"by_you\"}}\n"
         );
         let read: AgentMessage = serde_json::from_slice(&line).unwrap();
         assert_eq!(

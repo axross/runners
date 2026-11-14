@@ -239,8 +239,13 @@ see the Host configuration section of the
 names each by its JSON key, and [Schema Version 1](./cli.md#schema-version-1) for
 the TOML key each JSON key becomes, such as `runners` for `slots` and `memory_gb` for
 `memoryGb`; [The Agent's Configuration](./cli.md#the-agents-configuration) says how
-the agent loads it. The rules below name the JSON keys. The rules that matter
-operationally:
+the agent loads it. Its `[lifecycle]` table sets what the agent does around sign-in,
+sleep and the network: with no table it does not register at sign-in, starts the
+runners at launch, keeps Windows from idle sleep while runners run, stops every
+runner on a sleep or a primary-network change, and does not start them again on its
+own; [The Agent's Signals](./cli.md#the-agents-signals) gives each setting, the Run
+key value, and Windows' Startup apps. The rules below name the JSON keys. The rules
+that matter operationally:
 
 - **One entry per execution pool**, each with its own `name`, `slots`,
   `labels`, and `volumes`. Every entry uses the global `imageName`. The TOML form

@@ -30,6 +30,7 @@ pub struct Lifecycle {
     pub start_at_login: Option<bool>,
     pub start_runners_on_launch: Option<bool>,
     pub keep_awake: Option<bool>,
+    pub stop_on_network_change: Option<bool>,
     pub resume_after_stop: Option<bool>,
 }
 

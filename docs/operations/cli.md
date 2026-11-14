@@ -389,11 +389,13 @@ changes:
 - **No token key.** The file holds no token and no token path, so `token_path` is an
   undefined key. A pool's token is not a configuration setting, and the token-file
   rules of the JSON profiles do not apply to TOML.
-- **`[lifecycle]`** holds four optional booleans, `start_at_login`,
-  `start_runners_on_launch`, `keep_awake`, and `resume_after_stop`. Any other key in
+- **`[lifecycle]`** holds five optional booleans, `start_at_login`,
+  `start_runners_on_launch`, `keep_awake`, `stop_on_network_change`, and
+  `resume_after_stop`. Any other key in
   it is a problem, and an absent key means "not set". The rule set checks and keeps
-  the values, and nothing acts on them yet: W3 on Windows and M4 on macOS decide
-  what "not set" means and act on the rest.
+  the values. On axpc the agent applies them with their Windows defaults;
+  [The Agent's Signals](#the-agents-signals) gives what each setting does and its
+  default. On macOS nothing acts on them until M4.
 - **Encoding and size.** A leading byte-order mark is ignored and moves no position.
   A file larger than 1 MiB (1048576 bytes) is refused before it is parsed, and a file
   that is not UTF-8 is refused before TOML sees it. The file may be exactly 1 MiB.
@@ -1933,23 +1935,25 @@ The agent is `running`, `resuming`, `stopping`, `stopped`, `building`, or
 transition is answered at once, never queued behind it. It starts `running` or
 `stopped` as the caller asks.
 
-| Method             | Answer                                                                                                                                                                    |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `status`           | The snapshot, in any state                                                                                                                                                |
-| `start_all`        | Stopped: reads the configuration again and checks the image, then answers `resuming`, or `stopped` with the reason it could not. Running: the state it is in              |
-| `stop_all`         | Running: runs the stop sequence (the same grace, budget and exit deadline of 28 s as `stop`) and answers `stopped` when it is done. Stopped: `stopped`                    |
-| `build`            | Stopped: answers `building` with the start time once the build began, and the snapshot tells the rest. Running: `refused`. A configuration that cannot be used: `refused` |
-| `quit`             | Runs the stop sequence if runners run, cancels a build, answers `quitting`, and ends the agent; the lock is free within a second of the answer                            |
-| `token_set`        | Stores the repository's token in any state                                                                                                                                |
-| `token_remove`     | Removes it in any state                                                                                                                                                   |
-| `drain_for_update` | See [The Update Drain](#the-update-drain)                                                                                                                                 |
-| `config_read`      | The file's editable values in any state; see [Editing the Configuration](#editing-the-configuration)                                                                      |
-| `config_edit`      | Running: writes and applies. Stopped: writes, for the next `start_all`. A transition: `busy`. A drain: `refused`                                                          |
-| `config_reload`    | Running: applies the file. Stopped: makes it the configuration in use. A transition: `busy`. A drain: `refused`                                                           |
+| Method             | Answer                                                                                                                                                                                      |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `status`           | The snapshot, in any state                                                                                                                                                                  |
+| `start_all`        | Stopped: reads the configuration again and checks the image, then answers `resuming`, or `stopped` with the reason it could not. Running: the state it is in                                |
+| `stop_all`         | Running: runs the stop sequence (the same grace, budget and exit deadline of 28 s as `stop`) and answers `stopped` when it is done. Stopped: `stopped`, by you when it cancels a resume     |
+| `build`            | Stopped: answers `building` with the start time once the build began, and the snapshot tells the rest. Running: `refused`. A configuration that cannot be used: `refused`                   |
+| `quit`             | Runs the stop sequence if runners run, cancels a build, answers `quitting`, and ends the agent; the lock is free within a second of the answer                                              |
+| `token_set`        | Stores the repository's token in any state                                                                                                                                                  |
+| `token_remove`     | Removes it in any state                                                                                                                                                                     |
+| `drain_for_update` | See [The Update Drain](#the-update-drain)                                                                                                                                                   |
+| `config_read`      | The file's editable values in any state; see [Editing the Configuration](#editing-the-configuration)                                                                                        |
+| `config_edit`      | Running: writes and applies. Stopped: writes, for the next `start_all`. A transition: `busy`. A drain: `refused`                                                                            |
+| `config_reload`    | Running: applies the file. Stopped: makes it the configuration in use. A transition: `busy`. A drain: `refused`                                                                             |
+| `launch`           | Stopped: as `start_all` when `start_runners_on_launch` is on in effect, or while none is; otherwise stays stopped by you with the text `not started at launch`. Running: the state it is in |
+| `lifecycle_set`    | Writes one `[lifecycle]` key through the write path and puts it in effect at once, in any state; see [The Agent's Signals](#the-agents-signals)                                             |
 
 A request that arrives while the agent is `resuming`, `stopping`, `building` or
-`quitting` and is not one of `status`, `config_read`, `token_set` and
-`token_remove`, a stop or a quit, is answered `busy`, except `drain_for_update`,
+`quitting` and is not one of `status`, `config_read`, `token_set`, `token_remove`,
+`lifecycle_set`, a stop or a quit, is answered `busy`, except `drain_for_update`,
 which is `refused` there. The
 agent is `resuming` from the moment it begins to read
 the configuration until the runners' pools are admitted, so a `start_all` or a
@@ -1977,6 +1981,9 @@ snapshot, as the reason of the `stopped` state:
 | `no_pool_started`       | No pool could start, such as every pool without a token                      |
 | `restart_limit`         | The runtime core failed too often, under the same restart policy `start` has |
 | `image_build_failed`    | A `build` failed; the build's message is in the snapshot                     |
+| `slept`                 | The computer slept or woke; see [The Agent's Signals](#the-agents-signals)   |
+| `network_changed`       | The primary network changed on two checks in a row                           |
+| `resumed_too_often`     | A signal stop after too many automatic resumes within an hour                |
 
 The answer to a `start_all` follows the configuration read and the image check; it
 is not sent first. The check is one `docker image inspect` and, when that fails, one
@@ -2075,6 +2082,99 @@ A log that cannot write or continue its file stops, and the agent goes on withou
 it. It tries to open a new file again when a line arrives, at most every 30 s, and
 writes one line in the new file that says how many lines were not written.
 
+### The Agent's Signals
+
+On axpc the agent acts on the five `[lifecycle]` settings of
+[The Agent's Configuration](#the-agents-configuration). A key that is absent, or the
+whole table, takes its Windows default, and so does every key while the agent runs on
+a `config.json` its migration could not replace; the snapshot marks such a setting
+`defaulted`. On macOS nothing acts on them until M4.
+
+| Setting                   | When on                                                                                                                    | Windows default |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| `start_at_login`          | The agent keeps the sign-in item registered, so the app starts at sign-in with `--sign-in`; off, it removes the item       | off             |
+| `start_runners_on_launch` | `launch` starts the runners; off, `launch` leaves the agent stopped by you, with the banner's "not started at launch" line | on              |
+| `keep_awake`              | Windows is kept from idle sleep while the agent is `running`, `resuming`, `building` or `stopping`                         | on              |
+| `stop_on_network_change`  | A change of the primary network stops every runner with `network_changed`                                                  | on              |
+| `resume_after_stop`       | After a sleep or network-change stop, the agent starts the runners again once it is back on the recorded network           | off             |
+
+A sleep stops every runner whatever the settings say.
+
+The agent runs a `Monitor` (`instance::lifecycle`) beside its states, the seam the
+`start` instance uses on axmc. `Agent` takes it through `Seams`, with `NoMonitor` as
+the default, and the agent itself names no operating system:
+
+- Entering `running`, `resuming`, `building` or `stopping` takes the keep-awake hold,
+  and entering `stopped` or `quitting` ends it; `maintain` runs for the agent's whole
+  life, so a refused hold is retried for as long as the hold is wanted, and in
+  `stopped` and `quitting` nothing is retried.
+- Each run calls `begin`, then waits on `watch` beside the runtime core. A sleep or a
+  network change stops every runner with the stop sequence and leaves the agent
+  stopped for `slept` or `network_changed`.
+- A signal stop during a drain ends the agent for the update, and `ending`'s `update`
+  names the signal's code in `runners`. A stop by you during the drain's last steps
+  still makes it `by_you`.
+
+`ending`'s `update.runners` is `running`, `by_you`, or a signal's code, and
+`stopped_by_you` repeats whether it is `by_you`. The app starts the runners after an
+update only from `running`, so an update never undoes a signal stop.
+
+On Windows, `agent::run` gives the agent `WindowsMonitor` (`windows_host::monitor`)
+on `WindowsSignals` (`windows_host::signals`); elsewhere it gives `NoMonitor`.
+`WindowsMonitor` reads the settings in effect, which the agent sets from each
+configuration it reads into `lifecycle_settings::Current`, at every tick, so a
+change takes effect within a second:
+
+| Signal          | What it reads                                                                                                                                                           | Gated by                                                                                       |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Sleep           | Every 1 s, `Instant` against `QueryUnbiasedInterruptTime`: the unbiased clock more than 3 s behind, or more than 30 s between samples, is a sleep                       | Nothing; a sleep always stops                                                                  |
+| Primary network | Every 5 s, `netdev`'s default interface, bounded to 2 s on a blocking thread with one reading outstanding at most; M1's `NetworkWatch` judges two differing checks      | `stop_on_network_change` stops; the network is read only while it or `resume_after_stop` is on |
+| Keep-awake      | The request the executable supplies through `AgentOptions::keep_awake`, held by one thread that lives as long as the agent; a refusal warns once and retries every 10 s | `keep_awake`; nothing is held while no setting is in effect                                    |
+
+`lifecycle_set` writes one key of `[lifecycle]` through K1's write path, so the rest
+of the file keeps its form and comments, and `null` removes only that key's line. It
+answers with the snapshot's `lifecycle` part and refuses as `config_edit` does: a file
+that changed since the agent last read or wrote it (`config_changed`, so a hand edit
+is read at the next launch or Start all first), has problems or cannot be written, a
+file written in a form the write path does not edit (`config_file_form`, such as
+`lifecycle = { … }` over several lines), and while no valid configuration was read
+(`config_unusable`); while an edit applies it is `busy`. On axmc it is `refused`; the
+settings there are M4's.
+
+The snapshot's `lifecycle` part, present while settings are in effect on axpc, holds
+each setting's `on` and `defaulted`, the sign-in item (`registered`,
+`not_registered`, `turned_off` in Windows' Startup apps, or `failed` with
+`sign_in_error`), `keep_awake` (`held`, `released`, `warning` with its text, also
+while the program supplied no request, or `off`), and after a signal stop with
+`resume_after_stop` on, `resume` (`waiting`, or `no_gateway`) with `resume_cause`,
+the stop's code. The agent keeps the sign-in item, the current user's Run key value
+`Marshal` (`MarshalTest` in a debug build), in step with `start_at_login` at each
+configuration it reads and at each
+`lifecycle_set` of that key; it holds the quoted path of the program it runs from
+and `--sign-in`, at most 260 characters.
+
+A sleep is judged before the network, so a wake on another network stops with the
+sleep's reason, `Windows slept, so every runner was stopped`. An interface is named
+by its kind and index, such as `Wi-Fi 12`, never by its alias.
+
+The resume (`instance::resume`) follows a signal stop while `resume_after_stop` is on:
+
+- At the stop, the agent arms it with the monitor's `recorded` network, the primary
+  network last read while running. A record without a gateway hardware address arms
+  nothing, and `resume` is `no_gateway`.
+- While a resume waits, the stopped agent reads the network through the monitor's
+  `next_reading`, every 5 s. Once two readings in a row match the record, with the
+  gateway's hardware address read in both, it takes `start_all`'s path: the
+  configuration is read again and the image checked.
+- `stop_all`, `quit`, `build`, `start_all`, `launch` and turning the setting off
+  cancel it. A `stop_all` that cancels one leaves the agent stopped `by_you`, and so
+  does a `stop_all` while the signal's stop is still stopping, which arms nothing.
+- The agent counts its automatic resumes over a rolling hour, in memory. A signal stop
+  after 5 of them arms nothing and stops with `resumed_too_often`, whose text begins
+  with the signal's.
+- [App](./app.md) keeps a signal stop across its restart of a lost agent and an
+  update.
+
 ### The Update Drain
 
 W4 ([#78](https://github.com/axross/runners/issues/78)) adds `drain_for_update` to
@@ -2104,7 +2204,8 @@ drain can no longer be cancelled, because its runners are already stopping.
 | When                                                     | Result                                                                                                                                                 |
 | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `drain_for_update`, while `running`                      | Drains: the answer is `{state, update}`, and `agent.update` appears                                                                                    |
-| `drain_for_update`, while `stopped`                      | Ends for the update at once; `stopped_by_you` is true when stopped by you                                                                              |
+| `drain_for_update`, while `stopped`                      | Ends for the update at once; `runners` is the stop's code when stopped by you or by a signal, and `running` after an error stop                        |
+| A signal stop, while draining                            | Stops every runner, so running jobs fail, then ends for the update; `runners` is the signal's code                                                     |
 | `drain_for_update`, in any other state or while draining | `refused`, and nothing changes                                                                                                                         |
 | `start_all` or `build`, while draining                   | `refused`, and nothing changes                                                                                                                         |
 | `stop_all`, while draining                               | Answers `quitting`, also during the drain's last steps; stops every runner, so running jobs fail, then ends for the update, stopped by you             |
@@ -2194,16 +2295,16 @@ included. The first line a client sends MUST be `hello`; anything else, includin
 connection is closed, so today's commands exit 1 against an agent and change
 nothing. [Version Rules](#version-rules) says what a later agent of version 2 may add.
 
-| Message     | Fields                                                                                                   |
-| ----------- | -------------------------------------------------------------------------------------------------------- |
-| `hello`     | `versions` (the versions the client speaks), `client` (`name`, `version`), which the agent ignores       |
-| `welcome`   | `version` (2), `agent` (`version`), `methods`, `topics`                                                  |
-| `request`   | `id` (an integer of the client's own), `method`, `params`                                                |
-| `response`  | `id`, then `result` or `error`                                                                           |
-| `error`     | `error`, for what answers no request: a failed handshake, `busy`, or a message that is not a request     |
-| `event`     | `topic` (`state` or `github`), `seq`, `value` (the snapshot, or the GitHub status)                       |
-| `heartbeat` | `seq`, the last event's                                                                                  |
-| `ending`    | `reason`: `quit`, `executable_changed` or `update`; `update` (`version`, `stopped_by_you`) for an update |
+| Message     | Fields                                                                                                              |
+| ----------- | ------------------------------------------------------------------------------------------------------------------- |
+| `hello`     | `versions` (the versions the client speaks), `client` (`name`, `version`), which the agent ignores                  |
+| `welcome`   | `version` (2), `agent` (`version`), `methods`, `topics`                                                             |
+| `request`   | `id` (an integer of the client's own), `method`, `params`                                                           |
+| `response`  | `id`, then `result` or `error`                                                                                      |
+| `error`     | `error`, for what answers no request: a failed handshake, `busy`, or a message that is not a request                |
+| `event`     | `topic` (`state` or `github`), `seq`, `value` (the snapshot, or the GitHub status)                                  |
+| `heartbeat` | `seq`, the last event's                                                                                             |
+| `ending`    | `reason`: `quit`, `executable_changed` or `update`; `update` (`version`, `stopped_by_you`, `runners`) for an update |
 
 A reader ignores a message type, a field and a topic it does not know, and calls only
 the methods `welcome` lists. The library's `Client` does so, refuses a `welcome` that is not version 2, and
@@ -2220,21 +2321,23 @@ opens two connections; a `subscribe` to another topic on a connection that holds
 is answered with `invalid_request`, and one to the same topic again changes nothing
 but, for `github`, counts as a renewal.
 
-| Method             | Params                       | Result                                                             |
-| ------------------ | ---------------------------- | ------------------------------------------------------------------ |
-| `status`           | none                         | The snapshot                                                       |
-| `subscribe`        | `topic`: `state`, `github`   | `{topic}`; the first event follows at once                         |
-| `renew`            | `topic`: `github`            | `{topic}`; keeps the connection's `github` subscription            |
-| `start_all`        | none                         | `{state}`, `resuming` while the pools are admitted                 |
-| `stop_all`         | none                         | `{state}`                                                          |
-| `build`            | none                         | `{state, started}`, `started` in milliseconds since the Unix epoch |
-| `quit`             | none                         | `{state}`                                                          |
-| `token_set`        | `repository`, `token`        | `{repository}`, the key it was stored under                        |
-| `token_remove`     | `repository`                 | `{repository}`                                                     |
-| `drain_for_update` | `version`                    | `{state, update}`; see The Update Drain                            |
-| `config_read`      | none                         | `{revision, status, settings, pools, problems, too_large}`         |
-| `config_edit`      | `revision`, `edits`, `check` | `{revision, effects, repositories_released, applies}`              |
-| `config_reload`    | `revision`, `check`          | `{revision, effects, repositories_released, applies}`              |
+| Method             | Params                                              | Result                                                             |
+| ------------------ | --------------------------------------------------- | ------------------------------------------------------------------ |
+| `status`           | none                                                | The snapshot                                                       |
+| `subscribe`        | `topic`: `state`, `github`                          | `{topic}`; the first event follows at once                         |
+| `renew`            | `topic`: `github`                                   | `{topic}`; keeps the connection's `github` subscription            |
+| `start_all`        | none                                                | `{state}`, `resuming` while the pools are admitted                 |
+| `stop_all`         | none                                                | `{state}`                                                          |
+| `build`            | none                                                | `{state, started}`, `started` in milliseconds since the Unix epoch |
+| `quit`             | none                                                | `{state}`                                                          |
+| `token_set`        | `repository`, `token`                               | `{repository}`, the key it was stored under                        |
+| `token_remove`     | `repository`                                        | `{repository}`                                                     |
+| `drain_for_update` | `version`                                           | `{state, update}`; see The Update Drain                            |
+| `config_read`      | none                                                | `{revision, status, settings, pools, problems, too_large}`         |
+| `config_edit`      | `revision`, `edits`, `check`                        | `{revision, effects, repositories_released, applies}`              |
+| `config_reload`    | `revision`, `check`                                 | `{revision, effects, repositories_released, applies}`              |
+| `launch`           | none                                                | `{state}`, with `reason` when it stays stopped                     |
+| `lifecycle_set`    | `key`, `value` (`true`, `false` or `null` to unset) | `{lifecycle}`, the snapshot's part                                 |
 
 `token_set` is the one message that carries a secret: the token travels only in its
 `token` param, from the client to the agent, and the agent never sends, logs or
@@ -3969,7 +4072,9 @@ it.
 
 Tauri links the Visual C++ runtime statically, so `marshal-app.exe` needs no Visual
 C++ redistributable on the host, and it uses the Universal C Runtime that Windows 11
-includes. The import check runs `dumpbin /dependents`, found through `vswhere` among
+includes. [`cli/.cargo/config.toml`](../../cli/.cargo/config.toml) still sets
+`+crt-static` for the library's own tests and helpers, built in `cli/`, which no
+release ships. The import check runs `dumpbin /dependents`, found through `vswhere` among
 the MSVC tools the build links with. It fails unless `dumpbin` listed the app's
 dependencies, `KERNEL32.dll` among them, so a run that read nothing cannot pass.
 
@@ -4648,8 +4753,8 @@ In PowerShell 5.1 or 7:
   uninstall first.
 - **Roll back to the command line.** Uninstall Marshal, then install the
   [last command-line release](#the-last-command-line-release) by that release's
-  procedure. Its token files are read only by the command line, so keep them until
-  the app's runners work.
+  procedure. The command line reads its token files, not Credential Manager, so it
+  needs them; the app's tokens stay in Credential Manager.
 
 Immutable releases keep a published release's tag from moving, so a version you
 install again is the file you installed before.
@@ -4774,7 +4879,9 @@ must move `cli/Cargo.lock` and `app/Cargo.lock` to the same version in one chang
 | `serde_json`, `zmij`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | The agent's protocol messages and snapshot, in JSON, with only the `std` feature; `zmij` formats its floating-point numbers                                                                                                                                                                                                                                        | MIT OR Apache-2.0 for `serde_json`, MIT for `zmij`                                          |
 | `keyring-core`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | The interface of a credential store, which the token store adapts and a platform's store implements, with default features off                                                                                                                                                                                                                                     | MIT OR Apache-2.0                                                                           |
 | `windows-native-keyring-store` and `byteorder`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | The Windows Credential Manager behind the token store, with default features off, and the byte-order helper it uses for the UTF-16 token; they build on Windows only                                                                                                                                                                                               | MIT OR Apache-2.0 for the store, Unlicense OR MIT for `byteorder`                           |
-| `winsafe`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | The current user's security identifier, with only the `advapi` feature; it builds on Windows only                                                                                                                                                                                                                                                                  | MIT                                                                                         |
+| `netdev` and `mac-addr`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | The primary network for the lifecycle settings: the default interface, its IPv4 gateway and, with the `gateway` feature only, the gateway's hardware address, which `SendARP` reads; they build on Windows only and also use `ipnet`, listed above                                                                                                                 | MIT                                                                                         |
+| `block2`, `deranged`, `dispatch2`, `dlopen2`, `netlink-packet-core`, `netlink-packet-route`, `netlink-sys`, `num-conv`, `objc2`, `objc2-core-foundation`, `objc2-encode`, `objc2-system-configuration`, `plist`, `powerfmt`, `quick-xml`, `time`, `time-core`, `time-macros`, `winapi`, `winapi-i686-pc-windows-gnu`, `winapi-x86_64-pc-windows-gnu`, `zerocopy`, and `zerocopy-derive`                                                                                                                                                                                                                            | `netdev`'s dependencies on its other targets, which the lockfile records and none of the three CI targets builds; `time-macros` and `zerocopy-derive` are procedural macros                                                                                                                                                                                        | MIT, MIT OR Apache-2.0, Zlib OR Apache-2.0 OR MIT, or BSD-2-Clause OR Apache-2.0 OR MIT     |
+| `winsafe`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | The current user's security identifier, with only the `advapi` feature, and the lifecycle settings' Run key value and unbiased interrupt time; it builds on Windows only                                                                                                                                                                                           | MIT                                                                                         |
 | `win32job`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | The Job Object that ends each job container's `docker run` client with `start`; it builds on Windows only (see [Containment](#containment))                                                                                                                                                                                                                        | MIT OR Apache-2.0                                                                           |
 | `windows`, `windows-core`, `windows-collections`, `windows-future`, `windows-numerics`, `windows-threading`, `windows-result`, `windows-strings`, and `windows-link` 0.1                                                                                                                                                                                                                                                                                                                                                                                                                                           | The Windows API bindings `win32job` uses; they build on Windows only                                                                                                                                                                                                                                                                                               | MIT OR Apache-2.0                                                                           |
 | `windows-implement`, `windows-interface`, `thiserror` 1, `thiserror-impl` 1, and `syn` 2                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | The derives of the `windows` crates and `win32job`, with the older `syn` they use; these run at build time, on Windows only                                                                                                                                                                                                                                        | MIT OR Apache-2.0                                                                           |
