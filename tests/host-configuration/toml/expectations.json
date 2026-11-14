@@ -6,7 +6,7 @@
     "contains": [
       "schema_version: 1",
       "routing_label: axmc",
-      "lifecycle: start_at_login=unset start_runners_on_launch=unset keep_awake=unset resume_after_stop=unset",
+      "lifecycle: start_at_login=unset start_runners_on_launch=unset keep_awake=unset stop_on_network_change=unset resume_after_stop=unset",
       "budget: cpus=4 memory_gb=16 disk_gb=100",
       "pool[0]: name=alpha repository=octo/hello runners=1 os=linux cpus=2 memory_gb=8 disk_gb=40 labels=[self-hosted, linux, ARM64, axmc] volumes=[] diagnostics=false diagnostic_directory=none raw_records=false token_path=none"
     ],
@@ -19,7 +19,7 @@
     "contains": [
       "schema_version: 1",
       "routing_label: axmc",
-      "lifecycle: start_at_login=unset start_runners_on_launch=unset keep_awake=true resume_after_stop=unset",
+      "lifecycle: start_at_login=unset start_runners_on_launch=unset keep_awake=true stop_on_network_change=false resume_after_stop=unset",
       "image_name: example-image:tag",
       "budget: cpus=8 memory_gb=32 disk_gb=180",
       "pool[0]: name=alpha repository=octo/hello runners=1 os=macos cpus=4 memory_gb=16 disk_gb=60 labels=[self-hosted, macOS, ARM64, axmc] volumes=[] diagnostics=false diagnostic_directory=none raw_records=false token_path=none",
@@ -34,7 +34,7 @@
     "contains": [
       "schema_version: 1",
       "routing_label: axmc",
-      "lifecycle: start_at_login=unset start_runners_on_launch=unset keep_awake=unset resume_after_stop=unset",
+      "lifecycle: start_at_login=unset start_runners_on_launch=unset keep_awake=unset stop_on_network_change=unset resume_after_stop=unset",
       "budget: cpus=4 memory_gb=16 disk_gb=100",
       "pool[0]: name=alpha repository=octo/hello runners=1 os=linux cpus=2 memory_gb=8 disk_gb=40 labels=[self-hosted, linux, ARM64, axmc] volumes=[] diagnostics=false diagnostic_directory=none raw_records=false token_path=none"
     ],
@@ -47,7 +47,7 @@
     "contains": [
       "schema_version: 1",
       "routing_label: axpc",
-      "lifecycle: start_at_login=unset start_runners_on_launch=unset keep_awake=unset resume_after_stop=unset",
+      "lifecycle: start_at_login=unset start_runners_on_launch=unset keep_awake=unset stop_on_network_change=unset resume_after_stop=unset",
       "image_name: example-image:tag",
       "pool[0]: name=alpha repository=octo/hello runners=1 os=linux cpus=2 memory_gb=8 disk_gb=none labels=[self-hosted, linux, x64, axpc] volumes=[] diagnostics=false diagnostic_directory=none raw_records=false token_path=none"
     ],
@@ -60,7 +60,7 @@
     "contains": [
       "schema_version: 1",
       "routing_label: build-hosts",
-      "lifecycle: start_at_login=true start_runners_on_launch=false keep_awake=true resume_after_stop=false",
+      "lifecycle: start_at_login=true start_runners_on_launch=false keep_awake=true stop_on_network_change=false resume_after_stop=false",
       "image_name: example-image:tag",
       "pool[0]: name=alpha repository=octo/hello runners=2 os=linux cpus=1.5 memory_gb=12 disk_gb=none labels=[self-hosted, linux, x64, build-hosts] volumes=[alpha-cache:/home/runner/.cache, alpha-tools:/opt/hostedtoolcache] diagnostics=true diagnostic_directory=C:\\diagnostics\\alpha raw_records=true token_path=none",
       "pool[1]: name=beta repository=octo/hello runners=1 os=linux cpus=2 memory_gb=8 disk_gb=none labels=[self-hosted, linux, x64, gpu] volumes=[] diagnostics=false diagnostic_directory=none raw_records=false token_path=none"
@@ -74,7 +74,7 @@
     "contains": [
       "schema_version: 1",
       "routing_label: axpc",
-      "lifecycle: start_at_login=unset start_runners_on_launch=unset keep_awake=false resume_after_stop=unset",
+      "lifecycle: start_at_login=unset start_runners_on_launch=unset keep_awake=false stop_on_network_change=unset resume_after_stop=unset",
       "image_name: example-image:tag",
       "pool[0]: name=alpha repository=octo/hello runners=1 os=linux cpus=2 memory_gb=8 disk_gb=none labels=[self-hosted, linux, x64, axpc] volumes=[] diagnostics=false diagnostic_directory=none raw_records=false token_path=none"
     ],
@@ -87,7 +87,7 @@
     "contains": [
       "schema_version: 1",
       "routing_label: axpc",
-      "lifecycle: start_at_login=unset start_runners_on_launch=unset keep_awake=unset resume_after_stop=unset",
+      "lifecycle: start_at_login=unset start_runners_on_launch=unset keep_awake=unset stop_on_network_change=unset resume_after_stop=unset",
       "image_name: example-image:tag",
       "pool[0]: name=alpha repository=octo/hello runners=1 os=linux cpus=2 memory_gb=8 disk_gb=none labels=[self-hosted, linux, x64, axpc] volumes=[] diagnostics=false diagnostic_directory=none raw_records=false token_path=none"
     ],
@@ -100,7 +100,7 @@
     "contains": [
       "schema_version: 1",
       "routing_label: axpc",
-      "lifecycle: start_at_login=unset start_runners_on_launch=unset keep_awake=unset resume_after_stop=unset",
+      "lifecycle: start_at_login=unset start_runners_on_launch=unset keep_awake=unset stop_on_network_change=unset resume_after_stop=unset",
       "image_name: example-image:tag",
       "pool[0]: name=alpha repository=octo/hello runners=2 os=linux cpus=2 memory_gb=8 disk_gb=none labels=[self-hosted, linux, x64, axpc] volumes=[] diagnostics=false diagnostic_directory=none raw_records=false token_path=none",
       "pool[1]: name=beta repository=octo/other runners=1 os=linux cpus=2 memory_gb=8 disk_gb=none labels=[self-hosted, linux, x64, axpc] volumes=[beta-cache:/cache] diagnostics=false diagnostic_directory=none raw_records=false token_path=none"
@@ -180,7 +180,8 @@
     "problems": [
       "line 6: lifecycle.start_at_login: must be a boolean",
       "line 7: lifecycle.start_runners_on_launch: must be a boolean",
-      "line 9: lifecycle.resume_after_stop: must be a boolean"
+      "line 9: lifecycle.stop_on_network_change: must be a boolean",
+      "line 10: lifecycle.resume_after_stop: must be a boolean"
     ],
     "contains": [],
     "lacks": []

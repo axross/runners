@@ -22,6 +22,8 @@ pub enum Stop {
     NoPoolStarted,
     RestartLimit,
     ImageBuildFailed,
+    /// a sleep, a network change or too many resumes stopped every runner.
+    Signal(String),
     /// a code this reader does not know, or none.
     Other(String),
 }
@@ -39,6 +41,7 @@ impl Stop {
             StopReason::NO_POOL_STARTED => Self::NoPoolStarted,
             StopReason::RESTART_LIMIT => Self::RestartLimit,
             StopReason::IMAGE_BUILD_FAILED => Self::ImageBuildFailed,
+            code if StopReason::is_signal_code(code) => Self::Signal(code.to_string()),
             other => Self::Other(other.to_string()),
         }
     }

@@ -76,9 +76,12 @@ toml_parser = { version = "1.1.5", default-features = false, features = ["std"] 
 
 # the instance lock and control channel are named pipes on Windows: interprocess
 # owns the pipe calls, winsafe reads the current user's SID, and win32job puts
-# `start` in a Job Object that kills its children when it ends.
+# `start` in a Job Object that kills its children when it ends. netdev reads the
+# primary network for the lifecycle settings; its `gateway` feature reads the
+# router's hardware address.
 [target.'cfg(windows)'.dependencies]
 interprocess = { version = "2.4.7", default-features = false, features = ["tokio"] }
+netdev = { version = "0.47.0", default-features = false, features = ["gateway"] }
 windows-native-keyring-store = { version = "1.1.0", default-features = false }
 winsafe = { version = "0.0.29", default-features = false, features = ["advapi"] }
 win32job = { version = "2.0.3", default-features = false }

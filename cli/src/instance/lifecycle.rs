@@ -15,6 +15,7 @@ use std::time::Duration;
 
 use tokio::sync::{mpsc, oneshot, watch};
 
+use crate::macos::network::{NetworkReading, PrimaryNetwork};
 use crate::macos::prerequisites::{RESUME_VERSION_BUDGET, VERSION_BUDGET};
 use crate::macos::reason::sleep_reason;
 use crate::macos::watch::NetworkChange;
@@ -254,6 +255,18 @@ pub trait Monitor {
 
     /// what the monitor reports to `status`.
     fn report(&self) -> Vec<(&'static str, String)>;
+
+    /// the primary network last recorded while running, which a resume after a signal
+    /// stop waits for; `None` from a monitor that reads no network.
+    fn recorded(&self) -> Option<PrimaryNetwork> {
+        None
+    }
+
+    /// waits one network check and reads the primary network, while a resume waits in
+    /// stopped; it never ends on a monitor that reads no network.
+    fn next_reading(&self) -> impl Future<Output = NetworkReading> {
+        std::future::pending()
+    }
 }
 
 /// the monitor of a profile that has no signals.
