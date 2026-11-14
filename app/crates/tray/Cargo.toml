@@ -11,7 +11,7 @@ marshal-view = { path = "../view" }
 # the taskbar's mode and the time zone's bias are registry values, read without unsafe
 # code through the safe wrapper.
 [target.'cfg(windows)'.dependencies]
-windows-registry = "0.6"
+windows-registry = "0.100"
 
 [lints]
 workspace = true
