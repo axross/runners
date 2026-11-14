@@ -2963,15 +2963,14 @@ macOS VM will be built from:
 | Field           | Holds                                                                                            |
 | --------------- | ------------------------------------------------------------------------------------------------ |
 | `digest`        | The base's manifest digest; the reference is `ghcr.io/cirruslabs/macos-tahoe-base@<digest>`      |
-| `macos_version` | The macOS version the base ships, or none while it is not recorded                               |
+| `macos_version` | The macOS version the base ships, which the host must be at or above                             |
 | `published`     | The day the base was published, from the manifest's `org.cirruslabs.tart.upload-time` annotation |
 | `retired`       | The digests of earlier pins, the only bases a build removes from Tart's cache; empty so far      |
 
 The registry tags only `latest`, so the digest is the only fixed reference, and a
-base bump records the digest, the version, and the date together. The macOS
-version is not recorded yet: `BASE_MACOS_VERSION` is a placeholder until the first
-Mac check supplies it, and a test pins the placeholder so that recording the
-version updates the test too.
+base bump records the digest, the version, and the date together. The pinned
+base ships macOS 26.6.2 (25G83), as the first Mac check on
+[#80](https://github.com/axross/runners/issues/80) read inside a clone of it.
 
 `base_age_warnings` returns the base's age warnings as of a given time, from the
 whole days since `published`. Under 30 days there is none, from 30 days the first

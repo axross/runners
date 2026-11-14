@@ -19,8 +19,8 @@ const SECOND_WARNING_DAYS: u64 = 60;
 pub struct MacosBase {
     /// the manifest digest, as `sha256:<64 lowercase hexadecimal digits>`.
     pub digest: &'static str,
-    /// the macOS version the base ships, when it is known.
-    pub macos_version: Option<&'static str>,
+    /// the macOS version the base ships, which the host must be at or above.
+    pub macos_version: &'static str,
     /// the day the base was published, as `YYYY-MM-DD`, read as 00:00 UTC.
     pub published: &'static str,
     /// the digests of earlier pins, the only bases a build removes from Tart's cache.
@@ -35,15 +35,11 @@ impl MacosBase {
     }
 }
 
-// TODO(#80): the first Mac check records the base's macOS version here, and the
-// test that pins this placeholder is updated with it.
-const BASE_MACOS_VERSION: Option<&str> = None;
-
 /// the base the CLI pins; a base bump records its digest, macOS version and
 /// publication date together and adds the old digest to `retired`.
 pub const MACOS_BASE: MacosBase = MacosBase {
     digest: "sha256:4aaa751fa7538902d73c767f27a066fc87e83f183069da4e4b5022863abd4c77",
-    macos_version: BASE_MACOS_VERSION,
+    macos_version: "26.6.2",
     published: "2026-10-15",
     retired: &[],
 };
@@ -104,16 +100,8 @@ mod tests {
             "ghcr.io/cirruslabs/macos-tahoe-base@sha256:4aaa751fa7538902d73c767f27a066fc87e83f183069da4e4b5022863abd4c77"
         );
         assert_eq!(MACOS_BASE.published, "2026-10-15");
+        assert_eq!(MACOS_BASE.macos_version, "26.6.2");
         assert!(MACOS_BASE.retired.is_empty());
-    }
-
-    #[test]
-    fn the_base_macos_version_is_still_the_placeholder() {
-        assert_eq!(
-            MACOS_BASE.macos_version, None,
-            "the first Mac check on #80 recorded the base's macOS version: set BASE_MACOS_VERSION \
-             and update this test to pin it"
-        );
     }
 
     #[test]
