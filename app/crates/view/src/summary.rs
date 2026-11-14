@@ -4,6 +4,7 @@
 use serde::Serialize;
 
 use crate::github;
+use crate::host::HostWords;
 use crate::state::{Context, Resident, Stop};
 use crate::text::{capitalised, counted, plain};
 
@@ -42,18 +43,18 @@ fn with_count(word: &str, up: u32, wanted: u32) -> String {
     }
 }
 
-fn stop_phrase(stop: &Stop) -> String {
+fn stop_phrase(stop: &Stop, words: &HostWords) -> String {
     match stop {
         Stop::ByYou => "stopped by you".into(),
         Stop::NoConfiguration => "stopped, there is no configuration".into(),
         Stop::InvalidConfiguration => "stopped, the configuration is not valid".into(),
-        Stop::ImageUnusable => "stopped, the runner image cannot run jobs".into(),
+        Stop::ImageUnusable => format!("stopped, the {} cannot run jobs", words.image),
         Stop::NoPoolStarted => "stopped, no pool could start".into(),
         Stop::RestartLimit => format!(
             "stopped, the runtime core failed {} times",
             crate::text::RESTART_FAILURES
         ),
-        Stop::ImageBuildFailed => "stopped, the image build failed".into(),
+        Stop::ImageBuildFailed => format!("stopped, the {} build failed", words.image_short),
         Stop::Signal(_) | Stop::Other(_) => "runners stopped".into(),
     }
 }
@@ -86,18 +87,23 @@ fn phrase(context: &Context<'_>) -> String {
         Resident::Running if context.restart_due.is_some() => {
             "restarting after a failure".to_string()
         }
-        Resident::Running if context.waiting_for_docker() => "waiting for Docker".to_string(),
+        Resident::Running if context.waiting_for_docker() => {
+            format!("waiting for {}", context.input.words.engine)
+        }
         Resident::Running => count_phrase(settled, wanted),
         Resident::Resuming => with_count("starting", settled, wanted),
         Resident::Stopping => with_count("stopping", up, wanted),
         Resident::Quitting => with_count("quitting", up, wanted),
-        Resident::Building { stopping: false } => "building the runner image".to_string(),
+        Resident::Building { stopping: false } => {
+            format!("building the {}", context.input.words.image)
+        }
         Resident::Building { stopping: true } => "stopping the build".to_string(),
-        Resident::Stopped(stop) => stop_phrase(stop),
+        Resident::Stopped(stop) => stop_phrase(stop, &context.input.words),
         Resident::StartingMarshal => "starting".to_string(),
         Resident::NoAgent => "agent not reachable".to_string(),
         Resident::NotAnswering => "the agent is not answering".to_string(),
         Resident::LockHeld => "another Marshal is running".to_string(),
+        Resident::OutsideApplications => "not in Applications".to_string(),
         Resident::LostContact { .. } => "lost contact with the agent".to_string(),
         Resident::Unknown(_) => "the agent is in a state this version does not know".to_string(),
     }
@@ -149,7 +155,9 @@ fn since_line(context: &Context<'_>) -> String {
         }
         Resident::Stopping => since("Stopping"),
         Resident::Quitting => since("Quitting"),
-        Resident::Building { stopping: false } => since("Building the runner image"),
+        Resident::Building { stopping: false } => {
+            since(&format!("Building the {}", context.input.words.image))
+        }
         Resident::Building { stopping: true } => since("Stopping the build"),
         Resident::Stopped(Stop::ByYou) => since("Stopped by you"),
         Resident::Stopped(_) => since("Stopped"),
@@ -163,7 +171,8 @@ fn since_line(context: &Context<'_>) -> String {
         Resident::StartingMarshal
         | Resident::NoAgent
         | Resident::NotAnswering
-        | Resident::LockHeld => String::new(),
+        | Resident::LockHeld
+        | Resident::OutsideApplications => String::new(),
     }
 }
 

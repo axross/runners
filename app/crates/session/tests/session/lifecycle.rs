@@ -6,7 +6,8 @@ use marshal_cli::agent::Launch;
 use marshal_session::{Ended, Failure, RETRY_EVERY};
 
 use crate::support::{
-    Agent, Answer, Called, World, fixture, patched, secs, start, start_fresh, what,
+    Agent, Answer, Called, World, fixture, patched, secs, start, start_fresh,
+    start_outside_applications, what,
 };
 
 #[tokio::test(start_paused = true)]
@@ -659,4 +660,44 @@ async fn a_failure_to_reach_the_agent_that_is_not_a_missing_one_is_no_agent_and_
         "an agent that may exist is not started over"
     );
     assert_eq!(session.world.dials(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_copy_outside_applications_reaches_and_starts_no_agent_and_quits_alone() {
+    let (_agent, connected) = Agent::new();
+    let world = World::default();
+    world.then(Answer::Agent(connected));
+    let session = start_outside_applications(world);
+    session.wait(secs(30)).await;
+    assert_eq!(
+        session.world.dials(),
+        0,
+        "it does not even look for an agent"
+    );
+    assert!(session.world.started().is_empty());
+    let view = session.screen.view();
+    assert_eq!(what(&view), "Move Marshal to Applications");
+    let action = view.full().unwrap().action.clone().unwrap();
+    assert_eq!(action.action, marshal_view::Action::Quit);
+    assert!(action.confirmation.is_none(), "its Quit asks nothing");
+    let available: Vec<_> = view
+        .menu
+        .items
+        .iter()
+        .filter(|item| item.available)
+        .map(|item| item.action.clone())
+        .collect();
+    assert_eq!(
+        available,
+        [
+            marshal_view::Action::OpenMarshal,
+            marshal_view::Action::Quit
+        ]
+    );
+    assert!(
+        view.menu.items.len() > available.len(),
+        "W1's items stay in place"
+    );
+    session.handle.quit();
+    assert_eq!(session.ended().await, Ended::AppOnly);
 }

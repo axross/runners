@@ -1,6 +1,6 @@
 //! running the agent: the resident loop on its seams, and the entry that wires the
-//! Docker backend, GitHub, the token store, the lock, the channel and the log, with
-//! the Job Object that ends the agent's children with it.
+//! profile's backend (Docker on axpc, Tart on axmc), GitHub, the token store, the
+//! lock, the channel and the log, with what ends the agent's children with it.
 
 use std::ffi::{OsStr, OsString};
 use std::io::Write;
@@ -18,16 +18,23 @@ use crate::instance::lifecycle::{Monitor, NoMonitor, StopTimes};
 use crate::instance::lock::{InstanceLock, LockError};
 use crate::instance::roots::Roots;
 use crate::lifecycle_settings::Current;
+use crate::macos::gate::NetworkGate;
+use crate::macos::monitor::{Cadence, SignalMonitor};
+use crate::macos::signals::Signals;
 use crate::profile::Profile;
 use crate::runtime::backend::Backend;
 use crate::runtime::clock::{Clock, SystemClock};
-use crate::runtime::docker::{DockerBackend, DockerConfig, resolve_program};
+use crate::runtime::docker::{DockerBackend, DockerConfig, JobLauncher, resolve_program};
 use crate::runtime::log::Log;
 use crate::runtime::registration::{GitHubRegistrar, HttpLimits, Registrar};
-use crate::start::{ANSWERS_WITHIN, contain, hide_panic_messages, single_threaded_runtime};
+use crate::runtime::tart::client::program_from_environment;
+use crate::runtime::tart::{TartBackend, TartClient, TartConfig, TartTimings};
+use crate::start::{
+    ANSWERS_WITHIN, contain, hide_panic_messages, single_threaded_runtime, vm_launcher,
+};
 use crate::token_store::TokenStore;
 
-use super::builder::{DockerImageBuilder, ImageBuilder};
+use super::builder::{DockerImageBuilder, GoldenImageBuilder, ImageBuilder};
 use super::channel::AgentChannel;
 use super::executable::{CHECK_EVERY, Executable};
 use super::log::AgentLog;
@@ -252,8 +259,8 @@ pub fn applied_overrides(options: &AgentOptions<'_>) -> Applied {
     applied
 }
 
-/// the platform's token store: the Credential Manager on Windows, and none elsewhere
-/// until a store is added behind the interface.
+/// the platform's token store: the Credential Manager on Windows, the login keychain
+/// on macOS, and none elsewhere.
 fn platform_store(log: &dyn Log) -> Option<Arc<dyn TokenStore>> {
     #[cfg(windows)]
     {
@@ -265,7 +272,20 @@ fn platform_store(log: &dyn Log) -> Option<Arc<dyn TokenStore>> {
             }
         }
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        match crate::token_store::macos::login_keychain() {
+            Ok(store) => Some(Arc::new(store)),
+            Err(error) => {
+                log.warn(&format!(
+                    "The Keychain store cannot be opened: {}",
+                    error.describe()
+                ));
+                None
+            }
+        }
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         let _ = log;
         None
@@ -318,24 +338,6 @@ pub fn run(options: AgentOptions<'_>, err: &mut dyn Write) -> u8 {
             return log_error(&*log, &format!("the async runtime cannot start: {error}"));
         }
     };
-    let program = resolve_program(options.docker);
-    let environment = applied.environment;
-    let backend = DockerBackend::new(
-        DockerConfig {
-            program: program.clone(),
-            environment: environment.clone(),
-            launcher,
-            exporter: std::env::current_exe().ok(),
-            ..DockerConfig::default()
-        },
-        SystemClock,
-        log.clone(),
-    );
-    let builder = DockerImageBuilder {
-        program,
-        environment,
-        definition: options.definition.map(Path::to_path_buf),
-    };
     let store = applied.store.or_else(|| platform_store(&*log));
     let in_effect = Current::default();
     #[cfg(windows)]
@@ -347,12 +349,21 @@ pub fn run(options: AgentOptions<'_>, err: &mut dyn Write) -> u8 {
         Some(&crate::windows_host::run_key::RunKey);
     #[cfg(not(windows))]
     let sign_in = None;
+    let profile = applied.profile;
+    let host = Host {
+        profile,
+        launcher,
+        docker: resolve_program(options.docker),
+        environment: applied.environment,
+        definition: options.definition.map(Path::to_path_buf),
+        log: log.clone(),
+    };
     let resident = Resident {
-        backend: &backend,
+        backend: &(),
         clock: &SystemClock,
         registrar: &registrar,
         reader: &reader,
-        builder: &builder,
+        builder: &(),
         monitor: &monitor,
         in_effect: &in_effect,
         sign_in,
@@ -371,7 +382,7 @@ pub fn run(options: AgentOptions<'_>, err: &mut dyn Write) -> u8 {
         executable: applied.executable,
         limits: applied.limits,
     };
-    let ended = runtime.block_on(run_resident(resident));
+    let ended = runtime.block_on(run_on_host(host, resident));
     // the runtime is not waited for: on Windows a stalled client can keep a blocking
     // task of the pipe crate alive for as long as it stays, and the exit and the lock
     // must not wait for it
@@ -379,6 +390,108 @@ pub fn run(options: AgentOptions<'_>, err: &mut dyn Write) -> u8 {
     match ended {
         Ok(ended) => finish(&*log, &ended),
         Err(error) => log_error(&*log, &error),
+    }
+}
+
+/// what the backend and the image builder of a profile are made from.
+struct Host {
+    profile: Profile,
+    launcher: JobLauncher,
+    docker: OsString,
+    environment: Vec<(OsString, OsString)>,
+    definition: Option<PathBuf>,
+    log: Rc<AgentLog>,
+}
+
+impl<'a, K, R, M> Resident<'a, (), K, R, (), M> {
+    /// this resident on `backend`, with its images built by `builder` and the power and
+    /// network signals watched by `monitor`. Its stops reserve the backend's release
+    /// budget, as `start`'s do, so a stop on Tart has the time to delete its job VMs.
+    fn on<B: Backend, D, N>(
+        self,
+        backend: &'a B,
+        builder: &'a D,
+        monitor: &'a N,
+    ) -> Resident<'a, B, K, R, D, N> {
+        Resident {
+            backend,
+            clock: self.clock,
+            registrar: self.registrar,
+            reader: self.reader,
+            builder,
+            monitor,
+            in_effect: self.in_effect,
+            sign_in: self.sign_in,
+            store: self.store,
+            log: self.log,
+            roots: self.roots,
+            lock: self.lock,
+            settings: Settings {
+                times: StopTimes::reserving(backend.release_budget()),
+                ..self.settings
+            },
+            executable: self.executable,
+            limits: self.limits,
+        }
+    }
+}
+
+/// runs `resident` on the host's profile: Docker and the embedded definition on
+/// axpc, with the monitor `resident` has, and on axmc Tart, with the golden VM as the
+/// image `Build` makes and M1's monitor of the Mac's sleep and network, which holds the
+/// Mac awake while runners run and holds new job VMs while the network changes.
+async fn run_on_host<K: Clock, R: Registrar, M: Monitor>(
+    host: Host,
+    resident: Resident<'_, (), K, R, (), M>,
+) -> Result<Ended, ChannelError> {
+    match host.profile {
+        Profile::Axpc => {
+            let backend = DockerBackend::new(
+                DockerConfig {
+                    program: host.docker.clone(),
+                    environment: host.environment.clone(),
+                    launcher: host.launcher,
+                    exporter: std::env::current_exe().ok(),
+                    ..DockerConfig::default()
+                },
+                SystemClock,
+                host.log,
+            );
+            let builder = DockerImageBuilder {
+                program: host.docker,
+                environment: host.environment,
+                definition: host.definition,
+            };
+            let monitor = resident.monitor;
+            run_resident(resident.on(&backend, &builder, monitor)).await
+        }
+        Profile::Axmc => {
+            let tart = TartConfig {
+                program: program_from_environment(),
+                ..TartConfig::default()
+            };
+            let launcher = vm_launcher(&host.launcher);
+            let gate = NetworkGate::new();
+            let log = host.log.clone();
+            let backend = TartBackend::new(
+                TartClient::new(tart.clone()),
+                launcher.clone(),
+                TartTimings::default(),
+                SystemClock,
+                host.log,
+            )
+            .with_exporter(std::env::current_exe().ok(), None)
+            .with_network_gate(gate.clone());
+            let signals = Signals::from_environment();
+            let cadence = Cadence::for_source(signals.is_scripted());
+            let monitor = SignalMonitor::new(signals, &SystemClock, &*log, gate, cadence);
+            let builder = GoldenImageBuilder {
+                tart,
+                launcher,
+                definition: host.definition,
+            };
+            run_resident(resident.on(&backend, &builder, &monitor)).await
+        }
     }
 }
 

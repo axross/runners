@@ -268,7 +268,12 @@ impl MacHost {
 
     /// the command for `marshal <args>` on this host.
     pub fn command(&self, args: &[&str]) -> Command {
-        let mut command = Command::new(BINARY);
+        self.command_of(BINARY, args)
+    }
+
+    /// `program` with `args`, in this host's environment.
+    fn command_of(&self, program: &str, args: &[&str]) -> Command {
+        let mut command = Command::new(program);
         command
             .args(args)
             .current_dir(self.root.path())
@@ -280,6 +285,21 @@ impl MacHost {
             .env("PATH", &self.path)
             .stdin(Stdio::null());
         command
+    }
+
+    /// the resident agent of the test helper on the axmc profile, with this host's
+    /// configuration in its state, a token for each of `pools` and a GitHub at `github`.
+    pub fn agent(&self, github: &str, pools: &[&str]) -> super::agent::AgentProcess {
+        fs::copy(&self.config, self.state().join("config.json")).unwrap();
+        let mut command = self.command_of(super::agent::HELPER, &["agent", "--profile", "axmc"]);
+        command
+            .arg("--root")
+            .arg(self.state())
+            .args(["--github-api", github]);
+        for pool in pools {
+            command.args(["--token", &format!("o/{pool}={TOKEN}")]);
+        }
+        super::agent::AgentProcess::from_command(command, &self.state())
     }
 
     /// runs a client, such as `status`, to its end.

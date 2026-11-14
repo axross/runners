@@ -76,8 +76,14 @@ pub fn ask_in_own_window<R: Runtime>(
     .maximizable(false)
     .always_on_top(true)
     .center()
-    .focused(true)
-    .build();
+    .focused(true);
+    // option B: the window buttons sit in the page's top band, which the page makes a
+    // drag region, and the title stays for VoiceOver and the Window menu
+    #[cfg(target_os = "macos")]
+    let built = built
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .hidden_title(true);
+    let built = built.build();
     if built.is_err() {
         // no window, so no question is waiting for an answer
         state.answer();

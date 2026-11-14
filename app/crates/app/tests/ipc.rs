@@ -139,7 +139,7 @@ fn app_asking(then: Then, log: Arc<dyn Log>) -> App<MockRuntime> {
         .manage(state)
         .plugin(opener())
         .invoke_handler(commands::handler())
-        .build(tauri::generate_context!())
+        .build(tauri::generate_context!(test = true))
         .expect("the app builds")
 }
 
@@ -354,7 +354,7 @@ fn closing_the_main_window_tells_the_page_and_hides_it_instead() {
             Arc::new(Quiet),
         ))
         .on_window_event(on_window_event)
-        .build(tauri::generate_context!())
+        .build(tauri::generate_context!(test = true))
         .expect("the app builds");
     let told = count_hidden(&app);
     let seen = Arc::new(Mutex::new(Vec::new()));
@@ -534,7 +534,7 @@ fn showing_the_main_window_opens_the_github_subscription_and_hiding_it_ends_it()
             Arc::new(Quiet),
         ))
         .invoke_handler(commands::handler())
-        .build(tauri::generate_context!())
+        .build(tauri::generate_context!(test = true))
         .expect("the app builds");
     let main = window(&app, "main");
     // the session reaches the agent first, so a subscription it took regardless of the

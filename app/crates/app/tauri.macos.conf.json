@@ -1,0 +1,28 @@
+{
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Marshal",
+        "url": "index.html",
+        "width": 880,
+        "height": 680,
+        "minWidth": 480,
+        "visible": false,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app"],
+    "icon": ["icons/icon.png", "icons/icon.icns"],
+    "resources": {
+      "../../notices/THIRD-PARTY-NOTICES-macos.txt": "THIRD-PARTY-NOTICES.txt"
+    },
+    "macOS": {
+      "minimumSystemVersion": "26.0"
+    }
+  }
+}

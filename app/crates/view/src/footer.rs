@@ -8,10 +8,9 @@ use marshal_cli::agent::snapshot::{
 use serde::Serialize;
 
 use crate::banner::built_just_before_the_stop;
+use crate::host::HostWords;
 use crate::state::Context;
 use crate::text::{MIGRATE_ON_NEXT_START, plain};
-
-const NOTE: &str = "Closing this window keeps Marshal running in the notification area.";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Footer {
@@ -47,11 +46,18 @@ fn contract_text(value: &str) -> String {
     }
 }
 
-fn image_line(index: usize, image: &ImageInfo) -> String {
+fn image_line(index: usize, image: &ImageInfo, words: &HostWords) -> String {
+    if value(&image.lines, "golden-vm-version").is_some() {
+        return golden_vm_line(image);
+    }
     let label = if index == 0 {
-        "Runner image".to_string()
+        crate::text::capitalised(words.image)
     } else {
-        format!("Image {}", plain(&image.name))
+        format!(
+            "{} {}",
+            crate::text::capitalised(words.image_short),
+            plain(&image.name)
+        )
     };
     let known = ["image", "image-contract", "image-built", "runner"];
     let Some(contract) = value(&image.lines, "image-contract") else {
@@ -71,6 +77,39 @@ fn image_line(index: usize, image: &ImageInfo) -> String {
         parts.push(other);
     }
     format!("{label}: {}", parts.join(" · "))
+}
+
+/// a golden VM that M3's entry names by its own lines, such as the golden macOS VM:
+/// "Golden macOS VM: <name> · version 3 · runner 2.330.0 · base published 2026-10-01".
+fn golden_vm_line(image: &ImageInfo) -> String {
+    let known = [
+        "name",
+        "golden-vm-version",
+        "runner-version",
+        "base-published",
+    ];
+    let mut parts = Vec::new();
+    if let Some(name) = value(&image.lines, "name") {
+        parts.push(plain(name));
+    }
+    if let Some(version) = value(&image.lines, "golden-vm-version") {
+        parts.push(format!("version {}", plain(version)));
+    }
+    if let Some(runner) = value(&image.lines, "runner-version") {
+        parts.push(format!("runner {}", plain(runner)));
+    }
+    if let Some(published) = value(&image.lines, "base-published") {
+        parts.push(format!("base published {}", plain(published)));
+    }
+    let other = rest(&image.lines, &known);
+    if !other.is_empty() {
+        parts.push(other);
+    }
+    format!(
+        "{}: {}",
+        crate::text::capitalised(&plain(&image.name)),
+        parts.join(" · ")
+    )
 }
 
 /// the lines whose names the reader does not know, as "name value".
@@ -96,28 +135,37 @@ fn version(warning: &ImageWarning) -> String {
     )
 }
 
-/// a freshness warning in the words of the boards, which name no command.
-fn warning(kind: &WarningKind, warning: &ImageWarning) -> Option<String> {
+/// a freshness warning in the words of the boards, which name no command; `image` is
+/// what the warning is about, such as "golden VM" or M3's "golden macOS VM".
+fn warning(kind: &WarningKind, warning: &ImageWarning, image: &str) -> Option<String> {
     Some(match kind {
         WarningKind::NotBuiltByMarshal => {
-            "Warning: the image was not built by Marshal, so its build age is unknown.".to_string()
+            format!("Warning: the {image} was not built by Marshal, so its build age is unknown.")
         }
         WarningKind::PackagesOld => format!(
-            "Warning: the image's operating-system packages are {} days old; build the image again.",
+            "Warning: the {image}'s operating-system packages are {} days old; build the {image} again.",
             days(warning)
         ),
         WarningKind::ImageOld => format!(
-            "Warning: the image is {} days old and should be rebuilt.",
+            "Warning: the {image} is {} days old and should be rebuilt.",
             days(warning)
         ),
         WarningKind::RunnerOld => format!(
-            "Warning: {} was released {} days ago, so each job's runner likely updates itself at start; update Marshal to get a newer runner, then build the image again.",
+            "Warning: {} was released {} days ago, so each job's runner likely updates itself at start; update Marshal to get a newer runner, then build the {image} again.",
             version(warning),
             days(warning)
         ),
         WarningKind::RunnerMayBeNewer => format!(
             "Warning: {} was released {} days ago, and a newer runner may exist.",
             version(warning),
+            days(warning)
+        ),
+        WarningKind::RunnerAgeUnknown => format!(
+            "Warning: the {image}'s {} has no known release date, so its age is unknown.",
+            version(warning)
+        ),
+        WarningKind::BaseOld => format!(
+            "Warning: the {image}'s macOS base was published {} days ago; update Marshal to get a newer base, then build the {image} again.",
             days(warning)
         ),
         _ => return None,
@@ -208,26 +256,39 @@ pub fn footer(context: &Context<'_>) -> Footer {
         .map(|snapshot| snapshot.images.as_slice())
         .unwrap_or_default();
     let image_lines = if images.is_empty() {
-        vec!["Runner image: not checked".to_string()]
+        vec![format!(
+            "{}: not checked",
+            crate::text::capitalised(context.input.words.image)
+        )]
     } else {
         images
             .iter()
             .enumerate()
-            .map(|(index, image)| image_line(index, image))
+            .map(|(index, image)| image_line(index, image, &context.input.words))
             .collect()
     };
     let mut warnings: Vec<String> = images
         .iter()
-        .flat_map(|image| image.warnings.iter())
-        .filter_map(|each| warning(&each.kind(), each))
+        .enumerate()
+        .flat_map(|(index, image)| {
+            let subject = if index == 0 {
+                context.input.words.image_short.to_string()
+            } else {
+                plain(&image.name)
+            };
+            image
+                .warnings
+                .iter()
+                .filter_map(move |each| warning(&each.kind(), each, &subject))
+        })
         .collect();
     warnings.extend(configuration_warnings(context));
     if built_just_before_the_stop(context, "cancelled") {
         warnings.push(format!(
             "The build was stopped. Check {}: a stopped build may already have replaced it.",
             context.image_name.as_deref().map_or_else(
-                || "the runner image".to_string(),
-                |name| format!("the image {name}")
+                || format!("the {}", context.input.words.image),
+                |name| format!("the {} {name}", context.input.words.image_short)
             )
         ));
     }
@@ -236,6 +297,6 @@ pub fn footer(context: &Context<'_>) -> Footer {
         image_lines,
         warnings,
         configuration: configuration_line(context),
-        note: NOTE.to_string(),
+        note: context.input.words.close_note.to_string(),
     }
 }

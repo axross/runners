@@ -199,10 +199,11 @@ W4's tool job, which signs update archives, commits one that moves with the pin 
 it lands. The
 install goes to `$RUNNER_TEMP`, uses no cache, and so compiles on every run: a cache
 would be a trust boundary for a job that builds code and runs the tool. It runs in
-the Windows job of `merge-checks.yaml`, which holds `contents: read`, reads no
-secret and publishes nothing. `tauri-cli`'s build scripts and procedural macros run
-code at build time under that job's account, which is why the job is what bounds
-them. The release build that installs the app is to follow the same rule and read
+the Windows and macOS app jobs of `merge-checks.yaml`, each of which holds
+`contents: read`, reads no secret and publishes nothing; the macOS job, which M2
+adds, signs nothing and keeps the unsigned Mac app and disk image only as a workflow
+artifact. `tauri-cli`'s build scripts and procedural macros run code at build time
+under those jobs' accounts, which is why the jobs are what bounds them. The release build that installs the app is to follow the same rule and read
 the same pin; until it exists, nothing else installs the tool. To move the pin, see
 [App](../operations/app.md#the-tauri-cli-pin); the change needs the maintainer's
 review, since it changes the supply-chain surface (see
@@ -269,7 +270,9 @@ app is built for, `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`.
   to the tree and runs only when the target is Windows with the MSVC environment;
   `serde`, `serde_json` and `tokio` for the session and the view, at versions the
   library already builds, so they add no crate; `windows-registry` 0.6 on Windows, which reads the taskbar's mode and the
-  time zone's bias without `unsafe` code; and `keepawake` 0.6 on Windows, without its
+  time zone's bias without `unsafe` code; `core-foundation` 0.10 on macOS, Core
+  Foundation's safe wrapper, which reads the time zone's offset, at the version
+  Tauri's window crate already links there, so it adds no crate; and `keepawake` 0.6 on Windows, without its
   default features, which asks Windows not to idle-sleep while the agent's runners run
   and which the library's policy does not admit, so the executable gives the request to
   the agent. Its `derive_builder` macros bring a second version of the `darling`
@@ -1102,8 +1105,32 @@ named and used.
   persistence back. Any process of the same user can read the credential, as any
   can read a token file the user owns: the Credential Manager is not a boundary
   against the user's other programs.
-- On macOS and Linux the agent has no store, so it skips every pool with "no token
-  store" rather than falling back to a file; it never reads `tokenPath`.
+- On macOS a token is a generic password in the user's login keychain, with the
+  service `app.axross.marshal` and the account `github.com/<owner>/<name>` for a
+  repository or `github.com/<org>` for an organization; its label, which Keychain
+  Access shows, is `Marshal: <owner>/<name>` or `Marshal: <org> (organisation)`. The
+  agent is its only writer and reader. It adds each item with no access object of its
+  own, so macOS trusts the adding program by its designated requirement and its
+  team's partition, `teamid:<team>`. The requirement names the identifier
+  `app.axross.marshal`, the Developer ID markers and the team, not a path or a
+  certificate, so a later release signed by the same team reads the item; changing
+  the identifier or the team breaks that trust. An ad-hoc build, such as a dry run's,
+  is matched by its own code hash and reads only the items it stored. Setting a token
+  deletes the old item and adds a new one, so the item trusts the build that stored
+  it last.
+  - Any program the same team signs under `app.axross.marshal`, including a signed
+    `marshal` command line still on the Mac, can read the items. Another program of
+    the same user can ask for one, and macOS then asks the user, naming its label:
+    the Keychain is a boundary only as far as the user answers that dialog.
+  - The agent turns the Keychain's user interaction off for its whole life, so it
+    never shows a dialog. A read or write that would need the user, such as on a
+    locked keychain, fails at once with the kind `needs_user`, and the pool is
+    skipped with that reason rather than waiting on a dialog that an unattended Mac
+    would leave unseen.
+  - macOS refuses Keychain access to code changed on disk after it started; the
+    agent's changed-executable rule already ends such an agent.
+- On Linux the agent has no store, so it skips every pool with "no token store"
+  rather than falling back to a file. On no OS does it read `tokenPath`.
 - The `token_set` request is the first message in which a secret travels, from the
   client to the agent. The token is held as a `Secret` once the request is parsed,
   is masked in the log from then on, and is never repeated: not in the
@@ -1172,14 +1199,19 @@ the app may do with that reach. [App](../operations/app.md) owns how it works.
   never as markup. A change to the policy, to the files it governs or to the element
   builder needs the maintainer's review.
 
-- **Two capabilities grant what a window may call.** The app declares its commands, so
+- **Four capabilities grant what a window may call, two of them on macOS only.** The app declares its commands, so
   each works only in a window whose capability grants it. The main window's
   capability grants `core:event:allow-listen` and `core:event:allow-unlisten` and the
   commands that read the view, start all, stop all, build, stop the build, try
   again, set a token, remove a token, hide the window and open a runner's job. The
   confirmation window's
-  grants the two commands that read its question and answer it. Neither grants
-  anything else, each is limited to its window, and a test shows that a call the
+  grants the two commands that read its question and answer it. On macOS, where the
+  unified title bar hides the windows' own (M2's option B), `macos-main-drag` grants
+  the main window `core:window:allow-start-dragging` and
+  `core:window:allow-internal-toggle-maximize`, to drag and zoom it by its header
+  band, and `macos-confirmation-drag` grants the question window, which cannot be
+  zoomed, only `core:window:allow-start-dragging`. None grants anything else, each is
+  limited to its window, and a test shows that a call the
   capability does not grant is refused. The permission files Tauri generates are
   checked in, so a change to them shows in a diff, and Tauri's `dynamic-acl` feature
   is off, so no capability can be added while the app runs. Quit has no command: it

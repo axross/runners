@@ -1,12 +1,12 @@
 use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
 
-use marshal_cli::agent::Launch;
+use marshal_cli::agent::{EXECUTABLE_CHANGED, Launch};
 use marshal_cli::instance::roots::Roots;
 use marshal_modes::{Overrides, is_sign_in};
 use marshal_session::{
-    AppLog, Library, Log, MAX_FILE_BYTES, OwnExecutable, Processes, RECORD_FILE, RecordFile, Seams,
-    Session, TimeSource, Updater, WallClock,
+    AppLog, Ended, Library, Log, MAX_FILE_BYTES, MOVED_FILE, MovedFile, OwnExecutable, Processes,
+    RECORD_FILE, RecordFile, Seams, Session, TimeSource, Updater, WallClock, may_control_agent,
 };
 use marshal_tray::{Look, SIZES, Watch, utc_offset_minutes};
 use marshal_view::{GlyphColour, IconState};
@@ -28,10 +28,27 @@ pub const HIDDEN_EVENT: &str = "marshal:hidden";
 pub fn hide_main_window<R: Runtime>(window: &Window<R>) -> tauri::Result<()> {
     let told = window.emit_to(MAIN_WINDOW, HIDDEN_EVENT, ());
     window.hide()?;
+    in_dock(window.app_handle(), false);
     if let Some(state) = window.app_handle().try_state::<AppState>() {
         state.handle.window_shown(false);
     }
     told
+}
+
+/// on macOS, makes Marshal a regular app, with a Dock icon and its menus, while its main
+/// window is open, and a menu bar app with neither once it is hidden; `LSUIElement`
+/// starts it as the latter. Nothing elsewhere.
+#[allow(unused_variables)]
+fn in_dock<R: Runtime>(app: &AppHandle<R>, shown: bool) {
+    #[cfg(target_os = "macos")]
+    {
+        let policy = if shown {
+            tauri::ActivationPolicy::Regular
+        } else {
+            tauri::ActivationPolicy::Accessory
+        };
+        let _ = app.set_activation_policy(policy);
+    }
 }
 
 /// tells the session whether the main window can be seen, which is when it holds the
@@ -69,6 +86,7 @@ pub fn on_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
 /// brings the main window forward, showing it when it is hidden.
 pub fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+        in_dock(app, true);
         let _ = window.show();
         let _ = window.unminimize();
         let _ = window.set_focus();
@@ -124,7 +142,15 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             Arc::new(Discard)
         }
     };
-    let launcher = OwnExecutable::current(Arc::clone(&log))?;
+    let executable = std::env::current_exe()?;
+    let in_place = may_control_agent(&executable);
+    if !in_place {
+        log.warn(&format!(
+            "Marshal runs from {}, outside Applications, so it starts no agent.",
+            executable.display()
+        ));
+    }
+    let launcher = OwnExecutable::at(executable, Arc::clone(&log));
     let version = env!("CARGO_PKG_VERSION");
     let time = Arc::new(WallClock::new(utc_offset_minutes));
     // every launch removes the record kept across an update; a launch of the update's
@@ -143,6 +169,10 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     }
     let fresh = taken.is_none();
     let launch = taken.unwrap_or(Launch::Stopped);
+    // the marker the last copy left if its agent ended because Marshal was moved; only a
+    // copy that may control an agent takes it, so one opened elsewhere leaves it for that copy
+    let moved = MovedFile::new(roots.config_directory().join(MOVED_FILE));
+    let after_moved = in_place && moved.take();
     let (updater, processes) = update_seams(app);
     let watch = Arc::new(Mutex::new(Watch::new()));
     let latest = Arc::new(Latest::default());
@@ -166,11 +196,20 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         launch,
         fresh,
     });
+    let session = if !in_place {
+        session.outside_applications()
+    } else if after_moved {
+        log.info("The last agent ended because Marshal was moved, renamed or replaced.");
+        session.after_moved()
+    } else {
+        session
+    };
     app.manage(AppState::new(handle, latest, Arc::clone(&log)));
     // the window starts hidden, and a start from the sign-in item leaves it so
     if is_sign_in(std::env::args_os()) {
         log.info("Marshal started at sign-in, with its icon only.");
         tell_session_shown(app);
+        in_dock(app, false);
     } else {
         show_main_window(app);
     }
@@ -187,6 +226,13 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     tauri::async_runtime::spawn(async move {
         let ended = session.run().await;
         log.info(&format!("The app ends: {ended:?}."));
+        if ended == Ended::AgentEnded(EXECUTABLE_CHANGED.to_string())
+            && let Err(why) = moved.write()
+        {
+            log.warn(&format!(
+                "The next launch cannot be told why the agent ended: {why}"
+            ));
+        }
         app.exit(0);
     });
     Ok(())

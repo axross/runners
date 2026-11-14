@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "macos-main-drag",
+  "description": "On macOS only, where option B's unified title bar hides the main window's own: dragging the window by its header band, and zooming it with a double click there",
+  "platforms": ["macOS"],
+  "windows": ["main"],
+  "permissions": [
+    "core:window:allow-start-dragging",
+    "core:window:allow-internal-toggle-maximize"
+  ]
+}

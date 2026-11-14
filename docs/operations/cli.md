@@ -1884,10 +1884,16 @@ the same process model as `start`: the agent takes the same single-instance lock
 opens the same control channel, writes a log in the same directory and, on Windows,
 runs inside the same kind of Job Object, so `start` and the agent never run on one
 machine at once, and a second agent is refused as a second `start` is. It has no
-command or flag of its own: `agent::run` is the entry that wires the container
+command or flag of its own: `agent::run` is the entry that wires the profile's
 backend, GitHub, the token store, the lock, the channel and the log, and the app's
 executable runs it in its hidden agent mode, as [App](./app.md#the-executable-and-its-modes)
-describes. The CLI's tests start it through `instance-helper agent`. Only a debug
+describes. On axpc the backend is the container backend and Build builds the
+embedded definition with Docker. On axmc it is the Tart backend, which runs the Linux
+pools in VMs as `start` does, with every job VM under the shim; a macOS pool is
+skipped with `start`'s warning, the runners use `actions-runner:local` when the
+configuration names no image, and Build runs
+[The Golden VM Build](#the-golden-vm-build) as `build --profile axmc` does. The
+CLI's tests start it through `instance-helper agent`. Only a debug
 build lets a test replace the agent's token store, channel limits, watched file, log
 size and `docker` environment; a release build ignores each
 request, as it does the roots and the GitHub address, and `tests/agent_overrides.rs`
@@ -1907,9 +1913,9 @@ shows both halves and runs again in the release profile in CI.
 | `agent::snapshot`   | The value of the `state` topic and its fit to the message limit                     |
 | `agent::log`        | The log file that is continued in a new file at 10 MiB                              |
 | `agent::executable` | The check that the file the agent started from is still the same file               |
-| `agent::builder`    | The seam the agent builds the runner image through                                  |
-| `agent::run`        | `run_resident` on its seams, and `run` with Docker, GitHub and the platform's store |
-| `token_store`       | The token store interface, the in-memory store, and the Windows Credential Manager  |
+| `agent::builder`    | The seam the agent builds the runner image through: Docker's, and the golden VM's   |
+| `agent::run`        | `run_resident` on its seams, and `run` with the profile's backend, GitHub and store |
+| `token_store`       | The token store interface, the in-memory store, the Credential Manager and Keychain |
 
 ### Agent State
 
@@ -2103,7 +2109,15 @@ the default, and the agent itself names no operating system:
 update only from `running`, so an update never undoes a signal stop.
 
 On Windows, `agent::run` gives the agent `WindowsMonitor` (`windows_host::monitor`)
-on `WindowsSignals` (`windows_host::signals`); elsewhere it gives `NoMonitor`.
+on `WindowsSignals` (`windows_host::signals`). On the axmc profile it gives M1's
+`SignalMonitor` (`macos::monitor`), the monitor `start` uses there, sharing its
+network gate with the Tart backend: until M4 it reads no setting, so the Mac is kept
+awake while the agent is `running`, `resuming`, `building` or `stopping`, a sleep or a
+change of the primary network stops every runner with `slept` or `network_changed`,
+and nothing resumes on its own. Elsewhere it gives `NoMonitor`. On every profile the
+agent's stops reserve the backend's release budget as `start`'s do, so a stop on Tart
+has the time to delete its job VMs.
+
 `WindowsMonitor` reads the settings in effect, which the agent sets from each
 configuration it reads into `lifecycle_settings::Current`, at every tick, so a
 change takes effect within a second:
@@ -2241,18 +2255,42 @@ units, which keeps it inside the Credential Manager's 2560 bytes.
   its persistence back from the store's `persistence` attribute, round-trips a token of 1280 UTF-16 units and
   a non-ASCII, non-BMP one, and sends a `token_set` through an agent whose store is
   the Credential Manager to a registration; only the Windows CI job runs it.
-- **macOS and Linux.** There is no store yet. The agent runs with none, every pool is
-  skipped with the reason "no token store", a `token_set` is refused as
-  `store_failed`, and the agent is stopped for `no_pool_started`. A Keychain store can
-  later sit behind the same interface by naming its entries, as the Windows store
-  does.
+- **macOS.** The user's login keychain, through `security-framework`, as one generic
+  password per key with the service `app.axross.marshal`. A repository's item has the
+  account `github.com/<owner>/<name>` and the label `Marshal: <owner>/<name>`, and an
+  organization's the account `github.com/<org>` and the label
+  `Marshal: <org> (organisation)`; Keychain Access shows the label. Only a
+  repository's account has a slash after `github.com/`, so the two kinds never share
+  an item. These names are a contract K3, M4, X1 and X2 build on, and change only
+  through a revision of M2's plan. The store is the file-based login keychain, the
+  default keychain that adds go to, not the data-protection keychain. Setting a token
+  deletes any item for the key and adds a new one, so the item trusts the build that
+  stored it last; if the add fails after the delete, the key has no token. Removing
+  deletes the item, and removing a key without one is not an error. The store turns
+  the Keychain's user interaction off for as long as it lives, which is the agent's
+  life, so a call that would need the user fails at once instead of showing a dialog.
+  `tests/keychain_store.rs` sets, reads, replaces and removes a real item of each
+  kind under a test-only service, checks each label with `security`, and checks that
+  removing an organization's token keeps a repository's token of the same owner.
+- **Linux.** There is no store. The agent runs with none, every pool is skipped with
+  the reason "no token store", a `token_set` is refused as `store_failed`, and the
+  agent is stopped for `no_pool_started`.
 - **Tests.** An in-memory store, which can be made to fail with each kind of error.
 
 A store failure has a kind, which says what it asks of the caller, and the platform's
 own code when it gave one. The kinds are `needs_user`, such as a locked keychain the
 user can unlock, `access_refused`, when the item refuses this program, and `other`.
 The Credential Manager's failures are all `other`, with the Windows error number in
-the code. The kind and the code appear in the `store_failed` error (see Errors), in
+the code. The Keychain's codes `errSecInteractionNotAllowed` (-25308),
+`errSecInteractionRequired` (-25315) and `errSecAuthFailed` (-25293), which a locked
+keychain returns, are `needs_user`; `errSecItemNotFound` (-25300) is no token, not a
+failure; every other code is `other`, with Apple's code. Until the Mac run shows
+which code an item another build of Marshal added returns, a `needs_user` failure's
+words name both causes, a locked login keychain or another build's item, and the
+fix: unlock the keychain in Keychain Access, or enter the token again. A refused
+delete also gives the one command the window shows,
+`security delete-generic-password -s app.axross.marshal -a github.com/<owner>/<name>`
+(`-a github.com/<org>` for an organisation's item). The kind and the code appear in the `store_failed` error (see Errors), in
 the reason of a pool skipped because the store failed (`the token store failed: ...
 (kind needs_user, code 1312)`), and in the log line of a registration that failed
 for the same reason. None of them ever holds a token.
@@ -5420,6 +5458,7 @@ must move `cli/Cargo.lock` and `app/Cargo.lock` to the same version in one chang
 | `windows-native-keyring-store` and `byteorder`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | The Windows Credential Manager behind the token store, with default features off, and the byte-order helper it uses for the UTF-16 token; they build on Windows only                                                                                                                                                                                               | MIT OR Apache-2.0 for the store, Unlicense OR MIT for `byteorder`                           |
 | `netdev` and `mac-addr`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | The primary network for the lifecycle settings: the default interface, its IPv4 gateway and, with the `gateway` feature only, the gateway's hardware address, which `SendARP` reads; they build on Windows only and also use `ipnet`, listed above                                                                                                                 | MIT                                                                                         |
 | `block2`, `deranged`, `dispatch2`, `dlopen2`, `netlink-packet-core`, `netlink-packet-route`, `netlink-sys`, `num-conv`, `objc2`, `objc2-core-foundation`, `objc2-encode`, `objc2-system-configuration`, `plist`, `powerfmt`, `quick-xml`, `time`, `time-core`, `time-macros`, `winapi`, `winapi-i686-pc-windows-gnu`, `winapi-x86_64-pc-windows-gnu`, `zerocopy`, and `zerocopy-derive`                                                                                                                                                                                                                            | `netdev`'s dependencies on its other targets, which the lockfile records and none of the three CI targets builds; `time-macros` and `zerocopy-derive` are procedural macros                                                                                                                                                                                        | MIT, MIT OR Apache-2.0, Zlib OR Apache-2.0 OR MIT, or BSD-2-Clause OR Apache-2.0 OR MIT     |
+| `security-framework` 3.7.0                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | The Mac's Keychain store, with default features off; it builds on macOS only, and reqwest's platform verifier already locks this version with `security-framework-sys`, `core-foundation`, `core-foundation-sys`, `libc` and `bitflags`, so it adds no crate. Its project is looking for a maintainer                                                              | MIT OR Apache-2.0                                                                           |
 | `winsafe`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | The current user's security identifier, with only the `advapi` feature, and the lifecycle settings' Run key value and unbiased interrupt time; it builds on Windows only                                                                                                                                                                                           | MIT                                                                                         |
 | `win32job`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | The Job Object that ends each job container's `docker run` client with `start`; it builds on Windows only (see [Containment](#containment))                                                                                                                                                                                                                        | MIT OR Apache-2.0                                                                           |
 | `windows`, `windows-core`, `windows-collections`, `windows-future`, `windows-numerics`, `windows-threading`, `windows-result`, `windows-strings`, and `windows-link` 0.1                                                                                                                                                                                                                                                                                                                                                                                                                                           | The Windows API bindings `win32job` uses; they build on Windows only                                                                                                                                                                                                                                                                                               | MIT OR Apache-2.0                                                                           |

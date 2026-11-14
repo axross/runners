@@ -33,9 +33,14 @@ pub fn confirmation(context: &Context<'_>, action: &Action) -> Option<Confirmati
         )),
         Action::StopBuild => Some(question(
             "Stop the build?",
-            "A build in progress is discarded. If it has already finished, the new image stays.",
+            &format!(
+                "A build in progress is discarded. If it has already finished, the new {} stays.",
+                context.input.words.image_short
+            ),
             "Stop",
         )),
+        // a copy outside Applications controls no agent, so its Quit ends only itself
+        Action::Quit if context.resident == Resident::OutsideApplications => None,
         Action::Quit => Some(match &context.resident {
             Resident::Running | Resident::Resuming | Resident::Stopping if jobs_run => question(
                 "Quit Marshal?",
@@ -49,7 +54,10 @@ pub fn confirmation(context: &Context<'_>, action: &Action) -> Option<Confirmati
             ),
             Resident::Building { .. } => question(
                 "Quit Marshal?",
-                "The image build is discarded, and Marshal ends.",
+                &format!(
+                    "The {} build is discarded, and Marshal ends.",
+                    context.input.words.image_short
+                ),
                 "Quit",
             ),
             Resident::Stopped(_) => question("Quit Marshal?", "Marshal and its agent end.", "Quit"),

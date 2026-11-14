@@ -266,7 +266,7 @@ fn no_token_is_in_any_view_state_whatever_text_the_agent_sends() {
     let announcements: Vec<String> = ui
         .results
         .iter()
-        .map(|(repository, result)| result.announcement(repository))
+        .map(|(repository, result)| result.announcement(repository, &marshal_view::WINDOWS))
         .collect();
     let (mut form_error, mut refused_status, mut confirming) = (false, false, false);
     let (mut rejected, mut started) = (false, Vec::new());

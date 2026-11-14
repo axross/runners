@@ -9,6 +9,7 @@ use marshal_cli::token_store::TokenKey;
 use serde::Serialize;
 
 use crate::banner::{Banner, BannerKind, Tone};
+use crate::host::WINDOWS;
 use crate::input::GithubFeed;
 use crate::state::Context;
 use crate::text::{counted, plain};
@@ -17,6 +18,11 @@ use crate::view::Attention;
 /// where the hidden-names notice sends the reader, in one string so a platform where
 /// that document does not apply changes it in one place.
 pub const HIDDEN_NAMES: &str = "Job names hidden: this repository's token has no Actions: read. Windows Runner Host says how to add it.";
+
+/// [`HIDDEN_NAMES`] with the host's document.
+fn hidden_names(context: &Context<'_>) -> String {
+    HIDDEN_NAMES.replace(WINDOWS.host_document, context.input.words.host_document)
+}
 
 pub const UNAVAILABLE: &str = "GitHub status unavailable: the running agent does not report it.";
 
@@ -281,11 +287,11 @@ pub fn notes(context: &Context<'_>, pool: &PoolInfo, token_note: bool) -> Vec<Gi
     }
     match repository.job_names.as_str() {
         "hidden" => found.push(GithubNote {
-            text: HIDDEN_NAMES.to_string(),
+            text: hidden_names(context),
             line: None,
             attention: Some(Attention {
                 key: format!("github:hidden:{name}"),
-                text: format!("Pool {name}: {HIDDEN_NAMES}"),
+                text: format!("Pool {name}: {}", hidden_names(context)),
             }),
         }),
         "unreadable" => {

@@ -91,6 +91,11 @@ win32job = { version = "2.0.3", default-features = false }
 [target.'cfg(unix)'.dependencies]
 libc = { version = "0.2.191", default-features = false }
 
+# the Mac's Keychain store. reqwest's platform verifier already locks this version,
+# so it adds no crate.
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = { version = "3.7.0", default-features = false }
+
 # the GitHub status tests run the collector on tokio's paused clock, so its
 # intervals and back-offs pass without waiting; no crate is added.
 [dev-dependencies]

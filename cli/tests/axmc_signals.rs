@@ -4,7 +4,8 @@
 //! primary network and the keep-awake hold from outside. The scripted source runs the
 //! real cadence at a fiftieth of its time, so one network check is 100 ms. The tests
 //! cover what stops the instance, how a resume starts afresh, the gate that holds back
-//! the first clone and the keep-awake hold.
+//! the first clone and the keep-awake hold, and the same signals reaching the resident
+//! agent on axmc.
 #![cfg(unix)]
 #![allow(
     clippy::unwrap_used,
@@ -258,4 +259,33 @@ fn a_sleep_while_the_instance_is_stopped_is_not_a_stop_at_the_resume() {
 
     let finished = host.stop_and_finish(started);
     assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn the_resident_agent_on_axmc_holds_the_mac_awake_and_a_wake_stops_its_runners() {
+    // the agent's axmc wiring passes M1's monitor to the machine: running holds the
+    // Mac awake, a wake stops every runner with the reason `slept`, and the stop has
+    // the time to delete the job VM, so the agent ends cleanly
+    let host = holding_host();
+    let stub = github();
+    let agent = host.agent(&stub.address, &["linuxone"]);
+    let conn = support::agent::Conn::open(&agent.roots).await;
+    conn.until_runner_runs().await;
+    host.wait_for_keep_awake("held");
+
+    host.sleep();
+    let snapshot = conn.until_state("stopped").await;
+    let reason = snapshot.agent.reason.unwrap();
+    assert_eq!(reason.code, "slept");
+    assert_eq!(reason.message, "the Mac slept, so every runner was stopped");
+    host.wait_for_keep_awake("released");
+    assert_no_job_vm(&host);
+
+    conn.ok("quit").await;
+    let (code, stderr) = agent.finish(Duration::from_secs(30)).await;
+    assert_eq!(
+        code,
+        Some(0),
+        "the stop deleted the job VM in time: {stderr}"
+    );
 }
