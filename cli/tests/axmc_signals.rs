@@ -507,8 +507,23 @@ async fn on_axmc_the_sixth_signal_stop_within_an_hour_stops_with_resumed_too_oft
 
 #[tokio::test(flavor = "current_thread")]
 async fn on_axmc_a_sleep_during_a_drain_ends_the_agent_for_the_update_and_arms_no_resume() {
-    // the Tart backend reads no job activity, so the drain waits for the runner, and
-    // the sleep ends the agent with its reason kept for the update
+    signal_during_a_drain(MacHost::sleep, "slept").await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn on_axmc_a_network_change_during_a_drain_ends_the_agent_for_the_update_and_arms_no_resume()
+{
+    signal_during_a_drain(
+        |host| host.set_network(OTHER_WIFI_NETWORK),
+        "network_changed",
+    )
+    .await;
+}
+
+/// the Tart backend reads no job activity here, so the drain waits for the runner, and
+/// the signal stop ends the agent for the update with its reason `code` kept, so the new
+/// app sends no `start_all`; the agent ends, so no resume is left armed.
+async fn signal_during_a_drain(signal: impl FnOnce(&MacHost), code: &str) {
     let host = holding_host();
     let stub = github();
     let agent = host.agent(&stub.address, &["linuxone"]);
@@ -518,15 +533,15 @@ async fn on_axmc_a_sleep_during_a_drain_ends_the_agent_for_the_update_and_arms_n
     conn.call("drain_for_update", json!({ "version": "1.4.0" }))
         .await
         .unwrap();
-    host.sleep();
+    signal(&host);
     loop {
         if let Push::Ending { reason, update, .. } = conn.push().await {
             assert_eq!(reason, UPDATE);
-            assert_eq!(update, Some(UpdateEnding::with_runners("1.4.0", "slept")));
+            assert_eq!(update, Some(UpdateEnding::with_runners("1.4.0", code)));
             break;
         }
     }
-    let (code, stderr) = agent.finish(Duration::from_secs(30)).await;
-    assert_eq!(code, Some(0), "{stderr}");
+    let (exit, stderr) = agent.finish(Duration::from_secs(30)).await;
+    assert_eq!(exit, Some(0), "{stderr}");
     assert_no_job_vm(&host);
 }
