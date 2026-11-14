@@ -1,7 +1,7 @@
 //! the banner that leads the list: what the agent is doing or why it is stopped, in
 //! the words of the boards, with the one action that resolves it.
 
-use marshal_cli::agent::machine::NOT_STARTED_AT_LAUNCH;
+use marshal_cli::agent::machine::{NOT_STARTED_AT_LAUNCH, RESUME_NO_GATEWAY, RESUME_WAITING};
 use marshal_cli::agent::snapshot::WarningKind;
 use serde::Serialize;
 
@@ -369,11 +369,11 @@ fn stopped(context: &Context<'_>, stop: &Stop) -> Banner {
                 .and_then(|snapshot| snapshot.lifecycle.as_ref())
                 .and_then(|lifecycle| lifecycle.resume.as_deref());
             let next = match resume {
-                Some("waiting") => {
+                Some(RESUME_WAITING) => {
                     "They start again on their own once the network they stopped on has \
                      settled; on another network they stay stopped until you choose Start All."
                 }
-                Some("no_gateway") => {
+                Some(RESUME_NO_GATEWAY) => {
                     "They will not start again on their own on this network. Choose Start All \
                      to run them again."
                 }
