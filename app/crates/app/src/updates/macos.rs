@@ -17,7 +17,7 @@ use marshal_session::{Later, Process, Processes};
 use super::EXIT_POLL;
 
 /// the bundle this executable runs from, `<bundle>/Contents/MacOS/<executable>`.
-fn bundle() -> Result<PathBuf, String> {
+pub(super) fn bundle() -> Result<PathBuf, String> {
     let executable = std::env::current_exe()
         .map_err(|error| format!("the app's own file cannot be found: {error}"))?;
     executable
@@ -28,11 +28,10 @@ fn bundle() -> Result<PathBuf, String> {
         .ok_or_else(|| format!("{} is not inside an app bundle", executable.display()))
 }
 
-/// `Ok` when this user can exchange the bundle: an entry can be made in its folder, and
+/// `Ok` when this user can exchange `bundle`: an entry can be made in its folder, and
 /// the bundle belongs to the user who made it. Otherwise the updater would ask for an
 /// administrator's password.
-pub(super) fn replaceable() -> Result<(), String> {
-    let bundle = bundle()?;
+pub(super) fn replaceable(bundle: &Path) -> Result<(), String> {
     let folder = bundle
         .parent()
         .ok_or_else(|| format!("{} has no folder", bundle.display()))?;
@@ -42,7 +41,7 @@ pub(super) fn replaceable() -> Result<(), String> {
     let mine = made
         .map_err(|error| format!("{} cannot be changed: {error}", folder.display()))?
         .uid();
-    let owner = fs::metadata(&bundle)
+    let owner = fs::metadata(bundle)
         .map_err(|error| format!("{} cannot be read: {error}", bundle.display()))?
         .uid();
     if owner != mine {
@@ -54,18 +53,26 @@ pub(super) fn replaceable() -> Result<(), String> {
     Ok(())
 }
 
-/// waits in `/bin/sh` for the process `$1` to exit, then opens the bundle `$2`.
+/// waits in `/bin/sh` for the process `$1` to exit, then runs `$2` on the bundle `$3`.
 const RELAUNCH: &str =
-    "while /bin/kill -0 \"$1\" 2>/dev/null; do /bin/sleep 0.2; done; exec /usr/bin/open \"$2\"";
+    "while /bin/kill -0 \"$1\" 2>/dev/null; do /bin/sleep 0.2; done; exec \"$2\" \"$3\"";
+
+const OPEN: &str = "/usr/bin/open";
 
 /// starts the shell that opens the new bundle, at the same path, once this process has
-/// exited; the shell is in its own process group, so the app's end does not end it.
+/// exited.
 pub(super) fn relaunch() -> Result<(), String> {
-    let bundle = bundle()?;
+    open_after_exit(Path::new(OPEN), std::process::id(), &bundle()?)
+}
+
+/// starts the shell that runs `opener` on `bundle` once the process `pid` has exited; the
+/// shell is in its own process group, so the app's end does not end it.
+fn open_after_exit(opener: &Path, pid: u32, bundle: &Path) -> Result<(), String> {
     Command::new("/bin/sh")
         .args(["-c", RELAUNCH, "sh"])
-        .arg(std::process::id().to_string())
-        .arg(&bundle)
+        .arg(pid.to_string())
+        .arg(opener)
+        .arg(bundle)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -129,13 +136,36 @@ impl Process for Watch {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::{Path, PathBuf};
     use std::process::Command;
     use std::sync::Arc;
-    use std::time::Duration;
+    use std::thread::sleep;
+    use std::time::{Duration, Instant};
 
     use marshal_session::Processes;
 
-    use super::Watched;
+    use super::{Watched, open_after_exit, replaceable};
+
+    /// a temporary folder that stands in for Applications, holding `Marshal.app`.
+    fn applications(name: &str) -> (PathBuf, PathBuf) {
+        let folder =
+            std::env::temp_dir().join(format!("marshal-updates-{}-{name}", std::process::id()));
+        let _ = fs::remove_dir_all(&folder);
+        let bundle = folder.join("Marshal.app");
+        fs::create_dir_all(bundle.join("Contents/MacOS")).unwrap();
+        (folder, bundle)
+    }
+
+    fn entries(folder: &Path) -> Vec<String> {
+        let mut names: Vec<String> = fs::read_dir(folder)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .collect();
+        names.sort();
+        names
+    }
 
     #[tokio::test]
     async fn a_watched_process_is_seen_to_exit_and_a_missing_one_is_none() {
@@ -147,5 +177,72 @@ mod tests {
         child.wait().unwrap();
         assert!(process.wait(Duration::from_secs(5)).await);
         assert!(Watched.open(child.id()).unwrap().is_none());
+    }
+
+    #[test]
+    fn a_bundle_of_this_user_in_a_writable_folder_is_replaceable_and_no_probe_is_left() {
+        let (folder, bundle) = applications("writable");
+        let result = replaceable(&bundle);
+        let left = entries(&folder);
+        fs::remove_dir_all(&folder).unwrap();
+        assert_eq!(result, Ok(()));
+        assert_eq!(left, ["Marshal.app"]);
+    }
+
+    #[test]
+    fn a_bundle_in_a_read_only_folder_is_not_replaceable_and_no_probe_is_left() {
+        let (folder, bundle) = applications("read-only");
+        fs::set_permissions(&folder, fs::Permissions::from_mode(0o555)).unwrap();
+        let result = replaceable(&bundle);
+        let left = entries(&folder);
+        fs::set_permissions(&folder, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::remove_dir_all(&folder).unwrap();
+        let why = result.unwrap_err();
+        assert!(why.contains("cannot be changed"), "{why}");
+        assert_eq!(left, ["Marshal.app"]);
+    }
+
+    #[test]
+    fn the_new_bundle_is_opened_once_and_only_after_the_old_process_exits() {
+        let (folder, bundle) = applications("relaunch");
+        let record = folder.join("opened");
+        let opener = folder.join("open");
+        fs::write(
+            &opener,
+            format!(
+                "#!/bin/sh\nprintf '%s\\n' \"$1\" >> '{}'\n",
+                record.display()
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&opener, fs::Permissions::from_mode(0o755)).unwrap();
+        let mut old = Command::new("/bin/sleep").arg("30").spawn().unwrap();
+
+        open_after_exit(&opener, old.id(), &bundle).unwrap();
+        sleep(Duration::from_secs(1));
+        let early = record.exists();
+        old.kill().unwrap();
+        old.wait().unwrap();
+        let until = Instant::now() + Duration::from_secs(5);
+        while !record.exists() && Instant::now() < until {
+            sleep(Duration::from_millis(50));
+        }
+        // long enough for a second opening to show
+        sleep(Duration::from_millis(500));
+        let opened = fs::read_to_string(&record);
+        fs::remove_dir_all(&folder).unwrap();
+
+        assert!(!early, "the bundle was opened while the old process ran");
+        assert_eq!(opened.unwrap(), format!("{}\n", bundle.display()));
+    }
+
+    #[test]
+    fn a_previous_version_that_was_not_restored_is_reported_with_its_path() {
+        let kept = PathBuf::from("/Applications/Marshal (previous version).app");
+        let why = tauri_plugin_updater::Error::PreviousAppNotRestored(kept).to_string();
+        assert!(
+            why.contains("/Applications/Marshal (previous version).app"),
+            "{why}"
+        );
     }
 }

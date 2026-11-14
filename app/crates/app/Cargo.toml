@@ -19,6 +19,11 @@ path = "../../../cli/helpers/fake_docker.rs"
 test = false
 doc = false
 
+# `rehearsal` is the Mac rehearsal's build, made by hand: a local test feed replaces the
+# committed one (see src/updates/rehearsal.rs). It is off, and no workflow enables it.
+[features]
+rehearsal = []
+
 [dependencies]
 marshal-cli = { path = "../../../cli" }
 marshal-feed = { path = "../feed" }

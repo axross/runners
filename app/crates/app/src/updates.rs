@@ -5,16 +5,22 @@
 
 #[cfg(target_os = "macos")]
 mod macos;
+#[cfg(feature = "rehearsal")]
+pub mod rehearsal;
 #[cfg(windows)]
 mod windows;
 
 use std::sync::Arc;
 use std::time::Duration;
 
-use marshal_feed::download_allowed;
+#[cfg(not(feature = "rehearsal"))]
+use marshal_feed::{committed_public_key as public_key, download_allowed};
 use marshal_session::{Later, Updater, Verified};
 use tauri::{AppHandle, Runtime};
 use tauri_plugin_updater::{Update, UpdaterExt};
+
+#[cfg(feature = "rehearsal")]
+use rehearsal::{download_allowed, public_key};
 
 #[cfg(target_os = "macos")]
 pub use macos::Watched as Processes;
@@ -40,7 +46,7 @@ pub fn plugin<R: Runtime>() -> tauri::plugin::TauriPlugin<R, tauri_plugin_update
 /// build gets the feed too; the session never checks at `0.0.0-dev`.
 #[must_use]
 pub fn feed<R: Runtime>(app: &AppHandle<R>) -> Option<Arc<dyn Updater>> {
-    let key = marshal_feed::committed_public_key().ok()?;
+    let key = public_key().ok()?;
     if key.trim().is_empty() {
         return None;
     }
@@ -67,7 +73,7 @@ impl<R: Runtime> Updater for Feed<R> {
             // on the Mac the bundle is exchanged in place, so one that cannot be is not
             // downloaded
             #[cfg(target_os = "macos")]
-            macos::replaceable()?;
+            macos::replaceable(&macos::bundle()?)?;
             // the check's timeout does not carry over to the download
             update.timeout = Some(DOWNLOAD_WITHIN);
             // `download` verifies the signature, and the version it names, before it returns

@@ -684,6 +684,44 @@ and the app starts a `/bin/sh` that opens the new bundle with `/usr/bin/open` on
 app has exited, then ends. Until the release run writes the feed's `darwin-aarch64`
 entry, a Mac check finds no entry for its platform, logs it and changes nothing.
 
+**After a failed install on the Mac.** The plugin's macOS install (`install_inner` in
+`src/updater.rs` of `tauri-plugin-updater` 2.14.1) exchanges the two bundles in one
+step with `renamex_np`'s `RENAME_SWAP`. Where the file system cannot, it moves the old
+bundle aside and moves it back if the new one does not move in. Either way a failed
+install leaves `Marshal.app` in place. Only when the move back fails too does it keep
+the old bundle as `Marshal (previous version).app` beside it, or in the home folder,
+and the app logs `The update's installer did not start: failed to install the update
+and to restore the previous app, which was left at <path>`. Move that bundle back to
+`Marshal.app` in Applications, or install from the disk image.
+
+**The rehearsal build.** The app crate's `rehearsal` feature, off by default, is for
+the Mac rehearsal only, in a build made by hand on axmc; no workflow or task enables it,
+and `app/crates/feed/tests/feed.rs` fails if one does. It takes three values when the
+build is made, and the build fails without them:
+
+- `MARSHAL_REHEARSAL_FEED`: the local test feed's address, in place of the committed
+  `latest.json` address;
+- `MARSHAL_REHEARSAL_PUBLIC_KEY`: the throwaway key, in the base64 form
+  `tauri.conf.json` holds, in place of the committed key;
+- `MARSHAL_REHEARSAL_DOWNLOAD_PREFIX`: the address every download must start with,
+  ending in `/`, in place of the rule for this repository's release files.
+
+The build also sets the updater plugin's `dangerousInsecureTransportProtocol`, so the
+feed can be served over plain HTTP, and keeps `requireSignedVersion`. For example:
+
+```bash
+MARSHAL_REHEARSAL_FEED=http://127.0.0.1:8765/latest.json \
+MARSHAL_REHEARSAL_PUBLIC_KEY="$(cat rehearsal.key.pub)" \
+MARSHAL_REHEARSAL_DOWNLOAD_PREFIX=http://127.0.0.1:8765/download/ \
+cargo build --locked --release -p marshal-app --features rehearsal
+```
+
+That builds the executable only; the rehearsal puts it in its `Marshal.app` bundles. A
+build without the feature has none of this code, so it carries the committed feed
+address, key and download rule and none of the plugin's `dangerous` options. A
+rehearsal build needs a version other than `0.0.0-dev`, since a development build
+never reads the feed.
+
 **A lost connection during the drain.** If the agent's process still runs, the app
 reaches it again without starting another. If the agent's first snapshot still shows
 this app's drain, for the same version and process, the drain was past its last steps

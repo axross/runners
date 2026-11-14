@@ -7,6 +7,8 @@
     clippy::indexing_slicing
 )]
 
+use std::path::{Path, PathBuf};
+
 use marshal_feed::{
     Refusal, Released, check_feed, download_allowed, newer, recorded_sha256, release_address,
     sha256_hex, verify,
@@ -349,5 +351,48 @@ fn no_window_is_granted_an_updater_command() {
             !granted.contains("updater"),
             "{capability} grants an updater permission: {granted}"
         );
+    }
+}
+
+fn files_under(directory: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    for entry in std::fs::read_dir(directory).expect("a folder") {
+        let path = entry.expect("an entry").path();
+        if path.is_dir() {
+            files.extend(files_under(&path));
+        } else {
+            files.push(path);
+        }
+    }
+    files
+}
+
+#[test]
+fn no_default_feature_workflow_or_task_enables_the_rehearsal_build() {
+    let manifest =
+        std::fs::read_to_string(format!("{}/../app/Cargo.toml", env!("CARGO_MANIFEST_DIR")))
+            .expect("the app crate's manifest");
+    let features: Vec<&str> = manifest
+        .split("\n[features]\n")
+        .nth(1)
+        .expect("a features table")
+        .lines()
+        .take_while(|line| !line.starts_with('['))
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .collect();
+    assert_eq!(
+        features,
+        ["rehearsal = []"],
+        "the feature is declared alone, so no default or other feature turns it on"
+    );
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let mut files = files_under(&root.join(".github"));
+    files.push(root.join("mise.toml"));
+    for file in files {
+        let text = String::from_utf8_lossy(&std::fs::read(&file).expect("the file")).into_owned();
+        for word in ["rehearsal", "all-features"] {
+            assert!(!text.contains(word), "{} names {word}", file.display());
+        }
     }
 }

@@ -198,10 +198,13 @@ pub fn run() -> ExitCode {
     // only the app mode runs this, so only it registers the updater
     #[cfg(any(windows, target_os = "macos"))]
     let built = built.plugin(crate::updates::plugin());
+    let context = tauri::generate_context!();
+    #[cfg(feature = "rehearsal")]
+    let context = crate::updates::rehearsal::configured(context);
     let built = built
         .on_window_event(on_window_event)
         .invoke_handler(commands::handler())
-        .build(tauri::generate_context!());
+        .build(context);
     match built {
         Ok(app) => {
             app.run(|_handle, event| {
