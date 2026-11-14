@@ -16,6 +16,7 @@ use tokio::time::timeout;
 use crate::instance::lifecycle::{CoreFailure, Ending, StopTimes};
 use crate::instance::runtime_core::{failure, verify_image};
 use crate::instance::steps::{Steps, some_container_steps};
+use crate::profile::Os;
 use crate::runtime::backend::{Backend, JobHost};
 use crate::runtime::board::{Board, PoolState, SlotState};
 use crate::runtime::clock::Clock;
@@ -221,6 +222,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
     ) -> Result<(), CoreFailure> {
         self.board.clear();
         self.backend.use_plan(plan);
+        forget_macos_without_a_macos_pool(self.board, plan);
         // taken before the pools are admitted, so a token set meanwhile is seen
         let changes = self.tokens.changes();
         let pools =
@@ -386,7 +388,6 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
         running: &Running<'a>,
         stop: &watch::Receiver<bool>,
     ) -> Result<(), String> {
-        self.backend.use_plan(plan);
         let pools = match pools_from_plan(plan) {
             Ok(pools) => pools,
             Err(error) => {
@@ -425,6 +426,9 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
             );
         }
         self.stop_slots(leaving, running).await;
+        // the slots that leave were stopped under the pools they ran in
+        self.backend.use_plan(plan);
+        forget_macos_without_a_macos_pool(self.board, plan);
 
         let mut fresh = Vec::new();
         for (pool, step) in steps {
@@ -739,6 +743,14 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
         if !ready.is_empty() {
             self.prepare_and_start(ready, running, stop).await;
         }
+    }
+}
+
+/// drops the board's golden macOS VM record and leftover VMs when `plan` has no
+/// macOS pool, as `start` does, so the snapshot does not keep them.
+fn forget_macos_without_a_macos_pool(board: &Board, plan: &Plan) {
+    if !plan.entries.iter().any(|entry| entry.os == Some(Os::Macos)) {
+        board.forget_macos();
     }
 }
 

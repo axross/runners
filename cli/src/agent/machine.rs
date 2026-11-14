@@ -320,9 +320,8 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
         if let Some(image) = self.board.image_record() {
             inner.image = Some(image);
         }
-        if let Some(golden) = self.board.macos_golden() {
-            inner.macos_golden = Some(golden);
-        }
+        // copied as it is, so a record the board forgot leaves the snapshot too
+        inner.macos_golden = self.board.macos_golden();
         let left = self.left.borrow();
         let path = self.config_path().display().to_string();
         let mut snapshot = View {

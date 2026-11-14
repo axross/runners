@@ -17,8 +17,8 @@ export, the toolchain and the gates that cover it, the app's workspace that buil
 the library and the gates it adds, how a release is built, signed,
 and installed, and why its name is fixed. The binary is `marshal`. axpc runs its pools
 with it, as [Windows Runner Host](./windows-runner-host.md) describes, including how
-to roll back to the previous release, and axmc runs its Linux pools with it in Tart
-VMs, as [macOS Runner Host](./macos-runner-host.md) describes.
+to roll back to the previous release, and axmc runs its Linux and macOS pools with
+it in Tart VMs, as [macOS Runner Host](./macos-runner-host.md) describes.
 
 ## Running It
 
@@ -263,13 +263,13 @@ configuration prints its summary on standard output, with lines ending in `\n`:
 
 - **Required and direct fields.** A field read as a required value reports `null`
   as `required field is missing`: `repositories`, `imageName` on axpc, and per entry
-  `owner`, `repository`, `tokenPath`, `slots`, `name`, `volumes`,
+  `owner`, `repository`, `tokenPath`, `slots` on axpc, `name`, `volumes`,
   `diagnosticDirectory`, a volume's `suffix` and `mountPath`, and on axmc `budget`,
-  its members, `os`, and `diskGb`. A field read directly reports `null` as its own
+  its members, `os`, and a Linux pool's `diskGb`. A field read directly reports `null` as its own
   type error: `cpus`, `memoryGb`, `labels`, `diagnostics`, and
   `diagnosticRawRecords`.
-  A macOS pool reads `slots`, `memoryGb`, and `diskGb` the second way too; see
-  [macOS VM Pools](#macos-vm-pools).
+  On axmc every pool reads `slots` the second way, and a macOS pool reads `diskGb`
+  the second way too; see [macOS VM Pools](#macos-vm-pools).
 - **Names.** Known fields are found case-insensitively; the unknown-field check is
   case-sensitive, so `"Owner"` gives only `Owner: unknown field`.
 - **Patterns.** A pattern matches the whole value, so a trailing newline does not
@@ -682,40 +682,44 @@ The library holds the code that runs a host's pools: the container backend, JIT
 registration, and the loop of one slot. `start` reaches it through the instance
 layer, and the tests also drive it through its seams.
 
-| Module                                                   | Holds                                                                                                        |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `affinity`                                               | The CPU offsets `validate` and the backend share, and the selection of a slot's CPUs                         |
-| `runtime::backend`                                       | The backend seam                                                                                             |
-| `runtime::select`                                        | The runtime a pool's operating system selects on its host                                                    |
-| `runtime::docker`, `runtime::docker_args`                | The container backend and the exact `docker` argument lists                                                  |
-| `runtime::tart`, `tart::args`, `tart::client`            | The `tart` client: the exact argument lists, and the bounded process wrapper                                 |
-| `runtime::tart::list`, `tart::names`                     | The reader of `tart list --format json`, and the VM names, parsers and matchers                              |
-| `runtime::tart::backend`                                 | The Tart backend: the slot cycle's host steps, the probes, the job container, and the release                |
-| `tart::golden_check`, `tart::guest`                      | The golden VM check from VM names alone, and the commands run in a booted VM through the guest agent         |
-| `tart::boot`                                             | The wait for a booted VM's guest agent and the boot failure text, shared by a job VM and the build VM        |
-| `tart::hold`, `tart::teardown`, `vm_shim`                | The holder of a VM's `tart run`, the stop-and-delete within a budget, and the VM shim                        |
-| `golden`, `golden::pins`, `golden::key`, `golden::steps` | The golden VM's pins, the check of Docker's signing key, the launcher and the guest calls that provision it  |
-| `macos::version`                                         | The tested Tart and Softnet versions, the readers of their `--version`, and the sorting                      |
-| `macos::softnet`                                         | Finding Softnet on `PATH` as Tart does, the judgment of its file, and its version read                       |
-| `macos::prerequisites`                                   | The host checks: Tart's version, then Softnet's file and version, each a pass, warning or refusal            |
-| `runtime::registration`, `token`, `scrub`, `secret`      | JIT registration, the token file, error text, and the type that hides a secret                               |
-| `runtime::clock`, `runtime::log`                         | The time source and the sink for the runtime's messages, each a seam the tests replace                       |
-| `runtime::name`                                          | Runner and container names, and the test for a pool's own                                                    |
-| `runtime::pool`                                          | Pools from a plan, and their preparation                                                                     |
-| `runtime::worker`                                        | The slot loop and its backoff                                                                                |
-| `runtime::job_marks`                                     | What a runner's output says about its job, idle, busy or unknown, which a drain reads                        |
-| `runtime::retained`                                      | The diagnostic containers the backend retains, their records, and who finalises each                         |
-| `runtime::diagnostic`                                    | Finalising diagnostic containers at job end, in the container steps, and at startup                          |
-| `diagnostics`, `diagnostics::exporter`                   | The exporter child and the lines and exit codes it answers with                                              |
-| `diagnostics::transport`                                 | The transport seam through which the exporter reads a container's evidence                                   |
-| `diagnostics::sink`, `archive`, `identity`               | The sink checks and admission, the strict archive reader, and the identity readback                          |
-| `runtime::board`                                         | Each pool's and each slot's state, which `status` reports                                                    |
-| `macos::signals`, `macos::mac`                           | The signal-source seam and its real macOS source                                                             |
-| `macos::sleep`, `macos::network`, `macos::watch`         | The sleep judgment, the `route` and `arp` readers, and the primary network's judgment                        |
-| `macos::keep_awake`, `macos::probe`, `macos::reason`     | The `caffeinate` hold, the bounded system-program call, and the stop-reason texts                            |
-| `macos::monitor`, `macos::gate`                          | The instance's signals on axmc: the watch, the keep-awake hold, and the gate that holds back the first clone |
-| `macos::fake`, `macos::scripted`                         | The in-process signal source for tests, and the one a debug build reads from a directory                     |
-| `runtime::fake`                                          | In-memory stand-ins for the seams, used by tests; a debug or test build only                                 |
+| Module                                                   | Holds                                                                                                                     |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `affinity`                                               | The CPU offsets `validate` and the backend share, and the selection of a slot's CPUs                                      |
+| `runtime::backend`                                       | The backend seam                                                                                                          |
+| `runtime::select`                                        | The runtime a pool's operating system selects on its host                                                                 |
+| `runtime::docker`, `runtime::docker_args`                | The container backend and the exact `docker` argument lists                                                               |
+| `runtime::tart`, `tart::args`, `tart::client`            | The `tart` client: the exact argument lists, and the bounded process wrapper                                              |
+| `runtime::tart::list`, `tart::names`                     | The reader of `tart list --format json`, and the VM names, parsers and matchers                                           |
+| `runtime::tart::backend`                                 | The Tart backend: the slot cycle's host steps, the probes, the job container, and the release                             |
+| `tart::golden_check`, `tart::guest`                      | The golden VM check from VM names alone, and the commands run in a booted VM through the guest agent                      |
+| `tart::boot`                                             | The wait for a booted VM's guest agent and the boot failure text, shared by a job VM and the build VM                     |
+| `tart::hold`, `tart::teardown`, `vm_shim`                | The holder of a VM's `tart run`, the stop-and-delete within a budget, and the VM shim                                     |
+| `golden`, `golden::pins`, `golden::key`, `golden::steps` | The golden VM's pins, the check of Docker's signing key, the launcher and the guest calls that provision it               |
+| `macos::version`                                         | The tested Tart and Softnet versions, the readers of their `--version`, and the sorting                                   |
+| `macos::softnet`                                         | Finding Softnet on `PATH` as Tart does, the judgment of its file, and its version read                                    |
+| `macos::prerequisites`                                   | The host checks: Tart's version, then Softnet's file and version, each a pass, warning or refusal                         |
+| `runtime::tart::macos`                                   | What the Tart backend does differently for a macOS pool: the clone source, the VM-limit refusal, and the probe's judgment |
+| `macos::count`, `macos::place`                           | The count of macOS VMs against the limit of two, and the lock under which a slot takes the last place                     |
+| `macos::name`                                            | The names of the golden macOS VM and a macOS build VM                                                                     |
+| `golden::macos`                                          | The guest calls that provision the golden macOS VM, and the launcher and probe calls of a macOS job VM                    |
+| `runtime::registration`, `token`, `scrub`, `secret`      | JIT registration, the token file, error text, and the type that hides a secret                                            |
+| `runtime::clock`, `runtime::log`                         | The time source and the sink for the runtime's messages, each a seam the tests replace                                    |
+| `runtime::name`                                          | Runner and container names, and the test for a pool's own                                                                 |
+| `runtime::pool`                                          | Pools from a plan, and their preparation                                                                                  |
+| `runtime::worker`                                        | The slot loop and its backoff                                                                                             |
+| `runtime::job_marks`                                     | What a runner's output says about its job, idle, busy or unknown, which a drain reads                                     |
+| `runtime::retained`                                      | The diagnostic containers the backend retains, their records, and who finalises each                                      |
+| `runtime::diagnostic`                                    | Finalising diagnostic containers at job end, in the container steps, and at startup                                       |
+| `diagnostics`, `diagnostics::exporter`                   | The exporter child and the lines and exit codes it answers with                                                           |
+| `diagnostics::transport`                                 | The transport seam through which the exporter reads a container's evidence                                                |
+| `diagnostics::sink`, `archive`, `identity`               | The sink checks and admission, the strict archive reader, and the identity readback                                       |
+| `runtime::board`                                         | Each pool's and each slot's state, which `status` reports                                                                 |
+| `macos::signals`, `macos::mac`                           | The signal-source seam and its real macOS source                                                                          |
+| `macos::sleep`, `macos::network`, `macos::watch`         | The sleep judgment, the `route` and `arp` readers, and the primary network's judgment                                     |
+| `macos::keep_awake`, `macos::probe`, `macos::reason`     | The `caffeinate` hold, the bounded system-program call, and the stop-reason texts                                         |
+| `macos::monitor`, `macos::gate`                          | The instance's signals on axmc: the watch, the keep-awake hold, and the gate that holds back the first clone              |
+| `macos::fake`, `macos::scripted`                         | The in-process signal source for tests, and the one a debug build reads from a directory                                  |
+| `runtime::fake`                                          | In-memory stand-ins for the seams, used by tests; a debug or test build only                                              |
 
 ### Backend
 
@@ -2671,14 +2675,15 @@ the launcher, and the labels under [Backend](#backend), and what they need from 
 image. The image declares the contract it was built for, and the CLI checks it
 before any pool runs and before each job.
 
-| Module              | Holds                                                                                    |
-| ------------------- | ---------------------------------------------------------------------------------------- |
-| `image::contract`   | The label names, and this CLI's contract version, read from the embedded Dockerfile      |
-| `image::definition` | The image definition embedded in the binary, and the debug-only test definition          |
-| `image::archive`    | The build context: a ustar archive of the definition, written by the CLI itself          |
-| `image::check`      | The image check's format and outcomes, the refusal, the freshness warnings, and `status` |
-| `image::runner`     | The runner record: each declared runner version's release date and osx-arm64 SHA-256     |
-| `image::macos_base` | The macOS base record and its age warnings                                               |
+| Module                | Holds                                                                                    |
+| --------------------- | ---------------------------------------------------------------------------------------- |
+| `image::contract`     | The label names, and this CLI's contract version, read from the embedded Dockerfile      |
+| `image::definition`   | The image definition embedded in the binary, and the debug-only test definition          |
+| `image::archive`      | The build context: a ustar archive of the definition, written by the CLI itself          |
+| `image::check`        | The image check's format and outcomes, the refusal, the freshness warnings, and `status` |
+| `image::runner`       | The runner record: each declared runner version's release date and osx-arm64 SHA-256     |
+| `image::macos_base`   | The macOS base record and its age warnings                                               |
+| `image::macos_golden` | What `status` and the snapshot say about the golden macOS VM, and its age warnings       |
 
 ### Labels
 
@@ -3204,15 +3209,16 @@ talk to it. axpc runs its pools with `start` and builds its image with `build`, 
 VMs, and `build` there makes the golden VM, as [macOS Runner Host](./macos-runner-host.md)
 describes.
 
-| Module                   | Holds                                                                                                                |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| `start`                  | `start`: the lock, validation, the log file, containment, the channel, the instance, and its signals                 |
-| `build`, `build::golden` | `build`: the lock, validation, the channel, its states, and its `docker` steps and their aborts; the golden VM build |
-| `control`                | The clients `stop`, `restart`, `status`, and `diagnostics`                                                           |
-| `shim`                   | The Unix shim between `start` and one job container's `docker run` client                                            |
-| `diagnostics`            | The exporter child, listed under The Runtime Layer                                                                   |
-| `instance::runtime_core` | The runtime core, listed under The Instance Layer                                                                    |
-| `instance::log_file`     | The log, listed under The Instance Layer                                                                             |
+| Module                                   | Holds                                                                                                                                       |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `start`                                  | `start`: the lock, validation, the log file, containment, the channel, the instance, and its signals                                        |
+| `build`, `build::golden`                 | `build`: the lock, validation, the channel, its states, and its `docker` steps and their aborts; the golden VM build                        |
+| `build::golden_macos`, `build::build_vm` | The golden macOS VM build, and the life of a build VM of either OS: boot, guest calls under the stop signal, shutdown, commit, and deletion |
+| `control`                                | The clients `stop`, `restart`, `status`, and `diagnostics`                                                                                  |
+| `shim`                                   | The Unix shim between `start` and one job container's `docker run` client                                                                   |
+| `diagnostics`                            | The exporter child, listed under The Runtime Layer                                                                                          |
+| `instance::runtime_core`                 | The runtime core, listed under The Instance Layer                                                                                           |
+| `instance::log_file`                     | The log, listed under The Instance Layer                                                                                                    |
 
 ### Start
 

@@ -54,11 +54,11 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   recovery, health checks, rebuilding and updating, recovery, and rolling back to
   the previous `marshal` release.
 - [operations/macos-runner-host.md](./operations/macos-runner-host.md) -
-  running Linux runners in Tart VMs on the Mac, the axmc host, with the CLI: installing
+  running Linux and macOS runners in Tart VMs on the Mac, the axmc host, with the CLI: installing
   Tart and Softnet at the tested versions, setting up Softnet's SUID bit, the
   signed-in session, the golden VM contract, building the golden VM, running the
-  host, sleep, wake and network changes, removing the VMs of a pool no longer
-  configured, and the verification status.
+  host, sleep, wake and network changes, the golden macOS VM and macOS pools,
+  removing the VMs of a pool no longer configured, and the verification status.
 - [operations/cli.md](./operations/cli.md) - the CLI under `cli/`: what `validate`
   accepts and prints for the axpc and axmc host profiles, the validation rules and
   the shared fixtures, the TOML configuration format (schema version 1, its
@@ -73,7 +73,9 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   runner image with `build`, running a host with `start`, `stop`, `restart`,
   `status`, and `diagnostics` (the log, containment, the stop sequence, and the
   diagnostic containers and VMs and their export), the axmc host's prerequisites,
-  its VM shim, golden VM provisioning, and the golden VM build, the toolchain and Rust
+  its VM shim, golden VM provisioning, and the golden VM build, macOS VM pools (their
+  defaults, the runner and base records, the VM names, the two-VM count, the golden
+  macOS VM build, the macOS job VM, and macOS status), the toolchain and Rust
   gates, the app's workspace and what the library gives it, the release build and
   its dry run, signing the macOS files, installing from the MSI or the pkg, the
   optional check of a download, migrating, updating, uninstalling, and rolling back
