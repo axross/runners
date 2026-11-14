@@ -1,6 +1,7 @@
 //! the connection to the agent through the `marshal-cli` library's client: its handshake,
 //! its subscription and its calls, read into the session's own types.
 
+use marshal_cli::agent::config::Problem;
 use marshal_cli::agent::wire::ClientInfo;
 use marshal_cli::agent::{CallError, Client, ConnectError, Push, connect};
 use marshal_cli::instance::roots::Roots;
@@ -85,7 +86,7 @@ pub fn failure(error: CallError) -> Failure {
             },
             code if code.starts_with("config_") => Failure::Config {
                 code: code.to_string(),
-                message: body.message,
+                message: with_problems(&body.message, &body.problems),
             },
             _ => Failure::Refused(body.message),
         },
@@ -95,6 +96,24 @@ pub fn failure(error: CallError) -> Failure {
         CallError::TooLong => Failure::Other("the request is longer than the agent reads".into()),
         other => Failure::Other(other.to_string()),
     }
+}
+
+/// a config_invalid's words with its problems after them, worded as the snapshot
+/// words them (line N: path: message) and joined as the footer joins them.
+fn with_problems(message: &str, problems: &[Problem]) -> String {
+    if problems.is_empty() {
+        return message.to_string();
+    }
+    let listed: Vec<String> = problems
+        .iter()
+        .map(|problem| match (problem.line, &problem.path) {
+            (Some(line), Some(path)) => format!("line {line}: {path}: {}", problem.message),
+            (Some(line), None) => format!("line {line}: {}", problem.message),
+            (None, Some(path)) => format!("{path}: {}", problem.message),
+            (None, None) => problem.message.clone(),
+        })
+        .collect();
+    format!("{} ({})", message.trim_end_matches('.'), listed.join("; "))
 }
 
 /// reads the library's pushes into the session's, on a task that ends with the

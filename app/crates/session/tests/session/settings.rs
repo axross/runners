@@ -2,7 +2,10 @@
 //! settings wait until it is answered, and what came of it is shown under the setting
 //! and announced.
 
-use marshal_session::Failure;
+use marshal_cli::agent::CallError;
+use marshal_cli::agent::config::Problem;
+use marshal_cli::agent::wire::{ErrorBody, ErrorCode};
+use marshal_session::{Failure, failure};
 use serde_json::json;
 
 use crate::support::{Agent, Answer, Called, Running, World, patched, start};
@@ -166,4 +169,31 @@ async fn a_refusal_stands_until_the_lifecycle_part_changes_or_start_all_reads_th
         .ok();
     session.settle().await;
     assert_eq!(note(&session, "keep_awake"), None);
+}
+
+#[test]
+fn a_refusal_for_problems_keeps_them_as_the_snapshot_words_them() {
+    let mut body = ErrorBody::new(ErrorCode::ConfigInvalid, "the change breaks the rules.");
+    body.problems = vec![
+        Problem {
+            path: Some("lifecycle.keep_awake".to_string()),
+            line: Some(12),
+            message: "must be true or false".to_string(),
+        },
+        Problem {
+            path: None,
+            line: Some(3),
+            message: "expected a table".to_string(),
+        },
+    ]
+    .into();
+    assert_eq!(
+        failure(CallError::Agent(body)),
+        Failure::Config {
+            code: "config_invalid".to_string(),
+            message: "the change breaks the rules (line 12: lifecycle.keep_awake: must be true \
+                      or false; line 3: expected a table)"
+                .to_string(),
+        }
+    );
 }

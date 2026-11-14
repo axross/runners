@@ -818,8 +818,12 @@ the others, and the window never opens on it.
   resume); a saved value holds the checkbox until the snapshot shows it.
   `config_changed` says the file changed since Marshal read it, that the edits in the
   file were kept and Start All reads them, after Stop All while the runners run,
-  before changing the setting again; `busy` says to change it again; any other refusal gives
-  the agent's words after "Not saved:". A change the agent does not answer in 10 s
+  before changing the setting again; `busy` says to change it again. Any other refusal
+  gives the agent's words after "Not saved:", with `config_invalid`'s problems as the
+  footer lists them, and a next step: `config_unwritable` says to close any program
+  holding the file, `config_invalid` and `config_unusable` say to fix the file for Start
+  All, and `config_file_form` or a refusal this version does not know says the setting
+  can be changed in the file instead. A change the agent does not answer in 10 s
   says it may still be saved, and the checkbox follows the snapshot.
 - **Unavailable.** While Marshal has lost contact, is quitting, does not know the
   agent's state, `config.toml` is missing, unreadable or has problems, a setting is

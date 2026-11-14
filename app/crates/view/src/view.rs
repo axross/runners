@@ -26,7 +26,6 @@ use crate::tokens::{self, TokensTab};
 pub enum Tab {
     Pools,
     Tokens,
-    Settings,
 }
 
 /// the whole window saying why Marshal does not control the runners.

@@ -186,10 +186,26 @@ fn result_note(result: &SettingResult) -> Option<SettingNote> {
                 .to_string(),
             NoteTone::Error,
         ),
-        SettingResult::Refused { words, .. } => (
-            format!("Not saved: {}.", plain(words).trim_end_matches('.')),
-            NoteTone::Error,
-        ),
+        SettingResult::Refused { code, words } => {
+            let words = plain(words);
+            let next = match code.as_str() {
+                "config_unwritable" => {
+                    "Close any program that has config.toml open, then change the setting again."
+                }
+                "config_invalid" | "config_unusable" => {
+                    "Fix config.toml; Start All reads it, after Stop All while the runners run."
+                }
+                // a form the agent does not edit, or a refusal this version does not know
+                _ => {
+                    "You can change the setting in config.toml instead; Start All reads it, \
+                     after Stop All while the runners run."
+                }
+            };
+            (
+                format!("Not saved: {}. {next}", words.trim_end_matches('.')),
+                NoteTone::Error,
+            )
+        }
         SettingResult::LostContact => (
             "Not saved: Marshal has lost contact with the agent.".to_string(),
             NoteTone::Error,
@@ -311,30 +327,26 @@ fn row(
         .and_then(|ui| ui.writing.as_ref())
         .filter(|(writing, _)| writing == key)
         .map(|(_, on)| *on);
-    let state = match value {
-        // the checkbox keeps the value chosen until the agent answers
-        _ if saving.is_some() => {
-            format!(
-                "Being saved as {}.",
-                on_off(saving == Some(true)).to_lowercase()
-            )
-        }
-        Some(value) if value.on == setting.windows_default() => {
-            format!("{} (default).", on_off(value.on))
-        }
-        Some(value) => format!(
-            "{} (default: {}).",
-            on_off(value.on),
-            on_off(setting.windows_default()).to_lowercase()
-        ),
-        None if lifecycle.is_some() => "Not readable in config.toml.".to_string(),
-        None => "Not known while config.toml cannot be read.".to_string(),
-    };
     let latest = context.input.settings.and_then(|ui| ui.results.get(key));
-    // a saved value holds the checkbox until the snapshot that shows it arrives
+    // a saved value holds the checkbox, and its state, until the snapshot shows it
     let saved = match latest {
         Some(SettingResult::Saved { on }) => Some(*on),
         _ => None,
+    };
+    let on = saved.or(value.map(|value| value.on));
+    let state = match (saving, on) {
+        // the checkbox keeps the value chosen until the agent answers
+        (Some(saving), _) => format!("Being saved as {}.", on_off(saving).to_lowercase()),
+        (None, Some(on)) if on == setting.windows_default() => {
+            format!("{} (default).", on_off(on))
+        }
+        (None, Some(on)) => format!(
+            "{} (default: {}).",
+            on_off(on),
+            on_off(setting.windows_default()).to_lowercase()
+        ),
+        (None, None) if lifecycle.is_some() => "Not readable in config.toml.".to_string(),
+        (None, None) => "Not known while config.toml cannot be read.".to_string(),
     };
     let result = latest.and_then(result_note);
     let refused = result
@@ -347,7 +359,7 @@ fn row(
         label: label.to_string(),
         description: description.to_string(),
         state,
-        checked: saving.or(saved).or(value.map(|value| value.on)),
+        checked: saving.or(on),
         note: result.or_else(|| state_note(context, lifecycle, setting)),
     };
     (row, refused || startup_off)

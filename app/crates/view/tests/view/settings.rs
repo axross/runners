@@ -239,7 +239,7 @@ fn a_change_refused_because_the_file_changed_stays_under_its_setting_and_needs_a
 }
 
 #[test]
-fn another_refusal_gives_the_agents_reason() {
+fn another_refusal_gives_the_agents_reason_and_a_next_step() {
     let snapshot = with_lifecycle(|_| {});
     let ui = SettingsUi {
         writing: None,
@@ -259,7 +259,8 @@ fn another_refusal_gives_the_agents_reason() {
             .clone()
             .expect("a note")
             .text,
-        "Not saved: config.toml was not written: Access is denied. (os error 5)."
+        "Not saved: config.toml was not written: Access is denied. (os error 5). Close any program \
+         that has config.toml open, then change the setting again."
     );
 }
 
@@ -275,6 +276,10 @@ fn a_saved_change_shows_no_note_holds_its_value_and_is_announced_with_its_label(
     assert_eq!(row(settings(&view), "keep_awake").note, None);
     // the snapshot still says on: the saved value holds until it shows the change
     assert_eq!(row(settings(&view), "keep_awake").checked, Some(false));
+    assert_eq!(
+        row(settings(&view), "keep_awake").state,
+        "Off (default: on)."
+    );
     assert_eq!(
         saved.announcement("Keep the computer awake while runners run"),
         "Saved: \"Keep the computer awake while runners run\" is off."
