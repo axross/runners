@@ -2419,7 +2419,7 @@ a reader ignores one it does not know.
 | `runners_up`, `runners_wanted` | Totals over the listed pools, kept when rows are left out; 0 while `restart_due` is set                                    |
 | `repositories`                 | Each repository (`owner/name` in lower case), `has_token` and its pools                                                    |
 | `pools`                        | `name`, `repository`, `state`, `reason`, `has_token`, `runners_up`, `slots`, `runners`, `diagnostics`                      |
-| `pools[].runners`              | `slot`, `state`, `workload`, `reason`, `since`                                                                             |
+| `pools[].runners`              | `slot`, `state`, `workload`, `workload_kind`, `reason`, `since`                                                            |
 | `pools[].diagnostics`          | `limit`, `written`, `in_sink`, `containers`, `findings`, `manual_recovery`                                                 |
 | `leftovers`                    | What a stop could not remove, `kind` (today `container`) and `name`                                                        |
 | `images`                       | Each image the agent tracks (today the runner image): `name`, `lines`, `warnings`                                          |
@@ -2434,9 +2434,14 @@ lists its pools again. `repositories` is still listed.
 
 A pool is `waiting_for_docker`, `preparing`, `running`, `skipped` or `stopped`; the
 first word stands for whichever engine the pool waits for. A runner is `running`,
-`registering`, `backing_off`, `held` or `stopped`. The `reason` of a runner is plain
-text that says more about its state, such as what a state means that the reader may
-not know. A backing-off runner gives the reason it backs off: a token store
+`registering`, `backing_off`, `held`, `waiting_for_vm_limit`,
+`waiting_for_vm_deletion` or `stopped`. The `reason` of a runner is plain text that
+says more about its state, such as what a state means that the reader may not know.
+A `waiting_for_vm_limit` runner's macOS job VM waits for a place under the macOS VM
+limit, and a `waiting_for_vm_deletion` runner waits for the deletion of the VM its
+`workload` names; both occur only on axmc's Tart backend, and each `reason` says what
+the slot waits for. `workload_kind` is `vm` when the `workload` is a Tart VM, and is
+absent for a container. A backing-off runner gives the reason it backs off: a token store
 failure's kind and code, or what GitHub answered, scrubbed of any token and never a
 command. A `held` runner is one whose job host a host prerequisite refuses, with
 that prerequisite's reason, scrubbed the same way and cut to 500 characters; it

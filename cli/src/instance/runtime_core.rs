@@ -10,6 +10,8 @@ use std::time::Duration;
 use tokio::sync::watch;
 
 use crate::image::check::{ImageCheck, freshness_warnings};
+use crate::image::macos_base::MACOS_BASE;
+use crate::image::macos_golden;
 use crate::runtime::backend::Backend;
 use crate::runtime::board::Board;
 use crate::runtime::clock::Clock;
@@ -74,7 +76,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar> RuntimeCore<'a, B, K, R> {
 }
 
 /// checks the image until the engine answers the check, then logs its freshness
-/// warnings, or fails when it cannot run jobs.
+/// warnings and those of the golden macOS VM, or fails when it cannot run jobs.
 pub(crate) async fn verify_image<B: Backend, K: Clock>(
     backend: &B,
     clock: &K,
@@ -90,6 +92,14 @@ pub(crate) async fn verify_image<B: Backend, K: Clock>(
         let ImageCheck::Unavailable(reason) = check else {
             for warning in freshness_warnings(&check, clock.now()) {
                 log.warn(&format!("Image freshness: {warning}."));
+            }
+            if let Some(golden) = backend.golden_macos().await {
+                let fields =
+                    macos_golden::status_fields(golden.as_deref(), &MACOS_BASE, clock.now());
+                for (_, warning) in fields.iter().filter(|(field, _)| *field == "warning") {
+                    log.warn(&format!("Golden macOS VM freshness: {warning}."));
+                }
+                board.record_macos_golden(golden);
             }
             return Ok(());
         };

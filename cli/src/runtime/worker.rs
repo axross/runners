@@ -188,6 +188,17 @@ impl Report<'_> {
     }
 }
 
+/// returns when `waits` is marked changed; never for a backend without waits, or
+/// one that has gone.
+async fn wait_changed(waits: &mut Option<watch::Receiver<()>>) {
+    if let Some(receiver) = waits
+        && receiver.changed().await.is_ok()
+    {
+        return;
+    }
+    std::future::pending().await
+}
+
 /// why a slot waits out a backoff.
 enum Pause {
     /// an attempt failed, for this reason.
@@ -271,9 +282,21 @@ impl<B: Backend, K: Clock, R: Registrar> Context<'_, B, K, R> {
     /// the caller backs off.
     async fn attempt(&self, slot: &SlotSpec, halt: &mut Halt) -> Attempt {
         let request = slot.host_request();
-        let prepared = tokio::select! {
-            prepared = self.backend.prepare_job_host(&request) => Some(prepared),
-            () = halt.wait() => None,
+        let mut waits = self.backend.host_waits();
+        let preparing = self.backend.prepare_job_host(&request);
+        tokio::pin!(preparing);
+        let prepared = loop {
+            tokio::select! {
+                prepared = &mut preparing => break Some(prepared),
+                () = halt.wait() => break None,
+                () = wait_changed(&mut waits) => {
+                    self.report.state(match self.backend.host_wait(&request.host) {
+                        Some(wait) => SlotState::Waiting(wait),
+                        None => SlotState::Registering,
+                    });
+                    self.report.board.record_vm_leftovers(self.backend.counted_leftovers());
+                }
+            }
         };
         let attempt = match prepared {
             None => Attempt::Halted,

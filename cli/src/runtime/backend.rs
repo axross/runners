@@ -5,6 +5,7 @@ use std::fmt;
 use std::future::Future;
 use std::time::Duration;
 
+use tokio::sync::watch;
 use tokio::time::Instant;
 
 use crate::image::check::ImageCheck;
@@ -199,6 +200,15 @@ pub enum HostPreparation {
     Held(String),
 }
 
+/// what a job host's preparation waits for, which the slot shows as its state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HostWait {
+    /// a place under the macOS VM limit.
+    VmLimit,
+    /// the deletion of this VM, which an earlier release failed to delete.
+    VmDeletion(String),
+}
+
 /// the budget a job host's release gets outside a stop.
 pub const RELEASE_WITHIN: Duration = Duration::from_secs(30);
 
@@ -306,6 +316,30 @@ pub trait Backend {
     /// any registration. The backend counts the host as prepared from the start of
     /// the call, whatever it returns, until it is released.
     fn prepare_job_host(&self, request: &HostRequest) -> impl Future<Output = HostPreparation>;
+
+    /// the newest golden macOS VM's name, `Some(None)` when there is none, or `None`
+    /// for a backend without macOS pools or a check that could not list the VMs.
+    fn golden_macos(&self) -> impl Future<Output = Option<Option<String>>> {
+        std::future::ready(None)
+    }
+
+    /// what the preparation of `host` waits for now, if anything.
+    fn host_wait(&self, _host: &JobHost) -> Option<HostWait> {
+        None
+    }
+
+    /// the counted leftover job VMs of pools that are no longer configured, from the
+    /// latest count of macOS VMs.
+    fn counted_leftovers(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// a receiver marked changed whenever any host's [`host_wait`](Backend::host_wait)
+    /// or the [`counted_leftovers`](Backend::counted_leftovers) change, or `None` for a
+    /// backend whose preparations never wait.
+    fn host_waits(&self) -> Option<watch::Receiver<()>> {
+        None
+    }
 
     /// gets rid of the slot's host within `budget`. The worker calls it once after
     /// every [`prepare_job_host`](Backend::prepare_job_host), whatever that

@@ -142,6 +142,9 @@ pub struct Inner {
     pub restart_due: Option<SystemTime>,
     /// the image the latest check named, and what the check found.
     pub image: Option<(String, Option<ImageCheck>)>,
+    /// the newest golden macOS VM the latest check found, or `Some(None)` when it
+    /// found none.
+    pub macos_golden: Option<Option<String>>,
     /// the drain for an update under way.
     pub drain: Option<Drain>,
     /// the apply of an edit that runs now.
@@ -179,6 +182,7 @@ impl Inner {
             build: None,
             restart_due: None,
             image: None,
+            macos_golden: None,
             drain: None,
             applying: None,
             leaving: Vec::new(),

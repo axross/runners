@@ -376,7 +376,10 @@ From another terminal, as the same user:
 [CLI](./cli.md#running-a-host) gives each command's fields, waits and exit codes. In
 `marshal status`, a slot is `registering` while its VM is cloned, booted and probed,
 `running container <name>` while it holds a job, `backing off` after a failure, and
-`held: <reason>` when a prerequisite refuses its next boot. A slot that is held boots
+`held: <reason>` when a prerequisite refuses its next boot. A macOS slot shows
+`waiting for the macOS VM limit` while two macOS VMs count, and
+`waiting for VM <name> to be deleted` while Marshal deletes again, every 5 s, a job VM
+it failed to delete. A slot that is held boots
 nothing and tries again on its backoff, while jobs on other slots finish; fix the
 cause, such as Softnet's SUID bit after a `brew upgrade`, and the slot boots again.
 

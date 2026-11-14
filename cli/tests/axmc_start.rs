@@ -23,6 +23,7 @@ const INSTALL_SECTION: &str =
 const SOFTNET_SECTION: &str =
     "the \"Setting Up Softnet\" section of the macOS Runner Host document";
 const MACOS_GOLDEN: &str = "marshal-golden-macos-g1-r2.337.0-20261101000000";
+const LEFTOVER: &str = "marshal-job-oldmac-1-20260101000000000";
 const PROBE_50_GB: &str = "launcher yes\nrunner 2.337.0\ndisk 50000000000\npartitions 50000000000";
 
 /// a host whose job containers are held until a test ends them.
@@ -59,6 +60,16 @@ fn a_linux_and_macos_configuration_runs_each_pool_in_a_vm_of_its_os() {
     assert!(status.contains("pool: macone: running"), "{status}");
     assert!(status.contains("pool: linuxone: running"), "{status}");
     assert!(!status.contains("skipped"), "{status}");
+    assert!(
+        status.contains(&format!("golden-macos-vm: {MACOS_GOLDEN}")),
+        "{status}"
+    );
+    assert!(status.contains("golden-macos-vm-version: 1"), "{status}");
+    assert!(
+        status.contains("golden-macos-runner: 2.337.0, released "),
+        "{status}"
+    );
+    assert!(status.contains("macos-base-published: "), "{status}");
 
     let clones: Vec<_> = host
         .tart_calls()
@@ -95,6 +106,97 @@ fn a_linux_and_macos_configuration_runs_each_pool_in_a_vm_of_its_os() {
     let mut goldens = vec![linux_golden, MACOS_GOLDEN.to_string()];
     goldens.sort();
     assert_eq!(left, goldens, "the job VMs are gone");
+}
+
+#[test]
+fn a_macos_slot_waits_for_the_vm_limit_while_a_leftover_and_a_running_macos_vm_count_and_boots_once_it_stops()
+ {
+    let host = holding_host(&[macos("macone", 1)]);
+    let linux_golden = host.vm_names()[0].clone();
+    let listing = |second: &str| {
+        format!(
+            "{linux_golden}\tstopped\tlocal\t\t\t\n{MACOS_GOLDEN}\tstopped\tlocal\t\t\t\n\
+             {LEFTOVER}\tstopped\tlocal\t\t\t\nforeign-b\t{second}\tlocal\t\t\t"
+        )
+    };
+    host.tart_script("vms", &listing("running"));
+    host.tart_script("exec_stdout-marshal-probe", PROBE_50_GB);
+    host.tart_script("macos_hold", "");
+    let stub = github();
+    let started = host.start(&stub.address);
+    let status = host.wait_for_status("the limit wait", RUNNING_WITHIN, |status| {
+        status.contains("slot: macone slot 1: waiting for the macOS VM limit")
+    });
+    assert!(
+        status.contains(&format!(
+            "leftover-vm: {LEFTOVER} belongs to a pool that is no longer configured"
+        )),
+        "{status}"
+    );
+    assert_eq!(host.count_of("clone"), 0, "no VM is cloned past the limit");
+    assert!(
+        stub.requests().is_empty(),
+        "nothing is registered while it waits"
+    );
+
+    host.tart_script("vms", &listing("stopped"));
+    host.wait_for_status("the job", RUNNING_WITHIN, running(1));
+    let finished = host.stop_and_finish(started);
+    assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
+    let left = host.vm_names();
+    for vm in ["foreign-b", LEFTOVER] {
+        assert!(
+            left.iter().any(|name| name == vm),
+            "{vm} is left alone: {left:?}"
+        );
+    }
+    assert!(
+        host.log_text()
+            .contains(&format!("delete it with `tart delete {LEFTOVER}`"))
+    );
+    assert!(
+        host.tart_calls()
+            .iter()
+            .all(
+                |call| call.get(1).is_none_or(|vm| !vm.starts_with("foreign-")) || call[0] == "get"
+            ),
+        "only `tart get` reads another VM"
+    );
+}
+
+#[test]
+fn a_macos_job_vm_that_fails_to_delete_is_deleted_again_while_its_slot_waits() {
+    let host = holding_host(&[macos("macone", 1)]);
+    let linux_golden = host.vm_names()[0].clone();
+    host.tart_script(
+        "vms",
+        &format!("{linux_golden}\tstopped\tlocal\t\t\t\n{MACOS_GOLDEN}\tstopped\tlocal\t\t\t"),
+    );
+    host.tart_script("exec_stdout-marshal-probe", PROBE_50_GB);
+    host.tart_script("fail-delete", "");
+    let stub = github();
+    let started = host.start(&stub.address);
+    let status = host.wait_for_status("the deletion wait", RUNNING_WITHIN, |status| {
+        status.contains("slot: macone slot 1: waiting for VM marshal-job-macone-1-")
+    });
+    assert!(status.contains(" to be deleted"), "{status}");
+    let tries = host.count_of("delete");
+    host.wait_for_status("another deletion", RUNNING_WITHIN, |_| {
+        host.count_of("delete") > tries
+    });
+    assert_eq!(
+        host.count_of("clone"),
+        1,
+        "no second VM while the first is left"
+    );
+
+    host.remove_tart_script("fail-delete");
+    host.wait_for_status("the next VM", RUNNING_WITHIN, |_| {
+        host.count_of("clone") >= 2
+    });
+    let finished = host.stop_and_finish(started);
+    assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
+    assert!(host.log_text().contains("could not be deleted"));
 }
 
 #[test]

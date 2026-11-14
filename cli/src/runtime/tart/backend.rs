@@ -11,6 +11,7 @@ use std::time::Duration;
 
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
+use tokio::sync::watch;
 use tokio::time::Instant;
 
 use crate::affinity::select_cpus;
@@ -19,7 +20,7 @@ use crate::golden::macos::{launch_command as macos_launch_command, probe_call};
 use crate::image::check::{IMAGE_CHECK_BUDGET, ImageCheck};
 use crate::macos::count::{ConfiguredPool, count_macos_vms, listed_vms};
 use crate::macos::gate::NetworkGate;
-use crate::macos::name::GoldenMacosName;
+use crate::macos::name::{GoldenMacosName, newest_golden};
 use crate::macos::place::PlaceLock;
 use crate::macos::prerequisites::{
     Cause, Check, VERSION_BUDGET, check_softnet_with, check_softnet_within, check_tart,
@@ -29,8 +30,9 @@ use crate::macos::softnet::OwnerMode;
 use crate::profile::Os;
 use crate::runtime::backend::{
     Backend, BackendError, ContainerSpec, CpuRequest, DiagnosticRecord, ExportOutcome, Exported,
-    HostPreparation, HostRequest, JobHost, PoolContainers, RELEASE_WITHIN, StopRequest,
+    HostPreparation, HostRequest, HostWait, JobHost, PoolContainers, RELEASE_WITHIN, StopRequest,
 };
+use crate::runtime::board::leftover_vm_text;
 use crate::runtime::clock::Clock;
 use crate::runtime::diagnostic::join_all;
 use crate::runtime::docker::{RunningGuard, forward_lines};
@@ -51,6 +53,7 @@ use super::client::{Captured, TartClient, TartError};
 use super::golden_check::{check_golden, clone_source};
 use super::guest::Guest;
 use super::hold::{HeldVm, VmLauncher};
+use super::list::VmSource;
 use super::macos::{
     MACOS_BOOT_DEADLINE, PLACE_POLL, Verdict, is_vm_limit_refusal, judge_probe, macos_clone_source,
     read_probe, vm_limit_message,
@@ -96,7 +99,8 @@ pub struct TartTimings {
     pub release: Duration,
     /// from `tart run` to a macOS job VM's guest agent's first answer.
     pub macos_boot_deadline: Duration,
-    /// the wait between counts while a macOS slot waits for a place under the limit.
+    /// the wait between counts while a macOS slot waits for a place under the limit,
+    /// and between deletions of a macOS job VM an earlier release failed to delete.
     pub place_poll: Duration,
     /// how long a booted macOS job VM's probe may wait for its disk to grow, and the
     /// wait between probes.
@@ -136,6 +140,8 @@ struct Host {
     /// held by the release in progress, so a second release waits for the first.
     release: tokio::sync::Mutex<()>,
     released: Cell<bool>,
+    /// what the host's preparation waits for now.
+    wait: RefCell<Option<HostWait>>,
 }
 
 impl Host {
@@ -174,6 +180,10 @@ pub struct TartBackend<C> {
     /// held around a macOS slot's count and clone, so two slots never take the last
     /// place under the limit together.
     place: PlaceLock,
+    /// marked changed whenever a host's wait or the counted leftovers change.
+    waits: watch::Sender<()>,
+    /// the counted leftover job VMs of unconfigured pools the latest count found.
+    leftovers: RefCell<Vec<String>>,
 }
 
 fn text_of(error: &TartError) -> String {
@@ -208,6 +218,8 @@ impl<C: Clock> TartBackend<C> {
             network_gate: NetworkGate::default(),
             pools: Vec::new(),
             place: PlaceLock::new(),
+            waits: watch::channel(()).0,
+            leftovers: RefCell::new(Vec::new()),
         }
     }
 
@@ -376,6 +388,61 @@ impl<C: Clock> TartBackend<C> {
         parse_job_vm_name(vm).is_some_and(|job| self.is_macos(&job.pool))
     }
 
+    /// records what `host`'s preparation waits for, and tells the workers when it
+    /// changes.
+    fn mark_wait(&self, host: &Host, wait: Option<HostWait>) {
+        if *host.wait.borrow() != wait {
+            host.wait.replace(wait);
+            self.waits.send_replace(());
+        }
+    }
+
+    /// deletes the VM an earlier release of `request`'s macOS slot failed to delete,
+    /// again every [`TartTimings::place_poll`] until it is gone; the VM counts against
+    /// the limit meanwhile, and the slot shows it waits for the deletion.
+    async fn delete_until_gone(&self, request: &HostRequest) {
+        let label = format!("{} slot {}", request.host.pool, request.host.slot);
+        loop {
+            let Some(entry) = self.host(&request.host.pool, request.host.slot) else {
+                return;
+            };
+            match self.release_job_host(&request.host, RELEASE_WITHIN).await {
+                Ok(()) => {
+                    self.mark_wait(&entry, None);
+                    return;
+                }
+                Err(error) => {
+                    let vm = entry.vm().unwrap_or_default();
+                    if entry.wait.borrow().is_none() {
+                        self.log.warn(&format!(
+                            "{label}: job VM {vm} could not be deleted ({error}); trying again every {} s.",
+                            self.timings.place_poll.as_secs()
+                        ));
+                    }
+                    self.mark_wait(&entry, Some(HostWait::VmDeletion(vm)));
+                    self.clock.sleep(self.timings.place_poll).await;
+                }
+            }
+        }
+    }
+
+    /// names each newly counted leftover job VM of an unconfigured pool in the log,
+    /// and tells the workers when the list changes.
+    fn note_leftovers(&self, found: Vec<&str>) {
+        if *self.leftovers.borrow() == found {
+            return;
+        }
+        for name in found
+            .iter()
+            .filter(|name| !self.leftovers.borrow().iter().any(|seen| seen == *name))
+        {
+            self.log.warn(&format!("{}.", leftover_vm_text(name)));
+        }
+        self.leftovers
+            .replace(found.into_iter().map(str::to_string).collect());
+        self.waits.send_replace(());
+    }
+
     /// signals the runner in a macOS job VM, which has no container to stop.
     async fn signal_runner(
         &self,
@@ -474,11 +541,13 @@ impl<C: Clock> TartBackend<C> {
                             counted.join(", ")
                         ));
                         waiting = true;
+                        self.mark_wait(host, Some(HostWait::VmLimit));
                     }
                     self.clock.sleep(self.timings.place_poll).await;
                 }
             }
         };
+        self.mark_wait(host, None);
         self.client
             .set_resources(&vm, vcpus, request.memory_gb, disk_gb)
             .await
@@ -529,6 +598,7 @@ impl<C: Clock> TartBackend<C> {
         })?;
         let (golden, _) = macos_clone_source(&entries).map_err(BackendError::new)?;
         let count = count_macos_vms(&listed_vms(&entries), &self.pools, &self.client).await;
+        self.note_leftovers(count.leftover_jobs());
         if !count.has_free_place() {
             return Ok(Err(count
                 .counted()
@@ -949,10 +1019,12 @@ impl<C: Clock> Backend for TartBackend<C> {
         let key = (request.host.pool.clone(), request.host.slot);
         // a VM this slot could not delete earlier is tried again first, so a slot
         // never owns two
-        if self.host(&key.0, key.1).is_some()
-            && let Err(error) = self.release_job_host(&request.host, RELEASE_WITHIN).await
-        {
-            return HostPreparation::Failed(error);
+        if self.host(&key.0, key.1).is_some() {
+            if self.is_macos(&key.0) {
+                self.delete_until_gone(request).await;
+            } else if let Err(error) = self.release_job_host(&request.host, RELEASE_WITHIN).await {
+                return HostPreparation::Failed(error);
+            }
         }
         let host = Rc::new(Host::default());
         self.hosts.borrow_mut().insert(key, host.clone());
@@ -971,6 +1043,34 @@ impl<C: Clock> Backend for TartBackend<C> {
             Ok(()) => HostPreparation::Ready,
             Err(error) => HostPreparation::Failed(error),
         }
+    }
+
+    async fn golden_macos(&self) -> Option<Option<String>> {
+        if !self.pools.iter().any(|pool| pool.os == Os::Macos) {
+            return None;
+        }
+        let entries = tokio::time::timeout(self.timings.image_check, self.client.list())
+            .await
+            .ok()?
+            .ok()?;
+        let names = entries
+            .iter()
+            .filter(|entry| entry.source == VmSource::Local)
+            .map(|entry| entry.name.as_str());
+        Some(newest_golden(names).map(|(name, _)| name.to_string()))
+    }
+
+    fn counted_leftovers(&self) -> Vec<String> {
+        self.leftovers.borrow().clone()
+    }
+
+    fn host_wait(&self, host: &JobHost) -> Option<HostWait> {
+        self.host(&host.pool, host.slot)
+            .and_then(|entry| entry.wait.borrow().clone())
+    }
+
+    fn host_waits(&self) -> Option<watch::Receiver<()>> {
+        Some(self.waits.subscribe())
     }
 
     async fn release_job_host(&self, host: &JobHost, budget: Duration) -> Result<(), BackendError> {

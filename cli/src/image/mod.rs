@@ -9,4 +9,5 @@ pub mod definition;
 #[cfg(test)]
 mod dockerfile;
 pub mod macos_base;
+pub mod macos_golden;
 pub mod runner;

@@ -7,10 +7,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::host_config::{FileStatus, Loaded, Migration, MigrationFailure, Origin};
 use crate::image::check::{Freshness, freshness_findings, status_fields};
-use crate::runtime::backend::ExportOutcome;
+use crate::image::macos_base::MACOS_BASE;
+use crate::image::macos_golden::{self, MacosFreshness};
+use crate::profile::Profile;
+use crate::runtime::backend::{ExportOutcome, HostWait};
 use crate::runtime::board::{Board, PoolState, Row, SlotState};
 use crate::runtime::diagnostic::BUNDLE_QUOTA;
 use crate::runtime::retained::Retained;
+use crate::runtime::select::Runtime;
 use crate::token_store::TokenKey;
 use crate::validate::Entry;
 
@@ -192,8 +196,12 @@ impl View<'_> {
                     kind: "container".to_string(),
                     name: name.clone(),
                 })
+                .chain(self.board.vm_leftovers().into_iter().map(|name| Leftover {
+                    kind: "vm_unconfigured_pool".to_string(),
+                    name,
+                }))
                 .collect(),
-            images: self.image().into_iter().collect(),
+            images: self.image().into_iter().chain(self.macos_image()).collect(),
             ..Snapshot::default()
         };
         if let Some(plan) = inner.plan() {
@@ -205,7 +213,7 @@ impl View<'_> {
                 snapshot.pools = plan
                     .entries
                     .iter()
-                    .map(|entry| self.pool(entry, &pools, &slots))
+                    .map(|entry| self.pool(plan.profile, entry, &pools, &slots))
                     .collect();
                 // a pool an apply removes is listed until its slots have stopped, the
                 // apply's end included; one the file names again is listed as that
@@ -214,7 +222,7 @@ impl View<'_> {
                     .iter()
                     .filter(|entry| !plan.entries.iter().any(|named| named.name == entry.name));
                 for entry in removed {
-                    let mut pool = self.pool(entry, &pools, &slots);
+                    let mut pool = self.pool(plan.profile, entry, &pools, &slots);
                     pool.runners
                         .retain(|runner| runner.reason.as_deref() == Some(LEAVING));
                     if !pool.runners.is_empty() {
@@ -251,11 +259,13 @@ impl View<'_> {
 
     fn pool(
         &self,
+        profile: Profile,
         entry: &Entry,
         pools: &RowsByName<'_, PoolState>,
         slots: &RowsByName<'_, SlotState>,
     ) -> PoolInfo {
         let key = TokenKey::of(&entry.owner, &entry.repository);
+        let in_vm = Runtime::of_pool(profile, entry.os) == Some(Runtime::TartVm);
         let restarting = self.inner.applying.as_ref().is_some_and(|applying| {
             applying
                 .effects
@@ -291,6 +301,14 @@ impl View<'_> {
                             SlotState::Registering => ("registering", None, None),
                             SlotState::BackingOff(why) => ("backing_off", None, Some(why.clone())),
                             SlotState::Held(why) => ("held", None, Some(why.clone())),
+                            SlotState::Waiting(HostWait::VmLimit) => {
+                                ("waiting_for_vm_limit", None, Some(row.state.to_string()))
+                            }
+                            SlotState::Waiting(HostWait::VmDeletion(vm)) => (
+                                "waiting_for_vm_deletion",
+                                Some(vm.clone()),
+                                Some(row.state.to_string()),
+                            ),
                             SlotState::Running(name) => ("running", Some(name.clone()), None),
                             SlotState::Drained => {
                                 ("stopped", None, Some("stopped for an update".to_string()))
@@ -300,6 +318,7 @@ impl View<'_> {
                         RunnerInfo {
                             slot: number,
                             state: state.to_string(),
+                            workload_kind: (in_vm && workload.is_some()).then(|| "vm".to_string()),
                             workload,
                             reason,
                             since: millis(row.since),
@@ -309,6 +328,7 @@ impl View<'_> {
                         slot: number,
                         state: "stopped".to_string(),
                         workload: None,
+                        workload_kind: None,
                         reason: None,
                         since: millis(self.inner.since),
                     },
@@ -383,6 +403,43 @@ impl View<'_> {
         })
     }
 
+    /// the golden macOS VM's entry, after the Linux one, once a check found it or
+    /// found none.
+    fn macos_image(&self) -> Option<ImageInfo> {
+        let golden = self.inner.macos_golden.as_ref()?.as_deref();
+        let lines = macos_golden::lines(golden, &MACOS_BASE, self.now)
+            .into_iter()
+            .map(|(name, value)| ImageLine {
+                name: name.to_string(),
+                value,
+            })
+            .collect();
+        let warnings = macos_golden::findings(golden, &MACOS_BASE, self.now)
+            .into_iter()
+            .map(|finding| match finding {
+                MacosFreshness::RunnerOld { days } => ImageWarning {
+                    code: "runner_old".to_string(),
+                    days: Some(days),
+                    version: None,
+                },
+                MacosFreshness::RunnerAgeUnknown => ImageWarning {
+                    code: "runner_age_unknown".to_string(),
+                    ..ImageWarning::default()
+                },
+                MacosFreshness::BaseOld { days } => ImageWarning {
+                    code: "base_old".to_string(),
+                    days: Some(days),
+                    version: None,
+                },
+            })
+            .collect();
+        Some(ImageInfo {
+            name: macos_golden::IMAGE_NAME.to_string(),
+            lines,
+            warnings,
+        })
+    }
+
     fn image(&self) -> Option<ImageInfo> {
         let (name, check) = self.inner.image.as_ref()?;
         let lines = status_fields(name, check.as_ref(), self.now)
@@ -413,7 +470,6 @@ impl View<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::profile::Profile;
     use crate::validate::Plan;
 
     fn entry() -> Entry {
@@ -432,13 +488,23 @@ mod tests {
             diagnostics: false,
             diagnostic_directory: None,
             diagnostic_raw_records: false,
-            os: None,
-            disk_gb: None,
+            os: Some(crate::profile::Os::Macos),
+            disk_gb: Some(50),
         }
     }
 
     fn runners(board: &Board) -> Vec<RunnerInfo> {
+        snapshot(board, None)
+            .pools
+            .into_iter()
+            .next()
+            .unwrap()
+            .runners
+    }
+
+    fn snapshot(board: &Board, macos_golden: Option<Option<String>>) -> Snapshot {
         let mut inner = Inner::new(Phase::Running);
+        inner.macos_golden = macos_golden;
         inner.loaded = Some(Loaded {
             file: FileStatus::Valid,
             in_use: Some(crate::host_config::InUse {
@@ -457,7 +523,7 @@ mod tests {
         });
         let retained = Retained::default();
         let tokens = StoreTokens::new(None);
-        let snapshot = View {
+        View {
             version: "test",
             inner: &inner,
             config_path: "config.toml",
@@ -467,8 +533,46 @@ mod tests {
             left: &[],
             now: SystemTime::now(),
         }
-        .snapshot();
-        snapshot.pools.into_iter().next().unwrap().runners
+        .snapshot()
+    }
+
+    #[test]
+    fn a_found_golden_macos_vm_is_an_image_entry_with_its_lines_and_a_check_without_one_is_none() {
+        let board = Board::default();
+        assert!(snapshot(&board, None).images.is_empty());
+        let images = snapshot(
+            &board,
+            Some(Some(
+                "marshal-golden-macos-g1-r9.9.9-20260101000000".to_string(),
+            )),
+        )
+        .images;
+        let [image] = images.as_slice() else {
+            panic!("{images:?}")
+        };
+        assert_eq!(image.name, "golden macOS VM");
+        let names: Vec<_> = image.lines.iter().map(|line| line.name.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                "name",
+                "golden-vm-version",
+                "runner-version",
+                "base-published"
+            ]
+        );
+        assert_eq!(
+            image.lines[0].value,
+            "marshal-golden-macos-g1-r9.9.9-20260101000000"
+        );
+        assert!(
+            image
+                .warnings
+                .iter()
+                .any(|warning| warning.code == "runner_age_unknown")
+        );
+        let missing = snapshot(&board, Some(None)).images;
+        assert_eq!(missing[0].lines[0].value, "missing");
     }
 
     #[test]
@@ -482,5 +586,34 @@ mod tests {
         assert_eq!(runners[0].workload, None);
         assert_eq!(runners[1].state, "backing_off");
         assert_eq!(runners[1].reason.as_deref(), Some("failed"));
+    }
+
+    #[test]
+    fn a_vm_slot_names_its_wait_and_a_vm_workload_carries_its_kind() {
+        let board = Board::default();
+        board.set_slot("pool slot 1", SlotState::Waiting(HostWait::VmLimit));
+        board.set_slot(
+            "pool slot 2",
+            SlotState::Waiting(HostWait::VmDeletion("marshal-job-pool-2-x".to_string())),
+        );
+        let waiting = runners(&board);
+        assert_eq!(waiting[0].state, "waiting_for_vm_limit");
+        assert_eq!(
+            waiting[0].reason.as_deref(),
+            Some("waiting for the macOS VM limit")
+        );
+        assert_eq!(
+            (
+                waiting[0].workload.as_deref(),
+                waiting[0].workload_kind.as_deref()
+            ),
+            (None, None)
+        );
+        assert_eq!(waiting[1].state, "waiting_for_vm_deletion");
+        assert_eq!(waiting[1].workload.as_deref(), Some("marshal-job-pool-2-x"));
+        assert_eq!(waiting[1].workload_kind.as_deref(), Some("vm"));
+
+        board.set_slot("pool slot 1", SlotState::Running("pool-1-x".to_string()));
+        assert_eq!(runners(&board)[0].workload_kind.as_deref(), Some("vm"));
     }
 }

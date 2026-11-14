@@ -10,7 +10,8 @@ use super::check::{age_days, date_seconds};
 /// the registry tags only `latest`.
 pub const BASE_REPOSITORY: &str = "ghcr.io/cirruslabs/macos-tahoe-base";
 
-const FIRST_WARNING_DAYS: u64 = 30;
+/// the base's age, in days, from which `status` warns that it is old.
+pub(crate) const FIRST_WARNING_DAYS: u64 = 30;
 
 const SECOND_WARNING_DAYS: u64 = 60;
 
@@ -83,14 +84,19 @@ fn numbers(version: &str) -> Option<Vec<u32>> {
         .collect()
 }
 
+/// how many whole days before `now` the base was published.
+#[must_use]
+pub fn base_age_days(base: &MacosBase, now: SystemTime) -> Option<u64> {
+    Some(age_days(now, date_seconds(base.published)?))
+}
+
 /// the warnings about the base's age as of `now`: one from 30 days after its
 /// publication, and a stronger one from 60 days, both inclusive.
 #[must_use]
 pub fn base_age_warnings(base: &MacosBase, now: SystemTime) -> Vec<String> {
-    let Some(published) = date_seconds(base.published) else {
+    let Some(days) = base_age_days(base, now) else {
         return Vec::new();
     };
-    let days = age_days(now, published);
     if days >= SECOND_WARNING_DAYS {
         vec![format!(
             "the pinned macOS base is {days} days old, so the guest's macOS fixes are far behind; \
