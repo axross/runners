@@ -6,12 +6,24 @@ import { controlButton, keyOf } from "./controls.js";
 import { h } from "./dom.js";
 import { icon } from "./icons.js";
 import { banners, footer, poolsPanel } from "./pools.js";
+import { settingsPanel } from "./settings.js";
 import { tokensPanel } from "./tokens.js";
 
 const TABS = [
   ["pools", "Pools"],
   ["tokens", "Tokens"],
+  ["settings", "Settings"],
 ];
+
+/** a tab's chip, with its words for a screen reader, or nothing. */
+function chip(words) {
+  return words
+    ? [
+        h("span", { class: "chip", "aria-hidden": "true" }, icon("alert", 16)),
+        h("span", { class: "vh", text: `, ${words}` }),
+      ]
+    : null;
+}
 
 function tabs(header, ctx) {
   const buttons = TABS.map(([name, label]) => {
@@ -31,16 +43,8 @@ function tabs(header, ctx) {
         on: { click: () => ctx.selectTab(name) },
       },
       h("span", { text: label }),
-      name === "tokens" && header.tokens_chip
-        ? [
-            h(
-              "span",
-              { class: "chip", "aria-hidden": "true" },
-              icon("alert", 16),
-            ),
-            h("span", { class: "vh", text: `, ${header.tokens_chip}` }),
-          ]
-        : null,
+      chip(name === "tokens" ? header.tokens_chip : null),
+      chip(name === "settings" ? header.settings_chip : null),
     );
   });
   return h(
@@ -105,12 +109,13 @@ function listWindow(list, ctx) {
       "main",
       {
         class: "scroller",
-        "aria-label": "Pools and tokens",
+        "aria-label": "Pools, tokens and settings",
         "data-key": "scroller",
       },
       banners(list.banners, ctx),
       panel("pools", ctx, poolsPanel(list, ctx)),
       panel("tokens", ctx, tokensPanel(list.tokens, list.stale, ctx)),
+      panel("settings", ctx, settingsPanel(list.settings, ctx)),
     ),
   ];
 }

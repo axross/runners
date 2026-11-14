@@ -59,6 +59,12 @@ pub async fn remove_token(state: State<'_, AppState>, repository: String) -> Res
     state.handle.remove_token(repository).await
 }
 
+/// turns the `[lifecycle]` setting `key` on or off; the agent writes it to config.toml.
+#[tauri::command]
+pub async fn set_setting(state: State<'_, AppState>, key: String, on: bool) -> Result<(), String> {
+    state.handle.set_setting(key, on).await
+}
+
 #[tauri::command]
 pub fn hide_window<R: Runtime>(window: Window<R>) -> Result<(), String> {
     hide_main_window(&window).map_err(|error| error.to_string())
@@ -134,6 +140,7 @@ pub fn handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync + 'stat
         try_again,
         set_token,
         remove_token,
+        set_setting,
         hide_window,
         read_confirmation,
         answer_confirmation,

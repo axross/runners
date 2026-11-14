@@ -35,6 +35,11 @@ pub enum Method {
     TokenRemove {
         repository: String,
     },
+    /// writes one `[lifecycle]` setting, named by its key.
+    LifecycleSet {
+        key: String,
+        on: bool,
+    },
 }
 
 /// why a call got no result.
@@ -48,6 +53,12 @@ pub enum Failure {
     },
     /// the agent refused, or failed, in its own words.
     Refused(String),
+    /// the agent refused an edit of the configuration: `code` is its `config_…` error
+    /// code, `message` its words.
+    Config {
+        code: String,
+        message: String,
+    },
     /// the connection ended.
     Lost,
     /// the call took longer than it may on a connection that is still open, so the
@@ -67,7 +78,9 @@ impl Failure {
         match self {
             Self::Busy(_) => "The agent is busy. Try again in a moment.".to_string(),
             Self::Store { .. } => "The token store refused the request.".to_string(),
-            Self::Refused(words) | Self::Other(words) => marshal_view::plain(words),
+            Self::Refused(words) | Self::Other(words) | Self::Config { message: words, .. } => {
+                marshal_view::plain(words)
+            }
             Self::Lost => "Marshal has lost contact with the agent.".to_string(),
             Self::TimedOut => {
                 "The agent has not answered yet. The list shows what it is doing.".to_string()

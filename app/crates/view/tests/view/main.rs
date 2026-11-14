@@ -15,6 +15,7 @@ mod diagnostics;
 mod github;
 mod newer_agent;
 mod privacy;
+mod settings;
 mod states;
 mod support;
 mod time;

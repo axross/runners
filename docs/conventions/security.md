@@ -1176,7 +1176,8 @@ the app may do with that reach. [App](../operations/app.md) owns how it works.
   each works only in a window whose capability grants it. The main window's
   capability grants `core:event:allow-listen` and `core:event:allow-unlisten` and the
   commands that read the view, start all, stop all, build, stop the build, try
-  again, set a token, remove a token, hide the window and open a runner's job. The
+  again, set a token, remove a token, set a setting, hide the window and open a
+  runner's job. The
   confirmation window's
   grants the two commands that read its question and answer it. Neither grants
   anything else, each is limited to its window, and a test shows that a call the
