@@ -4,8 +4,8 @@ This file defines the working agreement for agents contributing to runners.
 
 ## Project overview
 
-**runners** holds generic GitHub Actions self-hosted runner images and the CLI
-that runs them, and later the WSL 2 host configuration for Claude Code
+**runners** holds generic GitHub Actions self-hosted runner images and Marshal,
+the Windows app that runs them, and later the WSL 2 host configuration for Claude Code
 Remote Control and Amp runner agent hosts. It is being extracted from the
 runner setup of a private application repository, in steps. It holds its agent
 foundation (the entry files, agent configuration, documentation, and lint

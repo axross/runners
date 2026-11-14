@@ -4072,7 +4072,9 @@ it.
 
 Tauri links the Visual C++ runtime statically, so `marshal-app.exe` needs no Visual
 C++ redistributable on the host, and it uses the Universal C Runtime that Windows 11
-includes. The import check runs `dumpbin /dependents`, found through `vswhere` among
+includes. [`cli/.cargo/config.toml`](../../cli/.cargo/config.toml) still sets
+`+crt-static` for the library's own tests and helpers, built in `cli/`, which no
+release ships. The import check runs `dumpbin /dependents`, found through `vswhere` among
 the MSVC tools the build links with. It fails unless `dumpbin` listed the app's
 dependencies, `KERNEL32.dll` among them, so a run that read nothing cannot pass.
 
