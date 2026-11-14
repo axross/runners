@@ -1,6 +1,7 @@
 //! the slot's loop on the Tart backend, with the fake `tart`, `softnet` and `docker`
-//! as processes: the order of a cycle, and what each failure does to the VM and to
-//! the registration.
+//! as processes: the order of a cycle, what each failure does to the VM and to the
+//! registration, and what a drain for an update does to a Tart runner, read from the
+//! guest runner's recorded lines.
 #![cfg(unix)]
 #![allow(
     clippy::unwrap_used,
@@ -12,16 +13,23 @@
 mod support;
 
 use std::cell::{Cell, RefCell};
-use std::time::Duration;
+use std::future::Future;
+use std::time::{Duration, Instant};
 
+use marshal_cli::instance::lifecycle::StopTimes;
+use marshal_cli::instance::steps::{Steps, container_steps};
 use marshal_cli::runtime::backend::Backend;
 use marshal_cli::runtime::board::Board;
+use marshal_cli::runtime::clock::Clock;
 use marshal_cli::runtime::fake::FakeClock;
+use marshal_cli::runtime::job_marks::Activity;
+use marshal_cli::runtime::name::job_container_name;
 use marshal_cli::runtime::pool::SlotSpec;
 use marshal_cli::runtime::registration::{JitRequest, Registrar, RegistrationError};
 use marshal_cli::runtime::secret::Secret;
-use marshal_cli::runtime::worker::{run_slot, stop_channel};
-use support::rig::{Rig, START_MILLIS, golden_name, job_vm};
+use marshal_cli::runtime::token::TokenFiles;
+use marshal_cli::runtime::worker::{Services, run_slot, run_slot_with, stop_channel};
+use support::rig::{POOL, Rig, SLOT, START_MILLIS, TestClock, golden_name, job_vm};
 use support::{TempDir, slot_spec};
 use tokio::sync::watch;
 
@@ -237,4 +245,215 @@ async fn a_prerequisite_refusal_holds_the_slot_and_nothing_is_cloned() {
         "{:?}",
         rig.log.lines()
     );
+}
+
+const LISTENING: &str = "stdout\t2026-11-12 08:00:01Z: Listening for Jobs";
+const RUNNING_JOB: &str = "stderr\t2026-11-12 08:03:00Z: Running job: build";
+
+fn job_container() -> String {
+    job_container_name(POOL, SLOT, TestClock.now())
+}
+
+async fn until(what: &str, condition: impl Fn() -> bool) {
+    let started = Instant::now();
+    while !condition() {
+        assert!(
+            started.elapsed() < Duration::from_secs(20),
+            "never saw {what}"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+/// runs the slot with `drain` and `stop` beside `script`, and returns how many
+/// registrations it asked for.
+async fn drained_run(
+    rig: &Rig,
+    drain: &watch::Sender<bool>,
+    stop: &watch::Sender<bool>,
+    times: StopTimes,
+    script: impl Future<Output = ()>,
+) -> usize {
+    let scratch = TempDir::new();
+    let slot = vm_slot(&scratch);
+    let recorder = Recorder {
+        rig,
+        stop: stop.clone(),
+        stop_on: usize::MAX,
+        requests: Cell::new(0),
+        seen: RefCell::new(Vec::new()),
+    };
+    let board = Board::default();
+    let services = Services {
+        backend: &rig.backend,
+        clock: &TestClock,
+        registrar: &recorder,
+        tokens: &TokenFiles,
+        log: &*rig.log,
+        board: &board,
+        drain: Some(drain),
+        stop_times: times,
+    };
+    let both = async { tokio::join!(run_slot_with(&slot, &services, stop.subscribe()), script) };
+    tokio::time::timeout(Duration::from_secs(60), both)
+        .await
+        .expect("the slot and the script did not both end in a minute");
+    recorder.requests.get()
+}
+
+/// waits until the slot's runner runs and its marks read busy, then begins the drain.
+async fn busy_in_a_drain(rig: &Rig, drain: &watch::Sender<bool>) {
+    let name = job_container();
+    until("the runner running", || rig.containers().contains(&name)).await;
+    until("the busy mark", || {
+        rig.backend.job_activity(&name) == Activity::Busy
+    })
+    .await;
+    drain.send_replace(true);
+}
+
+fn position(calls: &[Vec<String>], wanted: &[&str]) -> usize {
+    calls
+        .iter()
+        .position(|call| *call == wanted)
+        .unwrap_or_else(|| panic!("no {wanted:?} in {calls:?}"))
+}
+
+/// where `tart stop` of `vm` came, whatever its timeout.
+fn vm_stopped(calls: &[Vec<String>], vm: &str) -> usize {
+    calls
+        .iter()
+        .position(|call| call.len() > 1 && call[0] == "stop" && call[1] == vm)
+        .unwrap_or_else(|| panic!("no stop of {vm} in {calls:?}"))
+}
+
+fn ended_in_the_vm(rig: &Rig) -> bool {
+    rig.docker_calls().iter().any(|call| {
+        matches!(
+            call.arguments.first().map(String::as_str),
+            Some("stop" | "kill" | "rm")
+        )
+    })
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn in_a_drain_an_idle_runners_container_is_stopped_its_vm_stopped_and_deleted_and_nothing_registers()
+ {
+    let rig = Rig::new();
+    rig.docker_script("run_mode", "hold");
+    rig.docker_script("run_says", LISTENING);
+    let (drain, _) = watch::channel(false);
+    let (stop, _) = stop_channel();
+    let name = job_container();
+    let times = StopTimes::default();
+    let script = async {
+        until("the runner running", || rig.containers().contains(&name)).await;
+        drain.send_replace(true);
+        until("the job VM deleted", || {
+            rig.fake.vm_names() == [golden_name()]
+        })
+        .await;
+        // long enough for a slot that registers again to clone its next VM
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        assert_eq!(
+            rig.tart_calls_of("clone").len(),
+            1,
+            "a VM prepared in the drain"
+        );
+        stop.send_replace(true);
+    };
+    let registrations = drained_run(&rig, &drain, &stop, times, script).await;
+    assert_eq!(registrations, 1, "a registration during the drain");
+    let calls = rig.tart_calls();
+    let vm = job_vm();
+    let grace = times.grace.as_secs().to_string();
+    let stopped = position(
+        &calls,
+        &["exec", &vm, "docker", "stop", "--time", &grace, &name],
+    );
+    let vm_stopped = vm_stopped(&calls, &vm);
+    let deleted = position(&calls, &["delete", &vm]);
+    assert!(stopped < vm_stopped && vm_stopped < deleted, "{calls:?}");
+    assert!(rig.backend.prepared_hosts().is_empty());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn in_a_drain_a_busy_runner_keeps_its_vm_until_its_guest_exits_and_nothing_registers() {
+    let rig = Rig::new();
+    rig.docker_script("run_mode", "hold");
+    rig.docker_script("run_says", &format!("{LISTENING}\n{RUNNING_JOB}"));
+    let (drain, _) = watch::channel(false);
+    let (stop, _) = stop_channel();
+    let vm = job_vm();
+    let script = async {
+        busy_in_a_drain(&rig, &drain).await;
+        // several of the drain's looks at the marks
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        assert!(
+            rig.containers().contains(&job_container()),
+            "the busy job ended"
+        );
+        assert!(rig.fake.vm_names().contains(&vm), "the busy job's VM went");
+        assert!(!ended_in_the_vm(&rig), "{:?}", rig.docker_calls());
+        // the job ends in the guest: the held run exits once its container is gone
+        rig.docker_script("containers", "");
+        until("the job VM deleted", || {
+            rig.fake.vm_names() == [golden_name()]
+        })
+        .await;
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        assert_eq!(
+            rig.tart_calls_of("clone").len(),
+            1,
+            "a VM prepared in the drain"
+        );
+        stop.send_replace(true);
+    };
+    let registrations = drained_run(&rig, &drain, &stop, StopTimes::default(), script).await;
+    assert_eq!(registrations, 1, "a registration during the drain");
+    assert!(!ended_in_the_vm(&rig), "{:?}", rig.docker_calls());
+    let calls = rig.tart_calls();
+    assert!(vm_stopped(&calls, &vm) < position(&calls, &["delete", &vm]));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn the_stop_at_a_drains_bound_stops_a_busy_runner_in_its_vm_and_deletes_the_vm() {
+    let rig = Rig::new();
+    rig.docker_script("run_mode", "hold");
+    rig.docker_script("run_says", &format!("{LISTENING}\n{RUNNING_JOB}"));
+    let (drain, _) = watch::channel(false);
+    let (stop, _) = stop_channel();
+    let times = StopTimes::reserving(rig.backend.release_budget());
+    let (force, _) = watch::channel(false);
+    let removed = Cell::new(true);
+    let script = async {
+        busy_in_a_drain(&rig, &drain).await;
+        // the agent's stop at the bound: the running containers, then the stop, then
+        // the container steps
+        let containers = rig.backend.running_containers();
+        stop.send_replace(true);
+        let steps = Steps {
+            backend: &rig.backend,
+            log: &*rig.log,
+            times,
+            force: &force,
+            containers_removed: &removed,
+            left: None,
+        };
+        container_steps(&steps, containers).await;
+    };
+    let registrations = drained_run(&rig, &drain, &stop, times, script).await;
+    assert_eq!(registrations, 1);
+    assert!(removed.get(), "{:?}", rig.log.lines());
+    assert_eq!(rig.fake.vm_names(), [golden_name()]);
+    assert!(rig.backend.prepared_hosts().is_empty());
+    let calls = rig.tart_calls();
+    let vm = job_vm();
+    let name = job_container();
+    let grace = times.grace.as_secs().to_string();
+    let stopped = position(
+        &calls,
+        &["exec", &vm, "docker", "stop", "--time", &grace, &name],
+    );
+    assert!(stopped < position(&calls, &["delete", &vm]), "{calls:?}");
 }
