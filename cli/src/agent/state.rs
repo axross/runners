@@ -26,6 +26,12 @@ impl Reason {
     pub const NO_POOL_STARTED: &'static str = "no_pool_started";
     pub const RESTART_LIMIT: &'static str = "restart_limit";
     pub const IMAGE_BUILD_FAILED: &'static str = "image_build_failed";
+    /// the computer slept, or woke, which stops every runner.
+    pub const SLEPT: &'static str = "slept";
+    /// the primary network changed, which stops every runner.
+    pub const NETWORK_CHANGED: &'static str = "network_changed";
+    /// a signal stop that came after too many resumes within an hour, so it arms none.
+    pub const RESUMED_TOO_OFTEN: &'static str = "resumed_too_often";
 
     #[must_use]
     pub fn new(code: &'static str, message: impl Into<String>) -> Self {
@@ -38,6 +44,19 @@ impl Reason {
     #[must_use]
     pub fn by_you() -> Self {
         Self::new(Self::BY_YOU, "stopped by you")
+    }
+
+    /// whether a signal stopped the runners rather than the user or an error, which an
+    /// update keeps and a restart of the agent does not undo.
+    #[must_use]
+    pub fn is_signal(&self) -> bool {
+        Self::is_signal_code(self.code)
+    }
+
+    /// whether `code` is a signal stop's, as a client reads it off the wire.
+    #[must_use]
+    pub fn is_signal_code(code: &str) -> bool {
+        [Self::SLEPT, Self::NETWORK_CHANGED, Self::RESUMED_TOO_OFTEN].contains(&code)
     }
 
     pub(crate) fn wire(&self) -> WireReason {
@@ -71,6 +90,12 @@ impl Phase {
             Self::Quitting => "quitting",
             Self::Stopped(_) => "stopped",
         }
+    }
+
+    /// whether the agent wants Windows kept awake here.
+    #[must_use]
+    pub fn holds_keep_awake(&self) -> bool {
+        !matches!(self, Self::Stopped(_) | Self::Quitting)
     }
 }
 
@@ -117,11 +142,11 @@ impl Phase {
         match (self, method) {
             (Self::Running | Self::Stopped(_), Method::DrainForUpdate { .. }) => Action::Begin,
             (_, Method::DrainForUpdate { .. }) => Action::Refuse(DRAIN_NOT_NOW),
-            (Self::Stopped(_), Method::StartAll | Method::Build) => Action::Begin,
+            (Self::Stopped(_), Method::StartAll | Method::Launch | Method::Build) => Action::Begin,
             (Self::Stopped(_) | Self::Stopping | Self::Quitting, Method::StopAll)
-            | (Self::Running, Method::StartAll) => Action::NoChange,
+            | (Self::Running, Method::StartAll | Method::Launch) => Action::NoChange,
             (Self::Running, Method::Build) => Action::Refuse(BUILD_WHILE_RUNNING),
-            (_, Method::StartAll | Method::Build) => Action::Busy,
+            (_, Method::StartAll | Method::Launch | Method::Build) => Action::Busy,
             (_, Method::StopAll) => Action::Stop,
             (_, Method::Quit) => Action::Quit,
             _ => Action::Refuse("the method is not available"),

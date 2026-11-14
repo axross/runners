@@ -6,6 +6,7 @@ image_name = "example-image:tag"
 start_at_login = "yes"
 start_runners_on_launch = 1
 keep_awake = true
+stop_on_network_change = "off"
 resume_after_stop = [true]
 
 [[pool]]

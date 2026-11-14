@@ -2,7 +2,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 
 use marshal_cli::agent::Launch;
-use marshal_modes::{Mode, Overrides, agent_arguments, run};
+use marshal_modes::{Mode, Overrides, agent_arguments, is_sign_in, run};
 
 fn args(words: &[&str]) -> Vec<OsString> {
     words.iter().map(OsString::from).collect()
@@ -17,6 +17,16 @@ fn no_argument_starts_the_app() {
 fn an_argument_that_names_no_mode_starts_the_app() {
     assert_eq!(Mode::of(args(&["marshal-app", "--show"])), Mode::App);
     assert_eq!(Mode::of(args(&["marshal-app", "start"])), Mode::App);
+}
+
+#[test]
+fn the_sign_in_argument_starts_the_app_without_its_window() {
+    let signed_in = args(&["marshal-app", "--sign-in"]);
+    assert_eq!(Mode::of(signed_in.clone()), Mode::App);
+    assert!(is_sign_in(signed_in));
+    assert!(!is_sign_in(args(&["marshal-app"])));
+    // the program's own path is not an argument, whatever it is called
+    assert!(!is_sign_in(args(&["--sign-in"])));
 }
 
 #[test]

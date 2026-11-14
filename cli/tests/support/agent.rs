@@ -27,10 +27,16 @@ use marshal_cli::github_status::http::GitHubReader;
 use marshal_cli::instance::lifecycle::StopTimes;
 use marshal_cli::instance::lock::InstanceLock;
 use marshal_cli::instance::roots::Roots;
+use marshal_cli::lifecycle_settings::Current;
+use marshal_cli::macos::fake::FakeSignals;
+use marshal_cli::macos::monitor::Cadence;
+use marshal_cli::runtime::clock::SystemClock;
 use marshal_cli::runtime::fake::{Call, FakeBackend, FakeClock, FakeRegistrar, MemoryLog};
 use marshal_cli::runtime::log::Log;
 use marshal_cli::runtime::registration::HttpLimits;
 use marshal_cli::token_store::{MemoryTokenStore, TokenKey, TokenStore};
+use marshal_cli::windows_host::monitor::WindowsMonitor;
+use marshal_cli::windows_host::run_key::MemorySignIn;
 use serde_json::{Value, json};
 use tokio::io::WriteHalf;
 use tokio::sync::{Notify, mpsc, watch};
@@ -158,6 +164,13 @@ pub struct Rig {
     pub profile: Cell<marshal_cli::profile::Profile>,
     /// a store the agent uses in place of the in-memory one, as the Credential Manager.
     pub other_store: RefCell<Option<Arc<dyn TokenStore>>>,
+    /// the signals the agent's Windows monitor reads; a test makes it sleep or move
+    /// the network.
+    pub signals: Rc<FakeSignals>,
+    /// the settings in effect, which the agent sets and its monitor reads.
+    pub in_effect: Current,
+    /// the sign-in item, in memory.
+    pub sign_in: MemorySignIn,
     lock: RefCell<Option<InstanceLock>>,
     ended_at: Cell<Option<Instant>>,
 }
@@ -195,6 +208,9 @@ impl Rig {
             no_store: Cell::new(false),
             profile: Cell::new(marshal_cli::profile::Profile::Axpc),
             other_store: RefCell::new(None),
+            signals: Rc::new(FakeSignals::new()),
+            in_effect: Current::default(),
+            sign_in: MemorySignIn::default(),
             lock: RefCell::new(Some(lock)),
             ended_at: Cell::new(None),
         }
@@ -276,12 +292,26 @@ impl Rig {
         )
         .unwrap();
         let agent = async {
+            // the monitor ticks on the real clock, so its samples move no fake time
+            let monitor = WindowsMonitor::new(
+                Rc::clone(&self.signals),
+                &self.in_effect,
+                &SystemClock,
+                &self.log,
+                Cadence {
+                    sample: Duration::from_millis(10),
+                    samples_per_check: 5,
+                },
+            );
             let resident = Resident {
                 backend: &self.backend,
                 clock: &self.clock,
                 registrar: &self.registrar,
                 reader: &reader,
                 builder: &self.builder,
+                monitor: &monitor,
+                in_effect: &self.in_effect,
+                sign_in: Some(&self.sign_in),
                 store: (!self.no_store.get()).then(|| {
                     self.other_store
                         .borrow()

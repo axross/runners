@@ -7,6 +7,15 @@ schema_version = 1
 routing_label = "axpc"
 image_name = "actions-runner:local"
 
+# how Marshal behaves around sign-in, sleep and the network. Each key is optional;
+# remove the leading # to set one. The values shown are the Windows defaults.
+# [lifecycle]
+# start_at_login = false
+# start_runners_on_launch = true
+# keep_awake = true
+# stop_on_network_change = true
+# resume_after_stop = false
+
 [[pool]]
 name = "example-repo-one"
 repository = "example-owner/example-repo-one"

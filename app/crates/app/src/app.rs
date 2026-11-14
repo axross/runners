@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use marshal_cli::agent::Launch;
 use marshal_cli::instance::roots::Roots;
-use marshal_modes::Overrides;
+use marshal_modes::{Overrides, is_sign_in};
 use marshal_session::{
     AppLog, Library, Log, MAX_FILE_BYTES, OwnExecutable, Processes, RECORD_FILE, RecordFile, Seams,
     Session, TimeSource, Updater, WallClock,
@@ -128,16 +128,21 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let version = env!("CARGO_PKG_VERSION");
     let time = Arc::new(WallClock::new(utc_offset_minutes));
     // every launch removes the record kept across an update; a launch of the update's
-    // version within 30 minutes of it keeps the runners stopped by you
+    // version within 30 minutes of it leaves the runners as they were, and any other
+    // launch is fresh: the agent starts stopped and is sent `launch`
     let record = Arc::new(RecordFile::new(roots.config_directory().join(RECORD_FILE)));
-    let launch = if record.take(version, time.now_ms()) {
-        log.info(
-            "This launch follows an update from runners stopped by you, so they stay stopped.",
-        );
-        Launch::Stopped
-    } else {
-        Launch::Running
-    };
+    let taken = record.take(version, time.now_ms());
+    match taken {
+        Some(Launch::Stopped) => {
+            log.info("This launch follows an update from stopped runners, so they stay stopped.")
+        }
+        Some(Launch::Running) => {
+            log.info("This launch follows an update from running runners, so they start again.")
+        }
+        None => {}
+    }
+    let fresh = taken.is_none();
+    let launch = taken.unwrap_or(Launch::Stopped);
     let (updater, processes) = update_seams(app);
     let watch = Arc::new(Mutex::new(Watch::new()));
     let latest = Arc::new(Latest::default());
@@ -159,9 +164,16 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         processes,
         record,
         launch,
+        fresh,
     });
     app.manage(AppState::new(handle, latest, Arc::clone(&log)));
-    tell_session_shown(app);
+    // the window starts hidden, and a start from the sign-in item leaves it so
+    if is_sign_in(std::env::args_os()) {
+        log.info("Marshal started at sign-in, with its icon only.");
+        tell_session_shown(app);
+    } else {
+        show_main_window(app);
+    }
     tray::create(
         app,
         Look {

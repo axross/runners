@@ -19,6 +19,9 @@ use tokio::sync::mpsc;
 /// what the session asks of a connected agent.
 #[derive(Debug)]
 pub enum Method {
+    /// what a fresh launch sends: the agent starts the runners as
+    /// `start_runners_on_launch` says.
+    Launch,
     StartAll,
     StopAll,
     Build,
@@ -237,16 +240,17 @@ impl Processes for NoUpdates {
 }
 
 impl Record for NoUpdates {
-    fn write(&self, _version: &str, _at_ms: u64) -> Result<(), String> {
+    fn write(&self, _version: &str, _at_ms: u64, _stopped: bool) -> Result<(), String> {
         Ok(())
     }
 
     fn remove(&self) {}
 }
 
-/// the one-shot record of runners "stopped by you" when the agent ended for an update.
+/// the one-shot record of how the runners stood when the agent ended for an update.
 pub trait Record: Send + Sync + 'static {
-    /// writes that the runners were stopped by you, for the update to `version`.
-    fn write(&self, version: &str, at_ms: u64) -> Result<(), String>;
+    /// writes whether the runners stay stopped after the update to `version`: stopped
+    /// by you or by a signal, rather than running.
+    fn write(&self, version: &str, at_ms: u64, stopped: bool) -> Result<(), String>;
     fn remove(&self);
 }

@@ -67,6 +67,17 @@ impl Overrides {
     }
 }
 
+/// the argument the sign-in item starts the app with, which hides its window.
+pub use marshal_cli::windows_host::run_key::SIGN_IN_ARGUMENT;
+
+/// whether a process's arguments, the program name first, start the app from the
+/// sign-in item, with its icon and without its window.
+pub fn is_sign_in(args: impl IntoIterator<Item = OsString>) -> bool {
+    args.into_iter()
+        .skip(1)
+        .any(|argument| argument == SIGN_IN_ARGUMENT)
+}
+
 /// the arguments that start the agent from this executable.
 #[must_use]
 pub fn agent_arguments(launch: Launch) -> [&'static str; 2] {
@@ -123,14 +134,77 @@ pub fn run(mode: Mode) -> ExitCode {
     match mode {
         Mode::Agent(launch) => {
             let overrides = Overrides::from_environment();
-            ExitCode::from(marshal_cli::agent::run(
-                overrides.options(launch),
-                &mut std::io::stderr(),
-            ))
+            let mut options = overrides.options(launch);
+            options.keep_awake = keep_awake_request();
+            ExitCode::from(marshal_cli::agent::run(options, &mut std::io::stderr()))
         }
         Mode::Command(args) => {
             marshal_cli::command::run(args, &mut std::io::stdout(), &mut std::io::stderr())
         }
         Mode::App | Mode::Refused => ExitCode::from(EXIT_USAGE),
+    }
+}
+
+/// asks Windows to keep the system, not the display, awake until the returned guard
+/// is dropped.
+#[cfg(windows)]
+fn keep_awake_request() -> Option<marshal_cli::windows_host::keep_awake::Request> {
+    Some(Box::new(|| {
+        keepawake::Builder::default()
+            .idle(true)
+            .reason("Marshal's runners are running")
+            .app_name("Marshal")
+            .create()
+            .map(|held| Box::new(held) as Box<dyn std::any::Any>)
+            .map_err(|error| error.to_string())
+    }))
+}
+
+#[cfg(not(windows))]
+fn keep_awake_request() -> Option<marshal_cli::windows_host::keep_awake::Request> {
+    None
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use std::process::Command;
+
+    /// what `powercfg /requests` lists, or none when it needs an administrator, as it
+    /// does off CI's runner.
+    fn power_requests() -> Option<String> {
+        let output = Command::new("powercfg").arg("/requests").output().ok()?;
+        output
+            .status
+            .success()
+            .then(|| String::from_utf8_lossy(&output.stdout).into_owned())
+    }
+
+    #[test]
+    fn the_keep_awake_request_is_taken_listed_by_windows_and_ended() {
+        let held = super::keep_awake_request().map(|take| take());
+        assert!(matches!(held, Some(Ok(_))), "the request was not taken");
+        let name = std::env::current_exe()
+            .ok()
+            .and_then(|path| {
+                path.file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+            })
+            .unwrap_or_default();
+        let during = power_requests();
+        drop(held);
+        let after = power_requests();
+        match (during, after) {
+            (Some(during), Some(after)) => {
+                assert!(
+                    !name.is_empty() && during.contains(&name),
+                    "not listed while held"
+                );
+                assert!(!after.contains(&name), "still listed once dropped");
+            }
+            _ => assert!(
+                std::env::var_os("CI").is_none(),
+                "powercfg /requests did not answer on CI's administrator account"
+            ),
+        }
     }
 }
