@@ -8,7 +8,8 @@ use tokio::sync::watch;
 use crate::image::check::ImageCheck;
 
 use super::backend::{
-    Backend, ContainerSpec, CpuRequest, HostPreparation, HostWait, RELEASE_WITHIN, StopRequest,
+    Backend, ContainerSpec, CpuRequest, HostPreparation, HostWait, JobHost, RELEASE_WITHIN,
+    StopRequest,
 };
 use super::board::{Board, SlotState};
 use super::clock::Clock;
@@ -265,9 +266,6 @@ enum Attempt {
     /// a stop or a drain ended the attempt before a container started, or a drain
     /// stopped its idle runner's container.
     Halted,
-    /// the host's VM could not be deleted, and the slot's next preparation deletes it
-    /// again at the backend's own pace, so the slot does not back off.
-    DeletionPending,
 }
 
 struct Context<'a, B, K, R> {
@@ -289,21 +287,14 @@ impl<B: Backend, K: Clock, R: Registrar> Context<'_, B, K, R> {
         if let Some(wait) = self.backend.host_wait(&request.host) {
             self.report.state(SlotState::Waiting(wait));
         }
-        let preparing = self.backend.prepare_job_host(&request);
-        tokio::pin!(preparing);
-        let prepared = loop {
-            tokio::select! {
-                prepared = &mut preparing => break Some(prepared),
-                () = halt.wait() => break None,
-                () = wait_changed(&mut waits) => {
-                    self.report.state(match self.backend.host_wait(&request.host) {
-                        Some(wait) => SlotState::Waiting(wait),
-                        None => SlotState::Registering,
-                    });
-                    self.report.board.record_vm_leftovers(self.backend.counted_leftovers());
-                }
-            }
-        };
+        let prepared = self
+            .showing_waits(
+                self.backend.prepare_job_host(&request),
+                &request.host,
+                &mut waits,
+                halt,
+            )
+            .await;
         let attempt = match prepared {
             None => Attempt::Halted,
             Some(HostPreparation::Ready) => self.run_job(slot, halt).await,
@@ -327,20 +318,44 @@ impl<B: Backend, K: Clock, R: Registrar> Context<'_, B, K, R> {
                 self.report.label
             ));
             if !halt.stopped()
-                && matches!(
-                    self.backend.host_wait(&request.host),
-                    Some(HostWait::VmDeletion(_))
-                )
+                && let Some(wait @ HostWait::VmDeletion(_)) = self.backend.host_wait(&request.host)
             {
-                if let Attempt::Failed(reason) | Attempt::Held(reason) = &attempt {
-                    self.report
-                        .log
-                        .warn(&format!("{}: {reason}.", self.report.label));
-                }
-                return Attempt::DeletionPending;
+                self.report.state(SlotState::Waiting(wait));
+                self.showing_waits(
+                    self.backend.finish_release(&request.host),
+                    &request.host,
+                    &mut waits,
+                    halt,
+                )
+                .await;
             }
         }
         attempt
+    }
+
+    /// awaits `work`, showing what the host waits for whenever that changes, or
+    /// `None` when a stop or a drain comes first.
+    async fn showing_waits<T>(
+        &self,
+        work: impl Future<Output = T>,
+        host: &JobHost,
+        waits: &mut Option<watch::Receiver<()>>,
+        halt: &mut Halt,
+    ) -> Option<T> {
+        tokio::pin!(work);
+        loop {
+            tokio::select! {
+                done = &mut work => break Some(done),
+                () = halt.wait() => break None,
+                () = wait_changed(waits) => {
+                    self.report.state(match self.backend.host_wait(host) {
+                        Some(wait) => SlotState::Waiting(wait),
+                        None => SlotState::Registering,
+                    });
+                    self.report.board.record_vm_leftovers(self.backend.counted_leftovers());
+                }
+            }
+        }
     }
 
     /// probes the host's CPUs, registers, runs one job container to its end and
@@ -596,7 +611,7 @@ pub async fn run_slot_with<B: Backend, K: Clock, R: Registrar>(
         }
 
         let pause = match context.attempt(slot, &mut halt).await {
-            Attempt::Halted | Attempt::DeletionPending => continue,
+            Attempt::Halted => continue,
             Attempt::Ended if halt.draining() => continue,
             Attempt::Ended => {
                 log.info(&format!(

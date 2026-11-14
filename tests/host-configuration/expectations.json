@@ -460,6 +460,12 @@
     ],
     "lacks": ["cpus", "diskGb", "diagnostics"]
   },
+  "rust/rejected/axmc-linux-slots-null.json": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "contains": ["repositories[0].slots: must be an integer from 1 to 16"],
+    "lacks": ["required field is missing"]
+  },
   "rust/rejected/axmc-macos-slots-null.json": {
     "profile": "axmc",
     "outcome": "reject",

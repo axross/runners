@@ -356,7 +356,7 @@ tables, an inline array of tables, and hexadecimal integers.
 | ------------------------ | ----------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `name`                   | string                              | `name`                           | Required.                                                                                                                                                       |
 | `repository`             | string                              | `owner` and `repository`         | Required, `"owner/name"`. Anything that is not one owner, a slash, and one name is `must be "owner/name"`; each part then follows the owner or repository rule. |
-| `runners`                | integer                             | `slots`                          | Required on a Linux pool. Optional on a macOS pool, with the JSON key's default.                                                                                |
+| `runners`                | integer                             | `slots`                          | Required on axpc. Optional on axmc, with the JSON key's default: 2 on a Linux pool and 1 on a macOS pool.                                                       |
 | `labels`                 | array of strings                    | `labels`                         | Optional. Absent or empty gives the platform labels plus `routing_label`.                                                                                       |
 | `os`                     | `"linux"`, `"macos"`                | `os`                             | Optional on both hosts, and a pool without it is a Linux pool. Windows accepts `"linux"`, which changes nothing, and rejects `"macos"`.                         |
 | `cpus`                   | number                              | `cpus`                           | Optional, with the JSON key's default and range.                                                                                                                |
@@ -766,7 +766,10 @@ Two steps, per job and per slot, carry this:
   probe, a failed or refused registration, a run that ended or failed, and a stop at
   any of those points. A diagnostic container is exported first, so the host is
   released after the export. A release that fails is a warning and changes nothing
-  else.
+  else, except that a macOS VM still waiting for its deletion is then deleted again
+  through `finish_release` until it is gone, before the slot backs off. A stop ends
+  that wait and its sequence releases the host; a drain ends it too, and the slot's
+  next preparation deletes the VM.
 
 The backend counts a host as prepared from the start of its preparation until its
 release and lists the hosts it still counts, so the stop sequence can release the
@@ -2935,6 +2938,7 @@ These fixtures pin the new rules, and each default, minimum, and message has one
 | `rejected/axmc-macos-diagnostics.json`             | The `diagnostics` message, with no other error                                                   |
 | `rejected/axmc-macos-errors-in-field-order.json`   | The four messages together, in an entry's field order, at the index of a pool after a Linux pool |
 | `rejected/axmc-macos-slots-null.json`              | A `null` `slots` is a type error, not a default and not a missing field                          |
+| `rejected/axmc-linux-slots-null.json`              | The same for a Linux pool on axmc, where `slots` is optional too                                 |
 | `accepted/axmc-linux-default-slots.json`           | A Linux pool without `slots` gets 2 on axmc, beside a macOS pool without it that gets 1          |
 
 ### The Runner Record
@@ -3146,7 +3150,7 @@ these steps in place of the Linux ones:
    There is no container, so CPU placement is the VM's vCPUs, and a stop signals
    `Runner.Listener` with `sudo -n pkill -INT`, then `-KILL`.
 4. **Deletion.** When the job ends the VM is deleted, as on Linux. A VM the slot
-   fails to delete is deleted again every 5 s before the slot's next VM, and it
+   fails to delete is deleted again every 5 s, before the slot backs off, and it
    counts toward the limit meanwhile.
 
 When `tart run` ends with Tart's VM-limit error, `The number of VMs exceeds the
@@ -4083,7 +4087,7 @@ Five fixtures have an expectation of their own, because the TOML rules differ:
 | `rust/rejected/axpc-axmc-only-fields.json` | Only `budget` and `pool[0].disk_gb` are unknown                                  | `os` is a key a Windows pool defines, and it accepts `"linux"`.                                              |
 | `shared/rejected/field-name-case.json`     | The wrong-case keys are unknown, and the keys they stand for are missing as well | TOML keys match in exact case, where JSON finds a known field in any case and reports only the unknown ones. |
 
-**The fixtures that do not map** stay JSON-only. The test lists all 42 by name with
+**The fixtures that do not map** stay JSON-only. The test lists all 44 by name with
 the category that keeps each out, and fails when a fixture that cannot be translated
 is not listed, when a listed one can be, or when its category is wrong. The
 categories are:

@@ -333,8 +333,8 @@ fn read_name(name: &Field, path: &KeyPath, errors: &mut Errors) -> Option<String
 /// the slots of an axmc Linux pool that sets none.
 pub const AXMC_LINUX_DEFAULT_SLOTS: u32 = 2;
 
-/// reads `slots`: absent is `default` where there is one, and otherwise a missing
-/// field; a `null` is a type error.
+/// reads `slots`: absent is `default` where there is one, and a `null` then a type
+/// error; without a default, absent or `null` is a missing field.
 fn read_slots(
     slots: &Field,
     path: &KeyPath,
@@ -342,10 +342,13 @@ fn read_slots(
     errors: &mut Errors,
 ) -> Option<u32> {
     let field = path.key(Key::Slots);
-    if let (Field::Absent, Some(default)) = (slots, default) {
-        return Some(default);
-    }
-    let value = fields::required(slots, &field, errors)?;
+    let value = match default {
+        Some(default) => match slots.get() {
+            None => return Some(default),
+            Some(value) => value,
+        },
+        None => fields::required(slots, &field, errors)?,
+    };
     limits::read_bounded_integer(value, &field, MAX_SLOTS, errors)
 }
 

@@ -520,7 +520,8 @@ warnings ask for it.
 - **At most two macOS VMs.** Apple's licence allows two macOS guests at once, so a
   macOS slot counts the macOS VMs before it clones one, and waits while two count:
   job and build VMs of macOS pools, a leftover job VM that `tart get` reports as
-  macOS, any other running macOS VM, and any running VM whose OS cannot be read.
+  macOS or whose OS it cannot read, and any other running VM that it reports as
+  macOS or whose OS it cannot read, except the Linux golden and build VMs.
   `marshal status` shows the slot `waiting for the macOS VM limit`. The golden macOS
   VM counts only while someone runs it by hand, and a job VM of a configured Linux
   pool counts only when `tart get` reports it as macOS.

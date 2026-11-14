@@ -137,6 +137,7 @@ const JSON_ONLY: &[(&str, JsonOnly)] = &[
         JsonOnly::Token,
     ),
     ("rust/rejected/axmc-image-name-null.json", JsonOnly::Null),
+    ("rust/rejected/axmc-linux-slots-null.json", JsonOnly::Null),
     ("rust/rejected/axmc-macos-slots-null.json", JsonOnly::Null),
     (
         "rust/rejected/axmc-shared-token-other-repository.json",

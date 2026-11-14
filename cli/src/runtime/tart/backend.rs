@@ -410,14 +410,14 @@ impl<C: Clock> TartBackend<C> {
     /// deletes the VM an earlier release of `request`'s macOS slot failed to delete,
     /// again every [`TartTimings::place_poll`] until it is gone; the VM counts against
     /// the limit meanwhile, and the slot shows it waits for the deletion.
-    async fn delete_until_gone(&self, request: &HostRequest) {
-        let label = format!("{} slot {}", request.host.pool, request.host.slot);
+    async fn delete_until_gone(&self, host: &JobHost) {
+        let label = format!("{} slot {}", host.pool, host.slot);
         let mut warned = false;
         loop {
-            let Some(entry) = self.host(&request.host.pool, request.host.slot) else {
+            let Some(entry) = self.host(&host.pool, host.slot) else {
                 return;
             };
-            match self.release_job_host(&request.host, RELEASE_WITHIN).await {
+            match self.release_job_host(host, RELEASE_WITHIN).await {
                 Ok(()) => {
                     self.mark_wait(&entry, None);
                     return;
@@ -1044,7 +1044,7 @@ impl<C: Clock> Backend for TartBackend<C> {
         // never owns two
         if self.host(&key.0, key.1).is_some() {
             if self.is_macos(&key.0) {
-                self.delete_until_gone(request).await;
+                self.delete_until_gone(&request.host).await;
             } else if let Err(error) = self.release_job_host(&request.host, RELEASE_WITHIN).await {
                 return HostPreparation::Failed(error);
             }
@@ -1105,8 +1105,8 @@ impl<C: Clock> Backend for TartBackend<C> {
             return Ok(());
         };
         let released = self.release_host(&key, &entry, budget).await;
-        // a macOS VM left behind keeps counting, so the slot's next preparation
-        // deletes it again every few seconds rather than after the backoff
+        // a macOS VM left behind keeps counting, so the worker has it deleted again
+        // every few seconds before it backs off
         if released.is_err()
             && self.is_macos(&host.pool)
             && let Some(vm) = entry.vm()
@@ -1114,6 +1114,10 @@ impl<C: Clock> Backend for TartBackend<C> {
             self.mark_wait(&entry, Some(HostWait::VmDeletion(vm)));
         }
         released
+    }
+
+    async fn finish_release(&self, host: &JobHost) {
+        self.delete_until_gone(host).await;
     }
 
     fn host_awaits_finalisation(&self, host: &JobHost) -> bool {

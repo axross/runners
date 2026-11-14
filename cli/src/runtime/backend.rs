@@ -358,6 +358,15 @@ pub trait Backend {
         budget: Duration,
     ) -> impl Future<Output = Result<(), BackendError>>;
 
+    /// after a [`release_job_host`](Backend::release_job_host) that failed while the
+    /// host [waits](Backend::host_wait) for its VM's deletion, deletes the VM again
+    /// until it is gone, before the slot backs off. The worker stops waiting at a stop,
+    /// whose sequence releases the host itself, or at a drain, after which the slot's
+    /// next preparation deletes it.
+    fn finish_release(&self, _host: &JobHost) -> impl Future<Output = ()> {
+        std::future::ready(())
+    }
+
     /// whether the host still holds a diagnostic container's evidence that a
     /// finalisation has not removed. A worker that a stop has ended leaves such a host
     /// to the stop sequence, which exports it, deletes it with the container's

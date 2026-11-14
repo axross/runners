@@ -238,6 +238,10 @@ fn a_macos_job_vm_that_fails_to_delete_is_deleted_again_while_its_slot_waits() {
     });
     let finished = host.stop_and_finish(started);
     assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
+    assert!(
+        host.log_text().contains("retrying in"),
+        "the failed job still backs off once its VM is gone"
+    );
 }
 
 #[test]
