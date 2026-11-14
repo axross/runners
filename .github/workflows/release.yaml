@@ -1,18 +1,19 @@
 name: Release
 
 # releases Marshal with semantic-release from a manual dispatch on main, and on
-# nothing else. docs/operations/cli.md describes the five jobs and
+# nothing else. docs/operations/cli.md describes the seven jobs and
 # docs/conventions/security.md the controls and residual risks. it runs on
 # GitHub-hosted runners only.
 #
-# plan works out the version and build makes the unsigned set. assemble-signed is
-# where every file of the release meets: it checks the build's set and writes
-# SHA256SUMS over it, and attest and release read only what it uploads. no job
-# declares an Environment or reads a signing secret until the next signing job,
-# M2's or W4's, joins the chain before assemble-signed. the maintainer's dispatch
-# is the only decision until then. .github/scripts/check-release-shape.mjs, which
-# `mise run check` runs, fails if these jobs drift from that shape;
-# docs/operations/cli.md says how W4 and M2 extend them.
+# plan works out the version and build makes the unsigned set. update-tool builds
+# the update signer and the feed check, and sign-update, the one job that holds
+# the `release` Environment and reads the update-feed key, signs the build's MSI
+# with them. assemble-signed is where every file of the release meets: it checks
+# the build's set, writes latest.json from the signature and checks it, and
+# writes SHA256SUMS over the set; attest and release read only what it uploads.
+# .github/scripts/check-release-shape.mjs, which `mise run check` runs, fails if
+# these jobs drift from that shape; docs/operations/cli.md says how M2 and M4
+# extend them.
 
 on:
   workflow_dispatch:
@@ -71,12 +72,156 @@ jobs:
     with:
       version: ${{ needs.plan.outputs.version }}
 
-  # writes SHA256SUMS over the set that is published, the files as the build made
-  # them, each checked against its line in the build's SHA256SUMS. a later signing
-  # job adds its files here, with the hash its own job hands over.
+  # builds the two programs sign-update and assemble-signed run, with no
+  # Environment, no secret and no cache: cargo-tauri from the crate archive whose
+  # SHA-256 is committed, and the feed check from this repository. their hashes
+  # are handed over as outputs, apart from the artifact, so a program that changed
+  # on the way is refused where it runs.
+  update-tool:
+    name: Build The Update Tools
+    needs: plan
+    if: github.ref == 'refs/heads/main' && needs.plan.outputs.version != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    outputs:
+      tauri_cli_sha256: ${{ steps.hash.outputs.tauri_cli_sha256 }}
+      feed_check_sha256: ${{ steps.hash.outputs.feed_check_sha256 }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install Pinned Rust Toolchain
+        working-directory: app
+        run: rustup show active-toolchain || rustup toolchain install
+      # only cargo-deny, at mise.toml's pin, for the advisory check of the archive's
+      # lockfile.
+      - name: Install The Pinned cargo-deny
+        uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5.0.0
+        with:
+          version: 2026.9.17
+          # SHA-256 of the extracted mise binary, not of the archive the action
+          # downloads. update with the version; see docs/operations/agent-sessions.md.
+          sha256: 63049bc35fb9065e8dc35ac8b25fdae53e9bd6f1885a843aedeba398e046a1ee
+          install_args: cargo-deny
+          cache: false
+      - name: Build The Update Tools
+        run: bash .github/scripts/build-update-tools.sh "${RUNNER_TEMP}/update-tools"
+      - name: Hash The Update Tools
+        id: hash
+        working-directory: ${{ runner.temp }}/update-tools
+        run: |
+          set -euo pipefail
+          hash_file() {
+            local line hash
+            line="$(sha256sum "$1")"
+            hash="${line%% *}"
+            if [[ ! "$hash" =~ ^[0-9a-f]{64}$ ]]; then
+              echo "error: '${line}' does not start with a SHA-256" >&2
+              exit 1
+            fi
+            echo "${2}=${hash}" >> "$GITHUB_OUTPUT"
+            echo "${hash}  ${1}"
+          }
+          hash_file cargo-tauri tauri_cli_sha256
+          hash_file marshal-feed-check feed_check_sha256
+      - name: Upload The Update Tools
+        uses: actions/upload-artifact@v7
+        with:
+          name: update-tools
+          path: ${{ runner.temp }}/update-tools
+          retention-days: 14
+          if-no-files-found: error
+
+  # signs the build's MSI for the update feed, under the `release` Environment.
+  # it has no checkout and runs only the hash-checked cargo-tauri and system
+  # tools; every script starts with a `# sign-update: <name>` marker, which
+  # merge-checks.yaml's update-feed job extracts and runs with a throwaway key.
+  # the two secrets reach only the sign step, through its env, and it uploads
+  # only the detached signature.
+  sign-update:
+    name: Sign The Update
+    needs: [plan, build, update-tool]
+    if: github.ref == 'refs/heads/main' && needs.plan.outputs.version != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      contents: read
+    steps:
+      - name: Download The Build's Release Files
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: unsigned
+      - name: Download The Update Tools
+        uses: actions/download-artifact@v8
+        with:
+          name: update-tools
+          path: ${{ runner.temp }}/update-tools
+      - name: Check The Installer And The Signer
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+          TAURI_CLI_SHA256: ${{ needs.update-tool.outputs.tauri_cli_sha256 }}
+        run: |
+          # sign-update: check
+          set -euo pipefail
+          : "${SYSTEM_BIN:=/usr/bin}"
+          msi="marshal-${VERSION}-windows-x64.msi"
+          refuse() {
+            echo "error: $*" >&2
+            exit 1
+          }
+          # the hash the build's SHA256SUMS lists for the MSI, on exactly one line.
+          # shellcheck disable=SC2016 # the awk program is literal.
+          listed="$("$SYSTEM_BIN/awk" -v name="$msi" '$2 == name { print $1 }' unsigned/SHA256SUMS)"
+          if [[ -z "$listed" || "$listed" == *$'\n'* ]]; then
+            refuse "the build's SHA256SUMS does not list ${msi} exactly once"
+          fi
+          line="$("$SYSTEM_BIN/sha256sum" "unsigned/${msi}")"
+          [[ "${line%% *}" == "$listed" ]] || refuse "${msi} has SHA-256 ${line%% *}, not the ${listed} the build's SHA256SUMS lists"
+          line="$("$SYSTEM_BIN/sha256sum" "${RUNNER_TEMP}/update-tools/cargo-tauri")"
+          [[ "${line%% *}" == "$TAURI_CLI_SHA256" ]] || refuse "cargo-tauri has SHA-256 ${line%% *}, not the ${TAURI_CLI_SHA256} update-tool built"
+          chmod 0755 "${RUNNER_TEMP}/update-tools/cargo-tauri"
+          mkdir signing signature
+          cp "unsigned/${msi}" "signing/${msi}"
+          echo "${msi} and cargo-tauri have the hashes they were handed."
+      # the signer runs without a network, under unshare. the secrets are checked
+      # here, where they are set.
+      - name: Sign The Installer
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.UPDATE_FEED_SIGNING_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.UPDATE_FEED_SIGNING_KEY_PASSWORD }}
+        run: |
+          # sign-update: sign
+          set -euo pipefail
+          : "${SYSTEM_BIN:=/usr/bin}"
+          msi="marshal-${VERSION}-windows-x64.msi"
+          if [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" || -z "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" ]]; then
+            echo "error: UPDATE_FEED_SIGNING_KEY and UPDATE_FEED_SIGNING_KEY_PASSWORD must both be set in the release Environment" >&2
+            exit 1
+          fi
+          "$SYSTEM_BIN/unshare" --map-root-user --net "${RUNNER_TEMP}/update-tools/cargo-tauri" signer sign --app-version "$VERSION" "signing/${msi}"
+          mv "signing/${msi}.sig" "signature/${msi}.sig"
+          echo "Signed ${msi} for ${VERSION}."
+      - name: Upload The Signature
+        uses: actions/upload-artifact@v7
+        with:
+          name: update-signature
+          path: signature
+          retention-days: 14
+          if-no-files-found: error
+
+  # writes latest.json from sign-update's signature and checks it with the
+  # hash-checked feed check against the committed public key, then writes
+  # SHA256SUMS over the set that is published: the files as the build made them,
+  # each checked against its line in the build's SHA256SUMS, and the feed.
   assemble-signed:
     name: Assemble The Signed Release Files
-    needs: [plan, build]
+    needs: [plan, build, update-tool, sign-update]
     if: github.ref == 'refs/heads/main' && needs.plan.outputs.version != ''
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -94,9 +239,20 @@ jobs:
         with:
           name: ${{ needs.build.outputs.artifact }}
           path: unsigned
-      - name: Check The Hashes And Write SHA256SUMS
+      - name: Download The Signature
+        uses: actions/download-artifact@v8
+        with:
+          name: update-signature
+          path: signature
+      - name: Download The Update Tools
+        uses: actions/download-artifact@v8
+        with:
+          name: update-tools
+          path: ${{ runner.temp }}/update-tools
+      - name: Check The Hashes, Write The Feed And Check It, And Write SHA256SUMS
         env:
           VERSION: ${{ needs.plan.outputs.version }}
+          FEED_CHECK_SHA256: ${{ needs.update-tool.outputs.feed_check_sha256 }}
         run: |
           set -euo pipefail
           windows="marshal-${VERSION}-windows-x64.exe"
@@ -114,9 +270,22 @@ jobs:
           }
           windows_sha256="$(listed_hash "$windows")"
           windows_msi_sha256="$(listed_hash "$windows_msi")"
+          check="${RUNNER_TEMP}/update-tools/marshal-feed-check"
+          line="$(sha256sum "$check")"
+          if [[ "${line%% *}" != "$FEED_CHECK_SHA256" ]]; then
+            echo "error: marshal-feed-check has SHA-256 ${line%% *}, not the ${FEED_CHECK_SHA256} update-tool built" >&2
+            exit 1
+          fi
+          chmod 0755 "$check"
           mkdir dist
           cp "unsigned/${windows}" "unsigned/${windows_msi}" dist
-          bash .github/scripts/assemble-release.sh "$VERSION" dist "$windows_sha256" "$windows_msi_sha256"
+          # one <platform>=<file>=<signature> argument per signed file.
+          bash .github/scripts/write-update-feed.sh "$VERSION" dist/latest.json \
+            "windows-x86_64=dist/${windows_msi}=signature/${windows_msi}.sig"
+          # against the committed public key, before anything is published.
+          "$check" dist/latest.json "$VERSION" unsigned/SHA256SUMS "windows-x86_64=dist/${windows_msi}"
+          line="$(sha256sum dist/latest.json)"
+          bash .github/scripts/assemble-release.sh signed "$VERSION" dist "$windows_sha256" "$windows_msi_sha256" "${line%% *}"
       - name: Upload The Signed Release Files
         uses: actions/upload-artifact@v7
         with:
@@ -150,15 +319,15 @@ jobs:
         run: |
           windows="marshal-${VERSION}-windows-x64.exe"
           windows_msi="marshal-${VERSION}-windows-x64.msi"
-          attested="$(printf '%s\n' "$windows" "$windows_msi" | LC_ALL=C sort)"
-          expected="$(printf '%s\n' SHA256SUMS "$windows" "$windows_msi" | LC_ALL=C sort)"
+          attested="$(printf '%s\n' "$windows" "$windows_msi" latest.json | LC_ALL=C sort)"
+          expected="$(printf '%s\n' SHA256SUMS "$windows" "$windows_msi" latest.json | LC_ALL=C sort)"
           present="$(find . -mindepth 1 -maxdepth 1 -printf '%P\n' | LC_ALL=C sort)"
           if [[ "$present" != "$expected" ]]; then
-            echo "error: the release files are not exactly ${windows}, ${windows_msi} and SHA256SUMS:" >&2
+            echo "error: the release files are not exactly ${windows}, ${windows_msi}, latest.json and SHA256SUMS:" >&2
             echo "$present" >&2
             exit 1
           fi
-          for file in SHA256SUMS "$windows" "$windows_msi"; do
+          for file in SHA256SUMS "$windows" "$windows_msi" latest.json; do
             if [[ ! -f "$file" ]]; then
               echo "error: ${file} is not a regular file" >&2
               exit 1
@@ -166,7 +335,7 @@ jobs:
           done
           listed="$(awk '{ print $2 }' SHA256SUMS | LC_ALL=C sort)"
           if [[ "$listed" != "$attested" ]]; then
-            echo "error: SHA256SUMS does not list exactly ${windows} and ${windows_msi}" >&2
+            echo "error: SHA256SUMS does not list exactly ${windows}, ${windows_msi} and latest.json" >&2
             exit 1
           fi
           sha256sum --check --strict SHA256SUMS
@@ -180,6 +349,7 @@ jobs:
           subject-path: |
             release-files/${{ steps.files.outputs.windows }}
             release-files/${{ steps.files.outputs.windows_msi }}
+            release-files/latest.json
 
   release:
     name: Release

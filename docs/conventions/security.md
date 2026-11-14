@@ -198,8 +198,9 @@ tool's own published `Cargo.lock`, and Cargo checks the crate archive and each
 locked dependency against the checksums in the crates.io index, so the trust rests
 on that index over HTTPS, as for any crate. What this repository does not record is
 a hash of the tool's own archive, so it is not checksum-pinned like the tools above;
-W4's tool job, which signs update archives, commits one that moves with the pin once
-it lands. The
+W4's `update-tool` job builds the update signer from the archive whose SHA-256
+[`app/tauri-cli.crate.sha256`](../../app/tauri-cli.crate.sha256) commits, and a check
+in `mise run check` fails when its version differs from the pin. The
 install goes to `$RUNNER_TEMP`, uses no cache, and so compiles on every run: a cache
 would be a trust boundary for a job that builds code and runs the tool. It runs in
 the Windows job of `merge-checks.yaml` and, since W1's installer pull request, in the
@@ -385,12 +386,11 @@ record a change to either workflow, to the build call in
 - **A manual dispatch is the only trigger.** `release.yaml` runs on
   `workflow_dispatch` and on nothing else: no push, tag, pull request, schedule, or
   `workflow_run` trigger. The dispatch is the maintainer's decision to release.
-  From W1's installer pull request until the next signing job, M2's or W4's, joins
-  the chain, no job declares the `release` Environment or any other, and none waits
-  for an approval, so in that period the dispatch, after the commit check in
-  [Each Release](../operations/development-workflow.md#each-release), is the only
-  decision. The Environment and its secrets are kept for that signing job, as the
-  held record below says.
+  Only `sign-update` declares the `release` Environment, so a run waits for the
+  maintainer's approval before the update feed is signed; that approval, after the
+  commit check in
+  [Each Release](../operations/development-workflow.md#each-release), is the second
+  decision.
 - **The branch guard is advisory.** Every job in `release.yaml` has
   `if: github.ref == 'refs/heads/main'`. A dispatch on another branch runs that
   branch's own copy of the file, which could drop the guard, so it binds only the
@@ -410,6 +410,10 @@ record a change to either workflow, to the build call in
   - the plan job holds `contents: write`, for the `git push --dry-run` that
     semantic-release's dry run makes, and runs the npm tree;
   - the build job holds `contents: read`;
+  - `update-tool` holds `contents: read` alone, declares no Environment, reads no
+    secret and uses no cache;
+  - `sign-update` holds `contents: read` alone under the `release` Environment, and
+    checks nothing out;
   - `assemble-signed` holds `contents: read` alone, declares no Environment, and
     does not run the npm tree;
   - the attest job holds `id-token: write` and `attestations: write`, and nothing
@@ -434,9 +438,10 @@ record a change to either workflow, to the build call in
 - **The files are checked twice before they are used.** The attest job, and the
   release gate [`verify-release.sh`](../../.github/scripts/verify-release.sh) that
   semantic-release runs before it tags anything, each refuse unless the files are
-  exactly the app executable and the MSI named for the version and `SHA256SUMS`,
-  `SHA256SUMS` lists exactly those two, and `sha256sum --check --strict` passes. The
-  attest job attests the two files `SHA256SUMS` lists. The MSI is a per-user package
+  exactly the app executable and the MSI named for the version, `latest.json` and
+  `SHA256SUMS`, `SHA256SUMS` lists exactly those three, and
+  `sha256sum --check --strict` passes. The attest job attests the three files
+  `SHA256SUMS` lists. The MSI is a per-user package
   that the build leg packs the release app into unchanged and tests; it is not
   signed. Its only custom actions that run code are the start of the installed app,
   only when the `msiexec` line sets `AUTOLAUNCHAPP=True`, and at an uninstall the
@@ -447,13 +452,25 @@ record a change to either workflow, to the build call in
   its own run.
   `@semantic-release/github` skips an asset that is missing rather than failing, so
   the gate is what holds the file set.
-- **Signing is held for M2 and W4.** No job signs, declares an Environment or reads
-  a signing secret from W1's installer pull request until M2's disk-image pull
-  request brings back `sign-macos` and `verify-macos` or W4's feed pull request adds
-  its signing job; [CLI](../operations/cli.md#signing-held-for-m2-and-w4) says what
-  returns, and its [Signing Contracts](../operations/cli.md#the-signing-contracts)
-  stay in force. The Environment and its secrets are kept for those jobs, and the
-  record below is held for them:
+- **The update feed is signed in its own job.** `sign-update` is the one job that
+  declares the `release` Environment and reads a secret. It has no checkout, uses
+  only the artifact actions, runs only the hash-checked `cargo-tauri` and
+  `$SYSTEM_BIN/awk`, `sha256sum` and `unshare`, and refuses to sign unless the MSI
+  matches the build's `SHA256SUMS` line, the signer matches `update-tool`'s output,
+  and both secrets are set. `UPDATE_FEED_SIGNING_KEY` and
+  `UPDATE_FEED_SIGNING_KEY_PASSWORD` reach only its sign step, through `env:`, never a
+  command line, and the signer runs there without a network under
+  `unshare --map-root-user --net`. It uploads only the detached signature.
+  `assemble-signed` writes `latest.json` and checks it with the hash-checked feed
+  check against the committed public key before anything is published; the feed then
+  gets its `SHA256SUMS` line and its attestation. The merge checks run the same
+  scripts with a throwaway key, and [CLI](../operations/cli.md#the-update-feed-in-the-release)
+  describes both.
+- **Mac signing is held for M2.** No job signs the Mac from W1's installer pull
+  request until M2's disk-image pull request brings back `sign-macos` and
+  `verify-macos`; [CLI](../operations/cli.md#signing-held-for-m2) says what returns,
+  and its [Signing Contracts](../operations/cli.md#the-signing-contracts) stay in
+  force. The record below holds for `sign-update` and the jobs M2 brings back:
   - **The Environment `release`** is created and maintained by the maintainer.
     Deployment branches are selected branches, `main` only and no tags. Required
     reviewers are the maintainer, with "Prevent self-review" off, because the
@@ -461,9 +478,11 @@ record a change to either workflow, to the build call in
     [the roadmap](https://github.com/axross/runners/issues/72) requires
     self-approval. "Allow administrators to bypass" is off. The maintainer reports
     the settings on the tracking issue, because agents cannot read them.
-  - **Its secrets** are the six Environment secrets `MACOS_APPLICATION_P12_BASE64`,
-    `MACOS_INSTALLER_P12_BASE64`, `MACOS_P12_PASSWORD`, `MACOS_NOTARY_KEY_P8`,
-    `MACOS_NOTARY_KEY_ID` and `MACOS_NOTARY_ISSUER_ID`, and its variable is
+  - **Its secrets** are the update-feed key's two, `UPDATE_FEED_SIGNING_KEY` and
+    `UPDATE_FEED_SIGNING_KEY_PASSWORD`, and the six macOS ones held for M2,
+    `MACOS_APPLICATION_P12_BASE64`, `MACOS_INSTALLER_P12_BASE64`,
+    `MACOS_P12_PASSWORD`, `MACOS_NOTARY_KEY_P8`, `MACOS_NOTARY_KEY_ID` and
+    `MACOS_NOTARY_ISSUER_ID`, and its variable is
     `MACOS_TEAM_ID`, which is not secret. A job reads them only if it declares the
     Environment, and only after the reviewer approves it. No repository secret is
     added for signing.
@@ -475,11 +494,13 @@ record a change to either workflow, to the build call in
     comes before `release`, no job continues past a failure, and the notarization
     result is read from the status, not the exit code.
   - **Pull requests never sign or reach the Environment.** The dry run builds
-    unsigned, and no workflow declares an Environment.
+    unsigned, and only `release.yaml`, which no pull request triggers, declares an
+    Environment.
     [`check-release-shape.mjs`](../../.github/scripts/check-release-shape.mjs) in
-    `mise run check` fails if any job or step in any workflow declares an
-    Environment or reads a signing secret, so the signing job that returns changes
-    it in the same pull request.
+    `mise run check` fails if any other job or any step declares one, if a secret is
+    read in the release workflows outside `sign-update`'s sign step, or if another
+    workflow reads a signing secret, so a signing job that returns changes it in the
+    same pull request.
     [CLI](../operations/cli.md#what-the-release-tests-cover) lists its rules. A pull
     request can edit it, so it guards against mistakes, not against a hostile pull
     request, and [CLI](../operations/cli.md#extending-the-release-workflows) names
@@ -1256,8 +1277,17 @@ runs; these are the rules it is reviewed against.
 Residual risks, accepted:
 
 - Anyone who can publish a release here and holds the update-feed key can ship code
-  every installed app runs. The key, its custody and its rotation are the feed's
-  pull request's to record.
+  every installed app runs. The key is in the `release` Environment, which admits
+  `main` only and needs the maintainer's approval for each run; its offline backup,
+  rotation and recovery are in [App](../operations/app.md#the-update-feed-key).
+- The pinned `tauri-cli` and its locked dependencies run beside the key in
+  `sign-update`. The committed archive checksum and the binary's hash between the
+  jobs fix what runs, not whether it is trustworthy; the roadmap accepts that, with
+  the network cut during signing and the Environment's per-run approval. The
+  advisories in the archive's lockfile that the maintainer accepted are listed in
+  [`app/tauri-cli.deny.toml`](../../app/tauri-cli.deny.toml); every one is in a part
+  of `tauri-cli` that `signer sign` does not use, and a new advisory stops
+  `update-tool`.
 - Tauri's updater keeps each downloaded MSI in the temporary folder
   (tauri-apps/plugins-workspace#2389); Windows' storage cleanup removes it.
 

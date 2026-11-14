@@ -216,6 +216,119 @@ jobs:
     with:
       version: 0.0.0-dryrun.${{ github.run_number }}
 
+  # the feed round trip: release.yaml's update-tool script builds the signer and
+  # the feed check, sign-update's own scripts sign the dry run's MSI with a
+  # throwaway key made for this run, and the feed check passes the feed
+  # write-update-feed.sh writes and refuses the altered ones. no Environment, no
+  # secret and no cache. it builds only on a push to main and on pull requests
+  # that change the release workflows, their scripts, the pin or the app's
+  # updater; on others it reports success without building, so a required check
+  # never waits.
+  update-feed:
+    name: Update Feed Round Trip
+    needs: release-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    env:
+      RELEASE_VERSION: 0.0.0-dryrun.${{ github.run_number }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Decide Whether The Round Trip Runs
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT" != pull_request ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed="$(git diff --name-only "$BASE" "$HEAD")"
+          pattern='^(\.github/workflows/(release|release-build|merge-checks)\.yaml|\.github/scripts/|app/tauri-cli\.|app/Cargo\.lock|app/crates/feed/|app/crates/app/(Cargo\.toml|tauri\.conf\.json|src/updates\.rs|tests/update_feed\.rs))'
+          if grep -qE "$pattern" <<<"$changed"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "This pull request changes nothing the feed round trip covers."
+          fi
+      - name: Install Pinned Rust Toolchain
+        if: steps.scope.outputs.run == 'true'
+        working-directory: app
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: Install The Pinned cargo-deny
+        if: steps.scope.outputs.run == 'true'
+        uses: jdx/mise-action@9149ea85001c7435d5a66bb127d6a1b6227cb0a5 # v5.0.0
+        with:
+          version: 2026.9.17
+          # SHA-256 of the extracted mise binary, not of the archive the action
+          # downloads. update with the version; see docs/operations/agent-sessions.md.
+          sha256: 63049bc35fb9065e8dc35ac8b25fdae53e9bd6f1885a843aedeba398e046a1ee
+          install_args: cargo-deny
+          cache: false
+      - name: Build The Update Tools
+        if: steps.scope.outputs.run == 'true'
+        run: bash .github/scripts/build-update-tools.sh "${RUNNER_TEMP}/update-tools"
+      - name: Download The Dry Run's Release Files
+        if: steps.scope.outputs.run == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.release-build.outputs.artifact }}
+          path: ${{ runner.temp }}/release
+      - name: Sign The Dry Run's MSI And Check The Feed
+        if: steps.scope.outputs.run == 'true'
+        run: bash .github/scripts/tests/feed-round-trip.sh "${RUNNER_TEMP}/update-tools" "${RUNNER_TEMP}/release" "$RELEASE_VERSION" "${RUNNER_TEMP}/round-trip"
+      - name: Keep The Round Trip's Files
+        if: steps.scope.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: update-feed-round-trip
+          path: ${{ runner.temp }}/round-trip
+          retention-days: 14
+          if-no-files-found: error
+          overwrite: true
+
+  # the round trip's last step: the updater plugin's own verification, in the
+  # app's updater test, accepts the feed and the MSI and refuses a changed file,
+  # another key and another version. skipped when update-feed did not build.
+  update-feed-app:
+    name: Update Feed In The App On Windows
+    needs: update-feed
+    if: needs.update-feed.outputs.run == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+        working-directory: app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install Pinned Rust Toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: Download The Round Trip's Files
+        uses: actions/download-artifact@v8
+        with:
+          name: update-feed-round-trip
+          path: ${{ runner.temp }}/round-trip
+      - name: Run The App's Updater Test On The Feed
+        env:
+          MARSHAL_UPDATE_FEED_DIR: ${{ runner.temp }}/round-trip
+        run: cargo test --locked --package marshal-app --test update_feed -- --ignored
+
   # the install, check, and uninstall blocks of docs/operations/cli.md, extracted
   # from the document: first against stand-ins, then against the dry run's real
   # MSI with only gh stubbed. it downloads the dry run's artifact and holds

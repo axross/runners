@@ -3875,9 +3875,9 @@ A release is a `v<version>` tag on the default branch and the GitHub release tha
 carries its files, such as `v0.1.0`. The maintainer starts one by dispatching
 [`release.yaml`](../../.github/workflows/release.yaml) on main, and semantic-release
 works out the version from the commits since the last `v*` tag. Releases are never
-prereleases. The run has five jobs, and none of them declares an Environment or
-reads a signing secret: from W1's installer pull request until the next signing job,
-M2's or W4's, joins the chain, the maintainer's dispatch is the only decision.
+prereleases. The run has seven jobs. One of them, `sign-update`, declares the
+`release` Environment, so a run waits for the maintainer's approval before it signs
+the update feed, and only its sign step reads a secret.
 [Development Workflow](./development-workflow.md#cutting-a-release) gives the
 maintainer's steps and the version rules, and
 [Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
@@ -4081,7 +4081,7 @@ uploaded to the run, but nothing is attested or published, and no job references
 Environment. The `Install Blocks` job then runs the documented install blocks against
 that artifact, as [What the Install Tests Cover](#what-the-install-tests-cover)
 describes. [`release.yaml`](../../.github/workflows/release.yaml) runs only on a
-manual dispatch on main, in five jobs on the dispatched commit. Every job but `plan`
+manual dispatch on main, in seven jobs on the dispatched commit. Every job but `plan`
 needs `plan` directly and runs only when the plan job handed out a version:
 
 1. `plan` runs semantic-release as a dry run. Its gate,
@@ -4092,22 +4092,27 @@ needs `plan` directly and runs only when the plan job handed out a version:
    skipped.
 2. `build` is the build workflow, which builds and assembles the unsigned files at
    that version into `marshal-release`.
-3. `assemble-signed`, where every file of the release meets, needs `plan` and
-   `build`. On `ubuntu-latest` with `contents: read` and no Environment, it checks
-   each file against its single line in the build's `SHA256SUMS`, writes
-   `SHA256SUMS` again with `assemble-release.sh`, and uploads the files as
-   `marshal-release-signed`. Until a signing job joins, that set is the build's.
-4. `attest` downloads `marshal-release-signed` and fails unless it holds exactly
-   that version's three files, `SHA256SUMS` lists exactly the app and the MSI, and
-   `sha256sum --check --strict` passes. It then attests the build provenance of every
-   file `SHA256SUMS` lists with `actions/attest`. It checks nothing out and installs
-   no npm package.
-5. `release` downloads `marshal-release-signed` and runs semantic-release. The gate
+3. `update-tool` builds the update signer and the feed check, as
+   [The Update Feed in the Release](#the-update-feed-in-the-release) describes.
+4. `sign-update`, under the `release` Environment, signs the build's MSI for the
+   update feed and uploads only the detached signature.
+5. `assemble-signed`, where every file of the release meets, needs `plan`, `build`,
+   `update-tool` and `sign-update`. On `ubuntu-latest` with `contents: read` and no
+   Environment, it checks each file against its single line in the build's
+   `SHA256SUMS`, writes `latest.json` from the signature and checks it with the feed
+   check, writes `SHA256SUMS` over the three files with `assemble-release.sh signed`,
+   and uploads the four as `marshal-release-signed`.
+6. `attest` downloads `marshal-release-signed` and fails unless it holds exactly
+   that version's four files, `SHA256SUMS` lists exactly the app, the MSI and
+   `latest.json`, and `sha256sum --check --strict` passes. It then attests the build
+   provenance of every file `SHA256SUMS` lists with `actions/attest`. It checks
+   nothing out and installs no npm package.
+7. `release` downloads `marshal-release-signed` and runs semantic-release. The gate
    makes the same check for the version semantic-release worked out in that run,
    before anything is tagged. semantic-release then pushes the tag and its note, and
    `@semantic-release/github` creates a draft release with the generated notes,
-   uploads the three files, and publishes it. `mise run test:verify-release` tests
-   the gate.
+   uploads the four files, and publishes it, so the feed and the MSI it names become
+   visible together. `mise run test:verify-release` tests the gate.
 
 A failure of any job stops the run before any tag is pushed. The jobs and their
 `needs` chain are the contract that W4 and M2, other children of roadmap
@@ -4143,14 +4148,67 @@ this one are separate products that share `%LOCALAPPDATA%\Programs\marshal\`, so
 uninstalling the command line removes `marshal.exe` and its `PATH` entry and leaves
 Marshal's files, and `where.exe marshal` then finds nothing.
 
-### Signing, Held for M2 and W4
+### The Update Feed in the Release
 
-No job of `release.yaml` signs anything from W1's installer pull request until the
-next signing job joins the chain: M2's disk-image pull request brings back
-`sign-macos` and `verify-macos`, rewritten for the app and the disk image, and W4's
-feed pull request adds `update-tool` and `sign-update`. Each joins before
-`assemble-signed`, which then needs it. Until then no job declares the `release`
-Environment, and the Environment and its secrets are kept for those jobs.
+W4 ([#78](https://github.com/axross/runners/issues/78)) owns these jobs and scripts;
+[App](./app.md#updates) gives what the installed app does with the feed and
+[the key's procedure](./app.md#the-update-feed-key).
+
+- **`update-tool`** runs on `ubuntu-latest` with `contents: read`, no Environment, no
+  secret and no cache. It runs
+  [`build-update-tools.sh`](../../.github/scripts/build-update-tools.sh), which
+  downloads the `tauri-cli` crate archive at the pin and refuses it unless its SHA-256
+  equals the one [`app/tauri-cli.crate.sha256`](../../app/tauri-cli.crate.sha256)
+  commits, runs `cargo deny check advisories` on the archive's own lockfile with the
+  advisories the maintainer accepted in
+  [`app/tauri-cli.deny.toml`](../../app/tauri-cli.deny.toml), builds `cargo-tauri`
+  from it with `--locked`, and builds `marshal-feed-check` from the app's workspace.
+  It hands both binaries' SHA-256 on as job outputs, apart from the `update-tools`
+  artifact. Its timeout of 40 minutes is a first estimate, replaced by twice the
+  job's time in its first run, as the build leg's was.
+- **`sign-update`** runs on `ubuntu-latest` with `contents: read` under the `release`
+  Environment, with no checkout; its only actions download and upload artifacts.
+  Each script starts with a `# sign-update: <name>` marker and calls system tools by
+  `$SYSTEM_BIN/<tool>`. The check step refuses unless the MSI's SHA-256 equals the
+  build's `SHA256SUMS` line and `cargo-tauri`'s equals `update-tool`'s output. The
+  sign step refuses unless both secrets are set, then runs
+  `unshare --map-root-user --net "$RUNNER_TEMP/update-tools/cargo-tauri" signer sign --app-version <version>`
+  on a copy of the unchanged MSI, with no network. The secrets reach only that step,
+  as `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` in its
+  `env:`. It uploads only the detached signature, as `update-signature`.
+- **`assemble-signed`** checks `marshal-feed-check` against `update-tool`'s output,
+  writes `latest.json` with
+  [`write-update-feed.sh`](../../.github/scripts/write-update-feed.sh), one
+  `<platform>=<file>=<signature>` argument per signed file, and runs the feed check on
+  it against the committed public key before `assemble-release.sh signed` writes
+  `SHA256SUMS`. The platform entries are a list, so M4
+  ([#90](https://github.com/axross/runners/issues/90)) adds `darwin-aarch64` as one
+  more argument, with `sign-update` signing the Mac archive beside the MSI.
+
+**The feed's round trip in the merge checks.** The `Update Feed Round Trip` job of
+`merge-checks.yaml` runs on a push to main and on pull requests that change the
+release workflows, their scripts, the `tauri-cli` files, `app/Cargo.lock`, the feed
+crate or the app's updater; on others it reports success without building. It builds
+the tools with `update-tool`'s script, then
+[`feed-round-trip.sh`](../../.github/scripts/tests/feed-round-trip.sh) makes a
+throwaway key for the run, and
+[`run-sign-update.sh`](../../.github/scripts/tests/run-sign-update.sh) runs
+`sign-update`'s own scripts, extracted from `release.yaml` with
+[`extract-run-scripts.mjs`](../../.github/scripts/tests/extract-run-scripts.mjs), on
+the dry run's MSI with that key. The feed check passes the feed `write-update-feed.sh`
+writes, and refuses a changed MSI, another key's signature, a signature for another
+version, and the throwaway signature against the committed key; the job's output is
+searched for the key and its password. `Update Feed In The App On Windows` then runs
+the app's `tests/update_feed.rs`, which gives the same feed and MSI to the updater
+plugin's own `Update::verify` under the app's updater configuration with the throwaway
+key: it accepts them, and refuses a changed MSI, another key and another version.
+
+### Signing, Held for M2
+
+No job of `release.yaml` signs the Mac from W1's installer pull request until M2's
+disk-image pull request brings back `sign-macos` and `verify-macos`, rewritten for
+the app and the disk image. They join before `assemble-signed`, which then needs
+them, and the `release` Environment's macOS secrets are kept for them.
 [Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
 records that period.
 
@@ -4163,8 +4221,9 @@ The contracts below stay in force through the gap.
 
 ### The Signing Contracts
 
-These are held for M2 and W4: no job uses them until M2's or W4's signing job
-joins the chain, and they stay in force through the gap. F0 owns these. W1, W4, M2
+The macOS contracts below are held for M2: no job uses them until M2's signing job
+joins the chain, and they stay in force through the gap. W4's update-signing job uses
+the Environment contract. F0 owns these. W1, W4, M2
 and M4 consume them. Each is a child of roadmap
 [#72](https://github.com/axross/runners/issues/72), as F0 is:
 
@@ -4276,16 +4335,18 @@ points:
   steps that sign the Mac app with the same identifier and team, and notarize and
   staple its disk image. `assemble-signed` then needs both, and the disk image joins
   the signed set. The commands and the layout are M2's.
-- **W4** adds `update-tool`, a job without the Environment, and its own
+- **W4** added `update-tool`, a job without the Environment, and its own
   update-signing job, `sign-update`, which roadmap
   [#72](https://github.com/axross/runners/issues/72) adopted, to sign the update
-  archive. `assemble-signed` then needs both and writes `latest.json`. The archive's
-  signature is W4's contract.
+  archive; `assemble-signed` needs both and writes `latest.json`
+  ([The Update Feed in the Release](#the-update-feed-in-the-release)). The archive's
+  signature is W4's contract. M2 adds `sign-macos` beside `sign-update` in the shape
+  check's rules.
 - **M4** may sign the Mac's update archive in W4's update-signing job.
 
-The first of M2's and W4's pull requests gives `assemble-release.sh` a mode, as its
-first argument: `unsigned` for `release-build.yaml` and `signed` for
-`assemble-signed`, which requires the signed-only files. A pull request that changes
+`assemble-release.sh` takes a mode as its first argument: `unsigned` for
+`release-build.yaml` and `signed` for `assemble-signed`, which requires the
+signed-only files, today `latest.json`. A pull request that changes
 the release set changes every place that encodes it in the same change: the
 workflows, `assemble-release.sh`, `verify-release.sh` and their tests,
 `.releaserc.json`, the shape check and its test, `mise.toml` descriptions, the
@@ -4324,8 +4385,10 @@ secret:
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `mise run check:release-shape`      | Reads the `.yaml` and `.yml` workflows and fails unless the rules listed under this table hold.                                                                                                                          |
 | `mise run test:release-shape`       | Runs that check against the unchanged workflows, then against copies altered one change at a time, and expects each to fail.                                                                                             |
-| `mise run test:assemble-release`    | Runs `assemble-release.sh` against temporary directories: the two lines in order, and a refusal for another file set or a changed file.                                                                                  |
-| `mise run test:verify-release`      | Runs the release gate against temporary directories, and checks that `.releaserc.json`'s asset globs match exactly the three files the gate passes.                                                                      |
+| `mise run test:assemble-release`    | Runs `assemble-release.sh` against temporary directories: the two unsigned lines and the three signed ones in order, and a refusal for another file set, mode or a changed file.                                         |
+| `mise run test:verify-release`      | Runs the release gate against temporary directories, and checks that `.releaserc.json`'s asset globs match exactly the four files the gate passes.                                                                       |
+| `mise run test:sign-update`         | Runs `sign-update`'s scripts against a stand-in signer and `unshare`: a signature made under `unshare --net` with the secrets in the signer's environment only, and a refusal of a changed MSI, signer or empty secret.  |
+| `mise run test:update-tools`        | Checks the committed `tauri-cli` checksum against the pin, the refusal of a crate archive with another SHA-256, and the feed `write-update-feed.sh` writes.                                                              |
 | `mise run test:set-release-version` | Runs the version stamp against copies of the CLI's and the app's manifests and lockfiles, and the committed ones: only the versions they own change, and a file that does not hold the placeholder is refused unchanged. |
 
 `mise run check:release-shape` enforces these rules. They apply to every `.yaml` and
@@ -4333,20 +4396,48 @@ secret:
 a workflow that cannot be read or a missing `release.yaml` or `release-build.yaml`
 fails it too.
 
-- **The Environment.** No job and no step declares an `environment`, until the next
-  signing job's pull request allows its own.
+- **The Environment.** Only `release.yaml`'s `sign-update` declares one, and only
+  `release`. No step declares one, and a workflow a pull request triggers calls none
+  that does.
 - **Triggers.** `release.yaml` is triggered by `workflow_dispatch` alone. A workflow
   that `pull_request` or `pull_request_target` triggers calls only local workflows
   (`./.github/workflows/...`), so the rule above covers what it calls.
-- **The signing secrets.** No workflow reads one, whether by `secrets.MACOS_*`,
-  `secrets[...]`, `toJSON(secrets)` or `secrets: inherit`.
+- **The secrets.** In `release.yaml` and `release-build.yaml`, nothing reads the
+  `secrets` context by any name, through `toJSON(secrets)` or `secrets: inherit`,
+  except `sign-update`'s `# sign-update: sign` step, which sets exactly
+  `TAURI_SIGNING_PRIVATE_KEY` to `${{ secrets.UPDATE_FEED_SIGNING_KEY }}` and
+  `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` to
+  `${{ secrets.UPDATE_FEED_SIGNING_KEY_PASSWORD }}`. No other workflow reads a signing
+  secret, `secrets.MACOS_*` or `secrets.UPDATE_FEED_*`, the whole context, or
+  `secrets: inherit`.
+- **`sign-update`.** It runs on `ubuntu-latest`, holds exactly `contents: read`,
+  checks nothing out, uses only `actions/download-artifact` and
+  `actions/upload-artifact` at major tags with only their `name`, `path`,
+  `retention-days` and `if-no-files-found` inputs, and sets no shell. Each script
+  starts with a `# sign-update: <name>` marker, holds no `${{ }}`, refers to no
+  repository file, `GITHUB_PATH`, `GITHUB_ENV` or `GITHUB_OUTPUT`, assigns no `PATH`,
+  `BASH_ENV`, `ENV` or `SYSTEM_BIN`, gives `SYSTEM_BIN` only the default `/usr/bin`,
+  and runs only shell built-ins, base utilities and `$SYSTEM_BIN/awk`, `sha256sum` and
+  `unshare`; a package manager, `curl` or `wget`, an interpreter, or one of those tools
+  called by name fails it. Exactly one step is the sign step, and it runs the signer
+  as `"$SYSTEM_BIN/unshare" --map-root-user --net "${RUNNER_TEMP}/update-tools/cargo-tauri" signer sign --app-version "$VERSION"`;
+  no other step runs the signer.
 - **The chain.** Every job of `release.yaml` but `plan` needs `plan` directly and
   carries `if: github.ref == 'refs/heads/main' && needs.plan.outputs.version != ''`.
-  `assemble-signed` needs `plan` and `build`, `attest` needs `plan` and
-  `assemble-signed`, and `release` needs `plan` and `attest`.
-- **`assemble-signed`.** It runs on `ubuntu-latest`, holds exactly `contents: read`,
-  sets `timeout-minutes` to at most 10, checks out with `persist-credentials: false`,
-  calls `assemble-release.sh`, and no step of it carries an `if`.
+  `update-tool` needs `plan`; `sign-update` needs `plan`, `build` and `update-tool`;
+  `assemble-signed` needs those and `sign-update`; `attest` needs `plan` and
+  `assemble-signed`; and `release` needs `plan` and `attest`. `update-tool` sets
+  `timeout-minutes` to at most 40, `sign-update` to at most 15 and `assemble-signed`
+  to at most 10.
+- **`update-tool` and `assemble-signed`.** Each runs on `ubuntu-latest`, holds exactly
+  `contents: read`, checks out with `persist-credentials: false`, uses no cache
+  action, and gives `jdx/mise-action` `cache: false`. `update-tool` runs
+  `build-update-tools.sh`. `assemble-signed` writes the feed with
+  `write-update-feed.sh`, runs the feed check on `dist/latest.json`, and runs
+  `assemble-release.sh signed`; nothing in `release.yaml` passes `--public-key`, so
+  the feed is checked against the committed key.
+- **No step condition.** No step of `update-tool`, `sign-update` or `assemble-signed`
+  carries an `if`.
 - **`attest` and `release`.** `attest` holds exactly `id-token: write` and
   `attestations: write`. Each downloads exactly one artifact,
   `marshal-release-signed`, and no step of `release` reads `needs.build`.
@@ -4354,10 +4445,10 @@ fails it too.
   `continue-on-error`, and no job-level or step `if` uses `always()`, `failure()` or
   `cancelled()`, whatever their case and inner spaces. A step condition of `attest`
   or `release` that skips a step, such as `if: false`, is not seen.
-- **The environment of `release.yaml`.** None of `PATH`, `BASH_ENV` and `ENV` is an
-  `env:` key at any level.
+- **The environment of `release.yaml`.** None of `PATH`, `BASH_ENV`, `ENV` and
+  `SYSTEM_BIN` is an `env:` key at any level.
 - **The dry run's `assemble`.** Its checkouts set `persist-credentials: false`, a
-  script calls `assemble-release.sh`, and none writes `SHA256SUMS` itself, which means
+  script calls `assemble-release.sh unsigned`, and none writes `SHA256SUMS` itself, which means
   a `>` or `>>` redirection to it, `tee`, or `cp` or `mv` with it as the destination;
   reading it, as `cat` or `sha256sum -c` does, is not a write.
 

@@ -303,28 +303,35 @@ Apply the lens for each kind of file in the diff.
   [Security](docs/conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main).
   A publish or attest step outside `release.yaml`, a job that both runs the npm tree
   and holds `id-token: write`, an asset other than the app executable
-  `marshal-<v>-windows-x64.exe`, the MSI `marshal-<v>-windows-x64.msi` and
-  `SHA256SUMS`, such as a helper binary or a command-line file, an MSI custom action
+  `marshal-<v>-windows-x64.exe`, the MSI `marshal-<v>-windows-x64.msi`, the update
+  feed `latest.json` and `SHA256SUMS`, such as a helper binary or a command-line
+  file, a `latest.json` that is published without passing the feed check against the
+  committed public key, or is outside `SHA256SUMS` and the attestation, an MSI custom action
   that runs code other than the start of the installed app under
   `AUTOLAUNCHAPP=True` and the uninstall's deletion of the HKCU Run value `Marshal`,
   an MSI that asks for elevation, writes `PATH`, or shares the command line's upgrade
   code or a component code, a download that is none of the pinned WiX package, the
   recorded Rust toolchain exception, the recorded `tauri-cli` exception installed at
-  the pin `tauri-cli-version.sh` reads, or the Node that `actions/setup-node` installs
+  the pin `tauri-cli-version.sh` reads, the `tauri-cli` crate archive `update-tool`
+  refuses unless it matches `app/tauri-cli.crate.sha256`, or the Node that `actions/setup-node` installs
   (recorded under Security's Pinning Convention), or a departure from the record that
   the change does not also make to the record, is a finding. Install-time
   verification is optional for the installer, so a document or comment that presents
   the check block as required of an operator is a finding, and so is a change that
   weakens a pin, drops one of the check block's four checks, or drops the build
-  leg's product-version check or its failing run. From W1's installer pull request
-  until the next signing job, M2's or W4's, joins the chain, an `environment:` in any
-  job or a signing secret read by any job is a finding; the signing job that returns
-  brings its rules back to this list, to `check-release-shape.mjs` and to its test in
-  the same change, and keeps
+  leg's product-version check or its failing run. An `environment:` on any job but
+  `sign-update`, a secret read in `release.yaml` or `release-build.yaml` outside
+  `sign-update`'s sign step, a signing secret read by another workflow, a checkout,
+  another action, a package manager or a download in `sign-update`, the signer run
+  other than by its hash-checked path under `unshare --net`, the two update-feed
+  secrets on a command line or in output, an accepted advisory added to
+  `app/tauri-cli.deny.toml` without the maintainer's review, or a pin move without
+  the checksum is a finding. M2's signing job brings its rules back to this list, to
+  `check-release-shape.mjs` and to its test in the same change, and keeps
   [Security's held record](docs/conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main).
   A job or step that a later job can pass without, such as `continue-on-error`, a
   job-level `always()`, `!cancelled()` or `failure()`, a step condition in
-  `assemble-signed`, or one in `attest` or `release` that skips a step, which the
+  `update-tool`, `sign-update` or `assemble-signed`, or one in `attest` or `release` that skips a step, which the
   shape check does not see, and an attest or release job that reads the unsigned set
   are findings. A change to the identifier `app.axross.marshal`, the team pin, or the
   G2 intermediate's pin without its source and the record's update is a finding. A

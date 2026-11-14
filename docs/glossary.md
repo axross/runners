@@ -82,8 +82,8 @@ for the **Marshal App**.
 
 **Marshal Release** - a `v<version>` tag on main and the GitHub release that
 carries its files. Since W1's installer pull request they are the Windows app's
-executable, the unsigned per-user MSI that holds it, and `SHA256SUMS`; the releases
-before it carry
+executable, the unsigned per-user MSI that holds it, `SHA256SUMS` and, since W4's
+feed pull request, the **Update Feed**; the releases before it carry
 the **CLI**'s two binaries, its MSI and its macOS pkg, and the newest of them is the
 last command-line release. The maintainer starts one by dispatching `release.yaml`,
 and semantic-release picks the version from the commit subjects since the last `v*`
@@ -98,11 +98,23 @@ checks the download first, and the installer's version is the release's `X.Y.Z`,
 [operations/cli.md](./operations/cli.md#installing-updating-and-rolling-back).
 
 **Release Environment** - the GitHub Environment named `release`, which holds the
-macOS signing secrets and the `MACOS_TEAM_ID` variable. It admits `main` only and
-needs the maintainer's approval for each run. No job declares it from W1's installer
-pull request until M2's or W4's signing job returns; it and its secrets are kept for
-that job. The maintainer creates and changes it; agents never do. See
+update-feed key's two secrets, the macOS signing secrets and the `MACOS_TEAM_ID`
+variable. It admits `main` only and needs the maintainer's approval for each run.
+`sign-update` is the one job that declares it until M2's signing jobs return. The
+maintainer creates and changes it; agents never do. See
 [operations/cli.md](./operations/cli.md#the-signing-contracts).
+
+**Update Feed** - `latest.json`, the file of each **Marshal Release** that names its
+version and, per platform, the address of the file to install and its minisign
+signature, which the release run makes with the update-feed key and checks before it
+publishes. The **Marshal App** reads it on the latest release and installs only what
+verifies against the key committed in `tauri.conf.json`. See
+[operations/app.md](./operations/app.md#updates).
+
+**Update Drain** - the **Resident Agent**'s wait, at the app's request, for the jobs
+already running to finish before an update installs: it registers no new runner,
+waits for each busy runner's container to exit, at most 6 hours, then ends for the
+update. See [operations/cli.md](./operations/cli.md#the-update-drain).
 
 **Signing Identifier** - `app.axross.marshal`, the identifier one code object is signed
 under: the **CLI**'s macOS binary in the command-line releases, and the Mac app once

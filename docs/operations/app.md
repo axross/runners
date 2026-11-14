@@ -485,14 +485,23 @@ refuses a file that is a range, a prefix or more than one line, so a loose value
 never reaches `cargo install`. The Windows job installs `tauri-cli` with
 `cargo install tauri-cli --version "=<pin>" --locked` under `$RUNNER_TEMP`, with no
 cache, so the tool compiles on every run. The release build that W1's installer pull
-request (pull request 3) adds reads the same file the same way, and so does W4's tool job once it
-lands, which commits a checksum of the crate archive that moves with the pin. Do not
-write the version anywhere else. To move it:
+request (pull request 3) adds reads the same file the same way, and so does the
+release run's `update-tool` job, which builds the update signer from the crate archive
+whose SHA-256 [`app/tauri-cli.crate.sha256`](../../app/tauri-cli.crate.sha256)
+commits. Do not write the version anywhere else. To move it:
 
 1. Look up the latest `tauri-cli` release, never recall it.
 2. Change the one line of `app/tauri-cli.version`, and run `mise run check:app-pins`
    and `mise run test:tauri-cli-version`.
-3. Check the `tauri` crate's version in `app/Cargo.toml` is one the new tool supports,
+3. In the same change, write the new archive's line in `app/tauri-cli.crate.sha256`,
+   `<sha256>  tauri-cli-<X.Y.Z>.crate`, with the SHA-256 of
+   `https://static.crates.io/crates/tauri-cli/tauri-cli-<X.Y.Z>.crate` checked
+   against the `cksum` the crates.io index lists for that version, and run
+   `mise run test:update-tools`, which fails while the two versions differ. Revisit
+   [`app/tauri-cli.deny.toml`](../../app/tauri-cli.deny.toml), the advisories the
+   maintainer accepted for the old archive's lockfile: drop those the new lockfile no
+   longer has, and bring each new one to the maintainer.
+4. Check the `tauri` crate's version in `app/Cargo.toml` is one the new tool supports,
    and let the Windows job run `cargo tauri build --no-bundle` against it.
 
 Dependabot does not cover the pin, because it is not a crate of the workspace.
@@ -638,8 +647,8 @@ the rules the update path is reviewed against, and
 [CLI](./cli.md#the-update-drain) holds the agent's drain.
 
 The maintainer's update-feed public key, minisign key ID `6F39E3131E21E1E4`, is
-committed in `tauri.conf.json`. Until the release run publishes the feed, which W4's
-last pull request adds, a check finds no feed and changes nothing; an app with no
+committed in `tauri.conf.json`. Each release from main publishes the feed with its
+files; until the first one, a check finds no feed and changes nothing. An app with no
 committed key, or a development build at `0.0.0-dev`, never reads the feed.
 
 **Checking.** The app reads
@@ -712,16 +721,56 @@ signature rules the plugin applies, and builds `marshal-feed-check`, which the r
 run uses on the feed it writes before anything is published:
 
 ```text
-marshal-feed-check <latest.json> <version> <SHA256SUMS> <platform>=<file>...
+marshal-feed-check [--public-key <file>] <latest.json> <version> <SHA256SUMS> <platform>=<file>...
 ```
 
 It checks the feed's version, that it has exactly the given platforms, each entry's
 address under the release's tag, each file's SHA-256 against `SHA256SUMS`, and each
-signature against the key committed in `tauri.conf.json`, and lists every problem. Its
-tests use throwaway keys in `app/crates/feed/tests/fixtures/`.
+signature against the key committed in `tauri.conf.json`, and lists every problem.
+`--public-key` names another key, for the merge checks' round trip with a throwaway
+key; the release run never passes it, and the shape check fails `release.yaml` if it
+does. Its tests use throwaway keys in `app/crates/feed/tests/fixtures/`.
 
-The key's generation, its secrets, rotation and recovery come with the feed's pull
-request.
+**How the release signs the feed.** [CLI](./cli.md#the-update-feed-in-the-release)
+gives the release run's jobs: `update-tool` builds the signer, `cargo-tauri` from the
+crate archive whose SHA-256 is committed, and the feed check; `sign-update`, under the
+`release` Environment, signs the build's unchanged MSI with
+`signer sign --app-version <version>`; and `assemble-signed` writes `latest.json` with
+[`write-update-feed.sh`](../../.github/scripts/write-update-feed.sh), checks it with
+the feed check against the committed key, and adds it to the release with its
+`SHA256SUMS` line and attestation.
+
+### The Update-Feed Key
+
+The key is a minisign key made by `tauri signer generate`, protected by a password.
+Agents never handle the private key or its password.
+
+- **Generation.** The maintainer generates the key on their own machine, sets a
+  password, and posts the public key on [#78](https://github.com/axross/runners/issues/78);
+  it is committed as the updater's `pubkey` in `app/crates/app/tauri.conf.json`. The
+  key now committed has the minisign key ID `6F39E3131E21E1E4`.
+- **The two secrets.** The maintainer stores the private key, the whole text of the
+  file `tauri signer generate` wrote, as the `release` Environment secret
+  `UPDATE_FEED_SIGNING_KEY`, and its password as `UPDATE_FEED_SIGNING_KEY_PASSWORD`.
+  `sign-update`'s sign step alone reads them, through its `env:`, and refuses to sign
+  when either is empty.
+- **The offline backup.** The maintainer keeps a copy of the key file and of the
+  password offline, the two stored apart, and reports on the tracking issue that the
+  secrets and the backup exist before the first release after the feed lands.
+- **Rotation.** Installed apps trust one key, so a new key is introduced through a
+  release:
+  1. Commit the new public key, and release it signed with the old key, which every
+     installed app accepts.
+  2. Once the hosts have taken that release, replace the two secrets with the new
+     key and its password.
+  3. A host that missed the release in step 1 is reinstalled from a newer release's
+     MSI.
+- **Loss.** Without the old key no installed app accepts a new one through the feed.
+  Generate a new key, commit its public key, release, and reinstall each host from
+  that release's MSI.
+- **A leak.** The key is the barrier against anyone who can publish a release here,
+  which includes the release job's npm tree and any session acting under the
+  maintainer's identity. Rotate at once, as above.
 
 ## GitHub Status in the Window
 

@@ -246,7 +246,7 @@ jobs:
           VERSION: ${{ inputs.version }}
           WINDOWS_SHA256: ${{ needs.build.outputs.windows_x64_sha256 }}
           WINDOWS_MSI_SHA256: ${{ needs.build.outputs.windows_x64_msi_sha256 }}
-        run: bash .github/scripts/assemble-release.sh "$VERSION" dist "$WINDOWS_SHA256" "$WINDOWS_MSI_SHA256"
+        run: bash .github/scripts/assemble-release.sh unsigned "$VERSION" dist "$WINDOWS_SHA256" "$WINDOWS_MSI_SHA256"
       # dist holds exactly the two files and SHA256SUMS, which the script checked.
       - name: Upload The Release Files
         uses: actions/upload-artifact@v7

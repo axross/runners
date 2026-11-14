@@ -58,6 +58,7 @@
         "assets": [
           "../release-files/marshal-*-windows-x64.exe",
           "../release-files/marshal-*-windows-x64.msi",
+          "../release-files/latest.json",
           "../release-files/SHA256SUMS"
         ],
         "successCommentCondition": false,

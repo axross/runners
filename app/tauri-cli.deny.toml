@@ -1,0 +1,24 @@
+# cargo-deny's advisory check of the lockfile inside the tauri-cli crate archive that
+# app/tauri-cli.crate.sha256 commits. The release run's update-tool job builds the
+# update signer from that archive (.github/scripts/build-update-tools.sh), and any
+# advisory not listed here stops it. Each entry is one the maintainer accepted for that
+# archive; a pull request that moves the pin and the checksum revisits the list. See
+# docs/operations/app.md.
+[advisories]
+ignore = [
+  # brought in by tauri-bundler's RPM packaging, through rpm and pgp
+  { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5.5, through rpm and pgp; the job runs only signer sign" },
+  { id = "RUSTSEC-2025-0144", reason = "ml-dsa 0.0.4, through rpm and pgp; the job runs only signer sign" },
+  { id = "RUSTSEC-2023-0071", reason = "rsa 0.9.10, through rpm and pgp; the job runs only signer sign" },
+  { id = "RUSTSEC-2026-0391", reason = "zstd 0.14.2, through rpm; the job runs only signer sign" },
+  { id = "RUSTSEC-2026-0398", reason = "zstd-safe 8.1.0, through rpm; the job runs only signer sign" },
+  { id = "RUSTSEC-2026-0403", reason = "zstd-safe 8.1.0, through rpm; the job runs only signer sign" },
+  { id = "RUSTSEC-2026-0410", reason = "zstd-sys 2.1.1's WebAssembly allocator shim, through rpm; the job runs only signer sign" },
+  # brought in by the icon and image commands, through image and resvg
+  { id = "RUSTSEC-2024-0436", reason = "paste 1.0.15 is unmaintained, through image; the job runs only signer sign" },
+  { id = "RUSTSEC-2026-0206", reason = "rustybuzz 0.20.1 is unmaintained, through resvg; the job runs only signer sign" },
+  { id = "RUSTSEC-2026-0192", reason = "ttf-parser 0.25.1 is unmaintained, through resvg; the job runs only signer sign" },
+  # brought in by the development server, through axum and jsonrpsee
+  { id = "RUSTSEC-2026-0386", reason = "tokio 1.45.1's AsyncFd, through axum; the job runs only signer sign" },
+  { id = "RUSTSEC-2026-0441", reason = "pin-utils 0.1.0 is unmaintained, through futures-util; the job runs only signer sign" },
+]
