@@ -13,5 +13,6 @@
 //! 6. [`steps::disable_ssh_call`]
 
 pub mod key;
+pub mod macos;
 pub mod pins;
 pub mod steps;

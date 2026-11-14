@@ -36,7 +36,7 @@ pub struct GuestCall {
     pub budget: Duration,
 }
 
-fn script_call(
+pub(super) fn script_call(
     privileged: bool,
     name: &str,
     script: &str,
