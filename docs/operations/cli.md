@@ -4557,8 +4557,8 @@ In PowerShell 5.1 or 7:
   uninstall first.
 - **Roll back to the command line.** Uninstall Marshal, then install the
   [last command-line release](#the-last-command-line-release) by that release's
-  procedure. Its token files are read only by the command line, so keep them until
-  the app's runners work.
+  procedure. The command line reads its token files, not Credential Manager, so it
+  needs them; the app's tokens stay in Credential Manager.
 
 Immutable releases keep a published release's tag from moving, so a version you
 install again is the file you installed before.
