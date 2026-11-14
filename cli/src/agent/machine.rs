@@ -14,7 +14,12 @@ use serde_json::json;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::time::{Instant, MissedTickBehavior, interval, sleep_until, timeout};
 
-use crate::command::{LoadError, load_plan_under};
+use crate::checkout;
+use crate::edit::CONFIG_FILE_NAME;
+use crate::host_config::{
+    FileStatus, Loaded, Migration, MigrationFailure, Origin, StandardChecks, load_at_start,
+    load_at_start_all,
+};
 use crate::instance::lifecycle::{CatchPanic, CoreFailure, Ending, StopTimes};
 use crate::instance::restart::{RestartPolicy, Verdict};
 use crate::instance::steps::{self, Steps};
@@ -24,20 +29,25 @@ use crate::runtime::board::{Board, PoolState, SlotState};
 use crate::runtime::clock::Clock;
 use crate::runtime::image::check_image;
 use crate::runtime::log::Log;
+use crate::runtime::pool::image_name;
 use crate::runtime::registration::Registrar;
 use crate::runtime::scrub::scrub_error_text;
 use crate::runtime::worker::sleep_or_stop;
-use crate::token_store::RepositoryKey;
-use crate::validate::Plan;
+use crate::token_store::TokenKey;
+use crate::validate::{CheckoutRule, Plan};
 
 use super::api::{ApiError, ApiResult, Call, Method};
 use super::builder::ImageBuilder;
-use super::core::AgentCore;
+use super::core::{AgentCore, ApplyOrder};
 use super::snapshot::{BuildInfo, MAX_SNAPSHOT_BYTES, Snapshot};
 use super::state::{Action, Drain, Inner, Phase, Reason};
 use super::tokens::StoreTokens;
-use super::view::{View, millis};
+use super::view::{View, migration_failure_text, millis};
 use super::wire::{ENDING_UPDATE, ErrorCode, UpdateEnding};
+
+mod configure;
+
+use configure::{Mode, Request};
 
 /// the reason the agent ends when asked to by a client.
 pub const QUIT: &str = "quit";
@@ -66,8 +76,10 @@ pub enum Launch {
 #[derive(Debug, Clone)]
 pub struct Settings {
     pub version: String,
-    /// the configuration file the agent reads at every start.
-    pub config_path: std::path::PathBuf,
+    /// the folder of `config.toml`, and of the `config.json` a migration reads.
+    pub config_folder: std::path::PathBuf,
+    /// the rules the configuration is checked under, those of the host.
+    pub profile: Profile,
     pub times: StopTimes,
     pub launch: Launch,
     /// how long a drain for an update waits for busy runners; [`DRAIN_BOUND`].
@@ -110,6 +122,9 @@ enum Routed {
     Stop(Reply),
     /// the method ends the agent, and the exit is set; the reply waits for the stop.
     Quit(Reply),
+    /// a change of the configuration while the runners run, which may check an image
+    /// before it is answered.
+    Configure(Request, bool, Reply),
 }
 
 enum CycleEnd {
@@ -165,6 +180,10 @@ pub struct Agent<'a, B, K, R, D> {
     /// set once a drain's last steps have begun, after which a closed requester no
     /// longer cancels it.
     drain_ending: Cell<bool>,
+    /// sends an apply to the core that runs now, `None` while none runs.
+    orders: RefCell<Option<mpsc::UnboundedSender<ApplyOrder>>>,
+    /// how the core's latest apply ended; see [`AgentCore::applied`].
+    applied: watch::Sender<Option<String>>,
 }
 
 /// a drain for an update, as the running phase keeps it.
@@ -234,6 +253,8 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             exit: Cell::new(None),
             containers_removed: Cell::new(true),
             force: watch::Sender::new(false),
+            orders: RefCell::new(None),
+            applied: watch::Sender::new(None),
             admitted: watch::Sender::new(false),
             drain: watch::Sender::new(false),
             update: RefCell::new(None),
@@ -300,7 +321,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             inner.image = Some(image);
         }
         let left = self.left.borrow();
-        let path = self.settings.config_path.display().to_string();
+        let path = self.config_path().display().to_string();
         let mut snapshot = View {
             version: &self.settings.version,
             inner: &inner,
@@ -372,6 +393,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                     Err(error) => Err(ApiError::store_failed("saved", &error)),
                 })
             }
+            Method::ConfigRead => Ok(Ok(self.config_read())),
             Method::TokenRemove { key } => Ok(match self.tokens.remove(&key) {
                 Ok(()) => {
                     self.publish();
@@ -398,8 +420,12 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
         json!({ "state": self.phase_name() })
     }
 
-    /// reads the configuration again into the agent's record; the reason is why it
-    /// could not be read.
+    fn config_path(&self) -> std::path::PathBuf {
+        self.settings.config_folder.join(CONFIG_FILE_NAME)
+    }
+
+    /// loads the configuration into the agent's record; the reason is why none is in
+    /// use.
     fn read_configuration(&self) -> Result<Plan, Reason> {
         let result = self.read_configuration_file();
         // the read replaced what the snapshot shows, so subscribers are told now, even
@@ -408,53 +434,103 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
         result
     }
 
+    /// the first load is the agent's start, which migrates `config.json` when only it
+    /// exists; each later one is a Start all's, which keeps the configuration in use
+    /// when the file has problems or is gone.
     fn read_configuration_file(&self) -> Result<Plan, Reason> {
-        let path = &self.settings.config_path;
+        let folder = &self.settings.config_folder;
         // the configuration lives outside any checkout, so the rule is applied from each
-        // diagnostic directory's own place
-        let loaded = load_plan_under(path, Profile::Axpc, true);
-        match loaded.outcome {
-            Ok(plan) => {
-                {
-                    let mut inner = self.inner.borrow_mut();
-                    inner.plan = Some(plan.clone());
-                    inner.problems = Vec::new();
+        // diagnostic directory's own place too
+        let above = checkout::find(&self.config_path());
+        let checks = StandardChecks {
+            rule: CheckoutRule::AboveAndAtSink(above.as_deref()),
+        };
+        let profile = self.settings.profile;
+        let previous = self.inner.borrow_mut().loaded.take();
+        let loaded = match &previous {
+            None => load_at_start(folder, profile, self.clock, &checks),
+            Some(previous) => load_at_start_all(folder, profile, self.clock, &checks, previous),
+        };
+        self.log_load(&loaded);
+        let outcome = match &loaded.in_use {
+            Some(in_use) => Ok(in_use.plan.clone()),
+            None => Err(self.none_in_use(&loaded)),
+        };
+        self.inner.borrow_mut().loaded = Some(loaded);
+        if let Ok(plan) = &outcome {
+            self.refresh_tokens(plan);
+        }
+        outcome
+    }
+
+    /// records in the log a migration, and a configuration in use that is not the
+    /// file's.
+    fn log_load(&self, loaded: &Loaded) {
+        match &loaded.migration {
+            Migration::Migrated { .. } => self
+                .log
+                .info("Migrated config.json to config.toml; config.json is no longer read."),
+            Migration::Failed(failure @ MigrationFailure::JsonRejected(_)) => self
+                .log
+                .warn(&format!("{}.", migration_failure_text(failure))),
+            Migration::Failed(failure) => self.log.warn(&format!(
+                "{}; the configuration of config.json is used for this run.",
+                scrub_error_text(&migration_failure_text(failure), "")
+            )),
+            Migration::None | Migration::Pending => {}
+        }
+        match &loaded.in_use {
+            Some(in_use) if in_use.origin == Origin::LastValid => self.log.warn(
+                "config.toml is not usable, so the configuration read from it earlier stays in use.",
+            ),
+            Some(in_use) if in_use.origin == Origin::Json && loaded.file != FileStatus::Missing => {
+                self.log.warn(
+                    "config.toml is not usable, so the configuration of config.json stays in use.",
+                );
+            }
+            _ => {}
+        }
+    }
+
+    /// why no configuration is in use after `loaded`.
+    fn none_in_use(&self, loaded: &Loaded) -> Reason {
+        let problems = || scrub_error_text(&loaded.problems.join("; "), "");
+        match (&loaded.migration, loaded.file) {
+            (Migration::Failed(failure @ MigrationFailure::JsonRejected(problems)), _) => {
+                Reason::new(
+                    Reason::INVALID_CONFIGURATION,
+                    format!(
+                        "{}: {}",
+                        migration_failure_text(failure),
+                        scrub_error_text(&problems.join("; "), "")
+                    ),
+                )
+            }
+            (migration, FileStatus::Missing) => {
+                let mut message = format!(
+                    "there is no configuration at {}",
+                    self.config_path().display()
+                );
+                if *migration == Migration::Pending {
+                    message.push_str(
+                        "; Marshal migrates config.json when it next starts: quit Marshal and \
+                         launch it again",
+                    );
                 }
-                self.refresh_tokens(&plan);
-                Ok(plan)
+                Reason::new(Reason::NO_CONFIGURATION, message)
             }
-            Err(error) => {
-                let missing = matches!(error, LoadError::Unreadable(_)) && !path.exists();
-                let problems = if missing {
-                    Vec::new()
-                } else {
-                    error.into_problems()
-                };
-                let reason = if missing {
-                    Reason::new(
-                        Reason::NO_CONFIGURATION,
-                        format!("there is no configuration at {}", path.display()),
-                    )
-                } else {
-                    let text = scrub_error_text(&problems.join("; "), "");
-                    Reason::new(
-                        Reason::INVALID_CONFIGURATION,
-                        format!("the configuration is not valid: {text}"),
-                    )
-                };
-                let mut inner = self.inner.borrow_mut();
-                inner.plan = None;
-                inner.problems = problems;
-                Err(reason)
-            }
+            _ => Reason::new(
+                Reason::INVALID_CONFIGURATION,
+                format!("config.toml is not valid: {}", problems()),
+            ),
         }
     }
 
     fn refresh_tokens(&self, plan: &Plan) {
-        let keys: Vec<RepositoryKey> = plan
+        let keys: Vec<TokenKey> = plan
             .entries
             .iter()
-            .map(|entry| RepositoryKey::of(&entry.owner, &entry.repository))
+            .map(|entry| TokenKey::of(&entry.owner, &entry.repository))
             .collect();
         self.tokens.refresh(&keys);
     }
@@ -470,6 +546,8 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             admitted: &self.admitted,
             drain: &self.drain,
             times: self.settings.times,
+            steps: self.steps(),
+            applied: &self.applied,
         }
     }
 
@@ -500,6 +578,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             })
             .collect();
         self.inner.borrow_mut().skips = skips;
+        self.inner.borrow_mut().leaving.clear();
         self.board.clear();
     }
 
@@ -541,6 +620,9 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                             return Next::Exit;
                         }
                         Routed::Stop(reply) => self.reply_state(reply),
+                        Routed::Configure(_, _, reply) => {
+                            let _ = reply.send(self.busy());
+                        }
                     }
                 }
             }
@@ -578,12 +660,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             Ok(plan) => plan,
             Err(reason) => return Reloaded::Stopped(reason),
         };
-        let Some(image) = plan.image_name.as_deref() else {
-            return Reloaded::Stopped(Reason::new(
-                Reason::INVALID_CONFIGURATION,
-                "the configuration names no image",
-            ));
-        };
+        let image = image_name(&plan);
         let check = check_image(self.backend, &self.board, image).await;
         match check.refusal(image) {
             Some(refusal) => Reloaded::Stopped(Reason::new(Reason::IMAGE_UNUSABLE, refusal)),
@@ -604,6 +681,9 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
         let mut cycle = Box::pin(self.core_cycle(plan, stop_receiver));
         let mut ticker = ticker();
         let mut draining: Option<Draining> = None;
+        let mut applied = self.applied.subscribe();
+        // the change that checks its image, which one connection's call waits for
+        let mut configuring: Option<Pin<Box<dyn Future<Output = ()> + '_>>> = None;
         loop {
             let deadline = draining.as_ref().map(|drain| drain.deadline);
             tokio::select! {
@@ -658,6 +738,16 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                         self.publish();
                     }
                 }
+                () = async {
+                    match configuring.as_mut() {
+                        Some(change) => change.await,
+                        None => pending().await,
+                    }
+                } => configuring = None,
+                Ok(()) = applied.changed() => {
+                    let failure = applied.borrow_and_update().clone();
+                    self.apply_ended(failure);
+                }
                 _ = admitted.wait_for(|admitted| *admitted), if resuming => {
                     resuming = false;
                     // the pools are prepared, which removed the stale containers that
@@ -708,6 +798,16 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                             draining = Some(self.begin_drain(version, requester, reply));
                         }
                         Routed::Begin(_, reply) => self.reply_state(reply),
+                        Routed::Configure(_, _, reply) if configuring.is_some() => {
+                            let _ = reply.send(Err(ApiError::new(
+                                ErrorCode::ConfigApplying,
+                                "an edit of the configuration is being checked",
+                            )));
+                        }
+                        Routed::Configure(request, check, reply) => {
+                            configuring =
+                                Some(Box::pin(self.configure_running(request, check, reply)));
+                        }
                     }
                 }
             }
@@ -814,6 +914,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
 
     /// what a core that ended without a stop means for the agent.
     fn cycle_ended(&self, end: CycleEnd) -> Next {
+        self.apply_cut_short("failed", Some("the runtime core ended".to_string()));
         self.capture_skips();
         let reason = match end {
             CycleEnd::StopRequested | CycleEnd::Drained => Reason::by_you(),
@@ -847,6 +948,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
     ) {
         let containers = self.backend.running_containers();
         let _ = stop.send(true);
+        self.apply_cut_short("abandoned", None);
         self.set_phase(Phase::Stopping);
         let steps_done = Cell::new(false);
         let work = async {
@@ -934,6 +1036,10 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                 self.reply_state(reply);
                 false
             }
+            Routed::Configure(_, _, reply) => {
+                let _ = reply.send(self.busy());
+                false
+            }
         }
     }
 
@@ -948,6 +1054,23 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             }
             Err(method) => method,
         };
+        if matches!(
+            method,
+            Method::ConfigEdit { .. } | Method::ConfigReload { .. }
+        ) {
+            let request = self
+                .config_mode()
+                .and_then(|mode| Ok((mode, self.config_request(method)?)));
+            let result = match request {
+                Ok((Mode::Apply, (request, check))) => {
+                    return Routed::Configure(request, check, reply);
+                }
+                Ok((Mode::Write, (request, check))) => self.configure_stopped(request, check),
+                Err(error) => Err(error),
+            };
+            let _ = reply.send(result);
+            return Routed::Answered;
+        }
         match self.action(&method) {
             Action::Begin => Routed::Begin(method, reply),
             Action::Stop => Routed::Stop(reply),
@@ -990,7 +1113,17 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
     /// or a stop is asked for.
     async fn core_cycle(&self, plan: &Plan, mut stop: watch::Receiver<bool>) -> CycleEnd {
         loop {
-            let result = CatchPanic(Box::pin(self.core().run(plan, stop.clone()))).await;
+            // an edit written since the start is the configuration a restart runs
+            let plan = self
+                .inner
+                .borrow()
+                .plan()
+                .cloned()
+                .unwrap_or_else(|| plan.clone());
+            let (orders, received) = mpsc::unbounded_channel();
+            *self.orders.borrow_mut() = Some(orders);
+            let result = CatchPanic(Box::pin(self.core().run(&plan, stop.clone(), received))).await;
+            *self.orders.borrow_mut() = None;
             let failed_at = self.clock.now();
             if *stop.borrow() {
                 return CycleEnd::StopRequested;
@@ -1029,6 +1162,10 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             }
             self.log
                 .warn(&format!("The runtime core failed: {message}"));
+            self.apply_cut_short(
+                "failed",
+                Some(format!("the runtime core failed: {message}")),
+            );
             if draining {
                 // a drain starts nothing again, and its last steps begin here
                 self.drain_ending.set(true);
@@ -1120,6 +1257,9 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
                             waiting.push(reply);
                         }
                         Routed::Begin(_, reply) => self.reply_state(reply),
+                        Routed::Configure(_, _, reply) => {
+                            let _ = reply.send(self.busy());
+                        }
                     },
                 },
             }
@@ -1144,18 +1284,16 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
 
     /// the image a build may build now, or why it may not.
     fn image_to_build(&self) -> Result<String, String> {
-        let plan = self.read_configuration().map_err(|reason| {
-            format!(
-                "the image name comes from the configuration, which is not usable: {}",
-                reason.message
-            )
+        let plan = self.inner.borrow().plan().cloned().ok_or_else(|| {
+            "the image name comes from the configuration, and the agent holds none that \
+             is valid"
+                .to_string()
         })?;
-        match plan.image_name {
-            None => Err("the configuration names no image to build".to_string()),
-            Some(image) if image.contains('@') => Err(format!(
+        match image_name(&plan) {
+            image if image.contains('@') => Err(format!(
                 "the image name {image} names a digest, which cannot be tagged; give it a tag instead"
             )),
-            Some(image) => Ok(image),
+            image => Ok(image.to_string()),
         }
     }
 

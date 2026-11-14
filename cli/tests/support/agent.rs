@@ -23,12 +23,14 @@ use marshal_cli::agent::server::Limits;
 use marshal_cli::agent::snapshot::Snapshot;
 use marshal_cli::agent::wire::ClientInfo;
 use marshal_cli::agent::{CallError, Client, Push, RawStream, Resident, connect, run_resident};
+use marshal_cli::github_status::http::GitHubReader;
 use marshal_cli::instance::lifecycle::StopTimes;
 use marshal_cli::instance::lock::InstanceLock;
 use marshal_cli::instance::roots::Roots;
 use marshal_cli::runtime::fake::{Call, FakeBackend, FakeClock, FakeRegistrar, MemoryLog};
 use marshal_cli::runtime::log::Log;
-use marshal_cli::token_store::{MemoryTokenStore, RepositoryKey, TokenStore};
+use marshal_cli::runtime::registration::HttpLimits;
+use marshal_cli::token_store::{MemoryTokenStore, TokenKey, TokenStore};
 use serde_json::{Value, json};
 use tokio::io::WriteHalf;
 use tokio::sync::{Notify, mpsc, watch};
@@ -49,6 +51,17 @@ pub const JIT: &str = "fake-jit-config-cccc-3333";
 /// one pool, `r`, of repository `o/r`; the token path names no file.
 pub const ONE_POOL: &str = r#"{"imageName":"actions-runner:local","repositories":[
     {"owner":"o","repository":"r","name":"r","slots":1,"tokenPath":"C:\\no-such.token","volumes":[]}]}"#;
+
+/// [`ONE_POOL`] as `config.toml` writes it.
+pub const ONE_POOL_TOML: &str = r#"schema_version = 1
+routing_label = "axpc"
+image_name = "actions-runner:local"
+
+[[pool]]
+name = "r"
+repository = "o/r"
+runners = 1
+"#;
 
 /// two pools of two repositories.
 pub const TWO_POOLS: &str = r#"{"imageName":"actions-runner:local","repositories":[
@@ -128,6 +141,8 @@ pub struct Rig {
     pub backend: FakeBackend,
     pub clock: Rc<PacedClock>,
     pub registrar: FakeRegistrar,
+    /// where GitHub status is read from: a loopback stub, or nothing listening.
+    pub github_api: RefCell<String>,
     pub builder: FakeBuilder,
     pub store: Arc<MemoryTokenStore>,
     pub log: MemoryLog,
@@ -139,6 +154,8 @@ pub struct Rig {
     pub executable: RefCell<Option<PathBuf>>,
     /// the agent has no token store, as on a host without one.
     pub no_store: Cell<bool>,
+    /// the profile the agent checks its configuration under; axpc unless a test says.
+    pub profile: Cell<marshal_cli::profile::Profile>,
     /// a store the agent uses in place of the in-memory one, as the Credential Manager.
     pub other_store: RefCell<Option<Arc<dyn TokenStore>>>,
     lock: RefCell<Option<InstanceLock>>,
@@ -167,6 +184,7 @@ impl Rig {
                 pause: Cell::new(Duration::from_millis(60)),
             }),
             registrar,
+            github_api: RefCell::new("http://127.0.0.1:9".to_string()),
             builder: FakeBuilder::default(),
             store,
             log: MemoryLog::default(),
@@ -175,6 +193,7 @@ impl Rig {
             drain_bound: Cell::new(marshal_cli::agent::machine::DRAIN_BOUND),
             executable: RefCell::new(None),
             no_store: Cell::new(false),
+            profile: Cell::new(marshal_cli::profile::Profile::Axpc),
             other_store: RefCell::new(None),
             lock: RefCell::new(Some(lock)),
             ended_at: Cell::new(None),
@@ -185,15 +204,24 @@ impl Rig {
     pub fn store_token(&self, owner: &str, name: &str, token: &str) {
         use marshal_cli::runtime::secret::Secret;
         self.store
-            .set(
-                &RepositoryKey::of(owner, name),
-                &Secret::new(token.to_string()),
-            )
+            .set(&TokenKey::of(owner, name), &Secret::new(token.to_string()))
             .unwrap();
     }
 
-    pub fn write_config(&self, config: &str) {
+    /// writes `config.json`, which the agent migrates when it starts and finds no
+    /// `config.toml`.
+    pub fn write_json(&self, config: &str) {
         std::fs::write(self.root.path().join("config.json"), config).unwrap();
+    }
+
+    /// writes `config.toml`, the file the agent reads.
+    pub fn write_toml(&self, config: &str) {
+        std::fs::write(self.root.path().join("config.toml"), config).unwrap();
+    }
+
+    /// removes a configuration file of the rig's folder.
+    pub fn remove(&self, name: &str) {
+        std::fs::remove_file(self.root.path().join(name)).unwrap();
     }
 
     /// how long after `since` the agent had ended and released the lock; the instant is
@@ -242,11 +270,17 @@ impl Rig {
             .borrow_mut()
             .take()
             .expect("the rig was driven before");
+        let reader = GitHubReader::new(
+            Some(self.github_api.borrow().as_str()),
+            HttpLimits::default(),
+        )
+        .unwrap();
         let agent = async {
             let resident = Resident {
                 backend: &self.backend,
                 clock: &self.clock,
                 registrar: &self.registrar,
+                reader: &reader,
                 builder: &self.builder,
                 store: (!self.no_store.get()).then(|| {
                     self.other_store
@@ -259,7 +293,8 @@ impl Rig {
                 lock: &lock,
                 settings: Settings {
                     version: "test".to_string(),
-                    config_path: self.root.path().join("config.json"),
+                    config_folder: self.root.path().to_path_buf(),
+                    profile: self.profile.get(),
                     times: self.times.get(),
                     launch,
                     drain_bound: self.drain_bound.get(),

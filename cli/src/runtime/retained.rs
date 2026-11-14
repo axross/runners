@@ -226,7 +226,14 @@ impl Retained {
     /// claims every container nobody holds, and names those another path holds.
     #[must_use]
     pub fn claim_free(&self) -> (Vec<Claim<'_>>, Vec<String>) {
-        let names = self.names();
+        self.claim_free_where(|_| true)
+    }
+
+    /// does what [`Retained::claim_free`] does for the containers `keep` accepts only.
+    #[must_use]
+    pub fn claim_free_where(&self, keep: impl Fn(&str) -> bool) -> (Vec<Claim<'_>>, Vec<String>) {
+        let mut names = self.names();
+        names.retain(|name| keep(name));
         let held = names
             .iter()
             .filter(|name| {

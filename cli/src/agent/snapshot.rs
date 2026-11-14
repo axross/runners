@@ -97,9 +97,69 @@ pub struct UpdateInfo {
 pub struct ConfigurationInfo {
     #[serde(default)]
     pub path: String,
-    /// why the file is not usable, at most [`MAX_PROBLEMS`].
+    /// why the file is not usable, at most [`MAX_PROBLEMS`]; while the agent runs on
+    /// its last valid configuration, why the file it read last is not used.
     #[serde(default)]
     pub problems: Vec<String>,
+    /// what the latest read of the file found: `valid`, `invalid`, `missing` or
+    /// `unreadable`; empty before the first read.
+    #[serde(default)]
+    pub status: String,
+    /// the configuration the agent runs, absent when it holds none.
+    #[serde(default)]
+    pub in_use: Option<InUseInfo>,
+    /// the migration of `config.json` to the file, absent when none applies.
+    #[serde(default)]
+    pub migration: Option<MigrationInfo>,
+    /// the latest apply of an edit, absent until the first since the agent started.
+    #[serde(default)]
+    pub last_apply: Option<ApplyInfo>,
+}
+
+/// an apply of an edit of the configuration, and how it ended.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct ApplyInfo {
+    /// the revision of the file the edit wrote.
+    #[serde(default)]
+    pub revision: String,
+    /// when it started, in milliseconds since the Unix epoch.
+    #[serde(default)]
+    pub at: u64,
+    /// `applying`, `applied`, `abandoned` (by Stop all or Quit) or `failed`.
+    #[serde(default)]
+    pub outcome: String,
+    /// why it failed; plain text.
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+/// where the configuration the agent runs came from, and when it was read.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct InUseInfo {
+    /// `file`, `last_valid` (an earlier read of the file, kept because the latest has
+    /// problems or found none) or `json` (`config.json`, after a migration that failed).
+    #[serde(default)]
+    pub source: String,
+    /// milliseconds since the Unix epoch.
+    #[serde(default)]
+    pub read_at: u64,
+}
+
+/// the state of the migration of `config.json`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct MigrationInfo {
+    /// `migrated`, `failed` or `pending` (the next start of the agent migrates it).
+    #[serde(default)]
+    pub state: String,
+    /// when it was migrated, in milliseconds since the Unix epoch.
+    #[serde(default)]
+    pub at: Option<u64>,
+    /// why it failed; plain text.
+    #[serde(default)]
+    pub reason: Option<String>,
 }
 
 /// a repository the configuration names, and whether the store has its token.
@@ -473,6 +533,12 @@ impl Snapshot {
             }
             if let Some(reason) = &mut self.agent.reason {
                 reason.message = reason.message.chars().take(TEXT_CHARS).collect();
+            }
+            if let Some(migration) = &mut self.configuration.migration {
+                migration.reason = migration
+                    .reason
+                    .take()
+                    .map(|text| text.chars().take(TEXT_CHARS).collect());
             }
             if let Some(build) = &mut self.agent.build {
                 build.message = build

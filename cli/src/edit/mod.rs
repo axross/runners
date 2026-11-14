@@ -2,8 +2,10 @@
 //! key order, blank lines, the line ending, the byte-order mark and the comment on a
 //! changed value's line. the result is checked with the full TOML rules for the host
 //! before anything is written, and the file is replaced in one step, so a reader sees
-//! the old file or the new one; see `docs/operations/cli.md`.
+//! the old file or the new one; see `docs/operations/cli.md`. a file that does not exist
+//! yet is created in the same way, but only where no file of that name exists.
 
+mod create;
 mod document;
 mod frame;
 mod replace;
@@ -20,6 +22,7 @@ use crate::validate::{Failure, Key, KeyPath, validate_toml};
 use document::Refusal;
 use frame::Frame;
 
+pub use create::{CreateFailure, CreateOutcome, CreateStep, create_new};
 pub use replace::{CONFIG_FILE_NAME, Cleanup, remove_leftover_temporary_files};
 
 /// a value to put in the file.
@@ -80,11 +83,12 @@ pub enum EditError {
         kind: io::ErrorKind,
     },
     /// an edit names a place the document does not have, or one of another kind, which
-    /// is a mistake of the caller; or the file is written in a form the write path does
-    /// not edit, which only the user can change: it holds the removal marker, or the
-    /// edit goes inside an inline table written over several lines. the text names the
-    /// edit and the reason.
+    /// is a mistake of the caller. the text names the edit and the reason.
     Inapplicable(String),
+    /// the file is written in a form the write path does not edit, which only the user
+    /// can change: it holds the removal marker, or the edit goes inside an inline table
+    /// written over several lines. the text names the edit, or the marker, and the reason.
+    FileForm(String),
 }
 
 impl fmt::Display for EditError {
@@ -109,7 +113,7 @@ impl fmt::Display for EditError {
                 };
                 write!(f, "could not {operation} {}: {kind}", path.display())
             }
-            Self::Inapplicable(reason) => write!(f, "{reason}"),
+            Self::Inapplicable(reason) | Self::FileForm(reason) => write!(f, "{reason}"),
         }
     }
 }
@@ -208,6 +212,7 @@ pub fn rewrite(
         Ok(edited) => edited,
         Err(Refusal::Syntax) => return Err(not_a_document()),
         Err(Refusal::Inapplicable(reason)) => return Err(EditError::Inapplicable(reason)),
+        Err(Refusal::FileForm(reason)) => return Err(EditError::FileForm(reason)),
     };
     let output = if edited == text {
         bytes.to_vec()

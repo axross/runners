@@ -7,6 +7,7 @@
 pub mod api;
 pub mod builder;
 pub mod channel;
+pub mod config;
 mod core;
 pub mod executable;
 pub mod log;
@@ -19,8 +20,16 @@ pub mod tokens;
 mod view;
 pub mod wire;
 
+/// the agent's own version, which it gives in `welcome`: this library's package version,
+/// which an app that links it also starts.
+pub const PACKAGE_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 pub use channel::{
-    AgentChannel, CallError, Client, ConnectError, Push, RawStream, Welcome, connect, connect_raw,
+    AgentChannel, CallError, Client, ConnectError, HANDSHAKE_TIMEOUT, Push, RawStream, Welcome,
+    connect, connect_raw,
 };
 pub use machine::{EXECUTABLE_CHANGED, Ended, Launch, QUIT};
 pub use run::{AgentOptions, Resident, run, run_resident};
+/// the reasons the agent is stopped for; a reader of the snapshot compares a `reason`'s
+/// `code` with its constants.
+pub use state::Reason as StopReason;

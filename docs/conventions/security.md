@@ -5,9 +5,9 @@ under [`.github/`](../../.github) is pinned, what a workflow may be granted, how
 release of the CLI is published and its
 macOS files are signed, where
 a self-hosted runner may and may not run, what a runner's shared storage exposes,
-and what is never committed. It does not cover application-level security, such as
-input validation or the OWASP-style concerns the installed `application-security`
-capability owns.
+what the Windows app's web view and process may do, and what is never committed. It
+does not cover general application-level security, such as input validation or the
+OWASP-style concerns the installed `application-security` capability owns.
 
 The runner image under [`images/actions-runner/`](../../images/actions-runner) and
 the host configuration under
@@ -101,6 +101,22 @@ computed from the real download, and are not covered by Dependabot. Dependabot
 does cover the CLI's own dependencies: its `cargo` and `rust-toolchain` entries
 for `/cli` propose the crate and toolchain refreshes as pull requests.
 
+The app under [`app/`](../../app) is pinned the same way, with its own
+[`app/Cargo.lock`](../../app/Cargo.lock), used with `--locked` everywhere, its own
+[`app/deny.toml`](../../app/deny.toml), and
+[`app/rust-toolchain.toml`](../../app/rust-toolchain.toml), which names the CLI's
+channel; `mise run check:app-pins` fails when the two files differ, and Dependabot's
+`rust-toolchain` entry bumps both in one pull request. `mise run check:app-lock`
+fails when the app's lockfile resolves a crate `marshal-cli` builds with to another
+version than the CLI's. Its `cargo` entry covers the
+app's crates, and the weekly advisory check covers its lockfile. [The App's
+Dependencies](#the-apps-dependencies) holds the rest of its policy.
+`cargo-about`, which writes the app's licence notices, is a mise tool like
+`cargo-deny`: pinned in `mise.toml` and installed as the project's prebuilt
+release, with its download URL and checksum in `mise.lock`, so it needs no compile
+in CI and no exception here. [App](../operations/app.md#licence-notices) describes how
+the notices check holds that version.
+
 The Windows installer's tool is pinned the same way. Besides the Rust toolchain,
 whose exception is recorded below, WiX is the one tool the release build fetches.
 [`fetch-wix.sh`](../../.github/scripts/fetch-wix.sh) downloads the NuGet package
@@ -146,16 +162,17 @@ again from that URL, compute its SHA-256 from the download, and change the embed
 text and the pin together, with the maintainer's review. The job downloads only the
 run's own artifacts.
 
-The Rust toolchain is one of two downloads in this repository that are not
+The Rust toolchain is one of three downloads in this repository that are not
 checksum-pinned, and the maintainer accepted that exception when approving the
 CLI's plan. `rustup` fetches a channel manifest over HTTPS and checks each
 component's hash against that manifest, but it does not verify the manifest's
 signature, so the trust rests on the HTTPS connection to the Rust project's
 distribution server. Recording the manifest's hash here would need a refresh for
 every release without adding a signature check. A step that installs the toolchain
-`cli/rust-toolchain.toml` names through `rustup` is this recorded exception.
+`cli/rust-toolchain.toml` or `app/rust-toolchain.toml` names through `rustup` is this
+recorded exception.
 
-The other is the Node that `actions/setup-node` installs in `release.yaml`, at the
+The second is the Node that `actions/setup-node` installs in `release.yaml`, at the
 exact version in `mise.toml`. It takes Node from the runner's tool cache or from
 GitHub's own builds, listed in the `actions/node-versions` manifest, and this
 repository pins no checksum for it. That path is trusted under the joint-trust
@@ -165,8 +182,141 @@ job's token by default, to fetch that manifest. When the manifest lacks the vers
 or cannot be fetched, `actions/setup-node@v7` falls back to downloading Node from
 nodejs.org, again with no checksum. That path is outside the joint-trust argument,
 since the Node.js project is a separate party, and it is accepted as a residual
-risk of the release workflow, below. Any other unpinned download remains a
-finding.
+risk of the release workflow, below.
+
+The third is `tauri-cli`, which builds the app, and the maintainer accepted it when
+approving the app's plan ([#73](https://github.com/axross/runners/issues/73)). It is installed from source, not
+downloaded as a binary: `cargo install tauri-cli --version "=<pin>" --locked`, with
+`<pin>` read from [`app/tauri-cli.version`](../../app/tauri-cli.version), the one
+place the version is set, through
+[`tauri-cli-version.sh`](../../.github/scripts/tauri-cli-version.sh), which refuses
+a file that is anything but one exact `X.Y.Z`. `--locked` makes Cargo build the
+tool's own published `Cargo.lock`, and Cargo checks the crate archive and each
+locked dependency against the checksums in the crates.io index, so the trust rests
+on that index over HTTPS, as for any crate. What this repository does not record is
+a hash of the tool's own archive, so it is not checksum-pinned like the tools above;
+W4's tool job, which signs update archives, commits one that moves with the pin once
+it lands. The
+install goes to `$RUNNER_TEMP`, uses no cache, and so compiles on every run: a cache
+would be a trust boundary for a job that builds code and runs the tool. It runs in
+the Windows job of `merge-checks.yaml`, which holds `contents: read`, reads no
+secret and publishes nothing. `tauri-cli`'s build scripts and procedural macros run
+code at build time under that job's account, which is why the job is what bounds
+them. The release build that installs the app is to follow the same rule and read
+the same pin; until it exists, nothing else installs the tool. To move the pin, see
+[App](../operations/app.md#the-tauri-cli-pin); the change needs the maintainer's
+review, since it changes the supply-chain surface (see
+[REVIEW.md](../../REVIEW.md)). Any other unpinned download remains a finding.
+
+## The App's Dependencies
+
+The app's workspace under [`app/`](../../app) links the `marshal-cli` library and the
+Tauri framework, so its tree is far larger than the CLI's, and its policy differs from
+the CLI's where that size makes the CLI's rule unworkable. The pinning of the lockfile,
+the toolchain and the build tools is in [Pinning Convention](#pinning-convention).
+[`app/deny.toml`](../../app/deny.toml) is the app's `cargo-deny` configuration, and
+`mise run deny:app` runs its bans, licences and sources checks for the two targets the
+app is built for, `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`.
+
+**App crate.**
+
+- **Registry and licences.** crates.io only, and the CLI's licence allowlist: `MIT`,
+  `Apache-2.0`, `Unicode-3.0`, `ISC`, `BSD-3-Clause` and `0BSD`, an `OR` expression
+  accepted when one alternative is on the list. Two more licences are accepted one
+  crate at a time, each as its own exception in `deny.toml`, so a new crate under
+  either fails the check: `MPL-2.0` for `cssparser`, `cssparser-macros`,
+  `dtoa-short`, `selectors` and `option-ext`, and `Zlib` for `foldhash`. `MPL-2.0` is
+  copyleft at the level of the file, and the crates are linked unmodified, so the
+  obligation is to keep the licence text and say where the source is published, which
+  the licence notices do. The exceptions match what `cargo deny` reports, and it
+  reports an exception that no crate uses. Any other crate under another licence
+  returns to the maintainer.
+- **Duplicates are reported, not denied.** `deny.toml` sets `multiple-versions` to
+  `warn`, because Tauri's tree carries many duplicate versions and each would need a
+  skip that the next Tauri release changes. This is the app only: the CLI's
+  duplicates stay denied beyond its two listed skips. Wildcard version requirements
+  are denied except for the path dependencies the app's crates and `marshal-cli` have
+  on each other.
+- **Procedural macros are accepted as a class, in the app only.** Tauri's tree holds
+  many, and a review of each crate would add nothing the lockfile's checksums and
+  `cargo-deny` do not already give. `app/Cargo.lock` resolves every crate
+  `cli/Cargo.lock` resolves for `marshal-cli`, for Windows, macOS and Linux, to the same
+  version, with nothing more among them, and `mise run check` fails otherwise
+  (`check:app-lock`), so a procedural-macro crate that `marshal-cli`'s own dependencies
+  bring changes `cli/Cargo.lock`, and the CLI's rule, which needs the maintainer's
+  review, applies to it there. A crate that a feature the app turns on adds to a crate
+  both trees share is the app's own and falls under this class rule: features the
+  app's other dependencies turn on in `futures-util`, `reqwest` and `tracing` add `futures-macro`,
+  `tracing-attributes`, `tokio-util`, `futures-io`, `futures-sink` and `syn` 2 that way.
+- **Marshal's own crates forbid `unsafe_code`.** Tauri's macros expand into the app's
+  crates under that lint, and they build, so the macros emit none; Tauri's and the
+  platform crates' own code is outside the claim.
+- **Features are named.** Tauri's default features are off and the manifest lists each
+  kept one with its reason: `wry` for the web view, `tray-icon` for the icon and menu
+  without `image-png` or `image-ico`, so the app links no image decoder, and
+  `common-controls-v6` for the Windows menu. `compression`, `dynamic-acl`, `x11` and
+  `dbus` are left out, which drops brotli, the D-Bus and X11 crates from the tree and
+  means no capability can be added while the app runs. A new feature, or one of
+  those four, is a change to this list.
+- **Direct dependencies.** `tauri` 2.12, `tauri-build` 2.7 and
+  `tauri-plugin-single-instance` 2.5 for the app, `tauri-plugin-opener` 2.7.2 to open a
+  running job's page in the default browser from the Rust side (on Windows through the
+  `open` crate's `ShellExecuteExW`, so the address never passes through another
+  program's command line; it adds `open`, its build helper `tauri-plugin`, and on Linux
+  `is-wsl` and `is-docker`, and needs no licence exception), and `embed-resource` 3.0 to build
+  it, the resource compiler `tauri-build` already builds with, which `build.rs` calls
+  to link the common controls manifest into the integration tests, so it adds no crate
+  to the tree and runs only when the target is Windows with the MSVC environment;
+  `serde`, `serde_json` and `tokio` for the session and the view, at versions the
+  library already builds, so they add no crate; `windows-registry` 0.6 on Windows, which reads the taskbar's mode and the
+  time zone's bias without `unsafe` code. Its development-only dependencies are
+  Tauri's `test` feature, and on Windows `interprocess`, which a test uses to squat on
+  the agent's channel. For updates (see [Updates Come Only From the Signed
+  Feed](#updates-come-only-from-the-signed-feed)): `tauri-plugin-updater`, pinned to
+  `=2.14.1`, on Windows only, with its defaults off and only `rustls-tls` on, so it
+  links no zip reader and reads no system proxy; `winsafe` 0.0.29's `kernel` feature on
+  Windows, the crate the library already uses, to wait on the agent's process without
+  `unsafe` code; `tokio`'s `time` feature on Windows for that wait; and `serde_json`,
+  at the version the session builds, which the code `generate_context!` writes for the
+  updater's configuration needs. The
+  `marshal-feed` crate takes `minisign-verify`, `base64`, `semver`, `url` and `sha2`,
+  each at the version the updater plugin or the library already links on Windows, so
+  that its feed check verifies exactly as the plugin does, and `serde` and
+  `serde_json`, at the versions the session builds, to read the feed and the app's
+  configuration; on macOS they add
+  `minisign-verify` to the tree. The token store's crates come through the library, and
+  [CLI](../operations/cli.md#dependencies) lists them. A new direct dependency of an
+  app crate MUST be added here with its reason, and needs the maintainer's review.
+- **No crate sends telemetry or a crash report.** Marshal sends none. The app's only
+  network requests are the update check and the update's download, both over HTTPS
+  to `github.com`; a dependency or a feature that makes any other is a finding.
+- **Refreshes.** Dependabot's `cargo` entry for `/app` proposes the crate refreshes,
+  and a red pull request is fixed there, as for the CLI. A refresh of a crate
+  `marshal-cli` uses fails `check:app-lock` until `cli/Cargo.lock` takes the same
+  version in the same change. The licence notices must be written again whenever the
+  lockfile changes; see [App](../operations/app.md#licence-notices).
+
+**Front end.** The web view's pages are plain files in
+[`app/crates/app/frontend/`](../../app/crates/app/frontend):
+
+- **No npm package.** There is no `package.json`, no lockfile, no bundler and no
+  build step. The pages use the global API Tauri's configuration turns on, so
+  nothing is installed from npm and nothing needs refreshing; Dependabot has no
+  entry for it.
+- **No remote asset.** Nothing is downloaded at run time: no font service, no
+  script from a CDN, no image from a server. The content security policy below
+  would refuse it too.
+- **The font is a recorded copy.** IBM Plex Sans is bundled as three WOFF2 files
+  under the SIL Open Font License 1.1.
+  [`fonts/README.md`](../../app/crates/app/frontend/fonts/README.md) records the
+  release, its source, the archive's SHA-256 and each file's, and the files are kept
+  byte for byte by `.gitattributes`. A change to a font file changes that record and
+  the licence notices in the same commit.
+- **The colour values are a recorded copy.** The values in `tokens.css` are copied
+  from Radix Colors 3.0.0, licensed MIT; the file's header names the package and the
+  roles, and the package's notice is `colors-LICENSE.txt` beside it. They are
+  copied, not imported, so the package is not a dependency, and a change to them
+  changes the header and the licence notices in the same commit.
 
 ## `actions/*` Stays on Major Tags
 
@@ -767,9 +917,12 @@ registration, storage, and containers are kept apart from every other's. The rul
 for [`hosts/windows-docker-desktop/`](../../hosts/windows-docker-desktop) and any
 later host:
 
-- One token per target repository, a fine-grained personal access token limited to
-  that repository's Administration permission. A token MUST NOT cover several
-  repositories or be stored as a GitHub Actions secret. A token that covers
+- One token per target repository for a repository pool, a fine-grained personal
+  access token limited to that repository's Administration permission, and Actions:
+  read where [A Token Carries Only Its Pool Kind's
+  Permissions](#a-token-carries-only-its-pool-kinds-permissions) allows. A
+  repository pool's token MUST NOT cover several repositories or be stored as a
+  GitHub Actions secret. A token that covers
   several repositories, or a classic token, would let one leak register runners
   for all of them, and a secret that can register runners for the automation that
   reads it is not a boundary. The token is read from a file on the host on every
@@ -817,8 +970,11 @@ later host:
   passed to `docker run` by name. It MUST NOT be placed on a command line, in a log
   line, or in an image layer.
 - The CLI's registration request (see [CLI](../operations/cli.md#registration)) is
-  one HTTPS `POST` to `https://api.github.com` that follows no redirect, so a
-  redirect cannot carry the token to another host. It fails a connection after
+  one HTTPS `POST` to `https://api.github.com`, and the agent's GitHub status reads
+  (see [CLI](../operations/cli.md#github-status)) are `GET`s there through the same
+  client; neither follows a redirect, so a redirect cannot carry the token to
+  another host, and a status read follows a next page only on the same origin and
+  endpoint path. It fails a connection after
   10 s, a request after 30 s, and a response over 1 MiB. The token lives in a type
   with no `Display` and a redacted `Debug`, the header that carries it is marked
   sensitive, and error text has the token replaced before it is logged. Only a
@@ -843,6 +999,44 @@ later host:
   step.
 - `docker run` uses `--pull never`, so a missing local image fails instead of
   pulling a same-named public image.
+
+## A Token Carries Only Its Pool Kind's Permissions
+
+What a token may do is set when the operator creates it, and GitHub cannot report a
+token's permissions to Marshal, so limiting each token to its pool kind's permissions
+is an operator rule and a review rule, not a check.
+
+- A repository pool's token, whoever owns the repository, has that repository as
+  its only repository and carries Administration: Read and write, which registration
+  needs. It MAY add Actions: read, so the window can show the job a busy runner runs.
+  It carries nothing else.
+- Actions: read costs this: a leaked token can also read the repository's workflow
+  runs, their logs and their artifacts. Without it the window still shows whether
+  each runner is busy.
+- A 403 from the workflow-runs endpoint, or from a run's jobs, that is not a
+  rate-limit response means Actions: read is missing; Marshal hides job names for
+  that repository rather than failing, and logs GitHub's message and its
+  `X-Accepted-GitHub-Permissions` header.
+- Organisation pools are planned (X2) and no release configures one yet. An
+  organisation pool's token is created by an owner of the organisation, has the
+  organisation as its resource owner, and carries the organisation permission
+  Self-hosted runners: Read and write. It carries no repository permission, and its
+  repository access is public repositories only. One token serves one
+  organisation.
+- A leaked organisation token lets its holder register their own runner into any
+  runner group of the organisation, including the default group; set any group's
+  repositories to any repository the organisation owns, or open a group to public
+  repositories; and move runners between groups, change their labels and delete
+  runners. A rogue runner then receives the jobs, checked-out code, `GITHUB_TOKEN`
+  and secrets of every repository its group admits. The token cannot delete a
+  repository or change branch protection.
+- The GitHub status reads keep the registration's outbound limits and secret
+  handling, and no `github` value, view state or log line carries a token. The
+  workflow and job names GitHub returns are untrusted text: the agent removes
+  control and Unicode bidirectional formatting characters and cuts them before it
+  publishes them, and a reader shows them as plain text, never as markup or an
+  address. A reader builds a job's address itself from its configured repository
+  and the two numbers it was given.
 
 ## One Instance per Machine, Reached Only by Its User
 
@@ -890,13 +1084,14 @@ built: its names, modes, and checks.
 
 ## The Agent Keeps Tokens in the Operating System's Store
 
-The resident agent reads each repository's token from the operating system's
+The resident agent reads each token from the operating system's
 credential store, not from a file, and it receives a token from a client over its
 control channel. [CLI](../operations/cli.md#the-token-store) owns how the store is
 named and used.
 
 - On Windows a token is a generic credential in the user's Credential Manager,
-  named `app.axross.marshal:github.com/<owner>/<name>`, with **local** persistence.
+  named `app.axross.marshal:github.com/<owner>/<name>` for a repository or
+  `app.axross.marshal:github.com/<org>` for an organization, with **local** persistence.
   The crate's default persistence is the enterprise one, which roams with the user's
   profile and so would carry a repository's token to other machines of a domain
   account; the store asks for the local one, and a test on Windows reads the
@@ -914,7 +1109,10 @@ named and used.
   request is only as private as the channel: only the agent's user can send it, and
   on Windows the client sends it only after it has checked that the pipe's server
   runs as that user, so a squatter of another account receives nothing and a failure
-  to verify is a refusal. The residual risks are a squatter of the same user, which
+  to verify is a refusal. The check is made once at connection, before any request,
+  so it covers every request on the connection. A method added under protocol
+  version 2's version rules that carries a secret is handled as `token_set` is. The
+  residual risks are a squatter of the same user, which
   is accepted on a single-user host, and the tiny window in which a process ID is
   reused between the connection and the check.
 - A token longer than 1280 UTF-16 code units or empty is refused before it reaches the
@@ -924,17 +1122,168 @@ named and used.
 
 Residual risks, accepted on a single-user host:
 
-- A same-user client can create store entries for any well-formed repository name,
-  one token of at most 1280 units each, and the agent never removes one it did not
-  hear of. The agent's in-memory record of which repositories have a token also gains
-  an entry for each new name a `token_set` or `token_remove` names, until the next
-  configuration read replaces it; each key is bounded by the form of `owner/name`.
+- A same-user client can create store entries for any well-formed key, one token of
+  at most 1280 units each, and the agent never removes one it did not hear of. The
+  agent's in-memory record of which keys have a token also gains an entry for each
+  new name a request names, until the next configuration read replaces it; each key
+  is bounded by its form, `owner/name` for a repository or a login for an
+  organization.
 - Another process of the same user that connects to the channel can set or remove
   a token, stop the runners or quit the agent, as it can for `start`'s
   commands.
-- The agent holds a token in memory for as long as a registration needs it, and a
+- The agent holds a token in memory for as long as a registration or a GitHub status
+  check needs it, and a
   JIT configuration a runtime-core panic's message carried would reach the log
   unmasked, as for `start`.
+
+## The App Surface
+
+The Windows app is a notification-area icon, a menu and a web view that shows the
+runners and takes each repository's token. It runs as the signed-in user, beside an
+agent of the same executable that holds the pools' tokens, so the question is what
+the app may do with that reach. [App](../operations/app.md) owns how it works.
+
+- **The app process is a client only.** It never holds the instance lock, reads the
+  configuration, touches the token store or runs Docker: it talks to the agent in
+  protocol version 2 and passes a newly entered token to it in `token_set`, then drops
+  it. One executable runs as both, so the operating system cannot enforce the rule
+  for the app mode. Only the `marshal-modes` crate reaches the library's agent entry,
+  and only when the executable is started in its agent mode; the app's session
+  reaches the agent through the library's client alone. A review checks that no
+  other app crate takes the lock, opens the store or starts `docker`.
+- **The web view loads only bundled content.** Its pages, styles, scripts and fonts
+  are the files the app embeds. It never navigates away from them, never opens a
+  window from page content, and the release build has no developer tools. The policy
+  is set in `tauri.conf.json`, in full:
+
+  ```text
+  default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; frame-ancestors 'none'
+  ```
+
+  Tauri adds the scripts' hashes to `script-src`. The pages use no inline script, no
+  `style` attribute and no `eval`. The page's element builder refuses the `style`,
+  `href`, `src`, `srcdoc`, `action` and `formaction` attributes and every `on*`
+  attribute; any other way an element could load or run something is refused by the
+  content security policy above. Text from the configuration, Docker or the agent is set as text,
+  never as markup. A change to the policy, to the files it governs or to the element
+  builder needs the maintainer's review.
+
+- **Two capabilities grant what a window may call.** The app declares its commands, so
+  each works only in a window whose capability grants it. The main window's
+  capability grants `core:event:allow-listen` and `core:event:allow-unlisten` and the
+  commands that read the view, start all, stop all, build, stop the build, try
+  again, set a token, remove a token, hide the window and open a runner's job. The
+  confirmation window's
+  grants the two commands that read its question and answer it. Neither grants
+  anything else, each is limited to its window, and a test shows that a call the
+  capability does not grant is refused. The permission files Tauri generates are
+  checked in, so a change to them shows in a diff, and Tauri's `dynamic-acl` feature
+  is off, so no capability can be added while the app runs. Quit has no command: it
+  runs from the menu, on the Rust side.
+- **The page cannot open an address.** Open run names a pool and a runner, never an
+  address. The app's `open_job` command looks the runner up in the agent's snapshot and
+  the `github` topic, refuses a pool the agent does not list, and builds
+  `https://github.com/<owner>/<repo>/actions/runs/<run_id>/job/<job_id>` itself from
+  the pool's configured repository and the two numbers GitHub gave, then opens it in
+  the default browser from the Rust side with Tauri's opener plugin. The plugin's
+  page script, which sends link clicks to its own command, is off, and no capability
+  grants any of the plugin's three commands, which a test shows are refused.
+- **A token passes only through `token_set`.** The window's token field is a password
+  input without autocomplete or spell checking. The page clears it when the token is
+  submitted, whatever the outcome, and keeps the token in no variable once it has
+  called the command. A token half typed is cleared when the window hides: the app
+  sends the page `marshal:hidden` before every hide, which needs no permission beyond
+  listening, and the page also clears on the web view's own report. The Rust side
+  trims it, refuses an empty one or one over 1280 UTF-16 code units, wraps it in the
+  library's `Secret`, sends it once and drops it.
+  No view state, event, log line or error text of the app holds a token, and the app's
+  log masks a word shaped like a GitHub token as defence in depth. The app never
+  displays a stored token.
+- **No telemetry, no crash reports.** The app's only requests read the update feed
+  and download an update, as the next bullet says; opening a job's page hands its
+  address to the default browser. The agent's only requests go to GitHub's API.
+  Neither sends usage data or a crash report, and
+  no dependency may; see [The App's Dependencies](#the-apps-dependencies).
+- **Updates come only from the signed feed.** See
+  [Updates Come Only From the Signed Feed](#updates-come-only-from-the-signed-feed).
+- **The debug-only test variables are ignored in a release build.** A debug build's
+  agent and app read `MARSHAL_TEST_ROOT`, `MARSHAL_TEST_DOCKER` and
+  `MARSHAL_TEST_GITHUB_API`, so a test can run the executable against a scratch host.
+  A release build ignores all three, so no environment can move the lock, channel,
+  log, configuration, `docker` program or GitHub address of an installed Marshal, as
+  for the CLI under [One Instance per Machine](#one-instance-per-machine-reached-only-by-its-user).
+- **The app starts its agent from a file it checked.** It starts it from its own
+  executable's absolute path as a plain detached child, never through Tauri's shell
+  plugin, and never from a file that is missing, that it could not read when it
+  started, or that is no longer the file the app started from. The agent ends within 5 s of the file it started from being moved,
+  renamed, replaced or deleted, with the reason `executable_changed`, and the app ends
+  with it.
+- **The WebView2 runtime is the operating system's.** Windows 11 ships it and
+  updates it, and the app bundles no copy, so the web view's engine is as current as
+  Windows keeps it; the loader the app links is covered by the licence notices.
+
+Residual risks, accepted on a single-user host:
+
+- Any program running as the user can read a token's Credential Manager entry, can
+  connect to the agent's channel and stop the runners, and can read the web view's
+  data folder. The Credential Manager and the channel are not boundaries against the
+  user's other programs; [The Agent Keeps Tokens in the Operating System's
+  Store](#the-agent-keeps-tokens-in-the-operating-systems-store) says the same of the
+  store.
+- An agent that hangs cannot be ended by Quit, so the goal that quitting leaves no
+  Marshal container or process holds only while the agent answers. A Quit the agent
+  never answers keeps the app saying it is quitting until the agent's `ending` or the
+  connection's end, so the user ends `marshal-app.exe` in Task Manager. The window
+  says how only for an agent that does not answer its handshake. The next start
+  removes the containers it left.
+- Whether WebView2 enforces the policy, whether the agent, the exporter or one of
+  their `docker` clients shows a console window (the agent is created with
+  `DETACHED_PROCESS`, and the exporter and the clients with `CREATE_NO_WINDOW`, each
+  asserted at its command builder, but no check observes the window), and whether the menu opens from the keyboard are shown only on axpc;
+  [App](../operations/app.md#verification-status) lists what has and has not been
+  shown.
+- The app checks its executable and then starts it by path, in two steps, so a file
+  put at that path between the two is started. Whoever can do that can already
+  replace the executable before the app starts.
+
+## Updates Come Only From the Signed Feed
+
+The Windows app installs a new release by itself, so whoever can put a file in front of
+it could run code as the user. [App](../operations/app.md#updates) owns how an update
+runs; these are the rules it is reviewed against.
+
+- **Only the app mode updates.** Only the app mode registers Tauri's updater plugin, on
+  Windows; the agent, exporter and shim modes never do. The flow runs in Rust, and no
+  capability grants the web view an updater command, which a test of the capability
+  files shows.
+- **One feed, one key.** The feed is
+  `https://github.com/axross/runners/releases/latest/download/latest.json`, the only
+  endpoint `tauri.conf.json` names. The app verifies every downloaded MSI against the
+  one public key committed there, with `requireSignedVersion`, so the signature's
+  trusted comment must name the feed's version. A build with no committed key, or a
+  development build at `0.0.0-dev`, never checks.
+- **Only newer, only from this repository.** The app takes a release only when its
+  version is newer than its own, and only when the download address is `https`, on
+  `github.com` with no port or credentials, under
+  `/axross/runners/releases/download/`; redirects from it are followed, since the
+  signature is what makes the bytes trusted. No `dangerous` option is set and
+  downgrades are off, which a test of the configuration shows.
+- **Bounded requests.** A check gives up after 30 s and a download after 10 minutes.
+  Neither uses the GitHub REST API or a token.
+- **The installer is started by the app.** The app starts `msiexec` only after the
+  agent it asked to drain has ended and its process has exited, so the agent's Job
+  Object cannot end the installer, and nothing installs from another client's drain.
+- **The record across an update holds no secret.** It is a version and a time in
+  Marshal's local data folder, applies for 30 minutes to that version only, and every
+  launch removes it.
+
+Residual risks, accepted:
+
+- Anyone who can publish a release here and holds the update-feed key can ship code
+  every installed app runs. The key, its custody and its rotation are the feed's
+  pull request's to record.
+- Tauri's updater keeps each downloaded MSI in the temporary folder
+  (tauri-apps/plugins-workspace#2389); Windows' storage cleanup removes it.
 
 ## Tokens Stay Out of the Log, and Job Clients End With `start`
 
@@ -1015,6 +1364,54 @@ Residual risks, accepted on a single-user host:
   close it.
 - The write path does not flush the folder after the rename. A crash right after a
   write can leave the old file, and cannot leave a partial one.
+
+## Editing the Configuration Through the Agent Moves No Trust Boundary
+
+The agent's `config_read`, `config_edit` and `config_reload` methods change the
+configuration, which decides the repositories runners register to, their labels and
+the folder diagnostics are exported to. [CLI](../operations/cli.md#editing-the-configuration)
+owns the methods; these are the properties they keep.
+
+- Only the agent's own user reaches the channel, under
+  [One Instance per Machine, Reached Only by Its User](#one-instance-per-machine-reached-only-by-its-user),
+  and that user can already edit the file. No request names a file for the agent to
+  read or write: the agent edits only `config.toml` at its fixed path.
+- No request or response carries a token as such. `config_read` sends only the keys
+  the schema defines that the file sets with a value of the right type, also while
+  the file breaks other rules; an undefined key or a wrong-typed value appears only as
+  a problem, which quotes no value. A token pasted on a line of its own, under a key
+  of its own, or into a number or a boolean therefore does not reach the window. A
+  problem names a key path, as the first residual risk of
+  [The TOML Configuration Holds No Token and Quotes No Line](#the-toml-configuration-holds-no-token-and-quotes-no-line)
+  describes.
+- An edit goes through the write path and then through the checks the agent loads
+  with, the checkout rule at the diagnostic directory's own place included, so a file
+  the app writes is one the agent would load. An edit or a reload that sets or
+  changes a pool's `diagnostic_directory` also runs the exporter's sink checks on it
+  (it exists, is a directory, is no link, lies outside the checkout, and is private
+  on Unix) and is refused when it fails them; the problem names the key and the
+  check, not the path. A directory the configuration in use already names is left
+  to the exporter's own checks, as before.
+- An edit of `schema_version` or of `[lifecycle]` is refused before the file is
+  read.
+- A `config_edit` whose `revision` no longer matches the file is refused, and the
+  write path compares the file again just before it replaces it.
+
+Residual risks, accepted on a single-user host:
+
+- A same-user client can point a pool's diagnostics at any folder that passes the
+  sink checks, as it could by editing the file.
+- A token pasted into the value of a defined text key, such as a pool's name or a
+  label, is a value of the right type, so `config_read` sends it to the window, which
+  shows it in that field. The window is the same user's, who wrote the file.
+- The revision is std's default hasher over the file's bytes, with their length:
+  SipHash with fixed keys today, which std does not promise to keep. It detects an
+  edit made elsewhere; it is not meant to resist a file crafted to collide, and a
+  same-user writer needs no collision to change the file. An agent built with
+  another Rust may compute another revision for the same bytes, which a client sees
+  as `config_changed` and reads the file again.
+- A repository no pool names any more keeps its stored token until the client
+  removes it with `token_remove`; the agent does not remove it on its own.
 
 ## Diagnostic Evidence Stays Private
 
@@ -1343,11 +1740,27 @@ environment or supplied at run time. The exceptions are the two default runner l
 and `axmc`, which a host adds when `labels` is absent or empty and which are
 committed by the maintainer's decision: `axpc` names the Windows Docker Desktop
 host and `axmc` the macOS host. Every other host, consumer, or machine value stays
-a parameter. The one further exception is the macOS signing team ID and the exact
+a parameter. A further exception is the macOS signing team ID and the exact
 designated requirement, which a documentation change records in the CLI document
 after the first signed release as the contract text for later work. The team ID is
 public in every signed file, so recording it discloses nothing; it is not an account
-credential.
+credential. Another is the maintainer's update-feed public key, committed in
+`app/crates/app/tauri.conf.json` and pinned by the feed crate's configuration test:
+the app verifies every update against it, so it must be in the build, and a public key
+lets no one sign or sign in. Its private key and password are never committed; their
+custody is the feed's pull request's to record.
+
+The checked-in licence notices under `app/notices/` reproduce third-party licence
+texts and copyright notices verbatim, as those licences require, including the names
+and e-mail addresses of the people they name. That text is the one exception to the
+rule against committing personal names, account names and e-mail addresses. It covers
+only verbatim licence and copyright text that `app/notices/generate.sh` produces or
+that the repository's licence copies hold (`app/notices/licences/` and the licence
+files beside the window's bundled fonts and colours). It also covers the published
+repository URL that `generate.sh` writes into the notices for each crate, and a
+reference in `docs/operations/app.md` to a third-party crate's public repository,
+today `wravery/webview2-rs` and `madsmtm/objc2`; an account name, personal name or
+e-mail address of any other kind, or anywhere else, is still a finding.
 
 [`.gitignore`](../../.gitignore) excludes `settings.local.json`, `.env.local`,
 token files, and private keys so that a local working file cannot be committed by

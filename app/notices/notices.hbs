@@ -1,0 +1,24 @@
+The crates below are used to build Marshal: linked into it, or run while it compiles,
+as a procedural macro is. They are grouped by licence, and each crate's name and
+version are the ones in Cargo.lock.
+
+Overview of licences:
+{{#each overview}}
+  * {{{name}}} ({{count}})
+{{/each}}
+
+{{#each licenses}}
+================================================================================
+{{{name}}}
+
+Used by:
+{{#each used_by}}
+  * {{{crate.name}}} {{{crate.version}}}{{#if crate.repository}} - {{{crate.repository}}}{{/if}}
+{{#if (eq ../id "MPL-2.0")}}
+    source: https://crates.io/crates/{{{crate.name}}}/{{{crate.version}}}
+{{/if}}
+{{/each}}
+
+{{{text}}}
+
+{{/each}}

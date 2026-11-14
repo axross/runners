@@ -1,13 +1,16 @@
 //! what a connection asks of the agent, parsed from the wire: the methods that reach
 //! the agent's one task, and the errors they answer with.
 
+use std::fmt;
+
 use serde::Deserialize;
 use tokio::sync::oneshot;
 
 use crate::runtime::secret::Secret;
-use crate::token_store::{RepositoryKey, StoreError, TokenRefusal, accepted_token};
+use crate::token_store::{StoreError, TokenKey, TokenRefusal, accepted_token};
 
-use super::wire::{ErrorBody, ErrorCode, StoreFault, TOPIC_STATE};
+use super::config::Problem;
+use super::wire::{ErrorBody, ErrorCode, StoreFault, TOPIC_GITHUB, TOPIC_STATE};
 
 /// an error with its stable code.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -15,6 +18,7 @@ pub struct ApiError {
     pub code: ErrorCode,
     pub message: String,
     pub store: Option<StoreFault>,
+    pub problems: Box<[Problem]>,
 }
 
 impl ApiError {
@@ -24,6 +28,7 @@ impl ApiError {
             code,
             message: message.into(),
             store: None,
+            problems: Box::default(),
         }
     }
 
@@ -46,6 +51,7 @@ impl ApiError {
     pub fn body(&self) -> ErrorBody {
         ErrorBody {
             store: self.store.clone(),
+            problems: self.problems.clone(),
             ..ErrorBody::new(self.code, &self.message)
         }
     }
@@ -62,11 +68,11 @@ pub enum Method {
     Build,
     Quit,
     TokenSet {
-        key: RepositoryKey,
+        key: TokenKey,
         token: Secret,
     },
     TokenRemove {
-        key: RepositoryKey,
+        key: TokenKey,
     },
     /// drain for an update to `version`; `requester` reports, by closing, that the
     /// connection that asked has closed, and `None` never does.
@@ -74,6 +80,26 @@ pub enum Method {
         version: String,
         requester: Option<oneshot::Receiver<()>>,
     },
+    ConfigRead,
+    /// `edits` is read against the agent's profile, which the parser does not know.
+    ConfigEdit {
+        revision: String,
+        edits: Edits,
+        check: bool,
+    },
+    ConfigReload {
+        revision: String,
+        check: bool,
+    },
+}
+
+/// the edits of a `config_edit` as they came; `Debug` leaves out their values.
+pub struct Edits(pub serde_json::Value);
+
+impl fmt::Debug for Edits {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Edits(<redacted>)")
+    }
 }
 
 /// a method and where its result goes.
@@ -83,10 +109,38 @@ pub struct Call {
     pub reply: oneshot::Sender<ApiResult>,
 }
 
+/// a topic a connection subscribes to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Topic {
+    State,
+    /// collected only while a subscription to it is renewed.
+    Github,
+}
+
+impl Topic {
+    #[must_use]
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::State => TOPIC_STATE,
+            Self::Github => TOPIC_GITHUB,
+        }
+    }
+
+    fn of(word: &str) -> Result<Self, ApiError> {
+        match word {
+            TOPIC_STATE => Ok(Self::State),
+            TOPIC_GITHUB => Ok(Self::Github),
+            _ => Err(invalid("the agent serves the topics state and github")),
+        }
+    }
+}
+
 /// a request as the connection understands it.
 #[derive(Debug)]
 pub enum Parsed {
-    Subscribe,
+    Subscribe(Topic),
+    /// keeps the connection's `github` subscription alive.
+    Renew(Topic),
     Call(Method),
 }
 
@@ -136,6 +190,21 @@ fn is_version(text: &str) -> bool {
         && rest.len() != 1
 }
 
+#[derive(Deserialize)]
+struct ConfigEditParams {
+    revision: String,
+    edits: serde_json::Value,
+    #[serde(default)]
+    check: bool,
+}
+
+#[derive(Deserialize)]
+struct ConfigReloadParams {
+    revision: String,
+    #[serde(default)]
+    check: bool,
+}
+
 fn invalid(message: &str) -> ApiError {
     ApiError::new(ErrorCode::InvalidRequest, message)
 }
@@ -146,8 +215,8 @@ fn params<T: for<'de> Deserialize<'de>>(value: serde_json::Value) -> Result<T, A
     serde_json::from_value(value).map_err(|_| invalid("the params are not what the method takes"))
 }
 
-fn key(text: &str) -> Result<RepositoryKey, ApiError> {
-    RepositoryKey::parse(text).map_err(|error| invalid(&error.to_string()))
+fn key(text: &str) -> Result<TokenKey, ApiError> {
+    TokenKey::parse(text).map_err(|error| invalid(&error.to_string()))
 }
 
 /// reads the method a request names and its params; a method without params ignores
@@ -161,10 +230,14 @@ pub fn parse(method: &str, value: serde_json::Value) -> Result<Parsed, ApiError>
         "quit" => Method::Quit,
         "subscribe" => {
             let SubscribeParams { topic } = params(value)?;
-            if topic != TOPIC_STATE {
-                return Err(invalid("the agent serves the topic state only"));
+            return Ok(Parsed::Subscribe(Topic::of(&topic)?));
+        }
+        "renew" => {
+            let SubscribeParams { topic } = params(value)?;
+            if topic != TOPIC_GITHUB {
+                return Err(invalid("only a github subscription is renewed"));
             }
-            return Ok(Parsed::Subscribe);
+            return Ok(Parsed::Renew(Topic::Github));
         }
         "token_set" => {
             let TokenSetParams { repository, token } = params(value)?;
@@ -187,6 +260,23 @@ pub fn parse(method: &str, value: serde_json::Value) -> Result<Parsed, ApiError>
                 version,
                 requester: None,
             }
+        }
+        "config_read" => Method::ConfigRead,
+        "config_edit" => {
+            let ConfigEditParams {
+                revision,
+                edits,
+                check,
+            } = params(value)?;
+            Method::ConfigEdit {
+                revision,
+                edits: Edits(edits),
+                check,
+            }
+        }
+        "config_reload" => {
+            let ConfigReloadParams { revision, check } = params(value)?;
+            Method::ConfigReload { revision, check }
         }
         _ => {
             return Err(ApiError::new(
@@ -224,16 +314,33 @@ mod tests {
     }
 
     #[test]
-    fn subscribe_takes_the_state_topic_only() {
+    fn subscribe_takes_the_state_and_github_topics() {
         assert!(matches!(
             parse("subscribe", json!({"topic": "state"})),
-            Ok(Parsed::Subscribe)
+            Ok(Parsed::Subscribe(Topic::State))
+        ));
+        assert!(matches!(
+            parse("subscribe", json!({"topic": "github"})),
+            Ok(Parsed::Subscribe(Topic::Github))
         ));
         assert_eq!(
             code("subscribe", json!({"topic": "later"})),
             ErrorCode::InvalidRequest
         );
         assert_eq!(code("subscribe", json!(null)), ErrorCode::InvalidRequest);
+    }
+
+    #[test]
+    fn renew_takes_the_github_topic_only() {
+        assert!(matches!(
+            parse("renew", json!({"topic": "github"})),
+            Ok(Parsed::Renew(Topic::Github))
+        ));
+        assert_eq!(
+            code("renew", json!({"topic": "state"})),
+            ErrorCode::InvalidRequest
+        );
+        assert_eq!(code("renew", json!(null)), ErrorCode::InvalidRequest);
     }
 
     #[test]
@@ -265,6 +372,10 @@ mod tests {
         );
         assert_eq!(
             code("token_set", json!({"repository": "owner", "token": "x"})),
+            ErrorCode::InvalidRequest
+        );
+        assert_eq!(
+            code("token_remove", json!({"repository": "owner"})),
             ErrorCode::InvalidRequest
         );
         assert_eq!(

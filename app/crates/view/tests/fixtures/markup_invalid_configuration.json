@@ -1,0 +1,21 @@
+{
+  "agent": {
+    "version": "0.1.0",
+    "state": "stopped",
+    "since": 1793763660000,
+    "reason": {
+      "code": "invalid_configuration",
+      "message": "the configuration is not valid: <b>x</b>"
+    }
+  },
+  "configuration": {
+    "path": "C:\\Users\\<i>user</i>\\config.toml",
+    "problems": ["repositories[0].name: <script>alert(1)</script>"]
+  },
+  "runners_up": 0,
+  "runners_wanted": 0,
+  "repositories": [],
+  "pools": [],
+  "leftovers": [],
+  "images": []
+}

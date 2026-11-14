@@ -1,0 +1,160 @@
+{
+  "agent": {
+    "version": "0.1.0",
+    "state": "running",
+    "since": 1793762100000,
+    "extra": "later"
+  },
+  "configuration": {
+    "path": "C:\\Users\\<user>\\AppData\\Local\\marshal\\config.toml",
+    "problems": []
+  },
+  "runners_up": 2,
+  "runners_wanted": 6,
+  "repositories": [
+    {
+      "repository": "owner/app",
+      "has_token": true,
+      "pools": ["app"]
+    },
+    {
+      "repository": "owner/site",
+      "has_token": true,
+      "pools": ["site"]
+    },
+    {
+      "repository": "owner/docs",
+      "has_token": false,
+      "pools": ["docs"]
+    }
+  ],
+  "pools": [
+    {
+      "name": "app",
+      "repository": "owner/app",
+      "state": "running",
+      "reason": null,
+      "has_token": true,
+      "runners_up": 1,
+      "slots": 2,
+      "runners": [
+        {
+          "slot": 1,
+          "state": "running",
+          "workload": "app-1-20261104031522114",
+          "reason": null,
+          "since": 1793762122000
+        },
+        {
+          "slot": 2,
+          "state": "provisioning",
+          "workload": null,
+          "reason": "waiting for a virtual machine to boot",
+          "since": 1793762130000
+        }
+      ],
+      "diagnostics": null
+    },
+    {
+      "name": "site",
+      "repository": "owner/site",
+      "state": "hibernating",
+      "reason": null,
+      "has_token": true,
+      "runners_up": 1,
+      "slots": 3,
+      "runners": [
+        {
+          "slot": 1,
+          "state": "running",
+          "workload": "site-1-20261104033907412",
+          "reason": null,
+          "since": 1793763547000
+        },
+        {
+          "slot": 2,
+          "state": "registering",
+          "workload": null,
+          "reason": null,
+          "since": 1793763600000
+        },
+        {
+          "slot": 3,
+          "state": "backing_off",
+          "workload": null,
+          "reason": "container exited with code 1",
+          "since": 1793763480000
+        }
+      ],
+      "diagnostics": null,
+      "somefield": {
+        "anything": 1
+      }
+    },
+    {
+      "name": "docs",
+      "repository": "owner/docs",
+      "state": "skipped",
+      "reason": "repositories[2]: no token.",
+      "has_token": false,
+      "runners_up": 0,
+      "slots": 1,
+      "runners": [
+        {
+          "slot": 1,
+          "state": "stopped",
+          "workload": null,
+          "reason": null,
+          "since": 1793762100000
+        }
+      ],
+      "diagnostics": null
+    }
+  ],
+  "leftovers": [],
+  "images": [
+    {
+      "name": "actions-runner:local",
+      "lines": [
+        {
+          "name": "image",
+          "value": "actions-runner:local"
+        },
+        {
+          "name": "image-contract",
+          "value": "3"
+        },
+        {
+          "name": "image-built",
+          "value": "2 days ago"
+        },
+        {
+          "name": "runner",
+          "value": "2.338.2, released 9 days ago"
+        }
+      ],
+      "warnings": [
+        {
+          "code": "runner_may_be_newer",
+          "days": 9,
+          "version": "2.338.2"
+        },
+        {
+          "code": "vm_old",
+          "days": 3
+        }
+      ]
+    },
+    {
+      "name": "golden-vm",
+      "lines": [
+        {
+          "name": "vm-state",
+          "value": "ready"
+        }
+      ],
+      "warnings": []
+    }
+  ],
+  "extra_topic_data": [1, 2, 3]
+}

@@ -3,11 +3,13 @@
 use std::collections::BTreeMap;
 use std::time::SystemTime;
 
+use crate::host_config::{Loaded, Migration, MigrationFailure};
 use crate::image::check::ImageCheck;
-use crate::validate::Plan;
+use crate::validate::{Entry, Plan};
 
 use super::api::Method;
-use super::snapshot::{BuildInfo, Reason as WireReason};
+use super::config::Effect;
+use super::snapshot::{ApplyInfo, BuildInfo, Reason as WireReason};
 
 /// why the agent is stopped; the codes are an open set on the wire.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -132,9 +134,8 @@ impl Phase {
 pub struct Inner {
     pub phase: Phase,
     pub since: SystemTime,
-    /// the configuration last read, or `None` when the latest read failed.
-    pub plan: Option<Plan>,
-    pub problems: Vec<String>,
+    /// the latest load of the configuration, `None` until the first.
+    pub loaded: Option<Loaded>,
     /// why each pool was skipped when the runners last stopped.
     pub skips: BTreeMap<String, String>,
     pub build: Option<BuildInfo>,
@@ -143,6 +144,14 @@ pub struct Inner {
     pub image: Option<(String, Option<ImageCheck>)>,
     /// the drain for an update under way.
     pub drain: Option<Drain>,
+    /// the apply of an edit that runs now.
+    pub applying: Option<Applying>,
+    /// the pools an apply removed, which the snapshot lists while a slot of theirs is
+    /// still leaving, as one whose stop ran late or that keeps its evidence does after
+    /// the apply has ended.
+    pub leaving: Vec<Entry>,
+    /// how the latest apply of an edit ended, or that it runs.
+    pub last_apply: Option<ApplyInfo>,
 }
 
 /// a drain for an update under way, as the snapshot shows it.
@@ -153,19 +162,52 @@ pub struct Drain {
     pub deadline: SystemTime,
 }
 
+/// an apply that runs: its effect on each pool.
+#[derive(Debug)]
+pub struct Applying {
+    pub effects: Vec<Effect>,
+}
+
 impl Inner {
     #[must_use]
     pub fn new(phase: Phase) -> Self {
         Self {
             phase,
             since: SystemTime::now(),
-            plan: None,
-            problems: Vec::new(),
+            loaded: None,
             skips: BTreeMap::new(),
             build: None,
             restart_due: None,
             image: None,
             drain: None,
+            applying: None,
+            leaving: Vec::new(),
+            last_apply: None,
+        }
+    }
+}
+
+impl Inner {
+    /// the configuration in use, if the agent holds one.
+    #[must_use]
+    pub fn plan(&self) -> Option<&Plan> {
+        self.loaded
+            .as_ref()
+            .and_then(|loaded| loaded.in_use.as_ref())
+            .map(|in_use| &in_use.plan)
+    }
+
+    /// the problems the snapshot lists: those of `config.toml`, or of `config.json`
+    /// when its migration was refused for them.
+    #[must_use]
+    pub fn problems(&self) -> &[String] {
+        match &self.loaded {
+            Some(Loaded {
+                migration: Migration::Failed(MigrationFailure::JsonRejected(problems)),
+                ..
+            }) => problems,
+            Some(loaded) => &loaded.problems,
+            None => &[],
         }
     }
 }

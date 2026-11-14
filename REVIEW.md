@@ -133,8 +133,16 @@ Important; Codex review uses its native priority label.
   repository names of this repository and of `axross/skills` are allowed, and so
   are the default runner labels `axpc` and `axmc`, the two committed host labels,
   kept by the maintainer's decision, and the macOS signing team ID and designated
-  requirement that a later CLI record may hold, as Security records (see
+  requirement that a later CLI record may hold, and the maintainer's update-feed
+  public key in `app/crates/app/tauri.conf.json` and the test that pins it, as
+  Security records (see
   [Security](docs/conventions/security.md#nothing-identifying-or-secret-is-committed)).
+  Verbatim third-party licence and copyright text in the notices under
+  `app/notices/` and the licence copies they draw on, the crates' published
+  repository URLs in those notices, and `docs/operations/app.md`'s references to a
+  third-party crate's public repository are the exception Security records for
+  personal names, account names and email addresses, so they are not reported; such
+  a name or address anywhere else still is.
   An example uses an obviously fake
   placeholder (`<owner>`, `<repo>`, `example.invalid`). A value a runner needs
   is read from the environment or a prompt at run time.
@@ -157,11 +165,13 @@ Important; Codex review uses its native priority label.
   [Security](docs/conventions/security.md#actions-stays-on-major-tags); do not
   report it. A reusable workflow, a `docker://` reference, and a `run:` step
   that downloads and executes remote code without a checksum are held to the
-  same standard. There are two recorded exceptions, both in
+  same standard. There are three recorded exceptions, all in
   [Security](docs/conventions/security.md#pinning-convention): a step that
-  installs the Rust toolchain `cli/rust-toolchain.toml` names through `rustup`,
-  and the Node that `actions/setup-node` installs in `release.yaml`. Any other
-  unpinned download is still a finding.
+  installs the Rust toolchain `cli/rust-toolchain.toml` or
+  `app/rust-toolchain.toml` names through `rustup`, the Node that
+  `actions/setup-node` installs in `release.yaml`, and `tauri-cli`, installed
+  from source with `cargo install --locked` at the one version in
+  `app/tauri-cli.version`. Any other unpinned download is still a finding.
 - **Least-privilege workflow permissions.** Every workflow declares a
   top-level `permissions:` block that starts from `contents: read`. A broader
   scope is granted on the job that needs it, is justified in a comment or in
@@ -321,20 +331,43 @@ Apply the lens for each kind of file in the diff.
   and a signing job or step added without being added to `check-release-shape.mjs` and
   its test. A change that relaxes the record, or touches the signing job, needs the
   maintainer's review.
-- **Rust.** The CLI under `cli/` has no `unsafe` and no panic on an input path
-  (`unwrap`, `expect`, `panic!`, indexing); it collects every error in the order
+- **Rust.** The CLI under `cli/` and the app's crates under `app/` have no
+  `unsafe` and no panic on an input path (`unwrap`, `expect`, `panic!`,
+  indexing). The CLI collects every error in the order
   [CLI](docs/operations/cli.md) states under Validation Rules rather than returning
-  the first. A new crate has an
-  entry in [CLI](docs/operations/cli.md) and passes `cli/deny.toml`. A new
+  the first. A new CLI crate has an
+  entry in [CLI](docs/operations/cli.md) and passes `cli/deny.toml`; a new direct
+  dependency of an app crate is recorded in [Security](docs/conventions/security.md#the-apps-dependencies)
+  and passes `app/deny.toml`. A new
   procedural-macro crate, such as one a derive feature brings, is flagged for the
   maintainer's review, and so is a new duplicate-version skip. No token or JIT
   configuration reaches a `Debug` form, a log line, an error message, a command
-  line, or a control-channel response; a new log line or response that could carry
+  line, a control-channel response, or, in the app, the page, a view state or an
+  event; a new log line or response that could carry
   one unmasked is a finding (see
   [Security](docs/conventions/security.md#tokens-stay-out-of-the-log-and-job-clients-end-with-start)).
   A change to a validation rule changes the shared fixtures
   and their expectations in the same change. Give `file:line` evidence as in the other
   lenses.
+- **The app's web view.** A change under `app/` is also checked against the app's
+  record in [Security](docs/conventions/security.md#the-app-surface), its web view,
+  capability and token bullets. The content security policy in `tauri.conf.json`
+  stays the one Security states in full, and `tauri.conf.json` keeps the web view
+  on bundled files with no developer tools in the release build. The two
+  capabilities, the main window's and the confirmation window's, and the permission
+  files Tauri generates keep to the permissions Security lists; a permission, a
+  capability or Tauri feature added, such as `dynamic-acl`, is a finding. The
+  pages stay text-only: `dom.js` refuses `style`, `href`, `src`, `srcdoc`, `action`, `formaction` and
+  `on*`,
+  and text from the configuration, Docker or the agent is set as text, never as
+  markup, with no inline script, remote asset or npm package. No token sits in the
+  page, a view state or an event after `token_set` is called. A change to the
+  policy, a capability, a permission file, `tauri.conf.json` or the element builder
+  needs the maintainer's review. The test manifest `build.rs` links into the
+  integration tests holds only the version 6 common controls dependency and only on
+  a Windows MSVC target; another entry in it, such as an execution level, a second
+  `embed-resource` call, or a test skipped or cfg-ed out to avoid it, is a finding
+  and needs the maintainer's review.
 - **Diagnostics.** A labelled diagnostic container is removed only by a
   finalisation, which tries its export while its clock allows and uses its recorded
   settings, or by the manual recovery. The one exception to the recorded settings is
@@ -407,6 +440,12 @@ mechanical defect named below:
   CLI's tests (`mise run test:rust`), and its licence, source, and duplicate checks
   (`mise run deny:rust`). The advisory check runs in its own workflow and is not
   required.
+- The app's clippy (`mise run lint:app`), tests (`mise run test:app`), licence,
+  source, and duplicate checks (`mise run deny:app`), toolchain pin check
+  (`mise run check:app-pins`), lockfile check (`mise run check:app-lock`), main
+  window page tests (`mise run test:app-frontend`), the test of the `tauri-cli` pin's
+  reader (`mise run test:tauri-cli-version`), and the licence notices check
+  (`mise run check:notices`).
 - The agreement of `skills-lock.json` with `.claude/skills/`
   (`mise run check:skills`). Whether an installed copy matches its upstream
   source is not checked in CI and remains reportable.

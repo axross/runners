@@ -1,0 +1,46 @@
+# An example config.toml for an axpc host. The agent reads it from
+# %LOCALAPPDATA%\marshal\config.toml. Copy it there and replace every value.
+# Tokens are not kept here: the agent reads each pool's token from the
+# Credential Manager, by the pool's repository.
+schema_version = 1
+# added to the runners of a pool that lists no labels
+routing_label = "axpc"
+image_name = "actions-runner:local"
+
+[[pool]]
+name = "example-repo-one"
+repository = "example-owner/example-repo-one"
+runners = 2
+labels = ["axpc", "example-label-one"]
+
+[[pool.volumes]]
+suffix = "toolcache"
+mount_path = "/opt/hostedtoolcache"
+
+[[pool.volumes]]
+suffix = "cargo"
+mount_path = "/home/runner/.cargo"
+
+[[pool.volumes]]
+suffix = "rustup"
+mount_path = "/home/runner/.rustup"
+
+[[pool.volumes]]
+suffix = "npm"
+mount_path = "/home/runner/.npm"
+
+[[pool]]
+name = "example-repo-two"
+repository = "example-owner/example-repo-two"
+runners = 1
+labels = ["axpc", "example-label-two"]
+cpus = 4
+memory_gb = 16
+
+[[pool.volumes]]
+suffix = "toolcache"
+mount_path = "/opt/hostedtoolcache"
+
+[[pool.volumes]]
+suffix = "npm"
+mount_path = "/home/runner/.npm"

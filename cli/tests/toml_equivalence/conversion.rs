@@ -7,7 +7,7 @@ use marshal_cli::convert::{ConversionFailure, convert_to_toml, first_difference}
 use marshal_cli::json::{self, Value};
 use marshal_cli::profile::Profile;
 use marshal_cli::runtime::fake::FakeClock;
-use marshal_cli::validate::{Failure, validate, validate_toml};
+use marshal_cli::validate::{CheckoutRule, Failure, validate, validate_toml};
 
 use crate::{Fixture, counterpart, fixtures};
 
@@ -21,7 +21,7 @@ fn convert(json: &[u8], host: Profile) -> Result<String, ConversionFailure> {
         json,
         host,
         Path::new("config.json"),
-        None,
+        CheckoutRule::default(),
         &FakeClock::at(CLOCK_MILLIS),
     )
 }
@@ -230,7 +230,7 @@ fn the_opening_comment_names_the_file_and_never_its_path() {
             WINDOWS_FILE.as_bytes(),
             Profile::Axpc,
             Path::new(source),
-            None,
+            CheckoutRule::default(),
             &FakeClock::at(CLOCK_MILLIS),
         )
         .unwrap();
@@ -249,7 +249,7 @@ fn a_file_name_cannot_end_the_comment() {
         MACOS_FILE.as_bytes(),
         Profile::Axmc,
         Path::new("a\nschema_version = 2\u{7}.json"),
-        None,
+        CheckoutRule::default(),
         &FakeClock::at(CLOCK_MILLIS),
     )
     .unwrap();
@@ -267,7 +267,7 @@ fn the_time_comes_from_the_clock_the_caller_passes() {
             MACOS_FILE.as_bytes(),
             Profile::Axmc,
             Path::new("config.json"),
-            None,
+            CheckoutRule::default(),
             &clock,
         )
         .unwrap()

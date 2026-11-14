@@ -13,7 +13,8 @@ snapshot), the image contract every runner image declares and the
 check of it, running a host with `build` (the runner image on axpc, the golden VM on
 axmc), `start`, `stop`, `restart`, `status`, and
 `diagnostics`, the diagnostic containers and VMs a diagnostics-enabled pool runs and their
-export, the toolchain and the gates that cover it, how a release is built, signed,
+export, the toolchain and the gates that cover it, the app's workspace that builds on
+the library and the gates it adds, how a release is built, signed,
 and installed, and why its name is fixed. The binary is `marshal`. axpc runs its pools
 with it, as [Windows Runner Host](./windows-runner-host.md) describes, including how
 to roll back to the previous release, and axmc runs its Linux pools with it in Tart
@@ -177,15 +178,20 @@ from the sink, which directories hold `.git` follows the volume: on a volume tha
 ignores case, such as macOS's default one, a case variant of the checkout's path finds
 the checkout and is refused, while on Linux it is another directory. It also applies
 the checkout above its configuration file where one exists. A sink at or under either
-is a configuration problem, `repositories[n].diagnosticDirectory: must be outside the
-checkout`, in the snapshot, and the agent stops for `invalid_configuration`. The agent
+is a configuration problem, `pool[n].diagnostic_directory: must be outside the
+checkout` in `config.toml` (or `repositories[n].diagnosticDirectory` in a `config.json`
+it migrates), in the snapshot. With no configuration held the agent stops for
+`invalid_configuration`; at a Start all it keeps the last valid one, as [The Agent's
+Configuration](#the-agents-configuration) describes. The agent
 looks from a sink only when the path is one of the host it runs on, so a Windows path
 read on another host is not compared. Because the sink's own place was examined, the
 agent writes no note that the rule was skipped. `start`, `validate` and `build` are
 unchanged: their checkout stays the one above the configuration file.
-`tests/checkout_rule_agent.rs` covers a sink inside a checkout, outside one, a sibling
-prefix, a case variant (accepted on Linux, refused on macOS), and the unchanged rule of
-`start`.
+`validate_toml_with` and `validate_with` take this rule as
+`CheckoutRule::AboveAndAtSink`, and `validate_toml` and `validate` keep `start`'s.
+`tests/checkout_rule_agent.rs` covers a sink inside a checkout, in JSON and in TOML,
+outside one, a sibling prefix, a case variant (accepted on Linux, refused on macOS), and
+the unchanged rule of `start`.
 
 Known limitation: the axmc comparison is case-sensitive, while macOS's default APFS
 volume is case-insensitive. For `start` and `validate`, whose checkout is the one above
@@ -316,13 +322,11 @@ test named under Running It.
 
 A host configuration can also be written as TOML, schema version 1. The library
 reads that format with the same rules as JSON, converts a JSON configuration to it,
-and changes an existing file while keeping its comments. No command reads, converts,
-or writes TOML yet: `validate`, `build`, `start`, and the rest take JSON through
-`--config`, as Running It describes, and only the tests call the functions below.
-The agent's use of the format, which includes the migration that calls the
-conversion, lands in the second pull request of issue
-[#77](https://github.com/axross/runners/issues/77) and is documented with it. The
-roadmap issue [#72](https://github.com/axross/runners/issues/72) names the later
+and changes an existing file while keeping its comments. The agent reads its
+configuration as `config.toml` and migrates a `config.json` to it, as
+[The Agent's Configuration](#the-agents-configuration) describes. The commands do
+not: `validate`, `build`, `start`, and the rest take JSON through `--config`, as
+Running It describes. The roadmap issue [#72](https://github.com/axross/runners/issues/72) names the later
 consumers of the schema: W3 and M4 for `[lifecycle]`, and K3, X1, X2, and M2 for the
 rest.
 
@@ -534,11 +538,10 @@ macOS applies axmc's.
 
 ### Converting a JSON Configuration
 
-`convert_to_toml(json, host, source, checkout, clock)` in `cli/src/convert.rs` turns
+`convert_to_toml(json, host, source, rule, clock)` in `cli/src/convert.rs` turns
 the bytes of a JSON configuration into the text of an equivalent TOML document, and
-checks that text before it returns it. It reads and writes no file: the caller
-writes the text. The agent's migration, which does, lands in the second pull request
-of issue #77.
+checks that text before it returns it, both under the checkout `rule`. It reads and
+writes no file: the caller writes the text, as the agent's migration does.
 
 1. It validates the JSON under the host's JSON rules, which still require `tokenPath`.
    A rejected file is `SourceRejected`.
@@ -547,7 +550,7 @@ of issue #77.
    joins `owner` and `repository`, and leaves out `tokenPath`. It writes each key the
    JSON file set and no other, so a pool without `labels` still gets the routing label
    by default. It writes no `[lifecycle]`.
-3. It validates the document with the full TOML rules under the same checkout. A
+3. It validates the document with the full TOML rules under the same checkout rule. A
    document that fails is `DocumentRejected`.
 4. It compares the document's plan with the JSON file's, and a difference is
    `NotEquivalent`, naming the key or the pool.
@@ -635,11 +638,13 @@ bytes in each case:
 - `Inapplicable`: the edit names a place the document lacks or of another kind, such as
   a table on the way that is missing, a `Set` on a key that holds a table, or an entry
   that does not exist, which is a mistake of the caller. It carries no file text, only
-  the edit and the reason. Two refusals come from the file instead, and only the user
-  can change it: a file that already holds the text the write path uses to mark a
-  removal, and an edit inside an inline table written over several lines, which TOML
-  1.1 allows, since its members' comments sit where the edit would move them. A caller
-  shows these as a file to rewrite, for example that table on one line or as a
+  the edit and the reason.
+- `FileForm`: the file is written in a form the write path does not edit, which only
+  the user can change: a file that already holds the text the write path uses to mark
+  a removal, or an edit inside an inline table written over several lines, which TOML
+  1.1 allows, since its members' comments sit where the edit would move them. Like
+  `Inapplicable` it carries only the edit, or the marker, and the reason. A caller
+  shows it as a file to rewrite, for example that table on one line or as a
   `[table]`, not as its own error. Removing such a table from its list, or adding one,
   is not refused.
 
@@ -664,7 +669,7 @@ the new one, never part of one.
 removes only regular files named exactly `config.toml.<32 lower-case hexadecimal
 digits>.tmp`, so `config.toml.old.tmp`, a link, and a folder stay. It cannot tell a
 leftover from the temporary file of a write in progress, so a process calls it once,
-when it starts and before anything writes. Nothing calls it yet either.
+when it starts and before anything writes. The agent calls it at its start.
 
 ## The Runtime Layer
 
@@ -822,8 +827,21 @@ Every client starts in its own process group: `process_group(0)` on Unix, and
 `CREATE_NEW_PROCESS_GROUP` on Windows. A Ctrl+C in the terminal then reaches the CLI
 only, which can stop the containers in order. A test reads the group of every client
 the fake `docker` sees on Linux and macOS; no safe API reads a Windows process's
-creation flags, so the Windows flag is checked by review. A client is killed when
-the future that waits for it is dropped.
+creation flags back. On Windows every client and the exporter child also get
+`CREATE_NO_WINDOW`, so a resident agent that has no console, as the app's agent has
+none, does not open a console window for each `docker` call. This applies to the
+foreground commands too, since they share the builders. Their process group is
+unchanged. Most clients have piped or closed standard streams, but on Windows two
+children inherit the CLI's own: in terminal mode `build`'s `docker build` inherits its standard output
+and standard error, and the exporter child inherits its standard error. How a terminal
+run behaves on Windows with the flag, including `start`, Ctrl+C and whether a terminal
+`build` still streams its output, is not established here: the Windows CI tests only
+record the flags or run the CLI with piped output, so only the axpc run shows it. The one function that applies the flags is called by the client builder and
+by the exporter's command builder, and a test build records what each applied, so
+two unit tests assert both flags at the two builders, which every client and exporter
+call site goes through. Whether Windows shows a window is not observable here and is
+listed with the axpc checks. A client is killed when the future that waits for it is
+dropped.
 
 Every client other than a job container is bounded. A listing, a volume command,
 and an info call are bounded at 120 s. A removal and a stop take the budget their caller passes; stale cleanup removes
@@ -1868,11 +1886,12 @@ the same process model as `start`: the agent takes the same single-instance lock
 opens the same control channel, writes a log in the same directory and, on Windows,
 runs inside the same kind of Job Object, so `start` and the agent never run on one
 machine at once, and a second agent is refused as a second `start` is. It has no
-command or flag of its own yet; `agent::run` is the entry that wires the container
-backend, GitHub, the token store, the lock, the channel and the log, and the tests
-start it through `instance-helper agent`. A later release gives it a program to run
-in. Only a debug build lets a test replace the agent's token store, channel limits,
-watched file, log size and `docker` environment; a release build ignores each
+command or flag of its own: `agent::run` is the entry that wires the container
+backend, GitHub, the token store, the lock, the channel and the log, and the app's
+executable runs it in its hidden agent mode, as [App](./app.md#the-executable-and-its-modes)
+describes. The CLI's tests start it through `instance-helper agent`. Only a debug
+build lets a test replace the agent's token store, channel limits, watched file, log
+size and `docker` environment; a release build ignores each
 request, as it does the roots and the GitHub address, and `tests/agent_overrides.rs`
 shows both halves and runs again in the release profile in CI.
 
@@ -1911,10 +1930,14 @@ transition is answered at once, never queued behind it. It starts `running` or
 | `token_set`        | Stores the repository's token in any state                                                                                                                                |
 | `token_remove`     | Removes it in any state                                                                                                                                                   |
 | `drain_for_update` | See [The Update Drain](#the-update-drain)                                                                                                                                 |
+| `config_read`      | The file's editable values in any state; see [Editing the Configuration](#editing-the-configuration)                                                                      |
+| `config_edit`      | Running: writes and applies. Stopped: writes, for the next `start_all`. A transition: `busy`. A drain: `refused`                                                          |
+| `config_reload`    | Running: applies the file. Stopped: makes it the configuration in use. A transition: `busy`. A drain: `refused`                                                           |
 
 A request that arrives while the agent is `resuming`, `stopping`, `building` or
-`quitting` and is not one of `status`, `token_set` and `token_remove`, a stop or a
-quit, is answered `busy`, except `drain_for_update`, which is `refused` there. The
+`quitting` and is not one of `status`, `config_read`, `token_set` and
+`token_remove`, a stop or a quit, is answered `busy`, except `drain_for_update`,
+which is `refused` there. The
 agent is `resuming` from the moment it begins to read
 the configuration until the runners' pools are admitted, so a `start_all` or a
 `build` in that time is `busy`, not answered as if the runners ran. One table in the
@@ -1935,8 +1958,8 @@ snapshot, as the reason of the `stopped` state:
 | Reason code             | When                                                                         |
 | ----------------------- | ---------------------------------------------------------------------------- |
 | `by_you`                | A `stop_all`, a `quit`, or an agent launched stopped                         |
-| `no_configuration`      | There is no file at the configuration path                                   |
-| `invalid_configuration` | The file is not valid for the axpc profile; the problems are in the snapshot |
+| `no_configuration`      | There is no `config.toml` and no configuration is in use                     |
+| `invalid_configuration` | The file, or a `config.json` it migrates, is not valid; problems in snapshot |
 | `image_unusable`        | The image is missing, or its contract version is not this CLI's              |
 | `no_pool_started`       | No pool could start, such as every pool without a token                      |
 | `restart_limit`         | The runtime core failed too often, under the same restart policy `start` has |
@@ -1957,8 +1980,8 @@ shows the build, `start_all` and `build` are `busy`, and a `stop_all` or a `quit
 taken during the build or during the check skips or abandons the check, which leaves
 the `images` entry as it was; a build that still commits after the stop stays `ready`.
 A `build` that succeeds and is not cancelled leaves the agent stopped by you
-(`by_you`), whatever it was stopped for before, since the build read the configuration again and the
-snapshot's problems and pools are those of that read. Its outcome, `ready`, is only in `agent.build`,
+(`by_you`), whatever it was stopped for before; the build reads no file, so the
+snapshot's problems and pools are those of the latest `start_all` or start. Its outcome, `ready`, is only in `agent.build`,
 and the refreshed image entry is in `images`: "stopped with the image ready", in
 the state table above, is that outcome and not a reason. A build that fails
 stops the agent for `image_build_failed`, and a cancelled one is stopped by you.
@@ -1968,7 +1991,9 @@ is unchanged. A `start_all` answers
 becomes `running` once they are, or `stopped` with one of the reasons above when
 they could not be.
 
-The set is open: a reader keeps a code it does not know as text. A pool skipped for
+The set is open: a reader keeps a code it does not know as text. The library exports
+the codes as the constants of `agent::StopReason`, so a reader compares a reason with
+them rather than repeating the words. A pool skipped for
 want of a token does not stop the others: it is listed `skipped` with its reason,
 and when a token for its repository is set, it starts without a restart. When no
 pool is left running, the agent is stopped for `no_pool_started`, and each pool
@@ -1984,13 +2009,40 @@ an installer is blocked). It looks once a second and ends within 5 s, after the 
 names `quit`. The agent does not handle a sign-out or a shutdown: it gets no event
 for them, as `start` gets none on Windows, and the next agent removes what they left.
 
-The configuration is `config.json` in the `marshal` folder of `%LOCALAPPDATA%` on
+#### The Agent's Configuration
+
+The configuration is `config.toml` in the `marshal` folder of `%LOCALAPPDATA%` on
 Windows and in `~/Library/Application Support/marshal/` on macOS, a folder that must
 be a directory owned by the user with mode `0700`, the folder the socket is in. A
-debug build can move it with a test root. The agent reads the file when it starts
-running and at each `start_all` and `build`, with the axpc profile; it does not
-read a token file, and the `tokenPath` of each entry, which the commands of `start`
-still read, is checked by `validate` and ignored by the agent.
+debug build can move it with a test root. The path is fixed. The agent checks it under
+the profile of the host it runs on, axpc on Windows and axmc on macOS; only a debug
+build can name another, which the tests use. It reads no token file: each pool's
+token comes from the token store, by its repository. `cli/src/host_config/` does the
+loading, and the agent keeps what the latest load found.
+
+- **At the start** the agent removes the temporary files an interrupted write left,
+  then reads `config.toml`. When it is missing and `config.json` exists, it migrates
+  it: `config.json` is checked under today's JSON rules, converted as
+  [Converting a JSON Configuration](#converting-a-json-configuration) describes, and
+  written as `config.toml` only where no file of that name exists, then read. The log
+  says so. `config.json` is left in place and is not read again while `config.toml`
+  exists; deleting `config.toml` makes the next start migrate it again.
+- **A `config.json` that breaks the rules** is not migrated. The agent stays stopped
+  for `invalid_configuration`, with the JSON problems in today's wording.
+- **A converted document that fails its check, or a `config.toml` that cannot be
+  written,** leaves the agent on `config.json`'s configuration for this run, and the
+  snapshot's migration says why. The next start tries again.
+- **At each `start_all`** from a stopped state the agent reads `config.toml` again. A
+  valid file is used. A file with problems, or none, leaves the configuration the agent
+  holds in use, as `last_valid`, and the snapshot lists the file's problems and when
+  the configuration in use was read. With none held, the agent stays stopped. A
+  `start_all` migrates nothing: a missing `config.toml` beside `config.json` is
+  `pending`, and the reason says to quit Marshal and launch it again.
+- **`build`** uses the image name of the configuration in use, on axmc
+  `actions-runner:local` when it names none, as `marshal build` does, and reads no
+  file; with none in use it is `refused`. Start All checks the same image.
+- The last valid configuration lives in memory only. A new agent process starts from
+  the file. The agent does not watch the file.
 
 The agent's log is a file in the same private directory as `start`'s. It is
 continued in a new file when it reaches 10 MiB, so no line is lost to the limit, and
@@ -2071,18 +2123,24 @@ bound.
 
 ### The Token Store
 
-`token_store` is the one place the agent keeps a repository's token. The interface
-names no operating system: `get`, `set` and `remove` by a repository key, which is
-`owner/name` in lower case, so `Axross/Runners` and `axross/runners` are one token.
+`token_store` is the one place the agent keeps a token. The interface names no
+operating system: `get`, `set` and `remove` by a key of one of two kinds, each in
+lower case. A repository key is `owner/name`, so `Axross/Runners` and
+`axross/runners` are one token. An organization key is the organization's login
+alone, matching the configuration's owner pattern. A repository key always holds one
+slash and an organization key none, so the two never collide. `token_set` and
+`token_remove` take a repository key only and refuse an organization's login.
 A token is trimmed, then refused when it is empty or longer than 1280 UTF-16 code
 units, which keeps it inside the Credential Manager's 2560 bytes.
 
 - **Windows.** The Credential Manager of the current user, through
-  `windows-native-keyring-store`, as one generic credential per repository named
-  `app.axross.marshal:github.com/<owner>/<name>`, with the token as UTF-16 and with
-  local persistence. The crate's default persistence is the enterprise one, which
+  `windows-native-keyring-store`, as one generic credential per key named
+  `app.axross.marshal:github.com/<owner>/<name>` for a repository, or
+  `app.axross.marshal:github.com/<org>` for an organization, with the token as
+  UTF-16 and with local persistence. The crate's default persistence is the enterprise one, which
   roams with the user's profile, so the store asks for the local one.
-  `tests/token_store_windows.rs` sets, reads and removes a real credential, reads
+  `tests/token_store_windows.rs` sets, reads and removes a real credential of each
+  kind, a repository's and an organization's, checks its name with `cmdkey`, reads
   its persistence back from the store's `persistence` attribute, round-trips a token of 1280 UTF-16 units and
   a non-ASCII, non-BMP one, and sends a `token_set` through an agent whose store is
   the Credential Manager to a registration; only the Windows CI job runs it.
@@ -2102,8 +2160,9 @@ the reason of a pool skipped because the store failed (`the token store failed: 
 (kind needs_user, code 1312)`), and in the log line of a registration that failed
 for the same reason. None of them ever holds a token.
 
-The agent reads a token from the store when a pool is admitted and again at each
-registration, so a `token_set` takes effect at the next registration, and a
+The agent reads a token from the store when a pool is admitted, again at each
+registration, and at each GitHub status check, so a `token_set` takes effect at the
+next registration and check, and a
 `token_remove` makes the next registration fail and its slot back off with "no
 token". A running job container keeps the JIT configuration it was started with.
 
@@ -2120,8 +2179,7 @@ client message is at most 16 KiB and an agent message at most 64 KiB, line break
 included. The first line a client sends MUST be `hello`; anything else, including
 `start`'s version 1 requests, is answered with `unsupported_protocol` and the
 connection is closed, so today's commands exit 1 against an agent and change
-nothing. A later slice of version 2 may add methods, topics, error codes and fields
-but never rename or remove one.
+nothing. [Version Rules](#version-rules) says what a later agent of version 2 may add.
 
 | Message     | Fields                                                                                                   |
 | ----------- | -------------------------------------------------------------------------------------------------------- |
@@ -2130,7 +2188,7 @@ but never rename or remove one.
 | `request`   | `id` (an integer of the client's own), `method`, `params`                                                |
 | `response`  | `id`, then `result` or `error`                                                                           |
 | `error`     | `error`, for what answers no request: a failed handshake, `busy`, or a message that is not a request     |
-| `event`     | `topic` (`state`), `seq`, `value` (the snapshot)                                                         |
+| `event`     | `topic` (`state` or `github`), `seq`, `value` (the snapshot, or the GitHub status)                       |
 | `heartbeat` | `seq`, the last event's                                                                                  |
 | `ending`    | `reason`: `quit`, `executable_changed` or `update`; `update` (`version`, `stopped_by_you`) for an update |
 
@@ -2144,22 +2202,34 @@ variant without breaking a program that uses them; `tests/agent_protocol.rs` sho
 against unknown methods, topics and fields.
 
 The agent answers one connection's requests in order and several connections at once.
+A connection holds at most one subscription, so a client that wants both topics
+opens two connections; a `subscribe` to another topic on a connection that holds one
+is answered with `invalid_request`, and one to the same topic again changes nothing
+but, for `github`, counts as a renewal.
 
-| Method             | Params                | Result                                                             |
-| ------------------ | --------------------- | ------------------------------------------------------------------ |
-| `status`           | none                  | The snapshot                                                       |
-| `subscribe`        | `topic`: `state`      | `{"topic":"state"}`; the first event follows at once               |
-| `start_all`        | none                  | `{state}`, `resuming` while the pools are admitted                 |
-| `stop_all`         | none                  | `{state}`                                                          |
-| `build`            | none                  | `{state, started}`, `started` in milliseconds since the Unix epoch |
-| `quit`             | none                  | `{state}`                                                          |
-| `token_set`        | `repository`, `token` | `{repository}`, the key it was stored under                        |
-| `token_remove`     | `repository`          | `{repository}`                                                     |
-| `drain_for_update` | `version`             | `{state, update}`; see The Update Drain                            |
+| Method             | Params                       | Result                                                             |
+| ------------------ | ---------------------------- | ------------------------------------------------------------------ |
+| `status`           | none                         | The snapshot                                                       |
+| `subscribe`        | `topic`: `state`, `github`   | `{topic}`; the first event follows at once                         |
+| `renew`            | `topic`: `github`            | `{topic}`; keeps the connection's `github` subscription            |
+| `start_all`        | none                         | `{state}`, `resuming` while the pools are admitted                 |
+| `stop_all`         | none                         | `{state}`                                                          |
+| `build`            | none                         | `{state, started}`, `started` in milliseconds since the Unix epoch |
+| `quit`             | none                         | `{state}`                                                          |
+| `token_set`        | `repository`, `token`        | `{repository}`, the key it was stored under                        |
+| `token_remove`     | `repository`                 | `{repository}`                                                     |
+| `drain_for_update` | `version`                    | `{state, update}`; see The Update Drain                            |
+| `config_read`      | none                         | `{revision, status, settings, pools, problems, too_large}`         |
+| `config_edit`      | `revision`, `edits`, `check` | `{revision, effects, repositories_released, applies}`              |
+| `config_reload`    | `revision`, `check`          | `{revision, effects, repositories_released, applies}`              |
 
 `token_set` is the one message that carries a secret: the token travels only in its
 `token` param, from the client to the agent, and the agent never sends, logs or
-repeats it. Its error text never quotes the params.
+repeats it. Its error text never quotes the params. A method a later slice adds
+under the version rules above that carries a secret is handled as `token_set` is.
+On Windows the client makes its same-user check (see [Control
+Channel](#control-channel)) at connection, before it sends any request, so every
+such method is covered without a check of its own.
 
 Errors have a stable `code`, an open set, and a `message` in plain text:
 
@@ -2170,9 +2240,19 @@ Errors have a stable `code`, an open set, and a `message` in plain text:
 | `unknown_method`       | The agent has no such method                                                                                                             |
 | `invalid_request`      | The params are not what the method takes, or the message is not a request; a malformed request with a readable `id` is answered under it |
 | `subscription_limit`   | The agent has its most subscriptions                                                                                                     |
+| `not_subscribed`       | A `renew` on a connection that holds no subscription to the topic, such as one that ended for want of renewal; subscribe again           |
 | `token_invalid`        | The token is empty or too long                                                                                                           |
 | `store_failed`         | The token store could not do it; `store` holds `kind` and `code`                                                                         |
 | `refused`              | The agent's state does not allow the method                                                                                              |
+| `config_changed`       | `config.toml` no longer holds the bytes of the `revision` the request names                                                              |
+| `config_invalid`       | The result breaks the rules; `problems` lists each with its `path`, `line` and `message`                                                 |
+| `config_unusable`      | The file is missing, unreadable or not TOML, or the migration of `config.json` failed or is pending                                      |
+| `config_unwritable`    | `config.toml` could not be replaced, for example while another program holds it open on Windows                                          |
+| `config_refused`       | An edit touches `schema_version` or `lifecycle`                                                                                          |
+| `config_file_form`     | The file is written in a form the write path does not edit, such as an inline table over several lines; fix it in a text editor          |
+| `config_applying`      | An edit is being checked or applied while the runners run                                                                                |
+| `runtime_restarting`   | The runtime core waits to restart after a failure                                                                                        |
+| `image_unusable`       | The image a change names is missing or unusable on a running agent                                                                       |
 
 A subscription gets the snapshot at once as an event with `seq` 1, then an event
 with the whole snapshot after each change, at most one per 250 ms: changes within a
@@ -2202,6 +2282,7 @@ The limits:
 | Subscriptions | 4; a 5th is told `subscription_limit` and the connection stays                                                       |
 | Handshake     | 5 s from connect to `hello`                                                                                          |
 | Idle          | 60 s without a message, for a connection with no subscription and no request pending                                 |
+| Renewal       | 90 s without a `renew` or `subscribe` ends a `github` subscription; the connection stays                             |
 | Write         | 5 s for one message, or the connection is closed                                                                     |
 
 On Windows the pipe is created as the first instance of the name with the descriptor
@@ -2222,6 +2303,106 @@ shows a `quit` ends it within a second or so while a subscribed client reads
 nothing. On Unix the socket has the checks of
 [Control Channel](#control-channel).
 
+### Version Rules
+
+These rules bind every agent and every client of protocol version 2, including the
+ones other children add. The sections above describe what version 2 holds today;
+this one says how it may grow without a new version.
+
+Within version 2 an agent may add methods, topics, fields, error codes, runner
+states, images, image warnings, and the reasons a state or `ending` carries, and
+lists its methods and topics in `welcome`. A client ignores what it does not know,
+shows an unknown runner state by the runner's reason, and calls only methods listed.
+Removing one, or changing its meaning, needs version 3.
+
+So a client written against today's agent keeps working against a later agent of
+version 2, and a later client works against today's agent by calling only what
+`welcome` lists. [Protocol Version 2](#protocol-version-2) says how the library's
+`Client` follows these rules, and App says how the app follows them, in
+[The View](./app.md#the-view) and
+[The Agent and the App's Session](./app.md#the-agent-and-the-apps-session). A
+change that removes or reinterprets anything above is a version 3, which is a new
+framing decision for the maintainer, not an addition.
+
+### Editing the Configuration
+
+`config_read`, `config_edit` and `config_reload` let a client edit `config.toml` and
+apply a change without `stop_all` and `start_all`. `cli/src/agent/machine/configure.rs`
+answers them, `cli/src/agent/config/` reads the edits and works out each pool's
+effect, and `cli/src/agent/core.rs` applies it. The agent reads the file for these
+methods, at its start and at `start_all`, and never watches it.
+
+- **`revision`** is a digest of the file's bytes and their length, from std's
+  default hasher, compared for equality only. It names no path. A `config_edit` or `config_reload` names the revision it was made
+  from and is refused with `config_changed` when the file no longer has it.
+- **`config_read`** reads the file now and changes nothing the agent holds. `status`
+  is `valid`, `invalid`, `missing` or `unreadable`, the last for a file that is not
+  TOML. `settings` holds `routing_label` and `image_name`, and `budget` on axmc;
+  `pools` holds each pool's keys in the file's order. Both hold only keys the
+  schema defines that the file sets with a value of the right type, so an undefined
+  key or a wrong-typed value appears only in `problems`, each a `path`, a `line` and a
+  `message`, at most 100. `schema_version` and `lifecycle` are not sent. A result
+  that would pass the message limit has `too_large` true and no values.
+- **`edits`** are the write path's operations as JSON, addressed by TOML key paths
+  counted from 0, such as `pool[1].runners`: `{"op":"set","path","value"}`,
+  `{"op":"remove","path"}`, `{"op":"add_entry","array","values"}` and
+  `{"op":"remove_entry","path"}`. A value is a boolean, a number, a string or an array
+  of strings. An edit of `schema_version` or `lifecycle` is `config_refused`, and a
+  malformed one `invalid_request`, whose message repeats no value.
+- **A check** (`check: true`) runs the edits, or reads the file for a reload, and
+  checks the result with the rules the agent loads with, the checkout rule at the
+  diagnostic directory's own place included, and the exporter's sink checks on each
+  `diagnostic_directory` it sets or changes, and writes nothing. Without `check` the
+  agent checks again and writes through [Changing the File](#changing-the-file). On
+  a running agent a change of `image_name` first checks the new image, as `start_all`
+  does, and is `image_unusable`, with nothing written, when the image is missing or
+  unusable.
+- **The answer** lists each pool's `effects`: `pool`, `change`, `runners_before`,
+  `runners_after` and `stops_runners`, true when the change stops runners the pool has, which fails
+  the jobs on them, on a running agent only. `repositories_released` lists the
+  repositories no pool names after the change, whose tokens the client may offer to
+  remove; the agent removes none. `applies` is true when the change applies now.
+- **A reload of a file with problems** answers `config_invalid` or
+  `config_unusable` and records the problems in the snapshot; the configuration in use
+  stays, as `last_valid` when it came from the file.
+
+The written file is the configuration in use from the moment the write succeeds, so
+an abandoned apply, a later `start_all` and a restart of the runtime core all use
+it. On a stopped agent nothing else happens. On a running agent the answer follows
+the write and the start of the apply, and the snapshot shows the rest. Pools are
+matched by name with the configuration in use:
+
+| Change                                                                                                     | `change`          | Effect                                                |
+| ---------------------------------------------------------------------------------------------------------- | ----------------- | ----------------------------------------------------- |
+| None                                                                                                       | `unchanged`       | Its runners and their jobs carry on                   |
+| A new pool                                                                                                 | `added`           | Admitted and prepared as at `start_all`, then started |
+| A removed or renamed pool                                                                                  | `removed`         | Its slots stop with the stop sequence                 |
+| Only `runners` raised                                                                                      | `runners_added`   | The new slots start; the others carry on              |
+| Only `runners` lowered                                                                                     | `runners_removed` | The highest-numbered slots stop; the others carry on  |
+| Any other key of the pool, a `routing_label` it takes because it lists no labels, `image_name` or `budget` | `restarted`       | Its slots stop, then it starts as a new pool          |
+
+A pool that waits for its token takes a new `runners` and goes on waiting, and one
+that runs no slot because it was skipped is admitted and prepared again. A slot an
+apply stops has its diagnostic containers finalised with its other containers, as
+a stop does, and its job host is released only once nothing in it awaits that
+finalisation. A slot whose stop does not end its runner within the exit deadline stays
+listed as leaving until the runner ends, then starts again if the configuration in
+use still has it; one whose host still holds evidence stays taken until the runners
+next stop, so no new runner replaces that host first. A pool an apply restarts or
+adds while slots of its own are still held in either way is not prepared over them:
+it is listed `skipped` with the reason that it restarts once its earlier runners have
+stopped, and it is admitted and prepared once the last of them is finished, or at the
+next `start_all` when one holds evidence; while a drain for an update lasts, it is
+prepared only once the drain is cancelled. A slot an apply stops shows `stopped` with the reason that the edit stops it until
+its containers are stopped and its job host released, then leaves the list; a
+removed pool is listed, `stopped`, until its last slot has. A pool that restarts
+shows `preparing` with the reason that the edit restarts it. One apply runs at a
+time: an edit or a reload meanwhile is `config_applying`, and one while the runtime
+core waits to restart is `runtime_restarting`. During a drain for an update both
+are `refused`, as every method is but a stop, a quit, `status`, `config_read`,
+`token_set` and `token_remove`. `stop_all` and `quit` abandon the
+apply, and a failure of the core fails it; the file stays written either way.
+
 ### The Snapshot
 
 The snapshot is what `status` returns and what the `state` topic carries. It comes
@@ -2229,20 +2410,24 @@ from local state the agent already keeps; it reads nothing from Docker or GitHub
 never holds a token or a JIT configuration. Every field is optional for a reader, and
 a reader ignores one it does not know.
 
-| Field                          | Holds                                                                                                 |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------- |
-| `agent`                        | `version`, `state`, `reason` (`code`, `message`), `since`, `build`, `restart_due`, `update`           |
-| `agent.update`                 | While a drain for an update runs: `version`, `waiting`, `deadline`, `pid`                             |
-| `agent.build`                  | `started`, `outcome` (`building`, `ready`, `failed`, `cancelled`), `finished`, `message`              |
-| `configuration`                | `path` and `problems`, at most 100                                                                    |
-| `runners_up`, `runners_wanted` | Totals over the listed pools, kept when rows are left out; 0 while `restart_due` is set               |
-| `repositories`                 | Each repository (`owner/name` in lower case), `has_token` and its pools                               |
-| `pools`                        | `name`, `repository`, `state`, `reason`, `has_token`, `runners_up`, `slots`, `runners`, `diagnostics` |
-| `pools[].runners`              | `slot`, `state`, `workload`, `reason`, `since`                                                        |
-| `pools[].diagnostics`          | `limit`, `written`, `in_sink`, `containers`, `findings`, `manual_recovery`                            |
-| `leftovers`                    | What a stop could not remove, `kind` (today `container`) and `name`                                   |
-| `images`                       | Each image the agent tracks (today the runner image): `name`, `lines`, `warnings`                     |
-| `omitted`                      | How many `runners`, `problems`, `pools`, `repositories`, `leftovers` and `images` it left out         |
+| Field                          | Holds                                                                                                                      |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `agent`                        | `version`, `state`, `reason` (`code`, `message`), `since`, `build`, `restart_due`, `update`                                |
+| `agent.update`                 | While a drain for an update runs: `version`, `waiting`, `deadline`, `pid`                                                  |
+| `agent.build`                  | `started`, `outcome` (`building`, `ready`, `failed`, `cancelled`), `finished`, `message`                                   |
+| `configuration`                | `path`, `problems` (at most 100), `status`, `in_use`, `migration` and `last_apply`                                         |
+| `configuration.last_apply`     | Absent until an edit applies; else `revision`, `at`, `outcome` (`applying`, `applied`, `abandoned`, `failed`) and `reason` |
+| `configuration.status`         | What the latest read of `config.toml` found: `valid`, `invalid`, `missing` or `unreadable`                                 |
+| `configuration.in_use`         | Absent when none is in use; else `source` (`file`, `last_valid` or `json`) and `read_at`                                   |
+| `configuration.migration`      | Absent when none applies; else `state` (`migrated`, `failed`, `pending`), `at` and `reason`                                |
+| `runners_up`, `runners_wanted` | Totals over the listed pools, kept when rows are left out; 0 while `restart_due` is set                                    |
+| `repositories`                 | Each repository (`owner/name` in lower case), `has_token` and its pools                                                    |
+| `pools`                        | `name`, `repository`, `state`, `reason`, `has_token`, `runners_up`, `slots`, `runners`, `diagnostics`                      |
+| `pools[].runners`              | `slot`, `state`, `workload`, `reason`, `since`                                                                             |
+| `pools[].diagnostics`          | `limit`, `written`, `in_sink`, `containers`, `findings`, `manual_recovery`                                                 |
+| `leftovers`                    | What a stop could not remove, `kind` (today `container`) and `name`                                                        |
+| `images`                       | Each image the agent tracks (today the runner image): `name`, `lines`, `warnings`                                          |
+| `omitted`                      | How many `runners`, `problems`, `pools`, `repositories`, `leftovers` and `images` it left out                              |
 
 When the runtime core fails, the agent starts it again after 10, 30 and 60 s for the
 first, second and third failure within 10 minutes, and stops for `restart_limit` at the
@@ -2279,9 +2464,130 @@ A snapshot is cut to at most 64 KiB less the message's envelope. When it is larg
 it first lists no more than 100 configuration problems, then leaves out runner rows
 from the end, as many as it must and no more, then pools from the end, then
 leftovers, repositories, images and configuration problems from their ends, and says
-how many in `omitted`. Last of all the long texts, the configuration path and the
-agent's version, reason and build message, are cut to 512 characters. `runners_up`
+how many in `omitted`. Last of all the long texts, the configuration path, the
+migration's reason and the agent's version, reason and build message, are cut to 512
+characters. `runners_up`
 and `runners_wanted` still count a row left out.
+
+### GitHub Status
+
+GitHub status is what GitHub says about this host's runners, for the window only:
+whether each is offline, idle or busy, the job a busy runner runs, and the request
+budget. It lives in the library's `github_status` module beside registration, and the
+agent runs it and publishes it as the `github` topic. It owns the busy flag, the job
+lookup, the request budget and the back-off; a repository is one kind of scope, and a
+later scope, such as an organisation's, adds its own fields under the version rules
+above, so no field here changes meaning.
+
+**Collection follows the subscription.** The agent reads GitHub only while at least
+one connection holds a `github` subscription that was subscribed or renewed in the
+last 90 s. When the last one ends, no new request starts after 1 s; one in flight
+finishes or times out and its answer is kept. The app holds that subscription on a
+connection of its own while its window is shown and not minimized, and renews it every
+30 s, so an app that hangs stops collection within 91 s. After collection stops the
+agent keeps each repository's last pages and their `ETag`s.
+
+**The checks.** A repository is checked while one of its pools has a runner with a
+`workload` and the token store held its token at the last look; the token is read
+from the store at each check by the repository's key, as a registration reads it.
+A check reads the runner list in full, then, while a busy runner's job is not known,
+sends up to two lookup requests: the repository's in-progress runs, newest first, then
+the jobs (`filter=latest`) of those runs, continuing where it stopped at the next
+check. A job is matched to its runner by name, kept for that runner's life, and
+looked for in at most 20 checks. Every page is requested with `If-None-Match` and that
+page's last `ETag`, so a `304` keeps it at no cost. Pages hold 100 runners, 10 runs
+and 30 jobs; a read of more than 10 pages, a page over 1 MiB, or a `200` whose body
+is not the list asked for reads as `error`. Only the jobs pages of runs still in
+progress are kept. Requests go out one at a time across the host, in the order repositories
+fall due. A repository is checked at most once per 15 s at the `normal` level and
+once per 60 s at `slowed`, and never sooner than the latest `x-poll-interval` GitHub
+sent for any of the repository's reads.
+Registrations stay outside this queue, and their responses are not read for the
+budget.
+
+**Next pages.** For every paged read, each address in a `link` header's `next` is
+compared with the read's first request. It is followed only when it has that request's
+origin and its path is either that request's path or `/repositories/<id>` followed by
+exactly the rest of that path after `/repos/<owner>/<repo>`, where `<id>` is one or
+more ASCII digits and the same on every page of the read, and only its query differs.
+GitHub names next pages in the `/repositories/<id>` form. Any other address reads as
+`error` and is not requested, so no response can send the token to another origin or
+another endpoint path. The agent does not check that `<id>` is the configured
+repository's, which would cost another request; the address comes only from GitHub's
+response over TLS, with no redirect followed.
+
+The requests use the registration client: `https://api.github.com` only in a release
+build, no redirect, 10 s to connect, 30 s a request, 1 MiB a response, the token in a
+sensitive header and scrubbed error text. GitHub suggests following 301, 302 and 307;
+the agent follows none, so a redirect cannot carry the token elsewhere.
+
+**The budget** is read from the `x-ratelimit-limit`, `x-ratelimit-remaining` and
+`x-ratelimit-reset` headers of each display response. Within one reset window the
+lowest remaining count is kept; a response with a later reset, received after the
+current window's reset has passed, starts a new window at `normal`. The level is
+`normal` above 25% left, `slowed` at or below 25%, and `paused` at or below 10% or
+when GitHub says the limit is reached; it only moves down within a window, and a pause
+sends no display request until the reset.
+
+**What each answer means:**
+
+| Answer                                           | Runner list                                                                   | Lookup                                               |
+| ------------------------------------------------ | ----------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `200`                                            | Read                                                                          | Read; `job_names` becomes `shown`                    |
+| `304`                                            | Keep that page                                                                | Keep that page                                       |
+| 403 or 429 with `x-ratelimit-remaining: 0`       | Pause until the reset, or, with no reset known, wait as for a secondary limit | The same                                             |
+| 403 or 429 with GitHub's secondary-limit message | Wait `retry-after`, else 60 s doubling to 15 minutes                          | The same                                             |
+| Another 403 or 429 with `retry-after`            | Wait `retry-after`                                                            | Wait `retry-after`                                   |
+| `401`                                            | `token_rejected`                                                              | `job_names` `unreadable`, `token_rejected`           |
+| Any other 403                                    | `token_rejected`                                                              | `job_names` `hidden`: the token has no Actions: read |
+| `404`                                            | `not_found`                                                                   | `job_names` `unreadable`, `not_found`                |
+| `3xx`                                            | `moved`                                                                       | `job_names` `unreadable`, `moved`                    |
+| `5xx`, anything else, or a next page refused     | `error`                                                                       | `job_names` `unreadable`, `error`                    |
+| No connection or a timeout                       | `unreachable`                                                                 | `job_names` `unreadable`, `unreachable`              |
+| The store cannot give the token                  | `token_unreadable`                                                            | No request                                           |
+
+A rate-limit wait holds every display request on the host. A `retry-after` or
+`x-poll-interval` counts for at most an hour, and a reset is never taken as more than
+an hour away, which is the rate limit's own window. A repository whose runner
+list fails keeps its last runners and `checked_at`, and is tried again after 15 s,
+doubling to 5 minutes, never sooner than the level allows, with `retry_at`. A failed
+lookup leaves the runner list alone: job names become `unreadable`, and lookups wait
+15 s, doubling to 5 minutes, never less than the level's interval, with
+`job_names_retry_at`; `unreadable` stays until a later lookup is answered. While job
+names are hidden the agent sends one in-progress-runs request again when one of the
+repository's runners becomes busy, at most once a minute: a runner that becomes busy
+within the minute gets it at the first check after the minute, so a token that gains
+Actions: read shows the next job's name without a restart.
+
+**The `github` value:**
+
+| Field                          | Meaning                                                                                                                |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| `budget`                       | `null` until a display request is answered, then `limit`, `remaining`, `resets_at`, `seen_at` and `level`              |
+| `repositories`                 | Each repository with a registered runner and a stored token, by its key, with what the agent last learned of it        |
+| `repositories[]`               | `repository`, `checked_at`, `status`, `retry_at`, `job_names`, `job_names_cause`, `job_names_retry_at`, `runners`      |
+| `repositories[].runners`       | This host's runners GitHub lists: `name` (the snapshot's `workload`), `github` (`offline`, `idle` or `busy`) and `job` |
+| `repositories[].runners[].job` | `workflow`, `name`, `run_id` and `job_id`, once a busy runner's job is known                                           |
+| `omitted_runners`              | Runner entries left out from the end to keep the value within 64 KiB less the envelope                                 |
+
+Times are milliseconds since the Unix epoch. `status` is `ok` or the cause in the table
+above; `job_names` is `unknown` (no in-progress-runs request answered yet), `shown`,
+`hidden` or `unreadable`, with `job_names_cause` in the words of `status`. `level`,
+`status`, `job_names` and `github` are open sets: a reader treats a word it does not
+know as unknown. A runner is not listed when its repository's `checked_at` is later
+than the runner's `since` in the snapshot and no entry names it; until then it is
+still being checked. The workflow and job names come from GitHub and are untrusted:
+the agent removes control characters and Unicode bidirectional formatting characters
+and cuts each to 120 code points with an ellipsis. The value never carries a token, a
+URL from GitHub or a response body. A job's page is
+`https://github.com/<owner>/<repo>/actions/runs/<run_id>/job/<job_id>`, built by the
+reader from its own configured repository.
+
+The agent logs each display request's method, path, status code and requests left,
+and for a 403 or 404 from a lookup also GitHub's message, cleaned as names are and cut
+to 200 characters, and its `X-Accepted-GitHub-Permissions` header. It logs each change of
+a runner's GitHub state, of a repository's job names and of the level, each failure
+and pause with when it tries again, and never a token.
 
 ### What the Agent Tests Cover
 
@@ -2295,12 +2601,31 @@ image check after it, which still answers and is skipped or abandoned by a stop 
 staying up for each reason, also through `start_all`, which answers `resuming`, that
 `token_set` and `token_remove` are answered while it resumes, builds and stops, and the
 core's restarts: the `restart_due` window with its empty pool list, and the stop for
-`restart_limit`. The restart waits are the fake clock's, with a real pause of 400 ms
+`restart_limit`. It also covers the configuration: the migration at the first start,
+a `config.json` that is not migrated, the last valid configuration at `start_all`
+with the file's problems, a pending migration, and a `build` that uses the
+configuration in use. The restart waits are the fake clock's, with a real pause of 400 ms
 each so the script can look at the window.
+`tests/agent_config.rs` covers the configuration methods: `config_read` with a
+wrong-typed value and an undefined key, raising `runners` (the new slot starts, the
+comments stay, nothing stops), lowering it and removing a pool (only their slots'
+containers are stopped), the refusals that write nothing (`config_invalid`,
+`config_refused`, `image_unusable`, `config_changed`), an edit on a stopped agent, a
+reload of a bad file and then of a good one, a restarted pool, edits of a pool that
+waits for its token, and a removed pool with diagnostics on, whose evidence is
+exported first, and a stop that runs past its deadline. `tests/agent_drain.rs` shows the two editing methods refused during a
+drain.
 `tests/agent_protocol.rs` covers the handshake, `welcome`, unknown methods, topics
 and fields, subscription (also by a client that arrives while the agent is idle),
-coalescing, heartbeats, `ending`, the limits as timers and
-a connection that stops reading. `tests/agent_tokens.rs` covers what `token_set` and
+coalescing, heartbeats, `ending`, the limits as timers,
+a connection that stops reading, the `github` topic and `renew` (the full value on
+`subscribe`, the end after 90 s without renewal, `not_subscribed` after it, and
+collection only while a subscription is held). `tests/github_status.rs` runs GitHub
+status on a paused clock against a fake GitHub: the intervals and levels, the pause,
+`retry-after` and the secondary limit, the back-off, pages by `link` with their
+`ETag`s and refused next pages, the job lookup and its 20 checks, the hidden-names
+retry, and that no token reaches a value or the log; the module's unit tests cover
+each answer, the budget window, the next-page rule and the cleaning of names. `tests/agent_tokens.rs` covers what `token_set` and
 `token_remove` do to the next registration, a skipped pool starting, refused tokens,
 and the store's kind and code in an error, a skipped pool's reason and the log.
 `tests/agent_snapshot.rs` covers the snapshot, the diagnostics, the leftovers, the
@@ -3704,6 +4029,89 @@ with the marker files at test time. The advisory check, `cargo deny --locked che
 fetches the RustSec database, so it runs in
 [`rust-advisories.yaml`](../../.github/workflows/rust-advisories.yaml) and not in
 `mise run check`; see [Development Workflow](./development-workflow.md).
+
+## The App Workspace
+
+[`app/`](../../app) is a second Cargo workspace beside `cli/`: the Windows
+notification-area app, which is also the executable that runs the resident agent.
+[App](./app.md) owns what it does. This section owns what the library gives it and
+the gates that cover it, so a change to the library knows what the app relies on.
+
+**Contract.**
+
+- The workspace depends on the `marshal-cli` library by path, through the crate's
+  public items only, so the app's lockfile, `cargo deny` run, licence notices and
+  advisory check cover everything its executable links, the library's crates
+  included. It never runs the `marshal` binary.
+- No file under `cli/src` moves for the app. The library's additions for it are
+  small exports: the stop reason codes as `agent::StopReason`, the handshake
+  timeout `agent::HANDSHAKE_TIMEOUT`, the registration error's marker of a token
+  GitHub rejects as `runtime::registration::REJECTED_MARK`, the start of a pool's reason
+  when the token store failed as `agent::tokens::STORE_FAILED`, the failure that stops an
+  instance as `instance::restart::STOPPING_FAILURE`, beside the already public
+  `WINDOW` and `DELAYS`, whose figures the app's banners quote, and the names of the
+  debug-only test variables as `command::TEST_ROOT_VARIABLE`, `TEST_DOCKER_VARIABLE`
+  and `TEST_GITHUB_API_VARIABLE`. A later change to a public item the app uses
+  breaks the app's build, which `mise run check` and the Windows job show, so the
+  change and the app move together.
+- The app reads the library for the protocol's types and client, the agent's entry
+  and options, the token store's interface and refusals, the instance roots, the
+  hidden `export`, `shim` and `vm-shim` commands, the `Secret` type that masks a token,
+  the executable's identity (`agent::executable::Executable` and `Look`), the private
+  log folder and file mode (`private::current_uid`, `ensure_private_directory` and
+  `FILE_MODE`), and the log's timestamp (`runtime::name::stamp`). It adds no message to
+  the protocol: a new message follows [Version Rules](#version-rules).
+- `cli/helpers/fake_docker.rs` is also built as the `fake-docker` binary of the app's
+  executable package, so the app's tests can run the exporter child against a fake
+  engine. The source stays under `cli/`; the CLI's own tests build it as before.
+- The app has its own `Cargo.lock`, [`deny.toml`](../../app/deny.toml) and
+  [`rust-toolchain.toml`](../../app/rust-toolchain.toml). The toolchain file names
+  the CLI's channel, and Dependabot is set to bump both files in one pull request.
+  The app's lockfile resolves every crate `marshal-cli` builds with in the CLI, for
+  Windows, macOS and Linux, to the version in the CLI's, so the CLI's tests cover the library
+  at the versions the app links; a change to one of those versions changes both
+  lockfiles. The CLI's
+  `Cargo.lock`, `deny.toml`, and dependency table do not change for the app: the
+  table under Dependencies lists the CLI's crates only, and
+  [Security](../conventions/security.md#the-apps-dependencies) holds the policy for the
+  app's own.
+- Every app crate forbids `unsafe_code` and takes the CLI's lint set through
+  `[lints] workspace = true`.
+
+**Gates.** `mise run check` covers what builds without the web view's system
+libraries, so the Check job on Linux needs none; the Windows job covers the rest.
+
+| Task                             | Runs                                                                                                                                                                                                 |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fetch:app`                      | `cargo fetch --locked` in `app/`, which `cargo deny` and `cargo about` read                                                                                                                          |
+| `format:app`, `format:check:app` | `cargo fmt --all`, and `cargo fmt --all --check`, in `app/`                                                                                                                                          |
+| `lint:app`                       | `cargo clippy --locked --all-targets -- -D warnings` over the `marshal-modes`, `marshal-view`, `marshal-session`, `marshal-tray` and `marshal-feed` packages                                         |
+| `test:app`                       | `cargo test --locked` over the same five packages                                                                                                                                                    |
+| `test:app-frontend`              | `node --test` over the main window page's own tests, in `app/crates/app/tests/frontend/`                                                                                                             |
+| `deny:app`                       | `cargo deny --locked check bans licenses sources` in `app/`, for `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`                                                                                 |
+| `check:notices`, `notices:app`   | Compare, or write again, the checked-in licence notices against `app/Cargo.lock`; see [App](./app.md#licence-notices)                                                                                |
+| `check:app-pins`                 | Both toolchain files name one channel, and `app/tauri-cli.version` holds one exact version                                                                                                           |
+| `test:tauri-cli-version`         | The script that reads the pin, against files that are not one exact version                                                                                                                          |
+| `check:app-lock`                 | `app/Cargo.lock` resolves the crates `cli/Cargo.lock` resolves for `marshal-cli`, dev-dependencies aside, for the three targets to the same versions; crates the app's features add are not compared |
+
+`format:check` and `lint` call the app's formatting and lint tasks, and `check` calls
+the rest, so one run covers both workspaces. The Tauri crate, `marshal-app`, needs the
+web view and is not in `lint:app` or `test:app`.
+
+The `app` job in [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) runs
+on a Windows hosted runner: clippy and the tests over the whole workspace, then
+`cargo tauri build --no-bundle`, failing if the build changed or left a file. An
+`app-modes` job runs clippy and the tests of `marshal-modes` on a macOS hosted runner,
+which covers the dispatch of both Unix shims, `shim` and `vm-shim`, there, and runs the
+crate's tests again in the release profile, where the debug-only variables are
+ignored; it never builds the Tauri crate. Linux runs the dispatch tests in the debug
+profile in `mise run check`. The advisory check,
+`cargo deny --locked check advisories` in `app/`, runs in
+[`rust-advisories.yaml`](../../.github/workflows/rust-advisories.yaml) beside the CLI's
+and is not part of `mise run check`; see [Development Workflow](./development-workflow.md).
+[Development Workflow](./development-workflow.md) describes each job's permissions,
+and [App](./app.md#building-the-app) says how the app is built and which pin its
+build tool has.
 
 ## Releases
 
@@ -5133,52 +5541,54 @@ allows crates.io only, one version of each crate, and the licences below. The CL
 is unpublished, so it carries no licence field of its own; `deny.toml` ignores
 private crates for that reason. A Dependabot bump that raises new clippy warnings
 or adds a duplicate crate version arrives as a red pull request, and the
-maintainer fixes it there.
+maintainer fixes it there. A Dependabot `cargo` update of a crate `marshal-cli` uses
+must move `cli/Cargo.lock` and `app/Cargo.lock` to the same version in one change, or
+`check:app-lock` fails (see [The App Workspace](#the-app-workspace)).
 
-| Crate                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Why                                                                                                                                                                                                                                                                                                                                              | Licence                                                                                     |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
-| `clap`, with `clap_builder`, `clap_lex`, and `anstyle`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Argument parsing, with default features off                                                                                                                                                                                                                                                                                                      | MIT OR Apache-2.0                                                                           |
-| `regex`, with `regex-automata` and `regex-syntax`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | The whole-value patterns for names, labels, and image names                                                                                                                                                                                                                                                                                      | MIT OR Apache-2.0                                                                           |
-| `aho-corasick` and `memchr`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Optional dependencies of `regex`                                                                                                                                                                                                                                                                                                                 | Unlicense OR MIT                                                                            |
-| `serde`, with `serde_core`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Reading the parsed JSON tree and the shared expectations into derived types, with default features off                                                                                                                                                                                                                                           | MIT OR Apache-2.0                                                                           |
-| `serde_derive`, `syn` 3, `quote`, and `proc-macro2`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | The `Deserialize` derive; these run at build time                                                                                                                                                                                                                                                                                                | MIT OR Apache-2.0                                                                           |
-| `unicode-ident`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | A dependency of `syn` and `proc-macro2`                                                                                                                                                                                                                                                                                                          | (MIT OR Apache-2.0) AND Unicode-3.0                                                         |
-| `tokio`, `tokio-macros`, `mio`, `bytes`, and `slab`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | The async runtime for the slot loop and the container backend, on one thread, with only the `rt`, `time`, `sync`, `io-util`, `process`, `macros`, `net`, and `signal` features; `tokio-macros` supplies `select!` and `join!`, `net` serves the Unix control socket, and `signal` delivers the stop signals and console events                   | MIT                                                                                         |
-| `socket2`, `signal-hook-registry`, `errno`, `smallvec`, `once_cell`, `cfg-if`, `log`, `itoa`, and `bitflags`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Operating-system and small-utility dependencies of `tokio`, `reqwest`, and their dependencies                                                                                                                                                                                                                                                    | MIT OR Apache-2.0                                                                           |
-| `libc`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | The `O_NOFOLLOW` and `O_NONBLOCK` values for the Unix lock's open, declared directly on Unix with default features off; `tokio` and its dependencies use it too                                                                                                                                                                                  | MIT OR Apache-2.0                                                                           |
-| `pin-project-lite` and `atomic-waker`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Futures plumbing under `tokio` and `hyper`                                                                                                                                                                                                                                                                                                       | Apache-2.0 OR MIT                                                                           |
-| `futures-core`, `futures-task`, `futures-channel`, and `futures-util`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Future and channel traits `hyper` and `reqwest` use                                                                                                                                                                                                                                                                                              | MIT OR Apache-2.0                                                                           |
-| `reqwest`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | The one HTTPS request to GitHub's JIT endpoint, with default features off and only `rustls-no-provider`, so no JSON, cookie, proxy-crate, or compression feature is built                                                                                                                                                                        | MIT OR Apache-2.0                                                                           |
-| `hyper`, `hyper-util`, `http-body`, `http-body-util`, `tower`, `tower-http`, `tower-layer`, `tower-service`, `tracing`, `tracing-core`, `want`, and `try-lock`                                                                                                                                                                                                                                                                                                                                                                                                                                                     | The HTTP client stack under `reqwest`                                                                                                                                                                                                                                                                                                            | MIT                                                                                         |
-| `http`, `httparse`, `base64`, and `ipnet`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | HTTP types, header parsing, header encoding, and proxy address matching under `reqwest`                                                                                                                                                                                                                                                          | MIT OR Apache-2.0                                                                           |
-| `sync_wrapper`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | A dependency of `reqwest`                                                                                                                                                                                                                                                                                                                        | Apache-2.0                                                                                  |
-| `url`, `form_urlencoded`, `percent-encoding`, `idna`, and `idna_adapter`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Parsing the request URL, under `reqwest`                                                                                                                                                                                                                                                                                                         | MIT OR Apache-2.0                                                                           |
-| `utf8_iter`, `stable_deref_trait`, and `zeroize`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Dependencies of `idna` and the TLS stack                                                                                                                                                                                                                                                                                                         | Apache-2.0 OR MIT for `utf8_iter` and `zeroize`, MIT OR Apache-2.0 for `stable_deref_trait` |
-| `icu_collections`, `icu_locale_core`, `icu_normalizer`, `icu_normalizer_data`, `icu_properties`, `icu_properties_data`, `icu_provider`, `litemap`, `potential_utf`, `tinystr`, `writeable`, `yoke`, `zerofrom`, `zerotrie`, and `zerovec`                                                                                                                                                                                                                                                                                                                                                                          | Unicode normalisation data for `idna`                                                                                                                                                                                                                                                                                                            | Unicode-3.0                                                                                 |
-| `displaydoc`, `yoke-derive`, `zerofrom-derive`, `zerovec-derive`, and `synstructure`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Derives and their helper for the Unicode crates above; these run at build time                                                                                                                                                                                                                                                                   | MIT OR Apache-2.0 for `displaydoc`, MIT for `synstructure`, Unicode-3.0 for the rest        |
-| `rustls`, `hyper-rustls`, and `rustls-native-certs`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | TLS for `reqwest`, with only the `ring`, `std`, and `tls12` features                                                                                                                                                                                                                                                                             | Apache-2.0 OR ISC OR MIT                                                                    |
-| `tokio-rustls`, `rustls-pki-types`, and `rustls-platform-verifier`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | TLS glue, certificate types, and the platform's certificate verifier                                                                                                                                                                                                                                                                             | MIT OR Apache-2.0                                                                           |
-| `rustls-webpki` and `untrusted`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Certificate validation for `rustls`                                                                                                                                                                                                                                                                                                              | ISC                                                                                         |
-| `ring`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | The cryptography provider, installed explicitly                                                                                                                                                                                                                                                                                                  | Apache-2.0 AND ISC                                                                          |
-| `cc`, `shlex`, `find-msvc-tools`, and `getrandom`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Build-time C compiler discovery for `ring`, and its random-number source                                                                                                                                                                                                                                                                         | MIT OR Apache-2.0                                                                           |
-| `subtle`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Constant-time comparison for `rustls`                                                                                                                                                                                                                                                                                                            | BSD-3-Clause                                                                                |
-| `openssl-probe`, `security-framework`, `security-framework-sys`, `core-foundation`, `core-foundation-sys`, `windows-sys`, and `windows-link` 0.2                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | The platform certificate stores: the system store on Linux, the keychain on macOS, and the Windows APIs                                                                                                                                                                                                                                          | MIT OR Apache-2.0                                                                           |
-| `schannel`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | The Windows certificate APIs; Cargo records it but the three CI targets do not build it                                                                                                                                                                                                                                                          | MIT                                                                                         |
-| `bumpalo`, `combine`, `jni`, `jni-macros`, `jni-sys`, `jni-sys-macros`, `js-sys`, `rustc_version`, `rustls-platform-verifier-android`, `rustversion`, `same-file`, `semver`, `simd_cesu8`, `simdutf8`, `thiserror` 2, `thiserror-impl` 2, `walkdir`, `wasm-bindgen`, `wasm-bindgen-futures`, `wasm-bindgen-macro`, `wasm-bindgen-macro-support`, `wasm-bindgen-shared`, `web-sys`, `winapi-util`, `windows-targets`, `windows_aarch64_gnullvm`, `windows_aarch64_msvc`, `windows_i686_gnu`, `windows_i686_gnullvm`, `windows_i686_msvc`, `windows_x86_64_gnu`, `windows_x86_64_gnullvm`, and `windows_x86_64_msvc` | Platform verifier and `getrandom` code for Android, WebAssembly, and other Windows targets, which the lockfile records and none of the three CI targets builds                                                                                                                                                                                   | MIT OR Apache-2.0 (`same-file`, `walkdir`, and `winapi-util` are Unlicense OR MIT)          |
-| `wasi`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | A WebAssembly dependency of `getrandom`, not built on the CI targets                                                                                                                                                                                                                                                                             | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT                                         |
-| `webpki-root-certs`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Bundled roots the platform verifier uses on WebAssembly, not built on the CI targets                                                                                                                                                                                                                                                             | CDLA-Permissive-2.0                                                                         |
-| `interprocess`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | The Windows named pipes behind the single-instance lock and the control channel, with default features off and, for the agent's asynchronous pipe, its `tokio` feature; it builds on Windows only                                                                                                                                                | 0BSD OR Apache-2.0                                                                          |
-| `recvmsg`, `doctest-file`, and `widestring`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Dependencies of `interprocess`: a receive helper, a procedural macro that includes example files in documentation, and wide-string types for Windows paths                                                                                                                                                                                       | 0BSD for `recvmsg` and `doctest-file`, MIT OR Apache-2.0 for `widestring`                   |
-| `serde_json`, `zmij`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | The agent's protocol messages and snapshot, in JSON, with only the `std` feature; `zmij` formats its floating-point numbers                                                                                                                                                                                                                      | MIT OR Apache-2.0 for `serde_json`, MIT for `zmij`                                          |
-| `keyring-core`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | The interface of a credential store, which the token store adapts and a platform's store implements, with default features off                                                                                                                                                                                                                   | MIT OR Apache-2.0                                                                           |
-| `windows-native-keyring-store` and `byteorder`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | The Windows Credential Manager behind the token store, with default features off, and the byte-order helper it uses for the UTF-16 token; they build on Windows only                                                                                                                                                                             | MIT OR Apache-2.0 for the store, Unlicense OR MIT for `byteorder`                           |
-| `winsafe`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | The current user's security identifier, with only the `advapi` feature; it builds on Windows only                                                                                                                                                                                                                                                | MIT                                                                                         |
-| `win32job`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | The Job Object that ends each job container's `docker run` client with `start`; it builds on Windows only (see [Containment](#containment))                                                                                                                                                                                                      | MIT OR Apache-2.0                                                                           |
-| `windows`, `windows-core`, `windows-collections`, `windows-future`, `windows-numerics`, `windows-threading`, `windows-result`, `windows-strings`, and `windows-link` 0.1                                                                                                                                                                                                                                                                                                                                                                                                                                           | The Windows API bindings `win32job` uses; they build on Windows only                                                                                                                                                                                                                                                                             | MIT OR Apache-2.0                                                                           |
-| `windows-implement`, `windows-interface`, `thiserror` 1, `thiserror-impl` 1, and `syn` 2                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | The derives of the `windows` crates and `win32job`, with the older `syn` they use; these run at build time, on Windows only                                                                                                                                                                                                                      | MIT OR Apache-2.0                                                                           |
-| `toml_edit`, with `toml_parser`, `toml_writer`, and `toml_datetime`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Reading the TOML host configuration into a document that keeps each key's position, and changing a document while keeping its comments, with default features off and only `parse` and `display`; `display` prints a document back. The reader also uses `toml_parser` directly, with only `std`, to place a key nested past `toml_edit`'s limit | MIT OR Apache-2.0                                                                           |
-| `winnow`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | The parser library under `toml_parser` and `toml_edit`                                                                                                                                                                                                                                                                                           | MIT                                                                                         |
-| `indexmap`, `hashbrown`, and `equivalent`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | The order-keeping map under `toml_edit`'s tables, and its hash map and lookup trait                                                                                                                                                                                                                                                              | Apache-2.0 OR MIT for `indexmap` and `equivalent`, MIT OR Apache-2.0 for `hashbrown`        |
+| Crate                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Why                                                                                                                                                                                                                                                                                                                                                                | Licence                                                                                     |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| `clap`, with `clap_builder`, `clap_lex`, and `anstyle`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Argument parsing, with default features off                                                                                                                                                                                                                                                                                                                        | MIT OR Apache-2.0                                                                           |
+| `regex`, with `regex-automata` and `regex-syntax`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | The whole-value patterns for names, labels, and image names                                                                                                                                                                                                                                                                                                        | MIT OR Apache-2.0                                                                           |
+| `aho-corasick` and `memchr`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Optional dependencies of `regex`                                                                                                                                                                                                                                                                                                                                   | Unlicense OR MIT                                                                            |
+| `serde`, with `serde_core`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Reading the parsed JSON tree and the shared expectations into derived types, with default features off                                                                                                                                                                                                                                                             | MIT OR Apache-2.0                                                                           |
+| `serde_derive`, `syn` 3, `quote`, and `proc-macro2`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | The `Deserialize` derive; these run at build time                                                                                                                                                                                                                                                                                                                  | MIT OR Apache-2.0                                                                           |
+| `unicode-ident`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | A dependency of `syn` and `proc-macro2`                                                                                                                                                                                                                                                                                                                            | (MIT OR Apache-2.0) AND Unicode-3.0                                                         |
+| `tokio`, `tokio-macros`, `mio`, `bytes`, and `slab`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | The async runtime for the slot loop and the container backend, on one thread, with only the `rt`, `time`, `sync`, `io-util`, `process`, `macros`, `net`, and `signal` features, and `test-util` for the tests only; `tokio-macros` supplies `select!` and `join!`, `net` serves the Unix control socket, and `signal` delivers the stop signals and console events | MIT                                                                                         |
+| `socket2`, `signal-hook-registry`, `errno`, `smallvec`, `once_cell`, `cfg-if`, `log`, `itoa`, and `bitflags`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Operating-system and small-utility dependencies of `tokio`, `reqwest`, and their dependencies                                                                                                                                                                                                                                                                      | MIT OR Apache-2.0                                                                           |
+| `libc`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | The `O_NOFOLLOW` and `O_NONBLOCK` values for the Unix lock's open, declared directly on Unix with default features off; `tokio` and its dependencies use it too                                                                                                                                                                                                    | MIT OR Apache-2.0                                                                           |
+| `pin-project-lite` and `atomic-waker`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Futures plumbing under `tokio` and `hyper`                                                                                                                                                                                                                                                                                                                         | Apache-2.0 OR MIT                                                                           |
+| `futures-core`, `futures-task`, `futures-channel`, and `futures-util`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Future and channel traits `hyper` and `reqwest` use                                                                                                                                                                                                                                                                                                                | MIT OR Apache-2.0                                                                           |
+| `reqwest`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | The HTTPS requests to GitHub: the JIT registration and the agent's GitHub status reads, through one client builder, with default features off and only `rustls-no-provider`, so no JSON, cookie, proxy-crate, or compression feature is built                                                                                                                      | MIT OR Apache-2.0                                                                           |
+| `hyper`, `hyper-util`, `http-body`, `http-body-util`, `tower`, `tower-http`, `tower-layer`, `tower-service`, `tracing`, `tracing-core`, `want`, and `try-lock`                                                                                                                                                                                                                                                                                                                                                                                                                                                     | The HTTP client stack under `reqwest`                                                                                                                                                                                                                                                                                                                              | MIT                                                                                         |
+| `http`, `httparse`, `base64`, and `ipnet`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | HTTP types, header parsing, header encoding, and proxy address matching under `reqwest`                                                                                                                                                                                                                                                                            | MIT OR Apache-2.0                                                                           |
+| `sync_wrapper`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | A dependency of `reqwest`                                                                                                                                                                                                                                                                                                                                          | Apache-2.0                                                                                  |
+| `url`, `form_urlencoded`, `percent-encoding`, `idna`, and `idna_adapter`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Parsing the request URL, under `reqwest`                                                                                                                                                                                                                                                                                                                           | MIT OR Apache-2.0                                                                           |
+| `utf8_iter`, `stable_deref_trait`, and `zeroize`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Dependencies of `idna` and the TLS stack                                                                                                                                                                                                                                                                                                                           | Apache-2.0 OR MIT for `utf8_iter` and `zeroize`, MIT OR Apache-2.0 for `stable_deref_trait` |
+| `icu_collections`, `icu_locale_core`, `icu_normalizer`, `icu_normalizer_data`, `icu_properties`, `icu_properties_data`, `icu_provider`, `litemap`, `potential_utf`, `tinystr`, `writeable`, `yoke`, `zerofrom`, `zerotrie`, and `zerovec`                                                                                                                                                                                                                                                                                                                                                                          | Unicode normalisation data for `idna`                                                                                                                                                                                                                                                                                                                              | Unicode-3.0                                                                                 |
+| `displaydoc`, `yoke-derive`, `zerofrom-derive`, `zerovec-derive`, and `synstructure`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Derives and their helper for the Unicode crates above; these run at build time                                                                                                                                                                                                                                                                                     | MIT OR Apache-2.0 for `displaydoc`, MIT for `synstructure`, Unicode-3.0 for the rest        |
+| `rustls`, `hyper-rustls`, and `rustls-native-certs`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | TLS for `reqwest`, with only the `ring`, `std`, and `tls12` features                                                                                                                                                                                                                                                                                               | Apache-2.0 OR ISC OR MIT                                                                    |
+| `tokio-rustls`, `rustls-pki-types`, and `rustls-platform-verifier`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | TLS glue, certificate types, and the platform's certificate verifier                                                                                                                                                                                                                                                                                               | MIT OR Apache-2.0                                                                           |
+| `rustls-webpki` and `untrusted`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Certificate validation for `rustls`                                                                                                                                                                                                                                                                                                                                | ISC                                                                                         |
+| `ring`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | The cryptography provider, installed explicitly                                                                                                                                                                                                                                                                                                                    | Apache-2.0 AND ISC                                                                          |
+| `cc`, `shlex`, `find-msvc-tools`, and `getrandom`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Build-time C compiler discovery for `ring`, and its random-number source                                                                                                                                                                                                                                                                                           | MIT OR Apache-2.0                                                                           |
+| `subtle`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Constant-time comparison for `rustls`                                                                                                                                                                                                                                                                                                                              | BSD-3-Clause                                                                                |
+| `openssl-probe`, `security-framework`, `security-framework-sys`, `core-foundation`, `core-foundation-sys`, `windows-sys`, and `windows-link` 0.2                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | The platform certificate stores: the system store on Linux, the keychain on macOS, and the Windows APIs                                                                                                                                                                                                                                                            | MIT OR Apache-2.0                                                                           |
+| `schannel`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | The Windows certificate APIs; Cargo records it but the three CI targets do not build it                                                                                                                                                                                                                                                                            | MIT                                                                                         |
+| `bumpalo`, `combine`, `jni`, `jni-macros`, `jni-sys`, `jni-sys-macros`, `js-sys`, `rustc_version`, `rustls-platform-verifier-android`, `rustversion`, `same-file`, `semver`, `simd_cesu8`, `simdutf8`, `thiserror` 2, `thiserror-impl` 2, `walkdir`, `wasm-bindgen`, `wasm-bindgen-futures`, `wasm-bindgen-macro`, `wasm-bindgen-macro-support`, `wasm-bindgen-shared`, `web-sys`, `winapi-util`, `windows-targets`, `windows_aarch64_gnullvm`, `windows_aarch64_msvc`, `windows_i686_gnu`, `windows_i686_gnullvm`, `windows_i686_msvc`, `windows_x86_64_gnu`, `windows_x86_64_gnullvm`, and `windows_x86_64_msvc` | Platform verifier and `getrandom` code for Android, WebAssembly, and other Windows targets, which the lockfile records and none of the three CI targets builds                                                                                                                                                                                                     | MIT OR Apache-2.0 (`same-file`, `walkdir`, and `winapi-util` are Unlicense OR MIT)          |
+| `wasi`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | A WebAssembly dependency of `getrandom`, not built on the CI targets                                                                                                                                                                                                                                                                                               | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT                                         |
+| `webpki-root-certs`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Bundled roots the platform verifier uses on WebAssembly, not built on the CI targets                                                                                                                                                                                                                                                                               | CDLA-Permissive-2.0                                                                         |
+| `interprocess`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | The Windows named pipes behind the single-instance lock and the control channel, with default features off and, for the agent's asynchronous pipe, its `tokio` feature; it builds on Windows only                                                                                                                                                                  | 0BSD OR Apache-2.0                                                                          |
+| `recvmsg`, `doctest-file`, and `widestring`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Dependencies of `interprocess`: a receive helper, a procedural macro that includes example files in documentation, and wide-string types for Windows paths                                                                                                                                                                                                         | 0BSD for `recvmsg` and `doctest-file`, MIT OR Apache-2.0 for `widestring`                   |
+| `serde_json`, `zmij`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | The agent's protocol messages and snapshot, in JSON, with only the `std` feature; `zmij` formats its floating-point numbers                                                                                                                                                                                                                                        | MIT OR Apache-2.0 for `serde_json`, MIT for `zmij`                                          |
+| `keyring-core`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | The interface of a credential store, which the token store adapts and a platform's store implements, with default features off                                                                                                                                                                                                                                     | MIT OR Apache-2.0                                                                           |
+| `windows-native-keyring-store` and `byteorder`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | The Windows Credential Manager behind the token store, with default features off, and the byte-order helper it uses for the UTF-16 token; they build on Windows only                                                                                                                                                                                               | MIT OR Apache-2.0 for the store, Unlicense OR MIT for `byteorder`                           |
+| `winsafe`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | The current user's security identifier, with only the `advapi` feature; it builds on Windows only                                                                                                                                                                                                                                                                  | MIT                                                                                         |
+| `win32job`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | The Job Object that ends each job container's `docker run` client with `start`; it builds on Windows only (see [Containment](#containment))                                                                                                                                                                                                                        | MIT OR Apache-2.0                                                                           |
+| `windows`, `windows-core`, `windows-collections`, `windows-future`, `windows-numerics`, `windows-threading`, `windows-result`, `windows-strings`, and `windows-link` 0.1                                                                                                                                                                                                                                                                                                                                                                                                                                           | The Windows API bindings `win32job` uses; they build on Windows only                                                                                                                                                                                                                                                                                               | MIT OR Apache-2.0                                                                           |
+| `windows-implement`, `windows-interface`, `thiserror` 1, `thiserror-impl` 1, and `syn` 2                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | The derives of the `windows` crates and `win32job`, with the older `syn` they use; these run at build time, on Windows only                                                                                                                                                                                                                                        | MIT OR Apache-2.0                                                                           |
+| `toml_edit`, with `toml_parser`, `toml_writer`, and `toml_datetime`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Reading the TOML host configuration into a document that keeps each key's position, and changing a document while keeping its comments, with default features off and only `parse` and `display`; `display` prints a document back. The reader also uses `toml_parser` directly, with only `std`, to place a key nested past `toml_edit`'s limit                   | MIT OR Apache-2.0                                                                           |
+| `winnow`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | The parser library under `toml_parser` and `toml_edit`                                                                                                                                                                                                                                                                                                             | MIT                                                                                         |
+| `indexmap`, `hashbrown`, and `equivalent`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | The order-keeping map under `toml_edit`'s tables, and its hash map and lookup trait                                                                                                                                                                                                                                                                                | Apache-2.0 OR MIT for `indexmap` and `equivalent`, MIT OR Apache-2.0 for `hashbrown`        |
 
 `aho-corasick` and `memchr` are in the lockfile because `regex` lists them as
 optional, but the CLI's feature set (`std` and `unicode-perl`, no `perf`) does not

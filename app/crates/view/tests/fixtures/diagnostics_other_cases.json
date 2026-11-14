@@ -1,0 +1,163 @@
+{
+  "agent": {
+    "version": "0.1.0",
+    "state": "running",
+    "since": 1793762100000
+  },
+  "configuration": {
+    "path": "C:\\Users\\<user>\\AppData\\Local\\marshal\\config.toml",
+    "problems": []
+  },
+  "runners_up": 1,
+  "runners_wanted": 6,
+  "repositories": [
+    {
+      "repository": "owner/app",
+      "has_token": true,
+      "pools": ["app"]
+    },
+    {
+      "repository": "owner/site",
+      "has_token": true,
+      "pools": ["site"]
+    }
+  ],
+  "pools": [
+    {
+      "name": "app",
+      "repository": "owner/app",
+      "state": "running",
+      "reason": null,
+      "has_token": true,
+      "runners_up": 1,
+      "slots": 3,
+      "runners": [
+        {
+          "slot": 1,
+          "state": "running",
+          "workload": "app-1-20261104034410233",
+          "reason": null,
+          "since": 1793763850000
+        },
+        {
+          "slot": 2,
+          "state": "registering",
+          "workload": null,
+          "reason": null,
+          "since": 1793765520000
+        },
+        {
+          "slot": 3,
+          "state": "stopped",
+          "workload": null,
+          "reason": null,
+          "since": 1793762100000
+        }
+      ],
+      "diagnostics": {
+        "limit": 10,
+        "written": 0,
+        "in_sink": null,
+        "containers": [
+          {
+            "name": "app-2-20261104035512340",
+            "state": "retained",
+            "bundle": false
+          }
+        ],
+        "findings": [
+          {
+            "container": "app-2-20261104035512340",
+            "export": "failed",
+            "removed": false,
+            "kept": false
+          },
+          {
+            "container": "app-3-20261104030000000",
+            "export": "sink_full",
+            "removed": true,
+            "kept": false
+          },
+          {
+            "container": "app-1-20261104030100000",
+            "export": "complete",
+            "removed": false,
+            "kept": true
+          }
+        ],
+        "manual_recovery": []
+      }
+    },
+    {
+      "name": "site",
+      "repository": "owner/site",
+      "state": "skipped",
+      "reason": "a diagnostic container an earlier run kept needs the manual recovery in Windows Runner Host while this pool's diagnostics are off",
+      "has_token": true,
+      "runners_up": 0,
+      "slots": 3,
+      "runners": [
+        {
+          "slot": 1,
+          "state": "stopped",
+          "workload": null,
+          "reason": null,
+          "since": 1793762100000
+        },
+        {
+          "slot": 2,
+          "state": "stopped",
+          "workload": null,
+          "reason": null,
+          "since": 1793762100000
+        },
+        {
+          "slot": 3,
+          "state": "stopped",
+          "workload": null,
+          "reason": null,
+          "since": 1793762100000
+        }
+      ],
+      "diagnostics": {
+        "limit": 10,
+        "written": 0,
+        "in_sink": null,
+        "containers": [],
+        "findings": [],
+        "manual_recovery": ["site-1-20261103221408763"]
+      }
+    }
+  ],
+  "leftovers": [],
+  "images": [
+    {
+      "name": "actions-runner:local",
+      "lines": [
+        {
+          "name": "image",
+          "value": "actions-runner:local"
+        },
+        {
+          "name": "image-contract",
+          "value": "3"
+        },
+        {
+          "name": "image-built",
+          "value": "2 days ago"
+        },
+        {
+          "name": "runner",
+          "value": "2.338.2, released 9 days ago"
+        }
+      ],
+      "warnings": [
+        {
+          "code": "runner_may_be_newer",
+          "days": 9,
+          "version": "2.338.2"
+        }
+      ]
+    }
+  ]
+}

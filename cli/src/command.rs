@@ -26,11 +26,11 @@ pub(crate) const EXIT_FAILED: u8 = 1;
 pub(crate) const EXIT_USAGE: u8 = 2;
 
 // the four test-override variables below: only a debug build honours them, see docs/operations/cli.md
-const TEST_ROOT_VARIABLE: &str = "MARSHAL_TEST_ROOT";
+pub const TEST_ROOT_VARIABLE: &str = "MARSHAL_TEST_ROOT";
 
-const TEST_GITHUB_API_VARIABLE: &str = "MARSHAL_TEST_GITHUB_API";
+pub const TEST_GITHUB_API_VARIABLE: &str = "MARSHAL_TEST_GITHUB_API";
 
-const TEST_DOCKER_VARIABLE: &str = "MARSHAL_TEST_DOCKER";
+pub const TEST_DOCKER_VARIABLE: &str = "MARSHAL_TEST_DOCKER";
 
 const TEST_BUILD_DEFINITION_VARIABLE: &str = "MARSHAL_TEST_BUILD_DEFINITION";
 
@@ -385,13 +385,6 @@ pub(crate) struct Loaded {
 
 /// reads the file and validates it for `profile`.
 pub(crate) fn load_plan(config: &Path, profile: Profile) -> Loaded {
-    load_plan_under(config, profile, false)
-}
-
-/// reads the file and validates it for `profile`; with `at_sink`, each diagnostic
-/// directory is also compared with the checkout at or above it, as the agent's
-/// configuration lives outside any checkout.
-pub(crate) fn load_plan_under(config: &Path, profile: Profile, at_sink: bool) -> Loaded {
     let bytes = match read_limited(config) {
         Ok(bytes) => bytes,
         Err(error) => {
@@ -410,12 +403,7 @@ pub(crate) fn load_plan_under(config: &Path, profile: Profile, at_sink: bool) ->
         }
     };
     let checkout = checkout::find(config);
-    let rule = if at_sink {
-        CheckoutRule::AboveAndAtSink(checkout.as_deref())
-    } else {
-        CheckoutRule::Above(checkout.as_deref())
-    };
-    let validation = validate_with(&bytes, profile, rule);
+    let validation = validate_with(&bytes, profile, CheckoutRule::Above(checkout.as_deref()));
     let outcome = validation.outcome.map_err(|failure| match failure {
         Failure::Unreadable(problem) => {
             LoadError::Unreadable(format!("Host configuration is not valid JSON: {problem}"))

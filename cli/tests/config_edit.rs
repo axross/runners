@@ -797,6 +797,21 @@ fn an_edit_that_names_a_place_the_document_lacks_is_refused_and_the_file_stays()
 }
 
 #[test]
+fn a_file_holding_the_removal_marker_is_refused_as_the_files_form() {
+    let config = Config::new(&format!(
+        "# marshal-edit-removed-9f4c1e7a2b6d8035\n{SAMPLE}"
+    ));
+    let error = config
+        .edit(&[set(pool(0, Key::Slots), Value::Integer(3))])
+        .unwrap_err();
+    assert!(
+        matches!(&error, EditError::FileForm(reason) if reason.contains("marks a removal")),
+        "{error:?}"
+    );
+    config.assert_nothing_left_beside_the_file();
+}
+
+#[test]
 fn an_edit_that_cannot_apply_names_itself_without_the_files_text() {
     let config = Config::new(SAMPLE);
     let error = config
@@ -1151,7 +1166,7 @@ pool = [
     ] {
         let error = edit(refused.clone()).unwrap_err();
         assert!(
-            matches!(&error, EditError::Inapplicable(reason) if reason.contains("several lines")),
+            matches!(&error, EditError::FileForm(reason) if reason.contains("several lines")),
             "{refused:?}: {error:?}"
         );
     }
@@ -1192,7 +1207,7 @@ pool = [
         )
         .unwrap_err();
         assert!(
-            matches!(&error, EditError::Inapplicable(reason) if reason.contains("several lines")),
+            matches!(&error, EditError::FileForm(reason) if reason.contains("several lines")),
             "{refused:?}: {error:?}"
         );
     }

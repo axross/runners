@@ -1,0 +1,80 @@
+[package]
+name = "marshal-app"
+description = "Marshal: the notification-area app, and the one executable that also runs as the agent"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+build = "build.rs"
+default-run = "marshal-app"
+
+[[bin]]
+name = "marshal-app"
+path = "src/main.rs"
+
+# the CLI's stand-in for the docker client, built here too so the tests that start this
+# executable's exporter child can run it against a fake engine, as the CLI's own tests do.
+[[bin]]
+name = "fake-docker"
+path = "../../../cli/helpers/fake_docker.rs"
+test = false
+doc = false
+
+[dependencies]
+marshal-cli = { path = "../../../cli" }
+marshal-feed = { path = "../feed" }
+marshal-modes = { path = "../modes" }
+marshal-session = { path = "../session" }
+marshal-tray = { path = "../tray" }
+marshal-view = { path = "../view" }
+# Tauri's defaults are off and each feature is named, with its reason. `wry` is the web
+# view runtime. `tray-icon` is the notification-area icon and its menu, with no
+# `image-png` or `image-ico`, so the app links no image decoder: the icon's images are
+# embedded already decoded. `common-controls-v6` makes the Windows menu use the
+# version 6 common controls that tauri-build's manifest asks for, which the menu's
+# subclassing needs. The defaults left out: `compression` (the embedded pages are a few
+# files and the fonts are woff2, already compressed, so brotli would only be more code),
+# `dynamic-acl` (the two capabilities are fixed files, and nothing adds one while the
+# app runs), and `x11` and `dbus`, which are Linux only.
+tauri = { version = "2.12", default-features = false, features = ["wry", "common-controls-v6", "tray-icon"] }
+tauri-plugin-single-instance = "2.5"
+# opens a running job's page on github.com in the default browser, from the Rust side,
+# with an address the app builds itself. On Windows it reaches ShellExecuteExW through the
+# `open` crate, so the address never passes through another program's command line. Its
+# page script is turned off where the plugin is built, and no capability grants any of
+# its commands.
+tauri-plugin-opener = "2.7.2"
+serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
+# the code `generate_context!` writes for the configuration's `plugins` section names
+# `serde_json`; the version the session already builds, so this adds no crate.
+serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+tauri = { version = "2.12", default-features = false, features = ["test"] }
+tokio = { version = "1.54.1", default-features = false, features = ["rt", "time", "macros", "net", "io-util", "sync"] }
+
+# Tauri's updater, in the app mode only (see src/updates.rs), pinned to the exact version
+# whose behaviour marshal-feed mirrors. Its defaults are off: the feed and the MSI come
+# over rustls with ring, the MSI is downloaded as itself so no zip support is linked, and
+# no system proxy is read.
+[target.'cfg(windows)'.dependencies]
+tauri-plugin-updater = { version = "=2.14.1", default-features = false, features = ["rustls-tls"] }
+# the handle the app waits on for the agent's process to exit, without unsafe code, as
+# the library already does.
+winsafe = { version = "0.0.29", default-features = false, features = ["kernel"] }
+# the wait's timer; the version the session already builds, so this adds no crate.
+tokio = { version = "1.54.1", default-features = false, features = ["time"] }
+
+# the named pipe a test squats on, as the library does, to stand in for another process
+# that holds the agent's channel.
+[target.'cfg(windows)'.dev-dependencies]
+interprocess = { version = "2.4.7", default-features = false, features = ["tokio"] }
+
+[build-dependencies]
+tauri-build = { version = "2.7", features = [] }
+# links the common controls manifest into the integration tests, which tauri-build does for
+# the binaries only. it is the resource compiler tauri-build already builds with, so the
+# lock file gains no crate.
+embed-resource = "3.0.12"
+
+[lints]
+workspace = true

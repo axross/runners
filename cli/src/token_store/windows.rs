@@ -1,22 +1,23 @@
-//! the Windows Credential Manager store: one generic credential per repository named
-//! `app.axross.marshal:github.com/<owner>/<name>`, written as UTF-16 with local
-//! persistence, because the crate's default persistence is the enterprise one, which
+//! the Windows Credential Manager store: one generic credential per key named
+//! `app.axross.marshal:github.com/<owner>/<name>` for a repository and
+//! `app.axross.marshal:github.com/<org>` for an organization, written as UTF-16 with
+//! local persistence, because the crate's default persistence is the enterprise one, which
 //! roams with the user's profile.
 
 use keyring_core::Error;
 
-use super::{Classified, EntryName, KeyringTokenStore, RepositoryKey, StoreError, StoreErrorKind};
+use super::{Classified, EntryName, KeyringTokenStore, StoreError, StoreErrorKind, TokenKey};
 
 /// the signing identifier that names every Marshal credential.
 pub const CREDENTIAL_PREFIX: &str = "app.axross.marshal:github.com/";
 
 /// the credential's target name for `key`.
 #[must_use]
-pub fn target_name(key: &RepositoryKey) -> String {
+pub fn target_name(key: &TokenKey) -> String {
     format!("{CREDENTIAL_PREFIX}{key}")
 }
 
-fn naming(key: &RepositoryKey) -> EntryName {
+fn naming(key: &TokenKey) -> EntryName {
     EntryName {
         service: "app.axross.marshal".to_string(),
         user: key.to_string(),
@@ -73,8 +74,16 @@ mod tests {
     #[test]
     fn a_credential_is_named_for_the_lower_case_repository() {
         assert_eq!(
-            target_name(&RepositoryKey::of("Axross", "Runners")),
+            target_name(&TokenKey::of("Axross", "Runners")),
             "app.axross.marshal:github.com/axross/runners"
+        );
+    }
+
+    #[test]
+    fn a_credential_is_named_for_the_lower_case_organization() {
+        assert_eq!(
+            target_name(&TokenKey::parse_organization("Axross").unwrap()),
+            "app.axross.marshal:github.com/axross"
         );
     }
 
@@ -87,7 +96,7 @@ mod tests {
 
     #[test]
     fn the_entry_asks_for_local_persistence() {
-        let name = naming(&RepositoryKey::of("o", "r"));
+        let name = naming(&TokenKey::of("o", "r"));
         assert!(
             name.modifiers
                 .contains(&("persistence", "Local".to_string()))

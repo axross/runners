@@ -6,7 +6,9 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
+use super::config::Problem;
 use super::snapshot::Snapshot;
+use crate::github_status::GithubStatus;
 
 /// the protocol version this agent serves.
 pub const VERSION: u32 = 2;
@@ -20,8 +22,8 @@ pub const MAX_CLIENT_MESSAGE_BYTES: usize = 16 * 1024;
 /// the longest message the agent sends, its line break included.
 pub const MAX_AGENT_MESSAGE_BYTES: usize = 64 * 1024;
 
-/// the methods `welcome` lists.
-pub const METHODS: [&str; 9] = [
+/// the methods `welcome` lists; `renew` keeps a `github` subscription alive.
+pub const METHODS: [&str; 13] = [
     "status",
     "subscribe",
     "start_all",
@@ -31,6 +33,10 @@ pub const METHODS: [&str; 9] = [
     "token_set",
     "token_remove",
     "drain_for_update",
+    "renew",
+    "config_read",
+    "config_edit",
+    "config_reload",
 ];
 
 /// the `ending` reason of an agent that ends for an update.
@@ -64,11 +70,15 @@ pub struct EndingNotice {
     pub update: Option<UpdateEnding>,
 }
 
-/// the only topic of version 2's first slice: the snapshot `status` returns.
+/// the snapshot `status` returns.
 pub const TOPIC_STATE: &str = "state";
 
+/// what GitHub says about this host's runners, collected only while a subscription
+/// to it is renewed.
+pub const TOPIC_GITHUB: &str = "github";
+
 /// the topics `welcome` lists.
-pub const TOPICS: [&str; 1] = [TOPIC_STATE];
+pub const TOPICS: [&str; 2] = [TOPIC_STATE, TOPIC_GITHUB];
 
 /// the error codes of this slice; a later slice may add more, so a reader keeps a
 /// code it does not know as text.
@@ -84,6 +94,29 @@ pub enum ErrorCode {
     StoreFailed,
     /// the state does not allow the method.
     Refused,
+    /// a `renew` for a subscription the connection does not hold, such as one that
+    /// ended for want of renewal.
+    NotSubscribed,
+    /// the file no longer holds the revision the request names.
+    ConfigChanged,
+    /// the result breaks the rules; the error lists the problems.
+    ConfigInvalid,
+    /// the file cannot be parsed, is missing or unreadable, or a migration failed or is
+    /// pending.
+    ConfigUnusable,
+    /// the file could not be replaced.
+    ConfigUnwritable,
+    /// an edit touches `schema_version` or `lifecycle`.
+    ConfigRefused,
+    /// the file is written in a form only the user can change, such as an inline
+    /// table over several lines.
+    ConfigFileForm,
+    /// an edit is being applied.
+    ConfigApplying,
+    /// the runtime core waits to restart after a failure.
+    RuntimeRestarting,
+    /// the image a change names is missing or unusable.
+    ImageUnusable,
 }
 
 impl ErrorCode {
@@ -98,6 +131,16 @@ impl ErrorCode {
             Self::TokenInvalid => "token_invalid",
             Self::StoreFailed => "store_failed",
             Self::Refused => "refused",
+            Self::NotSubscribed => "not_subscribed",
+            Self::ConfigChanged => "config_changed",
+            Self::ConfigInvalid => "config_invalid",
+            Self::ConfigUnusable => "config_unusable",
+            Self::ConfigUnwritable => "config_unwritable",
+            Self::ConfigRefused => "config_refused",
+            Self::ConfigFileForm => "config_file_form",
+            Self::ConfigApplying => "config_applying",
+            Self::RuntimeRestarting => "runtime_restarting",
+            Self::ImageUnusable => "image_unusable",
         }
     }
 }
@@ -109,12 +152,16 @@ pub struct ErrorBody {
     pub code: String,
     pub message: String,
     /// the versions the agent serves, in `unsupported_protocol`.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub versions: Vec<u32>,
+    #[serde(default, skip_serializing_if = "<[u32]>::is_empty")]
+    pub versions: Box<[u32]>,
     /// what a `store_failed` adds: the kind of the store's failure and its platform
     /// code.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub store: Option<StoreFault>,
+    /// what a `config_invalid` lists, each with its TOML key path and line when it has
+    /// them; a problem never quotes the file.
+    #[serde(default, skip_serializing_if = "<[Problem]>::is_empty")]
+    pub problems: Box<[Problem]>,
 }
 
 /// a token store failure as it travels; the kind is an open set (`needs_user`,
@@ -133,15 +180,16 @@ impl ErrorBody {
         Self {
             code: code.as_str().to_string(),
             message: message.to_string(),
-            versions: Vec::new(),
+            versions: Box::default(),
             store: None,
+            problems: Box::default(),
         }
     }
 
     #[must_use]
     pub fn unsupported_protocol() -> Self {
         Self {
-            versions: SUPPORTED_VERSIONS.to_vec(),
+            versions: SUPPORTED_VERSIONS.into(),
             ..Self::new(
                 ErrorCode::UnsupportedProtocol,
                 "this agent speaks protocol version 2; send a hello message first",
@@ -233,10 +281,12 @@ pub enum AgentMessage {
     Error {
         error: ErrorBody,
     },
+    /// a topic's value; the reader reads it by its topic, as [`Self::snapshot`] and
+    /// [`Self::github`] do.
     Event {
         topic: String,
         seq: u64,
-        value: Box<Snapshot>,
+        value: serde_json::Value,
     },
     Heartbeat {
         seq: u64,
@@ -248,6 +298,32 @@ pub enum AgentMessage {
         #[serde(default)]
         update: Option<UpdateEnding>,
     },
+}
+
+impl AgentMessage {
+    /// the snapshot an event of the `state` topic carries.
+    #[must_use]
+    pub fn snapshot(topic: &str, value: &serde_json::Value) -> Option<Box<Snapshot>> {
+        (topic == TOPIC_STATE)
+            .then(|| Snapshot::deserialize(value).ok().map(Box::new))
+            .flatten()
+    }
+
+    /// the value an event of the `github` topic carries.
+    #[must_use]
+    pub fn github(topic: &str, value: &serde_json::Value) -> Option<Box<GithubStatus>> {
+        (topic == TOPIC_GITHUB)
+            .then(|| GithubStatus::deserialize(value).ok().map(Box::new))
+            .flatten()
+    }
+}
+
+/// a topic's value as the agent writes it.
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub enum EventValue<'a> {
+    State(&'a Snapshot),
+    Github(&'a GithubStatus),
 }
 
 /// what the agent sends, as it writes it; borrowed, so a snapshot is not copied.
@@ -273,7 +349,7 @@ pub enum ServerMessage<'a> {
     Event {
         topic: &'static str,
         seq: u64,
-        value: &'a Snapshot,
+        value: EventValue<'a>,
     },
     Heartbeat {
         seq: u64,
@@ -414,7 +490,7 @@ mod tests {
     fn the_unsupported_protocol_error_lists_the_versions() {
         let error = ErrorBody::unsupported_protocol();
         assert_eq!(error.code, "unsupported_protocol");
-        assert_eq!(error.versions, [2]);
+        assert_eq!(*error.versions, [2]);
     }
 
     #[test]
@@ -428,6 +504,7 @@ mod tests {
             ErrorCode::TokenInvalid,
             ErrorCode::StoreFailed,
             ErrorCode::Refused,
+            ErrorCode::NotSubscribed,
         ]
         .into_iter()
         .map(ErrorCode::as_str)
@@ -442,7 +519,8 @@ mod tests {
                 "subscription_limit",
                 "token_invalid",
                 "store_failed",
-                "refused"
+                "refused",
+                "not_subscribed"
             ]
         );
     }

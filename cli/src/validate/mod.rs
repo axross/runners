@@ -40,8 +40,10 @@ pub use problem::{Key, KeyPath, Kind, Location, Problem, Segment};
 pub use reader::{Format, Reader};
 pub use settings::SCHEMA_VERSION;
 use toml_reader::TomlReader;
+pub(crate) use toml_reader::key_line as toml_key_line;
 pub(crate) use toml_reader::path_text as toml_path_text;
 pub(crate) use toml_schema::key_name as toml_key_name;
+pub(crate) use toml_schema::parse_path as parse_toml_path;
 
 use fields::{Errors, Field};
 
@@ -92,6 +94,13 @@ pub enum CheckoutRule<'a> {
     AboveAndAtSink(Option<&'a Path>),
 }
 
+impl Default for CheckoutRule<'_> {
+    /// no checkout known, so the rule is skipped.
+    fn default() -> Self {
+        Self::Above(None)
+    }
+}
+
 struct Context<'a> {
     profile: Profile,
     reader: &'a dyn Reader,
@@ -120,12 +129,18 @@ pub fn validate_with(bytes: &[u8], profile: Profile, rule: CheckoutRule<'_>) -> 
 /// the only problem, as `Failure::Unreadable` carries it.
 #[must_use]
 pub fn validate_toml(bytes: &[u8], profile: Profile, checkout: Option<&Path>) -> Validation {
+    validate_toml_with(bytes, profile, CheckoutRule::Above(checkout))
+}
+
+/// validates TOML bytes for a host under a [`CheckoutRule`], as [`validate_toml`] does.
+#[must_use]
+pub fn validate_toml_with(bytes: &[u8], profile: Profile, rule: CheckoutRule<'_>) -> Validation {
     match toml_document::read(bytes) {
         Ok(document) => validate_tree(
             &document.tree,
             profile,
             &TomlReader::new(profile, &document),
-            CheckoutRule::Above(checkout),
+            rule,
         ),
         Err(problem) => Validation {
             outcome: Err(Failure::Unreadable(problem)),

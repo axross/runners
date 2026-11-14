@@ -1,0 +1,28 @@
+# An example config.toml for an axmc host. The agent reads it from
+# ~/Library/Application Support/marshal/config.toml. Copy it there and
+# replace every value. Tokens are not kept here.
+schema_version = 1
+# added to the runners of a pool that lists no labels
+routing_label = "axmc"
+
+[budget]
+cpus = 8
+memory_gb = 16
+disk_gb = 120
+
+[[pool]]
+name = "example-linux-one"
+repository = "example-owner/example-repo-one"
+runners = 1
+labels = ["axmc", "example-label-one"]
+cpus = 4
+memory_gb = 8
+disk_gb = 40
+
+[[pool]]
+name = "example-linux-two"
+repository = "example-owner/example-repo-two"
+runners = 1
+cpus = 4
+memory_gb = 8
+disk_gb = 40

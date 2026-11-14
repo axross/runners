@@ -88,8 +88,8 @@ pub(super) fn read_limited(path: &Path, limit: usize) -> io::Result<(Vec<u8>, fs
 }
 
 /// a temporary file that is removed when it goes out of scope, unless it was renamed.
-struct Temporary {
-    path: PathBuf,
+pub(super) struct Temporary {
+    pub(super) path: PathBuf,
     renamed: bool,
 }
 
@@ -104,7 +104,7 @@ impl Drop for Temporary {
 /// creates a new temporary file next to `target`, private to the user on Unix. its
 /// name starts with [`CONFIG_FILE_NAME`] whatever `target` is called, so the clean-up
 /// recognises it.
-fn create_temporary(target: &Path) -> io::Result<(Temporary, File)> {
+pub(super) fn create_temporary(target: &Path) -> io::Result<(Temporary, File)> {
     let folder = target
         .parent()
         .filter(|folder| !folder.as_os_str().is_empty())

@@ -5,21 +5,27 @@
 use std::collections::BTreeMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::host_config::{FileStatus, Loaded, Migration, MigrationFailure, Origin};
 use crate::image::check::{Freshness, freshness_findings, status_fields};
 use crate::runtime::backend::ExportOutcome;
 use crate::runtime::board::{Board, PoolState, Row, SlotState};
 use crate::runtime::diagnostic::BUNDLE_QUOTA;
 use crate::runtime::retained::Retained;
-use crate::token_store::RepositoryKey;
+use crate::token_store::TokenKey;
 use crate::validate::Entry;
 
+use super::config::Change;
+use super::core::LEAVING;
 use super::snapshot::{
     AgentInfo, ConfigurationInfo, DiagnosticContainer, DiagnosticFinding, DiagnosticsInfo,
-    ImageInfo, ImageLine, ImageWarning, Leftover, PoolInfo, RepositoryInfo, RunnerInfo, Snapshot,
-    UpdateInfo,
+    ImageInfo, ImageLine, ImageWarning, InUseInfo, Leftover, MigrationInfo, PoolInfo,
+    RepositoryInfo, RunnerInfo, Snapshot, UpdateInfo,
 };
 use super::state::{Inner, Phase};
 use super::tokens::StoreTokens;
+
+/// why a pool an apply restarts is preparing.
+pub const RESTARTING: &str = "the edit of the configuration restarts it";
 
 type RowsByName<'a, T> = BTreeMap<&'a str, &'a Row<T>>;
 
@@ -91,6 +97,69 @@ fn warning(finding: &Freshness) -> ImageWarning {
     }
 }
 
+/// the configuration part of the snapshot: the path, the problems, and what the
+/// latest load found.
+fn configuration(path: &str, inner: &Inner) -> ConfigurationInfo {
+    let mut info = ConfigurationInfo {
+        path: path.to_string(),
+        problems: inner.problems().to_vec(),
+        ..ConfigurationInfo::default()
+    };
+    let Some(loaded) = &inner.loaded else {
+        return info;
+    };
+    info.status = file_status_word(loaded.file).to_string();
+    info.in_use = loaded.in_use.as_ref().map(|in_use| InUseInfo {
+        source: match in_use.origin {
+            Origin::File => "file",
+            Origin::LastValid => "last_valid",
+            Origin::Json => "json",
+        }
+        .to_string(),
+        read_at: millis(in_use.read_at),
+    });
+    info.migration = migration(loaded);
+    info.last_apply.clone_from(&inner.last_apply);
+    info
+}
+
+fn file_status_word(status: FileStatus) -> &'static str {
+    match status {
+        FileStatus::Valid => "valid",
+        FileStatus::Invalid => "invalid",
+        FileStatus::Missing => "missing",
+        FileStatus::Unreadable => "unreadable",
+    }
+}
+
+fn migration(loaded: &Loaded) -> Option<MigrationInfo> {
+    let (state, at, reason) = match &loaded.migration {
+        Migration::None => return None,
+        Migration::Migrated { at } => ("migrated", Some(millis(*at)), None),
+        Migration::Pending => ("pending", None, None),
+        Migration::Failed(failure) => ("failed", None, Some(migration_failure_text(failure))),
+    };
+    Some(MigrationInfo {
+        state: state.to_string(),
+        at,
+        reason,
+    })
+}
+
+/// why a migration failed, in the words the window shows.
+#[must_use]
+pub fn migration_failure_text(failure: &MigrationFailure) -> String {
+    match failure {
+        MigrationFailure::JsonRejected(_) => {
+            "config.json is not valid, so it was not migrated".to_string()
+        }
+        MigrationFailure::CheckFailed(why) => {
+            format!("config.toml was not written: the converted file failed its check: {why}")
+        }
+        MigrationFailure::WriteFailed(why) => format!("config.toml was not written: {why}"),
+    }
+}
+
 impl View<'_> {
     /// the snapshot, not yet fitted to the message limit.
     #[must_use]
@@ -115,10 +184,7 @@ impl View<'_> {
                     pid: std::process::id(),
                 }),
             },
-            configuration: ConfigurationInfo {
-                path: self.config_path.to_string(),
-                problems: inner.problems.clone(),
-            },
+            configuration: configuration(self.config_path, inner),
             leftovers: self
                 .left
                 .iter()
@@ -130,7 +196,7 @@ impl View<'_> {
             images: self.image().into_iter().collect(),
             ..Snapshot::default()
         };
-        if let Some(plan) = &inner.plan {
+        if let Some(plan) = inner.plan() {
             snapshot.repositories = self.repositories(&plan.entries);
             if inner.restart_due.is_none() {
                 let pool_rows = self.board.pool_rows();
@@ -141,6 +207,23 @@ impl View<'_> {
                     .iter()
                     .map(|entry| self.pool(entry, &pools, &slots))
                     .collect();
+                // a pool an apply removes is listed until its slots have stopped, the
+                // apply's end included; one the file names again is listed as that
+                let removed = inner
+                    .leaving
+                    .iter()
+                    .filter(|entry| !plan.entries.iter().any(|named| named.name == entry.name));
+                for entry in removed {
+                    let mut pool = self.pool(entry, &pools, &slots);
+                    pool.runners
+                        .retain(|runner| runner.reason.as_deref() == Some(LEAVING));
+                    if !pool.runners.is_empty() {
+                        pool.state = "stopped".to_string();
+                        pool.reason = Some(LEAVING.to_string());
+                        pool.slots = 0;
+                        snapshot.pools.push(pool);
+                    }
+                }
             }
         }
         snapshot.runners_up = snapshot.pools.iter().map(|pool| pool.runners_up).sum();
@@ -149,10 +232,10 @@ impl View<'_> {
     }
 
     fn repositories(&self, entries: &[Entry]) -> Vec<RepositoryInfo> {
-        let mut by_key: BTreeMap<RepositoryKey, Vec<String>> = BTreeMap::new();
+        let mut by_key: BTreeMap<TokenKey, Vec<String>> = BTreeMap::new();
         for entry in entries {
             by_key
-                .entry(RepositoryKey::of(&entry.owner, &entry.repository))
+                .entry(TokenKey::of(&entry.owner, &entry.repository))
                 .or_default()
                 .push(entry.name.clone());
         }
@@ -172,15 +255,34 @@ impl View<'_> {
         pools: &RowsByName<'_, PoolState>,
         slots: &RowsByName<'_, SlotState>,
     ) -> PoolInfo {
-        let key = RepositoryKey::of(&entry.owner, &entry.repository);
+        let key = TokenKey::of(&entry.owner, &entry.repository);
+        let restarting = self.inner.applying.as_ref().is_some_and(|applying| {
+            applying
+                .effects
+                .iter()
+                .any(|effect| effect.pool == entry.name && effect.change == Change::Restarted)
+        });
         let (state, reason) = match pools.get(entry.name.as_str()).map(|row| &row.state) {
             Some(PoolState::WaitingForEngine(_)) => ("waiting_for_docker", None),
+            Some(PoolState::Preparing | PoolState::Running) if restarting => {
+                ("preparing", Some(RESTARTING.to_string()))
+            }
             Some(PoolState::Preparing) => ("preparing", None),
             Some(PoolState::Running) => ("running", None),
             Some(PoolState::Skipped(reason)) => ("skipped", Some(reason.clone())),
             None => ("stopped", self.inner.skips.get(&entry.name).cloned()),
         };
+        // a slot an apply stops is listed until its stop sequence ends, whichever of
+        // the slots above the pool's count are still on the board
+        let prefix = format!("{} slot ", entry.name);
+        let mut above: Vec<u32> = slots
+            .keys()
+            .filter_map(|label| label.strip_prefix(prefix.as_str())?.parse().ok())
+            .filter(|number| *number > entry.slots)
+            .collect();
+        above.sort_unstable();
         let runners: Vec<RunnerInfo> = (1..=entry.slots)
+            .chain(above)
             .map(|number| {
                 let label = format!("{} slot {number}", entry.name);
                 match slots.get(label.as_str()) {
@@ -193,6 +295,7 @@ impl View<'_> {
                             SlotState::Drained => {
                                 ("stopped", None, Some("stopped for an update".to_string()))
                             }
+                            SlotState::Leaving(why) => ("stopped", None, Some(why.clone())),
                         };
                         RunnerInfo {
                             slot: number,
@@ -336,19 +439,28 @@ mod tests {
 
     fn runners(board: &Board) -> Vec<RunnerInfo> {
         let mut inner = Inner::new(Phase::Running);
-        inner.plan = Some(Plan {
-            profile: Profile::Axmc,
-            image_name: None,
-            entries: vec![entry()],
-            budget: None,
-            settings: None,
+        inner.loaded = Some(Loaded {
+            file: FileStatus::Valid,
+            in_use: Some(crate::host_config::InUse {
+                origin: Origin::File,
+                plan: Plan {
+                    profile: Profile::Axmc,
+                    image_name: None,
+                    entries: vec![entry()],
+                    budget: None,
+                    settings: None,
+                },
+                read_at: SystemTime::now(),
+            }),
+            migration: Migration::None,
+            problems: Vec::new(),
         });
         let retained = Retained::default();
         let tokens = StoreTokens::new(None);
         let snapshot = View {
             version: "test",
             inner: &inner,
-            config_path: "config.json",
+            config_path: "config.toml",
             board,
             retained: &retained,
             tokens: &tokens,
