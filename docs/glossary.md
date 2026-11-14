@@ -185,7 +185,7 @@ whatever a job runs in. The core keeps the configuration, registration, backoff 
 the stop sequence; the runtime behind the seam waits for its engine, checks its
 image, prepares and releases a job's host, runs the job, and exports diagnostics. A
 pool's operating system, on the **Host Profile**'s host, selects the runtime: a
-Docker Desktop container on axpc, a **Job VM** for a Linux pool on axmc. See
+Docker Desktop container on axpc, a **Job VM** for a pool on axmc. See
 [operations/cli.md](./operations/cli.md#runtime-seam).
 
 **Golden VM** - the Tart Ubuntu VM that `build --profile axmc` makes on the macOS
@@ -195,11 +195,23 @@ Contract Version**, the runner version and the build time, so they are read with
 booting it. Only `build` deletes it. See
 [operations/macos-runner-host.md](./operations/macos-runner-host.md#the-golden-vm-contract).
 
-**Job VM** - the VM that runs one job of an axmc Linux **Execution Pool**: a clone
-of the **Golden VM**, named `marshal-job-<pool>-<slot>-<time>`, booted on
+**Job VM** - the VM that runs one job of an axmc **Execution Pool**: a clone of the
+**Golden VM** for a Linux pool, or of the **Golden macOS VM** for a macOS one, named `marshal-job-<pool>-<slot>-<time>`, booted on
 **Softnet** with no shared directory, clipboard, audio, USB accessories or Rosetta,
 and deleted when its job ends. A **Slot**'s Job VM is booted and idle while its
 runner waits for a job. See [conventions/security.md](./conventions/security.md#a-linux-job-on-axmc-runs-in-a-per-job-vm).
+
+**Golden macOS VM** - the Tart macOS VM that `build --profile axmc` makes from the
+digest-pinned Cirrus Labs base when a macOS pool is configured, and every macOS
+**Job VM** is cloned from. It holds the runner and the launcher, with no container,
+and its name, `marshal-golden-macos-g<golden VM version>-r<runner version>-<time>`,
+records what it holds. See
+[operations/cli.md](./operations/cli.md#the-golden-macos-vm-build).
+
+**macOS VM Limit** - the two macOS VMs that Apple's licence allows at once on the
+Mac. A macOS **Slot** counts the macOS VMs before it clones one and waits while two
+count; Linux VMs do not count. See
+[operations/cli.md](./operations/cli.md#the-two-vm-count).
 
 **VM-Local Docker Socket** - the Docker socket, `/var/run/docker.sock`, of the Docker
 Engine inside a **Job VM**, which the VM runtime mounts into that VM's runner

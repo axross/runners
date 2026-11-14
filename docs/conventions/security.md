@@ -1691,6 +1691,51 @@ mounts a host's socket, or gives a VM to more than one job ends it and needs a n
 decision. [macOS Runner Host](../operations/macos-runner-host.md) records that the
 mount and the group match have not run on a Mac.
 
+## A macOS Job on axmc Runs in a Per-Job macOS VM
+
+An `os: "macos"` pool's job runs in its own Tart macOS VM, cloned from the golden
+macOS VM for that job and deleted after it. The constraints of
+[A Linux Job on axmc Runs in a Per-Job VM](#a-linux-job-on-axmc-runs-in-a-per-job-vm)
+hold for it: the clone and deletion, the shim, the settings that share and attach
+nothing, `TART_NO_AUTO_PRUNE`, the bounded guest output, and the fixed vCPUs, memory
+and disk. [CLI](../operations/cli.md#macos-vm-pools) owns the runtime and
+[macOS Runner Host](../operations/macos-runner-host.md#the-golden-macos-vm-and-macos-pools)
+the procedure. The differences are these:
+
+- **The guest is open inside.** SIP and Gatekeeper are off in the base, and a job
+  has root through `sudo`. This is accepted, because the VM serves one job and is
+  deleted afterwards. The job can read its own JIT configuration inside the VM, as
+  on Linux.
+- **The JIT configuration** reaches the launcher only on the guest agent's standard
+  input, and the launcher passes it to the runner in `ACTIONS_RUNNER_INPUT_JITCONFIG`.
+  It is never an argument of any call.
+- **Remote access is off.** The golden macOS VM's build turns off Remote Login and
+  Screen Sharing, so the base's known `admin` password opens no network login.
+- **Guest OS fixes arrive only with a new base pin.** The build turns off the
+  automatic download and installation of macOS updates and leaves the automatic
+  check on, so a job never meets a half-installed update; the base-age warning from
+  30 days prompts a bump.
+- **The base is a third-party image** with preinstalled tools, trusted by its pinned
+  digest. A base bump reviews what Cirrus Labs changed.
+- **The runner archive is checked.** The build installs
+  `actions-runner-osx-arm64-<version>.tar.gz` only when its SHA-256 equals the runner
+  record's. A runner that updates itself at job start downloads its new version from
+  GitHub without that check, which the decided self-update accepts.
+  `MARSHAL_TEST_RUNNER`, which declares another runner and digest, works only in a
+  debug build.
+- **At most two macOS VMs.** Apple's macOS licence, §2B(iii) in both the macOS
+  Tahoe 26 and the macOS 27 licence, allows "up to two (2) additional copies or
+  instances" in virtual machines on a Mac the licensee owns or controls, for
+  software development, testing during development, macOS Server, or personal
+  non-commercial use, and excludes service-bureau, time-sharing and similar
+  services. The runtime counts the macOS VMs before every clone, as
+  [CLI](../operations/cli.md#the-two-vm-count) states, over-counting when it cannot
+  read a VM's OS.
+- **CPU placement** is the VM's vCPUs, with no container inside.
+- **Untested.** Softnet's filtering and the isolation settings are not tested for
+  macOS job VMs, as for Linux ones. M1's condition carries over: macOS pools take
+  jobs only while no public repository and no fork pull request reaches axmc.
+
 ## Tart, Softnet, and the Golden VM Are Pinned
 
 `marshal` neither bundles, installs nor repairs Tart or Softnet: the maintainer
@@ -1725,6 +1770,9 @@ what a reviewed change changes.
 - The runner image's arm64 build and smoke test in CI run on `ubuntu-24.04-arm`, a
   GitHub-hosted runner, tag the image on the runner and never push it, and their job
   holds only `contents: read`.
+- The macOS base, `ghcr.io/cirruslabs/macos-tahoe-base`, MUST be pinned by digest in
+  `MACOS_BASE`, with its macOS version and publication day, and its retired digests
+  follow the same rule as the Ubuntu base's.
 - The VM runtime adds no crate to the CLI.
 
 ## Nothing Identifying or Secret Is Committed

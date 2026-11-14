@@ -264,7 +264,20 @@ Codex review uses its native priority label.
   the retired list, Docker Engine, and the runner image's Docker client, come from
   Docker's apt repository at pinned versions after the signing key's fingerprint is
   checked, and the tested Tart and Softnet versions agree between the CLI and the
-  host document.
+  host document. The macOS base is pinned by digest in `MACOS_BASE`, and a bump
+  records its macOS version and publication day with it.
+- **The golden macOS VM stays closed.** A change to its provisioning
+  (`cli/src/golden/macos.rs`, `cli/src/golden/scripts/macos/`, `build::golden_macos`)
+  keeps Remote Login and Screen Sharing off, keeps the automatic download and
+  installation of macOS updates off, checks the runner archive's SHA-256 against the
+  runner record before it unpacks anything, keeps the JIT configuration on the
+  launcher's standard input and off every command line, and keeps
+  `MARSHAL_TEST_RUNNER` out of release builds. A change that weakens any of these is
+  a finding.
+- **The macOS VM limit holds.** A macOS slot counts under `PlaceLock` before every
+  clone, and `build` before it creates a macOS build VM, and a count that is
+  unreadable counts the VM. A clone outside the lock, a path that clones without a
+  count, and a change to the counting rule that under-counts are findings.
 
 The Dockerfile lens's rule against `apt-get upgrade` is about the runner image. The
 golden VM's provisioning upgrades the base's Ubuntu packages on purpose, so a

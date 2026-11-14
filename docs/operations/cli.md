@@ -129,9 +129,12 @@ unusable.
 When any Linux pool is configured, the disk total also counts a fixed 40 GB for the
 Linux golden VM and Tart's image cache, and the disk error says so:
 `budget: pools total N GB of disk (the sum of slots times diskGb, plus 40 GB for the golden VM and Tart's image cache), above the budget of M GB`.
-The summary's disk line includes the reserve and ends `, including a 40 GB reserve`.
-Without a Linux pool the total and the message are the sum of slots times `diskGb`
-alone.
+When any macOS pool is configured, the disk total also counts a fixed 100 GB for the
+golden macOS VM and its cached base, and the message adds
+`, plus 100 GB for the golden macOS VM and its cached base` after the Linux clause,
+or in its place without a Linux pool. The summary's disk line includes both
+reserves and ends `, including a <n> GB reserve`. Without a Linux or macOS pool the
+total and the message are the sum of slots times `diskGb` alone.
 
 ### Migrations
 
@@ -139,13 +142,14 @@ A change to what `axmc` accepts is recorded here with each old and new rule, its
 message, and the fixture that shows it. A configuration that validated before the
 change may be rejected now; the last column says how to change it.
 
-| Rule                          | Old                                                                                          | New                                                                                                                                                               | Fixture                                                                                                                                                                                                                                                              | To migrate                                                              |
-| ----------------------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `cpus` of a pool              | A number above 0 and at most 64, fractions allowed                                           | An integer from 1 to 64: `repositories[i].cpus: must be an integer from 1 to 64`                                                                                  | [`axmc-fractional-cpus.json`](../../tests/host-configuration/rust/rejected/axmc-fractional-cpus.json), accepted before and rejected now                                                                                                                              | Round each fractional `cpus` to a whole vCPU count, at least 1          |
-| `budget.cpus`                 | A number above 0 and at most 64, fractions allowed                                           | An integer from 1 to 64: `budget.cpus: must be an integer from 1 to 64`                                                                                           | [`axmc-budget-members.json`](../../tests/host-configuration/rust/rejected/axmc-budget-members.json), message changed; `axmc-fractional-cpus.json`                                                                                                                    | Round `budget.cpus` to a whole number that covers the pools             |
-| `diskGb` of a Linux pool      | Any integer from 1 to 16384                                                                  | At least 20: `repositories[i].diskGb: must be at least 20 on a Linux pool, the golden VM's disk size`                                                             | [`axmc-linux-disk-too-small.json`](../../tests/host-configuration/rust/rejected/axmc-linux-disk-too-small.json), accepted before and rejected now, with a macOS pool at the same `diskGb` left unflagged                                                             | Raise a Linux pool's `diskGb` to 20 or more; a macOS pool is unchanged  |
-| `imageName` of axmc           | Optional and validated as on axpc, with its use undecided                                    | Optional and validated as before; an absent name is `actions-runner:local`, and the name is the image that `build` makes inside the golden VM and every pool runs | [`axmc-image-name.json`](../../tests/host-configuration/rust/accepted/axmc-image-name.json), accepted before and now; nothing is accepted or rejected differently                                                                                                    | None; a configuration that validated still validates                    |
-| Disk budget with a Linux pool | `budget: pools total N GB of disk (the sum of slots times diskGb), above the budget of M GB` | `budget: pools total N GB of disk (the sum of slots times diskGb, plus 40 GB for the golden VM and Tart's image cache), above the budget of M GB`                 | [`axmc-disk-over-budget.json`](../../tests/host-configuration/rust/rejected/axmc-disk-over-budget.json), message and total; [`axmc-budget-at-limit.json`](../../tests/host-configuration/rust/accepted/axmc-budget-at-limit.json), whose budget rose from 150 to 190 | Raise `budget.diskGb` by 40 GB, or lower the pools' `diskGb` or `slots` |
+| Rule                          | Old                                                                                          | New                                                                                                                                                               | Fixture                                                                                                                                                                                                                                                                            | To migrate                                                               |
+| ----------------------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `cpus` of a pool              | A number above 0 and at most 64, fractions allowed                                           | An integer from 1 to 64: `repositories[i].cpus: must be an integer from 1 to 64`                                                                                  | [`axmc-fractional-cpus.json`](../../tests/host-configuration/rust/rejected/axmc-fractional-cpus.json), accepted before and rejected now                                                                                                                                            | Round each fractional `cpus` to a whole vCPU count, at least 1           |
+| `budget.cpus`                 | A number above 0 and at most 64, fractions allowed                                           | An integer from 1 to 64: `budget.cpus: must be an integer from 1 to 64`                                                                                           | [`axmc-budget-members.json`](../../tests/host-configuration/rust/rejected/axmc-budget-members.json), message changed; `axmc-fractional-cpus.json`                                                                                                                                  | Round `budget.cpus` to a whole number that covers the pools              |
+| `diskGb` of a Linux pool      | Any integer from 1 to 16384                                                                  | At least 20: `repositories[i].diskGb: must be at least 20 on a Linux pool, the golden VM's disk size`                                                             | [`axmc-linux-disk-too-small.json`](../../tests/host-configuration/rust/rejected/axmc-linux-disk-too-small.json), accepted before and rejected now, with a macOS pool at the same `diskGb` left unflagged                                                                           | Raise a Linux pool's `diskGb` to 20 or more; a macOS pool is unchanged   |
+| `imageName` of axmc           | Optional and validated as on axpc, with its use undecided                                    | Optional and validated as before; an absent name is `actions-runner:local`, and the name is the image that `build` makes inside the golden VM and every pool runs | [`axmc-image-name.json`](../../tests/host-configuration/rust/accepted/axmc-image-name.json), accepted before and now; nothing is accepted or rejected differently                                                                                                                  | None; a configuration that validated still validates                     |
+| Disk budget with a Linux pool | `budget: pools total N GB of disk (the sum of slots times diskGb), above the budget of M GB` | `budget: pools total N GB of disk (the sum of slots times diskGb, plus 40 GB for the golden VM and Tart's image cache), above the budget of M GB`                 | [`axmc-disk-over-budget.json`](../../tests/host-configuration/rust/rejected/axmc-disk-over-budget.json), message and total; [`axmc-budget-at-limit.json`](../../tests/host-configuration/rust/accepted/axmc-budget-at-limit.json), whose budget rose from 150 to 190               | Raise `budget.diskGb` by 40 GB, or lower the pools' `diskGb` or `slots`  |
+| Disk budget with a macOS pool | The sum of slots times `diskGb`, with the Linux reserve when a Linux pool is configured      | The same, plus 100 GB: `…, plus 100 GB for the golden macOS VM and its cached base), above the budget of M GB`                                                    | [`axmc-budget-errors-come-last.json`](../../tests/host-configuration/rust/rejected/axmc-budget-errors-come-last.json), message and total; [`axmc-budget-at-limit.json`](../../tests/host-configuration/rust/accepted/axmc-budget-at-limit.json), whose budget rose from 190 to 290 | Raise `budget.diskGb` by 100 GB, or lower the pools' `diskGb` or `slots` |
 
 ### Labels
 
@@ -864,7 +868,7 @@ selection is `Runtime::of_pool` in `runtime::select`:
 | ---- | ------------------ | ------------------------------------------------------- |
 | axpc | every pool (Linux) | The Docker Desktop container runtime, the backend above |
 | axmc | `os: "linux"`      | The VM runtime, a Tart VM per job, run by `start`       |
-| axmc | `os: "macos"`      | None: `start` skips the pool                            |
+| axmc | `os: "macos"`      | The VM runtime, a Tart macOS VM per job, run by `start` |
 
 The backend above is the Docker Desktop runtime. The runtime core takes nothing from
 the Docker modules: it drives the containers, and the per-job host steps under
@@ -2422,7 +2426,7 @@ a reader ignores one it does not know.
 | `pools[].runners`              | `slot`, `state`, `workload`, `workload_kind`, `reason`, `since`                                                            |
 | `pools[].diagnostics`          | `limit`, `written`, `in_sink`, `containers`, `findings`, `manual_recovery`                                                 |
 | `leftovers`                    | What a stop could not remove, `kind` (today `container`) and `name`                                                        |
-| `images`                       | Each image the agent tracks (today the runner image): `name`, `lines`, `warnings`                                          |
+| `images`                       | Each image the agent tracks (the runner image, and on axmc the golden macOS VM): `name`, `lines`, `warnings`               |
 | `omitted`                      | How many `runners`, `problems`, `pools`, `repositories`, `leftovers` and `images` it left out                              |
 
 When the runtime core fails, the agent starts it again after 10, 30 and 60 s for the
@@ -2448,7 +2452,8 @@ that prerequisite's reason, scrubbed the same way and cut to 500 characters; it
 occurs only on axmc's Tart backend, which the agent, running axpc only today, does
 not run. An image warning is data, not text: a `code` (`not_built_by_marshal`,
 `packages_old`, `image_old`, `runner_old` or `runner_may_be_newer`) with `days` or
-`version` where they apply, so the app words it. `leftovers` lists every container
+`version` where they apply, so the app words it; the golden macOS VM's codes are
+under [macOS Status](#macos-status). `leftovers` lists every container
 name of a failed removal call, which can name more containers than the one that
 failed. They stay listed until a start prepares the pools, which removes what is
 stale, so a `start_all` that stops for a missing image or an invalid configuration
@@ -2811,11 +2816,10 @@ when the image is missing or its labels are missing or malformed.
 ## macOS VM Pools
 
 An axmc pool with `os: "macos"` runs its jobs in macOS virtual machines. This
-section states what `validate` accepts for such a pool, and the runner and base
-records that the golden macOS VM will use, the names of the macOS VMs, and the
-count of macOS VMs against the host's limit. The macOS VM runtime is not
-implemented yet, so `start` skips macOS pools and `build` makes only the Linux
-golden VM, as Runtime Seam says.
+section states what `validate` accepts for such a pool, the runner and base records
+the golden macOS VM is built from, the names of the macOS VMs, the count of macOS
+VMs against the host's limit, how `build` makes the golden macOS VM, how a job runs
+in a macOS VM, and what `status` and the agent's snapshot show for them.
 The pool rules apply to a pool with `os: "macos"` under the axmc profile only;
 axpc and axmc Linux pools accept what they accepted before.
 
@@ -2862,8 +2866,8 @@ still apply as for any pool.
 - **The budgets use the resolved values.** The CPU, memory, and disk sums include
   the defaults, so a macOS pool without `cpus` uses 4 CPUs of the budget.
 
-The disk reserve that the disk budget will count for the golden macOS VM is not
-part of this rule set yet.
+The disk budget counts 100 GB for the golden macOS VM and its cached base when a
+macOS pool is configured, as [Profiles](#profiles) states.
 
 ### Migration
 
@@ -2877,16 +2881,16 @@ so it stays too.
 Each existing fixture whose macOS pool had `"diskGb": 40` now has 50, because 40
 is below the macOS minimum and each fixture was written to test something else:
 
-| Fixture                                                        | Change                                                                                                                                                      |
-| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `accepted/axmc-os-labels.json`                                 | The macOS pool's `diskGb` 40 to 50; it stays accepted, and its labels are what it pins                                                                      |
-| `accepted/axmc-shared-label-different-os.json`                 | The same; it stays accepted with `macOS VMs: 1 of 2`                                                                                                        |
-| `rejected/axmc-label-linux-on-macos.json`                      | The same, so the label error stays the only error                                                                                                           |
-| `rejected/axmc-label-own-platform.json`                        | The same, so the two label errors stay the only errors                                                                                                      |
-| `rejected/axmc-label-x64.json`                                 | The same, so the label error stays the only error                                                                                                           |
-| `rejected/axmc-different-os-shared-label-different-token.json` | The same, so the token error stays the only error                                                                                                           |
-| `rejected/axmc-three-macos-vms.json`                           | Both pools' `diskGb` 40 to 50, and `budget.cpus` 8 to 12, because three default macOS slots of 4 CPUs total 12; the VM-limit error stays the only error     |
-| `rejected/axmc-budget-errors-come-last.json`                   | The first pool's `diskGb` 40 to 50 and `budget.cpus` 8 to 12, for the same reason; the disk total in the last error is 1100 GB (2 × 50 + 1000), not 1080 GB |
+| Fixture                                                        | Change                                                                                                                                                                    |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `accepted/axmc-os-labels.json`                                 | The macOS pool's `diskGb` 40 to 50; it stays accepted, and its labels are what it pins                                                                                    |
+| `accepted/axmc-shared-label-different-os.json`                 | The same; it stays accepted with `macOS VMs: 1 of 2`                                                                                                                      |
+| `rejected/axmc-label-linux-on-macos.json`                      | The same, so the label error stays the only error                                                                                                                         |
+| `rejected/axmc-label-own-platform.json`                        | The same, so the two label errors stay the only errors                                                                                                                    |
+| `rejected/axmc-label-x64.json`                                 | The same, so the label error stays the only error                                                                                                                         |
+| `rejected/axmc-different-os-shared-label-different-token.json` | The same, so the token error stays the only error                                                                                                                         |
+| `rejected/axmc-three-macos-vms.json`                           | Both pools' `diskGb` 40 to 50, and `budget.cpus` 8 to 12, because three default macOS slots of 4 CPUs total 12; the VM-limit error stays the only error                   |
+| `rejected/axmc-budget-errors-come-last.json`                   | The first pool's `diskGb` 40 to 50 and `budget.cpus` 8 to 12, for the same reason; the disk total in the last error is 1200 GB (2 × 50 + 1000 + the 100 GB macOS reserve) |
 
 Two fixtures change because M1's rules and these meet, after both landed:
 
@@ -2894,6 +2898,24 @@ Two fixtures change because M1's rules and these meet, after both landed:
 | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `accepted/axmc-macos-values-replace-defaults.json` | `cpus` 2.5 to 3, because every axmc pool now has whole vCPUs; it stays accepted, with 6 of the budget's 8 CPUs                                                           |
 | `rejected/axmc-linux-disk-too-small.json`          | M1's fixture: the macOS pool's `diskGb` 19 to 50, because 19 is below the macOS minimum; the Linux pool's error stays the only error, and the macOS pool still gets none |
+
+The 100 GB macOS reserve raises the disk total of every fixture with a macOS pool.
+Where the fixture tests something else, its `budget.diskGb` rose by 100 so its
+outcome stays; where its expected text quotes the disk line or message, the text
+changed:
+
+| Fixture                                                                                              | Change                                                                                                    |
+| ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `accepted/axmc-budget-at-limit.json`                                                                 | `budget.diskGb` 190 to 290, so it stays exactly at the limit: `290 of 290 GB, including a 140 GB reserve` |
+| `accepted/axmc-macos-values-replace-defaults.json`                                                   | `budget.diskGb` 200 to 300; it stays accepted with `260 of 300 GB`                                        |
+| `accepted/axmc-os-labels.json`                                                                       | `budget.diskGb` 200 to 300; it stays accepted                                                             |
+| `accepted/axmc-shared-label-different-os.json`                                                       | `budget.diskGb` 200 to 300; it stays accepted                                                             |
+| `rejected/axmc-macos-three-default-slots.json`                                                       | `budget.diskGb` 200 to 300, so the VM-limit error stays the only budget error                             |
+| `accepted/axmc-macos-defaults.json`                                                                  | Its expected disk line is `150 of 200 GB, including a 100 GB reserve`                                     |
+| `accepted/axmc-macos-two-default-slots.json`                                                         | Its expected disk line is `200 of 200 GB, including a 100 GB reserve`, still within the budget            |
+| `rejected/axmc-budget-errors-come-last.json`                                                         | Its expected disk message names 1200 GB and the macOS reserve                                             |
+| TOML `accepted/macos-full.toml`                                                                      | `budget.disk_gb` 180 to 280; it stays accepted                                                            |
+| TOML `rejected/macos-budget-totals.toml` and `rejected/macos-clashes-come-before-budget-totals.toml` | Their expected disk messages name the macOS reserve and a total 100 GB higher                             |
 
 These fixtures pin the new rules, and each default, minimum, and message has one:
 
@@ -2920,8 +2942,8 @@ CLI has declared, the release date and the SHA-256 of
 `actions-runner-osx-arm64-<version>.tar.gz`, both taken from the
 [actions/runner releases](https://github.com/actions/runner/releases) page. The
 Linux image's freshness check reads its release date from the image's label, and
-a unit test requires the label to equal the record's date. The macOS golden VM's
-build will take the digest from the record, and its `status` the date.
+a unit test requires the label to equal the record's date. The golden macOS VM's
+build takes the digest from the record, and `status` the date.
 `DECLARED_RUNNER_VERSION` is the version that both install. One runner bump moves
 the Linux image and the macOS golden VM together, and it stays red until its
 entry is complete; [Development
@@ -2953,13 +2975,13 @@ verification of a golden macOS VM whose runner is behind. `declared_runner` in
   to install a runner the record does not hold. `tests/base_address.rs` shows both
   halves, and CI runs it again in the release profile.
 
-No command reads the variable yet, because the macOS golden VM's build does not
-exist; `declared_runner` takes the value from its caller, and the tests pin it.
+`build` reads the variable for the golden macOS VM's build; `declared_runner`
+takes the value from its caller, and the tests pin it.
 
 ### The Base Record
 
 `MACOS_BASE` in `cli/src/image/macos_base.rs` holds the macOS base the golden
-macOS VM will be built from:
+macOS VM is built from:
 
 | Field           | Holds                                                                                            |
 | --------------- | ------------------------------------------------------------------------------------------------ |
@@ -2977,8 +2999,8 @@ base ships macOS 26.6.2 (25G83), as the first Mac check on
 whole days since `published`. Under 30 days there is none, from 30 days the first
 and from 60 days the second replaces it, and both thresholds are inclusive, as the
 runner's are. Each tells the maintainer to bump the base pin and rebuild the
-golden macOS VM, because rebuilding alone does not update macOS. Nothing calls it
-yet: `status` shows no base age until the golden macOS VM does.
+golden macOS VM, because rebuilding alone does not update macOS. `status` and the
+log show them under [macOS Status](#macos-status).
 
 ### VM Names
 
@@ -3012,8 +3034,8 @@ it, and case matters.
   `marshal-job-ci-2-<stamp>` is slot 2 of pool `ci`. Pool names are unique per
   host, so a pool name identifies the pool whatever its OS.
 
-No command writes or reads these names yet: the macOS runtime and `build` do not
-exist. `cli/tests/macos_names.rs` pins the forms, the strict reading, the golden VM
+`build` writes the golden and build VM names, and the macOS runtime reads them.
+`cli/tests/macos_names.rs` pins the forms, the strict reading, the golden VM
 selection, and that neither OS's forms or selection match the other's.
 
 ### The Two-VM Count
@@ -3058,9 +3080,106 @@ failed call and an answer the reader does not know.
 shared by the macOS slots. A slot gives its `hold` the whole "count, then clone"
 step, so the lock stays held until the clone is listed and cannot be released
 between the two. The second slot then counts after the first's VM exists, and sees
-two. Neither the count nor the lock is wired into `start`, `build`, or `status`
-yet; that waits for the macOS runtime. `cli/tests/macos_vm_count.rs` runs every
-row of the table and the race of slots over a fake Tart.
+two. A macOS slot counts before each clone, and `build` before it creates the macOS
+build VM. `cli/tests/macos_vm_count.rs` runs every row of the table and the race of
+slots over a fake Tart.
+
+### The Golden macOS VM Build
+
+`build --profile axmc` builds the Linux golden VM when a Linux pool is configured,
+as [Tart Backend](#tart-backend) describes, and then the golden macOS VM when a
+macOS pool is. Each golden VM is replaced only when its own build succeeds; a
+failure of either is reported with its message and makes `build` exit 1, and a
+golden VM that was built stays. `build::golden_macos` runs the macOS build:
+
+1. It checks Tart and Softnet as `start` does, and refuses a Mac whose macOS is
+   older than the base's, with
+   `the pinned macOS base is macOS <v>, newer than this Mac's macOS <h>; update the Mac first`,
+   and a full limit, with
+   `<n> macOS VMs already count against the limit of 2 (<names>), so no macOS build VM was created; stop or delete one of them and build again`.
+2. It deletes any leftover macOS build VM; one it cannot delete is a warning.
+3. It pulls the base by its pinned digest and clones it to a build VM.
+4. It boots the build VM as a job VM boots, with 180 s for the guest agent's first
+   answer.
+5. Through the guest agent, it removes the base's runner; downloads
+   `actions-runner-osx-arm64-<version>.tar.gz` for the declared runner and stops
+   unless its SHA-256 equals the runner record's; unpacks it to
+   `/Users/admin/actions-runner` and installs the launcher; turns off Remote Login
+   and Screen Sharing; and turns off the automatic download and installation of
+   macOS updates, leaving the automatic check on. The scripts are in
+   `cli/src/golden/scripts/macos/`.
+6. It flushes the disk, shuts the VM down and renames it to the golden name.
+7. It deletes every other golden macOS VM, and removes from Tart's cache only the
+   retired base digests; a failure there is a warning, and the next build tries
+   again.
+
+Any failure, and a stop at any step, deletes the build VM within the stop sequence
+and leaves the previous golden macOS VM in place. The disk keeps the base's layout,
+recovery partition included: the first Mac check on
+[#80](https://github.com/axross/runners/issues/80) found that the guest agent grows
+the disk at boot with it kept. `cli/tests/golden_macos_build.rs` runs the build over
+the fake Tart.
+
+### The macOS Job VM
+
+A macOS slot runs one job per VM, on the Tart backend, with M1's slot cycle and
+these steps in place of the Linux ones:
+
+1. **A place under the limit.** Under `PlaceLock`, the slot counts the macOS VMs
+   and, when a place is free, clones the newest golden macOS VM to the slot's job VM
+   name. When two already count, it clones nothing and registers nothing, logs
+   `<pool> slot <n>: waiting for the macOS VM limit; <n> count (<names>).` once,
+   and counts again every 5 s. A missing golden macOS VM, or one of another golden
+   VM version, fails only that slot's attempt, which backs off.
+2. **Boot and probe.** It sets the pool's vCPUs, memory and disk, boots the VM
+   under its shim, and waits at most 180 s for the guest agent; Linux keeps 120 s.
+   It then probes the guest every 3 s for at most 90 s, until the disk has grown:
+   the launcher must be present, the runner must report the version the golden
+   VM's name records, and `diskutil` must report a disk within 1 GB of the pool's
+   `diskGb`, with less than 1 GB outside any partition. A failed probe ends the
+   attempt before registration.
+3. **The runner.** The JIT configuration goes to the launcher on the guest agent's
+   standard input, never on a command line. The launcher runs the runner's own
+   `run.sh` as `admin` with the configuration in `ACTIONS_RUNNER_INPUT_JITCONFIG`.
+   There is no container, so CPU placement is the VM's vCPUs, and a stop signals
+   `Runner.Listener` with `sudo -n pkill -INT`, then `-KILL`.
+4. **Deletion.** When the job ends the VM is deleted, as on Linux. A VM the slot
+   fails to delete is deleted again every 5 s before the slot's next VM, and it
+   counts toward the limit meanwhile.
+
+When `tart run` ends with Tart's VM-limit error, `The number of VMs exceeds the
+system limit`, the slot deletes the clone, backs off, and logs
+`macOS refused another macOS VM: <error>; if no other macOS VM is running, restart the Mac to release the place`.
+Any other boot failure stays a generic boot failure. `start`, a resume and a
+`restart` refuse a missing golden macOS VM, or one of another golden VM version,
+before any VM boots, with ``no golden macOS VM was found; `marshal build` makes it``
+or a message naming both versions.
+
+### macOS Status
+
+When a macOS pool is configured, `status` adds, after the image lines:
+
+- `golden-macos-vm: <name>`, or `missing`;
+- `golden-macos-vm-version: <n>`, or `mismatch (golden VM version <g>, CLI <n>)`;
+- `golden-macos-runner: <version>, released <d> days ago`, or
+  `<version>, released unknown` for a version the runner record does not hold;
+- `macos-base-published: <date>, <d> days ago`;
+- one `warning: <text>` line each for a runner released 7 or more days ago, which
+  says from 21 days that each job's runner likely updates itself, a runner whose
+  age is unknown, and the base's age from 30 days, as The Base Record says.
+
+The log carries the same warnings at each run of the core, as `Golden macOS VM
+freshness: <text>.`. A macOS slot shows `waiting for the macOS VM limit` or
+`waiting for VM <name> to be deleted` while it waits, and one `leftover-vm` line
+names each counted job VM of a pool that is no longer configured, with
+`` delete it with `tart delete <name>` ``, because `start` deletes only the leftovers
+of configured pools; the log names each once when a count first finds it.
+
+In the agent's snapshot these are the runner states `waiting_for_vm_limit` and
+`waiting_for_vm_deletion`, the runner field `workload_kind: "vm"`, an `images` entry
+named `golden macOS VM` with the lines `name`, `golden-vm-version`, `runner-version`
+and `base-published` and the warnings `runner_old` with `days`, `runner_age_unknown`
+and `base_old` with `days`, and `leftovers` of kind `vm_unconfigured_pool`.
 
 ## Running a Host
 
@@ -3827,8 +3946,10 @@ a panicking core, and no startable pool. The diagnostics tests are listed under
 
 `axmc_start.rs` runs `start` on the axmc profile as real processes, with the fake
 `tart`, the fake `softnet` and the fake `docker` in the VMs: a configuration of
-Linux and macOS pools that starts only the Linux pools, with one skip warning per
-macOS pool, and one of macOS pools alone that exits 1; a missing `tart`, a missing
+Linux and macOS pools that runs each pool in a VM of its OS, a macOS slot that
+waits for the limit while a leftover and a running macOS VM count, a macOS job VM
+that fails to delete and is deleted again while its slot waits, and a macOS-only
+configuration without a golden macOS VM that exits 1; a missing `tart`, a missing
 `softnet`, version refusals, Softnet setup refusals and a `softnet` that does not
 answer, each exiting 1 before any VM is cloned or booted; a `tart` that does not
 answer, which makes the slots wait; a newer patch, with its warnings in the log and
