@@ -28,6 +28,13 @@ pub fn list_arguments() -> Vec<String> {
     strings(["list", "--format", "json"])
 }
 
+/// `tart get <name> --format json`, whose `OS` field names the VM's operating
+/// system.
+#[must_use]
+pub fn get_arguments(name: &str) -> Vec<String> {
+    strings(["get", name, "--format", "json"])
+}
+
 /// `tart clone <source> <new name>`.
 #[must_use]
 pub fn clone_arguments(source: &str, new_name: &str) -> Vec<String> {

@@ -7,6 +7,8 @@ use std::future::Future;
 use crate::profile::Os;
 use crate::validate::MAX_MACOS_VMS;
 
+use crate::runtime::tart::TartClient;
+use crate::runtime::tart::list::{self, VmEntry, VmSource};
 use crate::runtime::tart::names::{GoldenVmName, parse_build_vm_name, parse_job_vm_name};
 
 use super::name::{GoldenMacosName, is_build_name};
@@ -172,6 +174,36 @@ fn judge_by_os(vm: &ListedVm, open: Open, os: GuestOs) -> Option<Reason> {
         (GuestOs::Unreadable, Open::LeftoverJob) => Some(Reason::UnreadableOs),
         (GuestOs::Unreadable, Open::Foreign) if vm.state.is_booted() => Some(Reason::UnreadableOs),
         (GuestOs::Linux, _) | (GuestOs::Unreadable, _) => None,
+    }
+}
+
+/// the local VMs of a `tart list` reading, as the count reads them; Tart's cached
+/// images are stored, not booted, so they never count.
+#[must_use]
+pub fn listed_vms(entries: &[VmEntry]) -> Vec<ListedVm> {
+    entries
+        .iter()
+        .filter(|entry| entry.source == VmSource::Local)
+        .map(|entry| ListedVm {
+            name: entry.name.clone(),
+            state: match entry.state {
+                list::VmState::Running => VmState::Running,
+                list::VmState::Suspended => VmState::Suspended,
+                list::VmState::Stopped => VmState::Stopped,
+            },
+        })
+        .collect()
+}
+
+/// reads a VM's operating system from `tart get`, whose `OS` field the first Mac
+/// check on #80 saw as `darwin` for a macOS VM.
+impl GuestOsLookup for TartClient {
+    async fn guest_os(&self, name: &str) -> GuestOs {
+        match self.os_of(name).await.as_deref() {
+            Some("darwin") => GuestOs::Macos,
+            Some("linux") => GuestOs::Linux,
+            _ => GuestOs::Unreadable,
+        }
     }
 }
 
