@@ -38,6 +38,7 @@ use tokio::task::JoinHandle;
 use tokio::time::{Instant, sleep_until};
 
 use crate::connect::{Attempt, Found, RETRY_EVERY, attempt};
+use crate::login_item::LoginItem;
 use crate::seam::{
     AgentInfo, Connected, Dial, DialError, Failure, Launcher, Link, Log, Method, Present,
     Processes, Pushed, Record, Shown, TimeSource, Updater, Verified,
@@ -362,6 +363,9 @@ pub struct Seams<D> {
     /// a fresh launch: an agent the first attempt starts is sent `launch`, which starts
     /// the runners as `start_runners_on_launch` says.
     pub fresh: bool,
+    /// the login item kept in step with `start_at_login`; `None` where the agent keeps
+    /// the sign-in item itself.
+    pub login_item: Option<LoginItem>,
 }
 
 pub struct Session<D: Dial> {
@@ -429,6 +433,7 @@ pub struct Session<D: Dial> {
     github: Github<D::Link>,
     /// the pools whose Open run found its job ended, with when.
     ended_jobs: BTreeMap<String, u64>,
+    login_item: Option<LoginItem>,
 }
 
 impl<D: Dial> Session<D> {
@@ -484,6 +489,7 @@ impl<D: Dial> Session<D> {
             window_shown: false,
             github: Github::new(),
             ended_jobs: BTreeMap::new(),
+            login_item: seams.login_item,
         };
         (
             session,
@@ -767,6 +773,9 @@ impl<D: Dial> Session<D> {
         match pushed.unwrap_or(Pushed::Closed) {
             Pushed::Snapshot(snapshot) => {
                 self.last_heard_ms = Some(self.now_ms());
+                if let Some(login_item) = &mut self.login_item {
+                    login_item.learn(snapshot.lifecycle.as_ref(), self.log.as_ref());
+                }
                 self.snapshot = Some(*snapshot);
                 self.snapshot_for_drain();
                 self.refresh();

@@ -45,7 +45,7 @@ own_copyright_lines() {
   local copy="${here}/licences/webview2-com-sys-LICENSE.txt"
   licence "$copy" >/dev/null
   awk -v template="$template" \
-    -v objc2_versions="block2 0.6.2,dispatch2 0.3.1,objc2 0.6.5,objc2-app-kit 0.3.2,objc2-core-foundation 0.3.2,objc2-core-graphics 0.3.2,objc2-encode 4.1.0,objc2-exception-helper 0.1.1,objc2-foundation 0.3.2,objc2-quartz-core 0.3.2,objc2-web-kit 0.3.2" \
+    -v objc2_versions="block2 0.6.2,dispatch2 0.3.1,objc2 0.6.5,objc2-app-kit 0.3.2,objc2-core-foundation 0.3.2,objc2-core-graphics 0.3.2,objc2-encode 4.1.0,objc2-exception-helper 0.1.1,objc2-foundation 0.3.2,objc2-quartz-core 0.3.2,objc2-security 0.3.2,objc2-service-management 0.3.2,objc2-web-kit 0.3.2" \
     -v objc2="These crate versions ship no licence file, and the licence in their repository at the commits they were published from names no copyright holder; a later licence there, from commit ee9a7ad, names one." '
     BEGIN {
       count = split(objc2_versions, pairs, ",")

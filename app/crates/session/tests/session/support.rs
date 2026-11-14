@@ -13,8 +13,8 @@ use marshal_cli::agent::wire::UpdateEnding;
 use marshal_cli::github_status::GithubStatus;
 use marshal_session::{
     AgentInfo, Connected, Dial, DialError, Ended, Failure, Handle, Later, Launcher, Link, Log,
-    Method, Present, Process, Processes, Pushed, Record, Seams, Session, Shown, TimeSource,
-    Updater, Verified,
+    LoginItem, LoginItemRecord, LoginItemService, LoginStatus, Method, Present, Process, Processes,
+    Pushed, Record, Seams, Session, Shown, TimeSource, Updater, Verified,
 };
 use marshal_view::{Clock, View};
 use tokio::sync::mpsc;
@@ -669,6 +669,115 @@ impl Record for Updates {
     }
 }
 
+// ---- the login item and its record
+
+/// what the session asked of the fake login item.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoginCall {
+    Register,
+    Unregister,
+}
+
+struct LoginState {
+    status: LoginStatus,
+    recorded: bool,
+    /// what a register or unregister fails with, until it is cleared.
+    failure: Option<String>,
+    calls: Vec<LoginCall>,
+    statuses_read: usize,
+}
+
+/// macOS's login item and the app's record of it, as one fake: a call that succeeds
+/// changes the status as macOS would.
+#[derive(Clone)]
+pub struct FakeLoginItem(Arc<Mutex<LoginState>>);
+
+impl FakeLoginItem {
+    pub fn new(status: LoginStatus, recorded: bool) -> Self {
+        Self(Arc::new(Mutex::new(LoginState {
+            status,
+            recorded,
+            failure: None,
+            calls: Vec::new(),
+            statuses_read: 0,
+        })))
+    }
+
+    /// the login item of an app running from `executable`, in the home folder `/Users/me`.
+    pub fn at(&self, executable: &str) -> LoginItem {
+        LoginItem::new(
+            Arc::new(self.clone()),
+            Arc::new(self.clone()),
+            std::path::Path::new(executable),
+            Some(std::path::Path::new("/Users/me")),
+        )
+    }
+
+    pub fn fail_with(&self, failure: Option<&str>) {
+        locked(&self.0).failure = failure.map(str::to_string);
+    }
+
+    pub fn calls(&self) -> Vec<LoginCall> {
+        locked(&self.0).calls.clone()
+    }
+
+    pub fn status_now(&self) -> LoginStatus {
+        locked(&self.0).status
+    }
+
+    pub fn recorded(&self) -> bool {
+        locked(&self.0).recorded
+    }
+
+    pub fn statuses_read(&self) -> usize {
+        locked(&self.0).statuses_read
+    }
+
+    fn call(&self, call: LoginCall, then: LoginStatus) -> Result<(), String> {
+        let mut state = locked(&self.0);
+        state.calls.push(call);
+        match state.failure.clone() {
+            Some(failure) => Err(failure),
+            None => {
+                state.status = then;
+                Ok(())
+            }
+        }
+    }
+}
+
+impl LoginItemService for FakeLoginItem {
+    fn status(&self) -> LoginStatus {
+        let mut state = locked(&self.0);
+        state.statuses_read += 1;
+        state.status
+    }
+
+    fn register(&self) -> Result<(), String> {
+        self.call(LoginCall::Register, LoginStatus::Enabled)
+    }
+
+    fn unregister(&self) -> Result<(), String> {
+        self.call(LoginCall::Unregister, LoginStatus::NotRegistered)
+    }
+}
+
+impl LoginItemRecord for FakeLoginItem {
+    fn exists(&self) -> bool {
+        locked(&self.0).recorded
+    }
+
+    fn write(&self) -> Result<(), String> {
+        locked(&self.0).recorded = true;
+        Ok(())
+    }
+
+    fn remove(&self) -> Result<(), String> {
+        locked(&self.0).recorded = false;
+        Ok(())
+    }
+}
+
 // ---- a running session
 
 pub struct Running {
@@ -702,7 +811,20 @@ pub fn start_linking(
     agent_version: &str,
     launch: Launch,
 ) -> Running {
-    start_session(world, updates, version, agent_version, launch, false)
+    start_session(world, updates, version, agent_version, launch, false, None)
+}
+
+/// starts a session, as [`start`] does, that keeps `login_item` in step.
+pub fn start_with_login_item(world: World, login_item: LoginItem) -> Running {
+    start_session(
+        world,
+        Updates::default(),
+        "0.0.0-dev",
+        "0.0.0-dev",
+        Launch::Running,
+        false,
+        Some(login_item),
+    )
 }
 
 /// starts a session of a fresh launch, which starts the agent stopped and sends it
@@ -715,6 +837,7 @@ pub fn start_fresh(world: World) -> Running {
         "0.0.0-dev",
         Launch::Stopped,
         true,
+        None,
     )
 }
 
@@ -725,6 +848,7 @@ fn start_session(
     agent_version: &str,
     launch: Launch,
     fresh: bool,
+    login_item: Option<LoginItem>,
 ) -> Running {
     let screen = Arc::new(Screen::default());
     let log = Arc::new(MemoryLog::default());
@@ -742,6 +866,7 @@ fn start_session(
         record: Arc::new(updates.clone()),
         launch,
         fresh,
+        login_item,
     });
     Running {
         world,

@@ -275,7 +275,13 @@ app is built for, `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`.
   the agent. Its `derive_builder` macros bring a second version of the `darling`
   crates beside the one the tree already has. Its development-only dependencies are
   Tauri's `test` feature, and on Windows `interprocess`, which a test uses to squat on
-  the agent's channel. For updates (see [Updates Come Only From the Signed
+  the agent's channel. On macOS, `smappservice-rs` 0.1.3 (MIT), which registers
+  the app's own bundle as its login item through Apple's `SMAppService` main-app item
+  (M4, [#90](https://github.com/axross/runners/issues/90)); it wraps
+  `objc2-service-management` 0.3, whose calls are `unsafe`, behind a safe interface,
+  so the app's own code stays without `unsafe`, and it adds that crate and
+  `objc2-security` 0.3, which are MIT, Zlib or Apache-2.0. It adds no helper, launch
+  agent or property list to the bundle. For updates (see [Updates Come Only From the Signed
   Feed](#updates-come-only-from-the-signed-feed)): `tauri-plugin-updater`, pinned to
   `=2.14.1`, on Windows only, with its defaults off and only `rustls-tls` on, so it
   links no zip reader and reads no system proxy; `winsafe` 0.0.29's `kernel` feature on
