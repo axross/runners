@@ -2109,7 +2109,15 @@ the default, and the agent itself names no operating system:
 update only from `running`, so an update never undoes a signal stop.
 
 On Windows, `agent::run` gives the agent `WindowsMonitor` (`windows_host::monitor`)
-on `WindowsSignals` (`windows_host::signals`); elsewhere it gives `NoMonitor`.
+on `WindowsSignals` (`windows_host::signals`). On the axmc profile it gives M1's
+`SignalMonitor` (`macos::monitor`), the monitor `start` uses there, sharing its
+network gate with the Tart backend: until M4 it reads no setting, so the Mac is kept
+awake while the agent is `running`, `resuming`, `building` or `stopping`, a sleep or a
+change of the primary network stops every runner with `slept` or `network_changed`,
+and nothing resumes on its own. Elsewhere it gives `NoMonitor`. On every profile the
+agent's stops reserve the backend's release budget as `start`'s do, so a stop on Tart
+has the time to delete its job VMs.
+
 `WindowsMonitor` reads the settings in effect, which the agent sets from each
 configuration it reads into `lifecycle_settings::Current`, at every tick, so a
 change takes effect within a second:

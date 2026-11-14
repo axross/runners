@@ -18,6 +18,9 @@ use crate::instance::lifecycle::{Monitor, NoMonitor, StopTimes};
 use crate::instance::lock::{InstanceLock, LockError};
 use crate::instance::roots::Roots;
 use crate::lifecycle_settings::Current;
+use crate::macos::gate::NetworkGate;
+use crate::macos::monitor::{Cadence, SignalMonitor};
+use crate::macos::signals::Signals;
 use crate::profile::Profile;
 use crate::runtime::backend::Backend;
 use crate::runtime::clock::{Clock, SystemClock};
@@ -401,22 +404,32 @@ struct Host {
 }
 
 impl<'a, K, R, M> Resident<'a, (), K, R, (), M> {
-    /// this resident on `backend`, with its images built by `builder`.
-    fn on<B, D>(self, backend: &'a B, builder: &'a D) -> Resident<'a, B, K, R, D, M> {
+    /// this resident on `backend`, with its images built by `builder` and the power and
+    /// network signals watched by `monitor`. Its stops reserve the backend's release
+    /// budget, as `start`'s do, so a stop on Tart has the time to delete its job VMs.
+    fn on<B: Backend, D, N>(
+        self,
+        backend: &'a B,
+        builder: &'a D,
+        monitor: &'a N,
+    ) -> Resident<'a, B, K, R, D, N> {
         Resident {
             backend,
             clock: self.clock,
             registrar: self.registrar,
             reader: self.reader,
             builder,
-            monitor: self.monitor,
+            monitor,
             in_effect: self.in_effect,
             sign_in: self.sign_in,
             store: self.store,
             log: self.log,
             roots: self.roots,
             lock: self.lock,
-            settings: self.settings,
+            settings: Settings {
+                times: StopTimes::reserving(backend.release_budget()),
+                ..self.settings
+            },
             executable: self.executable,
             limits: self.limits,
         }
@@ -424,7 +437,9 @@ impl<'a, K, R, M> Resident<'a, (), K, R, (), M> {
 }
 
 /// runs `resident` on the host's profile: Docker and the embedded definition on
-/// axpc, and on axmc Tart, with the golden VM as the image `Build` makes.
+/// axpc, with the monitor `resident` has, and on axmc Tart, with the golden VM as the
+/// image `Build` makes and M1's monitor of the Mac's sleep and network, which holds the
+/// Mac awake while runners run and holds new job VMs while the network changes.
 async fn run_on_host<K: Clock, R: Registrar, M: Monitor>(
     host: Host,
     resident: Resident<'_, (), K, R, (), M>,
@@ -447,7 +462,8 @@ async fn run_on_host<K: Clock, R: Registrar, M: Monitor>(
                 environment: host.environment,
                 definition: host.definition,
             };
-            run_resident(resident.on(&backend, &builder)).await
+            let monitor = resident.monitor;
+            run_resident(resident.on(&backend, &builder, monitor)).await
         }
         Profile::Axmc => {
             let tart = TartConfig {
@@ -455,6 +471,8 @@ async fn run_on_host<K: Clock, R: Registrar, M: Monitor>(
                 ..TartConfig::default()
             };
             let launcher = vm_launcher(&host.launcher);
+            let gate = NetworkGate::new();
+            let log = host.log.clone();
             let backend = TartBackend::new(
                 TartClient::new(tart.clone()),
                 launcher.clone(),
@@ -462,13 +480,17 @@ async fn run_on_host<K: Clock, R: Registrar, M: Monitor>(
                 SystemClock,
                 host.log,
             )
-            .with_exporter(std::env::current_exe().ok(), None);
+            .with_exporter(std::env::current_exe().ok(), None)
+            .with_network_gate(gate.clone());
+            let signals = Signals::from_environment();
+            let cadence = Cadence::for_source(signals.is_scripted());
+            let monitor = SignalMonitor::new(signals, &SystemClock, &*log, gate, cadence);
             let builder = GoldenImageBuilder {
                 tart,
                 launcher,
                 definition: host.definition,
             };
-            run_resident(resident.on(&backend, &builder)).await
+            run_resident(resident.on(&backend, &builder, &monitor)).await
         }
     }
 }
