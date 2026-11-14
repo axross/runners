@@ -28,12 +28,13 @@ use crate::runtime::backend::{
 };
 use crate::runtime::clock::Clock;
 use crate::runtime::diagnostic::join_all;
-use crate::runtime::docker::{RunningGuard, forward_lines};
+use crate::runtime::docker::{MarksGuard, RunningGuard, forward_marked_lines};
 use crate::runtime::docker_args::{
     RUN_COMMAND, info_arguments, kill_arguments, probe_run_arguments, remove_arguments,
     stop_arguments, vm_job_run_arguments,
 };
 use crate::runtime::exports::Exports;
+use crate::runtime::job_marks::{Activity, JobMarks};
 use crate::runtime::log::Log;
 use crate::runtime::name::{slot_of_container_name, slot_of_probe_name};
 use crate::runtime::retained::Retained;
@@ -139,6 +140,8 @@ pub struct TartBackend<C> {
     /// the job VM of every container started and not yet released with its VM.
     containers: RefCell<BTreeMap<String, String>>,
     running: RefCell<BTreeSet<String>>,
+    /// what each job container's output has said about its job, while its run lasts.
+    marks: RefCell<BTreeMap<String, Rc<Cell<JobMarks>>>>,
     retained: Retained,
     exports: Exports,
     in_use: RefCell<InUse>,
@@ -174,6 +177,7 @@ impl<C: Clock> TartBackend<C> {
             hosts: RefCell::new(BTreeMap::new()),
             containers: RefCell::new(BTreeMap::new()),
             running: RefCell::new(BTreeSet::new()),
+            marks: RefCell::new(BTreeMap::new()),
             retained: Retained::default(),
             exports: Exports::new(None, None),
             in_use: RefCell::new(InUse::default()),
@@ -792,11 +796,19 @@ impl<C: Clock> Backend for TartBackend<C> {
             .diagnostic
             .is_none()
             .then(|| RunningGuard::enter(&self.running, &spec.name));
+        let marks = Rc::new(Cell::new(JobMarks::default()));
+        self.marks
+            .borrow_mut()
+            .insert(spec.name.clone(), Rc::clone(&marks));
+        let _marks = MarksGuard {
+            map: &self.marks,
+            name: spec.name.clone(),
+        };
         let (stdout, stderr) = (child.stdout.take(), child.stderr.take());
         let log = &*self.log;
         let (_, _, status) = tokio::join!(
-            forward_lines(stdout, log),
-            forward_lines(stderr, log),
+            forward_marked_lines(stdout, log, Some(&marks)),
+            forward_marked_lines(stderr, log, Some(&marks)),
             child.wait()
         );
         let status = status
@@ -806,6 +818,13 @@ impl<C: Clock> Backend for TartBackend<C> {
 
     fn running_containers(&self) -> Vec<String> {
         self.running.borrow().iter().cloned().collect()
+    }
+
+    fn job_activity(&self, container: &str) -> Activity {
+        self.marks
+            .borrow()
+            .get(container)
+            .map_or(Activity::Unknown, |marks| marks.get().activity())
     }
 
     async fn stop_containers(&self, request: &StopRequest) -> Result<(), BackendError> {

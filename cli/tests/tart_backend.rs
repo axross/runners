@@ -26,6 +26,7 @@ use marshal_cli::runtime::board::Board;
 use marshal_cli::runtime::clock::Clock;
 use marshal_cli::runtime::diagnostic::finalize_at_job_end;
 use marshal_cli::runtime::docker_args::{probe_run_arguments, vm_job_run_arguments};
+use marshal_cli::runtime::job_marks::Activity;
 use marshal_cli::runtime::log::Log;
 use marshal_cli::runtime::name::{cpu_probe_name, job_container_name};
 use marshal_cli::runtime::pool::{PoolSpec, pools_from_plan};
@@ -1379,6 +1380,45 @@ async fn a_container_can_be_ended_at_once_and_a_stop_of_an_unknown_one_does_noth
         })
         .await
         .unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn the_guest_runners_output_marks_it_idle_then_busy_until_its_run_ends() {
+    let rig = Rig::new();
+    prepared(&rig).await;
+    rig.docker_script("run_mode", "hold");
+    let name = container_name();
+    let activity = || rig.backend.job_activity(&name);
+    let until = |wanted: Activity| async move {
+        let started = Instant::now();
+        while activity() != wanted {
+            assert!(
+                started.elapsed() < Duration::from_secs(20),
+                "never read {wanted:?}"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    };
+    let listening = "stdout\t2026-11-12 08:00:01Z: Listening for Jobs";
+    let observe = async {
+        // the runner's own start lines carry neither mark
+        assert_eq!(activity(), Activity::Unknown);
+        rig.docker_script("run_says", listening);
+        until(Activity::Idle).await;
+        rig.docker_script(
+            "run_says",
+            &format!("{listening}\nstderr\t2026-11-12 08:03:00Z: Running job: build"),
+        );
+        until(Activity::Busy).await;
+        assert_eq!(rig.backend.job_activity("unknown"), Activity::Unknown);
+        rig.backend
+            .kill_containers(std::slice::from_ref(&name), Duration::from_secs(5))
+            .await
+            .unwrap();
+    };
+    let (exit, ()) = while_running(&rig, &name, observe).await;
+    assert_eq!(exit.unwrap(), 137);
+    assert_eq!(activity(), Activity::Unknown, "the marks outlived the run");
 }
 
 #[tokio::test(flavor = "current_thread")]

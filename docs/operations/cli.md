@@ -2077,7 +2077,9 @@ neither line, not one that still prints `Listening for Jobs` but rewords or drop
 Both streams count, a mark never clears, and
 no other line, such as `Runner reconnected.`, changes it. Only the fixed text is
 compared: the drain keeps no job name and puts none in the snapshot or a protocol
-message; the line itself reaches the log, as all runner output does.
+message; the line itself reaches the log, as all runner output does. On the Mac, the
+Tart backend reads the same two lines from the runner container in each job VM, as its
+guest launcher forwards them, so a drain stops idle Tart runners too.
 
 The drain's last steps begin when the drain ends its runners: when no runner is waited
 for any more, when the 6 hours pass, or when the runtime core ends for the drain or

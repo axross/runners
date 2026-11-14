@@ -238,9 +238,9 @@ pub struct DockerBackend<C> {
 }
 
 /// keeps a job container's marks while its run lasts, a dropped future included.
-struct MarksGuard<'a> {
-    map: &'a RefCell<BTreeMap<String, Rc<Cell<JobMarks>>>>,
-    name: String,
+pub(crate) struct MarksGuard<'a> {
+    pub(crate) map: &'a RefCell<BTreeMap<String, Rc<Cell<JobMarks>>>>,
+    pub(crate) name: String,
 }
 
 impl Drop for MarksGuard<'_> {
