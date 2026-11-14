@@ -686,6 +686,19 @@ pub struct AgentProcess {
 }
 
 impl AgentProcess {
+    /// takes on an agent `command` started, whose state is under `state`.
+    pub fn from_command(mut command: std::process::Command, state: &std::path::Path) -> Self {
+        let child = command
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        Self {
+            child,
+            roots: Roots::for_tests(state),
+        }
+    }
+
     /// starts the agent under `state`, with `extra` arguments after the usual ones.
     pub fn spawn(host: &super::host::Host, github: &str, extra: &[&str]) -> Self {
         let state = host.state();
