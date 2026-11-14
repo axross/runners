@@ -684,6 +684,21 @@ and the app starts a `/bin/sh` that opens the new bundle with `/usr/bin/open` on
 app has exited, then ends. Until the release run writes the feed's `darwin-aarch64`
 entry, a Mac check finds no entry for its platform, logs it and changes nothing.
 
+**A bundle the app cannot replace.** When the check refuses, the log names the
+folder that cannot be changed or the bundle that belongs to another user, and the app
+stays at its version. A bundle copied in by another account, or installed with
+`sudo`, belongs to that account: give it to the user who runs Marshal, with
+`sudo chown -R "$(id -un)" /Applications/Marshal.app` run by an administrator. A
+standard user cannot make entries in `/Applications`, so on such an account move
+`Marshal.app` to `~/Applications` instead, which the location guard also accepts.
+The next hourly check then updates the app.
+
+**The Mac updater's tests.** The tests of the replaceability check and the relaunch
+shell are unit tests of `marshal-app` built for macOS only, so `mise run test:app`
+does not run them; on a Mac, `cargo test --locked -p marshal-app --lib` in `app/` does.
+In CI, M2's macOS app job, which runs the app workspace's tests on macOS, runs them
+once it merges.
+
 **After a failed install on the Mac.** The plugin's macOS install (`install_inner` in
 `src/updater.rs` of `tauri-plugin-updater` 2.14.1) exchanges the two bundles in one
 step with `renamex_np`'s `RENAME_SWAP`. Where the file system cannot, it moves the old
