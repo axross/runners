@@ -649,6 +649,43 @@ fn a_signal_stop_says_whether_the_runners_start_again_on_their_own() {
 }
 
 #[test]
+fn a_signal_stop_shows_the_stopped_by_an_error_icon_and_an_unknown_stop_does_not() {
+    let stopped_by = |code: &str| {
+        let snapshot = patched("newer_agent_stopped", |value| {
+            value["agent"]["reason"] = serde_json::json!({ "code": code, "message": "" });
+        });
+        let view = view_of(&snapshot);
+        (view.icon, first_banner(&view).tone)
+    };
+    for code in ["slept", "network_changed", "resumed_too_often"] {
+        assert_eq!(
+            stopped_by(code),
+            (IconState::StoppedByError, Tone::Error),
+            "{code}"
+        );
+    }
+    assert_eq!(
+        stopped_by("a_later_code"),
+        (IconState::Stopped, Tone::Neutral)
+    );
+}
+
+#[test]
+fn a_launch_that_started_nothing_says_the_setting_kept_the_runners_stopped() {
+    let snapshot = patched("stopped_by_you", |value| {
+        value["agent"]["reason"]["message"] = serde_json::json!("not started at launch");
+    });
+    assert_eq!(
+        first_banner(&view_of(&snapshot)).lines,
+        [
+            "They were not started at launch, because start_runners_on_launch is off in \
+             config.toml.",
+            "They stay stopped until you choose Start All."
+        ]
+    );
+}
+
+#[test]
 fn restarting_after_a_failure_says_when_and_that_no_pools_are_listed() {
     let snapshot = load("restarting");
     let view = view_of(&snapshot);

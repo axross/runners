@@ -25,7 +25,7 @@ use super::super::snapshot::{LifecycleInfo, SettingInfo};
 use super::super::state::{Phase, Reason};
 use super::super::wire::ErrorCode;
 use super::Agent;
-use super::configure::edit_error;
+use super::configure::{edit_error, revision};
 
 /// the text of a launch that left the runners stopped, a stop by you.
 pub const NOT_STARTED_AT_LAUNCH: &str = "not started at launch";
@@ -104,14 +104,21 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<'_, 
             ));
         };
         self.refuse_migration()?;
+        let file = edit::ConfigFile::read(&self.config_path()).map_err(edit_error)?;
+        if self.read_revision.borrow().as_deref() != Some(revision(file.bytes()).as_str()) {
+            return Err(ApiError::new(
+                ErrorCode::ConfigChanged,
+                "config.toml changed after the agent read it; Start all reads it again",
+            ));
+        }
         let above = self.above();
-        edit::edit_config(
-            &self.config_path(),
-            self.settings.profile,
-            above.as_deref(),
-            &write::edits(setting, value),
-        )
-        .map_err(edit_error)?;
+        let profile = self.settings.profile;
+        let edits = write::edits(setting, value);
+        let written =
+            edit::rewrite(file.bytes(), profile, above.as_deref(), &edits).map_err(edit_error)?;
+        file.edit(profile, above.as_deref(), &edits)
+            .map_err(edit_error)?;
+        *self.read_revision.borrow_mut() = Some(revision(&written));
         let settings = settings.with(setting, value);
         self.in_effect.set(settings);
         if !settings.is_on(Setting::ResumeAfterStop) && self.resume_note.take().is_some() {

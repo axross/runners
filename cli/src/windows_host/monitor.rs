@@ -138,7 +138,6 @@ impl<S: SignalSource, K: Clock> Monitor for WindowsMonitor<'_, S, K> {
             if self.signals.sleep_detected() {
                 return StopReason::Slept;
             }
-            self.reconcile();
             samples += 1;
             if samples < self.cadence.samples_per_check {
                 continue;

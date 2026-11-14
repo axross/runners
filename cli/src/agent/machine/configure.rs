@@ -429,6 +429,7 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<'_, 
                 .edit(self.settings.profile, above.as_deref(), edits)
                 .map_err(edit_error)?;
         }
+        *self.read_revision.borrow_mut() = Some(prepared.revision.clone());
         let result = self.change_result(&prepared, mode);
         let previous = self.use_file(prepared.plan.clone());
         self.refresh_tokens(&prepared.plan);

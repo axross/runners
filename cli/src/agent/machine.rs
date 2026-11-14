@@ -177,6 +177,9 @@ pub struct Agent<'a, B, K, R, D, M = NoMonitor> {
     /// what the latest signal stop did to the resume, for the snapshot: the state and
     /// the stop's code, until the resume fires or is cancelled.
     resume_note: Cell<Option<(&'static str, &'static str)>>,
+    /// the revision of `config.toml` as the agent last read or wrote it, which
+    /// `lifecycle_set` refuses a file changed since.
+    read_revision: RefCell<Option<String>>,
     board: Board,
     inner: RefCell<Inner>,
     /// the containers a stop could not remove.
@@ -297,6 +300,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
             sign_in_state: RefCell::new(None),
             resume: RefCell::new(Resume::new()),
             resume_note: Cell::new(None),
+            read_revision: RefCell::new(None),
             board: Board::default(),
             inner: RefCell::new(Inner::new(phase)),
             left: RefCell::new(Vec::new()),
@@ -516,12 +520,21 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
             rule: CheckoutRule::AboveAndAtSink(above.as_deref()),
         };
         let profile = self.settings.profile;
+        // read before the load, so a file that changes meanwhile counts as changed;
+        // a file the load writes, migrating `config.json`, is read after it
+        let read_now = || {
+            std::fs::read(self.config_path())
+                .ok()
+                .map(|bytes| configure::revision(&bytes))
+        };
+        let read = read_now();
         let previous = self.inner.borrow_mut().loaded.take();
         let loaded = match &previous {
             None => load_at_start(folder, profile, self.clock, &checks),
             Some(previous) => load_at_start_all(folder, profile, self.clock, &checks, previous),
         };
         self.log_load(&loaded);
+        *self.read_revision.borrow_mut() = read.or_else(read_now);
         // a kept last-valid configuration predates any `lifecycle_set` since, so only a
         // configuration read now sets what is in effect
         if let Some(settings) = loaded
@@ -531,6 +544,9 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
             .and_then(|in_use| in_use.plan.settings.as_ref())
         {
             self.take_settings(InEffect::windows(settings.lifecycle));
+        } else if loaded.in_use.is_some() {
+            // the settings in effect stay, and the sign-in item is still put in step
+            self.sync_sign_in();
         }
         let outcome = match &loaded.in_use {
             Some(in_use) => Ok(in_use.plan.clone()),
@@ -705,11 +721,8 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
                             self.log.info(
                                 "The runners were not started at launch, as start_runners_on_launch is off.",
                             );
-                            self.set_phase(Phase::Stopped(Reason::new(
-                                Reason::BY_YOU,
-                                NOT_STARTED_AT_LAUNCH,
-                            )));
                             let reason = Reason::new(Reason::BY_YOU, NOT_STARTED_AT_LAUNCH);
+                            self.set_phase(Phase::Stopped(reason.clone()));
                             let _ = reply.send(Ok(
                                 json!({ "state": "stopped", "reason": reason.wire() }),
                             ));

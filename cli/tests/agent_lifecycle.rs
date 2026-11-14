@@ -69,6 +69,10 @@ async fn launch_with_the_setting_at_its_default_starts_the_runners() {
         let settings = snapshot.lifecycle.unwrap().settings;
         let launch = settings["start_runners_on_launch"];
         assert!(launch.on && launch.defaulted);
+        assert!(!settings["start_at_login"].on && settings["start_at_login"].defaulted);
+        let lifecycle = conn.status().await.lifecycle.unwrap();
+        assert_eq!(lifecycle.sign_in.as_deref(), Some("not_registered"));
+        assert!(rig.sign_in.command.borrow().is_none());
         conn.ok("launch").await;
         conn.until_runner_runs().await;
         conn.ok("quit").await;
@@ -181,6 +185,55 @@ async fn a_lifecycle_written_over_several_lines_is_refused_as_the_files_form_and
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn a_file_changed_after_the_agent_read_it_is_refused_until_start_all_reads_it() {
+    let rig = rig("");
+    let rig = &rig;
+    rig.drive(Launch::Stopped, |conn| async move {
+        // a hand edit saved after the agent read the file
+        let edited = format!("# a hand edit\n{}", file(rig));
+        rig.write_toml(&edited);
+        let keep_awake = json!({ "key": "keep_awake", "value": false });
+        assert_eq!(
+            conn.code("lifecycle_set", keep_awake.clone()).await,
+            "config_changed"
+        );
+        assert_eq!(file(rig), edited);
+        let lifecycle = conn.status().await.lifecycle.unwrap();
+        assert!(lifecycle.settings["keep_awake"].on);
+
+        // once Start all has read it, the write goes through and keeps the hand edit
+        conn.ok("start_all").await;
+        conn.until_runner_runs().await;
+        rig.mark_running();
+        conn.call("lifecycle_set", keep_awake).await.unwrap();
+        assert!(file(rig).starts_with("# a hand edit\n"));
+        assert!(file(rig).contains("keep_awake = false"));
+        conn.ok("quit").await;
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn no_setting_can_be_changed_while_no_valid_configuration_was_read() {
+    let rig = rig("\n[lifecycle]\nkeep_awake = 3\n");
+    let rig = &rig;
+    let before = file(rig);
+    rig.drive(Launch::Stopped, |conn| async move {
+        assert_eq!(
+            conn.code(
+                "lifecycle_set",
+                json!({ "key": "keep_awake", "value": false })
+            )
+            .await,
+            "config_unusable"
+        );
+        assert_eq!(file(rig), before);
+        conn.ok("quit").await;
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn the_sign_in_item_follows_start_at_login() {
     let rig = rig("\n[lifecycle]\nstart_at_login = true\n");
     let rig = &rig;
@@ -211,6 +264,20 @@ async fn the_sign_in_item_follows_start_at_login() {
         assert_eq!(lifecycle.sign_in_error.as_deref(), Some("access is denied"));
         // the setting stays as the file says
         assert!(lifecycle.settings["start_at_login"].on);
+
+        // the next Start all retries the write, even one that keeps the last valid
+        // configuration because the file has problems
+        *rig.sign_in.failure.borrow_mut() = None;
+        rig.write_toml(&file(rig).replace("runners = 1", "runners = 0"));
+        conn.ok("start_all").await;
+        let snapshot = conn.until_runner_runs().await;
+        assert_eq!(snapshot.configuration.in_use.unwrap().source, "last_valid");
+        assert_eq!(
+            snapshot.lifecycle.unwrap().sign_in.as_deref(),
+            Some("registered")
+        );
+        assert!(rig.sign_in.command.borrow().is_some());
+        rig.mark_running();
         conn.ok("quit").await;
     })
     .await;

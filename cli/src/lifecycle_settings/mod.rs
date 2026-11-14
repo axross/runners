@@ -43,13 +43,7 @@ impl Setting {
     /// the key's name, as the file and the protocol write it.
     #[must_use]
     pub fn name(self) -> &'static str {
-        match self {
-            Self::StartAtLogin => "start_at_login",
-            Self::StartRunnersOnLaunch => "start_runners_on_launch",
-            Self::KeepAwake => "keep_awake",
-            Self::StopOnNetworkChange => "stop_on_network_change",
-            Self::ResumeAfterStop => "resume_after_stop",
-        }
+        crate::validate::toml_key_name(self.key())
     }
 
     /// the setting a key names.
