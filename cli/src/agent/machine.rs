@@ -367,11 +367,10 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
     }
 
     fn set_phase(&self, phase: Phase) {
-        match phase {
-            Phase::Running | Phase::Resuming | Phase::Building | Phase::Stopping => {
-                self.monitor.hold();
-            }
-            Phase::Stopped(_) | Phase::Quitting => self.monitor.release(),
+        if phase.holds_keep_awake() {
+            self.monitor.hold();
+        } else {
+            self.monitor.release();
         }
         {
             let mut inner = self.inner.borrow_mut();

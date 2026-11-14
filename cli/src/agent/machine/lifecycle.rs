@@ -239,10 +239,7 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<'_, 
             .into_iter()
             .flatten()
             .find_map(|(field, text)| (field == "warning").then_some(text));
-        let held = matches!(
-            self.inner.borrow().phase,
-            Phase::Running | Phase::Resuming | Phase::Building | Phase::Stopping
-        );
+        let held = self.inner.borrow().phase.holds_keep_awake();
         let keep_awake = if !settings.is_on(Setting::KeepAwake) {
             "off"
         } else if warning.is_some() {

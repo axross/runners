@@ -376,8 +376,9 @@ changes:
   `start_runners_on_launch`, `keep_awake`, `stop_on_network_change`, and
   `resume_after_stop`. Any other key in
   it is a problem, and an absent key means "not set". The rule set checks and keeps
-  the values. On axpc the agent applies them with their Windows defaults (see
-  [The Agent's Signals](#the-agents-signals)); on macOS nothing acts on them until M4.
+  the values. On axpc the agent applies them with their Windows defaults;
+  [The Agent's Signals](#the-agents-signals) gives what each setting does and its
+  default. On macOS nothing acts on them until M4.
 - **Encoding and size.** A leading byte-order mark is ignored and moves no position.
   A file larger than 1 MiB (1048576 bytes) is refused before it is parsed, and a file
   that is not UTF-8 is refused before TOML sees it. The file may be exactly 1 MiB.
@@ -2066,13 +2067,30 @@ writes one line in the new file that says how many lines were not written.
 
 ### The Agent's Signals
 
+On axpc the agent acts on the five `[lifecycle]` settings of
+[The Agent's Configuration](#the-agents-configuration). A key that is absent, or the
+whole table, takes its Windows default, and so does every key while the agent runs on
+a `config.json` its migration could not replace; the snapshot marks such a setting
+`defaulted`. On macOS nothing acts on them until M4.
+
+| Setting                   | When on                                                                                                                    | Windows default |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| `start_at_login`          | The agent keeps the sign-in item registered, so the app starts at sign-in with `--sign-in`; off, it removes the item       | off             |
+| `start_runners_on_launch` | `launch` starts the runners; off, `launch` leaves the agent stopped by you, with the banner's "not started at launch" line | on              |
+| `keep_awake`              | Windows is kept from idle sleep while the agent is `running`, `resuming`, `building` or `stopping`                         | on              |
+| `stop_on_network_change`  | A change of the primary network stops every runner with `network_changed`                                                  | on              |
+| `resume_after_stop`       | After a sleep or network-change stop, the agent starts the runners again once it is back on the recorded network           | off             |
+
+A sleep stops every runner whatever the settings say.
+
 The agent runs a `Monitor` (`instance::lifecycle`) beside its states, the seam the
 `start` instance uses on axmc. `Agent` takes it through `Seams`, with `NoMonitor` as
 the default, and the agent itself names no operating system:
 
 - Entering `running`, `resuming`, `building` or `stopping` takes the keep-awake hold,
   and entering `stopped` or `quitting` ends it; `maintain` runs for the agent's whole
-  life, so a refused hold is retried in every state.
+  life, so a refused hold is retried for as long as the hold is wanted, and in
+  `stopped` and `quitting` nothing is retried.
 - Each run calls `begin`, then waits on `watch` beside the runtime core. A sleep or a
   network change stops every runner with the stop sequence and leaves the agent
   stopped for `slept` or `network_changed`.

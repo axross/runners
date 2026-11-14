@@ -91,6 +91,12 @@ impl Phase {
             Self::Stopped(_) => "stopped",
         }
     }
+
+    /// whether the agent wants Windows kept awake here.
+    #[must_use]
+    pub fn holds_keep_awake(&self) -> bool {
+        !matches!(self, Self::Stopped(_) | Self::Quitting)
+    }
 }
 
 /// what a request that changes the agent's state does in a phase.
