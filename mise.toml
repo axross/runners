@@ -427,8 +427,12 @@ run = "bash .github/scripts/tests/test-sign-macos.sh"
 description = "Run the signed package check, which verify-macos runs, against stand-ins and produce each of its refusals"
 run = "bash .github/scripts/tests/test-signed-pkg-refusals.sh"
 
+[tasks."test:signed-dmg"]
+description = "Run the signed disk image check, which verify-macos will run for the Mac app, against stand-ins and produce each of its refusals"
+run = "bash .github/scripts/tests/test-signed-dmg-refusals.sh"
+
 [tasks.check]
-description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, release script tests, release shape check and its test, sign-macos, signed package and assemble tests, installer version and WiX fetch tests, install block tests, Rust tests, Rust dependency check, the app's toolchain and tauri-cli pin checks, lockfile check, licence notices, tests, page tests and dependency check"
+description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, release script tests, release shape check and its test, sign-macos, signed package, signed disk image and assemble tests, installer version and WiX fetch tests, install block tests, Rust tests, Rust dependency check, the app's toolchain and tauri-cli pin checks, lockfile check, licence notices, tests, page tests and dependency check"
 depends = [
   "format:check",
   "lint",
@@ -443,6 +447,7 @@ depends = [
   "test:release-shape",
   "test:sign-macos",
   "test:signed-pkg",
+  "test:signed-dmg",
   "test:installer-version",
   "test:fetch-wix",
   "test:install-blocks",
