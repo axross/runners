@@ -30,6 +30,7 @@ const INSTALL_RUNNER: &str = include_str!("scripts/macos/install-runner.sh");
 const INSTALL_LAUNCHER: &str = include_str!("scripts/macos/install-launcher.sh");
 const DISABLE_REMOTE_ACCESS: &str = include_str!("scripts/macos/disable-remote-access.sh");
 const DISABLE_UPDATES: &str = include_str!("scripts/macos/disable-updates.sh");
+const PROBE: &str = include_str!("scripts/macos/probe.sh");
 
 const DOWNLOAD_BUDGET: Duration = Duration::from_secs(6 * 60);
 const QUICK_STEP_BUDGET: Duration = Duration::from_secs(60);
@@ -120,6 +121,20 @@ pub fn flush_disk_call() -> GuestCall {
     script_call(true, "marshal-flush-disk", "sync", &[], None, FLUSH_BUDGET)
 }
 
+/// the probe of a booted job VM: the launcher, the runner's version and the disk,
+/// which [`crate::runtime::tart::macos::read_probe`] reads.
+#[must_use]
+pub fn probe_call(budget: Duration) -> GuestCall {
+    script_call(
+        false,
+        "marshal-probe",
+        PROBE,
+        &[LAUNCHER_PATH, RUNNER_DIRECTORY],
+        None,
+        budget,
+    )
+}
+
 /// the command a job runs: the launcher, with the runner's directory, as the guest
 /// agent's user; the JIT configuration goes on its standard input.
 #[must_use]
@@ -132,7 +147,8 @@ mod tests {
     use super::*;
     use crate::runtime::docker_args::JIT_VARIABLE;
 
-    const SCRIPTS: [(&str, &str); 6] = [
+    const SCRIPTS: [(&str, &str); 7] = [
+        ("probe", PROBE),
         ("launcher", LAUNCHER),
         ("remove-runner", REMOVE_RUNNER),
         ("install-runner", INSTALL_RUNNER),
