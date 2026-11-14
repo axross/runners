@@ -5,6 +5,7 @@
 //! `build` makes that VM; see `docs/operations/cli.md`.
 
 mod arguments;
+mod build_vm;
 pub mod golden;
 pub(crate) mod steps;
 

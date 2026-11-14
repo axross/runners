@@ -2,8 +2,6 @@
 //! the build VM to the golden name; any failure or stop before the rename deletes the
 //! build VM and leaves the previous golden VM as it was; see `docs/operations/cli.md`.
 
-use std::future::Future;
-use std::pin::pin;
 use std::time::{Duration, SystemTime};
 
 use tokio::io::AsyncWriteExt;
@@ -21,18 +19,17 @@ use crate::macos::prerequisites::{
     Check, VERSION_BUDGET, check_softnet, check_softnet_with, check_tart,
 };
 use crate::macos::softnet::OwnerMode;
-use crate::runtime::clock::SystemClock;
 use crate::runtime::docker::forward_lines;
 use crate::runtime::docker_args::{image_inspect_arguments, info_arguments};
 use crate::runtime::log::Log;
-use crate::runtime::scrub::scrub_error_text;
-use crate::runtime::tart::boot::{AgentWait, BUILD_VM, BootEnd, boot_failure_text, wait_for_agent};
-use crate::runtime::tart::list::{VmEntry, VmSource};
+use crate::runtime::tart::boot::AgentWait;
+use crate::runtime::tart::list::VmSource;
 use crate::runtime::tart::names::{GoldenVmName, build_vm_name, golden_vms, leftover_build_vms};
 use crate::runtime::tart::teardown::{Stop, tear_down};
-use crate::runtime::tart::{Captured, HeldVm, TartClient, VmLauncher};
+use crate::runtime::tart::{Captured, TartClient, VmLauncher};
 
 use super::arguments::{build_arguments, image_remove_arguments, tag_arguments, temporary_tag};
+use super::build_vm::{Abort, BuildVm, Session, text_of};
 use super::steps::unix_seconds;
 
 const PROVISIONING_STEPS: usize = 6;
@@ -109,48 +106,17 @@ pub struct GoldenBuild<'a> {
     pub stop: watch::Receiver<Option<Instant>>,
 }
 
-/// why a step ended the build.
-enum Abort {
-    /// a prerequisite is not met; nothing was changed.
-    Refused(String),
-    Stopped,
-    Failed(String),
-    /// the rename was cut short and a listing could not say whether it took effect.
-    CommitUnknown(String),
-}
-
-impl From<String> for Abort {
-    fn from(reason: String) -> Self {
-        Self::Failed(reason)
-    }
-}
-
-impl Abort {
-    fn message(self) -> String {
-        match self {
-            Self::Refused(reason) | Self::CommitUnknown(reason) => reason,
-            Self::Stopped => "the build was stopped before the golden VM was complete, so the \
-                              golden VM is unchanged"
-                .to_string(),
-            Self::Failed(reason) => {
-                format!("the golden VM build failed ({reason}), so the golden VM is unchanged")
-            }
+impl GoldenBuild<'_> {
+    fn vm(&self) -> BuildVm<'_> {
+        BuildVm {
+            client: &self.client,
+            launcher: &self.launcher,
+            log: self.log,
+            timings: self.timings,
+            stop: &self.stop,
         }
     }
-}
 
-/// the build VM, from its name being chosen until it is committed or deleted.
-#[derive(Default)]
-struct Session {
-    vm: Option<String>,
-    held: Option<HeldVm>,
-}
-
-fn text_of(error: &impl std::fmt::Display) -> String {
-    scrub_error_text(&error.to_string(), "")
-}
-
-impl GoldenBuild<'_> {
     /// runs the build until the golden VM holds the new image; the error says why not.
     /// A stop after the commit ends the clean-up of the old golden VMs, not the build.
     pub async fn run(&self) -> Result<(), String> {
@@ -158,69 +124,58 @@ impl GoldenBuild<'_> {
         let Err(abort) = self.make(&mut session).await else {
             return Ok(());
         };
-        self.remove_build_vm(&session).await;
+        self.vm().remove_build_vm(&session).await;
         Err(abort.message())
     }
 
     async fn make(&self, session: &mut Session) -> Result<(), Abort> {
-        self.guard(self.check_prerequisites())
+        self.vm()
+            .guard(self.check_prerequisites())
             .await
             .map_err(|abort| match abort {
                 Abort::Failed(reason) => Abort::Refused(reason),
                 other => other,
             })?;
-        self.guard(self.delete_leftovers()).await?;
+        self.vm().guard(self.delete_leftovers()).await?;
         self.log.info(&format!("Pulling {BASE_REFERENCE}."));
-        self.guard(async {
-            self.client
-                .pull(BASE_REFERENCE)
-                .await
-                .map_err(|e| text_of(&e))
-        })
-        .await?;
+        self.vm()
+            .guard(async {
+                self.client
+                    .pull(BASE_REFERENCE)
+                    .await
+                    .map_err(|e| text_of(&e))
+            })
+            .await?;
         let now = SystemTime::now();
         let vm = build_vm_name(now);
         // recorded before the clone, so a clone that fails halfway is still deleted
         session.vm = Some(vm.clone());
         self.log
             .info(&format!("Cloning the base image to the build VM {vm}."));
-        self.guard(async {
-            self.client
-                .clone_vm(BASE_REFERENCE, &vm)
-                .await
-                .map_err(|e| text_of(&e))
-        })
-        .await?;
-        self.boot(session, &vm).await?;
+        self.vm()
+            .guard(async {
+                self.client
+                    .clone_vm(BASE_REFERENCE, &vm)
+                    .await
+                    .map_err(|e| text_of(&e))
+            })
+            .await?;
+        self.vm().boot(session, &vm).await?;
         self.provision(&vm).await?;
         let built = self.build_runner_image(&vm).await?;
-        self.shut_down(session, &vm).await?;
+        self.vm()
+            .shut_down(session, &vm, &flush_disk_call())
+            .await?;
         let golden = GoldenVmName::current(built)
             .ok_or_else(|| Abort::Failed("the image definition declares no runner version".into()))?
             .to_string();
-        self.commit(session, &vm, &golden).await?;
+        self.vm().commit(session, &vm, &golden).await?;
         self.log.info(&format!(
             "The golden VM {golden} is built, with {} inside.",
             self.image
         ));
         self.retire_old(&golden).await;
         Ok(())
-    }
-
-    /// completes when a stop is asked for, with its time; never, when the sender is
-    /// gone without one.
-    async fn stopped(&self) -> Instant {
-        super::stop_requested(&self.stop).await
-    }
-
-    /// runs `work` until it ends or a stop is asked for, which drops it, killing the
-    /// client it runs.
-    async fn guard<T>(&self, work: impl Future<Output = Result<T, String>>) -> Result<T, Abort> {
-        tokio::select! {
-            biased;
-            _ = self.stopped() => Err(Abort::Stopped),
-            done = work => done.map_err(Abort::Failed),
-        }
     }
 
     async fn check_prerequisites(&self) -> Result<(), String> {
@@ -270,56 +225,6 @@ impl GoldenBuild<'_> {
         Ok(())
     }
 
-    /// starts the build VM under the launcher and waits for its guest agent.
-    async fn boot(&self, session: &mut Session, vm: &str) -> Result<(), Abort> {
-        self.log.info(&format!("Booting the build VM {vm}."));
-        let held = HeldVm::start(&self.client, &self.launcher, vm).map_err(|error| {
-            Abort::Failed(boot_failure_text(
-                BUILD_VM,
-                vm,
-                &BootEnd::NotStarted(text_of(&error)),
-            ))
-        })?;
-        let held = session.held.insert(held);
-        let waited = wait_for_agent(&self.client, &SystemClock, self.timings.agent, vm, held);
-        self.guard(async {
-            waited
-                .await
-                .map_err(|end| boot_failure_text(BUILD_VM, vm, &end))
-        })
-        .await
-    }
-
-    /// runs `command` in the VM and returns what it printed; the error begins with
-    /// `failure`, whether the client failed or the command did.
-    async fn exec_checked(
-        &self,
-        vm: &str,
-        command: &[String],
-        input: Option<&[u8]>,
-        budget: Duration,
-        failure: &str,
-    ) -> Result<Captured, String> {
-        let answer = self
-            .client
-            .exec(vm, command, input, budget)
-            .await
-            .map_err(|error| format!("{failure}: {}", text_of(&error)))?;
-        answer.checked(failure).map_err(|error| error.to_string())
-    }
-
-    /// runs one guest call and returns what it printed, a failure naming `what`.
-    async fn guest(&self, vm: &str, call: &GuestCall, what: &str) -> Result<Captured, String> {
-        self.exec_checked(
-            vm,
-            &call.command,
-            call.input.as_deref(),
-            call.budget,
-            &format!("{what} failed"),
-        )
-        .await
-    }
-
     async fn step(
         &self,
         vm: &str,
@@ -330,7 +235,7 @@ impl GoldenBuild<'_> {
         self.log.info(&format!(
             "Provisioning the golden VM, step {number} of {PROVISIONING_STEPS}: {what}."
         ));
-        self.guard(self.guest(vm, call, what)).await
+        self.vm().guard(self.vm().guest(vm, call, what)).await
     }
 
     /// the six guest calls of the golden VM's provisioning, in order; the key's
@@ -367,14 +272,15 @@ impl GoldenBuild<'_> {
         budget: Duration,
         failure: &str,
     ) -> Result<Captured, String> {
-        self.exec_checked(
-            vm,
-            &build_vm_docker_command(arguments),
-            None,
-            budget,
-            failure,
-        )
-        .await
+        self.vm()
+            .exec_checked(
+                vm,
+                &build_vm_docker_command(arguments),
+                None,
+                budget,
+                failure,
+            )
+            .await
     }
 
     /// builds the runner image under the temporary tag as axpc does, checks its contract
@@ -383,28 +289,31 @@ impl GoldenBuild<'_> {
     /// taken just before the build, which the temporary tag and the `built` label carry
     /// and the golden VM's name must carry too, so its freshness counts from the image.
     async fn build_runner_image(&self, vm: &str) -> Result<SystemTime, Abort> {
-        self.guard(self.wait_for_engine(vm)).await?;
+        self.vm().guard(self.wait_for_engine(vm)).await?;
         let now = SystemTime::now();
         let temporary = temporary_tag(self.image, now);
         self.log.info(&format!(
             "Building {} in the build VM under the temporary tag {temporary}.",
             self.image
         ));
-        self.guard(self.docker_build(vm, &temporary, unix_seconds(now)))
+        self.vm()
+            .guard(self.docker_build(vm, &temporary, unix_seconds(now)))
             .await?;
-        self.guard(self.check_contract(vm, &temporary)).await?;
+        self.vm().guard(self.check_contract(vm, &temporary)).await?;
         let budget = self.timings.docker_call;
-        self.guard(async {
-            self.docker(
-                vm,
-                &tag_arguments(&temporary, self.image),
-                budget,
-                &format!("tagging the build as {}", self.image),
-            )
-            .await
-        })
-        .await?;
+        self.vm()
+            .guard(async {
+                self.docker(
+                    vm,
+                    &tag_arguments(&temporary, self.image),
+                    budget,
+                    &format!("tagging the build as {}", self.image),
+                )
+                .await
+            })
+            .await?;
         let removed = self
+            .vm()
             .guard(async {
                 self.docker(
                     vm,
@@ -506,106 +415,10 @@ impl GoldenBuild<'_> {
         }
     }
 
-    /// writes the files the build VM has not yet written to its disk, stops it, and
-    /// waits for its `tart run` to end.
-    async fn shut_down(&self, session: &Session, vm: &str) -> Result<(), Abort> {
-        self.log
-            .info(&format!("Writing the build VM {vm}'s files to its disk."));
-        self.guard(self.guest(
-            vm,
-            &flush_disk_call(),
-            "writing the build VM's files to its disk",
-        ))
-        .await?;
-        self.log.info(&format!("Shutting the build VM {vm} down."));
-        let timings = self.timings;
-        self.guard(async {
-            self.client
-                .stop(vm, timings.shutdown_grace, timings.shutdown_budget)
-                .await
-                .map_err(|error| format!("shutting the build VM down failed: {}", text_of(&error)))
-        })
-        .await?;
-        let Some(held) = &session.held else {
-            return Ok(());
-        };
-        self.guard(async {
-            tokio::time::timeout(timings.run_end, held.ended())
-                .await
-                .map(drop)
-                .map_err(|_| {
-                    format!(
-                        "tart run did not end within {} s of the build VM stopping",
-                        timings.run_end.as_secs()
-                    )
-                })
-        })
-        .await
-    }
-
-    /// renames the build VM to the golden name, which commits the build. A rename cut
-    /// short by a stop gets a few seconds to finish, and a listing then says whether
-    /// it took effect.
-    async fn commit(&self, session: &mut Session, vm: &str, golden: &str) -> Result<(), Abort> {
-        self.log
-            .info(&format!("Renaming the build VM {vm} to {golden}."));
-        let timings = self.timings;
-        let finished = {
-            let mut rename = pin!(self.client.rename(vm, golden));
-            tokio::select! {
-                biased;
-                done = &mut rename => Some(done),
-                at = self.stopped() => {
-                    tokio::time::timeout_at(at + timings.commit_grace_after_stop, &mut rename)
-                        .await
-                        .ok()
-                }
-            }
-        };
-        match finished {
-            Some(Ok(())) => {
-                session.vm = None;
-                Ok(())
-            }
-            Some(Err(error)) => Err(Abort::Failed(format!(
-                "renaming the build VM failed: {}",
-                text_of(&error)
-            ))),
-            None => self.decide_commit(session, vm, golden).await,
-        }
-    }
-
-    /// after a rename cut short, whether the golden name exists says if it committed.
-    /// The `tart rename` client has ended by now, so the listing is not racing it.
-    async fn decide_commit(
-        &self,
-        session: &mut Session,
-        vm: &str,
-        golden: &str,
-    ) -> Result<(), Abort> {
-        let listed = tokio::time::timeout(self.timings.commit_listing, self.client.list()).await;
-        match listed {
-            Ok(Ok(entries)) if has_local(&entries, golden) => {
-                session.vm = None;
-                Ok(())
-            }
-            Ok(Ok(_)) => Err(Abort::Stopped),
-            _ => {
-                // the build VM stays recorded: deleting it by its own name is safe whether or
-                // not the rename took effect, and never reaches the golden name
-                Err(Abort::CommitUnknown(format!(
-                    "commit unknown: the rename was stopped and the VMs could not be listed; \
-                     `tart list` shows whether {golden} exists, and the build VM {vm} is also \
-                     deleted by its own name, with a warning if that fails"
-                )))
-            }
-        }
-    }
-
     /// after the commit: deletes every other golden VM and the retired base pins from
     /// Tart's cache. All of it is best effort, and a stop skips what is left.
     async fn retire_old(&self, golden: &str) {
-        match self.guard(self.delete_old(golden)).await {
+        match self.vm().guard(self.delete_old(golden)).await {
             Ok(()) => {}
             Err(Abort::Failed(reason)) => self
                 .log
@@ -648,30 +461,4 @@ impl GoldenBuild<'_> {
         }
         Ok(())
     }
-
-    /// deletes the build VM, if the build has not committed it, within the cleanup
-    /// budget; the VM's shim deletes it too when this process ends.
-    async fn remove_build_vm(&self, session: &Session) {
-        let Some(vm) = &session.vm else {
-            return;
-        };
-        let stop = match &session.held {
-            Some(held) if !held.has_ended() => Stop::Graceful,
-            _ => Stop::NotStarted,
-        };
-        if let Err(error) = tear_down(&self.client, vm, stop, self.timings.cleanup).await {
-            self.log.warn(&format!(
-                "{error}; the next build deletes it if it is still there."
-            ));
-        }
-        if let Some(held) = &session.held {
-            held.close_liveness();
-        }
-    }
-}
-
-fn has_local(entries: &[VmEntry], name: &str) -> bool {
-    entries
-        .iter()
-        .any(|entry| entry.source == VmSource::Local && entry.name == name)
 }
