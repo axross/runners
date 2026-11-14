@@ -8,7 +8,7 @@ use std::time::Duration;
 use tokio::time::Instant;
 
 use crate::affinity::{affinity_count, affinity_offset, slot_offset};
-use crate::profile::{Os, Profile};
+use crate::profile::Profile;
 use crate::validate::{Entry, Plan, PlannedVolume, format_cpu_count};
 
 use super::backend::{Backend, DiagnosticRecord, HostRequest, JobHost, Mount, StopRequest};
@@ -18,7 +18,6 @@ use super::diagnostic::{
 };
 use super::log::Log;
 use super::name::cpu_probe_name;
-use super::select::Runtime;
 use super::token::{TokenFiles, TokenSource};
 
 const STALE_REMOVE_BUDGET: Duration = Duration::from_secs(120);
@@ -94,33 +93,8 @@ pub fn image_name(plan: &Plan) -> &str {
     plan.image_name.as_deref().unwrap_or(DEFAULT_IMAGE_NAME)
 }
 
-/// why `start` skips an axmc macOS pool.
-pub const MACOS_POOL_SKIPPED: &str = "macOS VM pools are not supported yet";
-
-/// what `start` says when every pool of the configuration is skipped.
-pub const NO_POOL_CAN_START: &str =
-    "No pool can start, because macOS VM pools are not supported yet";
-
-/// the names of the pools of `plan` that have no runtime on its host: on axmc, the
-/// macOS pools, which have no runtime yet. An axpc plan skips none.
-#[must_use]
-pub fn skipped_pools(plan: &Plan) -> Vec<&str> {
-    plan.entries
-        .iter()
-        .filter(|entry| Runtime::of_pool(plan.profile, entry.os).is_none())
-        .map(|entry| entry.name.as_str())
-        .collect()
-}
-
-/// the warning `start` logs for a skipped pool.
-#[must_use]
-pub fn skip_warning(pool: &str) -> String {
-    format!("Skipping pool {pool}: {MACOS_POOL_SKIPPED}")
-}
-
-/// turns a valid axpc plan, or the Linux pools of an axmc plan, into pools, in the
-/// plan's order; an axmc macOS pool gets none (see [`skipped_pools`]), so a plan of
-/// macOS pools alone gives no pool. It fails for an entry without a token file.
+/// turns a valid plan into pools, in the plan's order: on axmc, a VM pool for each
+/// Linux or macOS entry. It fails for an entry without a token file.
 pub fn pools_from_plan(plan: &Plan) -> Result<Vec<PoolSpec>, PlanError> {
     match plan.profile {
         Profile::Axpc => {
@@ -138,7 +112,7 @@ pub fn pools_from_plan(plan: &Plan) -> Result<Vec<PoolSpec>, PlanError> {
         Profile::Axmc => plan
             .entries
             .iter()
-            .filter(|entry| entry.os == Some(Os::Linux))
+            .filter(|entry| entry.os.is_some())
             .map(|entry| vm_pool_from_entry(entry, image_name(plan)))
             .collect(),
     }

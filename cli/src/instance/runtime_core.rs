@@ -11,13 +11,12 @@ use tokio::sync::watch;
 
 use crate::image::check::{ImageCheck, freshness_warnings};
 use crate::runtime::backend::Backend;
-use crate::runtime::board::{Board, PoolState};
+use crate::runtime::board::Board;
 use crate::runtime::clock::Clock;
 use crate::runtime::image::check_image;
 use crate::runtime::log::Log;
 use crate::runtime::pool::{
-    MACOS_POOL_SKIPPED, NO_POOL_CAN_START, NoPoolStartable, PoolSpec, admit_pools, image_name,
-    pools_from_plan, prepare_admitted, skip_warning, skipped_pools,
+    NoPoolStartable, PoolSpec, admit_pools, image_name, pools_from_plan, prepare_admitted,
 };
 use crate::runtime::registration::Registrar;
 use crate::runtime::select::Runtime;
@@ -140,16 +139,8 @@ impl<B: Backend, K: Clock, R: Registrar> Core for RuntimeCore<'_, B, K, R> {
         self.board.clear();
         self.running.set(true);
         let _cleared = Cleared(&self.board, &self.running);
-        for pool in skipped_pools(plan) {
-            self.log.warn(&skip_warning(pool));
-            self.board
-                .set_pool(pool, PoolState::Skipped(MACOS_POOL_SKIPPED.to_string()));
-        }
         let pools =
             pools_from_plan(plan).map_err(|error| failure(error.to_string(), Ending::Ordinary))?;
-        if pools.is_empty() {
-            return Err(failure(NO_POOL_CAN_START.to_string(), Ending::NothingToRun));
-        }
         let image = image_name(plan);
         self.board.expect_image(image);
         let prepared = tokio::select! {

@@ -97,6 +97,9 @@ pub enum ImageCheck {
     Unavailable(String),
     /// what the VM runtime's check of the golden VM found, in place of an image.
     Golden(GoldenCheck),
+    /// the configuration runs no Linux pool, so no runner image or Linux golden VM is
+    /// needed; the golden macOS VM is checked where a macOS VM is cloned.
+    NoLinuxPool,
 }
 
 /// what the check of the golden VM found, from the VM names alone.
@@ -168,7 +171,7 @@ impl ImageCheck {
     #[must_use]
     pub fn refusal(&self, image: &str) -> Option<String> {
         match self {
-            Self::Matching(_) | Self::Unavailable(_) => None,
+            Self::Matching(_) | Self::Unavailable(_) | Self::NoLinuxPool => None,
             Self::Golden(golden) => golden.refusal(),
             Self::Mismatched(labels) => Some(format!(
                 "the image {image} has image contract {}, but this CLI needs image contract {CONTRACT_VERSION}",
@@ -184,7 +187,7 @@ impl ImageCheck {
         match self {
             Self::Matching(labels) | Self::Mismatched(labels) => Some(labels),
             Self::Golden(golden) => golden.labels(),
-            Self::Missing | Self::Unavailable(_) => None,
+            Self::Missing | Self::Unavailable(_) | Self::NoLinuxPool => None,
         }
     }
 
@@ -386,6 +389,7 @@ pub fn status_fields(
     let contract = match check {
         None | Some(ImageCheck::Unavailable(_)) => "not checked".to_string(),
         Some(ImageCheck::Matching(_)) => CONTRACT_VERSION.to_string(),
+        Some(ImageCheck::NoLinuxPool) => "not used, no Linux pool".to_string(),
         Some(ImageCheck::Mismatched(labels)) => format!(
             "mismatch (image {}, CLI {CONTRACT_VERSION})",
             shown_contract(labels)

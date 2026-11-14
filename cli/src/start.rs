@@ -250,7 +250,8 @@ async fn run_instance(parts: Parts<'_>, plan: crate::validate::Plan) -> u8 {
                 parts.log.clone(),
             )
             .with_exporter(parts.exporter.clone(), parts.checkout.clone())
-            .with_network_gate(gate.clone());
+            .with_network_gate(gate.clone())
+            .with_pools(configured_pools(&plan));
             let signals = Signals::from_environment();
             let cadence = Cadence::for_source(signals.is_scripted());
             let log = parts.log.clone();
@@ -258,6 +259,20 @@ async fn run_instance(parts: Parts<'_>, plan: crate::validate::Plan) -> u8 {
             serve_instance(&backend, &monitor, parts, plan, server, requests, sender).await
         }
     }
+}
+
+/// the pools of an axmc plan with their operating systems, which tell the backend a
+/// macOS slot from a Linux one.
+fn configured_pools(plan: &crate::validate::Plan) -> Vec<crate::macos::count::ConfiguredPool> {
+    plan.entries
+        .iter()
+        .filter_map(|entry| {
+            Some(crate::macos::count::ConfiguredPool {
+                name: entry.name.clone(),
+                os: entry.os?,
+            })
+        })
+        .collect()
 }
 
 /// the launcher of job VMs that matches the one of job containers: the shim where the

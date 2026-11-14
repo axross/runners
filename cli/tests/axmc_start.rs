@@ -22,7 +22,8 @@ const INSTALL_SECTION: &str =
     "the \"Installing Tart and Softnet\" section of the macOS Runner Host document";
 const SOFTNET_SECTION: &str =
     "the \"Setting Up Softnet\" section of the macOS Runner Host document";
-const SKIP_REASON: &str = "macOS VM pools are not supported yet";
+const MACOS_GOLDEN: &str = "marshal-golden-macos-g1-r2.337.0-20261101000000";
+const PROBE_50_GB: &str = "launcher yes\nrunner 2.337.0\ndisk 50000000000\npartitions 50000000000";
 
 /// a host whose job containers are held until a test ends them.
 fn holding_host(pools: &[support::axmc::Pool]) -> MacHost {
@@ -43,63 +44,73 @@ fn assert_refused_before_any_vm(host: &MacHost, finished: &Finished) {
 }
 
 #[test]
-fn a_linux_and_macos_configuration_starts_only_the_linux_pools_with_one_skip_warning_per_macos_pool()
- {
-    let host = holding_host(&[macos("macone", 1), linux("linuxone", 1), macos("mactwo", 1)]);
+fn a_linux_and_macos_configuration_runs_each_pool_in_a_vm_of_its_os() {
+    let host = holding_host(&[macos("macone", 1), linux("linuxone", 1)]);
+    let linux_golden = host.vm_names()[0].clone();
+    host.tart_script(
+        "vms",
+        &format!("{linux_golden}\tstopped\tlocal\t\t\t\n{MACOS_GOLDEN}\tstopped\tlocal\t\t\t"),
+    );
+    host.tart_script("exec_stdout-marshal-probe", PROBE_50_GB);
+    host.tart_script("macos_hold", "");
     let stub = github();
     let started = host.start(&stub.address);
-    let status = host.wait_for_status("the Linux job", RUNNING_WITHIN, running(1));
+    let status = host.wait_for_status("both jobs", RUNNING_WITHIN, running(2));
+    assert!(status.contains("pool: macone: running"), "{status}");
     assert!(status.contains("pool: linuxone: running"), "{status}");
-    for pool in ["macone", "mactwo"] {
-        assert!(
-            status.contains(&format!("pool: {pool}: skipped: {SKIP_REASON}")),
-            "{status}"
-        );
-    }
+    assert!(!status.contains("skipped"), "{status}");
 
-    let finished = host.stop_and_finish(started);
-    assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
-    let log = host.log_text();
-    for pool in ["macone", "mactwo"] {
-        let line = format!("WARNING: Skipping pool {pool}: {SKIP_REASON}");
-        assert_eq!(log.matches(&line).count(), 1, "{log}");
-        assert_eq!(finished.stderr.matches(&line).count(), 1);
-    }
-    assert!(!log.contains("Skipping pool linuxone"), "{log}");
     let clones: Vec<_> = host
         .tart_calls()
         .into_iter()
         .filter(|call| call[0] == "clone")
         .collect();
-    assert_eq!(clones.len(), 1, "{clones:?}");
-    assert!(clones[0][2].contains("linuxone"), "{clones:?}");
-    assert_eq!(host.vm_names().len(), 1, "the job VM is gone");
+    assert_eq!(clones.len(), 2, "{clones:?}");
+    let source_of = |pool: &str| {
+        clones
+            .iter()
+            .find(|call| call[2].starts_with(&format!("marshal-job-{pool}-")))
+            .map(|call| call[1].clone())
+            .unwrap()
+    };
+    assert_eq!(source_of("macone"), MACOS_GOLDEN);
+    assert_eq!(source_of("linuxone"), linux_golden);
+    let runs = std::fs::read_to_string(host.tart_dir().join("macos_runs")).unwrap();
+    assert!(runs.starts_with("marshal-job-macone-1-"), "{runs}");
+    let macos_set = host
+        .tart_calls()
+        .into_iter()
+        .find(|call| call[0] == "set" && call[1].starts_with("marshal-job-macone-"))
+        .unwrap();
+    assert_eq!(
+        macos_set[2..],
+        ["--cpu", "2", "--memory", "4096", "--disk-size", "50"]
+    );
+
+    let finished = host.stop_and_finish(started);
+    assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
+    assert!(!host.log_text().contains("Skipping pool"));
+    let mut left = host.vm_names();
+    left.sort();
+    let mut goldens = vec![linux_golden, MACOS_GOLDEN.to_string()];
+    goldens.sort();
+    assert_eq!(left, goldens, "the job VMs are gone");
 }
 
 #[test]
-fn a_macos_only_configuration_exits_1_and_needs_neither_tart_nor_softnet() {
-    let host = MacHost::new(&[macos("macone", 1), macos("mactwo", 1)])
-        .without_softnet()
-        .with_tart_program("/nonexistent/marshal-test/tart");
+fn a_macos_only_configuration_without_a_golden_macos_vm_exits_1_naming_build() {
+    let host = MacHost::new(&[macos("macone", 1), macos("mactwo", 1)]);
     let stub = github();
     let finished = host.start(&stub.address).finish(RUNNING_WITHIN);
     assert_eq!(finished.status.code(), Some(1), "{}", finished.stderr);
-    for pool in ["macone", "mactwo"] {
-        assert!(
-            finished
-                .stderr
-                .contains(&format!("Skipping pool {pool}: {SKIP_REASON}")),
-            "{}",
-            finished.stderr
-        );
-    }
     assert!(
         finished
             .stderr
-            .contains("No pool can start, because macOS VM pools are not supported yet"),
+            .contains("no golden macOS VM was found; `marshal build` makes it"),
         "{}",
         finished.stderr
     );
+    assert_eq!(host.count_of("clone"), 0);
     assert!(stub.requests().is_empty(), "nothing was registered");
 }
 

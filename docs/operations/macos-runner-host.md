@@ -378,8 +378,7 @@ From another terminal, as the same user:
 `running container <name>` while it holds a job, `backing off` after a failure, and
 `held: <reason>` when a prerequisite refuses its next boot. A slot that is held boots
 nothing and tries again on its backoff, while jobs on other slots finish; fix the
-cause, such as Softnet's SUID bit after a `brew upgrade`, and the slot boots again. A
-pool of `os: "macos"` shows `skipped: macOS VM pools are not supported yet`.
+cause, such as Softnet's SUID bit after a `brew upgrade`, and the slot boots again.
 
 Stop the host with `marshal stop`, or with Ctrl+C in the `start` terminal, or by
 closing it; each runs the same stop sequence, which stops the job containers and

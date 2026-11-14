@@ -879,18 +879,14 @@ vCPUs, the pool's `memoryGb` and the pool's `diskGb`, and the job container's CP
 quota and affinity cover all of the host's vCPUs, 0 to `cpus` - 1, with its memory
 limit equal to the host's memory. The image defaults to `actions-runner:local` when
 `imageName` is absent. `start` and the core apply that default, and `validate` and
-its summary do not. The macOS pools of a plan are not made into pools. The VM
+its summary do not. Each Linux or macOS pool of a plan is made into a VM pool. The VM
 runtime is the [Tart Backend](#tart-backend), which `start` runs, and
-`build --profile axmc` makes its golden VM:
+`build --profile axmc` makes its golden VMs:
 
-- `start --profile axmc` runs the Linux pools on the Tart backend. Each macOS pool
-  is skipped: the core logs `Skipping pool <pool>: macOS VM pools are not supported yet`
-  once for it at each run, and `status` shows the pool as
-  `skipped: macOS VM pools are not supported yet`. When every pool is skipped,
-  nothing can start, and `start` exits 1 with
-  `No pool can start, because macOS VM pools are not supported yet`, without
-  checking Tart or Softnet. A restart or a resume that finds only macOS pools fails
-  the core the same way, as any later run without a startable pool does. On a
+- `start --profile axmc` runs every pool on the Tart backend: a Linux pool's job VM
+  is cloned from the golden Linux VM, and a macOS pool's from the golden macOS VM.
+  `start` refuses a configuration with a macOS pool when no golden macOS VM of the
+  current version exists, naming `marshal build`, as it does for a Linux pool. On a
   Windows host, `start --profile axmc` exits 1 first, before taking the lock or
   calling any engine, with `error: the axmc profile runs only on macOS`; a Linux
   host is refused as unsupported, as under [Start](#start).

@@ -61,6 +61,10 @@ pub fn quick_timings() -> TartTimings {
         tart_poll: Duration::from_millis(50),
         image_check: Duration::from_secs(5),
         release: Duration::from_secs(10),
+        macos_boot_deadline: Duration::from_secs(5),
+        place_poll: Duration::from_millis(50),
+        disk_wait: Duration::from_secs(2),
+        disk_poll: Duration::from_millis(50),
     }
 }
 
