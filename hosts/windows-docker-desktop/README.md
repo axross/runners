@@ -57,6 +57,12 @@ reads each pool's token from the Credential Manager.
 When only `config.json` is in that folder, the agent's first start migrates it to
 `config.toml` and leaves `config.json` in place. The keys, the problems it reports,
 and the migration are in [CLI](../../docs/operations/cli.md#the-toml-configuration).
+Its optional `[lifecycle]` table, shown commented out in the example with the
+Windows defaults, says whether the agent registers at sign-in, starts the runners at
+launch, keeps Windows awake while runners run, stops them on a network change, and
+starts them again after a sleep or network stop;
+[The Agent's Signals](../../docs/operations/cli.md#the-agents-signals) describes
+each one.
 
 ## Checking a configuration
 

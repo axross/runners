@@ -177,6 +177,8 @@ pub struct MemorySignIn {
     pub command: std::cell::RefCell<Option<String>>,
     /// makes every write fail with this text while it is set.
     pub failure: std::cell::RefCell<Option<String>>,
+    /// answers a written value as turned off in Startup apps, as Windows reports it.
+    pub turned_off: std::cell::Cell<bool>,
 }
 
 #[cfg(any(debug_assertions, test))]
@@ -188,7 +190,11 @@ impl SignInItem for MemorySignIn {
         match command(executable) {
             Ok(command) => {
                 *self.command.borrow_mut() = Some(command);
-                SignIn::Registered
+                if self.turned_off.get() {
+                    SignIn::TurnedOffInStartupApps
+                } else {
+                    SignIn::Registered
+                }
             }
             Err(error) => SignIn::Failed(error.to_string()),
         }
@@ -269,12 +275,40 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn the_value_is_registered_read_back_and_removed_under_the_test_name() {
+    fn the_value_is_registered_read_back_turned_off_and_removed_under_the_test_name() {
+        use winsafe::{self as w, co};
+
         let executable = std::env::current_exe().unwrap();
         assert_eq!(register(&executable), SignIn::Registered);
         assert_eq!(read(), SignIn::Registered);
         assert_eq!(unregister(), SignIn::NotRegistered);
         assert_eq!(read(), SignIn::NotRegistered);
         assert_eq!(unregister(), SignIn::NotRegistered);
+
+        // Windows' own `StartupApproved\Run` value is read: an odd first byte under the
+        // test name turns the registered value off, and its removal turns it on again.
+        // this stays in one test, as the two share the value's name
+        let (approved, _) = w::HKEY::CURRENT_USER
+            .RegCreateKeyEx(
+                STARTUP_APPROVED_KEY,
+                None,
+                co::REG_OPTION::NON_VOLATILE,
+                co::KEY::SET_VALUE,
+                None,
+            )
+            .unwrap();
+        assert_eq!(register(&executable), SignIn::Registered);
+        approved
+            .RegSetValueEx(
+                Some(VALUE_NAME),
+                w::RegistryValue::Binary(vec![3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+            )
+            .unwrap();
+        let turned_off = read();
+        approved.RegDeleteValue(Some(VALUE_NAME)).unwrap();
+        let back_on = read();
+        assert_eq!(unregister(), SignIn::NotRegistered);
+        assert_eq!(turned_off, SignIn::TurnedOffInStartupApps);
+        assert_eq!(back_on, SignIn::Registered);
     }
 }

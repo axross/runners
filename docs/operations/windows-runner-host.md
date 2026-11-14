@@ -256,8 +256,14 @@ and see the Host configuration section of the
 resident agent reads the TOML form instead, `%LOCALAPPDATA%\marshal\config.toml`,
 which its first start migrates from a `config.json` in that folder; see
 [`config.example.toml`](../../hosts/windows-docker-desktop/config.example.toml) and
-[The Agent's Configuration](./cli.md#the-agents-configuration). The rules that matter
-operationally:
+[The Agent's Configuration](./cli.md#the-agents-configuration). Only the resident
+agent reads that file's `[lifecycle]` table: with no table it does not register at
+sign-in, starts the runners at launch, keeps Windows from idle sleep while runners
+run, stops every runner on a sleep or a primary-network change, and does not start
+them again on its own;
+[The Agent's Signals](./cli.md#the-agents-signals) gives each setting, the Run key value,
+and Windows' Startup apps. `marshal start` applies none of them. The
+rules that matter operationally:
 
 - **One entry per execution pool**, each with its own `name`, `slots`,
   `labels`, and `volumes`. Every entry uses the global `imageName`.

@@ -234,6 +234,42 @@ async fn no_setting_can_be_changed_while_no_valid_configuration_was_read() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn a_config_toml_deleted_after_the_agent_read_it_is_unusable_as_for_config_edit() {
+    let rig = rig("");
+    let rig = &rig;
+    rig.drive(Launch::Stopped, |conn| async move {
+        rig.remove("config.toml");
+        assert_eq!(
+            conn.code(
+                "lifecycle_set",
+                json!({ "key": "keep_awake", "value": false })
+            )
+            .await,
+            "config_unusable"
+        );
+        assert!(!rig.root.path().join("config.toml").exists());
+        conn.ok("quit").await;
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_sign_in_item_turned_off_in_startup_apps_is_shown_as_turned_off() {
+    let rig = rig("\n[lifecycle]\nstart_at_login = true\n");
+    rig.sign_in.turned_off.set(true);
+    let rig = &rig;
+    rig.drive(Launch::Stopped, |conn| async move {
+        let lifecycle = conn.status().await.lifecycle.unwrap();
+        assert_eq!(lifecycle.sign_in.as_deref(), Some("turned_off"));
+        assert_eq!(lifecycle.sign_in_error, None);
+        // the value is left as it is, not removed
+        assert!(rig.sign_in.command.borrow().is_some());
+        conn.ok("quit").await;
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn the_sign_in_item_follows_start_at_login() {
     let rig = rig("\n[lifecycle]\nstart_at_login = true\n");
     let rig = &rig;

@@ -279,10 +279,10 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<'_, 
         Ok(result)
     }
 
-    /// checks a change against the file and the rules the agent loads with.
-    fn prepare(&self, request: Request) -> Result<Prepared, ApiError> {
-        self.refuse_migration()?;
-        let file = ConfigFile::read(&self.config_path()).map_err(|failure| match failure {
+    /// reads `config.toml` for a change; a file that is gone or cannot be read is
+    /// `config_unusable`.
+    pub(super) fn read_for_change(&self) -> Result<ConfigFile, ApiError> {
+        ConfigFile::read(&self.config_path()).map_err(|failure| match failure {
             EditError::Io {
                 kind: io::ErrorKind::NotFound,
                 ..
@@ -297,7 +297,13 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<'_, 
                 ErrorCode::ConfigUnusable,
                 format!("config.toml could not be read: {failure}"),
             ),
-        })?;
+        })
+    }
+
+    /// checks a change against the file and the rules the agent loads with.
+    fn prepare(&self, request: Request) -> Result<Prepared, ApiError> {
+        self.refuse_migration()?;
+        let file = self.read_for_change()?;
         let (expected, edits) = match request {
             Request::Edit { revision, edits } => (revision, Some(edits)),
             Request::Reload { revision } => (revision, None),

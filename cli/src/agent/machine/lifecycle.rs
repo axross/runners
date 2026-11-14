@@ -8,7 +8,6 @@ use std::time::Instant;
 
 use serde_json::json;
 
-use crate::edit;
 use crate::instance::lifecycle::Monitor;
 use crate::instance::resume::{Armed, LIMIT};
 use crate::lifecycle_settings::{InEffect, Setting, write};
@@ -104,7 +103,7 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<'_, 
             ));
         };
         self.refuse_migration()?;
-        let file = edit::ConfigFile::read(&self.config_path()).map_err(edit_error)?;
+        let file = self.read_for_change()?;
         if self.read_revision.borrow().as_deref() != Some(revision(file.bytes()).as_str()) {
             return Err(ApiError::new(
                 ErrorCode::ConfigChanged,
