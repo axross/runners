@@ -198,6 +198,36 @@ fn a_macos_slot_waits_for_the_vm_limit_while_a_leftover_and_a_running_macos_vm_c
 }
 
 #[test]
+fn a_macos_slot_that_waited_for_the_limit_checks_tart_again_before_its_clone() {
+    let host = holding_host(&[macos("macone", 1)]);
+    let linux_golden = host.vm_names()[0].clone();
+    let listing = |foreign: &str| {
+        format!(
+            "{linux_golden}\tstopped\tlocal\t\t\t\n{MACOS_GOLDEN}\tstopped\tlocal\t\t\t\n\
+             foreign-a\t{foreign}\tlocal\t\t\t\nforeign-b\t{foreign}\tlocal\t\t\t"
+        )
+    };
+    host.tart_script("vms", &listing("running"));
+    let stub = github();
+    let started = host.start(&stub.address);
+    host.wait_for_status("the limit wait", RUNNING_WITHIN, |status| {
+        status.contains("slot: macone slot 1: waiting for the macOS VM limit")
+    });
+
+    host.tart_script("version_output", OLD_TART);
+    host.wait_for_status("the slot held", RUNNING_WITHIN, |status| {
+        status.contains("slot: macone slot 1: held: Tart 2.41.0 is older")
+    });
+    assert_eq!(
+        host.count_of("clone"),
+        0,
+        "no VM is cloned on a refused Tart"
+    );
+    let finished = host.stop_and_finish(started);
+    assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
+}
+
+#[test]
 fn a_macos_job_vm_that_fails_to_delete_is_deleted_again_while_its_slot_waits() {
     let host = holding_host(&[macos("macone", 1)]);
     let linux_golden = host.vm_names()[0].clone();
@@ -275,6 +305,56 @@ fn a_restart_after_a_macos_pool_is_added_runs_it_in_a_macos_vm() {
         .unwrap();
     assert_eq!(macos_clone[1], MACOS_GOLDEN);
     assert!(host.tart_dir().join("macos_runs").exists());
+    assert!(host.status().contains("golden-macos-vm-version: 1"));
+
+    std::fs::write(
+        &host.config,
+        support::axmc::config_for(host.root.path(), &[linux("linuxone", 1)]),
+    )
+    .unwrap();
+    let restart = host.client(&["restart"]);
+    assert_eq!(restart.status.code(), Some(0), "{}", texts(&restart).1);
+    let status = host.wait_for_status("the Linux job alone", RUNNING_WITHIN, |status| {
+        running_jobs(status).len() == 1 && !status.contains("macone")
+    });
+    assert!(
+        !status.contains("golden-macos-vm-version"),
+        "a run without a macOS pool forgets the golden macOS VM: {status}"
+    );
+    let finished = host.stop_and_finish(started);
+    assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
+}
+
+#[test]
+fn a_restart_without_a_golden_macos_vm_stays_stopped_with_the_image_advice() {
+    let host = holding_host(&[macos("macone", 1)]);
+    let linux_golden = host.vm_names()[0].clone();
+    host.tart_script(
+        "vms",
+        &format!("{linux_golden}\tstopped\tlocal\t\t\t\n{MACOS_GOLDEN}\tstopped\tlocal\t\t\t"),
+    );
+    host.tart_script("exec_stdout-marshal-probe", PROBE_50_GB);
+    host.tart_script("macos_hold", "");
+    let stub = github();
+    let started = host.start(&stub.address);
+    host.wait_for_status("the macOS job", RUNNING_WITHIN, running(1));
+
+    let kept: Vec<String> = std::fs::read_to_string(host.tart_dir().join("vms"))
+        .unwrap()
+        .lines()
+        .filter(|line| !line.starts_with(MACOS_GOLDEN))
+        .map(str::to_string)
+        .collect();
+    host.tart_script("vms", &kept.join("\n"));
+    let restart = host.client(&["restart"]);
+    let (stdout, stderr) = texts(&restart);
+    let both = format!("{stdout}{stderr}{}", host.status());
+    assert!(
+        both.contains("the golden macOS VM is missing")
+            && both.contains("run `marshal stop`, then `marshal build --config"),
+        "{both}"
+    );
+    assert!(host.status().contains("state: stopped"), "{both}");
     let finished = host.stop_and_finish(started);
     assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
 }
@@ -316,15 +396,16 @@ fn a_boot_that_macos_refuses_for_the_vm_limit_deletes_the_clone_and_backs_off() 
 }
 
 #[test]
-fn a_macos_only_configuration_without_a_golden_macos_vm_exits_1_naming_build() {
+fn a_macos_only_configuration_without_a_golden_macos_vm_exits_1_before_any_vm() {
     let host = MacHost::new(&[macos("macone", 1), macos("mactwo", 1)]);
     let stub = github();
     let finished = host.start(&stub.address).finish(RUNNING_WITHIN);
     assert_eq!(finished.status.code(), Some(1), "{}", finished.stderr);
     assert!(
-        finished
-            .stderr
-            .contains("no golden macOS VM was found; `marshal build` makes it"),
+        finished.stderr.contains(
+            "The instance ends: the golden macOS VM is missing; this CLI needs one with \
+             golden VM version 1. Run `marshal build --config"
+        ),
         "{}",
         finished.stderr
     );

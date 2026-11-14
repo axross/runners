@@ -1577,7 +1577,9 @@ async fn a_macos_slot_without_a_golden_macos_vm_fails_only_its_own_preparation()
     ]);
     let error = failed(rig.backend.prepare_job_host(&request()).await);
     assert!(
-        error.contains("no golden macOS VM was found; `marshal build` makes it"),
+        error.contains(
+            "the golden macOS VM is missing; this CLI needs one with golden VM version 1"
+        ),
         "{error}"
     );
     assert!(
@@ -1597,7 +1599,7 @@ async fn a_macos_slot_without_a_golden_macos_vm_fails_only_its_own_preparation()
     rig.fake.script("vms", &vms.join("\n"));
     let error = failed(rig.backend.prepare_job_host(&request()).await);
     assert!(
-        error.contains("is version 2, and this CLI runs version 1"),
+        error.contains("has golden VM version 2, but this CLI needs golden VM version 1"),
         "{error}"
     );
     let linux = HostRequest {

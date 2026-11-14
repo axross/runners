@@ -2743,9 +2743,9 @@ the contract, build-time, and runner labels. A name whose last path part has no 
 is checked as `<name>:latest`, as `docker run` resolves it. When inspect fails, a
 `docker image ls --quiet <name>` tells a missing image from Docker not answering.
 Both calls share a bound of 4 s. A resume's reload is the configuration read, then
-on axmc the [host prerequisites](#host-prerequisites), whose two version reads and,
-with a macOS pool, the golden macOS VM's listing run together and get 2 s each, and
-then this check, which lists the VMs once. It takes 4 s at the most on axpc and
+on axmc the [host prerequisites](#host-prerequisites), whose two version reads run
+together and get 2 s each, and then this check, whose one listing also judges the
+golden macOS VM when a macOS pool is configured. It takes 4 s at the most on axpc and
 6 s on axmc, so it fits inside `start`'s 10 s wait. It follows the container steps of
 a `restart`, which take 28 s at the most, so it ends at 32 s on axpc and 34 s on axmc,
 inside the 35 s wait.
@@ -3046,8 +3046,8 @@ selection, and that neither OS's forms or selection match the other's.
 
 ### The Two-VM Count
 
-Apple's licence allows two additional macOS VMs on a Mac, so the macOS runtime is
-to count them before it creates one. `macos::count` is that count as pure logic: it
+Apple's licence allows two additional macOS VMs on a Mac, so the macOS runtime
+counts them before it creates one. `macos::count` is that count as pure logic: it
 takes Tart's VM list once (each VM's name and state, running, suspended, or
 stopped, where a stopping VM is still running), the configured pools with their
 operating systems, and an OS lookup that stands in for `tart get`, and calls no
@@ -3068,19 +3068,19 @@ failed call and an answer the reader does not know.
 - **Unreadable counts** because over-counting only makes a job wait, while
   under-counting could exceed the licence. A job VM of an unconfigured pool counts
   in any state when its operating system is unreadable. It is among the leftover
-  job VMs that the log and `status` are to name, so the maintainer can delete it.
+  job VMs that the log and `status` name, so the maintainer can delete it.
 - **A job VM of a configured Linux pool is presumed Linux.** Only an explicit
   macOS answer counts it, as a VM left from before the pool's `os` changed. An
   answer of Linux, or an unreadable one, in any state, does not, so a `tart get`
   that fails never blocks macOS jobs because of Linux job VMs. It is not a
-  leftover of an unconfigured pool, because `start` is to delete a configured
-  pool's leftovers.
+  leftover of an unconfigured pool, because `start` deletes a configured pool's
+  leftovers.
 - **A failed deletion** needs no rule of its own: the VM stays in Tart's list, so
   it counts until a later attempt deletes it.
 - **The output** is the VMs that count, each with its reason; the total; whether a
   place is free, below `MAX_MACOS_VMS`; and the counted job VMs of unconfigured
-  pools, by name, for the log and `status`, because `start` is to delete only the
-  leftovers of configured pools.
+  pools, by name, for the log and `status`, because `start` deletes only the leftovers
+  of configured pools.
 
 `macos::place::PlaceLock` is the lock for taking a place, one per instance and
 shared by the macOS slots. A slot gives its `hold` the whole "count, then clone"
@@ -3100,10 +3100,11 @@ golden VM that was built stays. `build::golden_macos` runs the macOS build:
 
 1. It checks Tart and Softnet as `start` does, and refuses a Mac whose macOS is
    older than the base's, with
-   `the pinned macOS base is macOS <v>, newer than this Mac's macOS <h>; update the Mac first`,
-   and a full limit, with
+   `the pinned macOS base is macOS <v>, newer than this Mac's macOS <h>; update the Mac first`.
+2. It deletes any leftover macOS build VM; one it cannot delete is a warning. Then
+   it counts the macOS VMs, so a leftover it deleted does not count, and refuses a
+   full limit with
    `<n> macOS VMs already count against the limit of 2 (<names>), so no macOS build VM was created; stop or delete one of them and build again`.
-2. It deletes any leftover macOS build VM; one it cannot delete is a warning.
 3. It pulls the base by its pinned digest and clones it to a build VM.
 4. It boots the build VM as a job VM boots, with 180 s for the guest agent's first
    answer.
@@ -3158,8 +3159,12 @@ system limit`, the slot deletes the clone, backs off, and logs
 `macOS refused another macOS VM: <error>; if no other macOS VM is running, restart the Mac to release the place`.
 Any other boot failure stays a generic boot failure. `start`, a resume and a
 `restart` refuse a missing golden macOS VM, or one of another golden VM version,
-before any VM boots, with ``no golden macOS VM was found; `marshal build` makes it``
-or a message naming both versions.
+before any VM boots, with the Linux golden VM's messages: `the golden macOS VM is missing; this CLI needs one with golden VM version <G>`
+or `the golden macOS VM <name> has golden VM version <g>, but this CLI needs golden VM version <G>`,
+as image refusals: `start` ends with the Linux golden VM's `build` and `start`
+advice, and a resume or `restart` stays stopped with its `stop`, `build` and
+`start` advice. A later macOS job launch that meets the same refusal holds only its
+slot.
 
 ### macOS Status
 

@@ -16,30 +16,40 @@ pub const MACOS_BOOT_DEADLINE: Duration = Duration::from_secs(180);
 /// deletion is tried again.
 pub const PLACE_POLL: Duration = Duration::from_secs(5);
 
-/// the text Tart 2.41.1 prints when Virtualization.framework refuses another VM,
-/// as the first Mac check on #80 recorded it.
+/// the text Tart 2.41.1 prints when Virtualization.framework refuses another VM.
 pub const VM_LIMIT_ERROR: &str = "The number of VMs exceeds the system limit";
 
 const BYTES_PER_GB: u64 = 1_000_000_000;
 
-/// the golden macOS VM a job VM is cloned from: the newest local one, refused when
-/// there is none or its golden VM version is not this CLI's.
-pub fn macos_clone_source(entries: &[VmEntry]) -> Result<(String, GoldenMacosName), String> {
+/// the newest local golden macOS VM in a listing, with its parsed name, whatever its
+/// golden VM version.
+#[must_use]
+pub fn newest_local_golden(entries: &[VmEntry]) -> Option<(String, GoldenMacosName)> {
     let names = entries
         .iter()
         .filter(|entry| entry.source == VmSource::Local)
         .map(|entry| entry.name.as_str());
-    let Some((name, parsed)) = newest_golden(names) else {
-        return Err("no golden macOS VM was found; `marshal build` makes it".to_string());
+    newest_golden(names).map(|(name, parsed)| (name.to_string(), parsed))
+}
+
+/// the golden macOS VM a job VM is cloned from: the newest local one, refused with
+/// the Linux golden VM's messages when there is none or its golden VM version is not
+/// this CLI's.
+pub fn macos_clone_source(entries: &[VmEntry]) -> Result<(String, GoldenMacosName), String> {
+    let Some((name, parsed)) = newest_local_golden(entries) else {
+        return Err(format!(
+            "the golden macOS VM is missing; this CLI needs one with golden VM version \
+             {GOLDEN_MACOS_VM_VERSION}"
+        ));
     };
     if parsed.version() != GOLDEN_MACOS_VM_VERSION {
         return Err(format!(
-            "the golden macOS VM {name} is version {}, and this CLI runs version \
-             {GOLDEN_MACOS_VM_VERSION}; `marshal build` replaces it",
+            "the golden macOS VM {name} has golden VM version {}, but this CLI needs golden \
+             VM version {GOLDEN_MACOS_VM_VERSION}",
             parsed.version()
         ));
     }
-    Ok((name.to_string(), parsed))
+    Ok((name, parsed))
 }
 
 /// whether the output of a `tart run` that ended is Tart's VM-limit refusal.
@@ -152,7 +162,7 @@ mod tests {
         assert!(
             macos_clone_source(&newer_version)
                 .unwrap_err()
-                .contains("is version 2, and this CLI runs version 1")
+                .contains("has golden VM version 2, but this CLI needs golden VM version 1")
         );
         let oci = [VmEntry {
             source: VmSource::Oci,
@@ -161,7 +171,7 @@ mod tests {
         assert!(
             macos_clone_source(&oci)
                 .unwrap_err()
-                .starts_with("no golden macOS VM")
+                .starts_with("the golden macOS VM is missing")
         );
     }
 

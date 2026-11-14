@@ -185,10 +185,13 @@ fn the_build_provisions_the_base_and_commits_the_golden_macos_vm() {
 #[test]
 fn a_leftover_macos_build_vm_is_deleted_first_and_the_linux_vms_are_not() {
     let rig = Rig::new();
+    // the leftover and the running macOS VM would fill the limit, but the count
+    // follows the leftover's deletion
     rig.fake.seed(&[
         (&old_golden(), "stopped", "local"),
         (LINUX_GOLDEN, "stopped", "local"),
         (LEFTOVER, "stopped", "local"),
+        ("someone-elses-mac", "running", "local"),
     ]);
     assert_eq!(build(&rig), Ok(()), "{:?}", rig.log.lines());
     let calls = rig.calls();

@@ -88,6 +88,15 @@ impl GoldenMacosBuild<'_> {
                 other => other,
             })?;
         self.vm().guard(self.delete_leftovers()).await?;
+        // counted after the clean-up, so a leftover build VM this build deleted
+        // never refuses it
+        self.vm()
+            .guard(self.check_limit())
+            .await
+            .map_err(|abort| match abort {
+                Abort::Failed(reason) => Abort::Refused(reason),
+                other => other,
+            })?;
         let base = self.base.reference();
         self.log.info(&format!("Pulling {base}."));
         self.vm()
@@ -128,8 +137,7 @@ impl GoldenMacosBuild<'_> {
         Ok(())
     }
 
-    /// Tart and Softnet, the host's macOS against the base's, and a free place
-    /// under the limit, since the build VM counts toward the two.
+    /// Tart and Softnet, and the host's macOS against the base's.
     async fn check_prerequisites(&self) -> Result<(), String> {
         let tart = self.accepted(check_tart(&self.client).await)?;
         let path = self.client.config().path.as_deref();
@@ -140,6 +148,13 @@ impl GoldenMacosBuild<'_> {
         if let Some(refusal) = host_refusal(&self.base, &self.host_macos) {
             return Err(refusal);
         }
+        self.log
+            .info(&format!("Using Tart {tart} and Softnet {softnet}."));
+        Ok(())
+    }
+
+    /// refuses the build while two macOS VMs count against the limit.
+    async fn check_limit(&self) -> Result<(), String> {
         let entries = self
             .client
             .list()
@@ -155,8 +170,6 @@ impl GoldenMacosBuild<'_> {
                 names.join(", ")
             ));
         }
-        self.log
-            .info(&format!("Using Tart {tart} and Softnet {softnet}."));
         Ok(())
     }
 

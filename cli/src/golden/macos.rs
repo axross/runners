@@ -9,8 +9,8 @@
 //! 5. [`disable_updates_call`]
 //! 6. [`flush_disk_call`], before the VM stops
 //!
-//! The disk keeps the base's layout, recovery partition included: the first Mac
-//! check on #80 saw the guest agent grow it at boot.
+//! The disk keeps the base's layout, recovery partition included: the guest agent
+//! grows it at boot.
 
 use std::time::Duration;
 
@@ -103,7 +103,7 @@ pub fn disable_remote_access_call() -> GuestCall {
 }
 
 /// step 5: turns off the automatic download and installation of updates, and leaves
-/// the automatic check on, as plan revision 3 on #80 decided.
+/// the automatic check on.
 #[must_use]
 pub fn disable_updates_call() -> GuestCall {
     script_call(

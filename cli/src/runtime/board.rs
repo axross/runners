@@ -178,6 +178,13 @@ impl Board {
         self.vm_leftovers.borrow().clone()
     }
 
+    /// forgets the golden macOS VM and the leftover job VMs, for a run with no macOS
+    /// pool.
+    pub fn forget_macos(&self) {
+        self.macos_golden.replace(None);
+        self.vm_leftovers.borrow_mut().clear();
+    }
+
     /// records the newest golden macOS VM a check found, or that it found none.
     pub fn record_macos_golden(&self, golden: Option<String>) {
         self.macos_golden.replace(Some(golden));

@@ -12,6 +12,7 @@ use tokio::sync::watch;
 use crate::image::check::{ImageCheck, freshness_warnings};
 use crate::image::macos_base::MACOS_BASE;
 use crate::image::macos_golden;
+use crate::profile::Os;
 use crate::runtime::backend::Backend;
 use crate::runtime::board::Board;
 use crate::runtime::clock::Clock;
@@ -86,7 +87,10 @@ pub(crate) async fn verify_image<B: Backend, K: Clock>(
 ) -> Result<(), CoreFailure> {
     loop {
         let check = check_image(backend, board, image).await;
-        if let Some(refusal) = check.refusal(image) {
+        if let Some(refusal) = check
+            .refusal(image)
+            .or_else(|| backend.golden_macos_refusal())
+        {
             return Err(failure(refusal, Ending::ImageRefused));
         }
         let ImageCheck::Unavailable(reason) = check else {
@@ -148,6 +152,9 @@ impl<B: Backend, K: Clock, R: Registrar> Core for RuntimeCore<'_, B, K, R> {
     async fn run(&self, plan: &Plan, mut stop: watch::Receiver<bool>) -> Result<(), CoreFailure> {
         self.backend.use_plan(plan);
         self.board.clear();
+        if !plan.entries.iter().any(|entry| entry.os == Some(Os::Macos)) {
+            self.board.forget_macos();
+        }
         self.running.set(true);
         let _cleared = Cleared(&self.board, &self.running);
         let pools =
@@ -185,7 +192,10 @@ impl<B: Backend, K: Clock, R: Registrar> Core for RuntimeCore<'_, B, K, R> {
                 "{reason}, so the image {image} is checked once Docker answers."
             ));
         }
-        check.refusal(image).map_or(Ok(()), Err)
+        check
+            .refusal(image)
+            .or_else(|| self.backend.golden_macos_refusal())
+            .map_or(Ok(()), Err)
     }
 
     async fn check_prerequisites(&self, plan: &Plan, each_read: Duration) -> Result<(), String> {

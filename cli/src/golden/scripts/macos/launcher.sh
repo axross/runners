@@ -3,6 +3,7 @@
 # starts the runner through its own run.sh in the directory $1, so a runner that
 # updates itself is restarted; the value never appears in an argument list and is
 # not echoed, logged or written to a file.
+# POSIX sh has no pipefail, and this script has no pipeline for it to cover.
 set -eu
 
 limit=65536

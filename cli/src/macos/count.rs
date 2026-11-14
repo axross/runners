@@ -195,8 +195,8 @@ pub fn listed_vms(entries: &[VmEntry]) -> Vec<ListedVm> {
         .collect()
 }
 
-/// reads a VM's operating system from `tart get`, whose `OS` field the first Mac
-/// check on #80 saw as `darwin` for a macOS VM.
+/// reads a VM's operating system from `tart get`, whose `OS` field is `darwin` for a
+/// macOS VM.
 impl GuestOsLookup for TartClient {
     async fn guest_os(&self, name: &str) -> GuestOs {
         match self.os_of(name).await.as_deref() {

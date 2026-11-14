@@ -409,8 +409,10 @@ Apply the lens for each kind of file in the diff.
   to `APPROVED_CONTRACTS` in `cli/src/image/contract.rs`. A change that alters
   either without raising the version is a finding, even when `APPROVED_CONTRACTS`
   cannot see it. A runner bump sets the `FROM` line and the `runner-version` and
-  `runner-released` labels of both Dockerfiles, and adds the release's date from
-  the actions/runner release page to `RUNNER_RELEASES` in the same file. The
+  `runner-released` labels of both Dockerfiles, sets `DECLARED_RUNNER_VERSION`,
+  and adds the release's date and the SHA-256 of its osx-arm64 archive, both from
+  the actions/runner release page, to `RUNNER_RELEASES` in
+  `cli/src/image/runner.rs`. The
   tests that depend on the declared values read them from the Dockerfiles or the
   CLI's contract version, so neither change edits any other test; see
   [CLI](docs/operations/cli.md#the-image-contract).

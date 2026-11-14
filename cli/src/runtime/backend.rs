@@ -328,6 +328,13 @@ pub trait Backend {
         None
     }
 
+    /// why the latest image check refused the golden macOS VM: missing, or of another
+    /// golden VM version. `start`, a resume and a `restart` treat it as an image
+    /// refusal, as they treat the Linux golden VM's.
+    fn golden_macos_refusal(&self) -> Option<String> {
+        None
+    }
+
     /// what the preparation of `host` waits for now, if anything.
     fn host_wait(&self, _host: &JobHost) -> Option<HostWait> {
         None
