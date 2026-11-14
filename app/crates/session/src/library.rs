@@ -83,6 +83,10 @@ pub fn failure(error: CallError) -> Failure {
                     None => format!("kind {}", store.kind),
                 }),
             },
+            code if code.starts_with("config_") => Failure::Config {
+                code: code.to_string(),
+                message: body.message,
+            },
             _ => Failure::Refused(body.message),
         },
         CallError::NotServed(method) => Failure::NotServed(method),
@@ -147,6 +151,14 @@ impl Link for Agent {
                 .token_remove(&repository)
                 .await
                 .map(|()| serde_json::Value::Null),
+            Method::LifecycleSet { key, on } => {
+                self.client
+                    .call(
+                        "lifecycle_set",
+                        serde_json::json!({ "key": key, "value": on }),
+                    )
+                    .await
+            }
         };
         called.map(|_| ()).map_err(failure)
     }

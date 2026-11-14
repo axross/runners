@@ -48,6 +48,7 @@ function shown(runners, { announce = [], notes = [] } = {}) {
             line: "Running since today 03:15 · 1 pool · 1 running job",
             controls: [],
             tokens_chip: null,
+            settings_chip: null,
             opens_on: "pools",
           },
           banners: [],
@@ -78,6 +79,12 @@ function shown(runners, { announce = [], notes = [] } = {}) {
           pools_note: null,
           stale: false,
           tokens: { intro: "Tokens.", rows: [] },
+          settings: {
+            intro: "Settings.",
+            unavailable: null,
+            groups: [],
+            chip: null,
+          },
         },
         footer: {
           github: [

@@ -99,6 +99,27 @@ pub struct TokenUi {
     pub results: BTreeMap<String, TokenResult>,
 }
 
+/// what the latest change of one `[lifecycle]` setting came to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SettingResult {
+    /// written and in effect; `on` is the value written.
+    Saved { on: bool },
+    /// refused by the agent: `code` is its error code, `words` its message.
+    Refused { code: String, words: String },
+    /// contact with the agent was lost before it answered.
+    LostContact,
+    /// the agent did not answer within the call's limit; it may still write it.
+    NotAnswered,
+}
+
+/// the settings as the app has them: the setting being written, and the latest result
+/// for each setting by its key.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SettingsUi {
+    pub writing: Option<String>,
+    pub results: BTreeMap<String, SettingResult>,
+}
+
 /// what the window knows of GitHub's view of the runners.
 #[derive(Debug, Clone, Copy, Default)]
 pub enum GithubFeed<'a> {
@@ -130,6 +151,7 @@ pub struct Input<'a> {
     /// snapshot's count is shown.
     pub settled_up: Option<u32>,
     pub tokens: Option<&'a TokenUi>,
+    pub settings: Option<&'a SettingsUi>,
     pub github: GithubFeed<'a>,
     /// the pools whose Open run found the job ended, with when, in milliseconds since
     /// the Unix epoch.
@@ -146,6 +168,7 @@ impl<'a> Input<'a> {
             clock,
             settled_up: None,
             tokens: None,
+            settings: None,
             github: GithubFeed::Off,
             ended_jobs: None,
         }
@@ -166,6 +189,12 @@ impl<'a> Input<'a> {
     #[must_use]
     pub fn tokens(mut self, tokens: &'a TokenUi) -> Self {
         self.tokens = Some(tokens);
+        self
+    }
+
+    #[must_use]
+    pub fn settings(mut self, settings: &'a SettingsUi) -> Self {
+        self.settings = Some(settings);
         self
     }
 

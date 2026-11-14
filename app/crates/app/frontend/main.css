@@ -897,6 +897,82 @@ svg {
   margin-top: 12px;
 }
 
+/* ---- settings */
+
+.set-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.set-group-title {
+  margin: 8px 4px 0;
+  font-size: 16px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--text-neutral-high);
+}
+
+.set-list {
+  border-radius: var(--radius-xl);
+  background: var(--list-card-fill);
+  box-shadow: var(--shadow-list-card);
+}
+
+.set-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 16px;
+  align-items: start;
+  padding: 14px 16px;
+}
+
+.set-row + .set-row {
+  border-top: 1px solid var(--border-neutral-subtle);
+}
+
+.set-label {
+  font-weight: 500;
+}
+
+.set-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.set-state {
+  color: var(--text-neutral-low);
+}
+
+.set-note {
+  grid-column: 2;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.set-note svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.set-note.bad {
+  color: var(--text-destructive-low);
+}
+
+.check {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--solid-accent-rest);
+}
+
+.check[aria-disabled="true"] {
+  accent-color: var(--border-neutral-unselected-control);
+}
+
 /* ---- full-window states */
 
 .full {
@@ -1052,6 +1128,7 @@ svg {
   .card,
   .banner,
   .token-list,
+  .set-list,
   .dialog,
   .tip,
   .details {
@@ -1063,6 +1140,11 @@ svg {
     background: ButtonFace;
     border: 1px solid ButtonText;
     color: ButtonText;
+  }
+
+  .check[aria-disabled="true"] {
+    forced-color-adjust: none;
+    accent-color: GrayText;
   }
 
   :focus-visible {
