@@ -1076,14 +1076,16 @@ impl<C: Clock> Backend for TartBackend<C> {
         if let Some(reason) = self.wait_for_prerequisites().await {
             return HostPreparation::Held(reason);
         }
+        // each boot is boxed, so this future does not hold the largest of them inline
+        // on the worker's stack
         let booted = if self.is_macos(&request.host.pool) {
-            match self.place_macos(request, &host).await {
-                Ok(Ok(placed)) => self.boot_macos(request, &host, placed).await,
+            match Box::pin(self.place_macos(request, &host)).await {
+                Ok(Ok(placed)) => Box::pin(self.boot_macos(request, &host, placed)).await,
                 Ok(Err(reason)) => return HostPreparation::Held(reason),
                 Err(error) => Err(error),
             }
         } else {
-            self.boot(request, &host).await
+            Box::pin(self.boot(request, &host)).await
         };
         match booted {
             Ok(()) => HostPreparation::Ready,
