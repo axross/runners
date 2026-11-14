@@ -335,6 +335,12 @@ pub trait Backend {
         None
     }
 
+    /// the VM a job of `host` runs in when it runs in a VM rather than a container,
+    /// as a macOS job does.
+    fn job_vm(&self, _host: &JobHost) -> Option<String> {
+        None
+    }
+
     /// what the preparation of `host` waits for now, if anything.
     fn host_wait(&self, _host: &JobHost) -> Option<HostWait> {
         None

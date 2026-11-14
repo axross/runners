@@ -58,6 +58,14 @@ fn a_linux_and_macos_configuration_runs_each_pool_in_a_vm_of_its_os() {
     let started = host.start(&stub.address);
     let status = host.wait_for_status("both jobs", RUNNING_WITHIN, running(2));
     assert!(status.contains("pool: macone: running"), "{status}");
+    assert!(
+        status.contains("slot: macone slot 1: running VM marshal-job-macone-1-"),
+        "a macOS slot names its job VM, not a container: {status}"
+    );
+    assert!(
+        status.contains("slot: linuxone slot 1: running container linuxone-1-"),
+        "{status}"
+    );
     assert!(status.contains("pool: linuxone: running"), "{status}");
     assert!(!status.contains("skipped"), "{status}");
     assert!(
@@ -98,9 +106,25 @@ fn a_linux_and_macos_configuration_runs_each_pool_in_a_vm_of_its_os() {
         ["--cpu", "2", "--memory", "4096", "--disk-size", "50"]
     );
 
+    let stopping = std::time::Instant::now();
     let finished = host.stop_and_finish(started);
     assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
-    assert!(!host.log_text().contains("Skipping pool"));
+    // under Tart's 7 s grace, so a runner that ignored the INT would fail this
+    assert!(
+        stopping.elapsed() < std::time::Duration::from_secs(5),
+        "the macOS runner ended on the INT, within the grace"
+    );
+    let log = host.log_text();
+    assert!(!log.contains("Removing the containers failed"), "{log}");
+    assert!(
+        host.tart_calls().iter().all(|call| call[0] != "exec"
+            || !call
+                .iter()
+                .any(|arg| arg.starts_with("marshal-job-macone-"))
+            || !call.iter().any(|arg| arg == "docker")),
+        "no docker command reaches the macOS job VM"
+    );
+    assert!(!log.contains("Skipping pool"));
     let calls = support::tart::invocations(&host.tart_dir());
     let launch = calls
         .iter()

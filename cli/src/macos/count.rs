@@ -5,7 +5,7 @@
 use std::future::Future;
 
 use crate::profile::Os;
-use crate::validate::MAX_MACOS_VMS;
+use crate::validate::{MAX_MACOS_VMS, Plan};
 
 use crate::runtime::tart::TartClient;
 use crate::runtime::tart::list::{self, VmEntry, VmSource};
@@ -40,6 +40,21 @@ pub struct ListedVm {
 pub struct ConfiguredPool {
     pub name: String,
     pub os: Os,
+}
+
+impl ConfiguredPool {
+    /// the pools of `plan`, each with its operating system; a pool without `os` is a
+    /// Linux pool.
+    #[must_use]
+    pub fn of_plan(plan: &Plan) -> Vec<Self> {
+        plan.entries
+            .iter()
+            .map(|entry| Self {
+                name: entry.name.clone(),
+                os: entry.os.unwrap_or(Os::Linux),
+            })
+            .collect()
+    }
 }
 
 /// what `tart get` says a VM's operating system is; a failed call and an answer the

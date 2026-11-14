@@ -89,6 +89,7 @@ pub fn build(request: &BuildRequest<'_>, err: &mut dyn Write) -> u8 {
     };
     let Some(image) = plan
         .image_name
+        .clone()
         .or_else(|| (request.profile == Profile::Axmc).then(|| DEFAULT_IMAGE_NAME.to_string()))
     else {
         return print_error(err, &"the configuration names no image to build");
@@ -162,14 +163,7 @@ pub fn build(request: &BuildRequest<'_>, err: &mut dyn Write) -> u8 {
                 program: program_from_environment(),
                 ..TartConfig::default()
             });
-            let pools: Vec<ConfiguredPool> = plan
-                .entries
-                .iter()
-                .map(|entry| ConfiguredPool {
-                    name: entry.name.clone(),
-                    os: entry.os.unwrap_or(Os::Linux),
-                })
-                .collect();
+            let pools = ConfiguredPool::of_plan(&plan);
             let builds_linux = pools.iter().any(|pool| pool.os == Os::Linux);
             let builds_macos = pools.iter().any(|pool| pool.os == Os::Macos);
             let (image, log) = (&image, &log);

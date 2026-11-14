@@ -3299,7 +3299,8 @@ answer in time.
   `waiting for Docker` (`waiting for Tart` on axmc), `preparing`, `running`, or
   `skipped: <reason>`; one `slot`
   line per slot, which is `registering` (the preparation of its job host and the CPU
-  probe included), `backing off`, `held: <reason>`, or `running container <name>`;
+  probe included), `backing off`, `held: <reason>`, `running container <name>`, or,
+  for a macOS slot, `running VM <name>`;
   and the image lines under
   [The Image Contract](#the-image-contract), then, on axmc, a
   `network: waiting for a network (no IPv4 default route)` line while no primary

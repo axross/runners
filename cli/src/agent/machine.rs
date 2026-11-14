@@ -887,7 +887,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder> Agent<'a, B, K, R,
             .board
             .slot_rows()
             .into_iter()
-            .filter(|row| matches!(row.state, SlotState::Running(_)))
+            .filter(|row| matches!(row.state, SlotState::Running(_) | SlotState::RunningVm(_)))
             .count();
         u32::try_from(waited).unwrap_or(u32::MAX)
     }

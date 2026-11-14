@@ -381,7 +381,8 @@ From another terminal, as the same user:
 
 [CLI](./cli.md#running-a-host) gives each command's fields, waits and exit codes. In
 `marshal status`, a slot is `registering` while its VM is cloned, booted and probed,
-`running container <name>` while it holds a job, `backing off` after a failure, and
+`running container <name>` while it holds a job (`running VM <name>` for a macOS
+slot, whose job runs in its VM with no container), `backing off` after a failure, and
 `held: <reason>` when a prerequisite refuses its next boot. A macOS slot shows
 `waiting for the macOS VM limit` while two macOS VMs count, and
 `waiting for VM <name> to be deleted` while Marshal deletes again, every 5 s, a job VM
@@ -569,9 +570,9 @@ hand while `marshal` runs; `build` replaces it.
 
 ## Verification Status
 
-**Nothing in this document has been run on a Mac.** No real Tart VM, guest agent,
-Softnet, `caffeinate`, `route` or `arp` has run under `marshal`, and no claim above
-about their behaviour rests on a run. By the maintainer's decision
+**Only the runs this section names have run on a Mac.** A claim above about the
+behaviour of Tart, the guest agent, Softnet, `caffeinate`, `route` or `arp` rests on
+a run only when this section links that run's evidence. By the maintainer's decision
 [recorded on #74](https://github.com/axross/runners/issues/74#issuecomment-6784246305),
 this document's procedures were added with no host run. The one host run planned
 comes with the arm64 runner image, and checks only that a Linux job that uses
@@ -614,6 +615,23 @@ the run goes in this order:
    slept about 3 s and nothing stopped.
 6. Run `marshal stop`, then confirm with `tart list` that no job or build VM is left
    and that the golden VM stays.
+
+**The macOS checks.** The
+[first Mac check](https://github.com/axross/runners/issues/80#issuecomment-6816684419),
+on macOS 27.0 with Tart 2.41.1 and without using Softnet, booted clones of the pinned macOS base
+without `marshal`. It recorded `tart get`'s `"OS" : "darwin"` for a macOS VM, Tart's
+exact VM-limit error with two macOS VMs running, a Linux VM booting beside them, so Linux VMs do not count against the limit, a
+clone's disk growing to 80 GB at boot with the recovery partition kept, and the
+guest agent running commands as `admin`. Mac verification
+[steps 4.1 and 4.2](https://github.com/axross/runners/issues/80#issuecomment-6871092617)
+then ran `marshal build` at `bc5542c`, with a macOS pool and the base already in
+Tart's cache, so the pull found it cached, and read the golden macOS VM through the guest agent: its runner, the base's runner gone, Remote Login and Screen Sharing off,
+and the automatic download and installation of updates off. Steps 4.3 to 4.11 have
+not run: a macOS job VM's cycle under `marshal` and the runner updating itself, the
+limit wait and the refusal at boot, a pool's `diskGb` above 50 under `marshal`, a
+sleep and a network change during a macOS job, a hard kill, `stop`'s timing, and
+the boot time and a rebuild's peak disk use.
+Until they do, what this document says about those rests on the tests and sources.
 
 **What is checked without a Mac.** The CLI's tests run against fake `tart`, `docker`,
 `softnet`, `caffeinate`, `route` and `arp` programs and a scripted signal source:
@@ -667,8 +685,6 @@ of an Apple tool as the source prints it, and not on a run:
   ([decision record](https://github.com/axross/runners/issues/74#issuecomment-6784246305)).
 - The VM has the pool's vCPUs, memory and disk, and no shared directory, Rosetta share,
   sound card or USB device, and the `admin` password login over SSH is refused.
-- Whether Linux VMs count against Apple's limit of two VMs. No host run tests it,
-  and `validate` counts only macOS VMs against the limit.
 - `stop` ends every VM within 30 s, a hard-killed `start` leaves no running job VM
   after the next `start`, and a slot's next VM is cloned, booted, probed and
   registered within 60 s of the previous VM's deletion; record the turnaround.

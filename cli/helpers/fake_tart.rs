@@ -32,7 +32,9 @@
 //! - an `exec -i` of the launcher with one absolute path, the runner's directory in
 //!   a macOS job VM, stands in for the macOS runner: it refuses an empty standard
 //!   input with exit code 64, appends the VM's name to `macos_runs`, holds while
-//!   `macos_hold` exists and the VM runs, and exits with `macos_exit` (default 0);
+//!   `macos_hold` exists, the VM runs and no `pkill` of `Runner.Listener` has
+//!   reached the VM, and exits with `macos_exit` (default 0). Such a VM has no
+//!   Docker, so a `docker` command in it fails with exit code 127;
 //! - a provisioning call, which runs `bash -c <script> <name>` (after `sudo -n` when it
 //!   is privileged), takes its script from files that carry its `<name>`, such as
 //!   `marshal-list-key`: `exec_stdout-<name>` and `exec_exit-<name>` replace the
@@ -345,6 +347,16 @@ fn exec(dir: &Path, stem: &Path, rest: &[&str]) -> Result<u8, String> {
     {
         return Ok(macos_runner(dir, name, &input));
     }
+    if let ["sudo", "-n", "pkill", _, "-f", "Runner.Listener"] = command {
+        fs::write(dir.join(format!("runner_signalled-{name}")), "")
+            .map_err(|error| error.to_string())?;
+        return Ok(0);
+    }
+    let is_macos = text(dir, "macos_runs").is_some_and(|runs| runs.lines().any(|vm| vm == *name));
+    if is_macos && command.iter().take(3).any(|word| *word == "docker") {
+        let _ = writeln!(std::io::stderr(), "bash: docker: command not found");
+        return Ok(127);
+    }
     if let Some(code) = forward_to_docker(dir, command, &input)? {
         return Ok(code);
     }
@@ -366,9 +378,8 @@ fn exec(dir: &Path, stem: &Path, rest: &[&str]) -> Result<u8, String> {
 
 /// stands in for a macOS job VM's runner, which the launcher starts with the runner's
 /// directory: refuses an empty JIT configuration as the launcher does, appends the
-/// VM's name to `macos_runs`, holds while `macos_hold` exists and the VM runs, and
-/// exits with
-/// `macos_exit`, else 0.
+/// VM's name to `macos_runs`, holds while `macos_hold` exists, the VM runs and no
+/// `pkill` has signalled its runner, and exits with `macos_exit`, else 0.
 fn macos_runner(dir: &Path, vm_name: &str, input: &[u8]) -> u8 {
     if input.is_empty() {
         let _ = writeln!(
@@ -384,6 +395,7 @@ fn macos_runner(dir: &Path, vm_name: &str, input: &[u8]) -> u8 {
     let _ = writeln!(std::io::stdout(), "Listening for Jobs");
     sleep_while(|| {
         exists(dir, "macos_hold")
+            && !exists(dir, &format!("runner_signalled-{vm_name}"))
             && load(dir)
                 .iter()
                 .any(|vm| vm.name == vm_name && vm.running())

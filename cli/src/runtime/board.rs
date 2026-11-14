@@ -47,6 +47,8 @@ pub enum SlotState {
     Waiting(HostWait),
     /// running the job container of this name.
     Running(String),
+    /// running a job in the macOS job VM of this name, which has no container.
+    RunningVm(String),
     /// registers nothing while the agent drains for an update.
     Drained,
     /// being stopped for good, for this reason, such as an edit of the configuration
@@ -68,6 +70,7 @@ impl fmt::Display for SlotState {
                 write!(f, "waiting for VM {vm} to be deleted")
             }
             Self::Running(name) => write!(f, "running container {name}"),
+            Self::RunningVm(vm) => write!(f, "running VM {vm}"),
             Self::Drained => f.write_str("drained for an update"),
             Self::Leaving(reason) => write!(f, "stopping: {reason}"),
         }

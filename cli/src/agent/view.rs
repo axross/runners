@@ -9,12 +9,10 @@ use crate::host_config::{FileStatus, Loaded, Migration, MigrationFailure, Origin
 use crate::image::check::{Freshness, freshness_findings, status_fields};
 use crate::image::macos_base::MACOS_BASE;
 use crate::image::macos_golden::{self, MacosFreshness};
-use crate::profile::Profile;
 use crate::runtime::backend::{ExportOutcome, HostWait};
 use crate::runtime::board::{Board, PoolState, Row, SlotState};
 use crate::runtime::diagnostic::BUNDLE_QUOTA;
 use crate::runtime::retained::Retained;
-use crate::runtime::select::Runtime;
 use crate::token_store::TokenKey;
 use crate::validate::Entry;
 
@@ -213,7 +211,7 @@ impl View<'_> {
                 snapshot.pools = plan
                     .entries
                     .iter()
-                    .map(|entry| self.pool(plan.profile, entry, &pools, &slots))
+                    .map(|entry| self.pool(entry, &pools, &slots))
                     .collect();
                 // a pool an apply removes is listed until its slots have stopped, the
                 // apply's end included; one the file names again is listed as that
@@ -222,7 +220,7 @@ impl View<'_> {
                     .iter()
                     .filter(|entry| !plan.entries.iter().any(|named| named.name == entry.name));
                 for entry in removed {
-                    let mut pool = self.pool(plan.profile, entry, &pools, &slots);
+                    let mut pool = self.pool(entry, &pools, &slots);
                     pool.runners
                         .retain(|runner| runner.reason.as_deref() == Some(LEAVING));
                     if !pool.runners.is_empty() {
@@ -259,13 +257,11 @@ impl View<'_> {
 
     fn pool(
         &self,
-        profile: Profile,
         entry: &Entry,
         pools: &RowsByName<'_, PoolState>,
         slots: &RowsByName<'_, SlotState>,
     ) -> PoolInfo {
         let key = TokenKey::of(&entry.owner, &entry.repository);
-        let in_vm = Runtime::of_pool(profile, entry.os) == Some(Runtime::TartVm);
         let restarting = self.inner.applying.as_ref().is_some_and(|applying| {
             applying
                 .effects
@@ -310,6 +306,7 @@ impl View<'_> {
                                 Some(row.state.to_string()),
                             ),
                             SlotState::Running(name) => ("running", Some(name.clone()), None),
+                            SlotState::RunningVm(vm) => ("running", Some(vm.clone()), None),
                             SlotState::Drained => {
                                 ("stopped", None, Some("stopped for an update".to_string()))
                             }
@@ -318,7 +315,12 @@ impl View<'_> {
                         RunnerInfo {
                             slot: number,
                             state: state.to_string(),
-                            workload_kind: (in_vm && workload.is_some()).then(|| "vm".to_string()),
+                            workload_kind: matches!(
+                                row.state,
+                                SlotState::RunningVm(_)
+                                    | SlotState::Waiting(HostWait::VmDeletion(_))
+                            )
+                            .then(|| "vm".to_string()),
                             workload,
                             reason,
                             since: millis(row.since),
@@ -470,6 +472,7 @@ impl View<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::profile::Profile;
     use crate::validate::Plan;
 
     fn entry() -> Entry {
@@ -613,7 +616,15 @@ mod tests {
         assert_eq!(waiting[1].workload.as_deref(), Some("marshal-job-pool-2-x"));
         assert_eq!(waiting[1].workload_kind.as_deref(), Some("vm"));
 
+        board.set_slot(
+            "pool slot 1",
+            SlotState::RunningVm("marshal-job-pool-1-x".to_string()),
+        );
+        let running = &runners(&board)[0];
+        assert_eq!(running.workload.as_deref(), Some("marshal-job-pool-1-x"));
+        assert_eq!(running.workload_kind.as_deref(), Some("vm"));
+        // a Linux job on axmc runs in a container inside its VM
         board.set_slot("pool slot 1", SlotState::Running("pool-1-x".to_string()));
-        assert_eq!(runners(&board)[0].workload_kind.as_deref(), Some("vm"));
+        assert_eq!(runners(&board)[0].workload_kind, None);
     }
 }

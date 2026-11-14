@@ -94,7 +94,10 @@ pub fn running_jobs(status: &str) -> Vec<String> {
     status
         .lines()
         .filter(|line| line.starts_with("slot: "))
-        .filter_map(|line| line.split_once("running container "))
+        .filter_map(|line| {
+            line.split_once("running container ")
+                .or_else(|| line.split_once("running VM "))
+        })
         .map(|(_, name)| name.trim().to_string())
         .collect()
 }

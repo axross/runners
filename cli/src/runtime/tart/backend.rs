@@ -198,6 +198,9 @@ fn first_error(results: Vec<Result<(), BackendError>>) -> Result<(), BackendErro
     results.into_iter().find(Result::is_err).unwrap_or(Ok(()))
 }
 
+/// how often a stop checks whether a macOS job's runner has ended.
+const RUNNER_END_POLL: Duration = Duration::from_millis(200);
+
 /// a macOS job VM cloned into a place under the limit, with the golden macOS VM it
 /// was cloned from.
 struct Placed {
@@ -477,6 +480,19 @@ impl<C: Clock> TartBackend<C> {
                 answer.error_text()
             )))
         }
+    }
+
+    /// waits, for `grace` at the most, until no job of `names` is still running.
+    async fn wait_until_ended(&self, names: &[String], grace: Duration) {
+        let ended = async {
+            while names
+                .iter()
+                .any(|name| self.running.borrow().contains(name))
+            {
+                tokio::time::sleep(RUNNER_END_POLL).await;
+            }
+        };
+        let _ = tokio::time::timeout(grace, ended).await;
     }
 
     /// clones the golden VM, sizes and boots the clone, and waits for its guest agent.
@@ -867,6 +883,10 @@ impl<C: Clock> TartBackend<C> {
         let Some(vm) = self.vm_of_container(name) else {
             return Ok(());
         };
+        // a macOS job runs with no container; the release of its VM deletes what it ran
+        if self.is_macos_vm(&vm) {
+            return Ok(());
+        }
         let removed = self
             .guest_docker_checked(
                 &vm,
@@ -950,7 +970,9 @@ impl<C: Clock> Backend for TartBackend<C> {
         };
         self.macos_golden.replace(macos_golden);
         self.macos_refusal.replace(macos_refusal);
-        if self.runs_only_macos() {
+        // a listing that failed judged nothing, so it stays unavailable and is tried
+        // again, as with a Linux pool
+        if self.runs_only_macos() && matches!(listed, Ok(Ok(_))) {
             return ImageCheck::NoLinuxPool;
         }
         match listed {
@@ -1094,17 +1116,7 @@ impl<C: Clock> Backend for TartBackend<C> {
     }
 
     fn use_plan(&self, plan: &Plan) {
-        self.pools.replace(
-            plan.entries
-                .iter()
-                .filter_map(|entry| {
-                    Some(ConfiguredPool {
-                        name: entry.name.clone(),
-                        os: entry.os?,
-                    })
-                })
-                .collect(),
-        );
+        self.pools.replace(ConfiguredPool::of_plan(plan));
     }
 
     fn golden_macos(&self) -> Option<Option<String>> {
@@ -1113,6 +1125,13 @@ impl<C: Clock> Backend for TartBackend<C> {
 
     fn golden_macos_refusal(&self) -> Option<String> {
         self.macos_refusal.borrow().clone()
+    }
+
+    fn job_vm(&self, host: &JobHost) -> Option<String> {
+        if !self.is_macos(&host.pool) {
+            return None;
+        }
+        self.host(&host.pool, host.slot)?.vm()
     }
 
     fn counted_leftovers(&self) -> Vec<String> {
@@ -1220,9 +1239,15 @@ impl<C: Clock> Backend for TartBackend<C> {
             .into_iter()
             .map(|(vm, names)| async move {
                 if self.is_macos_vm(&vm) {
-                    return self
-                        .signal_runner(&vm, "-INT", request.budget, "Failed to stop containers")
-                        .await;
+                    let started = Instant::now();
+                    self.signal_runner(&vm, "-INT", request.budget, "Failed to stop containers")
+                        .await?;
+                    // the grace a container gets from `docker stop --time`, inside the same
+                    // budget: the runner has until its launcher's `tart exec` ends, and the
+                    // release of its VM ends whatever outlives it
+                    let left = request.budget.saturating_sub(started.elapsed());
+                    self.wait_until_ended(&names, request.grace.min(left)).await;
+                    return Ok(());
                 }
                 self.guest_docker_checked(
                     &vm,

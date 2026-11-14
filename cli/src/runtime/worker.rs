@@ -408,11 +408,24 @@ impl<B: Backend, K: Clock, R: Registrar> Context<'_, B, K, R> {
         if halt.halted() {
             return Attempt::Halted;
         }
-        log.info(&format!(
-            "{}: starting container {name}.",
-            self.report.label
-        ));
-        self.report.state(SlotState::Running(name.clone()));
+        // a macOS job runs in its VM, with no container
+        let state = match self.backend.job_vm(&slot.host_request().host) {
+            Some(vm) => {
+                log.info(&format!(
+                    "{}: starting the runner in VM {vm}.",
+                    self.report.label
+                ));
+                SlotState::RunningVm(vm)
+            }
+            None => {
+                log.info(&format!(
+                    "{}: starting container {name}.",
+                    self.report.label
+                ));
+                SlotState::Running(name.clone())
+            }
+        };
+        self.report.state(state);
         let spec = ContainerSpec {
             name,
             cpus: slot.cpus.clone(),
