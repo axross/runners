@@ -376,9 +376,9 @@ changes:
   `start_runners_on_launch`, `keep_awake`, `stop_on_network_change`, and
   `resume_after_stop`. Any other key in
   it is a problem, and an absent key means "not set". The rule set checks and keeps
-  the values. On axpc the agent applies them with their Windows defaults;
-  [The Agent's Signals](#the-agents-signals) gives what each setting does and its
-  default. On macOS nothing acts on them until M4.
+  the values. The agent applies them on axpc and on axmc, with the same defaults on
+  both; [The Agent's Signals](#the-agents-signals) gives what each setting does and
+  its default.
 - **Encoding and size.** A leading byte-order mark is ignored and moves no position.
   A file larger than 1 MiB (1048576 bytes) is refused before it is parsed, and a file
   that is not UTF-8 is refused before TOML sees it. The file may be exactly 1 MiB.
@@ -2082,20 +2082,22 @@ writes one line in the new file that says how many lines were not written.
 
 ### The Agent's Signals
 
-On axpc the agent acts on the five `[lifecycle]` settings of
-[The Agent's Configuration](#the-agents-configuration). A key that is absent, or the
-whole table, takes its Windows default, and so does every key while the agent runs on
-a `config.json` its migration could not replace; the snapshot marks such a setting
-`defaulted`. On macOS nothing acts on them until M4, whose monitor follows
-`keep_awake` and feeds the resume once the agent gives it the settings in effect.
+The agent acts on the five `[lifecycle]` settings of
+[The Agent's Configuration](#the-agents-configuration) on axpc and on axmc. A key
+that is absent, or the whole table, takes its default, which is the same on both
+(M4, [#90](https://github.com/axross/runners/issues/90)), and so does every key while
+the agent runs on a `config.json` its migration could not replace; the snapshot marks
+such a setting `defaulted`. On axmc the agent keeps no sign-in item, since the app
+keeps the login item, and `stop_on_network_change` is accepted and written but has no
+effect: a change of the primary network always stops every runner there.
 
-| Setting                   | When on                                                                                                                    | Windows default |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------- | --------------- |
-| `start_at_login`          | The agent keeps the sign-in item registered, so the app starts at sign-in with `--sign-in`; off, it removes the item       | off             |
-| `start_runners_on_launch` | `launch` starts the runners; off, `launch` leaves the agent stopped by you, with the banner's "not started at launch" line | on              |
-| `keep_awake`              | Windows is kept from idle sleep while the agent is `running`, `resuming`, `building` or `stopping`                         | on              |
-| `stop_on_network_change`  | A change of the primary network stops every runner with `network_changed`                                                  | on              |
-| `resume_after_stop`       | After a sleep or network-change stop, the agent starts the runners again once it is back on the recorded network           | off             |
+| Setting                   | When on                                                                                                                    | Default |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `start_at_login`          | The agent keeps the sign-in item registered, so the app starts at sign-in with `--sign-in`; off, it removes the item       | off     |
+| `start_runners_on_launch` | `launch` starts the runners; off, `launch` leaves the agent stopped by you, with the banner's "not started at launch" line | on      |
+| `keep_awake`              | Windows is kept from idle sleep while the agent is `running`, `resuming`, `building` or `stopping`                         | on      |
+| `stop_on_network_change`  | A change of the primary network stops every runner with `network_changed`                                                  | on      |
+| `resume_after_stop`       | After a sleep or network-change stop, the agent starts the runners again once it is back on the recorded network           | off     |
 
 A sleep stops every runner whatever the settings say.
 
@@ -2121,10 +2123,11 @@ update only from `running`, so an update never undoes a signal stop.
 On Windows, `agent::run` gives the agent `WindowsMonitor` (`windows_host::monitor`)
 on `WindowsSignals` (`windows_host::signals`). On the axmc profile it gives M1's
 `SignalMonitor` (`macos::monitor`), the monitor `start` uses there, sharing its
-network gate with the Tart backend: until M4 it reads no setting, so the Mac is kept
-awake while the agent is `running`, `resuming`, `building` or `stopping`, a sleep or a
-change of the primary network stops every runner with `slept` or `network_changed`,
-and nothing resumes on its own. Elsewhere it gives `NoMonitor`. On every profile the
+network gate with the Tart backend, with the settings in effect through
+`with_settings`: with `keep_awake` on the Mac is kept awake while the agent is
+`running`, `resuming`, `building` or `stopping`, a sleep or a change of the primary
+network stops every runner with `slept` or `network_changed` whatever the settings
+say, and the resume below reads the network through the monitor. Elsewhere it gives `NoMonitor`. On every profile the
 agent's stops reserve the backend's release budget as `start`'s do, so a stop on Tart
 has the time to delete its job VMs.
 
@@ -2145,13 +2148,12 @@ that changed since the agent last read or wrote it (`config_changed`, so a hand 
 is read at the next launch or Start all first), has problems or cannot be written, a
 file written in a form the write path does not edit (`config_file_form`, such as
 `lifecycle = { … }` over several lines), and while no valid configuration was read
-(`config_unusable`); while an edit applies it is `busy`. On axmc it is `refused`; the
-settings there are M4's.
+(`config_unusable`); while an edit applies it is `busy`.
 
-The snapshot's `lifecycle` part, present while settings are in effect on axpc, holds
+The snapshot's `lifecycle` part, present while settings are in effect, holds
 each setting's `on` and `defaulted`, the sign-in item (`registered`,
 `not_registered`, `turned_off` in Windows' Startup apps, or `failed` with
-`sign_in_error`), `keep_awake` (`held`, `released`, `warning` with its text, also
+`sign_in_error`; absent on axmc), `keep_awake` (`held`, `released`, `warning` with its text, also
 while the program supplied no request, or `off`), and after a signal stop with
 `resume_after_stop` on, `resume` (`waiting`, or `no_gateway`) with `resume_cause`,
 the stop's code. The agent keeps the sign-in item, the current user's Run key value

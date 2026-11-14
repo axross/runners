@@ -490,8 +490,10 @@ stopped, the instance fails every running job, deletes every job VM within the s
 
 ### Resuming
 
-Nothing resumes on its own: a Mac that wakes, or a network that comes back, leaves
-the instance stopped. Run `marshal start --profile axmc --config <path>` again from
+Nothing resumes `marshal start`'s instance on its own: a Mac that wakes, or a network
+that comes back, leaves the instance stopped. The resident agent resumes only with
+`resume_after_stop` on, as
+[The Agent's Signals](./cli.md#the-agents-signals) describes. Run `marshal start --profile axmc --config <path>` again from
 any terminal of the same user, or `marshal restart`, which the stopped instance
 answers by reading the configuration again, checking Tart, Softnet and the golden VM,
 and starting every pool. The resume records the primary network and arms the sleep

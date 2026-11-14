@@ -1,5 +1,5 @@
 //! the settings of `[lifecycle]` as the agent applies them: each setting's value in
-//! effect, its Windows default when the file leaves it unset, and the write of one
+//! effect, its default when the file leaves it unset, and the write of one
 //! setting through the configuration's write path. `docs/operations/cli.md`
 //! describes what each setting does.
 
@@ -52,7 +52,7 @@ impl Setting {
         Self::ALL.into_iter().find(|setting| setting.name() == name)
     }
 
-    /// the value an unset setting takes on Windows.
+    /// the value an unset setting takes on Windows, which the Mac takes too.
     #[must_use]
     pub fn windows_default(self) -> bool {
         match self {
@@ -93,8 +93,8 @@ pub struct Value {
     pub defaulted: bool,
 }
 
-/// the settings in effect on Windows: the values of one `[lifecycle]` table, with
-/// each unset one at its default.
+/// the settings in effect: the values of one `[lifecycle]` table, with each unset one
+/// at its default.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct InEffect {
     lifecycle: Lifecycle,
@@ -137,7 +137,7 @@ impl InEffect {
     }
 }
 
-/// the settings in effect as the agent keeps them, which the Windows monitor reads;
+/// the settings in effect as the agent keeps them, which its monitor reads;
 /// none while the agent has never held a valid configuration.
 #[derive(Debug, Default)]
 pub struct Current(Cell<Option<InEffect>>);
