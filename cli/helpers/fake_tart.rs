@@ -43,6 +43,8 @@
 //!   that long and then fails without stopping the VM, and only a stop with no
 //!   timeout stops it;
 //! - `delete` refuses a running VM and a VM that does not exist;
+//! - `get <name> --format json` prints an object whose `OS` is the file `os-<name>`,
+//!   else `darwin`, and fails for a VM that does not exist;
 //! - any subcommand called `<sub>` (`version` for `--version`) fails with `fail-<sub>` present, printing the
 //!   file's text, or a default one, to standard error; hangs with `hang-<sub>`
 //!   present; and prints 200 000 bytes to each of standard output and standard
@@ -102,6 +104,7 @@ fn run() -> Result<u8, String> {
         ["delete", names @ ..] => delete(&dir, names),
         ["pull", reference] => pull(&dir, reference),
         ["rename", name, target] => rename(&dir, name, target),
+        ["get", name, "--format", "json"] => get(&dir, name),
         _ => Err(format!("unexpected call: {arguments:?}")),
     }
 }
@@ -452,6 +455,20 @@ fn pull(dir: &Path, reference: &str) -> Result<u8, String> {
         }
         Ok(())
     })
+}
+
+/// prints the VM's `OS` field as Tart 2.41.1 does: the file `os-<name>`, else
+/// `darwin`; a VM that does not exist fails.
+fn get(dir: &Path, name: &str) -> Result<u8, String> {
+    if !load(dir).iter().any(|vm| vm.name == name) {
+        return Err(format!("the VM {name} does not exist"));
+    }
+    let os = text(dir, &format!("os-{name}")).unwrap_or_else(|| "darwin".to_string());
+    println!(
+        "{{\n  \"CPU\" : 4,\n  \"OS\" : {},\n  \"State\" : \"stopped\"\n}}",
+        json_string(os.trim())
+    );
+    Ok(0)
 }
 
 fn rename(dir: &Path, name: &str, target: &str) -> Result<u8, String> {
