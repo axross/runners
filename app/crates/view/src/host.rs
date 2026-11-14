@@ -29,6 +29,9 @@ pub struct HostWords {
     /// a pool that waits for that program, and what to do about it.
     pub waiting: &'static str,
     pub start_engine: &'static str,
+    /// the menu's items, in order: Open Marshal, Start all, Stop all, Build and Quit, in
+    /// sentence case on Windows and title case on the Mac, as each system's menus are.
+    pub menu: [&'static str; 5],
 }
 
 pub const WINDOWS: HostWords = HostWords {
@@ -44,6 +47,13 @@ pub const WINDOWS: HostWords = HostWords {
     engine: "Docker",
     waiting: "Waiting for Docker",
     start_engine: "Start Docker Desktop. Marshal checks every 5 s.",
+    menu: [
+        "Open Marshal",
+        "Start all runners",
+        "Stop all runners",
+        "Build image",
+        "Quit Marshal",
+    ],
 };
 
 pub const MACOS: HostWords = HostWords {
@@ -59,6 +69,13 @@ pub const MACOS: HostWords = HostWords {
     engine: "Tart",
     waiting: "Waiting for Tart",
     start_engine: "Install Tart and Softnet, and set Softnet's SUID bit, as macOS Runner Host says. Marshal checks every 5 s.",
+    menu: [
+        "Open Marshal",
+        "Start All Runners",
+        "Stop All Runners",
+        "Build Image",
+        "Quit Marshal",
+    ],
 };
 
 /// the words of the operating system this build is for, which the app gives the view.

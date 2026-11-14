@@ -231,3 +231,23 @@ fn the_next_launch_says_the_last_agent_ended_because_marshal_moved() {
     );
     assert!(!joined(&mac_view("running")).contains("because Marshal was moved"));
 }
+
+#[test]
+fn the_macs_menu_is_in_title_case() {
+    let labels: Vec<String> = mac_view("running")
+        .menu
+        .items
+        .iter()
+        .map(|item| item.label.clone())
+        .collect();
+    assert_eq!(
+        labels,
+        [
+            "Open Marshal",
+            "Start All Runners",
+            "Stop All Runners",
+            "Build Image",
+            "Quit Marshal"
+        ]
+    );
+}

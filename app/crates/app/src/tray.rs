@@ -113,6 +113,8 @@ fn build_menu(app: &AppHandle, menu: &Menu) -> tauri::Result<TauriMenu<tauri::Wr
 }
 
 pub fn set_menu(app: &AppHandle, menu: &Menu) -> tauri::Result<()> {
+    #[cfg(target_os = "macos")]
+    crate::app_menu::set(app, Some(menu))?;
     match app.tray_by_id(TRAY_ID) {
         Some(tray) => tray.set_menu(Some(build_menu(app, menu)?)),
         None => Ok(()),
@@ -127,7 +129,7 @@ fn on_menu_event(app: &AppHandle, event: MenuEvent) {
     tauri::async_runtime::spawn(async move { run_menu_item(&app, &id).await });
 }
 
-async fn run_menu_item(app: &AppHandle, id: &str) {
+pub(crate) async fn run_menu_item(app: &AppHandle, id: &str) {
     let state = app.state::<AppState>();
     let Some(item) = state.latest.menu().and_then(|menu| {
         menu.items

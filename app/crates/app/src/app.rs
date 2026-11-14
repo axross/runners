@@ -213,6 +213,8 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     } else {
         show_main_window(app);
     }
+    #[cfg(target_os = "macos")]
+    crate::app_menu::set(app, None)?;
     tray::create(
         app,
         Look {
@@ -253,20 +255,31 @@ pub fn run() -> ExitCode {
     // only the app mode runs this, so only it registers the updater
     #[cfg(windows)]
     let built = built.plugin(crate::updates::plugin());
+    #[cfg(target_os = "macos")]
+    let built = built.on_menu_event(|app, event| crate::app_menu::on_menu_event(app, &event));
     let built = built
         .on_window_event(on_window_event)
         .invoke_handler(commands::handler())
         .build(tauri::generate_context!());
     match built {
         Ok(app) => {
-            app.run(|_handle, event| {
-                // only Quit ends the app; an exit request with no code is the last
-                // window closing
-                if let RunEvent::ExitRequested {
-                    api, code: None, ..
-                } = event
-                {
-                    api.prevent_exit();
+            app.run(|handle, event| {
+                #[cfg(not(target_os = "macos"))]
+                let _ = handle;
+                match event {
+                    // only Quit ends the app; an exit request with no code is the last
+                    // window closing
+                    RunEvent::ExitRequested {
+                        api, code: None, ..
+                    } => api.prevent_exit(),
+                    // opening Marshal again from the Finder or Spotlight while it runs
+                    // shows the window, from a task as the icon menu's Open Marshal does
+                    #[cfg(target_os = "macos")]
+                    RunEvent::Reopen { .. } => {
+                        let handle = handle.clone();
+                        tauri::async_runtime::spawn(async move { show_main_window(&handle) });
+                    }
+                    _ => {}
                 }
             });
             ExitCode::SUCCESS
