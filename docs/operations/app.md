@@ -673,6 +673,17 @@ start, the app drops the update and the record, handles the agent's end as any o
 and checks again an hour later. An end for an update another client asked for is
 handled as any other end.
 
+**Installing on the Mac.** M4 ([#90](https://github.com/axross/runners/issues/90))
+adds the Mac's updates under the same flow. Before a download, the app checks that it
+can exchange its own bundle without an administrator's password: it can make an entry
+in the bundle's folder, and the bundle belongs to its user. Otherwise it does not
+download, and the check is logged. The agent's process is watched with `/bin/ps`,
+matched by its start time, so a reused process ID is not taken for the agent. To
+install, the plugin verifies the archive again and exchanges `Marshal.app` in place,
+and the app starts a `/bin/sh` that opens the new bundle with `/usr/bin/open` once the
+app has exited, then ends. Until the release run writes the feed's `darwin-aarch64`
+entry, a Mac check finds no entry for its platform, logs it and changes nothing.
+
 **A lost connection during the drain.** If the agent's process still runs, the app
 reaches it again without starting another. If the agent's first snapshot still shows
 this app's drain, for the same version and process, the drain was past its last steps

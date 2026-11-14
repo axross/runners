@@ -101,14 +101,17 @@ impl Log for Discard {
     fn warn(&self, _line: &str) {}
 }
 
-/// where the app updates itself, Windows, the feed and the agent's process handles;
-/// elsewhere neither.
-#[cfg(windows)]
+/// where the app updates itself, Windows and the Mac, the feed and a watch on the
+/// agent's process; elsewhere neither.
+#[cfg(any(windows, target_os = "macos"))]
 fn update_seams(app: &AppHandle) -> (Option<Arc<dyn Updater>>, Arc<dyn Processes>) {
-    (crate::updates::feed(app), Arc::new(crate::updates::Handles))
+    (
+        crate::updates::feed(app),
+        Arc::new(crate::updates::Processes),
+    )
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 fn update_seams(_app: &AppHandle) -> (Option<Arc<dyn Updater>>, Arc<dyn Processes>) {
     (None, Arc::new(marshal_session::NoUpdates))
 }
@@ -193,7 +196,7 @@ pub fn run() -> ExitCode {
         .plugin(opener())
         .setup(|app| start(app.handle()));
     // only the app mode runs this, so only it registers the updater
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     let built = built.plugin(crate::updates::plugin());
     let built = built
         .on_window_event(on_window_event)

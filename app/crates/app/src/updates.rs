@@ -1,20 +1,30 @@
-//! the app's update seams on Windows: Tauri's updater plugin reads the feed, downloads
-//! the MSI and verifies its signature, and installs it; a process handle tells when the
-//! agent has exited. The session drives them (see `marshal-session`).
+//! the app's update seams: Tauri's updater plugin reads the feed, downloads the
+//! update and verifies its signature, and installs it, the MSI on Windows and the app
+//! bundle on the Mac; a process handle tells when the agent has exited. The session
+//! drives them (see `marshal-session`).
 
-use std::sync::{Arc, Mutex};
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(windows)]
+mod windows;
+
+use std::sync::Arc;
 use std::time::Duration;
 
 use marshal_feed::download_allowed;
-use marshal_session::{Later, Process, Processes, Updater, Verified};
+use marshal_session::{Later, Updater, Verified};
 use tauri::{AppHandle, Runtime};
 use tauri_plugin_updater::{Update, UpdaterExt};
-use winsafe::{self as w, co, guard::CloseHandleGuard};
+
+#[cfg(target_os = "macos")]
+pub use macos::Watched as Processes;
+#[cfg(windows)]
+pub use windows::Handles as Processes;
 
 /// the longest a read of the feed takes.
 const CHECK_WITHIN: Duration = Duration::from_secs(30);
 
-/// the longest the MSI's download takes.
+/// the longest the update's download takes.
 const DOWNLOAD_WITHIN: Duration = Duration::from_secs(10 * 60);
 
 /// how often a wait looks at the agent's process.
@@ -54,6 +64,10 @@ impl<R: Runtime> Updater for Feed<R> {
                 return Ok(None);
             };
             download_allowed(&update.download_url).map_err(|refusal| refusal.to_string())?;
+            // on the Mac the bundle is exchanged in place, so one that cannot be is not
+            // downloaded
+            #[cfg(target_os = "macos")]
+            macos::replaceable()?;
             // the check's timeout does not carry over to the download
             update.timeout = Some(DOWNLOAD_WITHIN);
             // `download` verifies the signature, and the version it names, before it returns
@@ -80,54 +94,20 @@ impl Verified for Downloaded {
 
     /// verifies the bytes again and starts `msiexec`; the plugin ends this process when
     /// the installer has started.
+    #[cfg(windows)]
     fn install(self: Box<Self>) -> Result<(), String> {
         self.update
             .install(&self.bytes)
             .map_err(|error| error.to_string())
     }
-}
 
-/// opens processes by ID with the right to wait on them.
-pub struct Handles;
-
-impl Processes for Handles {
-    fn open(&self, pid: u32) -> Result<Option<Arc<dyn Process>>, String> {
-        match w::HPROCESS::OpenProcess(
-            co::PROCESS::SYNCHRONIZE | co::PROCESS::QUERY_LIMITED_INFORMATION,
-            false,
-            pid,
-        ) {
-            Ok(handle) => Ok(Some(Arc::new(Handle(Mutex::new(handle))))),
-            // no such process: it has exited
-            Err(co::ERROR::INVALID_PARAMETER) => Ok(None),
-            Err(error) => Err(error.to_string()),
-        }
-    }
-}
-
-struct Handle(Mutex<CloseHandleGuard<w::HPROCESS>>);
-
-impl Process for Handle {
-    fn has_exited(&self) -> bool {
-        let handle = self
-            .0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        matches!(handle.WaitForSingleObject(Some(0)), Ok(co::WAIT::OBJECT_0))
-    }
-
-    fn wait(self: Arc<Self>, limit: Duration) -> Later<bool> {
-        Box::pin(async move {
-            let until = tokio::time::Instant::now() + limit;
-            loop {
-                if self.has_exited() {
-                    return true;
-                }
-                if tokio::time::Instant::now() >= until {
-                    return false;
-                }
-                tokio::time::sleep(EXIT_POLL).await;
-            }
-        })
+    /// verifies the bytes again and exchanges the bundle with the update's, then starts
+    /// a shell that opens the new bundle once this process has exited.
+    #[cfg(target_os = "macos")]
+    fn install(self: Box<Self>) -> Result<(), String> {
+        self.update
+            .install(&self.bytes)
+            .map_err(|error| error.to_string())?;
+        macos::relaunch()
     }
 }

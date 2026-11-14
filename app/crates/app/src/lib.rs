@@ -8,7 +8,7 @@ mod icon;
 mod screen;
 pub mod state;
 mod tray;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 mod updates;
 
 pub use app::{HIDDEN_EVENT, MAIN_WINDOW, hide_main_window, on_window_event, opener, run};
