@@ -45,6 +45,7 @@ function shown() {
             line: "No runners.",
             controls: [],
             tokens_chip: null,
+            settings_chip: null,
             opens_on: "tokens",
           },
           banners: [],
@@ -52,6 +53,12 @@ function shown() {
           pools_note: null,
           stale: false,
           tokens: { intro: "Tokens.", rows: [ROW] },
+          settings: {
+            intro: "Settings.",
+            unavailable: null,
+            groups: [],
+            chip: null,
+          },
         },
         footer: {
           github: [],

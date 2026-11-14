@@ -99,8 +99,18 @@ mod system {
             Ok(command) => command,
             Err(error) => return SignIn::Failed(error.to_string()),
         };
-        let written = open(RUN_KEY, co::KEY::SET_VALUE)
-            .and_then(|key| key.RegSetValueEx(Some(VALUE_NAME), w::RegistryValue::Sz(command)));
+        // a new account may not have the Run key yet, so it is created when missing
+        let written = w::HKEY::CURRENT_USER
+            .RegCreateKeyEx(
+                RUN_KEY,
+                None,
+                co::REG_OPTION::NON_VOLATILE,
+                co::KEY::SET_VALUE,
+                None,
+            )
+            .and_then(|(key, _)| {
+                key.RegSetValueEx(Some(VALUE_NAME), w::RegistryValue::Sz(command))
+            });
         match written {
             Ok(()) => read(),
             Err(error) => {

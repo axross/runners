@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 use marshal_cli::agent::snapshot::{LifecycleInfo, SettingInfo};
 use marshal_cli::lifecycle_settings::Setting;
+use marshal_view::LoginItemState;
 
 use crate::location::in_applications;
 use crate::seam::{Log, LoginItemRecord, LoginItemService, LoginStatus};
@@ -25,6 +26,7 @@ pub struct LoginItem {
     in_applications: bool,
     told_outside: bool,
     settings: Option<BTreeMap<String, SettingInfo>>,
+    state: Option<LoginItemState>,
 }
 
 impl LoginItem {
@@ -43,7 +45,15 @@ impl LoginItem {
             in_applications: in_applications(executable, home),
             told_outside: false,
             settings: None,
+            state: None,
         }
+    }
+
+    /// the login item's state as the latest bringing in step left it; `None` before
+    /// the first, from outside Applications, or while macOS cannot find the item.
+    #[must_use]
+    pub fn state(&self) -> Option<LoginItemState> {
+        self.state
     }
 
     /// what a snapshot's `lifecycle` part says: the login item is brought in step when the
@@ -66,12 +76,14 @@ impl LoginItem {
             return;
         }
         if let Some(setting) = lifecycle.settings.get(Setting::StartAtLogin.name()) {
-            self.reconcile(setting.on, log);
+            self.state = self.reconcile(setting.on, log);
         }
     }
 
-    fn reconcile(&self, on: bool, log: &dyn Log) {
-        match (on, self.service.status()) {
+    /// brings the login item in step with `on` and says the state it leaves it in.
+    fn reconcile(&self, on: bool, log: &dyn Log) -> Option<LoginItemState> {
+        let status = self.service.status();
+        match (on, status) {
             (true, LoginStatus::Enabled) => {}
             (true, LoginStatus::RequiresApproval) => log.info(
                 "Marshal's login item waits for approval in Login Items, so Marshal leaves it.",
@@ -87,16 +99,22 @@ impl LoginItem {
                             "Marshal could not record that it registered its login item: {error}"
                         ));
                     }
+                    // macOS may hold a new item for approval
+                    return self.known(self.service.status());
                 }
-                Err(error) => log.warn(&format!(
-                    "Marshal could not register its login item, and tries again when the settings change: {error}"
-                )),
+                Err(error) => {
+                    log.warn(&format!(
+                        "Marshal could not register its login item, and tries again when the settings change: {error}"
+                    ));
+                    return Some(LoginItemState::NotAdded { code: error.code });
+                }
             },
             (false, LoginStatus::Enabled | LoginStatus::RequiresApproval) => {
                 match self.service.unregister() {
                     Ok(()) => {
                         log.info("Marshal unregistered its login item, as Start at login is off.");
                         self.forget(log);
+                        return Some(LoginItemState::Off);
                     }
                     Err(error) => log.warn(&format!(
                         "Marshal could not unregister its login item, and tries again when the settings change: {error}"
@@ -109,6 +127,18 @@ impl LoginItem {
             (_, LoginStatus::NotFound) => {
                 log.warn("macOS cannot find Marshal's login item, so Marshal leaves it alone.");
             }
+        }
+        self.known(status)
+    }
+
+    /// the state `status` and the record give.
+    fn known(&self, status: LoginStatus) -> Option<LoginItemState> {
+        match status {
+            LoginStatus::Enabled => Some(LoginItemState::On),
+            LoginStatus::RequiresApproval => Some(LoginItemState::WaitingForApproval),
+            LoginStatus::NotRegistered if self.record.exists() => Some(LoginItemState::Removed),
+            LoginStatus::NotRegistered => Some(LoginItemState::Off),
+            LoginStatus::NotFound => None,
         }
     }
 

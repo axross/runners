@@ -187,7 +187,7 @@ const APP_ORIGIN: &str = if cfg!(windows) {
     "tauri://localhost"
 };
 
-const MAIN_COMMANDS: [&str; 10] = [
+const MAIN_COMMANDS: [&str; 12] = [
     "read_view",
     "start_all",
     "stop_all",
@@ -196,6 +196,8 @@ const MAIN_COMMANDS: [&str; 10] = [
     "try_again",
     "set_token",
     "remove_token",
+    "set_setting",
+    "open_login_items",
     "hide_window",
     "open_job",
 ];
@@ -206,6 +208,7 @@ fn arguments(command: &str) -> serde_json::Value {
     match command {
         "set_token" => json!({ "repository": "axross/runners", "token": "" }),
         "remove_token" => json!({ "repository": "axross/runners" }),
+        "set_setting" => json!({ "key": "keep_awake", "on": false }),
         "read_view" => json!({ "forms": null }),
         "answer_confirmation" => json!({ "accepted": false }),
         "open_job" => json!({ "pool": "app", "runner": "app-1-20261104031522114" }),
@@ -214,10 +217,16 @@ fn arguments(command: &str) -> serde_json::Value {
 }
 
 #[test]
-fn the_main_window_calls_its_ten_commands() {
+fn the_main_window_calls_its_twelve_commands() {
     let app = app();
     let main = window(&app, "main");
-    for command in MAIN_COMMANDS {
+    // on macOS it would open System Settings
+    let opens_settings =
+        |command: &&str| cfg!(target_os = "macos") && *command == "open_login_items";
+    for command in MAIN_COMMANDS
+        .iter()
+        .filter(|command| !opens_settings(command))
+    {
         let result = call(&main, command, arguments(command));
         assert!(!refused(&result), "{command}: {result:?}");
     }

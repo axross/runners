@@ -102,6 +102,49 @@ pub struct TokenUi {
     pub results: BTreeMap<String, TokenResult>,
 }
 
+/// what the latest change of one `[lifecycle]` setting came to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SettingResult {
+    /// written and in effect; `on` is the value written.
+    Saved { on: bool },
+    /// refused by the agent: `code` is its error code, `words` its message.
+    Refused { code: String, words: String },
+    /// contact with the agent was lost before it answered.
+    LostContact,
+    /// the agent did not answer within the call's limit; it may still write it.
+    NotAnswered,
+}
+
+/// the settings as the app has them: the setting being written with the value it is
+/// written as, and the latest result for each setting by its key.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SettingsUi {
+    pub writing: Option<(String, bool)>,
+    pub results: BTreeMap<String, SettingResult>,
+}
+
+/// the system the window is drawn on, where its words or its settings differ.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Platform {
+    #[default]
+    Windows,
+    Macos,
+}
+
+/// the app's login item on macOS, as the app last learned it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoginItemState {
+    On,
+    WaitingForApproval,
+    /// not registered, though Marshal registered it: someone removed it in Login Items.
+    Removed,
+    /// macOS refused to register it, with `SMAppService`'s error code.
+    NotAdded {
+        code: u32,
+    },
+    Off,
+}
+
 /// what the window knows of GitHub's view of the runners.
 #[derive(Debug, Clone, Copy, Default)]
 pub enum GithubFeed<'a> {
@@ -133,6 +176,7 @@ pub struct Input<'a> {
     /// snapshot's count is shown.
     pub settled_up: Option<u32>,
     pub tokens: Option<&'a TokenUi>,
+    pub settings: Option<&'a SettingsUi>,
     pub github: GithubFeed<'a>,
     /// the pools whose Open run found the job ended, with when, in milliseconds since
     /// the Unix epoch.
@@ -143,6 +187,9 @@ pub struct Input<'a> {
     /// whether the agent before this launch ended because Marshal's executable was
     /// moved, renamed or replaced while it ran.
     pub after_moved: bool,
+    pub platform: Platform,
+    /// on macOS, the login item's state, `None` until the app has learned it.
+    pub login_item: Option<LoginItemState>,
 }
 
 impl<'a> Input<'a> {
@@ -155,11 +202,22 @@ impl<'a> Input<'a> {
             clock,
             settled_up: None,
             tokens: None,
+            settings: None,
             github: GithubFeed::Off,
             ended_jobs: None,
             words: WINDOWS,
             after_moved: false,
+            platform: Platform::Windows,
+            login_item: None,
         }
+    }
+
+    /// the window on macOS, with its login item's state as last learned.
+    #[must_use]
+    pub fn macos(mut self, login_item: Option<LoginItemState>) -> Self {
+        self.platform = Platform::Macos;
+        self.login_item = login_item;
+        self
     }
 
     /// names the operating system with `words`, such as [`crate::HOST`].
@@ -184,6 +242,12 @@ impl<'a> Input<'a> {
     #[must_use]
     pub fn tokens(mut self, tokens: &'a TokenUi) -> Self {
         self.tokens = Some(tokens);
+        self
+    }
+
+    #[must_use]
+    pub fn settings(mut self, settings: &'a SettingsUi) -> Self {
+        self.settings = Some(settings);
         self
     }
 

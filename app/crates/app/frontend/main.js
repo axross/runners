@@ -4,6 +4,7 @@
 import { askConfirmation, cancelDialog, dialogOpen } from "./dialog.js";
 import { keyOf } from "./controls.js";
 import { say } from "./live.js";
+import "./platform.js";
 import { renderWindow } from "./render.js";
 import { newestFirst } from "./revision.js";
 import { clearTypedTokens } from "./tokens.js";
@@ -299,6 +300,19 @@ function gotoToken(repository) {
   focusKey(`row:${repository}:primary`);
 }
 
+/**
+ * turns a setting on or off. Focus stays on its checkbox, the agent writes the change,
+ * and the next view shows and announces what it came to.
+ */
+function setSetting(key, on) {
+  run("set_setting", { key, on });
+}
+
+/** opens Login Items in macOS's System Settings. */
+function openLoginItems() {
+  run("open_login_items");
+}
+
 const context = {
   get tab() {
     return state.tab;
@@ -314,6 +328,8 @@ const context = {
   cancelForm,
   cancelRemoval,
   removeToken,
+  setSetting,
+  openLoginItems,
 };
 
 // ---- keys

@@ -151,7 +151,7 @@ async fn a_copy_outside_applications_neither_registers_nor_unregisters() {
 #[tokio::test(start_paused = true)]
 async fn a_failed_registration_is_logged_and_tried_again_at_the_next_change_of_the_settings() {
     let login = FakeLoginItem::new(LoginStatus::NotRegistered, false);
-    login.fail_with(Some("the app's code signature is not valid (code 4)"));
+    login.fail_with(Some((4, "the app's code signature is not valid")));
     let (agent, session) = connected(&login, IN_APPLICATIONS).await;
     send(&agent, &session, settings(true, true)).await;
     assert_eq!(login.calls(), [LoginCall::Register]);
@@ -188,4 +188,86 @@ fn the_record_file_is_the_record_and_removing_it_twice_succeeds() {
     record.remove().unwrap();
     assert!(!record.exists());
     record.remove().unwrap();
+}
+
+fn login_line(session: &Running) -> Option<String> {
+    let view = session.screen.view();
+    let list = view.list().expect("a list");
+    list.settings
+        .groups
+        .iter()
+        .flat_map(|group| &group.rows)
+        .find(|row| row.key == "start_at_login")
+        .and_then(|row| row.login_item.clone())
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_view_shows_the_login_items_state_on_the_mac_and_announces_each_change() {
+    let login = FakeLoginItem::new(LoginStatus::NotRegistered, false);
+    let (agent, session) = connected(&login, IN_APPLICATIONS).await;
+    send(&agent, &session, settings(false, true)).await;
+    assert_eq!(login_line(&session).as_deref(), Some("Off"));
+    let first_label = session.screen.view().list().unwrap().settings.groups[0].rows[0]
+        .label
+        .clone();
+    assert_eq!(first_label, "Open Marshal when I log in");
+
+    send(&agent, &session, settings(true, true)).await;
+    assert_eq!(login_line(&session).as_deref(), Some("On"));
+
+    // macOS holds it for approval; the next change of the settings learns it
+    login.set_status(LoginStatus::RequiresApproval);
+    send(&agent, &session, settings(true, false)).await;
+    assert_eq!(
+        login_line(&session).as_deref(),
+        Some("Waiting for approval")
+    );
+
+    // the maintainer removed it from Open at Login
+    login.set_status(LoginStatus::NotRegistered);
+    send(&agent, &session, settings(true, true)).await;
+    assert_eq!(
+        login_line(&session).as_deref(),
+        Some("Removed from Open at Login")
+    );
+
+    let announced: Vec<String> = session
+        .screen
+        .announced()
+        .into_iter()
+        .filter(|line| line.starts_with("Login Items:"))
+        .collect();
+    assert_eq!(
+        announced,
+        [
+            "Login Items: On.",
+            "Login Items: Waiting for approval.",
+            "Login Items: Removed from Open at Login.",
+        ],
+        "the first state learned is not announced"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_failed_registration_shows_its_code() {
+    let login = FakeLoginItem::new(LoginStatus::NotRegistered, false);
+    login.fail_with(Some((4, "the app's code signature is not valid")));
+    let (agent, session) = connected(&login, IN_APPLICATIONS).await;
+    send(&agent, &session, settings(true, true)).await;
+    assert_eq!(
+        login_line(&session).as_deref(),
+        Some("Could not be added (code 4)")
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_copy_outside_applications_shows_no_login_items_line() {
+    let login = FakeLoginItem::new(LoginStatus::NotRegistered, false);
+    let (agent, session) = connected(
+        &login,
+        "/Users/me/Downloads/Marshal.app/Contents/MacOS/marshal-app",
+    )
+    .await;
+    send(&agent, &session, settings(true, true)).await;
+    assert_eq!(login_line(&session), None);
 }

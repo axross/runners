@@ -55,7 +55,7 @@ mod configure;
 mod lifecycle;
 
 use configure::{Mode, Request};
-pub use lifecycle::NOT_STARTED_AT_LAUNCH;
+pub use lifecycle::{NOT_STARTED_AT_LAUNCH, RESUME_NO_GATEWAY, RESUME_WAITING};
 
 /// the reason the agent ends when asked to by a client.
 pub const QUIT: &str = "quit";

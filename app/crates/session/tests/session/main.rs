@@ -1,5 +1,5 @@
 //! the session against fakes and a clock that jumps: the connection lifecycle, the
-//! actions, the token path, the launcher, the log and the login item.
+//! actions, the token path, the settings path, the launcher, the log and the login item.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -15,6 +15,7 @@ mod lifecycle;
 mod log;
 mod login_item;
 mod revision;
+mod settings;
 mod support;
 mod tokens;
 mod update;
