@@ -3,12 +3,10 @@
 //! interface is named by its kind and index, such as `Wi-Fi 12`, never by its alias,
 //! which a user may have named after a person or a place.
 
-use std::cell::RefCell;
 use std::net::Ipv4Addr;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
-
-use tokio::task::JoinHandle;
 
 use crate::macos::network::{HardwareAddress, NetworkReading, PrimaryNetwork};
 
@@ -96,7 +94,18 @@ type Reader = Arc<dyn Fn() -> NetworkReading + Send + Sync>;
 pub struct Bounded {
     read: Reader,
     limit: Duration,
-    outstanding: RefCell<Option<JoinHandle<NetworkReading>>>,
+    /// set while a reading runs; the blocking task clears it, so a caller that drops
+    /// its wait does not lose track of the reading.
+    in_flight: Arc<AtomicBool>,
+}
+
+/// clears the in-flight mark when the reading ends, also when the reader panics.
+struct Done(Arc<AtomicBool>);
+
+impl Drop for Done {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
 }
 
 impl Bounded {
@@ -105,28 +114,30 @@ impl Bounded {
         Self {
             read,
             limit,
-            outstanding: RefCell::new(None),
+            in_flight: Arc::new(AtomicBool::new(false)),
         }
     }
 
     pub async fn read(&self) -> NetworkReading {
-        let previous = self.outstanding.borrow_mut().take();
-        if let Some(previous) = previous
-            && !previous.is_finished()
-        {
-            *self.outstanding.borrow_mut() = Some(previous);
+        if self.in_flight.swap(true, Ordering::AcqRel) {
             return NetworkReading::NoDefaultRoute;
         }
+        let done = Done(Arc::clone(&self.in_flight));
         let read = Arc::clone(&self.read);
-        let mut reading = tokio::task::spawn_blocking(move || read());
-        match tokio::time::timeout(self.limit, &mut reading).await {
+        let reading = tokio::task::spawn_blocking(move || {
+            let _done = done;
+            read()
+        });
+        match tokio::time::timeout(self.limit, reading).await {
             Ok(Ok(reading)) => reading,
-            Ok(Err(_)) => NetworkReading::NoDefaultRoute,
-            Err(_) => {
-                *self.outstanding.borrow_mut() = Some(reading);
-                NetworkReading::NoDefaultRoute
-            }
+            Ok(Err(_)) | Err(_) => NetworkReading::NoDefaultRoute,
         }
+    }
+
+    /// whether a reading is still running.
+    #[cfg(test)]
+    fn is_reading(&self) -> bool {
+        self.in_flight.load(Ordering::Acquire)
     }
 }
 
@@ -212,17 +223,34 @@ mod tests {
         assert_eq!(started.load(Ordering::SeqCst), 1);
         release.send(()).unwrap();
         for _ in 0..200 {
-            let finished = bounded
-                .outstanding
-                .borrow()
-                .as_ref()
-                .is_some_and(JoinHandle::is_finished);
-            if finished {
+            if !bounded.is_reading() {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
         assert_eq!(bounded.read().await, wifi());
         assert_eq!(started.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_reading_whose_wait_was_dropped_still_blocks_a_second() {
+        let started = Arc::new(AtomicU32::new(0));
+        let (release, released) = mpsc::channel::<()>();
+        let released = Mutex::new(released);
+        let counter = Arc::clone(&started);
+        let bounded = Bounded::new(
+            Arc::new(move || {
+                counter.fetch_add(1, Ordering::SeqCst);
+                let _ = released.lock().unwrap().recv();
+                wifi()
+            }),
+            Duration::from_secs(5),
+        );
+        // the caller gives up long before the limit, as a stop does
+        let dropped = tokio::time::timeout(Duration::from_millis(20), bounded.read()).await;
+        assert!(dropped.is_err());
+        assert_eq!(bounded.read().await, NetworkReading::NoDefaultRoute);
+        assert_eq!(started.load(Ordering::SeqCst), 1);
+        release.send(()).unwrap();
     }
 }

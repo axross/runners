@@ -537,13 +537,20 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
         *self.read_revision.borrow_mut() = read.or_else(read_now);
         // a kept last-valid configuration predates any `lifecycle_set` since, so only a
         // configuration read now sets what is in effect
-        if let Some(settings) = loaded
+        if let Some(in_use) = loaded
             .in_use
             .as_ref()
             .filter(|in_use| in_use.origin != Origin::LastValid)
-            .and_then(|in_use| in_use.plan.settings.as_ref())
         {
-            self.take_settings(InEffect::windows(settings.lifecycle));
+            // `config.json`, used after a failed migration, has no table, so it takes
+            // the defaults
+            let lifecycle = in_use
+                .plan
+                .settings
+                .as_ref()
+                .map(|settings| settings.lifecycle)
+                .unwrap_or_default();
+            self.take_settings(InEffect::windows(lifecycle));
         } else if loaded.in_use.is_some() {
             // the settings in effect stay, and the sign-in item is still put in step
             self.sync_sign_in();

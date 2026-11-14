@@ -114,9 +114,8 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<'_, 
         let above = self.above();
         let profile = self.settings.profile;
         let edits = write::edits(setting, value);
-        let written =
-            edit::rewrite(file.bytes(), profile, above.as_deref(), &edits).map_err(edit_error)?;
-        file.edit(profile, above.as_deref(), &edits)
+        let written = file
+            .edit(profile, above.as_deref(), &edits)
             .map_err(edit_error)?;
         *self.read_revision.borrow_mut() = Some(revision(&written));
         let settings = settings.with(setting, value);
