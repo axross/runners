@@ -2814,7 +2814,8 @@ the warnings nor an unknown age block a start.
 - `image: <name>`;
 - `image-contract: <n>`, `mismatch (image <m>, CLI <n>)`, `missing`, or
   `not checked`, which shows only before the first check Docker answers; a later
-  check Docker does not answer leaves the latest answer in place;
+  check Docker does not answer leaves the latest answer in place; on axmc with
+  only macOS pools it is `not used, no Linux pool`;
 - `image-built: <d> days ago`, or `unknown`;
 - `runner: <version>, released <d> days ago`, or `unknown`;
 - on axmc, `golden-vm: <name>` once a golden VM exists, and `mismatch (golden VM
@@ -2823,7 +2824,8 @@ version <g> and image contract <m>, CLI golden VM version <G> and image contract
 - one `warning: <text>` line per freshness warning.
 
 `image-built` and `runner` read `unknown` before the first check Docker answers, and
-when the image is missing or its labels are missing or malformed.
+when the image is missing or its labels are missing or malformed, or when no Linux
+pool is configured.
 
 ## macOS VM Pools
 
@@ -2905,14 +2907,14 @@ is below the macOS minimum and each fixture was written to test something else:
 | `rejected/axmc-three-macos-vms.json`                           | Both pools' `diskGb` 40 to 50, and `budget.cpus` 8 to 12, because three default macOS slots of 4 CPUs total 12; the VM-limit error stays the only error                   |
 | `rejected/axmc-budget-errors-come-last.json`                   | The first pool's `diskGb` 40 to 50 and `budget.cpus` 8 to 12, for the same reason; the disk total in the last error is 1200 GB (2 × 50 + 1000 + the 100 GB macOS reserve) |
 
-Two fixtures change because M1's rules and these meet, after both landed:
+One fixture of M1's changes because its macOS pool is below the new minimum:
 
-| Fixture                                            | Change                                                                                                                                                                   |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `accepted/axmc-macos-values-replace-defaults.json` | `cpus` 2.5 to 3, because every axmc pool now has whole vCPUs; it stays accepted, with 6 of the budget's 8 CPUs                                                           |
-| `rejected/axmc-linux-disk-too-small.json`          | M1's fixture: the macOS pool's `diskGb` 19 to 50, because 19 is below the macOS minimum; the Linux pool's error stays the only error, and the macOS pool still gets none |
+| Fixture                                   | Change                                                                                                                                                                   |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `rejected/axmc-linux-disk-too-small.json` | M1's fixture: the macOS pool's `diskGb` 19 to 50, because 19 is below the macOS minimum; the Linux pool's error stays the only error, and the macOS pool still gets none |
 
-The 100 GB macOS reserve raises the disk total of every fixture with a macOS pool.
+The 100 GB macOS reserve raises the disk total of every existing fixture with a macOS
+pool.
 Where the fixture tests something else, its `budget.diskGb` rose by 100 so its
 outcome stays; where its expected text quotes the disk line or message, the text
 changed:
@@ -2920,14 +2922,10 @@ changed:
 | Fixture                                                        | Change                                                                                                                                                                   |
 | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `accepted/axmc-budget-at-limit.json`                           | `budget.diskGb` 190 to 290, so it stays exactly at the limit: `290 of 290 GB, including a 140 GB reserve`                                                                |
-| `accepted/axmc-macos-values-replace-defaults.json`             | `budget.diskGb` 200 to 300; it stays accepted with `260 of 300 GB`                                                                                                       |
 | `accepted/axmc-os-labels.json`                                 | `budget.diskGb` 200 to 300; it stays accepted                                                                                                                            |
 | `accepted/axmc-shared-label-different-os.json`                 | `budget.diskGb` 200 to 300; it stays accepted                                                                                                                            |
-| `rejected/axmc-macos-three-default-slots.json`                 | `budget.diskGb` 200 to 300, so the VM-limit error stays the only budget error                                                                                            |
 | `rejected/axmc-different-os-shared-label-different-token.json` | `budget.diskGb` 200 to 300, so the token error stays the only error                                                                                                      |
 | `rejected/axmc-three-macos-vms.json`                           | `budget.diskGb` 200 to 300, so the VM-limit error stays the only error                                                                                                   |
-| `accepted/axmc-macos-defaults.json`                            | Its expected disk line is `150 of 200 GB, including a 100 GB reserve`                                                                                                    |
-| `accepted/axmc-macos-two-default-slots.json`                   | Its expected disk line is `200 of 200 GB, including a 100 GB reserve`, still within the budget                                                                           |
 | `rejected/axmc-budget-errors-come-last.json`                   | Its expected disk message names 1200 GB and the macOS reserve                                                                                                            |
 | TOML `accepted/macos-full.toml`                                | `budget.disk_gb` 180 to 280; it stays accepted                                                                                                                           |
 | TOML `rejected/macos-budget-totals.toml`                       | Its expected disk messages name the macOS reserve and a total 100 GB higher                                                                                              |
