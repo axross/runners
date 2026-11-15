@@ -214,6 +214,7 @@ Important; Codex review uses its native priority label.
 
 These lenses apply to a change of the axmc VM runtime: `cli/src/runtime/tart/`,
 `cli/src/macos/`, `cli/src/golden/`, `cli/src/build/golden_macos.rs`,
+`cli/src/build/build_vm.rs`,
 `cli/src/image/macos_base.rs`, the golden VMs' provisioning assets, and the macOS
 host document. Each is a hard project rule, owned by
 [Security](docs/conventions/security.md#a-linux-job-on-axmc-runs-in-a-per-job-vm)

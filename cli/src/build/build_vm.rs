@@ -10,6 +10,10 @@ use tokio::sync::watch;
 use tokio::time::Instant;
 
 use crate::golden::steps::GuestCall;
+use crate::macos::prerequisites::{
+    Check, VERSION_BUDGET, check_softnet, check_softnet_with, check_tart,
+};
+use crate::macos::softnet::OwnerMode;
 use crate::runtime::clock::SystemClock;
 use crate::runtime::log::Log;
 use crate::runtime::scrub::scrub_error_text;
@@ -68,9 +72,36 @@ pub(super) struct BuildVm<'a> {
     pub(super) log: &'a dyn Log,
     pub(super) timings: GoldenTimings,
     pub(super) stop: &'a watch::Receiver<Option<Instant>>,
+    /// the owner and mode Softnet's file is judged to have, as a test gives it; the
+    /// environment's override applies when it is unset.
+    pub(super) softnet_owner_mode: Option<OwnerMode>,
 }
 
 impl BuildVm<'_> {
+    /// checks Tart and Softnet as `start` does, warning on each warning, and returns
+    /// the versions they report.
+    pub(super) async fn tart_and_softnet(&self) -> Result<(String, String), String> {
+        let tart = self.accepted(check_tart(self.client).await)?;
+        let path = self.client.config().path.as_deref();
+        let softnet = self.accepted(match self.softnet_owner_mode {
+            Some(owner_mode) => check_softnet_with(path, Some(owner_mode), VERSION_BUDGET).await,
+            None => check_softnet(path).await,
+        })?;
+        Ok((tart, softnet))
+    }
+
+    /// the version of a check that lets the build run, warning when it carries one.
+    fn accepted(&self, check: Check) -> Result<String, String> {
+        match check {
+            Check::Pass { version } => Ok(version),
+            Check::Warn { version, message } => {
+                self.log.warn(&message);
+                Ok(version)
+            }
+            Check::Refuse(refusal) => Err(refusal.message),
+        }
+    }
+
     /// completes when a stop is asked for, with its time; never, when the sender is
     /// gone without one.
     pub(super) async fn stopped(&self) -> Instant {

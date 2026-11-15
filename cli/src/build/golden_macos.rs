@@ -18,9 +18,6 @@ use crate::image::macos_base::{BASE_REPOSITORY, MacosBase, host_refusal};
 use crate::image::runner::DeclaredRunner;
 use crate::macos::count::{ConfiguredPool, count_macos_vms, listed_vms};
 use crate::macos::name::{GOLDEN_MACOS_VM_VERSION, GoldenMacosName, build_name, is_build_name};
-use crate::macos::prerequisites::{
-    Check, VERSION_BUDGET, check_softnet, check_softnet_with, check_tart,
-};
 use crate::macos::softnet::OwnerMode;
 use crate::runtime::log::Log;
 use crate::runtime::tart::list::VmSource;
@@ -64,6 +61,7 @@ impl GoldenMacosBuild<'_> {
             log: self.log,
             timings: self.timings,
             stop: &self.stop,
+            softnet_owner_mode: self.softnet_owner_mode,
         }
     }
 
@@ -125,12 +123,7 @@ impl GoldenMacosBuild<'_> {
 
     /// Tart and Softnet, and the host's macOS against the base's.
     async fn check_prerequisites(&self) -> Result<(), String> {
-        let tart = self.accepted(check_tart(&self.client).await)?;
-        let path = self.client.config().path.as_deref();
-        let softnet = self.accepted(match self.softnet_owner_mode {
-            Some(owner_mode) => check_softnet_with(path, Some(owner_mode), VERSION_BUDGET).await,
-            None => check_softnet(path).await,
-        })?;
+        let (tart, softnet) = self.vm().tart_and_softnet().await?;
         if let Some(refusal) = host_refusal(&self.base, &self.host_macos) {
             return Err(refusal);
         }
@@ -157,17 +150,6 @@ impl GoldenMacosBuild<'_> {
             ));
         }
         Ok(())
-    }
-
-    fn accepted(&self, check: Check) -> Result<String, String> {
-        match check {
-            Check::Pass { version } => Ok(version),
-            Check::Warn { version, message } => {
-                self.log.warn(&message);
-                Ok(version)
-            }
-            Check::Refuse(refusal) => Err(refusal.message),
-        }
     }
 
     /// deletes the macOS build VMs an earlier build left; one that cannot be deleted

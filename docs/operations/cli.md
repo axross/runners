@@ -2889,7 +2889,7 @@ fixtures under [`tests/host-configuration/rust/`](../../tests/host-configuration
 No axpc fixture changes, and no `shared/` fixture changes. `axmc-defaults.json` and
 `axmc-diagnostics.json` describe Linux pools, so their outcomes and totals stay.
 `axmc-budget-at-limit.json` already sets every macOS value at or above its minimum,
-so it stays too.
+so only the macOS reserve changes it, as the reserve table below lists.
 
 Each existing fixture whose macOS pool had `"diskGb": 40` now has 50, because 40
 is below the macOS minimum and each fixture was written to test something else:
@@ -2917,20 +2917,21 @@ Where the fixture tests something else, its `budget.diskGb` rose by 100 so its
 outcome stays; where its expected text quotes the disk line or message, the text
 changed:
 
-| Fixture                                                                                              | Change                                                                                                    |
-| ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `accepted/axmc-budget-at-limit.json`                                                                 | `budget.diskGb` 190 to 290, so it stays exactly at the limit: `290 of 290 GB, including a 140 GB reserve` |
-| `accepted/axmc-macos-values-replace-defaults.json`                                                   | `budget.diskGb` 200 to 300; it stays accepted with `260 of 300 GB`                                        |
-| `accepted/axmc-os-labels.json`                                                                       | `budget.diskGb` 200 to 300; it stays accepted                                                             |
-| `accepted/axmc-shared-label-different-os.json`                                                       | `budget.diskGb` 200 to 300; it stays accepted                                                             |
-| `rejected/axmc-macos-three-default-slots.json`                                                       | `budget.diskGb` 200 to 300, so the VM-limit error stays the only budget error                             |
-| `rejected/axmc-different-os-shared-label-different-token.json`                                       | `budget.diskGb` 200 to 300, so the token error stays the only error                                       |
-| `rejected/axmc-three-macos-vms.json`                                                                 | `budget.diskGb` 200 to 300, so the VM-limit error stays the only error                                    |
-| `accepted/axmc-macos-defaults.json`                                                                  | Its expected disk line is `150 of 200 GB, including a 100 GB reserve`                                     |
-| `accepted/axmc-macos-two-default-slots.json`                                                         | Its expected disk line is `200 of 200 GB, including a 100 GB reserve`, still within the budget            |
-| `rejected/axmc-budget-errors-come-last.json`                                                         | Its expected disk message names 1200 GB and the macOS reserve                                             |
-| TOML `accepted/macos-full.toml`                                                                      | `budget.disk_gb` 180 to 280; it stays accepted                                                            |
-| TOML `rejected/macos-budget-totals.toml` and `rejected/macos-clashes-come-before-budget-totals.toml` | Their expected disk messages name the macOS reserve and a total 100 GB higher                             |
+| Fixture                                                        | Change                                                                                                                                                                   |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `accepted/axmc-budget-at-limit.json`                           | `budget.diskGb` 190 to 290, so it stays exactly at the limit: `290 of 290 GB, including a 140 GB reserve`                                                                |
+| `accepted/axmc-macos-values-replace-defaults.json`             | `budget.diskGb` 200 to 300; it stays accepted with `260 of 300 GB`                                                                                                       |
+| `accepted/axmc-os-labels.json`                                 | `budget.diskGb` 200 to 300; it stays accepted                                                                                                                            |
+| `accepted/axmc-shared-label-different-os.json`                 | `budget.diskGb` 200 to 300; it stays accepted                                                                                                                            |
+| `rejected/axmc-macos-three-default-slots.json`                 | `budget.diskGb` 200 to 300, so the VM-limit error stays the only budget error                                                                                            |
+| `rejected/axmc-different-os-shared-label-different-token.json` | `budget.diskGb` 200 to 300, so the token error stays the only error                                                                                                      |
+| `rejected/axmc-three-macos-vms.json`                           | `budget.diskGb` 200 to 300, so the VM-limit error stays the only error                                                                                                   |
+| `accepted/axmc-macos-defaults.json`                            | Its expected disk line is `150 of 200 GB, including a 100 GB reserve`                                                                                                    |
+| `accepted/axmc-macos-two-default-slots.json`                   | Its expected disk line is `200 of 200 GB, including a 100 GB reserve`, still within the budget                                                                           |
+| `rejected/axmc-budget-errors-come-last.json`                   | Its expected disk message names 1200 GB and the macOS reserve                                                                                                            |
+| TOML `accepted/macos-full.toml`                                | `budget.disk_gb` 180 to 280; it stays accepted                                                                                                                           |
+| TOML `rejected/macos-budget-totals.toml`                       | Its expected disk messages name the macOS reserve and a total 100 GB higher                                                                                              |
+| TOML `rejected/macos-clashes-come-before-budget-totals.toml`   | The first pool's `disk_gb` 40 to 50 and `budget.cpus` 8 to 12, as for `axmc-budget-errors-come-last.json`; its expected disk message names 1200 GB and the macOS reserve |
 
 These fixtures pin the new rules, and each default, minimum, and message has one:
 
@@ -3214,16 +3215,16 @@ talk to it. axpc runs its pools with `start` and builds its image with `build`, 
 VMs, and `build` there makes the golden VM, as [macOS Runner Host](./macos-runner-host.md)
 describes.
 
-| Module                                   | Holds                                                                                                                                       |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `start`                                  | `start`: the lock, validation, the log file, containment, the channel, the instance, and its signals                                        |
-| `build`, `build::golden`                 | `build`: the lock, validation, the channel, its states, and its `docker` steps and their aborts; the golden VM build                        |
-| `build::golden_macos`, `build::build_vm` | The golden macOS VM build, and the life of a build VM of either OS: boot, guest calls under the stop signal, shutdown, commit, and deletion |
-| `control`                                | The clients `stop`, `restart`, `status`, and `diagnostics`                                                                                  |
-| `shim`                                   | The Unix shim between `start` and one job container's `docker run` client                                                                   |
-| `diagnostics`                            | The exporter child, listed under The Runtime Layer                                                                                          |
-| `instance::runtime_core`                 | The runtime core, listed under The Instance Layer                                                                                           |
-| `instance::log_file`                     | The log, listed under The Instance Layer                                                                                                    |
+| Module                                   | Holds                                                                                                                                                                                   |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `start`                                  | `start`: the lock, validation, the log file, containment, the channel, the instance, and its signals                                                                                    |
+| `build`, `build::golden`                 | `build`: the lock, validation, the channel, its states, and its `docker` steps and their aborts; the golden VM build                                                                    |
+| `build::golden_macos`, `build::build_vm` | The golden macOS VM build, and what a build of either OS shares: the Tart and Softnet check, and the build VM's boot, guest calls under the stop signal, shutdown, commit, and deletion |
+| `control`                                | The clients `stop`, `restart`, `status`, and `diagnostics`                                                                                                                              |
+| `shim`                                   | The Unix shim between `start` and one job container's `docker run` client                                                                                                               |
+| `diagnostics`                            | The exporter child, listed under The Runtime Layer                                                                                                                                      |
+| `instance::runtime_core`                 | The runtime core, listed under The Instance Layer                                                                                                                                       |
+| `instance::log_file`                     | The log, listed under The Instance Layer                                                                                                                                                |
 
 ### Start
 

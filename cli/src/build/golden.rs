@@ -15,9 +15,6 @@ use crate::golden::steps::{
     install_docker_call, install_launcher_call, list_key_call, prepare_call,
 };
 use crate::image::check::{ImageCheck, ImageLabels, checked_reference};
-use crate::macos::prerequisites::{
-    Check, VERSION_BUDGET, check_softnet, check_softnet_with, check_tart,
-};
 use crate::macos::softnet::OwnerMode;
 use crate::runtime::docker::forward_lines;
 use crate::runtime::docker_args::{image_inspect_arguments, info_arguments};
@@ -114,6 +111,7 @@ impl GoldenBuild<'_> {
             log: self.log,
             timings: self.timings,
             stop: &self.stop,
+            softnet_owner_mode: self.softnet_owner_mode,
         }
     }
 
@@ -173,27 +171,10 @@ impl GoldenBuild<'_> {
     }
 
     async fn check_prerequisites(&self) -> Result<(), String> {
-        let tart = self.accepted(check_tart(&self.client).await)?;
-        let path = self.client.config().path.as_deref();
-        let softnet = self.accepted(match self.softnet_owner_mode {
-            Some(owner_mode) => check_softnet_with(path, Some(owner_mode), VERSION_BUDGET).await,
-            None => check_softnet(path).await,
-        })?;
+        let (tart, softnet) = self.vm().tart_and_softnet().await?;
         self.log
             .info(&format!("Using Tart {tart} and Softnet {softnet}."));
         Ok(())
-    }
-
-    /// the version of a check that lets the build run, warning when it carries one.
-    fn accepted(&self, check: Check) -> Result<String, String> {
-        match check {
-            Check::Pass { version } => Ok(version),
-            Check::Warn { version, message } => {
-                self.log.warn(&message);
-                Ok(version)
-            }
-            Check::Refuse(refusal) => Err(refusal.message),
-        }
     }
 
     /// deletes the build VMs an earlier build left, which a killed CLI leaves to its
