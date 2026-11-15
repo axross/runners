@@ -1,8 +1,9 @@
 # macOS Runner Host
 
-How to run ephemeral Linux GitHub Actions runners on the maintainer's Apple silicon
-Mac, the `axmc` host, with the CLI, `marshal`: each job runs in a fresh Tart Ubuntu
-VM that is cloned from a golden VM, on Softnet, with no Docker Desktop. It covers
+How to run ephemeral Linux and macOS GitHub Actions runners on the maintainer's Apple
+silicon Mac, the `axmc` host, with the CLI, `marshal`: each job runs in a fresh Tart
+VM, Ubuntu or macOS, cloned from the golden VM of its OS, on Softnet, with no Docker
+Desktop. It covers
 installing Tart and Softnet, setting up Softnet's privilege, the signed-in session
 the host needs, the golden VM and how `build` makes it, running and stopping the
 pools, what a sleep, a wake or a network change does, and the verification status. It
@@ -14,10 +15,10 @@ command does and how the runtime works, and the trust rules the host is reviewed
 against are in [Security](../conventions/security.md). The Windows equivalent is
 [Windows Runner Host](./windows-runner-host.md).
 
-`marshal start --profile axmc` runs the `os: "linux"` pools of the configuration.
-It skips each `os: "macos"` pool with a warning, because macOS VM pools are not
-supported yet, and exits 1 when every pool is skipped. No procedure below has been
-run on a Mac yet; see [Verification Status](#verification-status).
+`marshal start --profile axmc` runs the `os: "linux"` and `os: "macos"` pools of the
+configuration; see
+[The Golden macOS VM and macOS Pools](#the-golden-macos-vm-and-macos-pools).
+[Verification Status](#verification-status) says which procedures have run on a Mac.
 
 ## Installing Tart and Softnet
 
@@ -364,11 +365,13 @@ marshal start --config /path/to/runner-host.json
 `--profile axmc` is the default on macOS. `marshal` itself comes from a release, as
 [CLI](./cli.md#installing-updating-and-rolling-back) describes. `start` validates the
 configuration, opens its log under `~/Library/Logs/marshal/`, checks Tart and
-Softnet, checks the golden VM, prepares every Linux pool, and runs every slot until it
-is stopped. It also holds off idle sleep and watches for a sleep or a network change;
+Softnet, checks the golden VM of each configured OS, prepares every pool, and runs
+every slot until it is stopped. It also holds off idle sleep and watches for a sleep
+or a network change;
 see [Sleep, Wake, and Network Changes](#sleep-wake-and-network-changes). It exits 1
-when the configuration is invalid, when a prerequisite refuses, when the golden VM is
-missing or mismatched, or when no pool can start. Nothing starts it at sign-in.
+when the configuration is invalid, when a prerequisite refuses, when a configured OS's
+golden VM is missing or mismatched, or when no pool can start. Nothing starts it at
+sign-in.
 
 From another terminal, as the same user:
 
@@ -626,12 +629,15 @@ guest agent running commands as `admin`. Mac verification
 [steps 4.1 and 4.2](https://github.com/axross/runners/issues/80#issuecomment-6871092617)
 then ran `marshal build` at `bc5542c`, with a macOS pool and the base already in
 Tart's cache, so the pull found it cached, and read the golden macOS VM through the guest agent: its runner, the base's runner gone, Remote Login and Screen Sharing off,
-and the automatic download and installation of updates off. Steps 4.3 to 4.11 have
-not run: a macOS job VM's cycle under `marshal` and the runner updating itself, the
-limit wait and the refusal at boot, a pool's `diskGb` above 50 under `marshal`, a
-sleep and a network change during a macOS job, a hard kill, `stop`'s timing, and
-the boot time and a rebuild's peak disk use.
-Until they do, what this document says about those rests on the tests and sources.
+and the automatic download and installation of updates off. Mac verification
+[steps 4.3 to 4.11](https://github.com/axross/runners/issues/80#issuecomment-6889174071)
+then ran a release build at `1400199`: a macOS job on a runner behind GitHub's
+latest, which did not update itself because GitHub's JIT configuration sets
+`DisableUpdate: true`; at most two macOS VMs, with Linux VMs starting beside them;
+the limit wait for a VM Marshal did not create, and Tart's refusal at boot; an
+80 GB `diskGb`; a sleep during a macOS job, which stopped every runner and left no
+job VM; a hard kill, after which the shims deleted the job VMs; `stop` in 7.5 s; a
+boot of 28 to 32 s; and a rebuild within the 100 GB reserve.
 
 **What is checked without a Mac.** The CLI's tests run against fake `tart`, `docker`,
 `softnet`, `caffeinate`, `route` and `arp` programs and a scripted signal source:
@@ -685,8 +691,10 @@ of an Apple tool as the source prints it, and not on a run:
   ([decision record](https://github.com/axross/runners/issues/74#issuecomment-6784246305)).
 - The VM has the pool's vCPUs, memory and disk, and no shared directory, Rosetta share,
   sound card or USB device, and the `admin` password login over SSH is refused.
-- `stop` ends every VM within 30 s, a hard-killed `start` leaves no running job VM
-  after the next `start`, and a slot's next VM is cloned, booted, probed and
-  registered within 60 s of the previous VM's deletion; record the turnaround.
+- For Linux job VMs, `stop` ends every VM within 30 s, a hard-killed `start` leaves no
+  running job VM after the next `start`, and a slot's next VM is cloned, booted,
+  probed and registered within 60 s of the previous VM's deletion; record the
+  turnaround. Mac verification steps 4.9 and 4.10 confirmed the first two for macOS
+  job VMs.
 - The modes of the control socket, the state, log and diagnostic files, and the
   refusal of another OS user, on macOS.

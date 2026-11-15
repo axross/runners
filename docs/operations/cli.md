@@ -2832,8 +2832,9 @@ section states what `validate` accepts for such a pool, the runner and base reco
 the golden macOS VM is built from, the names of the macOS VMs, the count of macOS
 VMs against the host's limit, how `build` makes the golden macOS VM, how a job runs
 in a macOS VM, and what `status` and the agent's snapshot show for them.
-The pool rules apply to a pool with `os: "macos"` under the axmc profile only;
-axpc and axmc Linux pools accept what they accepted before.
+The pool rules apply to a pool with `os: "macos"` under the axmc profile only.
+axpc pools accept what they accepted before, and so do axmc Linux pools, except
+that `slots` is now optional with a default of 2.
 
 ### Defaults and Minimums
 
@@ -2923,6 +2924,8 @@ changed:
 | `accepted/axmc-os-labels.json`                                                                       | `budget.diskGb` 200 to 300; it stays accepted                                                             |
 | `accepted/axmc-shared-label-different-os.json`                                                       | `budget.diskGb` 200 to 300; it stays accepted                                                             |
 | `rejected/axmc-macos-three-default-slots.json`                                                       | `budget.diskGb` 200 to 300, so the VM-limit error stays the only budget error                             |
+| `rejected/axmc-different-os-shared-label-different-token.json`                                       | `budget.diskGb` 200 to 300, so the token error stays the only error                                       |
+| `rejected/axmc-three-macos-vms.json`                                                                 | `budget.diskGb` 200 to 300, so the VM-limit error stays the only error                                    |
 | `accepted/axmc-macos-defaults.json`                                                                  | Its expected disk line is `150 of 200 GB, including a 100 GB reserve`                                     |
 | `accepted/axmc-macos-two-default-slots.json`                                                         | Its expected disk line is `200 of 200 GB, including a 100 GB reserve`, still within the budget            |
 | `rejected/axmc-budget-errors-come-last.json`                                                         | Its expected disk message names 1200 GB and the macOS reserve                                             |

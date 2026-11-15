@@ -1,6 +1,6 @@
 //! the names of the macOS VMs Marshal makes: the golden macOS VM and a macOS build
-//! VM. a job VM's name is the same for both OSs, and M1's `runtime::tart::names`
-//! writes and reads it with the Linux forms.
+//! VM. a job VM's name is the same for both OSs, and `runtime::tart::names` writes
+//! and reads it with the Linux forms.
 
 use std::time::SystemTime;
 

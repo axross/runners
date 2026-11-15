@@ -25,8 +25,8 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   repository runs its own jobs on GitHub-hosted runners only, the cache-poisoning
   threat model for shared runner storage, per-repository isolation on a runner
   host, the release record for the CLI's dispatch-only release workflow and its
-  signing Environment, the accepted LAN-egress risk, the axmc Linux runtime's per-job
-  VM, CPU placement in it, Softnet and its SUID check, the accepted host-facing
+  signing Environment, the accepted LAN-egress risk, the axmc runtime's per-job Linux
+  and macOS VMs, CPU placement in it, Softnet and its SUID check, the accepted host-facing
   surface, the VM-local Docker socket, the pinned Tart, Softnet, golden VM base, and
   runner image Docker client, how the resident agent keeps tokens and receives them,
   what the TOML configuration holds and what its problems quote, what the Windows

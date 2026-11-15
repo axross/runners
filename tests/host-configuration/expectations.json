@@ -304,7 +304,7 @@
     "contains": [
       "repositories[1].tokenPath: pools for the same repository must use the same token file as repositories[0]"
     ],
-    "lacks": ["ambiguous"]
+    "lacks": ["ambiguous", "budget: pools total"]
   },
   "rust/rejected/axmc-disk-invalid.json": {
     "profile": "axmc",
@@ -538,7 +538,7 @@
     "contains": [
       "budget: macOS pools total 3 VMs (the sum of their slots), above the limit of 2"
     ],
-    "lacks": []
+    "lacks": ["budget: pools total"]
   },
   "rust/rejected/axmc-token-path-control-character.json": {
     "profile": "axmc",

@@ -109,7 +109,6 @@ pub fn build(request: &BuildRequest<'_>, err: &mut dyn Write) -> u8 {
         Err(error) => return print_error(err, &error),
     };
     let log = StderrLog::default();
-    log.info(&format!("Building {image}."));
     #[cfg(windows)]
     if let Err(error) = crate::start::contain() {
         return print_error(
@@ -139,6 +138,7 @@ pub fn build(request: &BuildRequest<'_>, err: &mut dyn Write) -> u8 {
         Profile::Axpc => {
             let program = resolve_program(request.docker);
             let (image, log) = (&image, &log);
+            log.info(&format!("Building {image}."));
             runtime.block_on(build.run(|stop| async move {
                 Steps {
                     program,
@@ -173,6 +173,7 @@ pub fn build(request: &BuildRequest<'_>, err: &mut dyn Write) -> u8 {
                 Box::pin(async move {
                     let mut failures = Vec::new();
                     if builds_linux {
+                        log.info(&format!("Building {image}."));
                         let linux = GoldenBuild {
                             client: client.clone(),
                             launcher: launcher.clone(),
