@@ -185,21 +185,33 @@ whatever a job runs in. The core keeps the configuration, registration, backoff 
 the stop sequence; the runtime behind the seam waits for its engine, checks its
 image, prepares and releases a job's host, runs the job, and exports diagnostics. A
 pool's operating system, on the **Host Profile**'s host, selects the runtime: a
-Docker Desktop container on axpc, a **Job VM** for a Linux pool on axmc. See
+Docker Desktop container on axpc, a **Job VM** for a pool on axmc. See
 [operations/cli.md](./operations/cli.md#runtime-seam).
 
 **Golden VM** - the Tart Ubuntu VM that `build --profile axmc` makes on the macOS
-host and every **Job VM** is cloned from. It holds Docker Engine, the launcher and
+host and every Linux **Job VM** is cloned from. It holds Docker Engine, the launcher and
 the **Runner Image**, and its name records its golden VM version, the **Image
 Contract Version**, the runner version and the build time, so they are read without
 booting it. Only `build` deletes it. See
 [operations/macos-runner-host.md](./operations/macos-runner-host.md#the-golden-vm-contract).
 
-**Job VM** - the VM that runs one job of an axmc Linux **Execution Pool**: a clone
-of the **Golden VM**, named `marshal-job-<pool>-<slot>-<time>`, booted on
+**Job VM** - the VM that runs one job of an axmc **Execution Pool**: a clone of the
+**Golden VM** for a Linux pool, or of the **Golden macOS VM** for a macOS one, named `marshal-job-<pool>-<slot>-<time>`, booted on
 **Softnet** with no shared directory, clipboard, audio, USB accessories or Rosetta,
 and deleted when its job ends. A **Slot**'s Job VM is booted and idle while its
 runner waits for a job. See [conventions/security.md](./conventions/security.md#a-linux-job-on-axmc-runs-in-a-per-job-vm).
+
+**Golden macOS VM** - the Tart macOS VM that `build --profile axmc` makes from the
+digest-pinned Cirrus Labs base when a macOS pool is configured, and every macOS
+**Job VM** is cloned from. It holds the runner and the launcher, with no container,
+and its name, `marshal-golden-macos-g<golden VM version>-r<runner version>-<time>`,
+records what it holds. See
+[operations/cli.md](./operations/cli.md#the-golden-macos-vm-build).
+
+**macOS VM Limit** - the two macOS VMs that Apple's licence allows at once on the
+Mac. A macOS **Slot** counts the macOS VMs before it clones one and waits while two
+count; Linux VMs do not count. See
+[operations/cli.md](./operations/cli.md#the-two-vm-count).
 
 **VM-Local Docker Socket** - the Docker socket, `/var/run/docker.sock`, of the Docker
 Engine inside a **Job VM**, which the VM runtime mounts into that VM's runner
@@ -208,8 +220,10 @@ belongs to a VM that one job uses and that is deleted afterwards, never to a hos
 and the Docker runtime on axpc mounts no socket. See
 [conventions/security.md](./conventions/security.md#the-vm-local-docker-socket).
 
-**Build VM** - the temporary VM, named `marshal-build-linux-<time>`, in which
-`build --profile axmc` makes a new **Golden VM**. It is renamed to the golden name
+**Build VM** - the temporary VM, named `marshal-build-linux-<time>` or
+`marshal-build-macos-<time>`, in which `build --profile axmc` makes a new
+**Golden VM** or **Golden macOS VM**. A macOS one counts toward the **macOS VM
+Limit** while it exists. It is renamed to the golden name
 only when complete, and a failed or interrupted build deletes it, so the previous
 Golden VM stays in place.
 

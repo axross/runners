@@ -5,10 +5,11 @@ use std::fmt;
 use std::future::Future;
 use std::time::Duration;
 
+use tokio::sync::watch;
 use tokio::time::Instant;
 
 use crate::image::check::ImageCheck;
-use crate::validate::PlannedVolume;
+use crate::validate::{Plan, PlannedVolume};
 
 use super::job_marks::Activity;
 use super::name::is_own_container_name;
@@ -199,6 +200,15 @@ pub enum HostPreparation {
     Held(String),
 }
 
+/// what a job host's preparation waits for, which the slot shows as its state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HostWait {
+    /// a place under the macOS VM limit.
+    VmLimit,
+    /// the deletion of this VM, which an earlier release failed to delete.
+    VmDeletion(String),
+}
+
 /// the budget a job host's release gets outside a stop.
 pub const RELEASE_WITHIN: Duration = Duration::from_secs(30);
 
@@ -238,6 +248,10 @@ pub trait Backend {
     /// image-check bound; anything not a clear answer is [`ImageCheck::Unavailable`],
     /// never a mismatch.
     fn check_image(&self, image: &str) -> impl Future<Output = ImageCheck>;
+
+    /// takes the pools of the plan a run is about to check or run, so a restart or a
+    /// resume that read an edited configuration uses its pools.
+    fn use_plan(&self, _plan: &Plan) {}
 
     /// checks the host prerequisites once before anything is started, and returns the
     /// refusal's message when one refuses. A prerequisite that does not answer is
@@ -307,6 +321,44 @@ pub trait Backend {
     /// the call, whatever it returns, until it is released.
     fn prepare_job_host(&self, request: &HostRequest) -> impl Future<Output = HostPreparation>;
 
+    /// the newest golden macOS VM's name as the latest image check found it,
+    /// `Some(None)` when it found none, or `None` for a backend without macOS pools
+    /// or a check that could not list the VMs.
+    fn golden_macos(&self) -> Option<Option<String>> {
+        None
+    }
+
+    /// why the latest image check refused the golden macOS VM: missing, or of another
+    /// golden VM version. `start`, a resume and a `restart` treat it as an image
+    /// refusal, as they treat the Linux golden VM's.
+    fn golden_macos_refusal(&self) -> Option<String> {
+        None
+    }
+
+    /// the VM a job of `host` runs in when it runs in a VM rather than a container,
+    /// as a macOS job does.
+    fn job_vm(&self, _host: &JobHost) -> Option<String> {
+        None
+    }
+
+    /// what the preparation of `host` waits for now, if anything.
+    fn host_wait(&self, _host: &JobHost) -> Option<HostWait> {
+        None
+    }
+
+    /// the counted leftover job VMs of pools that are no longer configured, from the
+    /// latest count of macOS VMs.
+    fn counted_leftovers(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// a receiver marked changed whenever any host's [`host_wait`](Backend::host_wait)
+    /// or the [`counted_leftovers`](Backend::counted_leftovers) change, or `None` for a
+    /// backend whose preparations never wait.
+    fn host_waits(&self) -> Option<watch::Receiver<()>> {
+        None
+    }
+
     /// gets rid of the slot's host within `budget`. The worker calls it once after
     /// every [`prepare_job_host`](Backend::prepare_job_host), whatever that
     /// returned, and before any backoff, unless a stop has ended the worker while the
@@ -318,6 +370,15 @@ pub trait Backend {
         host: &JobHost,
         budget: Duration,
     ) -> impl Future<Output = Result<(), BackendError>>;
+
+    /// after a [`release_job_host`](Backend::release_job_host) that failed while the
+    /// host [waits](Backend::host_wait) for its VM's deletion, deletes the VM again
+    /// until it is gone, before the slot backs off. The worker stops waiting at a stop,
+    /// whose sequence releases the host itself, or at a drain, after which the slot's
+    /// next preparation deletes it.
+    fn finish_release(&self, _host: &JobHost) -> impl Future<Output = ()> {
+        std::future::ready(())
+    }
 
     /// whether the host still holds a diagnostic container's evidence that a
     /// finalisation has not removed. A worker that a stop has ended leaves such a host
