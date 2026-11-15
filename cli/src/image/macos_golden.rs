@@ -140,9 +140,9 @@ fn runner_text(golden: Option<&str>, days: u64) -> String {
         .unwrap_or_default();
     if days >= RUNNER_SECOND_WARNING_DAYS {
         format!(
-            "the golden macOS VM's runner {version} was released {days} days ago, so each job's \
-             runner likely updates itself at start; update the CLI to get a newer runner, then \
-             rebuild the golden macOS VM"
+            "the golden macOS VM's runner {version} was released {days} days ago and never \
+             updates itself; update the CLI to get a newer runner, then rebuild the golden macOS \
+             VM before GitHub stops sending jobs to this version"
         )
     } else {
         format!(
@@ -241,7 +241,7 @@ mod tests {
                 .collect()
         };
         assert!(warnings(20)[0].ends_with("and a newer runner may exist"));
-        assert!(warnings(21)[0].contains("likely updates itself at start"));
+        assert!(warnings(21)[0].contains("never updates itself"));
         let base_warning = |days| warnings(days).last().unwrap().clone();
         assert!(!base_warning(59).contains("far behind"));
         assert!(base_warning(60).contains("far behind"));

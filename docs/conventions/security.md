@@ -1719,8 +1719,8 @@ the procedure. The differences are these:
   digest. A base bump reviews what Cirrus Labs changed.
 - **The runner archive is checked.** The build installs
   `actions-runner-osx-arm64-<version>.tar.gz` only when its SHA-256 equals the runner
-  record's. A runner that updates itself at job start downloads its new version from
-  GitHub without that check, which the decided self-update accepts.
+  record's. GitHub's JIT configuration turns the runner's self-update off, so the
+  checked archive is the only runner a job VM runs.
   `MARSHAL_TEST_RUNNER`, which declares another runner and digest, works only in a
   debug build.
 - **At most two macOS VMs.** Apple's macOS licence, §2B(iii) in both the macOS

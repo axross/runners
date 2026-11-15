@@ -3183,7 +3183,9 @@ When a macOS pool is configured, `status` adds, after the image lines:
   `<version>, released unknown` for a version the runner record does not hold;
 - `macos-base-published: <date>, <d> days ago`;
 - one `warning: <text>` line each for a runner released 7 or more days ago, which
-  says from 21 days that each job's runner likely updates itself, a runner whose
+  says from 21 days that the runner never updates itself, since GitHub's JIT
+  configuration turns that off, and asks for a rebuild before GitHub stops sending
+  jobs to the version, a runner whose
   age is unknown, and the base's age from 30 days, as The Base Record says.
 
 The log carries the same warnings at each run of the core, as `Golden macOS VM
