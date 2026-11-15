@@ -23,7 +23,7 @@
 // it also does not see a write to SHA256SUMS in release-build.yaml's assemble
 // job other than by a redirection, tee, cp or mv, or a step condition in attest
 // or release that skips a step, such as `if: false`. a later signing job or step
-// (W4, M2) is added to this check in its own pull request, under REVIEW.md's
+// (W4, M2, M4) is added to this check in its own pull request, under REVIEW.md's
 // release lens.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";

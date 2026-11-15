@@ -514,7 +514,18 @@ record a change to either workflow, to the build call in
     crate archive whose SHA-256 equals one committed in the repository. The signing
     job checks the binary it receives against the SHA-256 that the tool job outputs,
     before it runs it.
-    [CLI](../operations/cli.md#extending-the-release-workflows) names the points.
+    These are contracts for later pull requests, not jobs already implemented.
+    W1's installer pull request MUST merge first; M2's disk-image and W4's feed
+    pull requests may then merge in either order. From W1's installer pull request
+    until the next signing job, M2's or W4's, no job declares `release` and no
+    signing approval step runs. The maintainer's dispatch remains the decision;
+    the Environment and its secrets stay in place. W4's pull request MUST allow
+    `release` on `sign-update` as well as `sign-macos` when present. W1's pull
+    request MUST record the release build's exact-pin `cargo install --locked`
+    use of `tauri-cli` as an exception under the Pinning Convention, with no cache
+    and Cargo's checks against the crates.io index checksums.
+    [CLI](../operations/cli.md#extending-the-release-workflows) owns the release
+    sets, job dependencies, restoration point and each extension's obligations.
 - **The documented install blocks run against the dry run's installers on hosted
   runners.** The `Install Blocks` job in
   [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) needs the dry run,
