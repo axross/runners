@@ -220,7 +220,7 @@ fn golden_macos_vms_built_in_the_same_second_are_ordered_by_version_then_name() 
 
 #[test]
 fn a_job_vm_of_a_pool_whose_name_ends_in_digits_is_read_as_that_pool() {
-    // the count finds a job VM's pool with M1's reader; a pool name may end in
+    // the count finds a job VM's pool with `runtime::tart::names`; a pool name may end in
     // `-<digits>`, so the slot is the last number before the stamp.
     for (name, pool, slot) in [
         ("marshal-job-ci-2-1-20240305060708009", "ci-2", 1),
