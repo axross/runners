@@ -1,5 +1,5 @@
 //! the app's policy files against what the plan's System design states: the content
-//! security policy, the three capabilities and the commands each may call, the permission
+//! security policy, the four capabilities and the commands each may call, the permission
 //! files Tauri generates, and the window's size.
 #![allow(
     clippy::unwrap_used,

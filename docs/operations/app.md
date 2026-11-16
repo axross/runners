@@ -451,7 +451,8 @@ way and, if the SDK changed, replace the loader's licence text and the version i
 ## Building the App
 
 The app's workspace is built with Cargo like the CLI, and the Tauri crate also needs
-the Windows web view, so the whole workspace builds only on Windows. The CLI document
+a platform web view, so the whole workspace builds only on Windows and, for
+[The Mac App](#the-mac-app), on macOS. The CLI document
 lists the gates that run without it under [The App Workspace](./cli.md#the-app-workspace).
 
 The release executable is built with `cargo tauri build --no-bundle` in
@@ -494,7 +495,8 @@ replaces this second manifest and the `embed-resource` build dependency.
 version of `tauri-cli`: one line holding one exact `X.Y.Z`.
 [`tauri-cli-version.sh`](../../.github/scripts/tauri-cli-version.sh) reads it and
 refuses a file that is a range, a prefix or more than one line, so a loose value
-never reaches `cargo install`. The Windows job installs `tauri-cli` with
+never reaches `cargo install`. The Windows `app` job and the macOS `app-macos` job of
+`merge-checks.yaml` install `tauri-cli` with
 `cargo install tauri-cli --version "=<pin>" --locked` under `$RUNNER_TEMP`, with no
 cache, so the tool compiles on every run. The release build that W1's installer pull
 request (pull request 3) adds reads the same file the same way, and so does W4's tool job once it
@@ -818,7 +820,7 @@ A new message under protocol version 2 follows the version rules in
 
 M2 ([#84](https://github.com/axross/runners/issues/84)) builds the same app for an
 Apple silicon Mac running macOS 26 or later: a menu bar app whose agent runs axmc's
-Linux pools in Tart VMs, built from the golden VM, as
+Linux and macOS pools in Tart VMs, cloned from the golden VMs, as
 [macOS Runner Host](./macos-runner-host.md) describes. This section owns the bundle and
 disk-image layout and the Mac's own states; [The Token Store](./cli.md#the-token-store)
 owns the Keychain store.
@@ -937,5 +939,5 @@ window shows a slot waiting for the macOS VM limit or for a VM's deletion, the g
 macOS VM after the Linux one with its runner-age and base-age warnings, and a leftover
 VM of a pool no longer configured, which Marshal never deletes, pointing to
 [Removing the VMs of a Pool No Longer Configured](./macos-runner-host.md#removing-the-vms-of-a-pool-no-longer-configured).
-The window shows no command but the Keychain's fallback delete. Until M3's agent sends
-these, the view tests them against a fake snapshot in the codes M3 agreed.
+The window shows no command but the Keychain's fallback delete. The agent sends these
+items, and the view's tests draw each of them from a fake snapshot in the same codes.
