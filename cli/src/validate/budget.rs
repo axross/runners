@@ -53,14 +53,28 @@ pub fn read_budget(budget: &Field, reader: &dyn Reader, errors: &mut Errors) -> 
 /// image cache.
 pub const LINUX_DISK_RESERVE_GB: u64 = 40;
 
+/// the disk beyond the slot VMs that any macOS pool needs, for the golden macOS VM and
+/// its cached base.
+pub const MACOS_DISK_RESERVE_GB: u64 = 100;
+
 /// what the pools use together: the sum over the pools of slots times the limit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Usage {
     pub macos_vms: u32,
     pub cpu_nanos: u128,
     pub memory_gb: u64,
+    /// the slot VMs' disks and both reserves.
     pub disk_gb: u64,
-    pub disk_reserve_gb: u64,
+    pub linux_reserve_gb: u64,
+    pub macos_reserve_gb: u64,
+}
+
+impl Usage {
+    /// the disk both reserves add.
+    #[must_use]
+    pub fn disk_reserve_gb(&self) -> u64 {
+        self.linux_reserve_gb + self.macos_reserve_gb
+    }
 }
 
 #[must_use]
@@ -70,7 +84,8 @@ pub fn usage(entries: &[Entry]) -> Usage {
         cpu_nanos: 0,
         memory_gb: 0,
         disk_gb: 0,
-        disk_reserve_gb: 0,
+        linux_reserve_gb: 0,
+        macos_reserve_gb: 0,
     };
     for entry in entries {
         let slots = u64::from(entry.slots);
@@ -80,11 +95,13 @@ pub fn usage(entries: &[Entry]) -> Usage {
         total.cpu_nanos += u128::from(entry.slots) * limits::nanos(entry.cpus);
         total.memory_gb += slots * u64::from(entry.memory_gb);
         total.disk_gb += slots * u64::from(entry.disk_gb.unwrap_or(0));
-        if entry.os == Some(Os::Linux) {
-            total.disk_reserve_gb = LINUX_DISK_RESERVE_GB;
+        match entry.os {
+            Some(Os::Linux) => total.linux_reserve_gb = LINUX_DISK_RESERVE_GB,
+            Some(Os::Macos) => total.macos_reserve_gb = MACOS_DISK_RESERVE_GB,
+            None => {}
         }
     }
-    total.disk_gb += total.disk_reserve_gb;
+    total.disk_gb += total.disk_reserve_gb();
     total
 }
 
@@ -130,7 +147,8 @@ pub fn check_budget(entries: &[Entry], budget: Option<&Budget>, errors: &mut Err
             path,
             Kind::DiskBudgetExceeded {
                 total: used.disk_gb,
-                reserve: used.disk_reserve_gb,
+                linux_reserve: used.linux_reserve_gb,
+                macos_reserve: used.macos_reserve_gb,
                 budget: budget.disk_gb,
             },
         );

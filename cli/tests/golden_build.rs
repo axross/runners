@@ -941,6 +941,59 @@ fn marshal_build_names_the_image_the_configuration_gives() {
 }
 
 #[test]
+fn a_failed_macos_build_keeps_the_new_linux_golden_vm_and_exits_1() {
+    let rig = Rig::new();
+    let macos_golden = "marshal-golden-macos-g1-r2.337.0-20240101000000";
+    rig.fake.seed(&[
+        (&old_golden(), "stopped", "local"),
+        (macos_golden, "stopped", "local"),
+    ]);
+    let config = rig.config("axmc-shared-label-different-os.json");
+    let output = rig
+        .command(&["build", "--profile", "axmc", "--config"])
+        .arg(&config)
+        .env("MARSHAL_TEST_RUNNER", "not-a-runner")
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(stderr.contains("MARSHAL_TEST_RUNNER"), "{stderr}");
+    let golden = rig.golden_vms();
+    assert_eq!(golden.len(), 1, "{golden:?}");
+    assert_ne!(golden[0], old_golden(), "the Linux build committed");
+    assert!(
+        rig.local_vms().iter().any(|name| name == macos_golden),
+        "the Linux build left the golden macOS VM"
+    );
+}
+
+#[test]
+fn a_failed_linux_build_keeps_the_old_golden_vm_still_runs_the_macos_build_and_exits_1() {
+    let rig = Rig::new();
+    let macos_golden = "marshal-golden-macos-g1-r2.337.0-20240101000000";
+    rig.fake.seed(&[
+        (&old_golden(), "stopped", "local"),
+        (macos_golden, "stopped", "local"),
+    ]);
+    rig.fake.script("fail-rename", "rename went wrong");
+    let config = rig.config("axmc-shared-label-different-os.json");
+    let output = rig
+        .command(&["build", "--profile", "axmc", "--config"])
+        .arg(&config)
+        .env("MARSHAL_TEST_RUNNER", "not-a-runner")
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    // both failures are reported: the macOS build ran after the Linux one failed, and
+    // its own failure did not hide the Linux one
+    assert!(stderr.contains("rename went wrong"), "{stderr}");
+    assert!(stderr.contains("MARSHAL_TEST_RUNNER"), "{stderr}");
+    assert_eq!(rig.golden_vms(), [old_golden()]);
+    assert!(rig.local_vms().iter().any(|name| name == macos_golden));
+}
+
+#[test]
 fn an_interrupt_stops_the_build_within_30_seconds_and_keeps_the_old_golden_vm() {
     let rig = Rig::new();
     rig.fake.script("hang-exec-marshal-install-launcher", "");
