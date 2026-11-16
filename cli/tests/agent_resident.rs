@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 use marshal_cli::agent::machine::{EXECUTABLE_CHANGED, Launch, QUIT};
 use marshal_cli::agent::{AgentOptions, run};
 use marshal_cli::instance::lifecycle::StopTimes;
-use marshal_cli::profile::Profile;
+use marshal_cli::profile::{Os, Profile};
 use marshal_cli::runtime::fake::Call;
 use serde_json::{Value, json};
 use support::agent::{Conn, ONE_POOL, ONE_POOL_TOML, Raw, Rig, TOKEN, TWO_POOLS};
@@ -568,6 +568,38 @@ async fn on_axmc_the_linux_pool_runs_on_the_default_image() {
         })
         .collect();
     assert_eq!(images, ["actions-runner:local"]);
+}
+
+/// Build on axmc makes the golden VMs of every configured pool, as `build` does, so it
+/// is told about the macOS pool as well as the Linux one.
+#[tokio::test(flavor = "current_thread")]
+async fn on_axmc_build_is_given_the_linux_and_the_macos_pools() {
+    let rig = Rig::new(ONE_POOL);
+    rig.remove("config.json");
+    rig.profile.set(Profile::Axmc);
+    rig.write_toml(
+        "schema_version = 1\nrouting_label = \"axmc\"\n\n[budget]\ncpus = 8\nmemory_gb = 32\n\
+         disk_gb = 240\n\n[[pool]]\nname = \"r\"\nrepository = \"o/r\"\nrunners = 1\n\
+         os = \"linux\"\ndisk_gb = 40\n\n[[pool]]\nname = \"m\"\nrepository = \"o/m\"\n\
+         runners = 1\nos = \"macos\"\ncpus = 4\nmemory_gb = 16\ndisk_gb = 60\n",
+    );
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Stopped, |conn| async move {
+            conn.ok("build").await;
+            let snapshot = conn.until_state("stopped").await;
+            assert_eq!(snapshot.agent.build.unwrap().outcome, "ready");
+            conn.ok("quit").await;
+        })
+        .await;
+    assert_eq!(*rig.builder.images.borrow(), ["actions-runner:local"]);
+    assert_eq!(
+        *rig.builder.pools.borrow(),
+        [vec![
+            ("r".to_string(), Os::Linux),
+            ("m".to_string(), Os::Macos)
+        ]]
+    );
 }
 
 /// a rig whose build ends ready once released, and whose image check after it waits

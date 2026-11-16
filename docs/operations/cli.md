@@ -1905,10 +1905,11 @@ backend, GitHub, the token store, the lock, the channel and the log, and the app
 executable runs it in its hidden agent mode, as [App](./app.md#the-executable-and-its-modes)
 describes. On axpc the backend is the container backend and Build builds the
 embedded definition with Docker. On axmc it is the Tart backend, which runs the Linux
-pools in VMs as `start` does, with every job VM under the shim; a macOS pool is
-skipped with `start`'s warning, the runners use `actions-runner:local` when the
-configuration names no image, and Build runs
-[The Golden VM Build](#the-golden-vm-build) as `build --profile axmc` does. The
+and macOS pools in VMs as `start` does, with every job VM under the shim. The Linux
+runners use `actions-runner:local` when the configuration names no image. Build makes
+the golden VMs of the configured pools as `build --profile axmc` does, through the
+same function: [The Golden VM Build](#the-golden-vm-build) for a Linux pool, then the
+golden macOS VM for a macOS pool. The
 CLI's tests start it through `instance-helper agent`. Only a debug
 build lets a test replace the agent's token store, channel limits, watched file, log
 size and `docker` environment; a release build ignores each

@@ -28,8 +28,10 @@ use marshal_cli::instance::lifecycle::StopTimes;
 use marshal_cli::instance::lock::InstanceLock;
 use marshal_cli::instance::roots::Roots;
 use marshal_cli::lifecycle_settings::Current;
+use marshal_cli::macos::count::ConfiguredPool;
 use marshal_cli::macos::fake::FakeSignals;
 use marshal_cli::macos::monitor::Cadence;
+use marshal_cli::profile::Os;
 use marshal_cli::runtime::clock::SystemClock;
 use marshal_cli::runtime::fake::{Call, FakeBackend, FakeClock, FakeRegistrar, MemoryLog};
 use marshal_cli::runtime::log::Log;
@@ -79,6 +81,8 @@ pub const TWO_POOLS: &str = r#"{"imageName":"actions-runner:local","repositories
 #[derive(Default)]
 pub struct FakeBuilder {
     pub images: RefCell<Vec<String>>,
+    /// the configured pools each build was given, by name and operating system.
+    pub pools: RefCell<Vec<Vec<(String, Os)>>>,
     pub results: RefCell<VecDeque<Result<(), String>>>,
     pub hold: Cell<bool>,
     pub release: Notify,
@@ -93,10 +97,17 @@ impl ImageBuilder for FakeBuilder {
     async fn build(
         &self,
         image: &str,
+        pools: &[ConfiguredPool],
         _log: &dyn Log,
         mut stop: watch::Receiver<Option<tokio::time::Instant>>,
     ) -> Result<(), String> {
         self.images.borrow_mut().push(image.to_string());
+        self.pools.borrow_mut().push(
+            pools
+                .iter()
+                .map(|pool| (pool.name.clone(), pool.os))
+                .collect(),
+        );
         if self.hold.get() {
             tokio::select! {
                 () = self.release.notified() => {}
