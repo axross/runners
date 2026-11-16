@@ -10,14 +10,16 @@ use std::time::Duration;
 use tokio::sync::watch;
 
 use crate::image::check::{ImageCheck, freshness_warnings};
+use crate::image::macos_base::MACOS_BASE;
+use crate::image::macos_golden;
+use crate::profile::Os;
 use crate::runtime::backend::Backend;
-use crate::runtime::board::{Board, PoolState};
+use crate::runtime::board::Board;
 use crate::runtime::clock::Clock;
 use crate::runtime::image::check_image;
 use crate::runtime::log::Log;
 use crate::runtime::pool::{
-    MACOS_POOL_SKIPPED, NO_POOL_CAN_START, NoPoolStartable, PoolSpec, admit_pools, image_name,
-    pools_from_plan, prepare_admitted, skip_warning, skipped_pools,
+    NoPoolStartable, PoolSpec, admit_pools, image_name, pools_from_plan, prepare_admitted,
 };
 use crate::runtime::registration::Registrar;
 use crate::runtime::select::Runtime;
@@ -75,7 +77,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar> RuntimeCore<'a, B, K, R> {
 }
 
 /// checks the image until the engine answers the check, then logs its freshness
-/// warnings, or fails when it cannot run jobs.
+/// warnings and those of the golden macOS VM, or fails when it cannot run jobs.
 pub(crate) async fn verify_image<B: Backend, K: Clock>(
     backend: &B,
     clock: &K,
@@ -85,12 +87,23 @@ pub(crate) async fn verify_image<B: Backend, K: Clock>(
 ) -> Result<(), CoreFailure> {
     loop {
         let check = check_image(backend, board, image).await;
-        if let Some(refusal) = check.refusal(image) {
+        if let Some(refusal) = check
+            .refusal(image)
+            .or_else(|| backend.golden_macos_refusal())
+        {
             return Err(failure(refusal, Ending::ImageRefused));
         }
         let ImageCheck::Unavailable(reason) = check else {
             for warning in freshness_warnings(&check, clock.now()) {
                 log.warn(&format!("Image freshness: {warning}."));
+            }
+            if let Some(golden) = backend.golden_macos() {
+                let fields =
+                    macos_golden::status_fields(golden.as_deref(), &MACOS_BASE, clock.now());
+                for (_, warning) in fields.iter().filter(|(field, _)| *field == "warning") {
+                    log.warn(&format!("Golden macOS VM freshness: {warning}."));
+                }
+                board.record_macos_golden(golden);
             }
             return Ok(());
         };
@@ -137,19 +150,15 @@ async fn run_all<F: Future<Output = ()>>(mut workers: Vec<Pin<Box<F>>>) {
 
 impl<B: Backend, K: Clock, R: Registrar> Core for RuntimeCore<'_, B, K, R> {
     async fn run(&self, plan: &Plan, mut stop: watch::Receiver<bool>) -> Result<(), CoreFailure> {
+        self.backend.use_plan(plan);
         self.board.clear();
+        if !plan.entries.iter().any(|entry| entry.os == Some(Os::Macos)) {
+            self.board.forget_macos();
+        }
         self.running.set(true);
         let _cleared = Cleared(&self.board, &self.running);
-        for pool in skipped_pools(plan) {
-            self.log.warn(&skip_warning(pool));
-            self.board
-                .set_pool(pool, PoolState::Skipped(MACOS_POOL_SKIPPED.to_string()));
-        }
         let pools =
             pools_from_plan(plan).map_err(|error| failure(error.to_string(), Ending::Ordinary))?;
-        if pools.is_empty() {
-            return Err(failure(NO_POOL_CAN_START.to_string(), Ending::NothingToRun));
-        }
         let image = image_name(plan);
         self.board.expect_image(image);
         let prepared = tokio::select! {
@@ -183,10 +192,14 @@ impl<B: Backend, K: Clock, R: Registrar> Core for RuntimeCore<'_, B, K, R> {
                 "{reason}, so the image {image} is checked once Docker answers."
             ));
         }
-        check.refusal(image).map_or(Ok(()), Err)
+        check
+            .refusal(image)
+            .or_else(|| self.backend.golden_macos_refusal())
+            .map_or(Ok(()), Err)
     }
 
     async fn check_prerequisites(&self, plan: &Plan, each_read: Duration) -> Result<(), String> {
+        self.backend.use_plan(plan);
         let runs_vms = plan
             .entries
             .iter()

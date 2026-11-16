@@ -11,12 +11,19 @@ pub const CPU_RANGE: &str = "must be a number greater than 0 and at most 64";
 /// says what a disk budget total includes beyond the pools' own disks, after the key
 /// it is the sum of; empty when nothing is reserved.
 #[must_use]
-pub fn disk_reserve(reserve_gb: u64) -> String {
-    if reserve_gb == 0 {
-        String::new()
-    } else {
-        format!(", plus {reserve_gb} GB for the golden VM and Tart's image cache")
+pub fn disk_reserve(linux_gb: u64, macos_gb: u64) -> String {
+    let mut text = String::new();
+    if linux_gb > 0 {
+        text.push_str(&format!(
+            ", plus {linux_gb} GB for the golden VM and Tart's image cache"
+        ));
     }
+    if macos_gb > 0 {
+        text.push_str(&format!(
+            ", plus {macos_gb} GB for the golden macOS VM and its cached base"
+        ));
+    }
+    text
 }
 
 /// says what a Linux pool's disk must be, after the path.

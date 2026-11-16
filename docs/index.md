@@ -25,8 +25,8 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   repository runs its own jobs on GitHub-hosted runners only, the cache-poisoning
   threat model for shared runner storage, per-repository isolation on a runner
   host, the release record for the CLI's dispatch-only release workflow and its
-  signing Environment, the accepted LAN-egress risk, the axmc Linux runtime's per-job
-  VM, CPU placement in it, Softnet and its SUID check, the accepted host-facing
+  signing Environment, the accepted LAN-egress risk, the axmc runtime's per-job Linux
+  and macOS VMs, CPU placement in it, Softnet and its SUID check, the accepted host-facing
   surface, the VM-local Docker socket, the pinned Tart, Softnet, golden VM base, and
   runner image Docker client, how the resident agent keeps tokens and receives them,
   what the TOML configuration holds and what its problems quote, what the Windows
@@ -54,12 +54,12 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   recovery, health checks, rebuilding and updating, recovery, and rolling back to
   the previous release.
 - [operations/macos-runner-host.md](./operations/macos-runner-host.md) -
-  running Linux runners in Tart VMs on the Mac, the axmc host, with the library's VM
+  running Linux and macOS runners in Tart VMs on the Mac, the axmc host, with the library's VM
   runtime, which has no supported way to run until M2's Mac app: installing
   Tart and Softnet at the tested versions, setting up Softnet's SUID bit, the
   signed-in session, the golden VM contract, building the golden VM, running the
-  host, sleep, wake and network changes, removing the VMs of a pool no longer
-  configured, and the verification status.
+  host, sleep, wake and network changes, the golden macOS VM and macOS pools,
+  removing the VMs of a pool no longer configured, and the verification status.
 - [operations/cli.md](./operations/cli.md) - the `marshal-cli` library under `cli/`,
   with no command line and its test-only commands helper: what `validate` accepts for
   the axpc and axmc host profiles, the validation rules and
@@ -75,7 +75,9 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   runner image with `build`, running a host with `start`, `stop`, `restart`,
   `status`, and `diagnostics` (the log, containment, the stop sequence, and the
   diagnostic containers and VMs and their export), the axmc host's prerequisites,
-  its VM shim, golden VM provisioning, and the golden VM build, the toolchain and Rust
+  its VM shim, golden VM provisioning, and the golden VM build, macOS VM pools (their
+  defaults, the runner and base records, the VM names, the two-VM count, the golden
+  macOS VM build, the macOS job VM, and macOS status), the toolchain and Rust
   gates, the app's workspace and what the library gives it, the release build and
   its dry run, the last command-line release, the signing contracts held for M2 and
   W4, installing Marshal from its MSI, the optional check of a download, updating,

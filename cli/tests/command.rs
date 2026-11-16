@@ -66,8 +66,10 @@ fn accepts_the_axpc_example_saved_with_a_byte_order_mark() {
 #[test]
 fn accepts_the_axmc_example() {
     let summary = check(&axmc_example(), Profile::Axmc).unwrap();
-    assert!(summary.contains("macOS VMs:         0 of 2\n"));
-    assert!(summary.contains("disk:              120 of 120 GB, including a 40 GB reserve\n"));
+    assert!(summary.contains("macOS VMs:         1 of 2\n"));
+    assert!(summary.contains("cpus:              12 of 12\n"));
+    assert!(summary.contains("memory:            24 of 24 GB\n"));
+    assert!(summary.contains("disk:              270 of 270 GB, including a 140 GB reserve\n"));
     assert!(
         summary.contains("labels:            self-hosted, linux, ARM64, axmc, example-label-one\n")
     );

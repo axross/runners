@@ -181,13 +181,18 @@ pub struct RunnerInfo {
     /// counting from 1.
     #[serde(default)]
     pub slot: u32,
-    /// `running`, `registering`, `backing_off`, `held` or `stopped`; an open set, so a
-    /// reader treats a word it does not know as [`RunnerState::Unknown`].
+    /// `running`, `registering`, `backing_off`, `held`, `waiting_for_vm_limit`,
+    /// `waiting_for_vm_deletion` or `stopped`; an open set, so a reader treats a word
+    /// it does not know as [`RunnerState::Unknown`].
     #[serde(default)]
     pub state: String,
-    /// the name of what runs the runner's job, which today is a container.
+    /// the name of what runs the runner's job, a container or a VM, or of the VM a
+    /// `waiting_for_vm_deletion` runner waits for.
     #[serde(default)]
     pub workload: Option<String>,
+    /// `vm` when the workload is a VM; absent for a container.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workload_kind: Option<String>,
     /// plain text that says more about the state, such as what an unknown state means.
     #[serde(default)]
     pub reason: Option<String>,
@@ -203,6 +208,8 @@ pub enum RunnerState {
     Registering,
     BackingOff,
     Held,
+    WaitingForVmLimit,
+    WaitingForVmDeletion,
     Stopped,
     /// a state this reader does not know; the runner's reason says what it means.
     Unknown(String),
@@ -216,6 +223,8 @@ impl RunnerState {
             "registering" => Self::Registering,
             "backing_off" => Self::BackingOff,
             "held" => Self::Held,
+            "waiting_for_vm_limit" => Self::WaitingForVmLimit,
+            "waiting_for_vm_deletion" => Self::WaitingForVmDeletion,
             "stopped" => Self::Stopped,
             other => Self::Unknown(other.to_string()),
         }
@@ -393,7 +402,8 @@ impl ImageInfo {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct Leftover {
-    /// what it is: today always `container`.
+    /// what it is: `container`, or `vm_unconfigured_pool` for a counted job VM of a
+    /// pool that is no longer configured, which `start` does not delete.
     #[serde(default)]
     pub kind: String,
     #[serde(default)]
@@ -667,6 +677,7 @@ mod tests {
                     slot: u32::try_from(slot).unwrap(),
                     state: "running".to_string(),
                     workload: Some(format!("{name}-{slot}-20260101000000000")),
+                    workload_kind: None,
                     reason: None,
                     since: 1,
                 })
