@@ -290,14 +290,10 @@ installs `tauri-cli` with `cargo install --locked` at the version in
 runs `cargo tauri build --no-bundle`, fails if the build changed a tracked file or
 left a file that is neither tracked nor ignored, and keeps the built
 `marshal-app.exe` as the run's artifact. An `app-macos` job on a macOS hosted runner
-holds `contents: read` and builds the whole workspace for the Mac app: it installs
-`tauri-cli` the same way, lints and tests every crate with the `fake-engine`
-feature, runs the location rule's tests in the release profile, bundles the unsigned
-`Marshal.app` at bundle version 0.0.0, fails as the `app` job does if the build
-changed a tracked file, checks the bundle's layout, and keeps the app as a `ditto`
-archive and an unsigned disk image as the run's artifact. It signs, notarizes and
-publishes nothing. None of the three jobs uses a cache action, so `tauri-cli`
-compiles on every run, and the `app` and `app-macos` jobs' timeouts are 45 minutes;
+holds `contents: read` and lints and tests every crate of the app's workspace with the
+`fake-engine` feature; the release build's dry run below builds the unsigned Mac app.
+None of the three jobs uses a cache action, so `tauri-cli` compiles on every run where
+it is installed, and the `app` and `app-macos` jobs' timeouts are 45 minutes;
 [App](./app.md#building-the-app) records how the first was set.
 The workflow also builds the
 runner image for linux/arm64 on the hosted `ubuntu-24.04-arm` runner, in a job of its
@@ -310,7 +306,10 @@ release-profile tests on each, checks each binary's `--version` and, on Windows,
 it imports no `vcruntime` DLL, builds and tests an MSI on the Windows leg and a pkg on
 the macOS leg with the real installers, checks on the macOS leg that the tools the
 signing jobs call are where they call them, and uploads the two binaries, the two
-installers, and `SHA256SUMS` as one artifact of the run. The dry run signs nothing,
+installers, and `SHA256SUMS` as one artifact of the run. Its `app-macos` job builds
+the unsigned `Marshal.app` with `tauri-cli` at the pin, checks the bundle's layout,
+and keeps the app as a `ditto` archive and an unsigned disk image in the
+`marshal-macos-app` artifact, outside that set. The dry run signs nothing,
 references no Environment, and so cannot reach the signing secrets, and its installers
 are the build's own, not the signed ones. It holds `contents: read`, and nothing is
 attested or published; [CLI](./cli.md#releases) describes the build. Its

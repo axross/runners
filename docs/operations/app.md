@@ -507,8 +507,8 @@ replaces this second manifest and the `embed-resource` build dependency.
 version of `tauri-cli`: one line holding one exact `X.Y.Z`.
 [`tauri-cli-version.sh`](../../.github/scripts/tauri-cli-version.sh) reads it and
 refuses a file that is a range, a prefix or more than one line, so a loose value
-never reaches `cargo install`. The Windows `app` job and the macOS `app-macos` job of
-`merge-checks.yaml` install `tauri-cli` with
+never reaches `cargo install`. The Windows `app` job of `merge-checks.yaml` and the
+macOS `app-macos` job of `release-build.yaml` install `tauri-cli` with
 `cargo install tauri-cli --version "=<pin>" --locked` under `$RUNNER_TEMP`, with no
 cache, so the tool compiles on every run. The release build that W1's installer pull
 request (pull request 3) adds reads the same file the same way, and so does W4's tool job once it
@@ -869,10 +869,15 @@ image is made from it with `hdiutil`, not by Tauri's bundler. The app starts its
 the fixed `PATH` `/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin`, because an app
 opened from the Finder gets launchd's short `PATH`; the agent finds `tart`, and Tart
 finds `softnet`, on it, as
-[macOS Runner Host](./macos-runner-host.md#installing-tart-and-softnet) says. Until M2's pull request 2
-adds the release's app job and restores the signing job, nothing signs or notarizes
-either: the `app-macos` job of `merge-checks.yaml` keeps the unsigned app, as a
-`ditto` archive, and an unsigned disk image as a workflow artifact for testing. The bundler copies every binary of
+[macOS Runner Host](./macos-runner-host.md#installing-tart-and-softnet) says. The `app-macos` job of
+`release-build.yaml` builds the app with `--no-sign` at the release's `X.Y.Z`, or
+`0.0.0` in a dry run, and checks its layout. It packs the app in a `ditto` archive,
+whose SHA-256 is the workflow's `app_sha256` output. It makes a disk image from the
+app with up to three `hdiutil create` attempts 10 seconds apart, and checks that
+image's layout. It uploads both as the `marshal-macos-app` artifact, outside
+`marshal-release`. Every pull request's release dry run keeps that artifact for
+testing on a Mac. Until the signing job is restored, nothing signs or notarizes
+either file. The bundler copies every binary of
 `marshal-app` whose features are on, so `fake-docker`, the process tests' stand-in for
 the docker client, and those tests need the `fake-engine` feature, which no shipped
 build turns on: run the workspace's tests with

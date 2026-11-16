@@ -199,12 +199,14 @@ W4's tool job, which signs update archives, commits one that moves with the pin 
 it lands. The
 install goes to `$RUNNER_TEMP`, uses no cache, and so compiles on every run: a cache
 would be a trust boundary for a job that builds code and runs the tool. It runs in
-the Windows and macOS app jobs of `merge-checks.yaml`, each of which holds
-`contents: read`, reads no secret and publishes nothing; the macOS job, which M2
-adds, signs nothing and keeps the unsigned Mac app and disk image only as a workflow
-artifact. `tauri-cli`'s build scripts and procedural macros run code at build time
-under those jobs' accounts, which is why the jobs are what bounds them. The release build that installs the app is to follow the same rule and read
-the same pin; until it exists, nothing else installs the tool. To move the pin, see
+the Windows app job of `merge-checks.yaml` and in the `app-macos` job of
+`release-build.yaml`, which M2 adds. Each of these jobs holds `contents: read`,
+reads no secret and publishes nothing. The macOS job signs nothing, and it keeps the
+unsigned Mac app and disk image only as the `marshal-macos-app` workflow artifact;
+the restored signing job is to check the archive against its hash. `tauri-cli`'s build
+scripts and procedural macros run code at build time under those jobs' accounts,
+which is why the jobs are what bounds them. No other job installs the tool. To move
+the pin, see
 [App](../operations/app.md#the-tauri-cli-pin); the change needs the maintainer's
 review, since it changes the supply-chain surface (see
 [REVIEW.md](../../REVIEW.md)). Any other unpinned download remains a finding.
