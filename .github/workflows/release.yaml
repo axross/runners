@@ -15,7 +15,7 @@ name: Release
 # SHA256SUMS over the signed set, and attest and release read that set. every
 # signing step comes before release, so a failure stops the run before any tag.
 # .github/scripts/check-release-shape.mjs, which `mise run check` runs, fails if
-# these jobs drift from that shape; docs/operations/cli.md says how W1, W4 and M2
+# these jobs drift from that shape; docs/operations/cli.md says how W1, W4, M2 and M4
 # extend them.
 
 on:

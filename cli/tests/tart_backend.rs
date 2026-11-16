@@ -17,10 +17,12 @@ use std::time::{Duration, Instant};
 
 use marshal_cli::image::check::{GoldenCheck, ImageCheck, freshness_warnings};
 use marshal_cli::image::contract::CONTRACT_VERSION;
+use marshal_cli::macos::count::ConfiguredPool;
 use marshal_cli::macos::gate::NetworkGate;
-use marshal_cli::profile::Profile;
+use marshal_cli::profile::{Os, Profile};
 use marshal_cli::runtime::backend::{
-    Backend, ContainerSpec, CpuRequest, DiagnosticRecord, HostPreparation, StopRequest,
+    Backend, ContainerSpec, CpuRequest, DiagnosticRecord, HostPreparation, HostRequest, JobHost,
+    StopRequest,
 };
 use marshal_cli::runtime::board::Board;
 use marshal_cli::runtime::clock::Clock;
@@ -1558,5 +1560,88 @@ async fn a_release_under_the_shim_stops_and_deletes_and_the_shim_ends() {
     assert!(
         rig.fake.ended_within(run, Duration::from_secs(10)),
         "tart run ends with its VM"
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_macos_only_image_check_is_unavailable_while_tart_does_not_list() {
+    let rig = Rig::with_pools(vec![ConfiguredPool {
+        name: POOL.to_string(),
+        os: Os::Macos,
+    }]);
+    rig.fake
+        .script("fail-list", "Error: the tart server is starting");
+    assert!(
+        matches!(
+            rig.backend.check_image("ignored").await,
+            ImageCheck::Unavailable(_)
+        ),
+        "a failed listing judged nothing"
+    );
+    assert_eq!(rig.backend.golden_macos_refusal(), None);
+    fs::remove_file(rig.fake.dir.path().join("fail-list")).unwrap();
+    assert!(matches!(
+        rig.backend.check_image("ignored").await,
+        ImageCheck::NoLinuxPool
+    ));
+    assert!(
+        rig.backend
+            .golden_macos_refusal()
+            .is_some_and(|refusal| refusal.starts_with("the golden macOS VM is missing")),
+        "the listing that answers judges the golden macOS VM"
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_macos_slot_without_a_golden_macos_vm_fails_only_its_own_preparation() {
+    let rig = Rig::with_pools(vec![
+        ConfiguredPool {
+            name: POOL.to_string(),
+            os: Os::Macos,
+        },
+        ConfiguredPool {
+            name: "linuxpool".to_string(),
+            os: Os::Linux,
+        },
+    ]);
+    let error = failed(rig.backend.prepare_job_host(&request()).await);
+    assert!(
+        error.contains(
+            "the golden macOS VM is missing; this CLI needs one with golden VM version 1"
+        ),
+        "{error}"
+    );
+    assert!(
+        rig.fake
+            .invocations()
+            .iter()
+            .all(|call| call.arguments[0] != "clone"),
+        "nothing is cloned for the refused slot"
+    );
+    let mut vms: Vec<String> = rig
+        .fake
+        .vms()
+        .iter()
+        .map(|fields| fields.join("\t"))
+        .collect();
+    vms.push("marshal-golden-macos-g2-r2.337.0-20240101000000\tstopped\tlocal\t\t\t".to_string());
+    rig.fake.script("vms", &vms.join("\n"));
+    let error = failed(rig.backend.prepare_job_host(&request()).await);
+    assert!(
+        error.contains("has golden VM version 2, but this CLI needs golden VM version 1"),
+        "{error}"
+    );
+    let linux = HostRequest {
+        host: JobHost {
+            pool: "linuxpool".to_string(),
+            slot: 1,
+        },
+        ..request()
+    };
+    assert_eq!(
+        rig.backend.prepare_job_host(&linux).await,
+        HostPreparation::Ready,
+        "{:?}",
+        rig.log.lines()
     );
 }

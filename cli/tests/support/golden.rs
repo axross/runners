@@ -332,7 +332,7 @@ impl Drop for Spawned {
     }
 }
 
-fn describe(words: &[String]) -> String {
+pub fn describe(words: &[String]) -> String {
     if words.first().map(String::as_str) == Some("exec") {
         if let Some(at) = words.iter().position(|word| word == "bash") {
             return format!("exec {}", words[at + 3]);
