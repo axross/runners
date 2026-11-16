@@ -142,7 +142,8 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             Arc::new(Discard)
         }
     };
-    let executable = std::env::current_exe()?;
+    let executable = std::env::current_exe()
+        .map_err(|error| format!("the app's own executable cannot be found: {error}"))?;
     let in_place = may_control_agent(&executable);
     if !in_place {
         log.warn(&format!(

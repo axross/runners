@@ -45,13 +45,6 @@ pub struct OwnExecutable {
 }
 
 impl OwnExecutable {
-    /// the executable this process runs from.
-    pub fn current(log: Arc<dyn Log>) -> Result<Self, String> {
-        let path = std::env::current_exe()
-            .map_err(|error| format!("the app's own executable cannot be found: {error}"))?;
-        Ok(Self::at(path, log))
-    }
-
     #[must_use]
     pub fn at(path: PathBuf, log: Arc<dyn Log>) -> Self {
         Self {

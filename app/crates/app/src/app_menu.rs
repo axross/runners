@@ -58,7 +58,12 @@ fn build(app: &AppHandle, view: Option<&Menu>) -> tauri::Result<TauriMenu<tauri:
         "Edit",
         true,
         &[
+            &PredefinedMenuItem::undo(app, None)?,
+            &PredefinedMenuItem::redo(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::cut(app, None)?,
             &PredefinedMenuItem::copy(app, None)?,
+            &PredefinedMenuItem::paste(app, None)?,
             &PredefinedMenuItem::select_all(app, None)?,
         ],
     )?;

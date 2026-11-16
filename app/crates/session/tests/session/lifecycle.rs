@@ -698,6 +698,13 @@ async fn a_copy_outside_applications_reaches_and_starts_no_agent_and_quits_alone
         view.menu.items.len() > available.len(),
         "W1's items stay in place"
     );
+    assert!(
+        session.handle.try_again().await.is_err(),
+        "Try Again is refused outside Applications"
+    );
+    session.wait(secs(30)).await;
+    assert_eq!(session.world.dials(), 0, "Try Again looks for no agent");
+    assert!(session.world.started().is_empty());
     session.handle.quit();
     assert_eq!(session.ended().await, Ended::AppOnly);
 }

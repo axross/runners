@@ -952,7 +952,9 @@ impl<D: Dial> Session<D> {
     }
 
     fn try_again(&mut self, reply: Reply<()>) {
-        if !matches!(self.stage, Stage::Parked | Stage::Waiting) {
+        if self.connection == Connection::OutsideApplications
+            || !matches!(self.stage, Stage::Parked | Stage::Waiting)
+        {
             let _ = reply.send(Err("Marshal is not waiting to try again.".to_string()));
             return;
         }

@@ -161,8 +161,7 @@ fn warning(kind: &WarningKind, warning: &ImageWarning, image: &str) -> Option<St
             days(warning)
         ),
         WarningKind::RunnerAgeUnknown => format!(
-            "Warning: the {image}'s {} has no known release date, so its age is unknown.",
-            version(warning)
+            "Warning: the {image}'s runner has no known release date, so its age is unknown."
         ),
         WarningKind::BaseOld => format!(
             "Warning: the {image}'s macOS base was published {} days ago; update Marshal to get a newer base, then build the {image} again.",
