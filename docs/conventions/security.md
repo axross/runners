@@ -1255,10 +1255,16 @@ the app may do with that reach. [App](../operations/app.md) owns how it works.
   [Updates Come Only From the Signed Feed](#updates-come-only-from-the-signed-feed).
 - **The debug-only test variables are ignored in a release build.** A debug build's
   agent and app read `MARSHAL_TEST_ROOT`, `MARSHAL_TEST_DOCKER` and
-  `MARSHAL_TEST_GITHUB_API`, so a test can run the executable against a scratch host.
-  A release build ignores all three, so no environment can move the lock, channel,
-  log, configuration, `docker` program or GitHub address of an installed Marshal, as
-  for the CLI under [One Instance per Machine](#one-instance-per-machine-reached-only-by-its-user).
+  `MARSHAL_TEST_GITHUB_API`, so a test can run the executable against a scratch host;
+  on axmc the agent also reads the CLI's debug-only `tart` and signal variables, and
+  on the Mac the app reads `MARSHAL_TEST_ANY_LOCATION`, which lifts the rule that
+  only a copy in Applications controls an agent. A release build ignores all of them,
+  so no environment can move the lock, channel, log, configuration, `docker` or
+  `tart` program or GitHub address of an installed Marshal, or let a copy outside
+  Applications start an agent, as for the CLI under
+  [One Instance per Machine](#one-instance-per-machine-reached-only-by-its-user). The
+  `app-macos` job tests the location rule in the release profile with the variable
+  set.
 - **The app starts its agent from a file it checked.** It starts it from its own
   executable's absolute path as a plain detached child, never through Tauri's shell
   plugin, and never from a file that is missing, that it could not read when it

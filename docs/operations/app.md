@@ -68,9 +68,12 @@ together.
 A `fake-docker` binary is built beside `marshal-app` from the CLI's
 [`cli/helpers/fake_docker.rs`](../../cli/helpers/fake_docker.rs), so the tests that
 start this executable's exporter child can run it against a fake engine. The package
-sets `default-run = "marshal-app"`, so `cargo run` still starts the app. The helper
-is built by every build of the package and only the app's own executable is uploaded
-or, later, released.
+sets `default-run = "marshal-app"`, so `cargo run` still starts the app. The helper,
+and the process tests that use it, are built only with the `fake-engine` feature,
+which no shipped build turns on, so run the workspace's tests with
+`cargo test --locked --workspace --features marshal-app/fake-engine`; without the
+feature, Cargo skips those tests without saying so. Only the app's own executable is
+uploaded or released.
 
 ### The Debug-Only Test Variables
 
@@ -83,9 +86,18 @@ first, so a test can point the executable at a scratch host:
 | `MARSHAL_TEST_DOCKER`     | The `docker` program the agent runs, so a test can use `fake-docker` |
 | `MARSHAL_TEST_GITHUB_API` | The address the agent sends registration requests to                 |
 
-They are the names the command line's `start` reads. A release build ignores all of
-them: the `marshal-modes` crate reads them only when `debug_assertions` is on, so no
-environment moves a release build's lock, channel, files, `docker` or GitHub address.
+They are the names the command line's `start` reads. On axmc the agent also reads the
+CLI's other debug-only variables, such as `MARSHAL_TEST_TART` and the sleep and
+network signal variables, as [CLI](./cli.md) lists them. On the Mac, a debug build's
+app mode also reads `MARSHAL_TEST_ANY_LOCATION`, which lets a copy outside
+Applications control an agent, so a test can run the app from its build folder.
+A release build ignores all of
+them: the `marshal-modes` crate reads its three only when `debug_assertions` is on,
+the CLI library does the same for its own, and the location rule reads its variable
+only in a debug build, so no environment moves a release build's lock, channel,
+files, `docker`, `tart` or GitHub address, or lifts the Applications rule. The
+`app-macos` job runs the location rule's tests in the release profile with the
+variable set, so they fail if a release build reads it.
 [Security](../conventions/security.md#the-app-surface) records why. The crate has a
 test of that in the release profile, which the `app-modes` job runs on a macOS hosted
 runner with `cargo test --release` and all three variables set, so the test fails if a
