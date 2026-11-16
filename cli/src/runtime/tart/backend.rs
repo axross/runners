@@ -11,21 +11,28 @@ use std::time::Duration;
 
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
+use tokio::sync::watch;
 use tokio::time::Instant;
 
 use crate::affinity::select_cpus;
 use crate::diagnostics::ExportRequest;
+use crate::golden::macos::{launch_command as macos_launch_command, probe_call};
 use crate::image::check::{IMAGE_CHECK_BUDGET, ImageCheck};
+use crate::macos::count::{ConfiguredPool, count_macos_vms, listed_vms};
 use crate::macos::gate::NetworkGate;
+use crate::macos::name::GoldenMacosName;
+use crate::macos::place::PlaceLock;
 use crate::macos::prerequisites::{
     Cause, Check, VERSION_BUDGET, check_softnet_with, check_softnet_within, check_tart,
     check_tart_within,
 };
 use crate::macos::softnet::OwnerMode;
+use crate::profile::Os;
 use crate::runtime::backend::{
     Backend, BackendError, ContainerSpec, CpuRequest, DiagnosticRecord, ExportOutcome, Exported,
-    HostPreparation, HostRequest, JobHost, PoolContainers, RELEASE_WITHIN, StopRequest,
+    HostPreparation, HostRequest, HostWait, JobHost, PoolContainers, RELEASE_WITHIN, StopRequest,
 };
+use crate::runtime::board::leftover_vm_text;
 use crate::runtime::clock::Clock;
 use crate::runtime::diagnostic::join_all;
 use crate::runtime::docker::{RunningGuard, forward_lines};
@@ -39,13 +46,17 @@ use crate::runtime::name::{slot_of_container_name, slot_of_probe_name};
 use crate::runtime::retained::Retained;
 use crate::runtime::scrub::scrub_error_text;
 use crate::runtime::secret::Secret;
-use crate::validate::PlannedVolume;
+use crate::validate::{Plan, PlannedVolume};
 
 use super::boot::{AgentWait, BootEnd, JOB_VM, boot_failure_text, wait_for_agent};
 use super::client::{Captured, TartClient, TartError};
 use super::golden_check::{check_golden, clone_source};
 use super::guest::Guest;
 use super::hold::{HeldVm, VmLauncher};
+use super::macos::{
+    MACOS_BOOT_DEADLINE, PLACE_POLL, Verdict, is_vm_limit_refusal, judge_probe, macos_clone_source,
+    newest_local_golden, read_probe, vm_limit_message,
+};
 use super::names::{job_vm_name, leftover_job_vms, parse_job_vm_name};
 use super::teardown::{Stop, tear_down};
 
@@ -77,7 +88,7 @@ pub struct TartTimings {
     pub engine_poll: Duration,
     /// the bound on one question to the Docker Engine.
     pub engine_call: Duration,
-    /// the bound on the CPU probe's `docker run`.
+    /// the bound on the CPU probe's `docker run`, and on one probe of a macOS job VM.
     pub probe: Duration,
     /// the wait between checks while Tart does not answer.
     pub tart_poll: Duration,
@@ -85,6 +96,15 @@ pub struct TartTimings {
     pub image_check: Duration,
     /// the time the stop sequence reserves to release the job VMs.
     pub release: Duration,
+    /// from `tart run` to a macOS job VM's guest agent's first answer.
+    pub macos_boot_deadline: Duration,
+    /// the wait between counts while a macOS slot waits for a place under the limit,
+    /// and between deletions of a macOS job VM an earlier release failed to delete.
+    pub place_poll: Duration,
+    /// how long a booted macOS job VM's probe may wait for its disk to grow, and the
+    /// wait between probes.
+    pub disk_wait: Duration,
+    pub disk_poll: Duration,
 }
 
 impl Default for TartTimings {
@@ -100,6 +120,10 @@ impl Default for TartTimings {
             tart_poll: TART_POLL_INTERVAL,
             image_check: IMAGE_CHECK_BUDGET,
             release: RELEASE_RESERVE,
+            macos_boot_deadline: MACOS_BOOT_DEADLINE,
+            place_poll: PLACE_POLL,
+            disk_wait: Duration::from_secs(90),
+            disk_poll: Duration::from_secs(3),
         }
     }
 }
@@ -115,6 +139,8 @@ struct Host {
     /// held by the release in progress, so a second release waits for the first.
     release: tokio::sync::Mutex<()>,
     released: Cell<bool>,
+    /// what the host's preparation waits for now.
+    wait: RefCell<Option<HostWait>>,
 }
 
 impl Host {
@@ -147,6 +173,21 @@ pub struct TartBackend<C> {
     softnet_owner_mode: Option<OwnerMode>,
     /// closed while no primary network is recorded; no VM is cloned until it opens.
     network_gate: NetworkGate,
+    /// the configured pools, which tell a macOS slot from a Linux one and tell the
+    /// count which job VMs are macOS ones.
+    pools: RefCell<Vec<ConfiguredPool>>,
+    /// held around a macOS slot's count and clone, so two slots never take the last
+    /// place under the limit together.
+    place: PlaceLock,
+    /// the newest golden macOS VM the latest image check's listing found, or `None`
+    /// before one, after one that failed, or with no macOS pool.
+    macos_golden: RefCell<Option<Option<String>>>,
+    /// why the latest image check refused the golden macOS VM, if it did.
+    macos_refusal: RefCell<Option<String>>,
+    /// marked changed whenever a host's wait or the counted leftovers change.
+    waits: watch::Sender<()>,
+    /// the counted leftover job VMs of unconfigured pools the latest count found.
+    leftovers: RefCell<Vec<String>>,
 }
 
 fn text_of(error: &TartError) -> String {
@@ -155,6 +196,17 @@ fn text_of(error: &TartError) -> String {
 
 fn first_error(results: Vec<Result<(), BackendError>>) -> Result<(), BackendError> {
     results.into_iter().find(Result::is_err).unwrap_or(Ok(()))
+}
+
+/// how often a stop checks whether a macOS job's runner has ended.
+const RUNNER_END_POLL: Duration = Duration::from_millis(200);
+
+/// a macOS job VM cloned into a place under the limit, with the golden macOS VM it
+/// was cloned from.
+struct Placed {
+    vm: String,
+    golden: String,
+    parsed: GoldenMacosName,
 }
 
 impl<C: Clock> TartBackend<C> {
@@ -179,7 +231,37 @@ impl<C: Clock> TartBackend<C> {
             in_use: RefCell::new(InUse::default()),
             softnet_owner_mode: None,
             network_gate: NetworkGate::default(),
+            pools: RefCell::new(Vec::new()),
+            place: PlaceLock::new(),
+            macos_golden: RefCell::new(None),
+            macos_refusal: RefCell::new(None),
+            waits: watch::channel(()).0,
+            leftovers: RefCell::new(Vec::new()),
         }
+    }
+
+    /// the configured pools: a pool listed as macOS runs its jobs in macOS VMs, and a
+    /// backend without pools runs Linux VMs only.
+    #[must_use]
+    pub fn with_pools(self, pools: Vec<ConfiguredPool>) -> Self {
+        self.pools.replace(pools);
+        self
+    }
+
+    fn is_macos(&self, pool: &str) -> bool {
+        self.pools
+            .borrow()
+            .iter()
+            .any(|configured| configured.name == pool && configured.os == Os::Macos)
+    }
+
+    fn has_macos_pool(&self) -> bool {
+        self.pools.borrow().iter().any(|pool| pool.os == Os::Macos)
+    }
+
+    fn runs_only_macos(&self) -> bool {
+        let pools = self.pools.borrow();
+        !pools.is_empty() && pools.iter().all(|pool| pool.os == Os::Macos)
     }
 
     /// runs the exporter child as `exporter`, this CLI, and keeps every sink outside
@@ -311,6 +393,108 @@ impl<C: Clock> TartBackend<C> {
         in_use.warnings = warnings;
     }
 
+    /// whether `vm` is a job VM of a configured macOS pool.
+    fn is_macos_vm(&self, vm: &str) -> bool {
+        parse_job_vm_name(vm).is_some_and(|job| self.is_macos(&job.pool))
+    }
+
+    /// records what `host`'s preparation waits for, and tells the workers when it
+    /// changes.
+    fn mark_wait(&self, host: &Host, wait: Option<HostWait>) {
+        if *host.wait.borrow() != wait {
+            host.wait.replace(wait);
+            self.waits.send_replace(());
+        }
+    }
+
+    /// deletes the VM an earlier release of `request`'s macOS slot failed to delete,
+    /// again every [`TartTimings::place_poll`] until it is gone; the VM counts against
+    /// the limit meanwhile, and the slot shows it waits for the deletion.
+    async fn delete_until_gone(&self, host: &JobHost) {
+        let label = format!("{} slot {}", host.pool, host.slot);
+        let mut warned = false;
+        loop {
+            let Some(entry) = self.host(&host.pool, host.slot) else {
+                return;
+            };
+            match self.release_job_host(host, RELEASE_WITHIN).await {
+                Ok(()) => {
+                    self.mark_wait(&entry, None);
+                    return;
+                }
+                Err(error) => {
+                    let vm = entry.vm().unwrap_or_default();
+                    if !warned {
+                        warned = true;
+                        self.log.warn(&format!(
+                            "{label}: job VM {vm} could not be deleted ({error}); trying again every {} s.",
+                            self.timings.place_poll.as_secs()
+                        ));
+                    }
+                    self.mark_wait(&entry, Some(HostWait::VmDeletion(vm)));
+                    self.clock.sleep(self.timings.place_poll).await;
+                }
+            }
+        }
+    }
+
+    /// names each newly counted leftover job VM of an unconfigured pool in the log,
+    /// and tells the workers when the list changes.
+    fn note_leftovers(&self, found: Vec<&str>) {
+        if *self.leftovers.borrow() == found {
+            return;
+        }
+        for name in found
+            .iter()
+            .filter(|name| !self.leftovers.borrow().iter().any(|seen| seen == *name))
+        {
+            self.log.warn(&format!("{}.", leftover_vm_text(name)));
+        }
+        self.leftovers
+            .replace(found.into_iter().map(str::to_string).collect());
+        self.waits.send_replace(());
+    }
+
+    /// signals the runner in a macOS job VM, which has no container to stop.
+    async fn signal_runner(
+        &self,
+        vm: &str,
+        signal: &str,
+        budget: Duration,
+        failure: &str,
+    ) -> Result<(), BackendError> {
+        let command: Vec<String> = ["sudo", "-n", "pkill", signal, "-f", "Runner.Listener"]
+            .map(str::to_string)
+            .into();
+        let answer = self
+            .client
+            .exec(vm, &command, None, budget)
+            .await
+            .map_err(|error| BackendError::new(format!("{failure}: {}", text_of(&error))))?;
+        // pkill exits 1 when no runner is left, which is the state wanted
+        if answer.succeeded() || answer.code == Some(1) {
+            Ok(())
+        } else {
+            Err(BackendError::new(format!(
+                "{failure}: {}",
+                answer.error_text()
+            )))
+        }
+    }
+
+    /// waits, for `grace` at the most, until no job of `names` is still running.
+    async fn wait_until_ended(&self, names: &[String], grace: Duration) {
+        let ended = async {
+            while names
+                .iter()
+                .any(|name| self.running.borrow().contains(name))
+            {
+                tokio::time::sleep(RUNNER_END_POLL).await;
+            }
+        };
+        let _ = tokio::time::timeout(grace, ended).await;
+    }
+
     /// clones the golden VM, sizes and boots the clone, and waits for its guest agent.
     async fn boot(&self, request: &HostRequest, host: &Host) -> Result<(), BackendError> {
         let label = format!("{} slot {}", request.host.pool, request.host.slot);
@@ -357,6 +541,160 @@ impl<C: Clock> TartBackend<C> {
                 Ok(())
             }
             Err(end) => Err(boot_failure(&vm, &end)),
+        }
+    }
+
+    /// takes a place under the macOS VM limit and clones the golden macOS VM into it,
+    /// waiting while none is free. After each wait the prerequisites are checked again,
+    /// as before the first count, and a refusal is the inner `Err` that holds the slot.
+    async fn place_macos(
+        &self,
+        request: &HostRequest,
+        host: &Host,
+    ) -> Result<Result<Placed, String>, BackendError> {
+        let label = format!("{} slot {}", request.host.pool, request.host.slot);
+        let mut waiting = false;
+        loop {
+            let taken = self.place.hold(self.take_place(request, host)).await?;
+            match taken {
+                Ok(placed) => {
+                    self.mark_wait(host, None);
+                    return Ok(Ok(placed));
+                }
+                Err(counted) => {
+                    if !waiting {
+                        self.log.info(&format!(
+                            "{label}: waiting for the macOS VM limit; {} count ({}).",
+                            counted.len(),
+                            counted.join(", ")
+                        ));
+                        waiting = true;
+                        self.mark_wait(host, Some(HostWait::VmLimit));
+                    }
+                    self.clock.sleep(self.timings.place_poll).await;
+                    if let Some(reason) = self.wait_for_prerequisites().await {
+                        self.mark_wait(host, None);
+                        return Ok(Err(reason));
+                    }
+                }
+            }
+        }
+    }
+
+    /// sizes and boots the placed clone, waits for its guest agent and probes it.
+    async fn boot_macos(
+        &self,
+        request: &HostRequest,
+        host: &Host,
+        placed: Placed,
+    ) -> Result<(), BackendError> {
+        let label = format!("{} slot {}", request.host.pool, request.host.slot);
+        let Placed { vm, golden, parsed } = placed;
+        let vcpus = u32::try_from(request.vcpus)
+            .map_err(|_| BackendError::new("the pool's vCPU count is out of range"))?;
+        let disk_gb = request
+            .disk_gb
+            .ok_or_else(|| BackendError::new("the pool has no disk size for its VMs"))?;
+        self.client
+            .set_resources(&vm, vcpus, request.memory_gb, disk_gb)
+            .await
+            .map_err(|error| BackendError::new(text_of(&error)))?;
+        let held = HeldVm::start(&self.client, &self.launcher, &vm)
+            .map(Rc::new)
+            .map_err(|error| boot_failure(&vm, &BootEnd::NoAnswer(text_of(&error))))?;
+        host.hold.replace(Some(held.clone()));
+        self.log.info(&format!(
+            "{label}: booting macOS job VM {vm} from {golden}."
+        ));
+        let wait = AgentWait {
+            deadline: self.timings.macos_boot_deadline,
+            poll: self.timings.agent_poll,
+            call: self.timings.agent_call,
+        };
+        if let Err(end) = wait_for_agent(&self.client, &self.clock, wait, &vm, &held).await {
+            if let BootEnd::Ended(ended) = &end
+                && is_vm_limit_refusal(&format!("{}\n{}", ended.stdout, ended.stderr))
+            {
+                let message = vm_limit_message(&ended.error_text());
+                self.log.warn(&format!("{label}: {message}"));
+                return Err(BackendError::new(message));
+            }
+            return Err(boot_failure(&vm, &end));
+        }
+        self.probe_macos(&vm, disk_gb, parsed.runner_version())
+            .await?;
+        self.log.info(&format!("{label}: macOS job VM {vm} is up."));
+        Ok(())
+    }
+
+    /// one count under the place lock: clones the golden macOS VM to the slot's job VM
+    /// and returns its name and the golden VM's when a place is free, or the names of
+    /// the VMs that count when none is.
+    async fn take_place(
+        &self,
+        request: &HostRequest,
+        host: &Host,
+    ) -> Result<Result<Placed, Vec<String>>, BackendError> {
+        let entries = self.client.list().await.map_err(|error| {
+            BackendError::new(format!(
+                "the macOS VMs could not be counted ({})",
+                text_of(&error)
+            ))
+        })?;
+        let (golden, parsed) = macos_clone_source(&entries).map_err(BackendError::new)?;
+        let pools = self.pools.borrow().clone();
+        let count = count_macos_vms(&listed_vms(&entries), &pools, &self.client).await;
+        self.note_leftovers(count.leftover_jobs());
+        if !count.has_free_place() {
+            return Ok(Err(count
+                .counted()
+                .iter()
+                .map(|vm| vm.name.clone())
+                .collect()));
+        }
+        let vm = job_vm_name(&request.host.pool, request.host.slot, self.clock.now());
+        host.vm.replace(Some(vm.clone()));
+        self.client
+            .clone_vm(&golden, &vm)
+            .await
+            .map_err(|error| BackendError::new(text_of(&error)))?;
+        Ok(Ok(Placed { vm, golden, parsed }))
+    }
+
+    /// probes a booted macOS job VM until its disk has grown, and refuses one without
+    /// the launcher, with another runner version or with a disk of another size.
+    async fn probe_macos(&self, vm: &str, disk_gb: u32, runner: &str) -> Result<(), BackendError> {
+        let deadline = Instant::now() + self.timings.disk_wait;
+        let call = probe_call(self.timings.probe);
+        loop {
+            let answer = self
+                .client
+                .exec(vm, &call.command, None, call.budget)
+                .await
+                .map_err(|error| {
+                    BackendError::new(format!("the job VM's probe failed: {}", text_of(&error)))
+                })?;
+            let probe = answer
+                .succeeded()
+                .then(|| read_probe(&answer.stdout))
+                .flatten()
+                .ok_or_else(|| {
+                    BackendError::new(format!(
+                        "the job VM's probe failed: {}",
+                        answer.error_text()
+                    ))
+                })?;
+            match judge_probe(&probe, disk_gb, runner) {
+                Verdict::Ready => return Ok(()),
+                Verdict::Refused(reason) => return Err(BackendError::new(reason)),
+                Verdict::NotGrownYet if Instant::now() + self.timings.disk_poll >= deadline => {
+                    return Err(BackendError::new(format!(
+                        "the job VM's disk did not grow to the pool's {disk_gb} GB within {} s",
+                        self.timings.disk_wait.as_secs()
+                    )));
+                }
+                Verdict::NotGrownYet => self.clock.sleep(self.timings.disk_poll).await,
+            }
         }
     }
 
@@ -545,6 +883,10 @@ impl<C: Clock> TartBackend<C> {
         let Some(vm) = self.vm_of_container(name) else {
             return Ok(());
         };
+        // a macOS job runs with no container; the release of its VM deletes what it ran
+        if self.is_macos_vm(&vm) {
+            return Ok(());
+        }
         let removed = self
             .guest_docker_checked(
                 &vm,
@@ -616,7 +958,24 @@ impl<C: Clock> Backend for TartBackend<C> {
 
     async fn check_image(&self, _image: &str) -> ImageCheck {
         let budget = self.timings.image_check;
-        match tokio::time::timeout(budget, self.client.list()).await {
+        let listed = tokio::time::timeout(budget, self.client.list()).await;
+        // the same listing judges the golden macOS VM, so the image check stays one
+        // bounded listing; a Tart that does not list refuses nothing, as for Linux
+        let (macos_golden, macos_refusal) = match &listed {
+            Ok(Ok(entries)) if self.has_macos_pool() => (
+                Some(newest_local_golden(entries).map(|(name, _)| name)),
+                macos_clone_source(entries).err(),
+            ),
+            _ => (None, None),
+        };
+        self.macos_golden.replace(macos_golden);
+        self.macos_refusal.replace(macos_refusal);
+        // a listing that failed judged nothing, so it stays unavailable and is tried
+        // again, as with a Linux pool
+        if self.runs_only_macos() && matches!(listed, Ok(Ok(_))) {
+            return ImageCheck::NoLinuxPool;
+        }
+        match listed {
             Ok(Ok(entries)) => check_golden(&entries),
             Ok(Err(error)) => ImageCheck::Unavailable(format!(
                 "Tart did not list the golden VMs ({})",
@@ -631,8 +990,8 @@ impl<C: Clock> Backend for TartBackend<C> {
 
     /// refuses a `tart` or `softnet` that is missing, a version that does not run and a
     /// Softnet that is not set up or does not answer; a `tart` that does not answer is
-    /// not refused, because the slots wait for it. The two version reads run together,
-    /// so the check takes `each_read` at the most.
+    /// not refused, because the slots wait for it. The two version reads run
+    /// together, so the check takes `each_read` at the most.
     async fn check_prerequisites(&self, each_read: Duration) -> Result<(), String> {
         let (tart, softnet) = tokio::join!(
             check_tart_within(&self.client, each_read),
@@ -701,6 +1060,10 @@ impl<C: Clock> Backend for TartBackend<C> {
     }
 
     async fn select_cpuset(&self, request: &CpuRequest) -> Result<String, BackendError> {
+        // a macOS job runs in its VM directly, bounded by the VM's vCPUs
+        if slot_of_probe_name(&request.probe_name).is_some_and(|(pool, _)| self.is_macos(pool)) {
+            return Ok(String::new());
+        }
         let selected = async {
             let vm = slot_of_probe_name(&request.probe_name)
                 .and_then(|(pool, slot)| self.host(pool, slot))
@@ -720,10 +1083,12 @@ impl<C: Clock> Backend for TartBackend<C> {
         let key = (request.host.pool.clone(), request.host.slot);
         // a VM this slot could not delete earlier is tried again first, so a slot
         // never owns two
-        if self.host(&key.0, key.1).is_some()
-            && let Err(error) = self.release_job_host(&request.host, RELEASE_WITHIN).await
-        {
-            return HostPreparation::Failed(error);
+        if self.host(&key.0, key.1).is_some() {
+            if self.is_macos(&key.0) {
+                self.delete_until_gone(&request.host).await;
+            } else if let Err(error) = self.release_job_host(&request.host, RELEASE_WITHIN).await {
+                return HostPreparation::Failed(error);
+            }
         }
         let host = Rc::new(Host::default());
         self.hosts.borrow_mut().insert(key, host.clone());
@@ -733,10 +1098,53 @@ impl<C: Clock> Backend for TartBackend<C> {
         if let Some(reason) = self.wait_for_prerequisites().await {
             return HostPreparation::Held(reason);
         }
-        match self.boot(request, &host).await {
+        // each boot is boxed, so this future does not hold the largest of them inline
+        // on the worker's stack
+        let booted = if self.is_macos(&request.host.pool) {
+            match Box::pin(self.place_macos(request, &host)).await {
+                Ok(Ok(placed)) => Box::pin(self.boot_macos(request, &host, placed)).await,
+                Ok(Err(reason)) => return HostPreparation::Held(reason),
+                Err(error) => Err(error),
+            }
+        } else {
+            Box::pin(self.boot(request, &host)).await
+        };
+        match booted {
             Ok(()) => HostPreparation::Ready,
             Err(error) => HostPreparation::Failed(error),
         }
+    }
+
+    fn use_plan(&self, plan: &Plan) {
+        self.pools.replace(ConfiguredPool::of_plan(plan));
+    }
+
+    fn golden_macos(&self) -> Option<Option<String>> {
+        self.macos_golden.borrow().clone()
+    }
+
+    fn golden_macos_refusal(&self) -> Option<String> {
+        self.macos_refusal.borrow().clone()
+    }
+
+    fn job_vm(&self, host: &JobHost) -> Option<String> {
+        if !self.is_macos(&host.pool) {
+            return None;
+        }
+        self.host(&host.pool, host.slot)?.vm()
+    }
+
+    fn counted_leftovers(&self) -> Vec<String> {
+        self.leftovers.borrow().clone()
+    }
+
+    fn host_wait(&self, host: &JobHost) -> Option<HostWait> {
+        self.host(&host.pool, host.slot)
+            .and_then(|entry| entry.wait.borrow().clone())
+    }
+
+    fn host_waits(&self) -> Option<watch::Receiver<()>> {
+        Some(self.waits.subscribe())
     }
 
     async fn release_job_host(&self, host: &JobHost, budget: Duration) -> Result<(), BackendError> {
@@ -744,7 +1152,20 @@ impl<C: Clock> Backend for TartBackend<C> {
         let Some(entry) = self.hosts.borrow().get(&key).cloned() else {
             return Ok(());
         };
-        self.release_host(&key, &entry, budget).await
+        let released = self.release_host(&key, &entry, budget).await;
+        // a macOS VM left behind keeps counting, so the worker has it deleted again
+        // every few seconds before it backs off
+        if released.is_err()
+            && self.is_macos(&host.pool)
+            && let Some(vm) = entry.vm()
+        {
+            self.mark_wait(&entry, Some(HostWait::VmDeletion(vm)));
+        }
+        released
+    }
+
+    async fn finish_release(&self, host: &JobHost) {
+        self.delete_until_gone(host).await;
     }
 
     fn host_awaits_finalisation(&self, host: &JobHost) -> bool {
@@ -774,9 +1195,13 @@ impl<C: Clock> Backend for TartBackend<C> {
         self.containers
             .borrow_mut()
             .insert(spec.name.clone(), vm.clone());
-        let mut child = Guest::new(&self.client, &vm)
-            .launch(&vm_job_run_arguments(spec))
-            .map_err(|error| BackendError::new(text_of(&error)))?;
+        let launched = match slot_of_container_name(&spec.name) {
+            Some((pool, _)) if self.is_macos(pool) => {
+                self.client.spawn_exec(&vm, &macos_launch_command())
+            }
+            _ => Guest::new(&self.client, &vm).launch(&vm_job_run_arguments(spec)),
+        };
+        let mut child = launched.map_err(|error| BackendError::new(text_of(&error)))?;
         if let Some(mut input) = child.stdin.take() {
             // a launcher that ends without reading all of it shows in its exit code;
             // closing the pipe is what ends the configuration
@@ -813,6 +1238,17 @@ impl<C: Clock> Backend for TartBackend<C> {
             .group_by_vm(&request.names)
             .into_iter()
             .map(|(vm, names)| async move {
+                if self.is_macos_vm(&vm) {
+                    let started = Instant::now();
+                    self.signal_runner(&vm, "-INT", request.budget, "Failed to stop containers")
+                        .await?;
+                    // the grace a container gets from `docker stop --time`, inside the same
+                    // budget: the runner has until its launcher's `tart exec` ends, and the
+                    // release of its VM ends whatever outlives it
+                    let left = request.budget.saturating_sub(started.elapsed());
+                    self.wait_until_ended(&names, request.grace.min(left)).await;
+                    return Ok(());
+                }
                 self.guest_docker_checked(
                     &vm,
                     &stop_arguments(request.grace.as_secs(), &names),
@@ -835,6 +1271,11 @@ impl<C: Clock> Backend for TartBackend<C> {
             .group_by_vm(names)
             .into_iter()
             .map(|(vm, names)| async move {
+                if self.is_macos_vm(&vm) {
+                    return self
+                        .signal_runner(&vm, "-KILL", budget, "Failed to end containers")
+                        .await;
+                }
                 self.guest_docker_checked(
                     &vm,
                     &kill_arguments(&names),

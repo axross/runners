@@ -8,7 +8,8 @@ use tokio::sync::watch;
 use crate::image::check::ImageCheck;
 
 use super::backend::{
-    Backend, ContainerSpec, CpuRequest, HostPreparation, RELEASE_WITHIN, StopRequest,
+    Backend, ContainerSpec, CpuRequest, HostPreparation, HostWait, JobHost, RELEASE_WITHIN,
+    StopRequest,
 };
 use super::board::{Board, SlotState};
 use super::clock::Clock;
@@ -188,6 +189,17 @@ impl Report<'_> {
     }
 }
 
+/// returns when `waits` is marked changed; never for a backend without waits, or
+/// one that has gone.
+async fn wait_changed(waits: &mut Option<watch::Receiver<()>>) {
+    if let Some(receiver) = waits
+        && receiver.changed().await.is_ok()
+    {
+        return;
+    }
+    std::future::pending().await
+}
+
 /// why a slot waits out a backoff.
 enum Pause {
     /// an attempt failed, for this reason.
@@ -271,10 +283,18 @@ impl<B: Backend, K: Clock, R: Registrar> Context<'_, B, K, R> {
     /// the caller backs off.
     async fn attempt(&self, slot: &SlotSpec, halt: &mut Halt) -> Attempt {
         let request = slot.host_request();
-        let prepared = tokio::select! {
-            prepared = self.backend.prepare_job_host(&request) => Some(prepared),
-            () = halt.wait() => None,
-        };
+        let mut waits = self.backend.host_waits();
+        if let Some(wait) = self.backend.host_wait(&request.host) {
+            self.report.state(SlotState::Waiting(wait));
+        }
+        let prepared = self
+            .showing_waits(
+                self.backend.prepare_job_host(&request),
+                &request.host,
+                &mut waits,
+                halt,
+            )
+            .await;
         let attempt = match prepared {
             None => Attempt::Halted,
             Some(HostPreparation::Ready) => self.run_job(slot, halt).await,
@@ -297,8 +317,45 @@ impl<B: Backend, K: Clock, R: Registrar> Context<'_, B, K, R> {
                 "{}: releasing the job host failed ({error}).",
                 self.report.label
             ));
+            if !halt.stopped()
+                && let Some(wait @ HostWait::VmDeletion(_)) = self.backend.host_wait(&request.host)
+            {
+                self.report.state(SlotState::Waiting(wait));
+                self.showing_waits(
+                    self.backend.finish_release(&request.host),
+                    &request.host,
+                    &mut waits,
+                    halt,
+                )
+                .await;
+            }
         }
         attempt
+    }
+
+    /// awaits `work`, showing what the host waits for whenever that changes, or
+    /// `None` when a stop or a drain comes first.
+    async fn showing_waits<T>(
+        &self,
+        work: impl Future<Output = T>,
+        host: &JobHost,
+        waits: &mut Option<watch::Receiver<()>>,
+        halt: &mut Halt,
+    ) -> Option<T> {
+        tokio::pin!(work);
+        loop {
+            tokio::select! {
+                done = &mut work => break Some(done),
+                () = halt.wait() => break None,
+                () = wait_changed(waits) => {
+                    self.report.state(match self.backend.host_wait(host) {
+                        Some(wait) => SlotState::Waiting(wait),
+                        None => SlotState::Registering,
+                    });
+                    self.report.board.record_vm_leftovers(self.backend.counted_leftovers());
+                }
+            }
+        }
     }
 
     /// probes the host's CPUs, registers, runs one job container to its end and
@@ -351,11 +408,24 @@ impl<B: Backend, K: Clock, R: Registrar> Context<'_, B, K, R> {
         if halt.halted() {
             return Attempt::Halted;
         }
-        log.info(&format!(
-            "{}: starting container {name}.",
-            self.report.label
-        ));
-        self.report.state(SlotState::Running(name.clone()));
+        // a macOS job runs in its VM, with no container
+        let state = match self.backend.job_vm(&slot.host_request().host) {
+            Some(vm) => {
+                log.info(&format!(
+                    "{}: starting the runner in VM {vm}.",
+                    self.report.label
+                ));
+                SlotState::RunningVm(vm)
+            }
+            None => {
+                log.info(&format!(
+                    "{}: starting container {name}.",
+                    self.report.label
+                ));
+                SlotState::Running(name.clone())
+            }
+        };
+        self.report.state(state);
         let spec = ContainerSpec {
             name,
             cpus: slot.cpus.clone(),

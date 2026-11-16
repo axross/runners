@@ -2,7 +2,7 @@
   "budget": {
     "cpus": 8,
     "memoryGb": 32,
-    "diskGb": 200
+    "diskGb": 300
   },
   "repositories": [
     {
@@ -21,7 +21,7 @@
       "os": "macos",
       "slots": 1,
       "tokenPath": "/path/to/example-repo-2.token",
-      "diskGb": 40
+      "diskGb": 50
     }
   ]
 }
