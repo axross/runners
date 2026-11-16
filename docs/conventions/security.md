@@ -1610,7 +1610,9 @@ five after it are the constraints the VM runtime of
   instead.
 - Every `tart` call MUST set `TART_NO_AUTO_PRUNE`, so a clone never deletes an image
   another program cached; MUST get `marshal`'s own `PATH`, which `marshal` also uses
-  to find `tart` and `softnet`; and MUST have a standard output that is not a
+  to find `tart` and `softnet` (for the Mac app's agent, the fixed
+  `/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin` the app gives it, so no
+  directory the user's shell adds is searched); and MUST have a standard output that is not a
   terminal, so Tart never offers to change Softnet's privilege. Only `build`
   deletes golden and build VMs.
 - A VM MUST have a fixed vCPU count, memory size and disk cap, the pool's `cpus`,

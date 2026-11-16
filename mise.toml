@@ -101,7 +101,7 @@ dir = "app"
 run = "cargo fmt --all --check"
 
 [tasks."lint:app"]
-description = "Lint the app's platform-independent crates (the modes, the view, the session, the icon and the update feed) with clippy, warnings as errors; the Tauri crate is linted by the Windows job"
+description = "Lint the app's platform-independent crates (the modes, the view, the session, the icon and the update feed) with clippy, warnings as errors; the Tauri crate is linted by the Windows and macOS app jobs"
 depends = ["rust:require"]
 dir = "app"
 run = "cargo clippy --locked --package marshal-modes --package marshal-view --package marshal-session --package marshal-tray --package marshal-feed --all-targets -- -D warnings"

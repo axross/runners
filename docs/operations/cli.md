@@ -4372,7 +4372,8 @@ the gates that cover it, so a change to the library knows what the app relies on
   `[lints] workspace = true`.
 
 **Gates.** `mise run check` covers what builds without the web view's system
-libraries, so the Check job on Linux needs none; the Windows job covers the rest.
+libraries, so the Check job on Linux needs none; the Windows `app` job and the macOS
+`app-macos` job cover the rest.
 
 | Task                             | Runs                                                                                                                                                                                                 |
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -4393,7 +4394,9 @@ web view and is not in `lint:app` or `test:app`.
 
 The `app` job in [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) runs
 on a Windows hosted runner: clippy and the tests over the whole workspace, then
-`cargo tauri build --no-bundle`, failing if the build changed or left a file. An
+`cargo tauri build --no-bundle`, failing if the build changed or left a file. The
+`app-macos` job runs clippy and the tests over the whole workspace with the
+`fake-engine` feature on a macOS hosted runner. An
 `app-modes` job runs clippy and the tests of `marshal-modes` on a macOS hosted runner,
 which covers the dispatch of both Unix shims, `shim` and `vm-shim`, there, and runs the
 crate's tests again in the release profile, where the debug-only variables are

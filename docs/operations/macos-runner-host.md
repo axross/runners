@@ -24,7 +24,10 @@ configuration; see
 
 `marshal` installs, bundles and repairs neither program. It calls `tart` as an
 external program, and Tart runs the `softnet` that comes first on the `PATH` it
-gets, which is the `PATH` of the terminal where `marshal` runs. Both programs need
+gets: the `PATH` of the terminal where `marshal` runs, or, for the Mac app's agent,
+the fixed `/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin`, since an app opened from
+the Finder gets launchd's short `PATH`. The app's agent therefore finds Tart and
+Softnet only when Homebrew installed them in `/opt/homebrew/bin`. Both programs need
 an Apple silicon Mac, and Softnet 0.25.0 needs macOS 26.
 
 The tested versions are recorded in the CLI (`macos::version`):
@@ -416,6 +419,14 @@ instance.
   with a job. A VM left after `marshal stop` is a leftover.
 - **The log:** `~/Library/Logs/marshal/marshal-<time>-<pid>.log` keeps the newest ten
   runs. `Using Tart <v> and Softnet <v>.` records the versions in use.
+
+### Adding Actions: read for Job Names
+
+The Mac app names the job each busy runner runs only when the repository's token also
+has **Actions**, **Read-only**. Add it as
+[Windows Runner Host](./windows-runner-host.md#adding-actions-read-for-job-names)
+describes; the steps are on GitHub and the same on both hosts, and the token's value
+does not change, so nothing changes in the login keychain.
 
 ## Sleep, Wake, and Network Changes
 

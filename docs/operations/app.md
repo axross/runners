@@ -843,7 +843,7 @@ owns the Keychain store.
 While its main window is open, Marshal shows its own menus in place of Tauri's
 default: Marshal (About Marshal, with the name and version only; Hide Marshal, Hide
 Others, Show All; Quit Marshal with Command-Q, which asks W1's question and quits as
-the icon menu's Quit does), Edit (Copy, Select All), Runners (Start All Runners, Stop
+the icon menu's Quit does), Edit (Undo, Redo, Cut, Copy, Paste, Select All, whose key equivalents are the web view's editing shortcuts, such as Command-V in the token field), Runners (Start All Runners, Stop
 All Runners, Build Image, under the icon menu's rules) and Window (Minimize, Close with
 Command-W, which hides the window). The icon menu's items are in title case on the Mac.
 Opening Marshal again from the Finder or Spotlight while it runs shows its window.
@@ -853,7 +853,11 @@ Opening Marshal again from the Finder or Spotlight while it runs shows its windo
 the notices, and the main window again, since a merge replaces the whole window list,
 with the overlay title bar that puts the window buttons in the header band. The Mac
 app is bundled with `cargo tauri build --bundles app` in `app/crates/app`; the disk
-image is made from it with `hdiutil`, not by Tauri's bundler. Until M2's pull request 2
+image is made from it with `hdiutil`, not by Tauri's bundler. The app starts its agent with
+the fixed `PATH` `/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin`, because an app
+opened from the Finder gets launchd's short `PATH`; the agent finds `tart`, and Tart
+finds `softnet`, on it, as
+[macOS Runner Host](./macos-runner-host.md#installing-tart-and-softnet) says. Until M2's pull request 2
 adds the release's app job and restores the signing job, nothing signs or notarizes
 either: the `app-macos` job of `merge-checks.yaml` keeps the unsigned app, as a
 `ditto` archive, and an unsigned disk image as a workflow artifact for testing. The bundler copies every binary of
