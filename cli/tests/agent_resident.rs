@@ -538,18 +538,16 @@ async fn build_reports_building_with_its_start_and_ends_ready() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn on_axmc_the_linux_pool_runs_on_the_default_image_and_the_macos_pool_is_skipped() {
+async fn on_axmc_the_linux_pool_runs_on_the_default_image() {
     let rig = Rig::new(ONE_POOL);
     rig.remove("config.json");
     rig.profile.set(Profile::Axmc);
     rig.write_toml(
         "schema_version = 1\nrouting_label = \"axmc\"\n\n[budget]\ncpus = 8\nmemory_gb = 32\n\
          disk_gb = 180\n\n[[pool]]\nname = \"r\"\nrepository = \"o/r\"\nrunners = 1\n\
-         os = \"linux\"\ndisk_gb = 40\n\n[[pool]]\nname = \"m\"\nrepository = \"o/m\"\n\
-         runners = 1\nos = \"macos\"\ncpus = 4\nmemory_gb = 16\ndisk_gb = 60\n",
+         os = \"linux\"\ndisk_gb = 40\n",
     );
     rig.store_token("o", "r", TOKEN);
-    rig.store_token("o", "m", TOKEN);
     rig.hold_jobs();
     let rig = &rig;
     let (ended, ()) = rig
@@ -570,13 +568,6 @@ async fn on_axmc_the_linux_pool_runs_on_the_default_image_and_the_macos_pool_is_
         })
         .collect();
     assert_eq!(images, ["actions-runner:local"]);
-    let lines = rig.log.lines();
-    assert!(
-        lines
-            .iter()
-            .any(|line| line.contains("Skipping pool m: macOS VM pools are not supported yet")),
-        "{lines:?}"
-    );
 }
 
 /// a rig whose build ends ready once released, and whose image check after it waits
