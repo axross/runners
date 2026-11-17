@@ -3,7 +3,7 @@
 # Installer ProductVersion is major.minor.build with major and minor at most 255
 # and build at most 65535, so a release X.Y.Z beyond those limits is refused, the
 # dry-run form 0.0.0-dryrun.<n> maps to 0.0.0, and any other prerelease form is
-# refused. both installer build legs call it, so the pkg carries the same rule.
+# refused. the release build calls it before it builds the MSI.
 # see docs/operations/cli.md.
 set -euo pipefail
 

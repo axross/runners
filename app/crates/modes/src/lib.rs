@@ -21,7 +21,7 @@ pub const STOPPED: &str = "stopped";
 const EXIT_USAGE: u8 = 2;
 
 /// the variables a debug build's agent reads to run against a scratch host, which are
-/// the ones the command line's `start` reads.
+/// the library's test variables.
 pub use marshal_cli::command::{
     TEST_DOCKER_VARIABLE, TEST_GITHUB_API_VARIABLE, TEST_ROOT_VARIABLE,
 };

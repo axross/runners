@@ -388,7 +388,7 @@ console.log(`skills-lock.json and .claude/skills/ agree (${locked.length} skills
 '''
 
 [tasks."test:set-release-version"]
-description = "Check the script that writes the release version into the CLI's Cargo.toml and Cargo.lock"
+description = "Check the script that writes the release version into the CLI's and the app's Cargo.toml and Cargo.lock"
 run = "bash .github/scripts/tests/test-set-release-version.sh"
 
 [tasks."test:verify-release"]
@@ -396,39 +396,27 @@ description = "Check the release gate that semantic-release runs before it tags 
 run = "bash .github/scripts/tests/test-verify-release.sh"
 
 [tasks."test:installer-version"]
-description = "Check the script that maps a release version to the version its installers carry"
+description = "Check the script that maps a release version to the version its MSI carries"
 run = "bash .github/scripts/tests/test-installer-version.sh"
 
 [tasks."test:fetch-wix"]
 description = "Check that the WiX fetch refuses a package whose SHA-256 differs from the pin"
 run = "bash .github/scripts/tests/test-fetch-wix.sh"
 
-[tasks."test:install-blocks"]
-description = "Run the documented macOS install blocks of docs/operations/cli.md under bash against stand-ins, producing every refusal"
-run = "bash .github/scripts/tests/test-install-blocks.sh bash"
-
 [tasks."test:assemble-release"]
-description = "Check the script that writes SHA256SUMS for the release's four files and refuses another file set or a changed file"
+description = "Check the script that writes SHA256SUMS for the release's app executable and MSI and refuses another file set or a changed file"
 run = "bash .github/scripts/tests/test-assemble-release.sh"
 
 [tasks."check:release-shape"]
-description = "Check that the release workflows keep the shape the release record describes: one signing job in the release Environment, what it holds and runs, and its place in the chain"
+description = "Check that the release workflows keep the shape the release record describes: no job in an Environment or reading a signing secret, and each job's place in the chain"
 run = "node .github/scripts/check-release-shape.mjs"
 
 [tasks."test:release-shape"]
 description = "Run the release shape check against altered copies of the workflows, one change at a time, and expect each to fail"
 run = "bash .github/scripts/tests/test-release-shape.sh"
 
-[tasks."test:sign-macos"]
-description = "Run sign-macos's shell steps against recording stand-ins of the macOS signing tools: every refusal, the flags, the clean-up, and that no secret is printed"
-run = "bash .github/scripts/tests/test-sign-macos.sh"
-
-[tasks."test:signed-pkg"]
-description = "Run the signed package check, which verify-macos runs, against stand-ins and produce each of its refusals"
-run = "bash .github/scripts/tests/test-signed-pkg-refusals.sh"
-
 [tasks.check]
-description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, release script tests, release shape check and its test, sign-macos, signed package and assemble tests, installer version and WiX fetch tests, install block tests, Rust tests, Rust dependency check, the app's toolchain and tauri-cli pin checks, lockfile check, licence notices, tests, page tests and dependency check"
+description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, release script tests, release shape check and its test, assemble test, installer version and WiX fetch tests, Rust tests, Rust dependency check, the app's toolchain and tauri-cli pin checks, lockfile check, licence notices, tests, page tests and dependency check"
 depends = [
   "format:check",
   "lint",
@@ -441,11 +429,8 @@ depends = [
   "test:assemble-release",
   "check:release-shape",
   "test:release-shape",
-  "test:sign-macos",
-  "test:signed-pkg",
   "test:installer-version",
   "test:fetch-wix",
-  "test:install-blocks",
   "test:rust",
   "deny:rust",
   "check:app-pins",

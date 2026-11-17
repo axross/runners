@@ -136,7 +136,7 @@ fn lookup(pairs: &'static [(&'static str, &'static str)]) -> impl Fn(&str) -> Op
 }
 
 #[test]
-fn the_agent_overrides_are_read_from_the_variables_the_command_line_reads() {
+fn the_agent_overrides_are_read_from_the_library_test_variables() {
     let overrides = Overrides::from_lookup(lookup(&[
         ("MARSHAL_TEST_ROOT", "scratch"),
         ("MARSHAL_TEST_DOCKER", "fake-docker"),
