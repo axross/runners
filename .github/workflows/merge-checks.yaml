@@ -3,7 +3,7 @@ name: Merge Checks
 # the repository's own CI: the gates behind mise run check, the CLI tests on
 # Linux, Windows, and macOS, the app's build on Windows and its mode dispatch on
 # macOS, the image build and smoke test on amd64 and arm64, the release dry run,
-# and the documented install blocks against the dry run's installers. GitHub-hosted
+# and the documented install blocks against the dry run's MSI. GitHub-hosted
 # runners only, because this repository is public; see docs/conventions/security.md.
 
 on:
@@ -111,9 +111,9 @@ jobs:
         env:
           MARSHAL_REAL_DOCKER_IMAGE: runners-docker-test:ci
         run: cargo test --locked --test real_docker -- --ignored
-      # `marshal build` against the same daemon, with the debug-only test definition
-      # in tests/build-definition. a missing daemon fails the test, and the image it
-      # builds is removed and never pushed.
+      # the library's `build`, run by the commands helper, against the same daemon,
+      # with the debug-only test definition in tests/build-definition. a missing
+      # daemon fails the test, and the image it builds is removed and never pushed.
       - name: Run Real Docker Build Test
         if: runner.os == 'Linux'
         run: cargo test --locked --test real_docker_build -- --ignored
@@ -180,9 +180,10 @@ jobs:
           cargo install tauri-cli --version "=${version}" --locked --root "${RUNNER_TEMP}/tauri-cli"
           echo "${RUNNER_TEMP}/tauri-cli/bin" >> "$GITHUB_PATH"
       - name: Lint With Clippy
-        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets --features marshal-app/fake-engine -- -D warnings
+      # the process tests need the fake docker client, which only this feature builds
       - name: Run Tests
-        run: cargo test --locked --workspace --no-fail-fast
+        run: cargo test --locked --workspace --features marshal-app/fake-engine --no-fail-fast
       - name: Build The App
         working-directory: app/crates/app
         run: cargo tauri build --no-bundle
@@ -206,6 +207,91 @@ jobs:
           if-no-files-found: error
           overwrite: true
 
+  # the app's whole workspace on macOS, and the Mac app M2 adds: its tests, the
+  # unsigned Marshal.app at bundle version 0.0.0, and an unsigned disk image of it with
+  # the layout docs/operations/app.md gives, both kept for the Mac run. `tauri-cli` is
+  # installed as in the Windows job, from source at the pin with --locked; nothing is
+  # signed, notarized or published here. no cache action, for the reason the rust job
+  # gives.
+  app-macos:
+    name: Build App On macOS
+    runs-on: macos-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+        working-directory: app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install Pinned Rust Toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: Install tauri-cli At The Pin
+        run: |
+          version="$(bash ../.github/scripts/tauri-cli-version.sh)"
+          cargo install tauri-cli --version "=${version}" --locked --root "${RUNNER_TEMP}/tauri-cli"
+          echo "${RUNNER_TEMP}/tauri-cli/bin" >> "$GITHUB_PATH"
+      - name: Lint With Clippy
+        run: cargo clippy --locked --workspace --all-targets --features marshal-app/fake-engine -- -D warnings
+      # the process tests need the fake docker client, which only this feature builds
+      - name: Run Tests
+        run: cargo test --locked --workspace --features marshal-app/fake-engine --no-fail-fast
+      # a debug build lets a test run Marshal from anywhere; this builds the location
+      # rule's tests in the release profile with the variable set, so the test that a
+      # release build ignores it fails if it does not.
+      - name: Test That A Release Build Ignores The Location Variable
+        env:
+          MARSHAL_EXPECT_RELEASE: "1"
+          MARSHAL_TEST_ANY_LOCATION: "1"
+        run: cargo test --locked --release --package marshal-session --lib location
+      # 0.0.0 is the bundle version a dry run gets, since 0.0.0-dev is not a valid one
+      - name: Build The Mac App
+        working-directory: app/crates/app
+        run: cargo tauri build --bundles app --config '{"version":"0.0.0"}'
+      - name: Fail If The Build Changed A Tracked File
+        run: |
+          git diff --exit-code
+          untracked="$(git ls-files --others --exclude-standard --full-name -- :/)"
+          if [[ -n "$untracked" ]]; then
+            echo "error: the build left files that are neither tracked nor ignored:" >&2
+            echo "$untracked" >&2
+            exit 1
+          fi
+      - name: Check The Bundle's Layout
+        run: |
+          app=target/release/bundle/macos/Marshal.app
+          plist="${app}/Contents/Info.plist"
+          [[ "$(ls "${app}/Contents/MacOS")" == marshal-app ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")" == app.axross.marshal ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist")" == 0.0.0 ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$plist")" == 26.0 ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :LSUIElement' "$plist")" == true ]]
+          test -f "${app}/Contents/Resources/icon.icns"
+          test -f "${app}/Contents/Resources/THIRD-PARTY-NOTICES.txt"
+      # an artifact keeps no file modes, so the app goes in a ditto archive, which does
+      - name: Make The Unsigned Disk Image And App Archive
+        run: |
+          /usr/bin/ditto -c -k --keepParent target/release/bundle/macos/Marshal.app \
+            "${RUNNER_TEMP}/marshal-0.0.0-macos-arm64-app.zip"
+          stage="${RUNNER_TEMP}/marshal-dmg"
+          mkdir -p "$stage"
+          /usr/bin/ditto target/release/bundle/macos/Marshal.app "${stage}/Marshal.app"
+          /bin/ln -s /Applications "${stage}/Applications"
+          /usr/bin/hdiutil create -volname Marshal -srcfolder "$stage" -format UDZO -ov \
+            "${RUNNER_TEMP}/marshal-0.0.0-macos-arm64.dmg"
+      - name: Keep The Built App And Disk Image
+        uses: actions/upload-artifact@v7
+        with:
+          name: marshal-app-macos
+          path: |
+            ${{ runner.temp }}/marshal-0.0.0-macos-arm64-app.zip
+            ${{ runner.temp }}/marshal-0.0.0-macos-arm64.dmg
+          retention-days: 14
+          if-no-files-found: error
+          overwrite: true
+
   # the same reusable workflow release.yaml calls, at a dry-run version; it
   # publishes and attests nothing.
   release-build:
@@ -216,21 +302,17 @@ jobs:
     with:
       version: 0.0.0-dryrun.${{ github.run_number }}
 
-  # the install, check, migration, and uninstall blocks of docs/operations/cli.md,
-  # extracted from the document: first against stand-ins, then against the dry
-  # run's real installers with only gh stubbed. it downloads the dry run's artifact
-  # and holds contents: read; nothing is attested or published.
+  # the install, check, and uninstall blocks of docs/operations/cli.md, extracted
+  # from the document: first against stand-ins, then against the dry run's real
+  # MSI with only gh stubbed. it downloads the dry run's artifact and holds
+  # contents: read; nothing is attested or published.
   install-blocks:
-    name: Install Blocks On ${{ matrix.os }}
+    name: Install Blocks On windows-latest
     needs: release-build
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-latest
     timeout-minutes: 20
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, macos-latest]
     env:
       RELEASE_VERSION: 0.0.0-dryrun.${{ github.run_number }}
     steps:
@@ -243,47 +325,26 @@ jobs:
         with:
           name: ${{ needs.release-build.outputs.artifact }}
           path: ${{ runner.temp }}/release
-      - name: Run The macOS Blocks Against Stand-Ins Under zsh
-        if: runner.os == 'macOS'
-        timeout-minutes: 5
-        run: bash .github/scripts/tests/test-install-blocks.sh zsh
-      - name: Run The macOS Blocks Against Stand-Ins Under The System bash
-        if: runner.os == 'macOS'
-        timeout-minutes: 5
-        run: bash .github/scripts/tests/test-install-blocks.sh /bin/bash
-      # the real installer and passwordless sudo, with only gh stubbed.
-      - name: Run The macOS Blocks Against The Dry Run Package Under zsh
-        if: runner.os == 'macOS'
-        timeout-minutes: 8
-        run: bash .github/scripts/tests/test-install-blocks-real.sh zsh "${RUNNER_TEMP}/release" "$RELEASE_VERSION"
-      - name: Run The macOS Blocks Against The Dry Run Package Under The System bash
-        if: runner.os == 'macOS'
-        timeout-minutes: 8
-        run: bash .github/scripts/tests/test-install-blocks-real.sh /bin/bash "${RUNNER_TEMP}/release" "$RELEASE_VERSION"
       - name: Run The Windows Blocks Against Stand-Ins Under Windows PowerShell 5.1
-        if: runner.os == 'Windows'
         timeout-minutes: 8
         shell: powershell
         run: .\.github\scripts\tests\test-install-blocks.ps1
       - name: Run The Windows Blocks Against Stand-Ins Under PowerShell 7
-        if: runner.os == 'Windows'
         timeout-minutes: 8
         shell: pwsh
         run: ./.github/scripts/tests/test-install-blocks.ps1
       - name: Run The Windows Blocks Against The Dry Run MSI
-        if: runner.os == 'Windows'
         timeout-minutes: 10
         shell: powershell
         run: .\.github\scripts\tests\test-install-blocks-real.ps1 -ReleaseDirectory (Join-Path $env:RUNNER_TEMP 'release') -Version $env:RELEASE_VERSION -LogDirectory (Join-Path $env:RUNNER_TEMP 'install-block-logs')
       # the hosted runner is elevated, so a standard local user runs the check
       # block's extraction and the install, and the outcome is a MEASURED line.
       - name: Run The Check Block And The Install As A Standard User
-        if: runner.os == 'Windows'
         timeout-minutes: 12
         shell: powershell
         run: .\.github\scripts\tests\test-msi-standard-user.ps1 -ReleaseDirectory (Join-Path $env:RUNNER_TEMP 'release') -Version $env:RELEASE_VERSION
       - name: Upload The Install Block Logs
-        if: always() && runner.os == 'Windows'
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: install-block-logs-windows

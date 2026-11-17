@@ -7,6 +7,7 @@ use marshal_cli::agent::snapshot::Snapshot;
 use marshal_cli::github_status::GithubStatus;
 
 use crate::clock::Clock;
+use crate::host::{HostWords, WINDOWS};
 
 /// why the app lost contact with a running agent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,6 +35,8 @@ pub enum Connection {
     NotAnswering,
     /// the lock is held and the user's channel does not answer protocol version 2.
     LockHeld,
+    /// this copy runs outside Applications, so it starts and controls no agent.
+    OutsideApplications,
     /// the app is ending.
     Quitting,
 }
@@ -134,6 +137,12 @@ pub struct Input<'a> {
     /// the pools whose Open run found the job ended, with when, in milliseconds since
     /// the Unix epoch.
     pub ended_jobs: Option<&'a BTreeMap<String, u64>>,
+    /// the words that name the operating system; W1's Windows words unless
+    /// [`Input::words`] gives the host's.
+    pub words: HostWords,
+    /// whether the agent before this launch ended because Marshal's executable was
+    /// moved, renamed or replaced while it ran.
+    pub after_moved: bool,
 }
 
 impl<'a> Input<'a> {
@@ -148,7 +157,16 @@ impl<'a> Input<'a> {
             tokens: None,
             github: GithubFeed::Off,
             ended_jobs: None,
+            words: WINDOWS,
+            after_moved: false,
         }
+    }
+
+    /// names the operating system with `words`, such as [`crate::HOST`].
+    #[must_use]
+    pub fn words(mut self, words: HostWords) -> Self {
+        self.words = words;
+        self
     }
 
     #[must_use]
@@ -178,6 +196,14 @@ impl<'a> Input<'a> {
     #[must_use]
     pub fn ended_jobs(mut self, ended: &'a BTreeMap<String, u64>) -> Self {
         self.ended_jobs = Some(ended);
+        self
+    }
+
+    /// says this launch follows an agent that ended because Marshal was moved, renamed
+    /// or replaced while it ran.
+    #[must_use]
+    pub fn after_moved(mut self, after_moved: bool) -> Self {
+        self.after_moved = after_moved;
         self
     }
 }

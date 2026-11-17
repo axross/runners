@@ -13,5 +13,10 @@ marshal-view = { path = "../view" }
 [target.'cfg(windows)'.dependencies]
 windows-registry = "0.6"
 
+# the time zone's offset on the Mac, through Core Foundation's safe wrapper, at the
+# version Tauri's own window crate already links there, so it adds no crate.
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10"
+
 [lints]
 workspace = true

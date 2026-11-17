@@ -339,8 +339,9 @@ pub struct ImageLine {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct ImageWarning {
-    /// `not_built_by_marshal`, `packages_old`, `image_old`, `runner_old` or
-    /// `runner_may_be_newer`.
+    /// `not_built_by_marshal`, `packages_old`, `image_old`, `runner_old`,
+    /// `runner_may_be_newer`, or for the golden macOS VM (M3) `runner_age_unknown` and
+    /// `base_old`.
     #[serde(default)]
     pub code: String,
     #[serde(default)]
@@ -359,6 +360,8 @@ pub enum WarningKind {
     ImageOld,
     RunnerOld,
     RunnerMayBeNewer,
+    RunnerAgeUnknown,
+    BaseOld,
     Unknown(String),
 }
 
@@ -371,6 +374,8 @@ impl ImageWarning {
             "image_old" => WarningKind::ImageOld,
             "runner_old" => WarningKind::RunnerOld,
             "runner_may_be_newer" => WarningKind::RunnerMayBeNewer,
+            "runner_age_unknown" => WarningKind::RunnerAgeUnknown,
+            "base_old" => WarningKind::BaseOld,
             other => WarningKind::Unknown(other.to_string()),
         }
     }

@@ -164,49 +164,65 @@ pub fn build(request: &BuildRequest<'_>, err: &mut dyn Write) -> u8 {
                 ..TartConfig::default()
             });
             let pools = ConfiguredPool::of_plan(&plan);
-            let builds_linux = pools.iter().any(|pool| pool.os == Os::Linux);
-            let builds_macos = pools.iter().any(|pool| pool.os == Os::Macos);
+            if pools.iter().any(|pool| pool.os == Os::Linux) {
+                log.info(&format!("Building {image}."));
+            }
             let (image, log) = (&image, &log);
             // boxed: the whole golden build is a large future, which `block_on` would
             // otherwise hold on the main thread's stack
             runtime.block_on(build.run(|stop| {
-                Box::pin(async move {
-                    let mut failures = Vec::new();
-                    if builds_linux {
-                        log.info(&format!("Building {image}."));
-                        let linux = GoldenBuild {
-                            client: client.clone(),
-                            launcher: launcher.clone(),
-                            image,
-                            context,
-                            log,
-                            timings: GoldenTimings::default(),
-                            retired: RETIRED_BASE_PINS,
-                            softnet_owner_mode: None,
-                            stop: stop.clone(),
-                        };
-                        if let Err(error) = linux.run().await {
-                            failures.push(error);
-                        }
-                    }
-                    if builds_macos && stop.borrow().is_none() {
-                        let macos = macos_build(client, launcher, pools, log, stop);
-                        if let Err(error) = async { macos?.run().await }.await {
-                            failures.push(error);
-                        }
-                    }
-                    if failures.is_empty() {
-                        Ok(())
-                    } else {
-                        Err(failures.join("; "))
-                    }
-                })
+                Box::pin(golden_vms(
+                    client, launcher, image, context, pools, log, stop,
+                ))
             }))
         }
     };
     match outcome {
         Ok(()) => EXIT_OK,
         Err(error) => print_error(err, &error),
+    }
+}
+
+/// builds the golden VMs `pools` run on axmc, as `build` and the agent's Build do: the
+/// golden Linux VM named `image` when a Linux pool is configured, then the golden macOS
+/// VM when a macOS pool is and no stop was asked for. Both are tried, and the error
+/// joins what each said.
+pub async fn golden_vms(
+    client: TartClient,
+    launcher: VmLauncher,
+    image: &str,
+    context: Vec<u8>,
+    pools: Vec<ConfiguredPool>,
+    log: &dyn Log,
+    stop: watch::Receiver<Option<Instant>>,
+) -> Result<(), String> {
+    let mut failures = Vec::new();
+    if pools.iter().any(|pool| pool.os == Os::Linux) {
+        let linux = GoldenBuild {
+            client: client.clone(),
+            launcher: launcher.clone(),
+            image,
+            context,
+            log,
+            timings: GoldenTimings::default(),
+            retired: RETIRED_BASE_PINS,
+            softnet_owner_mode: None,
+            stop: stop.clone(),
+        };
+        if let Err(error) = linux.run().await {
+            failures.push(error);
+        }
+    }
+    if pools.iter().any(|pool| pool.os == Os::Macos) && stop.borrow().is_none() {
+        let macos = macos_build(client, launcher, pools, log, stop);
+        if let Err(error) = async { macos?.run().await }.await {
+            failures.push(error);
+        }
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(failures.join("; "))
     }
 }
 

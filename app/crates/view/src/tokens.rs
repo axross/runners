@@ -8,12 +8,10 @@ use marshal_cli::runtime::registration::REJECTED_MARK;
 use serde::Serialize;
 
 use crate::control::{Action, Confirmation, Control, Look, control};
+use crate::host::HostWords;
 use crate::input::{NotSaved, TokenResult};
 use crate::state::{Context, Resident, is_rejection};
 use crate::text::{capitalised, counted, list_of, plain};
-
-/// what the store is called in the window; the Mac's Keychain store names its own.
-const STORE: &str = "Windows Credential Manager";
 
 const TOKEN_MAX: &str = "a token is at most 1,280 characters";
 const ENTER_AGAIN: &str = "The field is empty; enter the token again.";
@@ -278,13 +276,19 @@ pub struct TokensTab {
     pub chip: Option<String>,
 }
 
-const INTRO: &str = "Each repository has one token, and every pool on that repository uses it. \
-Marshal keeps tokens in Windows Credential Manager and never shows one.";
+fn intro(words: &HostWords) -> String {
+    let store = words.store;
+    format!(
+        "Each repository has one token, and every pool on that repository uses it. \
+Marshal keeps tokens in {store} and never shows one."
+    )
+}
 
-fn hint(repository: &str) -> String {
+fn hint(repository: &str, words: &HostWords) -> String {
+    let store = words.store;
     format!(
         "A fine-grained personal access token with Administration: read and write for {repository} only. \
-Marshal keeps it in {STORE} and never shows it again."
+Marshal keeps it in {store} and never shows it again."
     )
 }
 
@@ -325,7 +329,7 @@ fn row(context: &Context<'_>, repository: &Repository) -> TokenRow {
     let editing = ui.is_some_and(|ui| ui.editing.as_deref() == Some(key));
     let result = ui.and_then(|ui| ui.results.get(key));
     let failure = result.and_then(|result| match result {
-        TokenResult::NotSaved(failure) => Some(failure.message()),
+        TokenResult::NotSaved(failure) => Some(failure.message(&context.input.words)),
         _ => None,
     });
     TokenRow {
@@ -335,13 +339,13 @@ fn row(context: &Context<'_>, repository: &Repository) -> TokenRow {
         state_text,
         status: match result {
             Some(TokenResult::NotSaved(_)) if editing => None,
-            Some(result) => Some(result.status_line(key)),
+            Some(result) => Some(result.status_line(key, &context.input.words)),
             None => None,
         },
         controls,
         form: editing.then(|| TokenForm {
             label: format!("Token for {key}"),
-            hint: hint(key),
+            hint: hint(key, &context.input.words),
             save: "Save".to_string(),
             cancel: "Cancel".to_string(),
             save_reason_when_empty: "Unavailable: the field is empty.".to_string(),
@@ -368,7 +372,7 @@ pub fn tab(context: &Context<'_>) -> TokensTab {
         .count();
     let attention = u32::try_from(attention).unwrap_or(u32::MAX);
     TokensTab {
-        intro: INTRO.to_string(),
+        intro: intro(&context.input.words),
         chip: (attention > 0).then(|| {
             if attention == 1 {
                 "1 repository needs attention".to_string()
@@ -387,22 +391,24 @@ impl NotSaved {
     /// the message the open field shows, which says the token was not saved and to enter
     /// it again.
     #[must_use]
-    pub fn message(&self) -> String {
+    pub fn message(&self, words: &HostWords) -> String {
+        let store = words.store;
         let reason = match self {
             Self::TooLong => TOKEN_MAX.to_string(),
             Self::Store {
                 detail: Some(detail),
             } => {
-                format!("{STORE} refused the token ({})", plain(detail))
+                format!("{store} refused the token ({})", plain(detail))
             }
-            Self::Store { detail: None } => format!("{STORE} refused the token"),
+            Self::Store { detail: None } => format!("{store} refused the token"),
             Self::Refused(words) => plain(words),
             Self::LostContact => "Marshal has lost contact with the agent".to_string(),
         };
         format!("Not saved: {}. {ENTER_AGAIN}", reason.trim_end_matches('.'))
     }
 
-    fn announcement(&self, repository: &str) -> String {
+    fn announcement(&self, repository: &str, words: &HostWords) -> String {
+        let store = words.store;
         match self {
             Self::LostContact => discarded_announcement(repository, true),
             Self::TooLong => format!(
@@ -412,11 +418,11 @@ impl NotSaved {
             Self::Store {
                 detail: Some(detail),
             } => format!(
-                "Token for {repository} not saved. {STORE} refused the token: {}. {ENTER_AGAIN}",
+                "Token for {repository} not saved. {store} refused the token: {}. {ENTER_AGAIN}",
                 plain(detail)
             ),
             Self::Store { detail: None } => format!(
-                "Token for {repository} not saved. {STORE} refused the token. {ENTER_AGAIN}"
+                "Token for {repository} not saved. {store} refused the token. {ENTER_AGAIN}"
             ),
             Self::Refused(words) => format!(
                 "Token for {repository} not saved. {}. {ENTER_AGAIN}",
@@ -429,7 +435,7 @@ impl NotSaved {
 impl TokenResult {
     /// the line the row shows, which is also what the live region says.
     #[must_use]
-    pub fn status_line(&self, repository: &str) -> String {
+    pub fn status_line(&self, repository: &str, words: &HostWords) -> String {
         match self {
             Self::Saved { started } if started.is_empty() => {
                 format!("Token for {repository} saved.")
@@ -440,7 +446,7 @@ impl TokenResult {
                 list_of(started)
             ),
             Self::Removed => format!("Token for {repository} removed."),
-            Self::NotSaved(failure) => failure.message(),
+            Self::NotSaved(failure) => failure.message(words),
             Self::NotRemoved(why) => format!(
                 "Token for {repository} not removed. {}. It is still stored.",
                 capitalised(plain(why).trim_end_matches('.'))
@@ -454,10 +460,10 @@ impl TokenResult {
 
     /// what the window's polite region says of the result.
     #[must_use]
-    pub fn announcement(&self, repository: &str) -> String {
+    pub fn announcement(&self, repository: &str, words: &HostWords) -> String {
         match self {
-            Self::NotSaved(failure) => failure.announcement(repository),
-            other => other.status_line(repository),
+            Self::NotSaved(failure) => failure.announcement(repository, words),
+            other => other.status_line(repository, words),
         }
     }
 }

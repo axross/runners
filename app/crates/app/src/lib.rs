@@ -2,6 +2,8 @@
 //! menu, and the wiring of the session that talks to the agent.
 
 mod app;
+#[cfg(target_os = "macos")]
+mod app_menu;
 pub mod commands;
 pub mod confirmation;
 mod icon;

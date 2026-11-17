@@ -353,33 +353,33 @@ fn a_save_that_started_pools_says_which() {
         started: vec!["docs".into()],
     };
     assert_eq!(
-        saved.status_line("owner/docs"),
+        saved.status_line("owner/docs", &marshal_view::WINDOWS),
         "Token for owner/docs saved. Starting pool docs."
     );
     assert_eq!(
-        saved.announcement("owner/docs"),
+        saved.announcement("owner/docs", &marshal_view::WINDOWS),
         "Token for owner/docs saved. Starting pool docs."
     );
     let two = TokenResult::Saved {
         started: vec!["docs".into(), "docs-arm".into()],
     };
     assert_eq!(
-        two.status_line("owner/docs"),
+        two.status_line("owner/docs", &marshal_view::WINDOWS),
         "Token for owner/docs saved. Starting pools docs and docs-arm."
     );
     let none = TokenResult::Saved {
         started: Vec::new(),
     };
     assert_eq!(
-        none.status_line("owner/docs"),
+        none.status_line("owner/docs", &marshal_view::WINDOWS),
         "Token for owner/docs saved."
     );
     assert_eq!(
-        TokenResult::Removed.status_line("owner/app"),
+        TokenResult::Removed.status_line("owner/app", &marshal_view::WINDOWS),
         "Token for owner/app removed."
     );
     assert_eq!(
-        TokenResult::Removed.announcement("owner/app"),
+        TokenResult::Removed.announcement("owner/app", &marshal_view::WINDOWS),
         "Token for owner/app removed."
     );
 }
@@ -425,7 +425,10 @@ fn a_save_that_failed_says_so_in_the_field_and_in_the_announcement() {
         let form = row.form.as_ref().expect("the field stays open");
         assert_eq!(form.error.as_deref(), Some(field));
         assert!(row.status.is_none(), "the error is in the form, not twice");
-        assert_eq!(result.announcement("owner/docs"), announced);
+        assert_eq!(
+            result.announcement("owner/docs", &marshal_view::WINDOWS),
+            announced
+        );
     }
 }
 
@@ -454,8 +457,14 @@ fn a_removal_that_failed_says_the_token_is_still_stored() {
     let token = format!("ghp_{}", "Q".repeat(36));
     let failed = TokenResult::NotRemoved(format!("Access is denied {token}"));
     let expected = "Token for owner/app not removed. Access is denied <token>. It is still stored.";
-    assert_eq!(failed.status_line("owner/app"), expected);
-    assert_eq!(failed.announcement("owner/app"), expected);
+    assert_eq!(
+        failed.status_line("owner/app", &marshal_view::WINDOWS),
+        expected
+    );
+    assert_eq!(
+        failed.announcement("owner/app", &marshal_view::WINDOWS),
+        expected
+    );
     let view = with_ui("running", &ui(None, None, &[("owner/app", failed)]));
     let row = list(&view)
         .tokens
@@ -474,7 +483,10 @@ fn a_call_the_agent_has_not_answered_says_so_and_leaves_the_token_to_the_snapsho
         let expected = format!(
             "The agent has not answered yet about {verb} the token for owner/app. It may still do it; this row shows where the token stands."
         );
-        assert_eq!(unanswered.announcement("owner/app"), expected);
+        assert_eq!(
+            unanswered.announcement("owner/app", &marshal_view::WINDOWS),
+            expected
+        );
         let view = with_ui(
             "running",
             &ui(Some("owner/app"), None, &[("owner/app", unanswered)]),
@@ -525,11 +537,11 @@ fn a_field_closed_without_a_save_is_announced() {
     );
     let lost = TokenResult::NotSaved(NotSaved::LostContact);
     assert_eq!(
-        lost.announcement("owner/docs"),
+        lost.announcement("owner/docs", &marshal_view::WINDOWS),
         "The token for owner/docs was not saved. Marshal has lost contact with the agent."
     );
     assert_eq!(
-        lost.status_line("owner/docs"),
+        lost.status_line("owner/docs", &marshal_view::WINDOWS),
         "Not saved: Marshal has lost contact with the agent. The field is empty; enter the token again."
     );
 }
