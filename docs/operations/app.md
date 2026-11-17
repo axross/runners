@@ -905,9 +905,10 @@ Keychain items are kept. Until M4, Marshal has no login item and no updates of i
 own.
 
 With the command line still running, the app shows that another Marshal holds the
-runner lock. Stop it with `marshal stop`, then remove the command line as
-[macOS Runner Host](./macos-runner-host.md) installed it; from then on the app runs
-the pools.
+runner lock. Stop it with `marshal stop`, then remove the command line with the
+uninstall procedure of the last command-line release's documents, as
+[The Last Command-Line Release](./cli.md#the-last-command-line-release) says; from then
+on the app runs the pools.
 
 To uninstall, quit Marshal and move it to the Trash. What it leaves, and how to remove
 each:
